@@ -343,7 +343,8 @@ position -- after `(`, `=`, `?`, `&&`, `=>`, a keyword such as `return`,
 `await`, `case` or `yield`, or at the start of a line -- opens a tag, `/>`
 closes that tag without opening an element, `>` opens the element's text
 when a matching `</name>` follows, `{` in text enters code until the
-matching `}`, and `</name>` returns to the parent's text. Inside text `//`, quotes and `/` are literal, so `<p>http://x</p>`
+matching `}`, and `</name>` returns to the parent's text. Inside text
+`//`, quotes and `/` are literal, so `<p>http://x</p>`
 keeps its URL on any line and after a nested child; "`//` in JSX text is
 markup, not a comment" holds. An apostrophe directly after an identifier is
 still not a string opener (`<p>it's</p>`), while a keyword that takes an
