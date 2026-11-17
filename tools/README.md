@@ -334,26 +334,32 @@ bodies masked, so a token in prose is not a finding; an inline or dynamic
 `os` import is matched on a copy that keeps its module specifier, then kept
 only when its keyword survives the mask, so a `require('os')` named inside a
 string stays prose. The TS/JS mask is hand-written, not a parser. It reads
-`</` before a tag name or `>`, a `/>` after an attribute-ending `}`,
-identifier or quote, and `//` in JSX text (`<p>http://x</p>`) as markup,
-not a regex or a comment. An apostrophe directly after an identifier is
-JSX text (`<p>it's</p>`) unless the identifier is a keyword that takes an
-expression with no space (`x as'user'`). A `<` that ends an operand on the
-same line is a comparison, not a tag start, so `s</re/.test(t)` is
-`s < /re/`, while `render(<Link>a</Link>)` still closes the element. A `/`
-after a regex preceder such as `(` still opens a regex, so
-`.replace(/>/g, ...)` masks its regex as a unit. A delimiter can
-still be mispaired, and then the mask hides text up to the next closing
-delimiter, which may be on a later line: a quote at the start of JSX text
-pairs with the next quote, a `/*` written in JSX text pairs with a `*/` on a
-later line, and a `/` after `throw` opens a regex the preceder rule does not
-recognise, so a quote inside or after it pairs with the next quote.
-Fail-closed guarantees only that such a misread cannot swallow to end of
-file: a string, template literal, regex or block comment still open there
-makes the gate exit 2 naming the file, so it surfaces rather than passing
-silently. The frontend's guards do not replace this scan: the structural
-guard in `web/scripts/workspace-test-config.test.mjs` parses every test
-source with the TypeScript compiler and walks the syntax tree, so it is not
+JSX with a state machine over the whole source: `<name` at an expression
+position opens a tag, `/>` closes that tag without opening an element, `>`
+opens the element's text when a matching `</name>` follows, `{` in text
+enters code until the matching `}`, and `</name>` returns to the parent's
+text. Inside text `//`, quotes and `/` are literal, so `<p>http://x</p>`
+keeps its URL on any line and after a nested child; "`//` in JSX text is
+markup, not a comment" holds. An apostrophe directly after an identifier is
+still not a string opener (`<p>it's</p>`), while a keyword that takes an
+expression with no space (`x as'user'`) keeps the string reading. A `<` that
+ends an operand on the same line is a comparison, not a tag start, so
+`s</re/.test(t)` is `s < /re/`, while `render(<Link>a</Link>)` still closes
+the element. A `/` after a regex preceder such as `(` still opens a regex,
+so `.replace(/>/g, ...)` masks its regex as a unit. A type-level `<T>` has
+no `</T>` and is not an element, so a generic arrow or a type assertion does
+not turn the following code into text. A delimiter can still be mispaired
+in code or a tag, and then the mask hides text up to the next closing
+delimiter, which may be on a later line: a quote inside a string or
+attribute pairs with the next quote, and a `/` after `throw` opens a regex
+the preceder rule does not recognise, so a quote inside or after it pairs
+with the next quote. Fail-closed guarantees only that such a misread cannot
+swallow to end of file: a string, template literal, regex or block comment
+still open there makes the gate exit 2 naming the file, so it surfaces
+rather than passing silently. The frontend's guards do not replace this
+scan: the structural guard in `web/scripts/workspace-test-config.test.mjs`
+parses every test source with the TypeScript compiler and walks the syntax
+tree, so it is not
 a second mask; it covers the workspace's test wiring and the shared floors.
 The custom rules under `web/eslint-rules/` are a separate set, walking the
 TypeScript syntax tree for their own subjects (i18n text, direct HTTP, HTML
@@ -366,22 +372,16 @@ import of
 constant passed as a budget (`const ms = 5_000; it('x', { timeout: ms })`);
 a budget built from a variable or from a longer expression than constant
 arithmetic; a width returned by a helper; a `findBy*`/`waitFor` timeout
-passed through a variable; a `//` on a later line of a multi-line JSX text
-run, or after a nested closing tag on the same line, which is read as a
-comment and hides the rest of that line; an `os` member reached through a
-binding the scan does not model (`const m = require('os'); m['cpus']()`); and a
+passed through a variable; an `os` member reached through a binding the
+scan does not model (`const m = require('os'); m['cpus']()`); and a
 function that saves one name twice, which the per-body pairing judges
 together, so a clean save can be reported because its same-named sibling in
-a nested block escaped. Two further shapes appear only when deliberately
-constructed and are pinned by a test each, in opposite directions. A real
-line comment whose `//` is followed by a `<` on the same line, when the
-nearest `>` before it closes a type-assertion or generic `<T>` at the start
-of an expression (`const y = foo(<T>bar) // os.cpus() <b>`), is read as JSX
-text, so the comment is not masked and a name inside it can be a false
-finding. An `as` directly followed by an apostrophe in JSX text (`as'x`)
-opens a string that runs to the next quote, which can sit on the next line
-inside a wait, hiding that wait's call name and its timeout: a missed
-finding. Exit codes: 0 clean, 1 a finding (file, line and
+a nested block escaped. A type-level `<T>` is read as an element when a
+`</T>` appears later in prose. Inside a comment that misread blanks the
+lines between them, so a budget there is invisible. Inside a string it
+fails closed: the element text swallows the opening quote, the closing
+quote lands in code as an unterminated string, and the gate exits 2
+naming the file. Exit codes: 0 clean, 1 a finding (file, line and
 what it is), 2 infrastructure error (the root is not a directory, nothing
 test-shaped was found, a shared default or one of its floors is missing,
 unreadable or not a positive finite number,

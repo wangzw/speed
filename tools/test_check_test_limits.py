@@ -1221,6 +1221,55 @@ class TestTheJavascriptMask(GateCase):
         # before it is not an operand of a comparison.
         self.assert_shape_reports("render(<Link>a</Link>);\n")
 
+    def test_a_comment_after_a_nested_closing_tag_is_masked(self) -> None:
+        # A nested closing tag, the text after it and the parent's closing
+        # tag all end their elements; the `//` after them is a real comment,
+        # so a name inside it stays prose.
+        masked = m.mask_javascript(
+            "render(<p><b>x</b> hello</p>) // names os.cpus()\n"
+        )
+        self.assertNotIn("os.cpus", masked)
+
+    def test_a_wait_after_a_nested_closing_tag_is_read(self) -> None:
+        # The `</` before `p` closes the element instead of opening a regex
+        # that would run to the division later on the line and blank the
+        # wait's arguments.
+        masked = m.mask_javascript(
+            "render(<p><b>x</b> hello</p>); "
+            "await screen.findByText('x', { timeout: 500 }); "
+            "const d = a / b\n"
+        )
+        self.assertIn("500", masked)
+
+    def test_code_after_a_multiline_element_close_is_read(self) -> None:
+        # Text and its closing tag on a later line still end the element,
+        # so the `os.cpus()` after it is code, not part of a regex body.
+        masked = m.mask_javascript(
+            "render(<p><b>x</b>\n hello</p>); const n = os.cpus() / 2\n"
+        )
+        self.assertIn("os.cpus", masked)
+
+    def test_text_after_a_self_closing_child_keeps_its_slashes(self) -> None:
+        # `http://y` sits in the parent's text after a self-closing child;
+        # `//` there is literal text, not a line comment.
+        masked = m.mask_javascript("render(<p><br/>http://y</p>)\n")
+        self.assertIn("http://y", masked)
+
+    def test_text_after_a_nested_open_tag_keeps_its_slashes(self) -> None:
+        # The same URL written after a nested open tag is still text.
+        masked = m.mask_javascript("render(<p>see <b>http://y</b></p>)\n")
+        self.assertIn("http://y", masked)
+
+    def test_a_type_argument_in_a_tag_does_not_end_the_tag(self) -> None:
+        # `<FormField<FormValues, 'name'> ... />` is one opening tag: the
+        # `>` that closes the type argument must not end it, or the trailing
+        # `/>` is read as a regex start and the code after it is masked.
+        masked = m.mask_javascript(
+            "render(<FormField<FormValues, 'name'> value={x} />); "
+            "const d = a / b\n"
+        )
+        self.assertIn("const d = a / b", masked)
+
     def test_a_less_than_chain_keeps_its_comment(self) -> None:
         # `a<b>c` is `(a < b) > c`, not markup, so the `//` still starts a
         # comment and a token named in it is prose.
@@ -1262,14 +1311,10 @@ class TestTheJavascriptMask(GateCase):
         )
         self.assert_clean()
 
-    def test_a_comment_after_a_type_assertion_before_a_less_than_is_reported(
-        self,
-    ) -> None:
-        # False positive, deliberately constructed and pinned rather than
-        # fixed: a real `//` comment whose line also carries a `<`, where the
-        # nearest `>` before it closes the type assertion `foo(<T>...)` at
-        # the start of an expression, is read as JSX text. The comment is
-        # not masked, so a name inside it is reported.
+    def test_a_comment_after_a_type_assertion_is_masked(self) -> None:
+        # `foo(<T>bar)` is a type assertion: no `</T>` closes it, so the
+        # `>` does not open element text and the `//` after it stays a
+        # comment. A name inside it is prose, not a finding.
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1277,16 +1322,27 @@ class TestTheJavascriptMask(GateCase):
             "  const y = foo(<T>bar) // os.cpus() <b>\n"
             "})\n",
         )
-        self.assert_finding("web/packages/alpha/src/alpha.test.ts", "os.cpus")
+        self.assert_clean()
 
-    def test_as_before_an_apostrophe_in_jsx_text_hides_the_next_wait(
-        self,
-    ) -> None:
-        # Miss, deliberately constructed and pinned rather than fixed: in
-        # JSX text `as` directly before an apostrophe opens a string that
-        # runs to the next quote, which here is on the next line inside the
-        # wait's arguments. The wait's call name is masked, so its 500ms
-        # timeout is never read.
+    def test_a_generic_arrow_does_not_turn_later_lines_into_text(self) -> None:
+        # `<T,>() => ...` is a generic arrow, not an element. Its `>` has no
+        # `</T>`, so the comment and the string on later lines are still
+        # masked: a text state would leave the name in them visible.
+        self.write(
+            "web/packages/alpha/src/alpha.test.ts",
+            "import { it } from 'vitest'\n"
+            "it('adds', () => {\n"
+            "  const empty = <T,>(): T[] => []\n"
+            "  // names os.cpus()\n"
+            "  const s = 'os.cpus()'\n"
+            "})\n",
+        )
+        self.assert_clean()
+
+    def test_an_apostrophe_in_jsx_text_does_not_hide_the_next_wait(self) -> None:
+        # JSX text is literal, so the apostrophe in `as'x` is a character,
+        # not a string opener: the wait on the next line keeps its name and
+        # its 500ms timeout is reported.
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it, screen } from 'vitest'\n"
@@ -1295,7 +1351,7 @@ class TestTheJavascriptMask(GateCase):
             "  await screen.findByText('x', { timeout: 500 })\n"
             "})\n",
         )
-        self.assert_clean()
+        self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
 
     def test_an_unclosed_construct_raises_rather_than_blanking(self) -> None:
         for source in (

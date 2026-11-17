@@ -78,36 +78,29 @@ budget.
 
 TS/JS sources are read through a hand-written mask, not a parser.
 `mask_javascript` blanks comments, string contents, template literals and
-regex bodies while keeping their delimiters. JSX is recognised to the
-extent a token scan can: `</` before a tag name or `>` and a `/>` that
-follows an attribute-ending `}`, identifier or quote are markup rather
-than a regex start, and `//` in JSX text is literal characters
-(`<p>http://x</p>`), not a line comment. An apostrophe directly after an
-identifier is JSX text (`<p>it's</p>`) unless the identifier is a keyword
-that takes an expression with no space (`x as'user'`), and a `/` after a
-regex preceder such as `(` still opens a regex, so `.replace(/>/g, ...)`
-masks its regex as a unit. A `<` that ends an operand on the same line is
-a comparison, not a tag start, so `s</re/.test(t)` is `s < /re/`.
+regex bodies while keeping their delimiters. JSX is read with a state
+machine over the whole source: `<name` at an expression position opens a
+tag, `/>` closes that tag without opening an element, `>` opens the
+element's text when a matching `</name>` follows, a `{` in text enters a
+code expression that ends at the matching `}`, and `</name>` closes the
+element and returns to its parent's text. Inside text `//`, quotes and `/`
+are literal characters, so `<p>http://x</p>` keeps its URL on any line and
+after a nested child. A `<` that ends an operand on the same line is a
+comparison, not a tag start, so `s</re/.test(t)` is `s < /re/`; a `/`
+after a regex preceder such as `(` still opens a regex, so
+`.replace(/>/g, ...)` masks its regex as a unit. A type-level `<T>` has no
+`</T>` and is not an element, so a generic arrow or a type assertion does
+not turn the following code into text.
 
-A mispaired delimiter still hides text, up to the next closing delimiter,
-which may be on a later line: a quote at the start of JSX text
-(`<p>'quoted'</p>`) pairs with the next quote; a `/*` written in JSX text
-pairs with a `*/` on a later line; and a `/` after `throw` opens a regex
-the preceder rule does not recognise, so a quote inside or after it pairs
-with the next quote. Fail-closed only guarantees that such a misread cannot
-swallow to end of file: a string, template literal, regex or block comment
-still open there is an infrastructure error naming the file.
-
-Two boundary shapes appear only when deliberately constructed and are
-pinned by a test in each direction, not fixed. False positive: a real line
-comment whose `//` is followed by a `<` on the same line, where the nearest
-`>` before it closes a type-assertion or generic `<T>` that starts an
-expression, is read as JSX text, so the comment is not masked and a name
-inside it can be reported (`const y = foo(<T>bar) // os.cpus() <b>`). Miss:
-an `as` directly followed by an apostrophe in JSX text (`as'x`) opens a
-string that runs to the next quote, which may be on the next line inside a
-wait's arguments, so that wait's call name is hidden and its timeout goes
-unreported.
+A mispaired delimiter in code or a tag still hides text, up to the next
+closing delimiter, which may be on a later line: a quote inside a string
+or attribute pairs with the next quote, and a `/` after `throw` opens a
+regex the preceder rule does not recognise, so a quote inside or after it
+pairs with the next quote. Fail-closed only guarantees that such a misread
+cannot swallow to end of file: a string, template literal, regex or block
+comment still open there is an infrastructure error naming the file. An
+element still open at end of file is not an error: text has no delimiter
+that can swallow past it.
 
 The frontend's guards do not replace this scan.
 `web/scripts/workspace-test-config.test.mjs` (run by `make web-check`,
@@ -125,15 +118,17 @@ and are a reviewer's obligation, not the gate's: a dot import of `runtime`
 constant passed as a budget (`const ms = 5_000; it('x', { timeout: ms })`)
 is not a literal; a budget built from a variable or from a longer expression
 than constant arithmetic; a width returned by a helper; a `findBy*`/`waitFor`
-timeout passed through a variable; a `//` on a later line of a multi-line
-JSX text run, or after a nested closing tag on the same line, which is read
-as a comment and hides the rest of that line; an `os` member reached
-through a binding the scan does not model (`const m = require('os');
-m['cpus']()`); and a
+timeout passed through a variable; an `os` member reached through a binding
+the scan does not model (`const m = require('os'); m['cpus']()`); and a
 function that saves one name twice, which the per-body pairing judges
 together, so a clean save can be reported because its same-named sibling in
 a nested block escaped -- naming the two saves differently, or moving one to
-another function, keeps them apart. Product runtime code is out of scope: a
+another function, keeps them apart. A type-level `<T>` is read as an element
+when a `</T>` appears later in prose. Inside a comment that misread blanks
+the lines between them, so a budget there is invisible. Inside a string it
+fails closed: the element text swallows the opening quote, the closing
+quote lands in code as an unterminated string, and the gate is an
+infrastructure error naming the file. Product runtime code is out of scope: a
 Go file outside the three shapes above is not read.
 
 Exit codes: 0 = clean; 1 = at least one finding, each reported as
@@ -795,99 +790,109 @@ def operand_ends_before(text: str, index: int) -> bool:
     )
 
 
-def in_jsx_text(text: str, index: int) -> bool:
-    """Whether `index` sits in JSX text on its line, not in code or a tag.
+def _jsx_name_end(text: str, start: int) -> int:
+    """The end of the JSX tag name that starts at `start`.
 
-    The nearest markup before the position must be a complete opening tag
-    that starts where an expression can, and a `<` must follow at or after
-    it before the newline, so the text run is closed on the same line. An
-    unmatched `{` after the opening `>` puts the position inside an
-    expression container, which is code. A TypeScript type assertion or
-    generic (`<T>x`) has no `<` later on the line, and a comparison chain
-    (`a<b>c`) does not start where an expression can, so the `//` after
-    either stays a comment. A `//` or `</` on a later line of a multi-line
-    text run is not recognised, and a `//` after a nested closing tag on the
-    same line is not either.
+    A fragment (`<>`) has no name, so the end is `start` itself. A
+    namespaced or member name (`svg:path`, `Foo.Bar`) and a hyphenated one
+    (`my-element`) stay in the name.
     """
-    line_start = text.rfind("\n", 0, index) + 1
-    line_end = text.find("\n", index)
-    if line_end == -1:
-        line_end = len(text)
-    if text.find("<", index, line_end) == -1:
-        return False
-    before = text[line_start:index]
-    tag_end = before.rfind(">")
-    if tag_end == -1:
-        return False
-    tag_start = before.rfind("<", 0, tag_end)
-    if tag_start == -1:
-        return False
-    # A JSX element starts where an expression can (`(`, `=`, `?`, `&&`, a
-    # `=>`, a keyword such as `return`, or the start of a line); a type
-    # argument or a comparison (`a<b>c`) does not.
-    previous = line_start + tag_start - 1
-    while previous >= line_start and text[previous] in " \t":
-        previous -= 1
-    if previous >= line_start and not regex_can_start(text, previous + 1):
-        return False
-    tag = before[tag_start + 1 : tag_end]
-    if tag.startswith("/") or tag.endswith("/"):
-        return False
-    if tag and not _is_identifier_char(tag[0]):
-        return False
-    rest = before[tag_end + 1 :]
-    return rest.count("{") <= rest.count("}")
+    end = start
+    while end < len(text):
+        char = text[end]
+        if char.isalnum() or char in "_$.:-":
+            end += 1
+        else:
+            break
+    return end
 
 
-# The characters that can end a JSX attribute right before `/>`: the `}` of
-# an expression container and an attribute value's closing quote. An
-# identifier also ends an attribute (`<Br />`) and is tested separately.
-JSX_TAG_END_PRECEDERS = set("}\"'")
+def starts_jsx_element(text: str, index: int) -> bool:
+    """Whether the `<` at `index`, in code, opens a JSX element.
 
-
-def jsx_tag_slash(text: str, index: int) -> bool:
-    """Whether the `/` at `index` is part of a JSX tag, not a regex start.
-
-    `</name>` and `</>` close a JSX element, but a `<` can also be the
-    comparison operator whose right operand is a regex (`s</re/.test(t)` is
-    `s < /re/`). When an operand ends just before the `<` and the position
-    is not JSX text, the `<` is that operator and the slash starts a regex,
-    as it also does when anything but a tag-name character or `>` follows
-    the slash (`x</[a-z]/.test(s)`, `x</`/.test(s)`). JSX text keeps the
-    markup reading although its last character is an identifier character,
-    so `render(<Link>a</Link>)` still closes the element.
-
-    `/>` closes a self-closing tag only when the last character before it
-    can end an attribute: the `}` of an expression container, a closing
-    quote, or an identifier (`<A p={x} />`, `<A p="x" />`, `<Br />`). After
-    a regex preceder such as `(`, as in `.replace(/>/g, ...)`, the slash
-    still opens a regex, so its `>` is masked with the regex instead of
-    read as a tag end.
+    A JSX element starts where an expression can: after `(`, `=`, `?`,
+    `&&`, a `=>`, a keyword such as `return`, or at the start of a line.
+    A `<` that ends an operand on the same line is the comparison operator,
+    so `s</re/.test(t)` is `s < /re/` and `a<b>c` is `(a < b) > c`, not
+    markup. A following character that can start neither a tag name nor a
+    fragment's `>` is not markup either (`a < b`, `x <= y`).
     """
     next_index = index + 1
     if next_index >= len(text):
         return False
     following = text[next_index]
-    if following == ">":
-        if index > 0 and text[index - 1] == "<":
-            return True
-        previous = index - 1
-        while previous >= 0 and text[previous] in " \t\r\n":
-            previous -= 1
-        if previous < 0:
-            return False
-        char = text[previous]
-        return char in JSX_TAG_END_PRECEDERS or _is_identifier_char(char)
-    if index > 0 and text[index - 1] == "<":
-        if following == ">":
-            return True
-        if not (following.isalpha() or following in "_$"):
-            return False
-        return not (
-            operand_ends_before(text, index - 1)
-            and not in_jsx_text(text, index - 1)
-        )
+    if following != ">" and not (following.isalpha() or following in "_$"):
+        return False
+    return not operand_ends_before(text, index)
+
+
+def jsx_closing_name(text: str, index: int) -> str | None:
+    """The name of the closing tag whose `</` starts at `index`, or None.
+
+    A closing tag is `</name>` or `</>`, and whitespace is allowed before
+    its `>`. Anything else after `</` is text, not a closing tag.
+    """
+    base = index + 2
+    end = _jsx_name_end(text, base)
+    probe = end
+    while probe < len(text) and text[probe] in " \t\r\n":
+        probe += 1
+    if probe < len(text) and text[probe] == ">":
+        return text[base:end]
+    return None
+
+
+def jsx_element_closes(text: str, name: str, start: int) -> bool:
+    """Whether a closing tag for `name` appears after `start`.
+
+    A type-level `<T>` -- a generic arrow (`<T,>() => ...`) or a type
+    assertion (`<T>value`) -- is not a JSX element and has no `</T>`. Its
+    `>` must not open a text state that would absorb the following code.
+    A fragment (`<>...` ) closes with `</>`.
+    """
+    needle = "</" + name
+    position = text.find(needle, start)
+    while position != -1:
+        end = position + len(needle)
+        if name == "":
+            if text.startswith(">", end):
+                return True
+        elif end >= len(text) or not (
+            text[end].isalnum() or text[end] in "_$.:-"
+        ):
+            probe = end
+            while probe < len(text) and text[probe] in " \t\r\n":
+                probe += 1
+            if probe < len(text) and text[probe] == ">":
+                return True
+        position = text.find(needle, position + 1)
     return False
+
+
+# The JSX state machine's three frame kinds, held on one stack: an open
+# element whose text is being read, an opening tag whose attributes and
+# type arguments are being read, and an expression container whose braces
+# must balance before the surrounding text or tag resumes. An empty stack
+# means code. A tag frame carries `[name, type_depth]`: a `<` in the tag
+# opens a type argument (`<FormField<FormValues, 'name'>`), and its `>` must
+# close the argument rather than the tag.
+ELEMENT = "element"
+TAG = "tag"
+EXPR = "expr"
+
+
+def close_jsx_element(frames: list[tuple], name: str) -> None:
+    """Pop the element `name` and every frame above it.
+
+    The search is tolerant of a mismatch: a closing tag pops through the
+    nearest open element of that name, so a malformed tree cannot leave the
+    scan stuck in a text state past its real end.
+    """
+    for position in range(len(frames) - 1, -1, -1):
+        frame = frames[position]
+        if frame[0] == ELEMENT and frame[1] == name:
+            del frames[position:]
+            return
 
 
 def apostrophe_starts_string(text: str, index: int) -> bool:
@@ -931,25 +936,81 @@ def mask_javascript(text: str) -> str:
     text-heuristic cost this gate accepts. A regex literal is masked as a
     whole, so an apostrophe inside it is not a string delimiter.
 
-    JSX is recognised to the extent a token scan can: `</` before a tag name
-    or `>`, and a `/>` that follows an attribute-ending `}`, identifier or
-    quote, are markup rather than a regex start, and an apostrophe directly
-    after an identifier is JSX text (`<p>it's</p>`) rather than a string
-    opener. A quote at the start of JSX text still opens a string that pairs
-    with the next quote, a `/*` in JSX text still pairs with a `*/` on a
-    later line, and a `/` after `throw` opens a regex the preceder rule does
-    not recognise, so a quote after it pairs with the next quote. A mispair
-    hides text up to that closing delimiter, which may be on a later line.
+    JSX is read with a state machine over the whole source, not a
+    single-line heuristic: a `<name` at an expression position opens a tag,
+    `/>` closes that tag without opening an element, `>` opens the element's
+    text, a `{` in text enters a code expression that ends at the matching
+    `}`, and `</name>` closes the element and returns to its parent's text.
+    Inside text `//`, quotes and `/` are literal characters, so
+    `<p>http://x</p>` keeps its URL even on a later line or after a nested
+    child. A `<` that ends an operand on the same line is the comparison
+    operator, so `s</re/.test(t)` stays `s < /re/` and a comment after
+    `a<b>c` is still a comment.
 
     The scan is fail-closed: a string, template literal, regex or block
     comment still open at end of file raises `UnterminatedSource` instead
     of blanking the rest of the file, so an unrecognised construct stops
-    the gate with an infrastructure error rather than silently passing.
+    the gate with an infrastructure error rather than silently passing. An
+    element still open at end of file is not an error: JSX text has no
+    delimiter that can swallow past it.
     """
     chars = list(text)
     index, size = 0, len(text)
+    frames: list[tuple] = []
+
+    def mode() -> str:
+        if not frames:
+            return "code"
+        kind = frames[-1][0]
+        if kind == ELEMENT:
+            return "text"
+        if kind == TAG:
+            return "tag"
+        return "code"
+
     while index < size:
-        if text.startswith("//", index) and not in_jsx_text(text, index):
+        state = mode()
+        char = text[index]
+        if state == "text":
+            # JSX text is literal: `//`, quotes and `/` are characters, not
+            # code, a comment or a regex. Only a child tag (`<`), a closing
+            # tag (`</`) and an expression container (`{`) change state.
+            if char == "{":
+                frames.append((EXPR, 1))
+                index += 1
+            elif char == "<" and index + 1 < size:
+                following = text[index + 1]
+                if following == "/":
+                    name = jsx_closing_name(text, index)
+                    if name is None:
+                        index += 1
+                    else:
+                        close_jsx_element(frames, name)
+                        end = index + 2 + len(name)
+                        while end < size and text[end] in " \t\r\n":
+                            end += 1
+                        index = end + 1
+                elif (
+                    following == ">"
+                    or following.isalpha()
+                    or following in "_$"
+                ):
+                    name_end = (
+                        index + 1
+                        if following == ">"
+                        else _jsx_name_end(text, index + 1)
+                    )
+                    frames.append((TAG, text[index + 1 : name_end], 0))
+                    index = name_end
+                else:
+                    index += 1
+            else:
+                index += 1
+            continue
+
+        # Code and an opening tag share delimiter scanning: both can hold a
+        # string, a comment and (in code) a regex literal.
+        if text.startswith("//", index):
             end = text.find("\n", index)
             end = size if end == -1 else end
             for at in range(index, end):
@@ -965,10 +1026,10 @@ def mask_javascript(text: str) -> str:
                     chars[at] = " "
             index = end
         elif (
-            text[index] == "/"
+            state == "code"
+            and char == "/"
             and index + 1 < size
             and text[index + 1] not in "/*"
-            and not jsx_tag_slash(text, index)
             and regex_can_start(text, index)
         ):
             end = index + 1
@@ -1018,8 +1079,56 @@ def mask_javascript(text: str) -> str:
                 if chars[at] != "\n":
                     chars[at] = " "
             index = end + 1
+        elif state == "tag":
+            _, name, type_depth = frames[-1]
+            if text.startswith("/>", index) and type_depth == 0:
+                frames.pop()
+                index += 2
+            elif char == ">":
+                if type_depth > 0:
+                    # A type argument's `>` closes the argument, not the
+                    # tag. An arrow's `=>` inside one is not a closing `>`.
+                    if not (index > 0 and text[index - 1] == "="):
+                        frames[-1] = (TAG, name, type_depth - 1)
+                    index += 1
+                else:
+                    frames.pop()
+                    if jsx_element_closes(text, str(name), index + 1):
+                        frames.append((ELEMENT, name))
+                    index += 1
+            elif char == "<":
+                frames[-1] = (TAG, name, type_depth + 1)
+                index += 1
+            elif char == "{":
+                frames.append((EXPR, 1))
+                index += 1
+            else:
+                index += 1
         else:
-            index += 1
+            if char == "<" and starts_jsx_element(text, index):
+                following = text[index + 1]
+                name_end = (
+                    index + 1
+                    if following == ">"
+                    else _jsx_name_end(text, index + 1)
+                )
+                frames.append((TAG, text[index + 1 : name_end], 0))
+                index = name_end
+            elif frames and frames[-1][0] == EXPR:
+                if char == "{":
+                    frames[-1] = (EXPR, int(frames[-1][1]) + 1)
+                    index += 1
+                elif char == "}":
+                    depth = int(frames[-1][1]) - 1
+                    if depth == 0:
+                        frames.pop()
+                    else:
+                        frames[-1] = (EXPR, depth)
+                    index += 1
+                else:
+                    index += 1
+            else:
+                index += 1
     return "".join(chars)
 
 
