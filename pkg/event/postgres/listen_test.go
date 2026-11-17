@@ -25,11 +25,13 @@ import (
 // so it arrives promptly only if a live session is listening: a replica left
 // polling picks it up a poll interval later. The case sets that interval to a
 // minute, far past the bound it allows: a wrong implementation needs up to a
-// minute for each event, while a notification takes milliseconds, and the
-// bound of two seconds carries GATE_TIME_SCALE alone. The two stay apart until
-// the caller's scale reaches about thirty; under the race detector the margin
-// is smaller, about twelve, because the notification the bound is compared
-// against is slowed there while the bound itself is not.
+// minute for each event, while a notification takes milliseconds. The bound of
+// two seconds carries GATE_TIME_SCALE alone, and the wrong time is the poll
+// interval, stated to DeclaredAgainst from b.pollEvery rather than computed in
+// a comment. The poll interval does not scale with the race detector, so the
+// detector does not move the meeting point, where the scaled bound reaches the
+// poll interval; it only slows a correct notification's arrival, which the two
+// seconds leave room for.
 func TestALostListeningConnectionIsTakenAgain(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	ctx := context.Background()
@@ -69,7 +71,7 @@ func TestALostListeningConnectionIsTakenAgain(t *testing.T) {
 		}
 		select {
 		case at := <-arrived:
-			if took := at.Sub(sent); took > coretest.Declared(2*time.Second) {
+			if took := at.Sub(sent); took > coretest.DeclaredAgainst(t, 0, 2*time.Second, b.pollEvery) {
 				t.Fatalf("event %d took %v to arrive after the listening session was terminated: the "+
 					"replica is delivering by polling the table, not by notification", i, took)
 			}

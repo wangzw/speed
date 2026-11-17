@@ -47,10 +47,10 @@ func TestPublishDoesNotWaitOnBlockedReaders(t *testing.T) {
 	// it carries the caller's scale alone: the race factor slows the program
 	// under test, not the difference between one round trip and a blocked
 	// reader's read. The wrong implementation needs about one blocked read per
-	// reader past the pool's size, so the bound stays below one blocked read
-	// until the caller's scale reaches five, where the two meet and the case
-	// stops telling them apart.
-	if each := time.Since(began) / publishes; each > coretest.Declared(readBlock/5) {
+	// publish that waits, so one blocked read is its time, stated to
+	// DeclaredAgainst. A twentieth of it for the average of ten publishes is
+	// still far below the blocked read and leaves a round trip room to be slow.
+	if each := time.Since(began) / publishes; each > coretest.DeclaredAgainst(t, 0, readBlock/20, readBlock) {
 		t.Fatalf("a publish took %v on average with %d readers on a pool of %d connections: it "+
 			"waited for a connection a blocked reader was holding", each, types, speedredis.Defaults().PoolSize)
 	}

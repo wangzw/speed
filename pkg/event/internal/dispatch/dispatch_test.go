@@ -47,10 +47,9 @@ func newTable() *Table {
 // A stop stage that used the package default grace instead of the configured
 // one is made to need an hour here: the default is widened before the table is
 // built, so that implementation's own time grows with nothing the bound
-// carries. The configured grace and the moment it gives a cancelled subscriber
-// need about 1.1 seconds, and the bound is 2.1 seconds through GATE_TIME_SCALE
-// alone: the hour meets that bound at a caller's scale of about seventeen
-// hundred, and the case stops telling the two apart at or past it.
+// carries. That hour is the wrong time, stated to DeclaredAgainst from Grace;
+// the bound is the configured grace, the moment it gives a cancelled
+// subscriber and a second, through GATE_TIME_SCALE alone.
 func TestAStopWhoseGraceRunsOutCancelsTheSubscribers(t *testing.T) {
 	previousGrace := Grace
 	Grace = time.Hour
@@ -71,7 +70,7 @@ func TestAStopWhoseGraceRunsOutCancelsTheSubscribers(t *testing.T) {
 	tbl.Freeze(context.Background())
 	tbl.Go(func(_, handling context.Context) { tbl.Deliver(handling, event.Event{Type: "t"}) })
 
-	bound := coretest.Declared(grace + settle + time.Second)
+	bound := coretest.DeclaredAgainst(t, 0, grace+settle+time.Second, Grace)
 	stopped := make(chan error, 1)
 	go func() { stopped <- tbl.Stop() }()
 	var err error
