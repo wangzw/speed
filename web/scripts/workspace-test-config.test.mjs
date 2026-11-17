@@ -45,9 +45,11 @@
  *
  * The scan covers the test sources and the test-support sources the suites
  * run on: every package's `test-utils/`, `web/test-utils/src/` (the
- * browser-tier setup included) and `starters/demo/web/src/test-utils/`.
- * Only `web/test-utils/src/wait.ts` is exempt, by its exact path, because
- * it is the helper that supplies the budget.
+ * browser-tier setup included), `starters/demo/web/src/test-utils/` and the
+ * demo's `src/a11y/` support modules, plus the root leg's tests under
+ * `web/eslint-rules/` and `web/scripts/`. Only `web/test-utils/src/wait.ts`
+ * is exempt, by its exact path, because it is the helper that supplies the
+ * budget.
  *
  * Four shapes are outside what a static read of the syntax tree can
  * follow: a key held in a variable (`vi[name]`), a `vi` reached through a
@@ -711,9 +713,9 @@ function testSources(dir) {
 /**
  * The test-support directories the wait rule scans: each package's
  * `test-utils/`, the shared `web/test-utils/src/` (the browser tier's
- * setup included) and the demo host's own copy. They are derived from the
- * package roster and the two fixed roots, so a new helper file is in scope
- * without a second list to maintain.
+ * setup included), the demo host's own copy and its `src/a11y/` support
+ * modules. They are derived from the package roster and the fixed roots,
+ * so a new helper file is in scope without a second list to maintain.
  */
 function testSupportDirs() {
   const dirs = []
@@ -725,6 +727,7 @@ function testSupportDirs() {
   }
   dirs.push(join(webRoot, 'test-utils', 'src'))
   dirs.push(join(demoWebRoot, 'src', 'test-utils'))
+  dirs.push(join(demoWebRoot, 'src', 'a11y'))
   return dirs
 }
 
@@ -894,6 +897,8 @@ describe('workspace test configuration', () => {
   const scopedTestSources = [
     ...testPackages.flatMap((pkg) => testSources(pkg.dir)),
     ...testSources(demoWebRoot),
+    ...testSources(join(webRoot, 'eslint-rules')),
+    ...testSources(join(webRoot, 'scripts')),
   ]
 
   /**
@@ -959,11 +964,22 @@ describe('workspace test configuration', () => {
     const dirs = testSupportDirs()
     expect(dirs).toContain(join(webRoot, 'test-utils', 'src'))
     expect(dirs).toContain(join(demoWebRoot, 'src', 'test-utils'))
+    expect(dirs).toContain(join(demoWebRoot, 'src', 'a11y'))
     expect(dirs).toContain(join(webRoot, 'packages', 'account-ui', 'test-utils'))
     expect(dirs).toContain(join(webRoot, 'packages', 'admin-ui', 'test-utils'))
     expect(scopedWaitSources).toContain(
       join(webRoot, 'packages', 'account-ui', 'test-utils', 'refresh-warning.ts'),
     )
+    // The root leg's own tests and the demo's a11y support modules are in
+    // scope too: they run under the same budgets and may not reach either
+    // wait.
+    expect(scopedTestSources).toContain(
+      join(webRoot, 'scripts', 'workspace-test-config.test.mjs'),
+    )
+    expect(scopedTestSources).toContain(
+      join(webRoot, 'eslint-rules', 'no-literal-text.test.mjs'),
+    )
+    expect(scopedWaitSources).toContain(join(demoWebRoot, 'src', 'a11y', 'scan.ts'))
     expect(scopedWaitSources).not.toContain(WAIT_HELPER)
   })
 
