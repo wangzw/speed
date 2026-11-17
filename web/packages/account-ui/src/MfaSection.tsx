@@ -144,7 +144,7 @@
  * because then there is no add action to point at.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -173,6 +173,7 @@ import {
   FORM_MAX_WIDTH,
   ListSkeleton,
   SectionCard,
+  SectionSurfaceContext,
   useWriteFeedback,
   type WriteOutcome,
 } from '@speed/ui-kit'
@@ -358,6 +359,11 @@ function EnrollmentFeedback({
 
 export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const { t, i18n } = useAccountUiTranslation()
+  // On a plain surface the host's own block already names this area, and the
+  // card title is not rendered, so the section's accessible name has to carry
+  // the distinction itself: a page block titled "Two-step verification" and an
+  // inner region with the same name are two landmarks sharing one name.
+  const surface = useContext(SectionSurfaceContext)
   const queryClient = useQueryClient()
   const { data, isPending, isFetching, error, refetch } = useFactorsQuery()
   // The same profile read the account page's identifier surface uses: the
@@ -960,7 +966,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
 
   return (
     <>
-      <SectionCard title={t('mfa.title')}>
+      <SectionCard
+        title={surface === 'plain' ? t('mfa.landmarkName') : t('mfa.title')}
+      >
         <AccountAsyncSection
         pending={pending}
         payload={factors}

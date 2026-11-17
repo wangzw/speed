@@ -115,6 +115,55 @@ function expectNoDecidableIncomplete(
   ).toBe(false)
 }
 
+/** The accessible name a named section/region landmark exposes. */
+function regionAccessibleName(element: Element): string {
+  const label = element.getAttribute('aria-label')
+  if (label !== null) {
+    return label.trim()
+  }
+  const ids = element.getAttribute('aria-labelledby')
+  if (ids === null) {
+    return ''
+  }
+  return ids
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent?.trim() ?? '')
+    .join(' ')
+    .trim()
+}
+
+/**
+ * Fails when two region landmarks in the scanned document share one
+ * accessible name. A region's name is what a screen reader announces in the
+ * landmark list, so two regions both called "Two-step verification" are
+ * indistinguishable there; axe's landmark-unique reports the same defect,
+ * but only in the advisory best-practice pass, so this assertion holds every
+ * swept route and state to it instead of trusting a warning nobody reads.
+ */
+function expectUniqueRegionNames(label: string): void {
+  const seen = new Map<string, string>()
+  const duplicates: string[] = []
+  for (const element of document.querySelectorAll(
+    'section[aria-label], section[aria-labelledby], [role="region"][aria-label], [role="region"][aria-labelledby]',
+  )) {
+    const name = regionAccessibleName(element)
+    if (name === '') {
+      continue
+    }
+    const first = seen.get(name)
+    const where = `<${element.tagName.toLowerCase()}>`
+    if (first !== undefined) {
+      duplicates.push(`"${name}" on ${where} and ${first}`)
+    } else {
+      seen.set(name, where)
+    }
+  }
+  expect(
+    duplicates,
+    `route ${label} has region landmarks sharing one accessible name`,
+  ).toEqual([])
+}
+
 /**
  * The one exit every scanned route and driven case goes through: asserts the
  * decidable-indeterminate rules absent, prints every remaining indeterminate
@@ -133,6 +182,7 @@ function recordScan(
   result: A11yScanResult,
 ): readonly A11yFinding[] {
   expectNoDecidableIncomplete(result, `route ${label}`)
+  expectUniqueRegionNames(label)
   for (const finding of result.incomplete) {
     console.warn(`[route-a11y] ${label} indeterminate: ${formatFinding(finding)}`)
   }
