@@ -1666,16 +1666,10 @@ describe('AccountsPage', () => {
           ),
       }),
     )
-    const { queryClient } = renderWithProviders(<AccountsPage />, { operations })
+    renderWithProviders(<AccountsPage />, { operations })
     await screen.findByText('Ada Lovelace')
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     await screen.findByText('Grace Hopper')
-    // The page swap is more than the new row: the footer's next-cursor
-    // state and the row replacement are separate commits of the same read.
-    // Scan only once the cache has no read in flight, so axe never reads a
-    // heading tree that is being replaced under it (the transient
-    // heading-order incomplete this case used to report).
-    await waitFor(() => expect(queryClient.isFetching()).toBe(0))
     await expectNoAxeViolations()
   })
 
