@@ -165,11 +165,11 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 	// The call budget is an hour, far past the bound this case allows: a gate
 	// that queued behind the backend and then gave up when the budget ran out
 	// would need up to that hour, while a gate that refuses at once needs none
-	// of it. The hour meets the one-second bound below at a caller's scale of
-	// 3600: at or past that scale the case stops telling the two apart. The
-	// bound on the refusal carries the caller's scale alone and not the race
-	// factor, so an implementation that pauses a fixed few seconds before
-	// refusing is seen here as well.
+	// of it. That hour is the wrong implementation's time, stated to
+	// DeclaredAgainst rather than left to a comment. The bound on the refusal
+	// carries the caller's scale alone and not the race factor, so an
+	// implementation that pauses a fixed few seconds before refusing is seen
+	// here as well.
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: time.Hour, inFlight: 1}, blocking)
 	sealed(t, g, routerWith("public"))
 
@@ -196,7 +196,7 @@ func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 		t.Fatal("a request past the full in-flight gate did not answer while the one slot was " +
 			"held: it queued behind the backend that stopped answering")
 	}
-	if waited, limit := time.Since(started), coretest.Declared(time.Second); waited > limit {
+	if waited, limit := time.Since(started), coretest.DeclaredAgainst(t, 0, time.Second, time.Hour); waited > limit {
 		t.Errorf("the request waited %s before being refused, past the %s an immediate refusal gets: "+
 			"a gate that pauses before refusing still holds the request while the backend has stopped answering",
 			waited, limit)
@@ -309,6 +309,10 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 	}
 
 	const budget = 20 * time.Millisecond
+	// drainHeadroom is how far past the configured budget a drain may return:
+	// ten times the budget, which is room for a loaded machine and still far
+	// short of the package default the wrong implementation runs on.
+	const drainHeadroom = 10 * budget
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: budget, inFlight: 2}, stuck)
 	sealed(t, g, routerWith("public"))
 
@@ -321,8 +325,8 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 	// a bounded drain (which returns at once) from an unbounded one (which
 	// waits for the backend the case holds until it ends). The elapsed bound
 	// below is what tells the configured budget from the default: it carries
-	// GATE_TIME_SCALE alone, and the default is five seconds, so the two stay
-	// apart until the caller's scale reaches about five.
+	// GATE_TIME_SCALE alone, and the default (configDefaults.CallBudget) is the
+	// wrong implementation's time, stated to DeclaredAgainst.
 	drained := make(chan error, 1)
 	started := time.Now()
 	go func() { drained <- g.drain(context.Background()) }()
@@ -337,10 +341,10 @@ func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 			t.Errorf("draining returned after %s, before the configured budget of %s: it did not "+
 				"wait for the call inside the backend", took, budget)
 		}
-		if limit := coretest.Declared(budget + time.Second); took > limit {
+		if limit := coretest.DeclaredAgainst(t, budget, drainHeadroom, configDefaults.CallBudget); took > limit {
 			t.Errorf("draining returned after %s, past the limit of %s the configured budget of %s "+
-				"allows: it ran on the default call budget of five seconds rather than the configured one",
-				took, limit, budget)
+				"allows: it ran on the default call budget of %v rather than the configured one",
+				took, limit, budget, configDefaults.CallBudget)
 		}
 	case <-time.After(coretest.Scale(30 * time.Second)):
 		t.Fatal("draining did not return within its budget while a call was still inside a " +
