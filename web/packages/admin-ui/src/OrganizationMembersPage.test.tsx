@@ -2615,6 +2615,87 @@ describe('the invitation section', () => {
     )
   })
 
+  it('moves focus to the invitation heading when a terminal revoke empties the pending filter', async () => {
+    const user = userEvent.setup()
+    let terminal = false
+    const expired: AdminInvitation = {
+      ...PENDING_INVITATION,
+      state: 'expired',
+      expires_at: '2026-02-01T00:00:00Z',
+    }
+    // The shipped bundle drives the generated surface, so the refusal and
+    // the re-read are the ones the package ships, not a scripted stand-in.
+    bindAdminRequest((call) => {
+      if (
+        call.method === 'GET' &&
+        call.path === `/api/v1/tenants/${TENANT}/members`
+      ) {
+        return { members: [], next_cursor: '' }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === `/api/v1/tenants/${TENANT}/roles`
+      ) {
+        return { roles: [] }
+      }
+      if (
+        call.method === 'GET' &&
+        call.path === `/api/v1/tenants/${TENANT}/invitations`
+      ) {
+        // The server filters by status: the terminal row drops out of the
+        // default pending read, so the re-read removes it from the table.
+        if (terminal && call.query?.status === 'pending') {
+          return { invitations: [], next_cursor: '' }
+        }
+        return {
+          invitations: [terminal ? expired : PENDING_INVITATION],
+          next_cursor: '',
+        }
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path ===
+          `/api/v1/tenants/${TENANT}/invitations/${PENDING_INVITATION.id}`
+      ) {
+        // The row moved between this list's read and the click, so the
+        // server refuses the write without changing anything.
+        terminal = true
+        throw { status: 409, code: 'authn.invitation_terminal' }
+      }
+      throw new Error(`unexpected request: ${call.method} ${call.path}`)
+    })
+    renderWithProviders(
+      <OrganizationAdminProvider
+        tenant={TENANT}
+        operations={organizationAdminOperations}
+        hasFeature={() => true}
+        routes={organizationAdminRoutes}
+        protectedRoles={[TENANT_ADMIN_ROLE]}
+      >
+        <OrganizationMembersPage tenant={TENANT} />
+      </OrganizationAdminProvider>,
+    )
+    await screen.findByText(PENDING_INVITATION.email)
+    // The default filter is pending: the re-read drops the now-terminal row,
+    // taking the menu that started the write with it.
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.revoke,
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+    const heading = screen.getByRole('heading', {
+      name: zhCN.invitations.section.title,
+    })
+    await waitFor(() =>
+      expect(screen.queryByText(PENDING_INVITATION.email)).toBeNull(),
+    )
+    await waitFor(() => expect(document.activeElement).toBe(heading))
+    expect(heading).toHaveAttribute('tabindex', '-1')
+  })
+
   it('asks before closing the one-time panel and only then clears it', async () => {
     const user = userEvent.setup()
     const { backend } = scripted()

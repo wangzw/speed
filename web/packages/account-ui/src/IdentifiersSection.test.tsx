@@ -373,7 +373,9 @@ describe('IdentifiersSection', () => {
 
     // The unverified address is a contact; the picker displays the account's
     // chosen address, so this one reads once.
-    expect(await screen.findAllByText('second@x.test')).toHaveLength(1)
+    await waitFor(() =>
+      expect(screen.getAllByText('second@x.test')).toHaveLength(1),
+    )
     // The account as a whole is verified, so the banner offers no entry for
     // this row; the row itself must.
     expect(rowAction('second@x.test', zhCN.identifiers.verify)).toBeTruthy()
@@ -918,7 +920,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('ada')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
   })
@@ -947,7 +949,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('ada')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     // A username is permanent: the group states the rule and carries no row
     // action, whether or not the name is the only login name.
     expect(
@@ -1019,7 +1021,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('ada')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     expect(screen.getByText('+14155550123')).toBeTruthy()
     // The username is permanent, so its group carries no row action; the
     // phone signs in through its own code route and stays removable from its
@@ -1066,7 +1068,7 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('ada')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     // Another login name does not make the username removable: the name is
     // permanent, so its group keeps stating the rule and carries no row
     // action.
@@ -2298,7 +2300,7 @@ describe('IdentifiersSection', () => {
     const user = userEvent.setup()
 
     // The listed username still reads in its group's sentence.
-    expect(await screen.findAllByText('ada')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.open }),
     )
@@ -2341,7 +2343,7 @@ describe('IdentifiersSection', () => {
       <IdentifiersSection session={rig.session} emailAvailable={false} />,
     )
 
-    expect(await screen.findAllByText('ada')).toHaveLength(1)
+    await waitFor(() => expect(screen.getAllByText('ada')).toHaveLength(1))
     expect(
       screen.queryByRole('button', { name: zhCN.identifiers.add.open }),
     ).toBeNull()
@@ -2377,9 +2379,12 @@ describe('IdentifiersSection', () => {
       screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
     )
 
-    const alerts = await screen.findAllByRole('alert')
-    expect(alerts).toHaveLength(1)
-    expect(alerts[0]).toHaveTextContent(zhCN.errors.authn.unavailable)
+    await waitFor(() =>
+      expect(screen.getAllByRole('alert')).toHaveLength(1),
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.unavailable,
+    )
   })
 
   it('raises the identifier actions to the 44px floor under a coarse pointer', async () => {

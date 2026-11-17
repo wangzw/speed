@@ -181,9 +181,10 @@ func (p *product) list(ctx context.Context, tenant string, page authn.Page, filt
 
 // Revoke revokes a pending invitation that has not expired and that no later
 // invitation superseded, voiding its token and recording when it was revoked.
-// An expired or accepted invitation is refused, because removing a membership
-// is not this route's job and an expired link no longer grants anything;
-// revoking one that was already revoked is an idempotent success and leaves its
+// An expired, superseded or accepted invitation is refused, because removing a
+// membership is not this route's job and an expired link no longer grants
+// anything; a superseded row reads expired even before its deadline. Revoking
+// one that was already revoked is an idempotent success and leaves its
 // revocation time alone.
 func (p *product) Revoke(ctx context.Context, tenant, id string) error {
 	if tenant == "" || id == "" {

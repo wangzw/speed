@@ -387,8 +387,7 @@ func TestResendAnswersTheWrittenRowWhenTheRereadFails(t *testing.T) {
 		}
 	}
 	// The token in the answer is the live one. The callback fails every read
-	// after the update, which is the re-read a resend no longer makes; turning it
-	// off lets this check read the stored row.
+	// after the update, so turning it off lets this check read the stored row.
 	updated.Store(false)
 	if _, state, err := h.p.viewToken(context.Background(), answered.Token); err != nil || state != viewStatePending {
 		t.Errorf("the answered token reads %q (%v), want pending", state, err)

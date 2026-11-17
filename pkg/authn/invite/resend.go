@@ -13,14 +13,15 @@ import (
 // the new digest is written, and a lookup of it answers no invitation.
 //
 // Only a pending invitation that has not expired can be resent. A terminal row
-// — accepted, revoked or expired — is refused, and an identifier that names no
-// row of the tenant is ErrInvitationNotFound. The send budgets are charged the
-// way an issuance charges them: the issuing account's budget before the terminal
-// check, so a terminal row still costs the operator; and the addressed address's
-// and the deployment's only once the row is known to be live, counted only when
-// the resend's write lands. A resend spends the same send budgets but is not a
-// new issuance: it re-judges nothing about the target, which was judged when the
-// invitation was issued.
+// — accepted, revoked or expired — is refused; a row a later invitation
+// superseded reads expired even before its deadline, so it is refused the same
+// way. An identifier that names no row of the tenant is ErrInvitationNotFound.
+// The send budgets are charged the way an issuance charges them: the issuing
+// account's budget before the terminal check, so a terminal row still costs the
+// operator; and the addressed address's and the deployment's only once the row
+// is known to be live, counted only when the resend's write lands. A resend
+// spends the same send budgets but is not a new issuance: it re-judges nothing
+// about the target, which was judged when the invitation was issued.
 //
 // The conditional write makes the check and the change one statement: a row
 // that became terminal in between, or one a later invitation superseded, leaves

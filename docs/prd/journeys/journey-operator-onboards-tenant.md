@@ -100,6 +100,7 @@ flowchart TD
 - `REQ-tenancy-021`
 - `REQ-tenancy-022`
 - `REQ-tenancy-023`
+- `REQ-tenancy-058`
 - `REQ-tenancy-061`
 - `REQ-tenancy-062`
 - `REQ-tenancy-064`

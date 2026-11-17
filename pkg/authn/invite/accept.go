@@ -358,8 +358,11 @@ func acceptedMembership(id authn.AccountID, tenant string, existing authn.Member
 }
 
 // terminalState reports a row that cannot be redeemed, or nil for a pending one
-// that is not yet expired. The order follows the design: a terminal state is
-// told first, and expiry is judged last, from the clock.
+// that is neither expired nor superseded. The order follows the design: a
+// terminal state is told first, and a superseded row and expiry are judged last,
+// from the stored record and the clock. A superseded row reads expired even
+// while its own deadline is ahead, because a later invitation took the live
+// slot; the writes that share this judgement answer it the same way.
 func terminalState(row invitationRow, now time.Time) error {
 	switch row.Status {
 	case statusAccepted:
@@ -367,7 +370,7 @@ func terminalState(row invitationRow, now time.Time) error {
 	case statusRevoked:
 		return fmt.Errorf("%w", ErrInvitationRevoked)
 	}
-	if !utc(row.ExpiresAt).After(now) {
+	if row.SupersededAt != nil || !utc(row.ExpiresAt).After(now) {
 		return fmt.Errorf("%w", ErrInvitationExpired)
 	}
 	return nil

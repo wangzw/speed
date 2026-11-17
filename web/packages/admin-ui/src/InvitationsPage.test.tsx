@@ -2292,7 +2292,14 @@ describe('InvitationsPage', () => {
     const sentAt = '2026-11-10T09:00:00Z'
     const operations = withTenant({
       listInvitations: () =>
-        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+        Promise.resolve({
+          invitations: [
+            resent.length === 0
+              ? invitation()
+              : invitation({ send_count: 2, last_sent_at: sentAt }),
+          ],
+          next_cursor: '',
+        }),
       resendInvitation: (input) => {
         resent.push(`${input.tenant}:${input.id}`)
         return Promise.resolve(
@@ -2340,6 +2347,22 @@ describe('InvitationsPage', () => {
     expect(
       screen.getByText(
         fill(zhCN.invitations.resent, { email: 'ada@example.com' }),
+      ),
+    ).toBeInTheDocument()
+    // The latest send sits beneath the row's issued time: the issued time is
+    // still created_at, not the resend's instant.
+    expect(
+      await screen.findByText(
+        fill(zhCN.invitations.created.resentOnce, {
+          time: formatInstant(sentAt, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
+        }),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        formatInstant('2026-10-15T12:00:00Z', 'zh-CN', {
+          timeZone: TEST_TIME_ZONE,
+        }),
       ),
     ).toBeInTheDocument()
   })

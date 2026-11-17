@@ -462,11 +462,14 @@ describe('ImpersonationsPage', () => {
     renderWithProviders(<ImpersonationsPage />, {
       operations: withPage({ getAccount: () => Promise.reject(new Error('forbidden')) }),
     })
-    const grantCells = await screen.findAllByTitle(
-      zhCN.common.accountUnresolved,
+    await waitForCondition(() =>
+      expect(screen.getAllByTitle(zhCN.common.accountUnresolved)).toHaveLength(
+        1,
+      ),
     )
-    expect(grantCells).toHaveLength(1)
-    expect(grantCells[0]).toHaveTextContent(zhCN.common.accountUnavailable)
+    expect(
+      screen.getByTitle(zhCN.common.accountUnresolved),
+    ).toHaveTextContent(zhCN.common.accountUnavailable)
     expect(screen.queryByText('acc-7')).toBeNull()
   })
 

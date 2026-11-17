@@ -216,20 +216,47 @@ func TestASupersededRowThatHasNotExpiredIsNotLive(t *testing.T) {
 	}
 	before := h.row(row.ID)
 
-	// The claim matches no live row, so the stale slot is not accepted.
-	if _, err := h.p.Accept(h.acceptCtx("acct-alice", "alice@example.com"), AcceptInvite{Token: token}); err == nil {
-		t.Fatal("accepting a superseded row succeeded, want it refused")
+	// Every write that would redeem, resend or revoke the row judges it the way
+	// the read does: it reads expired, so each answers the expired error rather
+	// than a missing row or an unavailable dependency.
+	if _, err := h.p.Accept(h.acceptCtx("acct-alice", "alice@example.com"), AcceptInvite{Token: token}); !errors.Is(err, ErrInvitationExpired) {
+		t.Errorf("accepting a superseded row gave %v, want ErrInvitationExpired", err)
 	}
 	if h.members.count != 0 {
 		t.Errorf("the refused acceptance wrote %d membership(s), want none", h.members.count)
 	}
-
-	// Resend and revoke answer as if the row were not there, keeping it as it is.
-	if _, err := h.p.Resend(context.Background(), tenant, row.ID); !errors.Is(err, ErrInvitationNotFound) {
-		t.Errorf("resending a superseded row gave %v, want ErrInvitationNotFound", err)
+	if _, err := h.p.Resend(context.Background(), tenant, row.ID); !errors.Is(err, ErrInvitationExpired) {
+		t.Errorf("resending a superseded row gave %v, want ErrInvitationExpired", err)
 	}
-	if err := h.p.Revoke(context.Background(), tenant, row.ID); !errors.Is(err, ErrInvitationNotFound) {
-		t.Errorf("revoking a superseded row gave %v, want ErrInvitationNotFound", err)
+	if err := h.p.Revoke(context.Background(), tenant, row.ID); !errors.Is(err, ErrInvitationExpired) {
+		t.Errorf("revoking a superseded row gave %v, want ErrInvitationExpired", err)
+	}
+
+	// The routes answer the terminal refusal: 409 with invitation-terminal, on
+	// both faces, not a bare 404.
+	h.asAdmin()
+	for _, request := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodDelete, pathAdmin + "/" + row.ID},
+		{http.MethodPost, pathAdmin + "/" + row.ID + "/resend"},
+	} {
+		w := h.request(request.method, request.path, nil)
+		if w.Code != http.StatusConflict {
+			t.Errorf("%s %s answered %d, want 409: %s", request.method, request.path, w.Code, w.Body.String())
+			continue
+		}
+		if !strings.Contains(w.Body.String(), "urn:speed:authn:invitation-terminal") {
+			t.Errorf("%s %s body %s does not carry invitation-terminal", request.method, request.path, w.Body.String())
+		}
+	}
+	h.acceptAsHTTP("acct-alice", "alice@example.com")
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+token, map[string]string{})
+	if w.Code != http.StatusConflict {
+		t.Errorf("accepting a superseded row answered %d, want 409: %s", w.Code, w.Body.String())
+	} else if got := problemTypeOf(t, w); got != typePrefix+"invitation-terminal" {
+		t.Errorf("problem type = %q, want %s", got, typePrefix+"invitation-terminal")
 	}
 
 	after := h.row(row.ID)

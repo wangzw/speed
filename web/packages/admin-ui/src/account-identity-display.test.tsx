@@ -258,8 +258,9 @@ describe('OrganizationMembersPage', () => {
     renderMembers('')
     // The name column keeps the display name; the username column beside it
     // must not repeat it, and it never falls back to the account id.
-    const names = await screen.findAllByText('Ada Lovelace')
-    expect(names.length).toBe(1)
+    await waitFor(() =>
+      expect(screen.getAllByText('Ada Lovelace')).toHaveLength(1),
+    )
     expect(
       await screen.findByText(zhCN.common.accountUnavailable),
     ).toBeInTheDocument()
