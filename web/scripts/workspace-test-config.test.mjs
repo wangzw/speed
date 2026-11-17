@@ -1171,9 +1171,9 @@ describe('workspace test configuration', () => {
     expect(
       bareWaitUses("const pattern = /['\"]x/g\nawait vi.waitFor(() => {})"),
     ).toHaveLength(1)
-    // A stripper that does not recognise regex literals pairs these quotes as
-    // string delimiters and hides the wait below; both shapes occur in this
-    // repository's test sources.
+    // The TypeScript parser reads these as regex literals, not strings, so
+    // the quotes inside them cannot hide the wait below; both shapes occur
+    // in this repository's test sources.
     expect(
       bareWaitUses(
         "const literal = /(['\"`])([^'\"`\\\\]*)\\1/g\nawait vi.waitFor(() => {})",
