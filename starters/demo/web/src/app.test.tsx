@@ -1570,11 +1570,16 @@ describe('the account page', () => {
     ).toBeInTheDocument()
     // ...and the tenant header carries no language switch: its one menu is
     // the account menu, with the organization switcher inside it.
+    // The header may render before its menus do, so the count is asserted
+    // inside the wait rather than once after the first combobox appears.
+    await waitFor(() => {
+      const [banner] = screen.getAllByRole('banner')
+      const menus = within(banner as HTMLElement)
+        .getAllByRole('button')
+        .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
+      expect(menus).toHaveLength(1)
+    })
     const [banner] = screen.getAllByRole('banner')
-    const menus = within(banner as HTMLElement)
-      .getAllByRole('button')
-      .filter((button) => button.getAttribute('aria-haspopup') === 'menu')
-    expect(menus).toHaveLength(1)
     expect(
       within(banner as HTMLElement).getByTestId('user-menu-trigger'),
     ).toBeInTheDocument()
