@@ -558,11 +558,11 @@ describe('SmsPage', () => {
     )
     // The table's own region carries the refusal, and its row marker
     // repeats the one message.
-    const alerts = await screen.findAllByRole('alert')
-    expect(alerts.map((alert) => alert.textContent)).toEqual([
-      zhCN.errors.sms.bad_request,
-      zhCN.errors.sms.conflict,
-    ])
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('alert').map((alert) => alert.textContent),
+      ).toEqual([zhCN.errors.sms.bad_request, zhCN.errors.sms.conflict]),
+    )
     expect(
       within(section(zhCN.sms.register.title)).queryByText(zhCN.errors.sms.conflict),
     ).toBeNull()

@@ -744,12 +744,14 @@ describe('SsoPage', () => {
       name: zhCN.sso.provider.usernameClaimLabel,
     })
     await user.click(claimField)
-    expect(
-      (await screen.findAllByRole('option')).map((option) => option.textContent),
-    ).toEqual([
-      zhCN.sso.provider.usernameClaim.preferredUsername,
-      zhCN.sso.provider.usernameClaim.email,
-    ])
+    await vi.waitFor(() =>
+      expect(
+        screen.getAllByRole('option').map((option) => option.textContent),
+      ).toEqual([
+        zhCN.sso.provider.usernameClaim.preferredUsername,
+        zhCN.sso.provider.usernameClaim.email,
+      ]),
+    )
     await user.click(
       screen.getByRole('option', { name: zhCN.sso.provider.usernameClaim.email }),
     )

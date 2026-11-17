@@ -162,7 +162,9 @@ describe('IdentifiersSection', () => {
     ).toBeTruthy()
     // The email is a sign-in way, so it reads as the email group's chosen
     // value and as a row in the contacts list; the phone is a contact only.
-    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText('ada@x.test')).toHaveLength(2),
+    )
     expect(screen.getAllByText(zhCN.identifiers.kind.email)).toHaveLength(1)
     expect(screen.getByText('+14155550123')).toBeTruthy()
     expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(1)
@@ -335,7 +337,9 @@ describe('IdentifiersSection', () => {
 
     // The first address is the email group's chosen value; both addresses
     // are contact rows.
-    expect(await screen.findAllByText('operator@demo.test')).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText('operator@demo.test')).toHaveLength(2),
+    )
     expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(2)
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
     // The binary vocabulary has no channel labels left.
@@ -403,7 +407,9 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('only@x.test')).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText('only@x.test')).toHaveLength(2),
+    )
     // Removal is withheld, leaving verification as the row's one action: it
     // renders as a plain button, not behind an overflow trigger.
     const actions = rowActions('only@x.test')
@@ -878,7 +884,9 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('pending@x.test')).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText('pending@x.test')).toHaveLength(2),
+    )
     expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(1)
     // The row still offers removal, but the verify action is absent while
     // the account-wide flow owns the pending code.
@@ -969,7 +977,9 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText('ada@x.test')).toHaveLength(2),
+    )
     // An email address is a login name for a password account too. Removal is
     // withheld and the row has nothing to verify, so it carries no action at
     // all.
@@ -1089,7 +1099,9 @@ describe('IdentifiersSection', () => {
     }
     mount(respond)
 
-    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText('ada@x.test')).toHaveLength(2),
+    )
     // With no password the address is not the withheld "last login name", so
     // its row keeps the removal action.
     expect(rowAction('ada@x.test', zhCN.identifiers.remove)).toBeTruthy()
@@ -2893,7 +2905,9 @@ describe('IdentifiersSection', () => {
     }
     const { queryClient } = mount(respond)
 
-    expect(await screen.findAllByText('ada@x.test')).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText('ada@x.test')).toHaveLength(2),
+    )
 
     await act(async () => {
       await queryClient.invalidateQueries()

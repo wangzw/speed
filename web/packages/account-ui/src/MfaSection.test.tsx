@@ -2657,9 +2657,9 @@ describe('MfaSection', () => {
 
     // The single authenticator entry reads as its kind, not as the name
     // the list carries; the heading shows the same word.
-    expect(
-      (await screen.findAllByText(zhCN.mfa.factor.kind.totp)).length,
-    ).toBe(2)
+    await waitFor(() =>
+      expect(screen.getAllByText(zhCN.mfa.factor.kind.totp)).toHaveLength(2),
+    )
     expect(screen.queryByText('My authenticator')).toBeNull()
     // With one entry active, the group's action offers a replacement rather
     // than a plain add.

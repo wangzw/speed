@@ -498,9 +498,11 @@ describe('AuditPage', () => {
       }),
     )
     renderWithProviders(<AuditPage />, { operations })
-    expect(
-      (await screen.findAllByText('Ada Lovelace (ada)')).length,
-    ).toBeGreaterThanOrEqual(2)
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('Ada Lovelace (ada)').length,
+      ).toBeGreaterThanOrEqual(2),
+    )
     expect(screen.queryByText(UUID)).toBeNull()
   })
 
@@ -547,8 +549,13 @@ describe('AuditPage', () => {
       renderWithProviders(<AuditPage />, { operations })
 
       // The actor and the object both resolve to the account's identity.
-      const identities = await screen.findAllByText('Ada Lovelace (ada)')
-      expect(identities.length).toBeGreaterThanOrEqual(2)
+      // findAllByText resolves on the first match, so wait for the count.
+      await waitFor(() =>
+        expect(
+          screen.getAllByText('Ada Lovelace (ada)').length,
+        ).toBeGreaterThanOrEqual(2),
+      )
+      const identities = screen.getAllByText('Ada Lovelace (ada)')
       // The id is neither rendered nor handed over as a title or a copy
       // value by either cell.
       expect(screen.queryByText(UUID)).toBeNull()
@@ -594,9 +601,11 @@ describe('AuditPage', () => {
     expect(await screen.findByText(sessionId)).toBeInTheDocument()
     expect(screen.queryByText(UUID)).toBeNull()
     expect(screen.queryByText(`account:${UUID}`)).toBeNull()
-    expect(
-      (await screen.findAllByText('Ada Lovelace (ada)')).length,
-    ).toBeGreaterThanOrEqual(2)
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('Ada Lovelace (ada)').length,
+      ).toBeGreaterThanOrEqual(2),
+    )
     // The session id was never handed to the account read.
     expect(getAccount.mock.calls.some(([query]) => query.id === sessionId)).toBe(
       false,
@@ -751,8 +760,11 @@ describe('AuditDetailPage detail identities', () => {
 
     // On a revoke the `by` value is the account that ended the grant, so it
     // resolves like `on_behalf_of`; the object and the actor resolve too.
-    const identities = await screen.findAllByText('Ada Lovelace (ada)')
-    expect(identities.length).toBeGreaterThanOrEqual(3)
+    await waitFor(() =>
+      expect(
+        screen.getAllByText('Ada Lovelace (ada)').length,
+      ).toBeGreaterThanOrEqual(3),
+    )
     expect(screen.queryByText(UUID)).toBeNull()
   })
 

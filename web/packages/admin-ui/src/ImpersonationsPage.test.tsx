@@ -436,10 +436,12 @@ describe('ImpersonationsPage', () => {
       }),
     })
     await pickTenant(user)
-    const recordCells = await screen.findAllByTitle(
-      zhCN.common.accountUnresolved,
+    await vi.waitFor(() =>
+      expect(
+        screen.getAllByTitle(zhCN.common.accountUnresolved),
+      ).toHaveLength(2),
     )
-    expect(recordCells).toHaveLength(2)
+    const recordCells = screen.getAllByTitle(zhCN.common.accountUnresolved)
     for (const cell of recordCells) {
       expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
     }

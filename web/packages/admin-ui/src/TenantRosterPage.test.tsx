@@ -531,17 +531,19 @@ describe('TenantRosterPage', () => {
     })
     await user.click(acmeToggle)
     // The same resolved text stands in the row marker and in the region.
-    expect(
-      await screen.findAllByText(zhCN.errors.tenant.conflict),
-    ).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText(zhCN.errors.tenant.conflict)).toHaveLength(2),
+    )
 
     const globexToggle = screen.getByRole('switch', {
       name: text(zhCN.tenants.disableAria, { name: 'globex' }),
     })
     await user.click(globexToggle)
-    expect(
-      await screen.findAllByText(zhCN.errors.tenant.bad_request),
-    ).toHaveLength(2)
+    await waitFor(() =>
+      expect(screen.getAllByText(zhCN.errors.tenant.bad_request)).toHaveLength(
+        2,
+      ),
+    )
 
     // Each row marks its own failure; the other row is untouched.
     expect(acmeToggle).toHaveAttribute('aria-invalid', 'true')
