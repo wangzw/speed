@@ -660,7 +660,7 @@ const PICKER_ACCOUNT = {
     {
       kind: 'username',
       value: 'target-one',
-      proven: true,
+      proven: false,
       sign_in: true,
       contact: false,
       default_contact: false,
