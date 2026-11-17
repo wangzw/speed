@@ -107,11 +107,16 @@ through `node_modules` rather than the map.
 
 `src/session-harness.test.ts` is the harness's own regression (the
 script dispatch gate's prototype-chain branch); `src/axe.test.ts` pins the
-pure decisions the axe harness makes without a DOM (the environment
-label, the tags that cannot carry `aria-hidden`, the overlay family a
-marker class list names), and `src/axe.browser.test.tsx` pins the two
-assertions an open overlay now faces: a trapped dialog passes with no
-report while an untrapped one's focus escape fails the scan, and a
-background left readable fails the page-context exemption. Run them with
-`pnpm test` from this directory; the browser case runs under
-`make web-browser`.
+pure decisions the axe harness makes without a DOM (the tier it runs in,
+decided by whether the browser setup installed the real-keyboard driver,
+the tags that cannot carry `aria-hidden`, the overlay family a marker
+class list names, and the check that holds each browser determination to
+a browser case that runs the axe assertion); `src/axe.dom.test.ts` pins
+the jsdom tier's side of that decision (a user agent that names a browser
+does not hand a jsdom scan a keyboard it cannot press); and
+`src/axe.browser.test.tsx` pins what an open overlay faces: a trapped
+dialog passes with no report, an untrapped one's focus escape fails the
+scan in either Tab direction, a background left readable fails the
+page-context exemption, and a menu's unexercised trap is reported with
+the reason. Run them with `pnpm test` from this directory; the browser
+case runs under `make web-browser`.
