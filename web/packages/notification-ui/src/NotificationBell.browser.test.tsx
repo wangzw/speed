@@ -23,6 +23,7 @@ import {
   makeRealClientRigWithoutSession,
 } from '../test-utils/real-client.js'
 import { renderWithProviders, TEST_TENANT_ID } from '../test-utils/render.js'
+import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { NotificationBell } from './NotificationBell.js'
 
 /** The largest count the badge prints before switching to "99+". */
@@ -125,4 +126,21 @@ describe('NotificationBell Label in Name in Chromium', () => {
       expect(violations).toEqual([])
     })
   }
+
+  it('settles Label in Name for the bell with an unread count', async () => {
+    // The unit suite's full scan of the bell cannot decide Label in Name
+    // (jsdom measures no text); this case is the verdict it points at (see
+    // @speed/test-utils/axe's BROWSER_DETERMINATIONS) and the whole page
+    // rule set runs over the same settled state.
+    const rig = makeRealClientRigWithoutSession(() =>
+      jsonResponse(200, { unread: 3 }),
+    )
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationBell onClick={vi.fn()} />, {
+      language: 'en-US',
+    })
+
+    await screen.findByRole('button', { name: bellName(3) })
+    await expectNoAxeViolations()
+  })
 })

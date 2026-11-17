@@ -26,7 +26,10 @@ import { createAppTheme } from '@speed/ui-kit'
 import { makeHarness } from '@speed/test-utils/session-harness'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
-import { expectNoAxeViolations } from '../../test-utils/axe.js'
+import {
+  BROWSER_DETERMINATIONS,
+  expectNoAxeViolations,
+} from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStepFields, HumanGatedFlowStep } from './flow-step.js'
 import type { OpenFlowState } from './flow.js'
@@ -1194,7 +1197,11 @@ describe('FlowStepFields TOTP enrolment', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.signInFlow.totpManualToggle }),
     )
-    await expectNoAxeViolations()
+    // Label in Name needs canvas text measurement, which jsdom lacks; the
+    // named browser case decides it.
+    await expectNoAxeViolations({
+      decidedInBrowser: BROWSER_DETERMINATIONS.flowStepFieldsManualDisclosure,
+    })
   })
 })
 

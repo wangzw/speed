@@ -32,7 +32,10 @@ import { configure, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
-import { expectNoAxeViolations } from '../../test-utils/axe.js'
+import {
+  BROWSER_DETERMINATIONS,
+  expectNoAxeViolations,
+} from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStep } from './flow-step.js'
 
@@ -619,6 +622,10 @@ describe('FlowStep TOTP enrolment', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.flowStep.totpManualToggle }),
     )
-    await expectNoAxeViolations()
+    // Label in Name needs canvas text measurement, which jsdom lacks; the
+    // named browser case decides it.
+    await expectNoAxeViolations({
+      decidedInBrowser: BROWSER_DETERMINATIONS.flowStepAccountManualDisclosure,
+    })
   })
 })

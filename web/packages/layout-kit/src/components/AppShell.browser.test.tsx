@@ -274,6 +274,28 @@ describe('AppShell geometry in Chromium', () => {
       0,
     )
   })
+
+  it('keeps the temporary drawer focus trap holding on the mobile layout', async () => {
+    // The unit suite's open-drawer scan cannot press Tab, so its
+    // aria-hidden-focus result is indeterminate; this case exercises the real
+    // keyboard and decides it (see @speed/test-utils/axe).
+    await page.viewport(400, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell navItems={NAV_ITEMS}>
+        <h1>Main content</h1>
+      </AppShell>,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: OPEN_NAV }))
+    await waitFor(() => {
+      expect(
+        document
+          .querySelector<HTMLElement>(`.${drawerClasses.paper}`)
+          ?.getBoundingClientRect().width ?? 0,
+      ).toBeGreaterThan(0)
+    })
+    await expectNoAxeViolations()
+  })
 })
 
 describe('AppShell drawer slots in Chromium', () => {

@@ -40,7 +40,10 @@ import { switchLanguage } from '@speed/i18n'
 import { createAppTheme } from '@speed/ui-kit'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
-import { expectNoAxeViolations } from '../../test-utils/axe.js'
+import {
+  BROWSER_DETERMINATIONS,
+  expectNoAxeViolations,
+} from '../../test-utils/axe.js'
 import {
   emittedStyleText,
   hasCoarsePointerTouchTarget,
@@ -1367,7 +1370,11 @@ describe('AppShell', () => {
         </AppShell>,
       )
       await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
-      await expectNoAxeViolations()
+      // The open drawer's focus trap needs a real Tab, which jsdom lacks; the
+      // named browser case exercises it and decides aria-hidden-focus.
+      await expectNoAxeViolations({
+        decidedInBrowser: BROWSER_DETERMINATIONS.appShellSidebarDrawer,
+      })
     })
   })
 
@@ -2468,7 +2475,11 @@ describe('AppShell', () => {
           .querySelector(`.${drawerClasses.paper}`)
           ?.getAttribute('aria-modal'),
       ).toBe('true')
-      await expectNoAxeViolations()
+      // The open drawer's focus trap needs a real Tab, which jsdom lacks; the
+      // named browser case exercises it and decides aria-hidden-focus.
+      await expectNoAxeViolations({
+        decidedInBrowser: BROWSER_DETERMINATIONS.appShellMobileDrawer,
+      })
     })
   })
 })

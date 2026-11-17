@@ -8,6 +8,7 @@
  * helper so the rule tiers cannot drift between packages.
  */
 export {
+  BROWSER_DETERMINATIONS,
   expectNoAxeViolations,
   expectNoAxeViolationsForPage,
 } from '@speed/test-utils/axe'

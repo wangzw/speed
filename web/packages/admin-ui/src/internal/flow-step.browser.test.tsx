@@ -9,11 +9,18 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStep } from './flow-step.js'
 
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
+
+/** A URI carrying a secret, so the panel offers the manual disclosure. */
+const TOTP_URI =
+  'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'
 
 /** The row an action belongs to, found by the row's own marker. */
 function actionRowOf(action: Element): HTMLElement {
@@ -95,5 +102,31 @@ describe('FlowStep action rows in Chromium', () => {
 
     const confirm = await screen.findByRole('button', { name: 'Confirm' })
     await expectClosedOnTheRight(confirm)
+  })
+})
+
+describe('FlowStep Label in Name in Chromium', () => {
+  it('settles Label in Name with the FlowStep manual disclosure open', async () => {
+    // axe's Label in Name rule measures visible text through the canvas API,
+    // which jsdom answers with null; this case is the verdict the unit
+    // suite's scan cannot reach (see @speed/test-utils/axe).
+    const user = userEvent.setup()
+    renderWithProviders(
+      <>
+        <h1>Verify it's you</h1>
+        <FlowStep
+          step={{ kind: 'webauthn', options: { otpauth_uri: TOTP_URI } }}
+          sequence={1}
+          answerStep="answer"
+          submitLabel="Continue"
+          onSubmit={vi.fn()}
+        />
+      </>,
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.stepUp.totpManualToggle }),
+    )
+    await expectNoAxeViolations()
   })
 })

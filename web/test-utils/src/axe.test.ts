@@ -12,12 +12,19 @@
  * token, so the jsdom branch must win), and a string that is neither.
  */
 
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  BROWSER_DETERMINATIONS,
   environmentLabel,
   isAriaHiddenForbiddenTag,
   overlayKindFromClasses,
 } from './axe'
+
+/** The workspace root (`web/`), the base every declared file is relative to. */
+const WEB_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
 const CHROMIUM_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
@@ -80,4 +87,22 @@ describe('overlayKindFromClasses', () => {
     )
     expect(overlayKindFromClasses([])).toBe('other')
   })
+})
+
+describe('BROWSER_DETERMINATIONS', () => {
+  for (const [key, determination] of Object.entries(
+    BROWSER_DETERMINATIONS,
+  )) {
+    it(`${key} names a real browser-tier case`, () => {
+      // The exemption a jsdom case takes is only as good as the browser
+      // case behind it: a renamed or deleted case must break here rather
+      // than leave the rule unexamined in both tiers.
+      expect(determination.file).toMatch(/\.browser\.test\.tsx$/)
+      const source = readFileSync(
+        join(WEB_ROOT, determination.file),
+        'utf8',
+      )
+      expect(source).toContain(`it('${determination.testName}'`)
+    })
+  }
 })

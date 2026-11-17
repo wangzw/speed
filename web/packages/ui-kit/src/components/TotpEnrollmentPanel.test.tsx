@@ -16,7 +16,10 @@ import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expectNoAxeViolations } from '../../test-utils/axe.js'
+import {
+  BROWSER_DETERMINATIONS,
+  expectNoAxeViolations,
+} from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import {
   TotpEnrollmentPanel,
@@ -225,6 +228,10 @@ describe('TotpEnrollmentPanel', () => {
     )
 
     await user.click(screen.getByRole('button', { name: TOGGLE_LABEL }))
-    await expectNoAxeViolations()
+    // Label in Name needs canvas text measurement, which jsdom lacks; the
+    // named browser case decides it.
+    await expectNoAxeViolations({
+      decidedInBrowser: BROWSER_DETERMINATIONS.totpManualDisclosure,
+    })
   })
 })

@@ -8,6 +8,7 @@
  * placeholder) are probed through runHeadingOrderCheck instead.
  */
 export {
+  BROWSER_DETERMINATIONS,
   expectNoAxeViolations,
   runHeadingOrderCheck,
 } from '@speed/test-utils/axe'

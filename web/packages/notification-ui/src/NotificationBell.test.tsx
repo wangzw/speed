@@ -18,7 +18,10 @@ import {
 } from '../test-utils/real-client.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../test-utils/render.js'
-import { expectNoAxeViolations } from '../test-utils/axe.js'
+import {
+  BROWSER_DETERMINATIONS,
+  expectNoAxeViolations,
+} from '../test-utils/axe.js'
 import { NotificationBell } from './NotificationBell.js'
 
 describe('NotificationBell', () => {
@@ -36,7 +39,11 @@ describe('NotificationBell', () => {
     expect(button).toHaveTextContent('3')
     await userEvent.click(button)
     expect(onClick).toHaveBeenCalledTimes(1)
-    await expectNoAxeViolations()
+    // Label in Name needs canvas text measurement, which jsdom lacks; the
+    // named browser case decides it.
+    await expectNoAxeViolations({
+      decidedInBrowser: BROWSER_DETERMINATIONS.notificationBellUnread,
+    })
   })
 
   it('renders a host icon and hands the activation event to onClick', async () => {

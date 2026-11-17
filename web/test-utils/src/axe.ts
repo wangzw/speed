@@ -94,9 +94,90 @@
 import { expect } from 'vitest'
 import axe from 'axe-core'
 
+/**
+ * The browser-tier case that decides a rule jsdom cannot answer, named by
+ * its file (relative to the workspace root, `web/`) and its exact case
+ * name. A jsdom case declares one only for a rule whose verdict the named
+ * browser case reaches; keeping the pair in BROWSER_DETERMINATIONS and
+ * holding it to a real case (see axe.test.ts) is what stops an exemption
+ * from being invented without a source.
+ */
+export interface BrowserDetermination {
+  /** The browser-tier test file, relative to `web/`. */
+  readonly file: string
+  /** The exact case name inside that file. */
+  readonly testName: string
+}
+
+/**
+ * The rules jsdom cannot decide: aria-hidden-focus under a focus-trapping
+ * overlay (no real Tab), and label-content-name-mismatch (no canvas text
+ * measurement). The browser tier decides both, so a jsdom scan that declares
+ * the deciding browser case does not report them.
+ */
+const BROWSER_DECIDED_RULES: readonly string[] = [
+  'aria-hidden-focus',
+  'label-content-name-mismatch',
+]
+
+/**
+ * The browser-tier cases that settle the rules jsdom cannot, one entry per
+ * jsdom case that needs the exemption. axe.test.ts resolves each entry's
+ * file and case, so an entry that names a file or a case that does not exist
+ * fails the suite.
+ */
+export const BROWSER_DETERMINATIONS = {
+  totpManualDisclosure: {
+    file: 'packages/ui-kit/src/components/TotpEnrollmentPanel.browser.test.tsx',
+    testName: 'settles Label in Name with the manual disclosure open',
+  },
+  flowStepManualDisclosure: {
+    file: 'packages/admin-ui/src/internal/flow-step.browser.test.tsx',
+    testName: 'settles Label in Name with the FlowStep manual disclosure open',
+  },
+  flowStepAccountManualDisclosure: {
+    file: 'packages/account-ui/src/internal/flow-step.browser.test.tsx',
+    testName:
+      'settles Label in Name with the account FlowStep manual disclosure open',
+  },
+  flowStepFieldsManualDisclosure: {
+    file: 'packages/auth-ui/src/internal/flow-step.browser.test.tsx',
+    testName:
+      'settles Label in Name with the FlowStepFields manual-entry disclosure open',
+  },
+  notificationBellUnread: {
+    file: 'packages/notification-ui/src/NotificationBell.browser.test.tsx',
+    testName: 'settles Label in Name for the bell with an unread count',
+  },
+  accountsDetailPanel: {
+    file: 'packages/admin-ui/src/AccountsPage.browser.test.tsx',
+    testName: 'keeps the detail panel focus trap holding over a hidden page',
+  },
+  accountsOneTimeSecret: {
+    file: 'packages/admin-ui/src/AccountsPage.browser.test.tsx',
+    testName: 'keeps the one-time secret focus trap holding over a hidden page',
+  },
+  appShellMobileDrawer: {
+    file: 'packages/layout-kit/src/components/AppShell.browser.test.tsx',
+    testName: 'keeps the temporary drawer focus trap holding on the mobile layout',
+  },
+  appShellSidebarDrawer: {
+    file: 'packages/layout-kit/src/components/AppShell.browser.test.tsx',
+    testName:
+      'shows the brand once at 400px and pins the open drawer bottom row, with no accessibility violations',
+  },
+} as const satisfies Record<string, BrowserDetermination>
+
 export interface AxeAssertionOptions {
   /** Extra axe rules to disable beyond color-contrast. */
   readonly disabledRules?: readonly string[]
+  /**
+   * The browser-tier case that decides the rules jsdom cannot answer. Read
+   * only under jsdom: the browser tier runs those rules itself (and, for an
+   * open dialog or drawer, its real focus-trap check), so it ignores the
+   * declaration.
+   */
+  readonly decidedInBrowser?: BrowserDetermination
 }
 
 /**
@@ -503,7 +584,14 @@ async function runAxeAssertions(
   pageTier: boolean,
   options: AxeAssertionOptions,
 ): Promise<void> {
-  const { disabledRules = [] } = options
+  const { disabledRules = [], decidedInBrowser } = options
+  // jsdom cannot decide these rules at all; a caller that names the browser
+  // case deciding them reports nothing here. The browser tier ignores the
+  // declaration and runs the rules itself.
+  const decidedElsewhere =
+    decidedInBrowser !== undefined && describeEnvironment() !== 'the browser'
+      ? new Set(BROWSER_DECIDED_RULES)
+      : new Set<string>()
   // The widget-tier carve-out (see header): region and the page-level
   // main-landmark rules are page concerns, not widget semantics. The
   // scan still runs every rule that IS meaningful for an isolated
@@ -585,7 +673,9 @@ async function runAxeAssertions(
     verifiedFocusTrap = focusTrapRule
   }
   reportNonCriticalIncomplete(
-    incomplete.filter((rule) => rule !== verifiedFocusTrap),
+    incomplete.filter(
+      (rule) => rule !== verifiedFocusTrap && !decidedElsewhere.has(rule.id),
+    ),
     topOverlay,
   )
 }

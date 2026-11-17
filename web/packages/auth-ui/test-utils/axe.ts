@@ -5,4 +5,7 @@
  * disabled and page-has-heading-one asks its question against the page
  * heading the render harness supplies.
  */
-export { expectNoAxeViolations } from '@speed/test-utils/axe'
+export {
+  BROWSER_DETERMINATIONS,
+  expectNoAxeViolations,
+} from '@speed/test-utils/axe'
