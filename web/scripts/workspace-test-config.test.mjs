@@ -54,8 +54,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import {
   gateTimeScale,
@@ -116,341 +117,357 @@ const testPackages = packageDirs
   })
   .filter((pkg) => typeof pkg.test === 'string')
 
-/** Comments are prose, not configuration; drop them before matching. */
-function stripComments(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/.*$/gm, '')
+/** The script kind a test source is parsed as, by its extension. */
+const SCRIPT_KINDS = {
+  '.ts': ts.ScriptKind.TS,
+  '.mts': ts.ScriptKind.TS,
+  '.cts': ts.ScriptKind.TS,
+  '.tsx': ts.ScriptKind.TSX,
+  '.js': ts.ScriptKind.JS,
+  '.mjs': ts.ScriptKind.JS,
+  '.cjs': ts.ScriptKind.JS,
+  '.jsx': ts.ScriptKind.JSX,
 }
 
 /**
- * The source with comments removed and every string, template literal and
- * regex literal collapsed to a value placeholder, so that a name spelled out
- * in prose is not read as a use of it. A template literal is removed whole,
- * `${...}` included: code inside a substitution is not scanned, and no test
- * source reaches a wait that way.
- *
- * A `/` opens a regex literal rather than dividing when the last emitted
- * token is one that expects an expression there, the rule
- * `tools/check_test_limits.py` applies. Treating a regex literal as code
- * would let a quote inside it open a string and swallow the text after it.
- * An apostrophe directly after an identifier character is JSX text
- * (`<p>it's</p>`), not a string opener; treating it as one swallows the text
- * after it the same way.
- *
- * A single- or double-quoted string is confined to its line. A quote with no
- * closing partner on that line is not a string: it is emitted as ordinary
- * text and scanning continues after it, so a lone quote can hide at most the
- * rest of its own line. A template literal is the one string allowed to span
- * lines, and it is removed whole; a backtick with no closing partner before
- * the end of the source is emitted as ordinary text too, so a backtick read
- * as one by mistake cannot swallow the lines below it.
- *
- * A `/` directly after a `<` in the source is a JSX closing tag, not a regex.
- * Read as one, `</Link>` opens a regex at the slash, runs to a slash inside a
- * template literal on the same line and takes that template's opening
- * backtick with it; its closing backtick then opens a template that runs to
- * the end of the file. The comparison operator is written with a space before
- * its regex in practice (`x < /re/`), so that shape still opens one; the
- * unspaced `x</re/` is read as a division, and the unterminated-template
- * fallback above keeps that from swallowing more than the text it starts.
- *
- * The approximations that remain can hide a use or invent one: a regex whose
- * opening `/` follows a token this rule does not recognise is read as a
- * division, and a quote inside it then starts a string; and a quoted run at
- * the start of JSX text (`<p>'quoted'</p>`) is read as a string and collapses
- * that line's text. Each affects at most its own line, so neither can hide a
- * wait below it. Two shapes report a use that is not there. An unterminated
- * template literal is scanned as code, so a wait spelled inside it is
- * counted; only malformed source reaches it, and a false positive is safer
- * there than a blind spot. A regex written with no space after a `<`
- * (`x</vi.waitFor/`) takes the JSX closing-tag branch above and is read as a
- * division, so a name in its body is counted as a use; the current tree
- * writes no such shape.
+ * The parser kind for a path. The constructed sources in this suite's own
+ * cases have no file of their own and are parsed as TSX, which accepts both
+ * the JSX shapes and the plain code they hold.
  */
-function stripCommentsAndStrings(source) {
-  let out = ''
-  for (let i = 0; i < source.length; i += 1) {
-    const char = source[i]
-    const next = source[i + 1]
-    if (char === '/' && next === '/') {
-      while (i < source.length && source[i] !== '\n') i += 1
-      out += '\n'
-      continue
-    }
-    if (char === '/' && next === '*') {
-      i += 2
-      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) {
-        if (source[i] === '\n') out += '\n'
-        i += 1
-      }
-      i += 1
-      continue
-    }
-    // A `/` directly after a `<` is a JSX closing tag, not a regex. The
-    // comparison operator writes a space before the slash, so `x < /re/`
-    // still opens one.
-    if (char === '/' && source[i - 1] !== '<' && regexCanStart(out)) {
-      let end = i + 1
-      let inClass = false
-      while (end < source.length) {
-        const inner = source[end]
-        if (inner === '\\') {
-          end += 2
-          continue
-        }
-        if (inner === '[') inClass = true
-        else if (inner === ']') inClass = false
-        else if (inner === '/' && !inClass) break
-        else if (inner === '\n') break
-        end += 1
-      }
-      if (end < source.length && source[end] === '/') {
-        i = end
-        while (i + 1 < source.length && /[A-Za-z]/.test(source[i + 1])) i += 1
-        out += '0'
-        continue
-      }
-    }
-    if (char === "'" || char === '"' || char === '`') {
-      // An apostrophe that follows an identifier cannot open a string in
-      // JavaScript, so it is JSX text such as a contraction.
-      const preceding = out.at(-1)
-      if (
-        char === "'"
-        && preceding !== undefined
-        && /[A-Za-z0-9_$]/.test(preceding)
-      ) {
-        out += char
-        continue
-      }
-      const start = i
-      let end = i + 1
-      let closed = false
-      while (end < source.length) {
-        const inner = source[end]
-        if (inner === '\\') {
-          end += 2
-          continue
-        }
-        if (inner === char) {
-          closed = true
-          break
-        }
-        // Only a template literal spans lines. A quoted string with no
-        // closing quote on its line is not a string here: the quote is
-        // emitted as ordinary text below and scanning continues after it.
-        if (inner === '\n' && char !== '`') break
-        if (inner === '\n') out += '\n'
-        end += 1
-      }
-      if (!closed) {
-        // No string here reaches the end of the source: the quote is emitted
-        // as ordinary text and scanning continues after it. A template
-        // literal opened by mistake therefore hides at most the text up to
-        // the next construct it starts, not every line below it.
-        out += char
-        continue
-      }
-      i = end
-      // A string behind a member access is a property key, not prose:
-      // `vi['waitFor']` names the wait the same way `vi.waitFor` does, so it
-      // is kept. An array element is prose like any other string, so the
-      // bracket must follow the object it reads from, and none of the
-      // keywords the regex rule knows is an object: `return ['vi.waitFor']`
-      // and `for (const n of ['vi.waitFor'])` are arrays of prose.
-      const trimmed = out.trimEnd()
-      let base = trimmed.length - 2
-      while (base >= 0 && /\s/.test(trimmed[base])) base -= 1
-      let wordStart = base
-      while (wordStart >= 0 && /[A-Za-z0-9_$]/.test(trimmed[wordStart])) {
-        wordStart -= 1
-      }
-      const memberAccess =
-        trimmed.at(-1) === '['
-        && base >= 0
-        && /[A-Za-z0-9_$.]/.test(trimmed[base])
-        && !REGEX_PRECEDER_WORDS.has(trimmed.slice(wordStart + 1, base + 1))
-      let after = i + 1
-      while (after < source.length && /\s/.test(source[after])) after += 1
-      if (memberAccess && source[after] === ']') {
-        out += source.slice(start, i + 1)
-      } else {
-        out += '0'
-      }
-      continue
-    }
-    out += char
+function scriptKindOf(filePath) {
+  return SCRIPT_KINDS[extname(filePath)] ?? ts.ScriptKind.TSX
+}
+
+/**
+ * The syntax tree of one test source, parsed with the TypeScript compiler.
+ * The tree is what tells a use of a name from its spelling in a comment, a
+ * string, a template literal, a regular expression or JSX text; no
+ * hand-written lexer is involved.
+ *
+ * A source the parser reports a diagnostic for is an error naming the file,
+ * never a skipped file. A guard that passed a source it could not read
+ * would leave the blind spot it exists to close.
+ */
+function parseTestSource(source, filePath) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKindOf(filePath),
+  )
+  const diagnostics = sourceFile.parseDiagnostics
+  if (!Array.isArray(diagnostics)) {
+    throw new Error(
+      `${filePath}: the TypeScript parser exposed no diagnostics, so the `
+        + 'guard cannot tell a parse failure from a clean source',
+    )
   }
-  return out
+  const [diagnostic] = diagnostics
+  if (diagnostic !== undefined) {
+    throw new Error(
+      `${filePath}: cannot parse the test source: `
+        + ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
+    )
+  }
+  return sourceFile
 }
 
-/** The tokens after which a JavaScript `/` opens a regex literal. */
-const REGEX_PRECEDER_CHARS = new Set('(,=:[!&|?{};+-*%^~<>')
+/** Every node of a tree, parents before children. */
+function forEachNode(node, visit) {
+  visit(node)
+  ts.forEachChild(node, (child) => forEachNode(child, visit))
+}
+
+/** The name a property or binding element is written under, or null. */
+function writtenName(name) {
+  if (
+    ts.isIdentifier(name)
+    || ts.isStringLiteral(name)
+    || ts.isNumericLiteral(name)
+  ) {
+    return name.text
+  }
+  return null
+}
+
+/** The root and the members of a property-access chain, or null. */
+function calleeChain(node) {
+  if (ts.isIdentifier(node)) {
+    return [node.text]
+  }
+  if (ts.isPropertyAccessExpression(node)) {
+    const base = calleeChain(node.expression)
+    return base === null ? null : [...base, node.name.text]
+  }
+  return null
+}
+
+/** Whether a node is the identifier `vi`. */
+function isVi(node) {
+  return ts.isIdentifier(node) && node.text === 'vi'
+}
+
+/** The two Vitest waits with a fixed one-second default and no global one. */
+const WAIT_NAMES = new Set(['waitFor', 'waitUntil'])
+
+/** `vi.waitFor`, `vi.waitUntil`, `vi['waitFor']`, `vi?.['waitUntil']`. */
+function isWaitAccess(node) {
+  if (ts.isPropertyAccessExpression(node)) {
+    return isVi(node.expression) && WAIT_NAMES.has(node.name.text)
+  }
+  if (ts.isElementAccessExpression(node)) {
+    const key = node.argumentExpression
+    return isVi(node.expression)
+      && (ts.isStringLiteral(key)
+        || ts.isNoSubstitutionTemplateLiteral(key))
+      && WAIT_NAMES.has(key.text)
+  }
+  return false
+}
+
+/** `const { waitFor } = vi`, renamed or not. */
+function isDestructuredFromVi(node) {
+  if (
+    !ts.isVariableDeclaration(node)
+    || !ts.isObjectBindingPattern(node.name)
+    || node.initializer === undefined
+    || !isVi(node.initializer)
+  ) {
+    return false
+  }
+  return node.name.elements.some(
+    (element) =>
+      ts.isBindingElement(element)
+      && WAIT_NAMES.has(writtenName(element.propertyName ?? element.name) ?? ''),
+  )
+}
+
+/** `({ waitFor } = vi)`, renamed or not. */
+function isAssignedFromVi(node) {
+  if (
+    !ts.isBinaryExpression(node)
+    || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken
+    || !isVi(node.right)
+  ) {
+    return false
+  }
+  let target = node.left
+  while (ts.isParenthesizedExpression(target)) {
+    target = target.expression
+  }
+  return ts.isObjectLiteralExpression(target)
+    && target.properties.some(
+      (property) =>
+        (ts.isShorthandPropertyAssignment(property)
+          || ts.isPropertyAssignment(property))
+        && WAIT_NAMES.has(writtenName(property.name) ?? ''),
+    )
+}
+
+/** Whether any call in a tree names `name`. */
+function hasCallNamed(sourceFile, name) {
+  let found = false
+  forEachNode(sourceFile, (node) => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === name
+    ) {
+      found = true
+    }
+  })
+  return found
+}
+
+/** Whether any object property in a tree is written under `name`. */
+function hasPropertyNamed(sourceFile, name) {
+  let found = false
+  forEachNode(sourceFile, (node) => {
+    if (
+      (ts.isPropertyAssignment(node)
+        || ts.isShorthandPropertyAssignment(node)
+        || ts.isMethodDeclaration(node)
+        || ts.isPropertyDeclaration(node))
+      && writtenName(node.name) === name
+    ) {
+      found = true
+    }
+  })
+  return found
+}
+
+/** The initializer of the first object property written under `name`. */
+function propertyInitializer(sourceFile, name) {
+  let found = null
+  forEachNode(sourceFile, (node) => {
+    if (
+      found === null
+      && ts.isPropertyAssignment(node)
+      && writtenName(node.name) === name
+    ) {
+      found = node.initializer
+    }
+  })
+  return found
+}
+
+/** Whether a tree imports from a specifier matching `pattern`. */
+function importsFrom(sourceFile, pattern) {
+  let found = false
+  forEachNode(sourceFile, (node) => {
+    if (
+      ts.isImportDeclaration(node)
+      && ts.isStringLiteral(node.moduleSpecifier)
+      && pattern.test(node.moduleSpecifier.text)
+    ) {
+      found = true
+    }
+  })
+  return found
+}
+
 /**
- * The keywords after which a JavaScript `/` opens a regex literal. A bracket
- * that directly follows one cannot be reading a member from it either: what
- * sits in the bracket is an array element, not a property key.
+ * The string a `reporters` property is written as, or null when it is not a
+ * string literal.
  */
-const REGEX_PRECEDER_WORDS = new Set([
-  'return',
-  'typeof',
-  'case',
-  'in',
-  'of',
-  'delete',
-  'void',
-  'new',
-  'do',
-  'else',
-  'yield',
-  'await',
+function reportersLiteral(sourceFile) {
+  const initializer = propertyInitializer(sourceFile, 'reporters')
+  return initializer !== null && ts.isStringLiteral(initializer)
+    ? initializer.text
+    : null
+}
+
+/** The calls that declare a case, hook or suite. */
+const CASE_HEADS = new Set([
+  'it',
+  'test',
+  'beforeEach',
+  'afterEach',
+  'beforeAll',
+  'afterAll',
+  'describe',
 ])
 
 /**
- * Whether a `/` at the current position of `emitted` opens a regex literal
- * rather than dividing, judged by the last token emitted. A string is
- * emitted as `0`, so a division after it (`'a' / 2`) is still a division.
+ * A constant millisecond budget: a numeric literal, or factors joined by `*`
+ * (`2 * 60_000`), optionally parenthesized. Anything that names a value is
+ * not a constant, so a variable is not read as its first factor.
  */
-function regexCanStart(emitted) {
-  let previous = emitted.length - 1
-  while (previous >= 0 && /\s/.test(emitted[previous])) previous -= 1
-  if (previous < 0) return true
-  if (REGEX_PRECEDER_CHARS.has(emitted[previous])) return true
-  let start = previous
-  while (start >= 0 && /[A-Za-z0-9_$]/.test(emitted[start])) start -= 1
-  return REGEX_PRECEDER_WORDS.has(emitted.slice(start + 1, previous + 1))
-}
-
-/**
- * A constant millisecond expression: a numeric literal with optional digit
- * separators, or factors joined by `*` (`2 * 60_000`). The product of the
- * factors is the value, so an arithmetic base is not read as its first
- * factor.
- */
-function toMs(literal) {
-  return literal
-    .split('*')
-    .map((factor) => Number(factor.trim().replaceAll('_', '')))
-    .reduce((total, factor) => total * factor, 1)
-}
-
-/**
- * The text of the call whose opening parenthesis is at `openIndex`, with
- * nested parentheses and quoted strings respected, or null when the
- * source ends first.
- */
-function callText(source, openIndex) {
-  let depth = 0
-  let quote = null
-  for (let index = openIndex; index < source.length; index += 1) {
-    const char = source[index]
-    if (quote !== null) {
-      if (char === '\\') {
-        index += 1
-      } else if (char === quote) {
-        quote = null
-      }
-      continue
-    }
-    if (char === "'" || char === '"' || char === '`') {
-      quote = char
-    } else if (char === '(') {
-      depth += 1
-    } else if (char === ')') {
-      depth -= 1
-      if (depth === 0) {
-        return source.slice(openIndex, index + 1)
-      }
+function constantMs(node) {
+  if (ts.isNumericLiteral(node)) {
+    return Number(node.text.replaceAll('_', ''))
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    return constantMs(node.expression)
+  }
+  if (
+    ts.isBinaryExpression(node)
+    && node.operatorToken.kind === ts.SyntaxKind.AsteriskToken
+  ) {
+    const left = constantMs(node.left)
+    const right = constantMs(node.right)
+    if (left !== null && right !== null) {
+      return left * right
     }
   }
   return null
 }
 
-/**
- * The trailing numeric budget of a call whose last argument is a number. A
- * budget of 0 is no limit, which is a widening and passes.
- */
-function trailingTimeout(call, floor) {
-  const trailing = /,\s*([\d_]+(?:\s*\*\s*[\d_]+)*)\s*\)$/.exec(call)
-  if (trailing !== null) {
-    const ms = toMs(trailing[1])
-    if (ms !== 0 && ms < floor) {
-      return [ms]
+/** The `timeout` of an options object, when it is a constant. */
+function timeoutOf(options) {
+  for (const property of options.properties) {
+    if (
+      ts.isPropertyAssignment(property)
+      && writtenName(property.name) === 'timeout'
+    ) {
+      return constantMs(property.initializer)
     }
   }
-  return []
+  return null
 }
 
-/** The `timeout` in the options object a call passes after a name string. */
-function optionTimeout(call, floor) {
-  // `it('name', { timeout }, fn)`, and the call an `it.each(table)` returns
-  // (`it.each(table)('name', { timeout }, fn)`): the name string is
-  // followed by the options object. A `{ timeout }` deeper in an arrow
-  // function's body belongs to a wait or a nested call, not to this case.
-  const named =
-    /\(\s*(?:(['"`])(?:\\.|(?!\1).)*\1)\s*,\s*\{([^}]*)\}/.exec(call)
-  if (named === null) {
-    return []
-  }
-  const timeout = /\btimeout\s*:\s*([\d_]+(?:\s*\*\s*[\d_]+)*)/.exec(named[2])
-  if (timeout !== null) {
-    const ms = toMs(timeout[1])
-    // 0 is Vitest's and Playwright's "no limit", which is a widening.
-    if (ms !== 0 && ms < floor) {
-      return [ms]
+/** The budgets below `floor` carried by one case call. */
+function caseCallBudgets(call, floor) {
+  const lowered = []
+  const options = call.arguments[1]
+  if (options !== undefined && ts.isObjectLiteralExpression(options)) {
+    const ms = timeoutOf(options)
+    if (ms !== null && ms !== 0 && ms < floor) {
+      lowered.push(ms)
     }
   }
-  return []
+  // A trailing budget needs at least two arguments: `it(name, 2000)` is one,
+  // while a lone numeric argument (`it.runIf(1)`) is a condition or a table.
+  const trailing = call.arguments.at(-1)
+  if (
+    call.arguments.length >= 2
+    && trailing !== undefined
+    && !ts.isObjectLiteralExpression(trailing)
+  ) {
+    const ms = constantMs(trailing)
+    if (ms !== null && ms !== 0 && ms < floor) {
+      lowered.push(ms)
+    }
+  }
+  return lowered
 }
 
 /**
  * The per-case, per-hook and per-suite budgets in one test source that sit
- * below `floor`. Four forms are scanned: a trailing numeric budget
- * (`it(name, fn, 2000)`, `beforeEach(fn, 2000)`), an options object after
- * a name (`it(name, { timeout }, fn)`, `describe(name, { timeout }, fn)`),
- * the call an `it.each(table)`/`test.each(table)` returns, and
- * `test.setTimeout(ms)`. A case budget of 0 means no limit in both Vitest
+ * below `floor`. Four forms are read from the syntax tree: a trailing numeric
+ * budget (`it(name, fn, 2000)`, `beforeEach(fn, 2000)`), an options object in
+ * the second argument (`it(name, { timeout }, fn)`, `describe(name, {
+ * timeout }, fn)`), the call an `it.each(table)`/`test.each(table)` returns,
+ * and `test.setTimeout(ms)`. A case budget of 0 means no limit in both Vitest
  * and Playwright and passes. Waits such as `waitFor(..., { timeout })` and
  * `findBy*(..., { timeout })` are not case budgets and are left alone.
  */
-function lowCaseTimeouts(source, floor) {
-  const code = stripComments(source)
+function lowCaseTimeouts(source, floor, filePath = 'constructed.tsx') {
+  const sourceFile = parseTestSource(source, filePath)
   const lowered = []
-  for (const match of code.matchAll(
-    /\b(?:it|test|beforeEach|afterEach|beforeAll|afterAll|describe)(?:\.(?!each\b)\w+)?\(/g,
-  )) {
-    const call = callText(code, match.index + match[0].length - 1)
-    if (call === null) {
-      continue
+  forEachNode(sourceFile, (node) => {
+    if (!ts.isCallExpression(node)) {
+      return
     }
-    lowered.push(...trailingTimeout(call, floor), ...optionTimeout(call, floor))
-  }
-  // `it.each(table)` returns a function that is then called with the case.
-  // The table is not a budget, so the scan continues past it and inspects
-  // that call instead.
-  for (const match of code.matchAll(/\b(?:it|test|describe)\.each\s*\(/g)) {
-    const openIndex = match.index + match[0].length - 1
-    const table = callText(code, openIndex)
-    if (table === null) {
-      continue
+    const chain = calleeChain(node.expression)
+    if (chain === null || !CASE_HEADS.has(chain[0])) {
+      return
     }
-    const rest = code.slice(openIndex + table.length)
-    const open = rest.search(/\S/)
-    if (open === -1 || rest[open] !== '(') {
-      continue
+    // `test.setTimeout(ms)` is a case budget of its own, read below; it does
+    // not take case arguments that are budgets.
+    if (chain.length === 2 && chain[0] === 'test' && chain[1] === 'setTimeout') {
+      return
     }
-    const call = callText(code, openIndex + table.length + open)
-    if (call !== null) {
-      lowered.push(...trailingTimeout(call, floor), ...optionTimeout(call, floor))
+    // `it.each(table)` returns a function that is then called with the case.
+    // The table is not a budget, so the call it returns is inspected instead.
+    if (chain.at(-1) === 'each') {
+      if (ts.isCallExpression(node.parent) && node.parent.expression === node) {
+        lowered.push(...caseCallBudgets(node.parent, floor))
+      }
+      return
     }
-  }
-  for (const match of code.matchAll(/\btest\.setTimeout\(\s*([\d_]+)\s*\)/g)) {
-    const ms = toMs(match[1])
-    if (ms !== 0 && ms < floor) {
+    lowered.push(...caseCallBudgets(node, floor))
+  })
+  forEachNode(sourceFile, (node) => {
+    if (!ts.isCallExpression(node)) {
+      return
+    }
+    const chain = calleeChain(node.expression)
+    if (
+      chain === null
+      || chain.length !== 2
+      || chain[0] !== 'test'
+      || chain[1] !== 'setTimeout'
+    ) {
+      return
+    }
+    const [argument] = node.arguments
+    const ms = argument === undefined ? null : constantMs(argument)
+    if (ms !== null && ms !== 0 && ms < floor) {
       lowered.push(ms)
     }
-  }
+  })
   return lowered
 }
 
@@ -460,25 +477,23 @@ function lowCaseTimeouts(source, floor) {
  * so every member access counts, whatever becomes of it: a call, an argument,
  * a property value, an arrow's return or a reference kept for later. Optional
  * chaining and bracket access are the same access. A destructuring that binds
- * either name from `vi` is listed too. Comments and strings are removed first,
- * so prose that spells a wait out is not a use.
+ * either name from `vi` is listed too. The syntax tree tells a use from prose:
+ * a comment, string, template literal, regular expression or JSX text that
+ * spells a wait out is not one.
  */
-function bareWaitUses(source) {
-  const code = stripCommentsAndStrings(source)
-  return [
-    ...(code.match(
-      /\bvi\s*\??\.\s*(?:waitFor|waitUntil)\b/g,
-    ) ?? []),
-    ...(code.match(
-      /\bvi\s*(?:\?\.)?\s*\[\s*(['"])(?:waitFor|waitUntil)\1\s*\]/g,
-    ) ?? []),
-    ...(code.match(
-      /\b(?:const|let|var)\s*\{[^}]*\b(?:waitFor|waitUntil)\b[^}]*\}\s*=\s*vi\b/g,
-    ) ?? []),
-    ...(code.match(
-      /\(\s*\{[^}]*\b(?:waitFor|waitUntil)\b[^}]*\}\s*=\s*vi\s*\)/g,
-    ) ?? []),
-  ]
+function bareWaitUses(source, filePath = 'constructed.tsx') {
+  const sourceFile = parseTestSource(source, filePath)
+  const uses = []
+  forEachNode(sourceFile, (node) => {
+    if (
+      isWaitAccess(node)
+      || isDestructuredFromVi(node)
+      || isAssignedFromVi(node)
+    ) {
+      uses.push(node.pos)
+    }
+  })
+  return uses
 }
 
 /**
@@ -490,11 +505,19 @@ function bareWaitUses(source) {
  * the literal 1 would leave the floor in place while ignoring a caller who
  * raised it.
  */
-function asyncBudgetScale(source) {
-  const match = /asyncUtilTimeout\s*:\s*asyncBudgetMs\s*\(\s*((?:[^()]|\([^()]*\))+?)\s*\)/.exec(
-    stripComments(source),
-  )
-  return match?.[1] ?? null
+function asyncBudgetScale(source, filePath = 'constructed.ts') {
+  const sourceFile = parseTestSource(source, filePath)
+  const initializer = propertyInitializer(sourceFile, 'asyncUtilTimeout')
+  if (
+    initializer === null
+    || !ts.isCallExpression(initializer)
+    || !ts.isIdentifier(initializer.expression)
+    || initializer.expression.text !== 'asyncBudgetMs'
+  ) {
+    return null
+  }
+  const [argument] = initializer.arguments
+  return argument === undefined ? null : argument.getText(sourceFile)
 }
 
 /** The expressions that carry the caller's scale into a setup. */
@@ -549,12 +572,11 @@ describe('workspace test configuration', () => {
     // Those tests live outside every package, so no package config covers
     // them; without a config at the web root the leg runs on Vitest's
     // fixed 5s default.
-    const source = stripComments(
-      readFileSync(join(webRoot, 'vitest.config.ts'), 'utf8'),
-    )
-    expect(source).toContain('sharedTestOptions(')
-    expect(source).not.toMatch(/testTimeout\s*:/)
-    expect(source).not.toMatch(/hookTimeout\s*:/)
+    const configPath = join(webRoot, 'vitest.config.ts')
+    const sourceFile = parseTestSource(readFileSync(configPath, 'utf8'), configPath)
+    expect(hasCallNamed(sourceFile, 'sharedTestOptions')).toBe(true)
+    expect(hasPropertyNamed(sourceFile, 'testTimeout')).toBe(false)
+    expect(hasPropertyNamed(sourceFile, 'hookTimeout')).toBe(false)
   })
 
   it('fixes the test reporter so the log does not depend on the runner', () => {
@@ -564,16 +586,18 @@ describe('workspace test configuration', () => {
     // appearing only when a person runs the gate.
     expect(sharedTestOptions().reporters).toBe('default')
     const configPath = join(demoWebRoot, 'vitest.config.ts')
-    const source = stripComments(readFileSync(configPath, 'utf8'))
-    expect(source).toContain("reporters: 'default'")
+    expect(
+      reportersLiteral(
+        parseTestSource(readFileSync(configPath, 'utf8'), configPath),
+      ),
+    ).toBe('default')
     // The a11y sweep's verbose reporter is the other fixed choice; the
     // singular CLI spelling is ignored by the config, so it is checked
     // for as well.
-    const a11ySource = stripComments(
-      readFileSync(join(demoWebRoot, 'vitest.a11y.config.ts'), 'utf8'),
-    )
-    expect(a11ySource).toContain("reporters: 'verbose'")
-    expect(a11ySource).not.toContain('reporter:')
+    const a11yPath = join(demoWebRoot, 'vitest.a11y.config.ts')
+    const a11yFile = parseTestSource(readFileSync(a11yPath, 'utf8'), a11yPath)
+    expect(reportersLiteral(a11yFile)).toBe('verbose')
+    expect(hasPropertyNamed(a11yFile, 'reporter')).toBe(false)
   })
 
   it('keeps the shared case budget at or above its floor', () => {
@@ -677,7 +701,11 @@ describe('workspace test configuration', () => {
     const floor = SHARED_TIMEOUT_MS
     const offenders = []
     for (const source of scopedTestSources) {
-      for (const ms of lowCaseTimeouts(readFileSync(source, 'utf8'), floor)) {
+      for (const ms of lowCaseTimeouts(
+        readFileSync(source, 'utf8'),
+        floor,
+        source,
+      )) {
         offenders.push(`${source}: a case budget of ${ms}ms`)
       }
     }
@@ -690,7 +718,10 @@ describe('workspace test configuration', () => {
   it('rejects every vi.waitFor and vi.waitUntil use outside waitForCondition', () => {
     const offenders = []
     for (const source of scopedTestSources) {
-      const count = bareWaitUses(readFileSync(source, 'utf8')).length
+      const count = bareWaitUses(
+        readFileSync(source, 'utf8'),
+        source,
+      ).length
       if (count > 0) {
         offenders.push(`${source}: ${count} bare wait use(s)`)
       }
@@ -843,16 +874,8 @@ describe('workspace test configuration', () => {
     expect(
       bareWaitUses("<p>it's a member</p>\nawait vi.waitFor(() => {})"),
     ).toHaveLength(1)
-    // A quoted string never spans lines: a quote with no partner on its line
-    // is ordinary text, so the line below it is still scanned.
-    expect(
-      bareWaitUses("const label = 'unfinished\nawait vi.waitFor(() => {})"),
-    ).toHaveLength(1)
-    expect(
-      bareWaitUses('const label = "unfinished\nawait vi.waitFor(() => {})'),
-    ).toHaveLength(1)
-    // A template literal is still free to span lines, and the wait spelled
-    // out inside it stays prose.
+    // A template literal is free to span lines, and the wait spelled out
+    // inside it stays prose; the one below it is a use.
     expect(
       bareWaitUses('const text = `a\nvi.waitFor`\nawait vi.waitFor(() => {})'),
     ).toHaveLength(1)
@@ -881,11 +904,20 @@ describe('workspace test configuration', () => {
         'render(<div>a</div>); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
       ),
     ).toHaveLength(1)
-    // A self-closing tag's slash follows the tag name, so it was never read as
-    // a regex; the pin keeps it that way.
+    // A self-closing tag's slash follows the tag name, or an attribute value.
+    // A lexer that reads the `}` before it as one that can precede a regex
+    // opens one there, runs to the next slash inside the template on the same
+    // line and takes that template's backticks, hiding every wait below. The
+    // parser reads the tag as JSX.
     expect(
       bareWaitUses(
         'render(<Br />); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
+      ),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses(
+        'render(<A p={x} />); f(`/a/${id}`)\nawait vi.waitFor(() => {})\n'
+          + 'const t = `z`',
       ),
     ).toHaveLength(1)
     // A `<` operator still opens a regex: the wait name inside the pattern is
@@ -895,12 +927,35 @@ describe('workspace test configuration', () => {
     ).toHaveLength(1)
   })
 
-  it('scans past a template literal that reaches the end of the file', () => {
-    // A template with no closing backtick must not swallow the rest of the
-    // file: the backtick is ordinary text and the lines below are scanned.
+  it('scans a wait below a regex literal that carries a backtick', () => {
+    // A backtick inside a regex literal used to open a template that ran to
+    // the next backtick, or to the end of the file when there was none. The
+    // parser reads the whole literal as a regular expression.
     expect(
-      bareWaitUses('const text = `unclosed\nawait vi.waitFor(() => {})'),
+      bareWaitUses(
+        'if (x) /`/.test(s)\nawait vi.waitFor(() => {})\nconst t = `z`',
+      ),
     ).toHaveLength(1)
+    // The unspaced form is a comparison, not a JSX tag; it is parsed as
+    // TypeScript, where `</` cannot open a JSX closing tag.
+    expect(
+      bareWaitUses(
+        'x</`/.test(s)\nawait vi.waitFor(() => {})\nconst t = `z`',
+        'constructed.ts',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('reports a test source it cannot parse instead of skipping it', () => {
+    // A source with no syntax tree is not a source with no offenders: the
+    // guard stops and names the file, so the blind spot cannot pass as clean.
+    for (const source of [
+      'const text = `unclosed\nawait vi.waitFor(() => {})',
+      "const label = 'unfinished\nawait vi.waitFor(() => {})",
+      'const label = "unfinished\nawait vi.waitFor(() => {})',
+    ]) {
+      expect(() => bareWaitUses(source)).toThrow(/constructed\.tsx/)
+    }
   })
 
   it('scans the async budget argument it is meant to catch', () => {
@@ -932,19 +987,22 @@ describe('workspace test configuration', () => {
   for (const pkg of testPackages) {
     it(`${pkg.name} takes its test options from the shared preset`, async () => {
       const configPath = join(pkg.dir, 'vitest.config.ts')
-      const source = stripComments(readFileSync(configPath, 'utf8'))
+      const sourceFile = parseTestSource(
+        readFileSync(configPath, 'utf8'),
+        configPath,
+      )
 
       // The spread is what makes the preset the source of the options;
       // a hand-written block (or a locally pinned timeout) is exactly the
       // omission this guard exists to catch. The import carries the .ts
       // extension because Vite's native config loader warns on an
       // extensionless one and plans to reject it.
-      expect(source).toMatch(
-        /from '\.\.\/(?:\.\.\/)?vitest\.shared\.ts'/,
-      )
-      expect(source).toContain('sharedTestOptions(')
-      expect(source).not.toMatch(/testTimeout\s*:/)
-      expect(source).not.toMatch(/hookTimeout\s*:/)
+      expect(
+        importsFrom(sourceFile, /^\.\.\/(?:\.\.\/)?vitest\.shared\.ts$/),
+      ).toBe(true)
+      expect(hasCallNamed(sourceFile, 'sharedTestOptions')).toBe(true)
+      expect(hasPropertyNamed(sourceFile, 'testTimeout')).toBe(false)
+      expect(hasPropertyNamed(sourceFile, 'hookTimeout')).toBe(false)
 
       const config = (await import(pathToFileURL(configPath).href)).default
 
