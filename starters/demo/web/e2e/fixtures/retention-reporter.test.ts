@@ -82,6 +82,23 @@ describe('RunRetentionReporter', () => {
     await expect(exists(runDirectory)).resolves.toBe(true)
   })
 
+  it('keeps the directory of an interrupted run', async () => {
+    const reporter = reporterFor(prefixRoot)
+
+    reporter.onEnd(resultWith('interrupted'))
+    await reporter.onExit()
+
+    await expect(exists(runDirectory)).resolves.toBe(true)
+  })
+
+  it('keeps the directory when onExit runs without a preceding onEnd', async () => {
+    const reporter = reporterFor(prefixRoot)
+
+    await reporter.onExit()
+
+    await expect(exists(runDirectory)).resolves.toBe(true)
+  })
+
   it('restores write permission before removing a passed run with read-only files', async () => {
     const nested = join(runDirectory, 'nested')
     await mkdir(nested)

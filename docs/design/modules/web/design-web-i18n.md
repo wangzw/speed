@@ -6,7 +6,7 @@ i18n 是前端包树的国际化层，位于依赖图的地板，被 ui-kit 与�
 
 本包为 web 包树提供国际化层，包裹 react-i18next（[REF-react-i18next](../../../references.md)）与 i18next（[REF-i18next](../../../references.md)）并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回退到另一种语言**。
 
-它把一个宿主需要的整套 i18n 接口收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、[本地日期时间](../../../glossary.md)与时刻的互转（`instantToWallClock`、`wallClockToInstant` 与 `WallClock`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI（[REF-mui](../../../references.md)）本地化辅助函数在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
+它把一个宿主需要的整套 i18n 接口收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough`/`wait` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、[本地日期时间](#术语表)与时刻的互转（`instantToWallClock`、`wallClockToInstant` 与 `WallClock`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI（[REF-mui](../../../references.md)）本地化辅助函数在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
 
 react 绑定只从这里再导出，组件包与宿主不直接 import `react-i18next`：版本锁步使一个树里只有一个 react-i18next 副本，`useTranslation` 在交付出去的组件里因此安全。
 
@@ -17,6 +17,14 @@ react 绑定只从这里再导出，组件包与宿主不直接 import `react-i1
 - **不生成文案。** 后端错误码到前端文本的包在 `@speed/i18n/platform-errors`，当前手工维护（其生成器已随早期实现退役）；本包只承载并注册它。
 - **不做 MUI 本地化本身。** MUI 的本地化对象由 MUI 提供，本包只把语言标签映射到它（见扩展点）。
 - **不持业务状态，不发请求，也不持显示时区。** 档案语言与时区偏好的解析（如经 `/me`、本地偏好存储、上下文提供者）在宿主一侧，本包只接受其结果；`resolveTimeZone` 与 `formatInstant` 只处理传入的值，不决定某个界面该用哪个时区。
+
+## 术语表
+
+以下术语的含义限于前端：本包交付的时间辅助函数与取用它们的界面包。它们不进项目术语表。后端的 `clock` 包以 wall clock 指一次真实的时钟读数，与这里所指的读数不是同一个意思。
+
+| 术语 | 英文 | 适用范围 | 定义 |
+|---|---|---|---|
+| 本地日期时间 | wall clock | `@speed/i18n` 的时间辅助函数与取用它们的界面包 | 把一个时刻按指定时区读出的日历字段（年、月、日、时、分、秒）组成的日期时间读数。它不带时区偏移，同一读数在不同时区指代不同的瞬间。代码中以 `WallClock` 类型承载，`instantToWallClock` 与 `wallClockToInstant` 在它与时刻之间互转。 |
 
 ## 外部接口契约
 

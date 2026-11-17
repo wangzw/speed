@@ -86,9 +86,12 @@ drive the legs under the stand-ins and read what each tool was handed.
 `.github/workflows/deploy.yml` to running only on a manual dispatch, to failing
 a dispatch outside `main` (it runs the `refuse` job's script and requires a
 non-zero exit and an error naming the ref), to keeping `decide` on `main`, and
-to refusing a commit whose `check` did not succeed (it runs the gate against a
-stubbed Actions API with a failed, an empty and a successful run set), and to
-installing go alone through the setup action's `tools` input.
+to refusing a commit whose push `check` did not succeed (it runs the gate
+against a stubbed Actions API with failed, cancelled, queued or in-progress,
+empty and successful run sets, and with a failing query), to reading only
+`event=push` runs and granting `actions: read` to `decide` alone, to the gate
+step carrying no `continue-on-error` and only the tip guard that lets it run,
+and to installing go alone through the setup action's `tools` input.
 
 ## The integration stack
 
@@ -293,9 +296,10 @@ whole roster. A job calling `make check` itself is a finding, not full
 coverage, because the union of the jobs' targets must be the legs, not the
 target that runs them. Coverage alone is not enough: the run must fail when
 a leg fails, so the gate also requires the workflow-level `env:` to set
-`GATE_JOBS` and a `GOFLAGS` containing `-count=1`, and refuses a job that
-runs a gate leg while setting `continue-on-error` (anything but `false`) or
-an `if:` other than `always()` that could skip it. Its suite,
+`GATE_JOBS` and a `GOFLAGS` containing `-count=1`, and refuses a job or a
+step whose `run:` invokes a gate leg while setting `continue-on-error`
+(anything but `false`) or an `if:` other than `always()` that could skip it.
+Its suite,
 `test_check_ci_jobs.py`, drives the gate over scratch trees whose Makefile,
 workflow and `go.work` it writes. Exit codes: 0 clean, 1 a finding (a leg no
 job runs, a target that is no segment, a module no job covers, the workflow

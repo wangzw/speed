@@ -26,13 +26,16 @@ and a `GOFLAGS` that contains `-count=1`, so the tools take the intended
 width and a cached test result is never replayed. And a job that runs a
 `check` leg must neither set `continue-on-error` (any value but `false`) nor
 carry an `if:` that can skip it; `always()`, bare or in `${{ }}`, is the one
-condition allowed because it never skips the job.
+condition allowed because it never skips the job. The same holds one level
+down: a step whose `run:` invokes a `check` leg must not set
+`continue-on-error` and must not carry an `if:` that can skip it, because a
+tolerated or skipped step lets the leg fail without failing the run.
 
 Exit codes: 0 clean, 1 a finding (a leg no job runs, a target that is no
 segment, a module no job covers, the workflow env missing `GATE_JOBS` or
-`-count=1`, or a gate job that could let a failure pass), 2 infrastructure
-error -- the root is not a directory, or the Makefile, the workflow or
-go.work is missing or names nothing to compare.
+`-count=1`, or a gate job or gate step that could let a failure pass), 2
+infrastructure error -- the root is not a directory, or the Makefile, the
+workflow or go.work is missing or names nothing to compare.
 """
 
 from __future__ import annotations
@@ -232,6 +235,109 @@ def job_attributes(text: str) -> dict[str, dict[str, str]]:
     return attrs
 
 
+def workflow_steps(text: str) -> dict[str, list[dict[str, object]]]:
+    """Return each job's steps with their own `if:`, `continue-on-error:` and runs.
+
+    A step is an item of the job's `steps:` sequence; its keys sit one level
+    deeper than the `- ` dash and its block-scalar `run:` body deeper still.
+    A job's own `if:` and `continue-on-error:` sit above the sequence and are
+    not a step's, so the two levels cannot be confused. Each step is returned
+    as a mapping with the attributes it set (`name`, `if`,
+    `continue-on-error`) and a `scripts` list of (first line number, script).
+    """
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.rstrip() == "jobs:"), None)
+    if start is None:
+        return {}
+    jobs: dict[str, list[dict[str, object]]] = {}
+    current: str | None = None
+    step: dict[str, object] | None = None
+    step_indent: int | None = None
+    attribute_indent: int | None = None
+    index = start + 1
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip() or line.lstrip().startswith("#"):
+            index += 1
+            continue
+        if not line.startswith(" "):
+            break
+        job = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if job:
+            current = job.group(1)
+            jobs[current] = []
+            step, step_indent, attribute_indent = None, None, None
+            index += 1
+            continue
+        if current is None:
+            index += 1
+            continue
+        indent = len(line) - len(line.lstrip())
+        steps_key = re.match(r"^(\s*)steps:\s*$", line)
+        if steps_key:
+            step_indent = len(steps_key.group(1)) + 2
+            step, attribute_indent = None, None
+            index += 1
+            continue
+        dash = re.match(r"^(\s*)- (\S.*)$", line)
+        if step_indent is not None and dash is not None and indent == step_indent:
+            step = {"scripts": []}
+            jobs[current].append(step)
+            attribute_indent = indent + 2
+            first_key = re.match(r"^(name|if|continue-on-error):\s*(.*)$", dash.group(2))
+            if first_key:
+                step[first_key.group(1)] = first_key.group(2).strip().strip("\"'")
+            index += 1
+            continue
+        if step is None or attribute_indent is None:
+            index += 1
+            continue
+        if indent < attribute_indent:
+            step, attribute_indent = None, None
+            index += 1
+            continue
+        if indent > attribute_indent:
+            index += 1
+            continue
+        match = re.match(r"^\s*(if|continue-on-error|name|run):\s*(.*)$", line)
+        if match is None:
+            # A block scalar on another key (env:, with:) is not read, but its
+            # body is skipped so a `- ` inside it is not taken for a step.
+            block = re.match(r"^\s*[A-Za-z0-9_-]+:\s*[|>][+-]?\d*\s*$", line)
+            if block:
+                following = index + 1
+                while following < len(lines):
+                    entry = lines[following]
+                    if entry.strip() and (len(entry) - len(entry.lstrip())) <= attribute_indent:
+                        break
+                    following += 1
+                index = following
+                continue
+            index += 1
+            continue
+        key, value = match.group(1), match.group(2).strip()
+        if key == "run":
+            if re.fullmatch(r"[|>][+-]?\d*", value):
+                body: list[str] = []
+                following = index + 1
+                while following < len(lines):
+                    entry = lines[following]
+                    if entry.strip() and (len(entry) - len(entry.lstrip())) <= attribute_indent:
+                        break
+                    body.append(entry.strip())
+                    following += 1
+                step["scripts"].append((index + 2, "\n".join(body)))
+                index = following
+                continue
+            if value and not value.startswith("#"):
+                step["scripts"].append((index + 1, value.strip("\"'")))
+            index += 1
+            continue
+        step[key] = value.strip("\"'")
+        index += 1
+    return jobs
+
+
 def safe_condition(condition: str) -> bool:
     """A condition that never skips the job: `always()`, bare or in `${{ }}`."""
     text = condition.strip()
@@ -277,6 +383,47 @@ def gate_job_findings(workflow: str, gate_jobs: set[str]) -> int:
                 f"ci-jobs: {WORKFLOW}: job {job} runs only under if: {condition}, "
                 "which can skip a gate segment"
             )
+    return findings
+
+
+def gate_step_findings(workflow: str, gate_legs: set[str]) -> int:
+    """Print a finding for each gate step that could let a failure pass."""
+    findings = 0
+    for job, steps in workflow_steps(workflow).items():
+        for step in steps:
+            gate = False
+            line = 0
+            for first, script in step["scripts"]:
+                for offset, text in enumerate(script.splitlines()):
+                    if text.strip().startswith("#"):
+                        continue
+                    for command in MAKE_COMMAND_RE.finditer(text):
+                        if any(target in gate_legs for target in call_targets(command.group(1))):
+                            gate, line = True, first + offset
+                            break
+                    if gate:
+                        break
+                if gate:
+                    break
+            if not gate:
+                continue
+            name = step.get("name")
+            where = f"job {job} step {name}" if name else f"job {job} step at line {line}"
+            continue_on_error = step.get("continue-on-error")
+            if continue_on_error is not None and str(continue_on_error).lower() != "false":
+                findings += 1
+                print(
+                    f"ci-jobs: {WORKFLOW}: {where} sets "
+                    f"continue-on-error: {continue_on_error}, so its failure would "
+                    "not fail the run"
+                )
+            condition = step.get("if")
+            if condition and not safe_condition(str(condition)):
+                findings += 1
+                print(
+                    f"ci-jobs: {WORKFLOW}: {where} runs only under if: {condition}, "
+                    "which can skip a gate segment"
+                )
     return findings
 
 
@@ -400,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
     findings = 0
     findings += gate_env_findings(workflow_text)
     findings += gate_job_findings(workflow_text, gate_jobs)
+    findings += gate_step_findings(workflow_text, check_legs)
     for leg in sorted(check_legs - ci_legs):
         findings += 1
         print(

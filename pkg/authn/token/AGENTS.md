@@ -111,7 +111,8 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. To run this package alone, from `pkg/`:
+CI runs the segments of `make check` as parallel jobs.
+To run this package alone, from `pkg/`:
 
 ```
 go test -race ./authn/token/...

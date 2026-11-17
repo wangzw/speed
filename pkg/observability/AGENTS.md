@@ -367,7 +367,7 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. On this module alone:
+CI runs the segments of `make check` as parallel jobs. On this module alone:
 
 ```
 go -C pkg/observability build ./...

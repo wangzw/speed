@@ -364,15 +364,51 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         code, out, err = self.write_job_attribute("if: ${{ always() }}")
         self.assertEqual(0, code, out + err)
 
-    def test_a_step_condition_is_not_read_as_the_job_condition(self) -> None:
+    def write_step_attribute(self, line: str) -> tuple[int, str, str]:
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             GATE_ENV
             + "jobs:\n  all:\n    runs-on: ubuntu-26.04\n    steps:\n"
-            "      - name: all\n        if: false\n        run: make lint test\n",
+            f"      - name: all\n        {line}\n        run: make lint test\n",
+        )
+        return self.run_gate()
+
+    def test_a_step_condition_that_skips_a_gate_segment_is_a_finding(self) -> None:
+        code, out, err = self.write_step_attribute("if: false")
+        self.assertEqual(1, code, out + err)
+        self.assertIn("job all step all runs only under if: false", out)
+        self.assertIn("which can skip a gate segment", out)
+
+    def test_a_step_continue_on_error_true_is_a_finding(self) -> None:
+        code, out, err = self.write_step_attribute("continue-on-error: true")
+        self.assertEqual(1, code, out + err)
+        self.assertIn(
+            "job all step all sets continue-on-error: true, so its failure would not fail",
+            out,
+        )
+
+    def test_a_step_always_is_an_allowed_condition(self) -> None:
+        code, out, err = self.write_step_attribute("if: always()")
+        self.assertEqual(0, code, out + err)
+
+    def test_a_step_continue_on_error_false_passes(self) -> None:
+        code, out, err = self.write_step_attribute("continue-on-error: false")
+        self.assertEqual(0, code, out + err)
+
+    def test_a_step_condition_on_a_non_gate_step_is_not_a_finding(self) -> None:
+        # Only a step that runs a `check` leg is read; a step skipping some
+        # other command narrows nothing the gate depends on.
+        self.write(
+            os.path.join(".github", "workflows", "ci.yml"),
+            GATE_ENV
+            + "jobs:\n  all:\n    runs-on: ubuntu-26.04\n    steps:\n"
+            "      - name: all\n        if: false\n        run: make lint test\n"
+            "      - name: docs\n        if: false\n        run: go test ./...\n",
         )
         code, out, err = self.run_gate()
-        self.assertEqual(0, code, out + err)
+        self.assertEqual(1, code, out + err)
+        self.assertIn("job all step all runs only under if:", out)
+        self.assertNotIn("job all step docs", out)
 
 
 class TestThisRepository(GateCase):

@@ -88,6 +88,7 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. The suite includes the end-to-end cases in
+CI runs the segments of `make check` as parallel jobs.
+The suite includes the end-to-end cases in
 `internal/loghost`, which build that host and run it as a real child process;
 the tests need nothing installed beyond the Go toolchain.

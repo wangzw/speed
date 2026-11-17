@@ -114,6 +114,17 @@ describe('removeExpiredRunDirectories', () => {
     await expect(lstat(run)).resolves.toBeTruthy()
   })
 
+  it('keeps a 23-hour-old run directory, inside the one-day window', async () => {
+    const now = Date.now()
+    const run = await makeDirectory(RUN_DIRECTORY)
+    await backdate(run, now, 23 * 60 * 60 * 1000)
+
+    const removed = await removeExpiredRunDirectories({ prefixRoot, now })
+
+    expect(removed).toEqual([])
+    await expect(exists(run)).resolves.toBe(true)
+  })
+
   it('keeps a run directory just inside the one-day window and removes one just outside', async () => {
     const now = Date.now()
     const justInside = await makeDirectory('speed-e2e-4242-m1abc2de-00000001')

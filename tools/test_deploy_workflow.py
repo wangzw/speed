@@ -39,15 +39,21 @@ def job_block(text: str, name: str) -> str:
 
 
 def condition_of(block: str) -> str:
-    """The job's `if:` expression, folded onto one line."""
+    """The block's first `if:` expression, folded onto one line.
+
+    A job block's own `if:` sits above its steps, so it is the first one found;
+    a step block's `if:` is found the same way. A folded scalar's continuation
+    lines are deeper than the `if:` key.
+    """
     lines = block.splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith("    if:"))
+    start = next(i for i, line in enumerate(lines) if re.match(r"^\s+if:", line))
+    indent = len(lines[start]) - len(lines[start].lstrip())
     first = lines[start].split("if:", 1)[1].strip()
     if first not in (">-", ">", "|", "|-"):
         return first
     folded: list[str] = []
     for line in lines[start + 1 :]:
-        if not line.startswith("      "):
+        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
             break
         folded.append(line.strip())
     return " ".join(folded)
@@ -144,11 +150,16 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.text = WORKFLOW.read_text(encoding="utf-8")
         self.decide = job_block(self.text, "decide")
 
-    def run_gate(self, fixture: str) -> subprocess.CompletedProcess[str]:
+    def run_gate(
+        self, fixture: str, *, curl_fails: bool = False
+    ) -> subprocess.CompletedProcess[str]:
         """Run the check-gate script against a stubbed Actions API."""
         with tempfile.TemporaryDirectory() as scratch:
             stub = pathlib.Path(scratch)
-            (stub / "curl").write_text('#!/bin/sh\ncat "${FIXTURE}"\n', encoding="utf-8")
+            curl = '#!/bin/sh\necho "curl: (22) HTTP 500" >&2\nexit 22\n'
+            if not curl_fails:
+                curl = '#!/bin/sh\ncat "${FIXTURE}"\n'
+            (stub / "curl").write_text(curl, encoding="utf-8")
             (stub / "curl").chmod(0o755)
             payload = stub / "payload.json"
             payload.write_text(fixture, encoding="utf-8")
@@ -171,16 +182,23 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
                 check=False,
             )
 
-    def test_the_workflow_may_read_the_check_runs(self) -> None:
+    def test_only_the_decide_job_may_read_the_check_runs(self) -> None:
+        # The token's actions scope belongs to the job that reads the runs; the
+        # workflow-level default stays contents-only.
         permissions = re.search(r"(?ms)^permissions:\n(.*?)(?=^\S)", self.text)
         self.assertIsNotNone(permissions, "no permissions block")
-        self.assertIn("actions: read", permissions.group(1))
+        self.assertNotIn("actions: read", permissions.group(1))
+        self.assertIn("actions: read", self.decide)
+        for job in ("refuse", "deploy"):
+            self.assertNotIn("actions: read", job_block(self.text, job))
 
-    def test_the_gate_reads_the_runs_for_the_dispatched_commit(self) -> None:
+    def test_the_gate_reads_only_the_push_runs(self) -> None:
         script = run_script_of_step(
             step_block(self.decide, "Refuse a commit whose check did not succeed")
         )
-        self.assertIn("actions/workflows/ci.yml/runs?head_sha=${COMMIT}", script)
+        self.assertIn(
+            "actions/workflows/ci.yml/runs?head_sha=${COMMIT}&event=push", script
+        )
         self.assertIn("Authorization: Bearer ${GITHUB_TOKEN}", script)
         self.assertIn("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", self.decide)
 
@@ -210,6 +228,44 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
             "its check workflow runs are none;",
             result.stdout,
         )
+
+    def test_only_cancelled_runs_refuse_the_run(self) -> None:
+        result = self.run_gate('{"workflow_runs":[{"conclusion":"cancelled"}]}')
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "its check workflow runs are cancelled;",
+            result.stdout,
+        )
+
+    def test_only_queued_or_in_progress_runs_refuse_the_run(self) -> None:
+        result = self.run_gate(
+            '{"workflow_runs":[{"conclusion":null,"status":"queued"},'
+            '{"conclusion":null,"status":"in_progress"}]}'
+        )
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "its check workflow runs are queued, in_progress;",
+            result.stdout,
+        )
+
+    def test_a_failed_actions_query_refuses_the_run(self) -> None:
+        result = self.run_gate('{"workflow_runs":[]}', curl_fails=True)
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "::error::could not list the check workflow runs for 0123456789abcdef "
+            "through the Actions API",
+            result.stdout,
+        )
+
+    def test_the_gate_step_runs_exactly_when_the_deploy_could(self) -> None:
+        # A tolerated or skipped step would let a commit through without its
+        # check. The step's only guard is the tip check, the same one the
+        # deploy job carries.
+        step = step_block(self.decide, "Refuse a commit whose check did not succeed")
+        self.assertEqual("steps.tip.outputs.is_tip == 'true'", condition_of(step))
+        self.assertNotIn("continue-on-error:", step)
 
     def test_no_job_but_refuse_runs_for_a_dispatch_off_main(self) -> None:
         # deploy follows decide, which a dispatch off main does not satisfy.

@@ -147,5 +147,6 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. The subpackages are covered by the same
+CI runs the segments of `make check` as parallel jobs.
+The subpackages are covered by the same
 commands; nothing needs to be installed beyond the Go toolchain.

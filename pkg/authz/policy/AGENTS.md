@@ -336,7 +336,7 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. On this package alone:
+CI runs the segments of `make check` as parallel jobs. On this package alone:
 
 ```
 go -C pkg build ./authz/...

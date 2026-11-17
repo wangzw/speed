@@ -396,7 +396,8 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. This capability directory alone, inside the `pkg`
+CI runs the segments of `make check` as parallel jobs.
+This capability directory alone, inside the `pkg`
 module:
 
 ```

@@ -143,7 +143,8 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. On this capability alone, inside the `pkg` module:
+CI runs the segments of `make check` as parallel jobs.
+On this capability alone, inside the `pkg` module:
 
 ```
 go -C pkg build ./mail/...

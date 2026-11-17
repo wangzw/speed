@@ -112,5 +112,6 @@ make lint
 make check
 ```
 
-`make check` is what CI runs. Tests here are the same-package unit suite
+CI runs the segments of `make check` as parallel jobs.
+Tests here are the same-package unit suite
 and need nothing installed beyond the Go toolchain.

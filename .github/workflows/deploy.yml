@@ -2,28 +2,28 @@
 #
 # It runs only when dispatched by hand on main. A dispatch ships the commit it
 # was dispatched on (github.sha), and only after that commit's `check` workflow
-# has concluded successfully: `decide` reads the check workflow's runs for that
-# commit through the Actions API and refuses the run when none of them
-# succeeded, so a tree the gate has not passed is never deployed. A request made
-# on any other ref fails in the `refuse` job with an error naming the ref: a
-# dispatch that would deploy nothing is a failed run, not a skipped one.
+# has concluded successfully: `decide` reads the runs the commit's push to main
+# triggered (event=push) through the Actions API and refuses the run when none
+# of them succeeded, so a tree the gate has not passed is never deployed. A
+# request made on any other ref fails in the `refuse` job with an error naming
+# the ref: a dispatch that would deploy nothing is a failed run, not a skipped
+# one.
 #
 # Nothing deploys on a push. A tip whose check failed, was cancelled or was
-# replaced stays undeployed, and a commit pushed with [skip ci] gets no check
-# run at all. Such a commit is deployed by dispatching the check workflow on
-# main for it, and then dispatching this workflow on main once that check has
-# passed.
+# replaced stays undeployed. A commit pushed with [skip ci] gets no push run of
+# the check workflow at all, so it cannot be deployed itself; a later push that
+# passes check is deployed instead.
 #
 # Three jobs. `refuse` fails a dispatch outside main and has no other effect.
 # `decide` resolves the commit, requires a successful check run for it, and
 # compares it with the tip of main, which it reads from the public origin with
 # git ls-remote, so that comparison needs no credential of its own. The Actions
-# API read uses the workflow's automatic token, which is why the workflow asks
-# for `actions: read`. `decide` declares no concurrency group, no environment
-# and no deploy secret, so its runs do not queue behind one another and none of
-# them can touch the deployment. `deploy` needs it and runs only when the commit
-# is the tip; a commit that main has moved past is skipped with a notice. An
-# older tree must not replace a newer one when runs queue up.
+# API read uses the workflow's automatic token, which is why the `decide` job
+# alone asks for `actions: read`. `decide` declares no concurrency group, no
+# environment and no deploy secret, so its runs do not queue behind one
+# another and none of them can touch the deployment. `deploy` needs it and runs
+# only when the commit is the tip; a commit that main has moved past is skipped
+# with a notice. An older tree must not replace a newer one when runs queue up.
 #
 # The deploy job runs in the `production` environment, and FLY_API_TOKEN is a
 # secret of that environment. GitHub creates the environment the first time the
@@ -48,7 +48,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 defaults:
   run:
@@ -69,6 +68,11 @@ jobs:
 
   decide:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    # The Actions API read is the only thing in this workflow that needs more
+    # than the contents of the repository.
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     outputs:
@@ -93,9 +97,10 @@ jobs:
             echo "is_tip=false" >> "${GITHUB_OUTPUT}"
           fi
 
-      # The commit is immutable, but its verdict is not: the check workflow may
-      # have no run for it at all, may still be running, or may have concluded
-      # anything but success. Only a successful run deploys the tree.
+      # The commit is immutable, but its verdict is not: the commit's push to
+      # main may have no check run at all, that run may still be running, or it
+      # may have concluded anything but success. Only a successful push run
+      # deploys the tree.
       - name: Refuse a commit whose check did not succeed
         if: steps.tip.outputs.is_tip == 'true'
         env:
@@ -105,7 +110,7 @@ jobs:
           if ! response="$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT}&per_page=100")"; then
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT}&event=push&per_page=100")"; then
             echo "::error::could not list the check workflow runs for ${COMMIT} through the Actions API"
             exit 1
           fi
@@ -136,7 +141,11 @@ jobs:
     steps:
       # This job may have waited in the group behind a deploy that was running,
       # and main may point at another commit by then, so the tip is read again
-      # before anything is set up or deployed.
+      # before anything is set up or deployed. The check verdict is not read
+      # again: the commit is immutable, so a success recorded for it cannot be
+      # withdrawn by time passing, and a re-run adds a run rather than removing
+      # one. The trade-off is that a success deleted by hand between `decide`
+      # and here is not seen; a queued run's verdict is otherwise unchanged.
       - name: Check that the commit is still the tip of main
         id: tip
         env:

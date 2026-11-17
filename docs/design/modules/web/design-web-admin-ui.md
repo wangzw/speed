@@ -381,7 +381,7 @@ export function OrganizationProfilePage(): ReactElement
 | `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 要求加强认证时打开加强认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，管理后台显式传入 `session.isStepUpShortfall` 作为判别。`./otpauth` 子路径解析 `otpauth://` 登记 URI 并格式化 base32 密钥供手工输入，通行密钥仪式（[REF-webauthn](../../../references.md)）经子路径 `@speed/auth-core/webauthn`。平台管理面不读当前租户；组织管理面从宿主属性取当前租户，不调 auth-core 的当前租户钩子 |
 | `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）、认证器应用的登记面板 `TotpEnrollmentPanel`、取出显示时区的 `useResolvedTimeZone` 也由它提供 |
 | `@speed/layout-kit` | 外壳骨架：`AppShell` 的两种外壳形态（顶栏 / 侧栏）、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
-| `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染经 ui-kit 的 `useFormatInstant` 按显示时区，审计筛选的[本地日期时间](../../../glossary.md)读数经 `wallClockToInstant` 换算成时刻，已应用的时刻经 `instantToWallClock` 换回本地日期时间。本包不直接调用 `formatInstant`，也不固定时区。宿主仍在读账户档案或档案读失败时，显示时区上下文没有值，时间按浏览器时区渲染；档案落定后若其存值与浏览器时区不同，首屏会跳一次，这是接受的代价 |
+| `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染经 ui-kit 的 `useFormatInstant` 按显示时区，审计筛选的[本地日期时间](design-web-i18n.md#术语表)读数经 `wallClockToInstant` 换算成时刻，已应用的时刻经 `instantToWallClock` 换回本地日期时间。本包不直接调用 `formatInstant`，也不固定时区。宿主仍在读账户档案或档案读失败时，显示时区上下文没有值，时间按浏览器时区渲染；档案落定后若其存值与浏览器时区不同，首屏会跳一次，这是接受的代价 |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient |
 | `react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/*`（[REF-emotion](../../../references.md)） | peer（必需）：宿主拥有的 React／MUI 树 |
 

@@ -354,6 +354,7 @@ env UPDATE_FRAGMENTS=1 go -C pkg test ./authn/humanverify \
 make api-docs
 ```
 
-`make check` from the repository root is what CI runs. Run `golangci-lint` from
+CI runs the segments of `make check` from the repository root as parallel jobs.
+Run `golangci-lint` from
 inside `pkg`: handed an absolute path from outside the module it prints zero
 issues without loading the packages.

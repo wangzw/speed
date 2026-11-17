@@ -41,8 +41,9 @@ Makefile owns the entry points — this file only says which one a change
 needs. `make help` lists them, one line each; the toolchain they need comes
 from `mise install`, which reads `.mise.toml`. `.github/workflows/ci.yml`
 runs the `check` segments as parallel jobs through `make`, with
-`GATE_JOBS=4` and `GOFLAGS=-count=1`; `tools/check_ci_jobs.py` holds the
-jobs' legs to `make check`'s segments and to the module roster in `go.work`.
+`GOFLAGS=-count=1` and `GATE_JOBS` at the Makefile's default;
+`tools/check_ci_jobs.py` holds the jobs' legs to `make check`'s segments and
+to the module roster in `go.work`.
 The browser, end-to-end and integration tiers are separate workflows with
 targets of their own.
 
@@ -84,13 +85,14 @@ budgets.
 
 A change that crosses the boundary is two changes: run each side's gate.
 
-**The gate's CPU budget is `GATE_JOBS`**, default 4. Every tool a gate leg
-calls that takes a width setting is told that width explicitly — go build,
-go test and go vet (`-p` and `GOMAXPROCS`; tests also `-parallel`),
-golangci-lint (`--concurrency`), vitest (`--maxWorkers`), Playwright
-(`--workers`) and pnpm -r (`--workspace-concurrency`) — so none of them
-probes the host's core count, which is wrong inside a container because the
-process sees the node's cores rather than the share it was given. Three carry
+**The gate's CPU budget is `GATE_JOBS`**, defaulted by the Makefile. Every
+tool a gate leg calls that takes a width setting is told that width
+explicitly — go build, go test and go vet (`-p` and `GOMAXPROCS`; tests also
+`-parallel`), golangci-lint (`--concurrency`), vitest (`--maxWorkers`),
+Playwright (`--workers`) and pnpm -r (`--workspace-concurrency`) — so none
+of them probes the host's core count, which is wrong inside a container
+because the process sees the node's cores rather than the share it was given.
+Three carry
 no width this repository can set and run at whatever their runtime decides:
 `golangci-lint fmt`, tsc, and the rolldown thread pool behind `vite build`.
 Set it to the CPU share this run may use. A leg that nests two of those
