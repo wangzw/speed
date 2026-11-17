@@ -238,8 +238,10 @@ func sliderRange(t *testing.T, s *store, id string) (min, max int) {
 func outsideSlider(t *testing.T, s *store, id string) int {
 	t.Helper()
 	_, max := sliderRange(t, s, id)
-	// The accepted range ends before the background's right edge, so the next
-	// offset is always inside the drawable range.
+	// max+1 is never one of the stored digests, so the server rejects it. At the
+	// top of the cut range max is already the piece's rightmost position and
+	// max+1 lies past the drawable range; naming that offset is still enough,
+	// because all this helper has to produce is an offset outside the tolerance.
 	return max + 1
 }
 
@@ -394,6 +396,42 @@ func TestTheSliderToleranceIsTwoPixels(t *testing.T) {
 				t.Fatalf("the offset %d %s the accepted range resolved with %v, want ErrHumanVerificationRequired", outside, side, verifyErr)
 			}
 		})
+	}
+}
+
+// TestTheSliderToleranceHoldsAtTheTopOfTheCutRange pins the cut to the top of
+// the range its drawer is given and holds the same five accepted offsets there
+// as anywhere else. The offset-count check above only sees a cut at the edge
+// when a random draw lands there; this case reaches the edge every time.
+func TestTheSliderToleranceHoldsAtTheTopOfTheCutRange(t *testing.T) {
+	const salt = "cut-range-edge"
+	images, err := newSliderWithDrawer(salt, func(_, max int) (int, error) {
+		return max, nil
+	})
+	if err != nil {
+		t.Fatalf("newSliderWithDrawer: %v", err)
+	}
+	low, high := -1, -1
+	for offset := 0; offset <= sliderWidth; offset++ {
+		if matches(images.digests, digest(salt, strconv.Itoa(offset))) {
+			if low < 0 {
+				low = offset
+			}
+			high = offset
+		}
+	}
+	if low < 0 {
+		t.Fatal("no offset matches a stored digest")
+	}
+	if got := high - low + 1; got != 2*sliderTolerance+1 {
+		t.Errorf("with the cut at the top of its range the slider accepts %d offsets in [%d, %d], want %d",
+			got, low, high, 2*sliderTolerance+1)
+	}
+	// The window is flush with the right edge: the top accepted offset is the
+	// rightmost position the piece can occupy.
+	pieceSize, _ := pngSize(t, images.piece)
+	if want := sliderWidth - pieceSize; high != want {
+		t.Errorf("with the cut at the top of its range the accepted offsets end at %d, want the rightmost position %d", high, want)
 	}
 }
 

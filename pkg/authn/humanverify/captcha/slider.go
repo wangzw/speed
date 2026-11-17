@@ -33,9 +33,25 @@ type sliderImages struct {
 	digests []string
 }
 
+// intDrawer draws an integer in [min, max], both ends included. Production draws
+// through randomInt from crypto/rand; the slider's tests pin the draw through
+// this seam, so a position at one end of a range is reached deterministically
+// rather than by waiting for the random source to land there.
+type intDrawer func(min, max int) (int, error)
+
 // newSlider draws a background, cuts a piece out of it and records the digests
 // of the offsets that count as the right answer, keyed by the challenge's salt.
 func newSlider(salt string) (sliderImages, error) {
+	return newSliderWithDrawer(salt, randomInt)
+}
+
+// newSliderWithDrawer builds a slider whose cut position is drawn by draw. It is
+// the seam the package's own tests use: the edges of the cut range are a
+// correctness boundary, and a case that needs the cut at one edge must not wait
+// for a random draw to put it there. The caller guarantees draw returns a value
+// in the [min, max] it is passed: production draws through randomInt, and the
+// package's tests pin the draw themselves.
+func newSliderWithDrawer(salt string, draw intDrawer) (sliderImages, error) {
 	pieceSize, err := randomInt(pieceSizeMin, pieceSizeMax)
 	if err != nil {
 		return sliderImages{}, err
@@ -45,9 +61,13 @@ func newSlider(salt string) (sliderImages, error) {
 		return sliderImages{}, err
 	}
 	pieceTop := (sliderHeight - pieceSize) / 2
-	// The piece's left edge stays clear of the background's own edges, so the
-	// accepted offsets are all positions the piece can actually occupy.
-	cut, err := randomInt(pieceSize, sliderWidth-pieceSize)
+	// The piece's left edge stays clear of the background's own edges, and the
+	// cut leaves room for the whole tolerance window on the upper side, so the
+	// accepted offsets are all positions the piece can occupy and there are
+	// always 2*sliderTolerance+1 of them. The lower side needs no such room:
+	// pieceSize is at least pieceSizeMin, which is well above sliderTolerance,
+	// so cut-sliderTolerance is never negative.
+	cut, err := draw(pieceSize, sliderWidth-pieceSize-sliderTolerance)
 	if err != nil {
 		return sliderImages{}, err
 	}
