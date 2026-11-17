@@ -22,7 +22,15 @@
 import { describe, expect, it } from 'vitest'
 import type { HttpMethod } from '@speed/api-client'
 import { speedRequest } from '@speed/api-sdk/runtime'
-import { makeHarness } from './session-harness'
+import { makeHarness, principal } from './session-harness'
+
+describe('the harness fixture defaults', () => {
+  it('builds a user-kind principal', () => {
+    // The principal's kind decides which surfaces consume it downstream;
+    // the fixture default is the ordinary account's.
+    expect(principal().kind).toBe('user')
+  })
+})
 
 describe('session-harness script dispatch', () => {
   it('refuses a request whose method names a prototype-chain function', async () => {
