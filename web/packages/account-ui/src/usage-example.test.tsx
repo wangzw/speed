@@ -85,7 +85,7 @@ describe('the README quick start, exercised over a real api-client', () => {
         case PROFILE_PATH:
           return jsonResponse(200, {
             account_id: 'user-1',
-            kind: 'person',
+            kind: 'user',
             display_name: 'Ada',
             mfa_required: false,
             password_set: true,

@@ -15,7 +15,7 @@ export function profileBody(
 ): Record<string, unknown> {
   return {
     account_id: 'user-1',
-    kind: 'person',
+    kind: 'user',
     display_name: 'Ada',
     mfa_required: false,
     password_set: true,

@@ -1686,7 +1686,7 @@ describe('response guards reject a contract-violating 2xx', () => {
 
   it.each([
     ['a non-object profile', 'x'],
-    ['a profile with no account_id', { kind: 'person' }],
+    ['a profile with no account_id', { kind: 'user' }],
     ['a profile identifier with no id', { account_id: 'a', identifiers: [{}] }],
     ['a profile with a non-object identifier', { account_id: 'a', identifiers: [3] }],
     ['a profile link with no id', { account_id: 'a', links: [{}] }],
@@ -1780,7 +1780,7 @@ describe('response guards reject a contract-violating 2xx', () => {
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
       [PROFILE_GET]: () => ({
         account_id: 'acct-1',
-        kind: 'person',
+        kind: 'user',
         display_name: 'Ada',
         mfa_required: true,
         password_set: false,
@@ -1795,7 +1795,7 @@ describe('response guards reject a contract-violating 2xx', () => {
             kind: 'email',
             value: 'ada@example.com',
             verified_at: '2026-01-02T00:00:00Z',
-            verified_via: 'email',
+            verified_via: 'email-code',
             sign_in: true,
             contact: true,
             default_contact: false,
@@ -1828,7 +1828,7 @@ describe('response guards reject a contract-violating 2xx', () => {
           kind: 'email',
           value: 'ada@example.com',
           verified_at: '2026-01-02T00:00:00Z',
-          verified_via: 'email',
+          verified_via: 'email-code',
           sign_in: true,
           contact: true,
           default_contact: false,
