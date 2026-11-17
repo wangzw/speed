@@ -52,11 +52,12 @@
  * budget.
  *
  * Four shapes are outside what a static read of the syntax tree can
- * follow: a key that is not a literal (`vi[name]`, a concatenation, or a
- * template literal with a substitution), a `vi` reached through a
- * namespace import or a dynamic import (`import * as vitest`), a `vi`
- * passed into a helper that is free to access it, and a shadowed local
- * named `vi` (read as Vitest's, a false positive rather than a bypass).
+ * follow: a key that is not a literal (`vi[name]`, a concatenation, a
+ * template literal with a substitution, or a computed destructuring key
+ * such as `const { [name]: w } = vi`), a `vi` reached through a namespace
+ * import or a dynamic import (`import * as vitest`), a `vi` passed into a
+ * helper that is free to access it, and a shadowed local named `vi` (read
+ * as Vitest's, a false positive rather than a bypass).
  * A call in dead code such as `if (false)` counts as a use; the guard does
  * not evaluate conditions. Testing Library's own `waitFor` and `findBy*`
  * queries are outside this guard: they wait under the `asyncUtilTimeout`
@@ -203,7 +204,14 @@ function forEachNode(node, visit) {
   ts.forEachChild(node, (child) => forEachNode(child, visit))
 }
 
-/** The name a property or binding element is written under, or null. */
+/**
+ * The name a property or binding element is written under, or null.
+ *
+ * A computed key counts when its expression is a literal: `['waitFor']`,
+ * `[0]` and `` [`waitFor`] `` name the same property as the uncomputed
+ * forms. A computed key built from a variable or a substitution stays
+ * null; that shape is a known limitation of the guard.
+ */
 function writtenName(name) {
   if (
     ts.isIdentifier(name)
@@ -211,6 +219,16 @@ function writtenName(name) {
     || ts.isNumericLiteral(name)
   ) {
     return name.text
+  }
+  if (ts.isComputedPropertyName(name)) {
+    const key = name.expression
+    if (
+      ts.isStringLiteral(key)
+      || ts.isNumericLiteral(key)
+      || ts.isNoSubstitutionTemplateLiteral(key)
+    ) {
+      return key.text
+    }
   }
   return null
 }
@@ -1051,6 +1069,16 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses('const { waitFor: wrapped } = vi')).toHaveLength(1)
     expect(bareWaitUses('let { waitFor, waitUntil } = vi')).toHaveLength(1)
     expect(bareWaitUses('({ waitFor } = vi)')).toHaveLength(1)
+    // A computed key whose expression is a literal names the same property.
+    expect(bareWaitUses("const { ['waitFor']: w } = vi")).toHaveLength(1)
+    expect(bareWaitUses("const { ['waitUntil']: w } = vi")).toHaveLength(1)
+    expect(bareWaitUses('const { [`waitFor`]: w } = vi')).toHaveLength(1)
+    expect(bareWaitUses("({ ['waitFor']: w } = vi)")).toHaveLength(1)
+    expect(
+      bareWaitUses("function f({ ['waitUntil']: w } = vi) {}"),
+    ).toHaveLength(1)
+    // A computed key built from a variable is outside the static read.
+    expect(bareWaitUses('const { [name]: w } = vi')).toHaveLength(0)
     expect(bareWaitUses('const wait = vi.waitFor')).toHaveLength(1)
     expect(bareWaitUses('let wait = vi.waitUntil')).toHaveLength(1)
     expect(bareWaitUses("const wait = vi['waitFor']")).toHaveLength(1)
