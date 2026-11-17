@@ -31,12 +31,31 @@
  * Library's budget does not reach: neither has a global default, and both
  * use a fixed one second per call. Every `vi.waitFor` must go through
  * `waitForCondition` (@speed/test-utils/wait), which supplies the shared
- * budget, and `vi.waitUntil` is forbidden. A test source is red here for
- * any member access to either name -- a call, a bracket-access call,
- * optional chaining, a destructured alias (`const { waitFor } = vi`), an
- * argument, a property value, an arrow's return, or a reference kept
- * uncalled (`const wait = vi.waitFor`) -- because outside `wait.ts` no use
- * of either is permitted. Testing Library's own `waitFor` and `findBy*`
+ * budget, and `vi.waitUntil` is forbidden. A scanned source is red here
+ * for any member access to either name -- a call, a bracket-access call,
+ * optional chaining, a destructured alias (`const { waitFor } = vi`, a
+ * parameter default included), an argument, a property value, an arrow's
+ * return, or a reference kept uncalled (`const wait = vi.waitFor`) --
+ * because outside `wait.ts` no use of either is permitted. The scan
+ * follows the name through the wrappers that do not change its value (a
+ * parenthesized expression, a non-null assertion, a type assertion), an
+ * aliased `vi` import (`import { vi as x } from 'vitest'`), a local alias
+ * (`const v = vi`) and an alias of an alias, and a direct
+ * `import { waitFor } from 'vitest'`.
+ *
+ * The scan covers the test sources and the test-support sources the suites
+ * run on: every package's `test-utils/`, `web/test-utils/src/` (the
+ * browser-tier setup included) and `starters/demo/web/src/test-utils/`.
+ * Only `web/test-utils/src/wait.ts` is exempt, by its exact path, because
+ * it is the helper that supplies the budget.
+ *
+ * Four shapes are outside what a static read of the syntax tree can
+ * follow: a key held in a variable (`vi[name]`), a `vi` reached through a
+ * namespace import or a dynamic import (`import * as vitest`), a `vi`
+ * passed into a helper that is free to access it, and a shadowed local
+ * named `vi` (read as Vitest's, a false positive rather than a bypass).
+ * A call in dead code such as `if (false)` counts as a use; the guard does
+ * not evaluate conditions. Testing Library's own `waitFor` and `findBy*`
  * queries are outside this guard: they wait under the `asyncUtilTimeout`
  * budget the setup configures.
  *
@@ -47,6 +66,7 @@
  * budget, because the copy carries the same wiring by hand.
  */
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -204,22 +224,107 @@ function calleeChain(node) {
   return null
 }
 
-/** Whether a node is the identifier `vi`. */
-function isVi(node) {
-  return ts.isIdentifier(node) && node.text === 'vi'
+/**
+ * The expression a node denotes, with the wrappers that do not change its
+ * value peeled off: parentheses, non-null assertions and type assertions.
+ */
+function unwrapExpression(node) {
+  let current = node
+  while (
+    ts.isParenthesizedExpression(current)
+    || ts.isNonNullExpression(current)
+    || ts.isAsExpression(current)
+    || ts.isTypeAssertionExpression(current)
+    || ts.isSatisfiesExpression(current)
+  ) {
+    current = current.expression
+  }
+  return current
 }
 
 /** The two Vitest waits with a fixed one-second default and no global one. */
 const WAIT_NAMES = new Set(['waitFor', 'waitUntil'])
 
-/** `vi.waitFor`, `vi.waitUntil`, `vi['waitFor']`, `vi?.['waitUntil']`. */
-function isWaitAccess(node) {
+/**
+ * Every local name that denotes the Vitest `vi` object: `vi`, an aliased
+ * named import (`import { vi as x } from 'vitest'`), a variable holding
+ * one of those (`const v = vi`), and an alias of an alias. Read to a fixed
+ * point so a chain of aliases resolves however it is ordered.
+ */
+function viNames(sourceFile) {
+  const names = new Set(['vi'])
+  forEachNode(sourceFile, (node) => {
+    if (
+      ts.isImportDeclaration(node)
+      && ts.isStringLiteral(node.moduleSpecifier)
+      && node.moduleSpecifier.text === 'vitest'
+      && ts.isNamedImports(node.importClause?.namedBindings)
+    ) {
+      for (const element of node.importClause.namedBindings.elements) {
+        if ((element.propertyName ?? element.name).text === 'vi') {
+          names.add(element.name.text)
+        }
+      }
+    }
+  })
+  let changed = true
+  while (changed) {
+    changed = false
+    forEachNode(sourceFile, (node) => {
+      if (
+        ts.isVariableDeclaration(node)
+        && ts.isIdentifier(node.name)
+        && node.initializer !== undefined
+      ) {
+        const value = unwrapExpression(node.initializer)
+        if (
+          ts.isIdentifier(value)
+          && names.has(value.text)
+          && !names.has(node.name.text)
+        ) {
+          names.add(node.name.text)
+          changed = true
+        }
+      }
+      if (
+        ts.isBinaryExpression(node)
+        && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        && ts.isIdentifier(node.left)
+      ) {
+        const value = unwrapExpression(node.right)
+        if (
+          ts.isIdentifier(value)
+          && names.has(value.text)
+          && !names.has(node.left.text)
+        ) {
+          names.add(node.left.text)
+          changed = true
+        }
+      }
+    })
+  }
+  return names
+}
+
+/** Whether a node names one of `names`, through the value wrappers. */
+function isNamedReference(node, names) {
+  const value = unwrapExpression(node)
+  return ts.isIdentifier(value) && names.has(value.text)
+}
+
+/**
+ * `vi.waitFor`, `vi.waitUntil`, `vi['waitFor']`, `vi?.['waitUntil']`, and
+ * the same accesses on an alias of `vi`, whichever wrappers the base
+ * carries (`(vi)`, `vi!`, `vi as typeof vi`).
+ */
+function isWaitAccess(node, names) {
   if (ts.isPropertyAccessExpression(node)) {
-    return isVi(node.expression) && WAIT_NAMES.has(node.name.text)
+    return isNamedReference(node.expression, names)
+      && WAIT_NAMES.has(node.name.text)
   }
   if (ts.isElementAccessExpression(node)) {
     const key = node.argumentExpression
-    return isVi(node.expression)
+    return isNamedReference(node.expression, names)
       && (ts.isStringLiteral(key)
         || ts.isNoSubstitutionTemplateLiteral(key))
       && WAIT_NAMES.has(key.text)
@@ -227,36 +332,53 @@ function isWaitAccess(node) {
   return false
 }
 
-/** `const { waitFor } = vi`, renamed or not. */
-function isDestructuredFromVi(node) {
-  if (
-    !ts.isVariableDeclaration(node)
-    || !ts.isObjectBindingPattern(node.name)
-    || node.initializer === undefined
-    || !isVi(node.initializer)
-  ) {
-    return false
-  }
-  return node.name.elements.some(
-    (element) =>
-      ts.isBindingElement(element)
-      && WAIT_NAMES.has(writtenName(element.propertyName ?? element.name) ?? ''),
+/** Whether an object binding pattern binds one of the two wait names. */
+function bindsWaitName(pattern) {
+  return (
+    ts.isObjectBindingPattern(pattern)
+    && pattern.elements.some(
+      (element) =>
+        ts.isBindingElement(element)
+        && WAIT_NAMES.has(
+          writtenName(element.propertyName ?? element.name) ?? '',
+        ),
+    )
   )
 }
 
-/** `({ waitFor } = vi)`, renamed or not. */
-function isAssignedFromVi(node) {
+/**
+ * `const { waitFor } = vi`, renamed or not, with a parenthesized,
+ * asserted or non-null right-hand side and an alias of `vi` there too.
+ * A parameter default (`function f({ waitFor } = vi) {}`) is the same
+ * binding and is read through the parameter as well.
+ */
+function isDestructuredFromVi(node, names) {
+  if (
+    ts.isVariableDeclaration(node)
+    && bindsWaitName(node.name)
+    && node.initializer !== undefined
+    && isNamedReference(node.initializer, names)
+  ) {
+    return true
+  }
+  return (
+    ts.isParameter(node)
+    && bindsWaitName(node.name)
+    && node.initializer !== undefined
+    && isNamedReference(node.initializer, names)
+  )
+}
+
+/** `({ waitFor } = vi)`, renamed or not, through the same wrappers. */
+function isAssignedFromVi(node, names) {
   if (
     !ts.isBinaryExpression(node)
     || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken
-    || !isVi(node.right)
+    || !isNamedReference(node.right, names)
   ) {
     return false
   }
-  let target = node.left
-  while (ts.isParenthesizedExpression(target)) {
-    target = target.expression
-  }
+  const target = unwrapExpression(node.left)
   return ts.isObjectLiteralExpression(target)
     && target.properties.some(
       (property) =>
@@ -264,6 +386,22 @@ function isAssignedFromVi(node) {
           || ts.isPropertyAssignment(property))
         && WAIT_NAMES.has(writtenName(property.name) ?? ''),
     )
+}
+
+/**
+ * A direct `import { waitFor } from 'vitest'`: naming the wait at the
+ * import reaches the same fixed default as `vi.waitFor` and bypasses every
+ * member-access check above.
+ */
+function importsWaitDirectly(node) {
+  return (
+    ts.isImportDeclaration(node)
+    && ts.isStringLiteral(node.moduleSpecifier)
+    && node.moduleSpecifier.text === 'vitest'
+    && ts.isNamedImports(node.importClause?.namedBindings)
+    && node.importClause.namedBindings.elements.some((element) =>
+      WAIT_NAMES.has((element.propertyName ?? element.name).text))
+  )
 }
 
 /** Whether any call in a tree names `name`. */
@@ -485,23 +623,28 @@ function lowCaseTimeouts(source, floor, filePath = 'constructed.tsx') {
 }
 
 /**
- * The uses of `vi.waitFor` or `vi.waitUntil` in a test source that bypass the
- * shared budget. Outside `wait.ts` there is no permitted use of either name,
- * so every member access counts, whatever becomes of it: a call, an argument,
- * a property value, an arrow's return or a reference kept for later. Optional
- * chaining and bracket access are the same access. A destructuring that binds
- * either name from `vi` is listed too. The syntax tree tells a use from prose:
- * a comment, string, template literal, regular expression or JSX text that
- * spells a wait out is not one.
+ * The uses of `vi.waitFor` or `vi.waitUntil` in a scanned source that
+ * bypass the shared budget. Outside `wait.ts` there is no permitted use of
+ * either name, so every member access counts, whatever becomes of it: a
+ * call, an argument, a property value, an arrow's return or a reference
+ * kept for later. Optional chaining and bracket access are the same
+ * access, an alias of `vi` names the same object, and a direct
+ * `import { waitFor } from 'vitest'` is the same wait. A destructuring
+ * that binds either name from `vi` -- as a declaration, an assignment or a
+ * parameter default -- is listed too. The syntax tree tells a use from
+ * prose: a comment, string, template literal, regular expression or JSX
+ * text that spells a wait out is not one.
  */
 function bareWaitUses(source, filePath = 'constructed.tsx') {
   const sourceFile = parseTestSource(source, filePath)
+  const names = viNames(sourceFile)
   const uses = []
   forEachNode(sourceFile, (node) => {
     if (
-      isWaitAccess(node)
-      || isDestructuredFromVi(node)
-      || isAssignedFromVi(node)
+      isWaitAccess(node, names)
+      || isDestructuredFromVi(node, names)
+      || isAssignedFromVi(node, names)
+      || importsWaitDirectly(node)
     ) {
       uses.push(node.pos)
     }
@@ -536,8 +679,11 @@ function asyncBudgetScale(source, filePath = 'constructed.ts') {
 /** The expressions that carry the caller's scale into a setup. */
 const SCALE_SOURCE = /^(?:gateTimeScale\(\)|__SPEED_GATE_TIME_SCALE__)$/
 
-/** Every test source under `dir`, skipping installed and built output. */
-function testSources(dir) {
+/** The source extensions a scan reads. */
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/
+
+/** Every script under `dir`, skipping installed and built output. */
+function scriptSources(dir) {
   const sources = []
   const walk = (current) => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
@@ -547,7 +693,7 @@ function testSources(dir) {
       const path = join(current, entry.name)
       if (entry.isDirectory()) {
         walk(path)
-      } else if (/\.test\.(?:[cm]?[jt]sx?)$/.test(entry.name)) {
+      } else if (SOURCE_FILE.test(entry.name)) {
         sources.push(path)
       }
     }
@@ -555,6 +701,38 @@ function testSources(dir) {
   walk(dir)
   return sources
 }
+
+/** Every test source under `dir`, skipping installed and built output. */
+function testSources(dir) {
+  return scriptSources(dir).filter((path) =>
+    /\.test\.(?:[cm]?[jt]sx?)$/.test(path))
+}
+
+/**
+ * The test-support directories the wait rule scans: each package's
+ * `test-utils/`, the shared `web/test-utils/src/` (the browser tier's
+ * setup included) and the demo host's own copy. They are derived from the
+ * package roster and the two fixed roots, so a new helper file is in scope
+ * without a second list to maintain.
+ */
+function testSupportDirs() {
+  const dirs = []
+  for (const pkgDir of packageDirs) {
+    const dir = join(pkgDir, 'test-utils')
+    if (existsSync(dir)) {
+      dirs.push(dir)
+    }
+  }
+  dirs.push(join(webRoot, 'test-utils', 'src'))
+  dirs.push(join(demoWebRoot, 'src', 'test-utils'))
+  return dirs
+}
+
+/**
+ * The one source allowed to call `vi.waitFor`: the helper that supplies the
+ * shared budget. An exact path, so no other file is exempted with it.
+ */
+const WAIT_HELPER = join(webRoot, 'test-utils', 'src', 'wait.ts')
 
 /**
  * The async defaults that sit below the async floor `floors` names. Both
@@ -718,6 +896,18 @@ describe('workspace test configuration', () => {
     ...testSources(demoWebRoot),
   ]
 
+  /**
+   * Every source the wait rule scans: the case files and the test-support
+   * sources the cases run on. `wait.ts` is the only exemption, by exact
+   * path, because it is where the budget is supplied.
+   */
+  const scopedWaitSources = [
+    ...new Set([
+      ...scopedTestSources,
+      ...testSupportDirs().flatMap(scriptSources),
+    ]),
+  ].filter((source) => source !== WAIT_HELPER)
+
   it('keeps no case budget below the shared one', () => {
     // The unscaled constant: a caller's GATE_TIME_SCALE must not change this
     // tree's verdict. Comparing the scaled options would let a case budget
@@ -742,7 +932,7 @@ describe('workspace test configuration', () => {
 
   it('rejects every vi.waitFor and vi.waitUntil use outside waitForCondition', () => {
     const offenders = []
-    for (const source of scopedTestSources) {
+    for (const source of scopedWaitSources) {
       const count = bareWaitUses(
         readFileSync(source, 'utf8'),
         source,
@@ -756,9 +946,25 @@ describe('workspace test configuration', () => {
       'call waitForCondition (@speed/test-utils/wait) instead of vi.waitFor '
         + 'or vi.waitUntil: either name is reached only through that helper, '
         + "so a call, an alias, an argument, a property value and a returned "
-        + "reference all count, and both waits' one-second default is outside "
+        + 'reference all count, and both waits\' one-second default is outside '
         + 'the setup budget and GATE_TIME_SCALE',
     ).toEqual([])
+  })
+
+  it('scans the test-support directories and exempts only the wait helper', () => {
+    // The scan list is the guard's own blind spot: a helper source the
+    // suites run on is where a bare wait hides. Every package's test-utils,
+    // the shared tree and the demo host's copy are in scope; the one file
+    // that supplies the budget is out by its exact path, not by a rule.
+    const dirs = testSupportDirs()
+    expect(dirs).toContain(join(webRoot, 'test-utils', 'src'))
+    expect(dirs).toContain(join(demoWebRoot, 'src', 'test-utils'))
+    expect(dirs).toContain(join(webRoot, 'packages', 'account-ui', 'test-utils'))
+    expect(dirs).toContain(join(webRoot, 'packages', 'admin-ui', 'test-utils'))
+    expect(scopedWaitSources).toContain(
+      join(webRoot, 'packages', 'account-ui', 'test-utils', 'refresh-warning.ts'),
+    )
+    expect(scopedWaitSources).not.toContain(WAIT_HELPER)
   })
 
   it('scans the case budgets it is meant to catch', () => {
@@ -841,8 +1047,8 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses('await vi?.waitFor(() => {})')).toHaveLength(1)
     expect(bareWaitUses('vi.waitFor.call(null, () => {})')).toHaveLength(1)
     expect(bareWaitUses("await vi?.['waitUntil'](() => true)")).toHaveLength(1)
-    // A string that names the call is prose; stripping removes it before any
-    // of the patterns above run, so it is not counted.
+    // A string that names the call is prose; the syntax tree holds no node
+    // for it, so no pattern reads it as a use.
     expect(bareWaitUses("it('names vi.waitFor in prose', () => {})")).toHaveLength(0)
     // A string that spells out an assignment is prose too.
     expect(bareWaitUses("it('x = vi.waitFor', () => {})")).toHaveLength(0)
@@ -863,6 +1069,45 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses("switch (x) { case ['vi.waitFor']: break }")).toHaveLength(0)
     expect(bareWaitUses("x in ['vi.waitFor']")).toHaveLength(0)
     expect(bareWaitUses("typeof ['vi.waitFor']")).toHaveLength(0)
+  })
+
+  it('scans the wrappers and aliases a wait can hide behind', () => {
+    // A parameter default destructures the same object a declaration does.
+    expect(bareWaitUses('function f({ waitFor } = vi) {}')).toHaveLength(1)
+    // Parentheses, non-null assertions and type assertions do not change
+    // the object, so the member access is the same one.
+    expect(bareWaitUses('(vi).waitFor(() => {})')).toHaveLength(1)
+    expect(bareWaitUses('vi!.waitFor(() => {})')).toHaveLength(1)
+    expect(
+      bareWaitUses('(vi as unknown as typeof vi).waitFor(() => {})'),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses('(<typeof vi>vi).waitFor(() => {})', 'constructed.ts'),
+    ).toHaveLength(1)
+    // A local alias, an aliased import, and an alias of an alias all name
+    // the same object.
+    expect(bareWaitUses('const v = vi\nv.waitFor(() => {})')).toHaveLength(1)
+    expect(
+      bareWaitUses("import { vi as x } from 'vitest'\nx.waitFor(() => {})"),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses("import { vi as x } from 'vitest'\nconst { waitFor } = x"),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses('const v = vi\nconst w = v\nw.waitFor(() => {})'),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses('const v = vi as unknown as typeof vi\nv.waitFor(() => {})'),
+    ).toHaveLength(1)
+    // Naming the wait at the import reaches the same one-second default.
+    expect(
+      bareWaitUses("import { waitFor } from 'vitest'\nwaitFor(() => {})"),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses("import { waitFor as w } from 'vitest'\nw(() => {})"),
+    ).toHaveLength(1)
+    // An alias of something else is not Vitest's vi.
+    expect(bareWaitUses('const v = other\nv.waitFor(() => {})')).toHaveLength(0)
   })
 
   it('scans a wait after a regex literal or JSX text that carries a quote', () => {
