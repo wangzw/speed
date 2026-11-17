@@ -46,7 +46,7 @@ function usernameIdentifier(value: string): AdminAccount['identifiers'][number] 
   return {
     kind: 'username',
     value,
-    proven: true,
+    proven: false,
     sign_in: true,
     contact: false,
     default_contact: false,

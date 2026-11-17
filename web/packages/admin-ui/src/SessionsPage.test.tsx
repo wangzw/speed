@@ -69,7 +69,7 @@ function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
     protected: false,
     password_set: true,
     identifiers: [
-      { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+      { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
     ],
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
@@ -272,7 +272,7 @@ describe('SessionsPage', () => {
               id: 'acc-10',
               display_name: 'Bob',
               identifiers: [
-                { kind: 'username', value: 'bob', proven: true, sign_in: true, contact: false, default_contact: false },
+                { kind: 'username', value: 'bob', proven: false, sign_in: true, contact: false, default_contact: false },
               ],
             }),
           ],
@@ -578,7 +578,7 @@ describe('SessionsPage', () => {
               id: 'acc-10',
               display_name: 'Bob',
               identifiers: [
-                { kind: 'username', value: 'bob', proven: true, sign_in: true, contact: false, default_contact: false },
+                { kind: 'username', value: 'bob', proven: false, sign_in: true, contact: false, default_contact: false },
               ],
             }),
           ],

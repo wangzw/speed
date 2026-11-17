@@ -1851,7 +1851,7 @@ describe('AccountsPage', () => {
         id: DELETE_UUID,
         display_name: 'Ada Lovelace',
         identifiers: [
-          { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+          { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
           { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
         ],
       }),
@@ -1885,7 +1885,7 @@ describe('AccountsPage', () => {
         id: DELETE_UUID,
         display_name: '',
         identifiers: [
-          { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+          { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
           { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
         ],
       }),
@@ -2268,7 +2268,7 @@ describe('AccountsPage', () => {
   }
 
   const NOTICE_IDENTIFIERS: AdminAccount['identifiers'] = [
-    { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+    { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
   ]
 
   /** The identity label the console shows for one account view. */
@@ -3725,7 +3725,7 @@ describe('AccountsPage', () => {
               accountFixture({
                 display_name: 'Ada Lovelace',
                 identifiers: [
-                  { kind: 'username', value: 'ada', proven: true, sign_in: true, contact: false, default_contact: false },
+                  { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
                   { kind: 'email', value: 'ada@example.com', proven: false, sign_in: false, contact: false, default_contact: false },
                 ],
               }),
