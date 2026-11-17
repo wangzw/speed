@@ -5,7 +5,7 @@
  * registers exactly once per instance.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createInstance } from 'i18next'
 import { createI18n, registerNamespace, type ResourceBundle } from './index'
 import { MemoryStorage } from '../test-utils/memory-storage'
@@ -233,17 +233,35 @@ describe('registerNamespace', () => {
   })
 
   it('leaves the instance untouched when validation fails (atomicity)', () => {
-    const instance = createI18n({ storage: new MemoryStorage(), navigatorLanguages: [] })
+    const onMissingKey = vi.fn()
+    const instance = createI18n({
+      storage: new MemoryStorage(),
+      navigatorLanguages: [],
+      onMissingKey,
+    })
     expect(() => registerNamespace(instance, 'welcome', enUsMissingProfile())).toThrow()
     expect(instance.hasResourceBundle('zh-CN', 'welcome')).toBe(false)
     expect(instance.hasResourceBundle('en-US', 'welcome')).toBe(false)
     expect(instance.t('greeting.hello', { ns: 'welcome', lng: 'zh-CN' })).toBe(
       'greeting.hello',
     )
+    // The deliberately missing key is reported through the host's recorder
+    // rather than the default console warning, and the record names the
+    // lookup that missed.
+    expect(onMissingKey).toHaveBeenCalledWith({
+      languages: ['zh-CN'],
+      namespace: 'welcome',
+      key: 'greeting.hello',
+    })
   })
 
   it('leaves the namespace unregistered when a bundle fails to land mid-loop, so a retry is a fresh registration', () => {
-    const instance = createI18n({ storage: new MemoryStorage(), navigatorLanguages: [] })
+    const onMissingKey = vi.fn()
+    const instance = createI18n({
+      storage: new MemoryStorage(),
+      navigatorLanguages: [],
+      onMissingKey,
+    })
     const original = instance.addResourceBundle.bind(instance)
     let calls = 0
     instance.addResourceBundle = ((lng, ns, resources, deep, overwrite) => {
@@ -264,6 +282,13 @@ describe('registerNamespace', () => {
       expect(instance.t('greeting.hello', { ns: 'welcome', lng: 'zh-CN' })).toBe(
         'greeting.hello',
       )
+      // The deliberately missing key is reported through the host's recorder,
+      // never the default console warning.
+      expect(onMissingKey).toHaveBeenCalledWith({
+        languages: ['zh-CN'],
+        namespace: 'welcome',
+        key: 'greeting.hello',
+      })
     } finally {
       instance.addResourceBundle = original
     }
@@ -275,5 +300,7 @@ describe('registerNamespace', () => {
     expect(instance.t('greeting.hello', { ns: 'welcome', lng: 'en-US' })).toBe(
       welcomeEn.greeting.hello,
     )
+    // The retry's lookups resolve, so the recorder saw the miss exactly once.
+    expect(onMissingKey).toHaveBeenCalledTimes(1)
   })
 })
