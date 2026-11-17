@@ -700,7 +700,7 @@ describe('workspace test configuration', () => {
       join(demoWebRoot, 'src/test-utils/setup.ts'),
     ]
     for (const path of setups) {
-      const scale = asyncBudgetScale(readFileSync(path, 'utf8'))
+      const scale = asyncBudgetScale(readFileSync(path, 'utf8'), path)
       expect(
         scale,
         `${path} names no async budget for the guard to check`,
@@ -1003,6 +1003,15 @@ describe('workspace test configuration', () => {
       asyncBudgetScale('configure({ asyncUtilTimeout: asyncBudgetMs(0.5) })'),
     ).toBe('0.5')
     expect(asyncBudgetScale('configure({ asyncUtilTimeout: 30_000 })')).toBeNull()
+    // A source that cannot be parsed names the file it came from, not the
+    // placeholder: a setup the guard could not read must not report
+    // `constructed.ts` and leave the real file unidentified.
+    expect(() =>
+      asyncBudgetScale(
+        'configure({ asyncUtilTimeout: asyncBudgetMs(',
+        'setup.ts',
+      ),
+    ).toThrow(/setup\.ts/)
     expect(SCALE_SOURCE.test('gateTimeScale()')).toBe(true)
     expect(SCALE_SOURCE.test('__SPEED_GATE_TIME_SCALE__')).toBe(true)
     expect(SCALE_SOURCE.test('1')).toBe(false)
