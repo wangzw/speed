@@ -287,9 +287,6 @@ class Harness:
         lines = self.log_path.read_text(encoding="utf-8").splitlines()
         return [json.loads(line) for line in lines if line.strip()]
 
-    def programs(self):
-        return {entry["program"] for entry in self.calls()}
-
     def by_program(self, program):
         return [entry["argv"] for entry in self.calls() if entry["program"] == program]
 
