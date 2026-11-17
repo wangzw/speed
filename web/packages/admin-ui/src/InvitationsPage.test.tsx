@@ -2138,6 +2138,10 @@ describe('InvitationsPage', () => {
     })
     // The revoked row's menu is gone; focus lands on the invitation section's
     // heading, and the success text is announced through its live region.
+    // The page behind the confirmation is aria-hidden until its exit
+    // transition ends, so the section is readable only after the dialog
+    // has left.
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     const invitationSection = section(zhCN.invitations.section.title)
     const heading = within(invitationSection).getByRole('heading', {
       name: zhCN.invitations.section.title,
@@ -2277,6 +2281,10 @@ describe('InvitationsPage', () => {
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
+    // While the confirmation is on screen the rest of the page is
+    // aria-hidden, so the heading is readable only after the dialog has
+    // left. Wait for that rather than querying the closing state.
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     const heading = within(section(zhCN.invitations.section.title)).getByRole(
       'heading',
       { name: zhCN.invitations.section.title },

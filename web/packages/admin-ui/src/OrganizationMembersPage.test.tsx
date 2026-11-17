@@ -265,6 +265,7 @@ const FULL_TENANT_PERMISSIONS = [
 
 const uiKitZh = uiKitResources['zh-CN'] as unknown as {
   readonly confirmDialog: {
+    readonly title: string
     readonly confirmAgainLabel: string
   }
 }
@@ -1303,6 +1304,17 @@ describe('the member management panel', () => {
         account: ADA.account,
         active: false,
       }),
+    )
+    // While the confirmation is on screen the member panel behind it is
+    // aria-hidden, so the panel's own controls are readable only after that
+    // dialog has left. The panel is a dialog too, so this names the
+    // confirmation instead of taking any dialog. Confirming clears the
+    // pending action at once, so the exiting dialog carries ui-kit's default
+    // heading rather than the action's title.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: uiKitZh.confirmDialog.title }),
+      ).toBeNull(),
     )
     await user.click(
       within(activePanel).getByRole('button', {
@@ -2513,6 +2525,10 @@ describe('the invitation section', () => {
         { tenant: TENANT, id: PENDING_INVITATION.id },
       ]),
     )
+    // While the confirmation is on screen the rest of the page is
+    // aria-hidden, so the heading is readable only after the dialog has
+    // left. Wait for that rather than querying the closing state.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     // The pending-only list drops the row, so its action menu leaves the
     // document. Focus moves to the invitation section's heading, which stays,
     // and the success text is announced through the section's live region.
@@ -2686,6 +2702,10 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
+    // While the confirmation is on screen the rest of the page is
+    // aria-hidden, so the heading is readable only after the dialog has
+    // left. Wait for that rather than querying the closing state.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const heading = screen.getByRole('heading', {
       name: zhCN.invitations.section.title,
     })
