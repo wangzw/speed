@@ -30,8 +30,8 @@ inputs:
       installed through the workspace's own Playwright package, and the browser and
       end-to-end targets run from the same install. The demo host under
       starters/demo/web is a member of that workspace, so one install covers
-      both. A job that runs `make check` leaves this off: its web-check leg
-      installs for itself.
+      both. A job that runs the gate's frontend legs leaves this off:
+      `web-check-static` installs the dependencies for itself.
     required: false
     default: "false"
 

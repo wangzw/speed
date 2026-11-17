@@ -40,8 +40,11 @@ Everything runs from the repository root through `make`, and the root
 Makefile owns the entry points — this file only says which one a change
 needs. `make help` lists them, one line each; the toolchain they need comes
 from `mise install`, which reads `.mise.toml`. `.github/workflows/ci.yml`
-runs `make check`; the browser, end-to-end and integration tiers are
-separate workflows with targets of their own.
+runs the `check` segments as parallel jobs through `make`, with
+`GATE_JOBS=4` and `GOFLAGS=-count=1`; `tools/check_ci_jobs.py` holds the
+jobs' legs to `make check`'s segments and to the module roster in `go.work`.
+The browser, end-to-end and integration tiers are separate workflows with
+targets of their own.
 
 **Iterate at the smallest useful scope.** `make check` is the commit
 gate and runs the Go and frontend legs both, so using it for a one-sided

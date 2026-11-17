@@ -51,6 +51,7 @@ python3 tools/check_test_tiers.py
 python3 tools/check_e2e_honesty.py
 python3 tools/check_platform_errors.py
 python3 tools/check_pnpm_filters.py
+python3 tools/check_ci_jobs.py
 python3 tools/lint_composite_actions.py
 ```
 
@@ -275,3 +276,27 @@ matches a member, or a path selector, with the `...` and `^` markers and a
 leading `!` removed). Exit codes: 0 clean, 1 a finding (each with file, line
 and the call), 2 infrastructure error (the root is not a directory, or the
 workspace file is missing or lists no member).
+
+`check_ci_jobs.py` — holds the `check` workflow to the commit gate, leg for
+leg. `make check` names one segment per leg, and each segment's recipe calls
+the leg through `$(MAKE)`; `.github/workflows/ci.yml` runs the same legs
+split across parallel jobs. The gate reads the legs from the `check-*`
+prerequisites and the targets of every `make` command in the workflow, and
+holds the two sets equal, so a segment added to `check` without a job in the
+workflow fails here rather than widening the local gate beyond what CI runs.
+A leg narrowed with `MODULES=` runs part of that leg's module loop: the union
+of its `MODULES=` values across the jobs must cover exactly the modules
+`go.work` lists, and a job running the leg without `MODULES=` covers the
+whole roster. A job calling `make check` itself is a finding, not full
+coverage, because the union of the jobs' targets must be the legs, not the
+target that runs them. Coverage alone is not enough: the run must fail when
+a leg fails, so the gate also requires the workflow-level `env:` to set
+`GATE_JOBS` and a `GOFLAGS` containing `-count=1`, and refuses a job that
+runs a gate leg while setting `continue-on-error` (anything but `false`) or
+an `if:` other than `always()` that could skip it. Its suite,
+`test_check_ci_jobs.py`, drives the gate over scratch trees whose Makefile,
+workflow and `go.work` it writes. Exit codes: 0 clean, 1 a finding (a leg no
+job runs, a target that is no segment, a module no job covers, the workflow
+env missing `GATE_JOBS` or `-count=1`, or a gate job that could let a failure
+pass), 2 infrastructure error (the root is not a directory, or the Makefile,
+the workflow or `go.work` is missing or names nothing to compare).

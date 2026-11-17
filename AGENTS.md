@@ -14,4 +14,5 @@ specific to that module.
 ## Commands
 
 Everything runs from the repository root through `make`. `make help`
-lists the entry points; `make check` is the one CI runs.
+lists the entry points; CI runs the same legs as `make check`, split across
+parallel jobs.

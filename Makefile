@@ -1,5 +1,6 @@
 # Every check this repository runs has its entry point here. CI installs the
-# toolchain and calls `make check`; no other file repeats these commands.
+# toolchain and runs the legs of `make check` as parallel jobs, each through
+# this Makefile; no other file repeats these commands.
 #
 # The module set is derived from go.work, the repository's only machine-readable
 # module roster, so adding a module to the workspace registers it everywhere.
