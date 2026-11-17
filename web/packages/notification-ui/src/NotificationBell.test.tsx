@@ -19,7 +19,6 @@ import {
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
-  BROWSER_DETERMINATIONS,
   expectNoAxeViolations,
 } from '../test-utils/axe.js'
 import { NotificationBell } from './NotificationBell.js'
@@ -42,7 +41,7 @@ describe('NotificationBell', () => {
     // Label in Name needs canvas text measurement, which jsdom lacks; the
     // named browser case decides it.
     await expectNoAxeViolations({
-      decidedInBrowser: BROWSER_DETERMINATIONS.notificationBellUnread,
+      decidedInBrowser: 'notificationBellUnread',
     })
   })
 

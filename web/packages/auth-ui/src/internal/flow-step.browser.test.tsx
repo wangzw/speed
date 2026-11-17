@@ -42,6 +42,8 @@ describe('FlowStepFields Label in Name in Chromium', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.signInFlow.totpManualToggle }),
     )
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: 'flowStepFieldsManualDisclosure',
+    })
   })
 })

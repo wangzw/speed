@@ -141,6 +141,8 @@ describe('NotificationBell Label in Name in Chromium', () => {
     })
 
     await screen.findByRole('button', { name: bellName(3) })
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: 'notificationBellUnread',
+    })
   })
 })

@@ -66,6 +66,8 @@ describe('TotpEnrollmentPanel Label in Name in Chromium', () => {
       }),
     )
     await screen.findByText(PANEL_PROPS.secretLabel)
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: 'totpManualDisclosure',
+    })
   })
 })

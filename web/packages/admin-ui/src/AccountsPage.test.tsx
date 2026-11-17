@@ -50,7 +50,6 @@ import {
   type AdminBackend,
 } from '../test-utils/operations.js'
 import {
-  BROWSER_DETERMINATIONS,
   expectNoAxeViolations,
 } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -1068,7 +1067,7 @@ describe('AccountsPage', () => {
     // The open panel's focus trap needs a real Tab, which jsdom lacks; the
     // named browser case exercises it and decides aria-hidden-focus.
     await expectNoAxeViolations({
-      decidedInBrowser: BROWSER_DETERMINATIONS.accountsDetailPanel,
+      decidedInBrowser: 'accountsDetailPanel',
     })
   })
 
@@ -1087,7 +1086,7 @@ describe('AccountsPage', () => {
       }),
     )
     await expectNoAxeViolations({
-      decidedInBrowser: BROWSER_DETERMINATIONS.accountsOneTimeSecret,
+      decidedInBrowser: 'accountsOneTimeSecret',
     })
   })
 

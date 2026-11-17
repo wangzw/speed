@@ -166,7 +166,9 @@ describe('AccountsPage focus traps in Chromium', () => {
     // and decides it (@speed/test-utils/axe).
     const panel = await openDetail()
     expect(panel).toBeInTheDocument()
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: 'accountsDetailPanel',
+    })
   })
 
   it('keeps the one-time secret focus trap holding over a hidden page', async () => {
@@ -185,6 +187,8 @@ describe('AccountsPage focus traps in Chromium', () => {
         .replace('{{label}}', 'label')
         .replace('{{secret}}', 'one-time'),
     )
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: 'accountsOneTimeSecret',
+    })
   })
 })

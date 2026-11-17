@@ -27,7 +27,6 @@ import { makeHarness } from '@speed/test-utils/session-harness'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import {
-  BROWSER_DETERMINATIONS,
   expectNoAxeViolations,
 } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -1200,7 +1199,7 @@ describe('FlowStepFields TOTP enrolment', () => {
     // Label in Name needs canvas text measurement, which jsdom lacks; the
     // named browser case decides it.
     await expectNoAxeViolations({
-      decidedInBrowser: BROWSER_DETERMINATIONS.flowStepFieldsManualDisclosure,
+      decidedInBrowser: 'flowStepFieldsManualDisclosure',
     })
   })
 })

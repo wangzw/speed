@@ -100,30 +100,39 @@ import { expect } from 'vitest'
 import axe from 'axe-core'
 
 /**
- * The browser-tier case that decides a rule jsdom cannot answer, named by
- * its file (relative to the workspace root, `web/`) and its exact case
- * name. A jsdom case declares one only for a rule whose verdict the named
- * browser case reaches; keeping the pair in BROWSER_DETERMINATIONS and
- * holding it to a real case (see axe.test.ts) is what stops an exemption
- * from being invented without a source.
- */
-export interface BrowserDetermination {
-  /** The browser-tier test file, relative to `web/`. */
-  readonly file: string
-  /** The exact case name inside that file. */
-  readonly testName: string
-}
-
-/**
  * The rules jsdom cannot decide: aria-hidden-focus under a focus-trapping
  * overlay (no real Tab), and label-content-name-mismatch (no canvas text
  * measurement). The browser tier decides both, so a jsdom scan that declares
  * the deciding browser case does not report them.
  */
-const BROWSER_DECIDED_RULES: readonly string[] = [
+export const BROWSER_DECIDED_RULES = [
   'aria-hidden-focus',
   'label-content-name-mismatch',
-]
+] as const
+
+/** One rule a browser case settles on jsdom's behalf. */
+export type BrowserDecidedRule = (typeof BROWSER_DECIDED_RULES)[number]
+
+/**
+ * The browser-tier case that decides the rules jsdom cannot answer, named by
+ * its file (relative to the workspace root, `web/`), its full describe path,
+ * and the rules it settles. A jsdom case declares one only for a rule whose
+ * verdict the named browser case reaches; keeping the pair in
+ * BROWSER_DETERMINATIONS and holding it to a real case (see axe.test.ts) is
+ * what stops an exemption from being invented without a source.
+ *
+ * `testName` is the case's whole path through its `describe` blocks, joined
+ * by ` > `, so two cases of the same name in different suites cannot stand
+ * for each other.
+ */
+export interface BrowserDetermination {
+  /** The browser-tier test file, relative to `web/`. */
+  readonly file: string
+  /** The exact describe path and case name, joined by ` > `. */
+  readonly testName: string
+  /** The rules the named case settles. */
+  readonly rules: readonly BrowserDecidedRule[]
+}
 
 /**
  * The browser-tier cases that settle the rules jsdom cannot, one entry per
@@ -134,55 +143,74 @@ const BROWSER_DECIDED_RULES: readonly string[] = [
 export const BROWSER_DETERMINATIONS = {
   totpManualDisclosure: {
     file: 'packages/ui-kit/src/components/TotpEnrollmentPanel.browser.test.tsx',
-    testName: 'settles Label in Name with the manual disclosure open',
+    testName:
+      'TotpEnrollmentPanel Label in Name in Chromium > settles Label in Name with the manual disclosure open',
+    rules: ['label-content-name-mismatch'],
   },
   flowStepManualDisclosure: {
     file: 'packages/admin-ui/src/internal/flow-step.browser.test.tsx',
-    testName: 'settles Label in Name with the FlowStep manual disclosure open',
+    testName:
+      'FlowStep Label in Name in Chromium > settles Label in Name with the FlowStep manual disclosure open',
+    rules: ['label-content-name-mismatch'],
   },
   flowStepAccountManualDisclosure: {
     file: 'packages/account-ui/src/internal/flow-step.browser.test.tsx',
     testName:
-      'settles Label in Name with the account FlowStep manual disclosure open',
+      'FlowStep Label in Name in Chromium > settles Label in Name with the account FlowStep manual disclosure open',
+    rules: ['label-content-name-mismatch'],
   },
   flowStepFieldsManualDisclosure: {
     file: 'packages/auth-ui/src/internal/flow-step.browser.test.tsx',
     testName:
-      'settles Label in Name with the FlowStepFields manual-entry disclosure open',
+      'FlowStepFields Label in Name in Chromium > settles Label in Name with the FlowStepFields manual-entry disclosure open',
+    rules: ['label-content-name-mismatch'],
   },
   notificationBellUnread: {
     file: 'packages/notification-ui/src/NotificationBell.browser.test.tsx',
-    testName: 'settles Label in Name for the bell with an unread count',
+    testName:
+      'NotificationBell Label in Name in Chromium > settles Label in Name for the bell with an unread count',
+    rules: ['label-content-name-mismatch'],
   },
   accountsDetailPanel: {
     file: 'packages/admin-ui/src/AccountsPage.browser.test.tsx',
-    testName: 'keeps the detail panel focus trap holding over a hidden page',
+    testName:
+      'AccountsPage focus traps in Chromium > keeps the detail panel focus trap holding over a hidden page',
+    rules: ['aria-hidden-focus'],
   },
   accountsOneTimeSecret: {
     file: 'packages/admin-ui/src/AccountsPage.browser.test.tsx',
-    testName: 'keeps the one-time secret focus trap holding over a hidden page',
+    testName:
+      'AccountsPage focus traps in Chromium > keeps the one-time secret focus trap holding over a hidden page',
+    rules: ['aria-hidden-focus'],
   },
   appShellMobileDrawer: {
     file: 'packages/layout-kit/src/components/AppShell.browser.test.tsx',
-    testName: 'keeps the temporary drawer focus trap holding on the mobile layout',
+    testName:
+      'AppShell geometry in Chromium > keeps the temporary drawer focus trap holding on the mobile layout',
+    rules: ['aria-hidden-focus'],
   },
   appShellSidebarDrawer: {
     file: 'packages/layout-kit/src/components/AppShell.browser.test.tsx',
     testName:
-      'shows the brand once at 400px and pins the open drawer bottom row, with no accessibility violations',
+      'AppShell sidebar layout in Chromium > shows the brand once at 400px and pins the open drawer bottom row, with no accessibility violations',
+    rules: ['aria-hidden-focus'],
   },
 } as const satisfies Record<string, BrowserDetermination>
+
+/** The registry key a declaration may name; an inline object is not one. */
+export type BrowserDeterminationKey = keyof typeof BROWSER_DETERMINATIONS
 
 export interface AxeAssertionOptions {
   /** Extra axe rules to disable beyond color-contrast. */
   readonly disabledRules?: readonly string[]
   /**
-   * The browser-tier case that decides the rules jsdom cannot answer. Read
-   * only under jsdom: the browser tier runs those rules itself (and, for an
-   * open dialog or drawer, its real focus-trap check), so it ignores the
-   * declaration.
+   * The registered browser-tier case that decides the rules jsdom cannot
+   * answer, named by its key in BROWSER_DETERMINATIONS. Under jsdom only
+   * the entry's own `rules` are silenced; in the browser tier the scan
+   * asserts those rules reached a verdict, so the case that takes the
+   * exemption really decides them.
    */
-  readonly decidedInBrowser?: BrowserDetermination
+  readonly decidedInBrowser?: BrowserDeterminationKey
 }
 
 /**
@@ -566,12 +594,16 @@ async function runAxeAssertions(
   options: AxeAssertionOptions,
 ): Promise<void> {
   const { disabledRules = [], decidedInBrowser } = options
+  const decision =
+    decidedInBrowser === undefined
+      ? undefined
+      : BROWSER_DETERMINATIONS[decidedInBrowser]
   // jsdom cannot decide these rules at all; a caller that names the browser
-  // case deciding them reports nothing here. The browser tier ignores the
-  // declaration and runs the rules itself.
+  // case deciding them reports nothing here. The browser tier runs the rules
+  // itself and, below, holds the declaration to an actual verdict.
   const decidedElsewhere =
-    decidedInBrowser !== undefined && !isBrowserTier()
-      ? new Set(BROWSER_DECIDED_RULES)
+    decision !== undefined && !isBrowserTier()
+      ? new Set(decision.rules)
       : new Set<string>()
   // The widget-tier carve-out (see header): region and the page-level
   // main-landmark rules are page concerns, not widget semantics. The
@@ -652,6 +684,23 @@ async function runAxeAssertions(
   ) {
     await verifyFocusTrap(topOverlay)
     verifiedFocusTrap = focusTrapRule
+  }
+  if (decision !== undefined && isBrowserTier()) {
+    // The jsdom case takes its exemption on the strength of this one: the
+    // named browser case must actually reach a verdict on every rule it
+    // claims. A rule left incomplete here -- and not settled by the real
+    // focus-trap check above -- means the exemption names a case that does
+    // not decide it, and that is a broken declaration, not a warning.
+    const undecided = decision.rules.filter((rule) =>
+      incomplete.some(
+        (result) => result.id === rule && result !== verifiedFocusTrap,
+      ))
+    if (undecided.length > 0) {
+      expect.fail(
+        'the browser case declared to decide '
+          + `${undecided.join(', ')} left it incomplete`,
+      )
+    }
   }
   reportNonCriticalIncomplete(
     incomplete.filter(

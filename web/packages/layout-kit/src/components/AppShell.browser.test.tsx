@@ -294,7 +294,9 @@ describe('AppShell geometry in Chromium', () => {
           ?.getBoundingClientRect().width ?? 0,
       ).toBeGreaterThan(0)
     })
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: 'appShellMobileDrawer',
+    })
   })
 })
 
@@ -784,7 +786,9 @@ describe('AppShell sidebar layout in Chromium', () => {
       Math.abs(bottomRow.getBoundingClientRect().bottom - paperRect.bottom),
     ).toBeLessThanOrEqual(1)
 
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: 'appShellSidebarDrawer',
+    })
   })
 
   it('keeps the sidebar minimal top bar on the theme gutter below md', async () => {
