@@ -44,7 +44,13 @@
  * narrowed case budget and a bare wait, and its setup for the async
  * budget, because the copy carries the same wiring by hand.
  */
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -363,25 +369,29 @@ describe('workspace test configuration', () => {
 
   it('refuses a floor file that names no floor', () => {
     const dir = mkdtempSync(join(tmpdir(), 'test-time-floors-'))
-    const path = join(dir, 'test-time-floors.json')
-    writeFileSync(path, JSON.stringify({ vitestCaseTimeoutMs: 60_000 }))
-    expect(() => readTimeFloors(path)).toThrow(/playwrightCaseTimeoutMs/)
-    writeFileSync(
-      path,
-      JSON.stringify({
-        vitestCaseTimeoutMs: 0,
-        playwrightCaseTimeoutMs: 120_000,
-        asyncUtilTimeoutMs: 30_000,
-      }),
-    )
-    expect(() => readTimeFloors(path)).toThrow(/vitestCaseTimeoutMs/)
-    // `1e999` parses to Infinity, which `<= 0` alone would let through.
-    writeFileSync(
-      path,
-      '{"vitestCaseTimeoutMs": 60000, "playwrightCaseTimeoutMs": 120000, '
-        + '"asyncUtilTimeoutMs": 1e999}',
-    )
-    expect(() => readTimeFloors(path)).toThrow(/asyncUtilTimeoutMs/)
+    try {
+      const path = join(dir, 'test-time-floors.json')
+      writeFileSync(path, JSON.stringify({ vitestCaseTimeoutMs: 60_000 }))
+      expect(() => readTimeFloors(path)).toThrow(/playwrightCaseTimeoutMs/)
+      writeFileSync(
+        path,
+        JSON.stringify({
+          vitestCaseTimeoutMs: 0,
+          playwrightCaseTimeoutMs: 120_000,
+          asyncUtilTimeoutMs: 30_000,
+        }),
+      )
+      expect(() => readTimeFloors(path)).toThrow(/vitestCaseTimeoutMs/)
+      // `1e999` parses to Infinity, which `<= 0` alone would let through.
+      writeFileSync(
+        path,
+        '{"vitestCaseTimeoutMs": 60000, "playwrightCaseTimeoutMs": 120000, '
+          + '"asyncUtilTimeoutMs": 1e999}',
+      )
+      expect(() => readTimeFloors(path)).toThrow(/asyncUtilTimeoutMs/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('takes the async floor from the floor file', () => {
@@ -389,22 +399,26 @@ describe('workspace test configuration', () => {
     // it above the shared default makes that default an offender; a guard
     // that compared against a hardcoded floor would still clear it.
     const dir = mkdtempSync(join(tmpdir(), 'test-time-floors-'))
-    const path = join(dir, 'test-time-floors.json')
-    const raisedFloorMs = ASYNC_UTIL_TIMEOUT_MS + 15_000
-    writeFileSync(
-      path,
-      JSON.stringify({
-        vitestCaseTimeoutMs: 60_000,
-        playwrightCaseTimeoutMs: 120_000,
-        asyncUtilTimeoutMs: raisedFloorMs,
-      }),
-    )
-    const floors = readTimeFloors(path)
-    expect(floors.asyncUtilTimeoutMs).toBe(raisedFloorMs)
-    expect(asyncBudgetsBelowFloor(floors)).toEqual([
-      ASYNC_UTIL_TIMEOUT_MS,
-      DEMO_ASYNC_UTIL_TIMEOUT_MS,
-    ])
+    try {
+      const path = join(dir, 'test-time-floors.json')
+      const raisedFloorMs = ASYNC_UTIL_TIMEOUT_MS + 15_000
+      writeFileSync(
+        path,
+        JSON.stringify({
+          vitestCaseTimeoutMs: 60_000,
+          playwrightCaseTimeoutMs: 120_000,
+          asyncUtilTimeoutMs: raisedFloorMs,
+        }),
+      )
+      const floors = readTimeFloors(path)
+      expect(floors.asyncUtilTimeoutMs).toBe(raisedFloorMs)
+      expect(asyncBudgetsBelowFloor(floors)).toEqual([
+        ASYNC_UTIL_TIMEOUT_MS,
+        DEMO_ASYNC_UTIL_TIMEOUT_MS,
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('keeps the async budget at or above its floor', () => {
