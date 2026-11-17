@@ -282,7 +282,9 @@ const openedValue = "logged-value-opened"
 // key, the sentinel and the engine's result code, since the handle is opened
 // with the engine's classification of what it refuses — and without the value it
 // bound; a statement that ran as any other is not written at the level a handle
-// is opened at, which is Warn.
+// is opened at, which is Warn. A statement the machine made slow is written as
+// "slow statement", and those records are left out of the counts (see
+// withoutSlowStatements); the redaction is still asserted over every record.
 func TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith(t *testing.T) {
 	rec := &recordingHandler{}
 	handle, err := openHandle(t.Context(), sqliteSpec(), sqliteSection(filepath.Join(t.TempDir(), "logged.db")),
@@ -302,7 +304,7 @@ func TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith(t *testing.T) 
 	if err := handle.Exec("INSERT INTO logged_codes (code) VALUES (?)", openedValue).Error; err != nil {
 		t.Fatalf("writing the row: %v", err)
 	}
-	if records := rec.written(); len(records) != 0 {
+	if records := withoutSlowStatements(rec.written()); len(records) != 0 {
 		t.Fatalf("statements that ran as any other were written at the level a handle is opened at:\n%s",
 			everythingOf(records))
 	}
@@ -313,13 +315,14 @@ func TestAHandleWritesItsStatementsThroughTheLoggerItIsOpenedWith(t *testing.T) 
 	}
 	records := rec.written()
 	assertNoneCarries(t, records, openedValue)
-	if len(records) != 1 {
-		t.Fatalf("the refused statement was written as %d records, want one:\n%s", len(records), everythingOf(records))
+	written := withoutSlowStatements(records)
+	if len(written) != 1 {
+		t.Fatalf("the refused statement was written as %d records, want one:\n%s", len(written), everythingOf(records))
 	}
-	attrs := attributesOf(t, records[0])
-	if records[0].Message != "statement failed" || records[0].Level != slog.LevelError {
+	attrs := attributesOf(t, written[0])
+	if written[0].Message != "statement failed" || written[0].Level != slog.LevelError {
 		t.Errorf("the refused statement is written as %q at %s, want \"statement failed\" at ERROR",
-			records[0].Message, records[0].Level)
+			written[0].Message, written[0].Level)
 	}
 	if classes, _ := textOf(attrs, "classes"); classes != "duplicated key not allowed, result code 2067" {
 		t.Errorf("the refused statement is written with the classes %q, want the sentinel and the engine's code",

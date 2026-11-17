@@ -218,6 +218,29 @@ var attributeKinds = map[string]slog.Kind{
 	"detail":    slog.KindString,
 }
 
+// withoutSlowStatements is records with the "slow statement" records left out.
+//
+// A statement slower than the logger's threshold is written as "slow
+// statement" at Warn whatever else it did, and the threshold is a fixed couple
+// of hundred milliseconds: on a loaded machine an ordinary statement — a
+// CREATE TABLE, an INSERT — crosses it. A case that counts the records of
+// statements it expects to be unwritten, or to be exactly one failure, is not
+// about that record; a count that included it would pass or fail with the
+// machine's load. The slow statement's own emission has its cases, so this
+// helper only narrows a count. No assertion about what a record carries reads
+// its result: a slow statement's redaction is still asserted over every
+// record.
+func withoutSlowStatements(records []slog.Record) []slog.Record {
+	kept := make([]slog.Record, 0, len(records))
+	for _, record := range records {
+		if record.Message == "slow statement" {
+			continue
+		}
+		kept = append(kept, record)
+	}
+	return kept
+}
+
 // attributesOf is what a record carries, by key. A key carried twice, or a
 // group, fails the case: the logger writes each attribute once, and flat.
 func attributesOf(t *testing.T, record slog.Record) map[string]slog.Value {

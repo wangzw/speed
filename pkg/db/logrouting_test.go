@@ -594,14 +594,20 @@ func str(record map[string]any, key string) string {
 var statementMessages = []string{"statement failed", "slow statement", "statement"}
 
 // statementRecords are the records of the log file that are written for the
-// statements issueStatements runs: those under a statement message whose
-// statement is one of theirs.
+// statements issueStatements runs: those under a statement message whose call
+// site is a line of this file.
+//
+// The call site is what tells them from the statements the module runs on its
+// own, the migrations among them, whose call sites are in the module. A
+// statement-text test alone is not enough: the module's Scan statement is
+// written as a slow statement on a loaded machine, carries the withheld note
+// the case's own Scan statement carries, and would be counted as one of the
+// case's.
 func (f logFile) statementRecords() []map[string]any {
 	var own []map[string]any
 	for _, record := range f.records {
-		statement := str(record, "statement")
 		if slices.Contains(statementMessages, str(record, "msg")) &&
-			(strings.Contains(statement, "routing_") || statement == db.WithheldStatement) {
+			callerOfTheCase.MatchString(str(record, "caller")) {
 			own = append(own, record)
 		}
 	}
