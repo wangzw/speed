@@ -17,7 +17,7 @@ describe('parseTimeScale', () => {
     expect(parseTimeScale(raw)).toBe(expected)
   })
 
-  it.each(['0', '0.5', '-2', 'abc', 'NaN', 'Infinity', '0x10'])(
+  it.each(['0', '0.5', '-2', 'abc', 'NaN', 'Infinity', '1e999', '0x10'])(
     'refuses %s',
     (raw) => {
       expect(() => parseTimeScale(raw)).toThrow(
