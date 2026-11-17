@@ -1,0 +1,5 @@
+{
+  "vitestCaseTimeoutMs": 60000,
+  "playwrightCaseTimeoutMs": 120000,
+  "asyncUtilTimeoutMs": 30000
+}

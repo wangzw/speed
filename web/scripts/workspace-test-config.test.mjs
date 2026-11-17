@@ -19,9 +19,13 @@
  * a preset that lowers its shared default, a setup that lowers the async
  * budget, or a case that pins its own budget below the shared default is
  * red here. Comparing a package's config with the preset alone would
- * accept a preset lowered along with it. The floors are compared against
- * the unscaled preset constants, so a caller's GATE_TIME_SCALE cannot
- * change this tree's verdict.
+ * accept a preset lowered along with it. The floors -- the Vitest case
+ * budget, the Playwright case budget and the async wait budget -- are read
+ * from `web/scripts/test-time-floors.json`, a file that holds only floors,
+ * so lowering a default cannot lower its own floor in the same edit. That
+ * file is the one entry point for an intentional floor change: a change to
+ * it carries its reason in the commit message. The values are compared
+ * unscaled, so a caller's GATE_TIME_SCALE cannot change this tree's verdict.
  *
  * Vitest's `vi.waitFor` and `vi.waitUntil` are the waits Testing
  * Library's budget does not reach: neither has a global default, and both
@@ -36,7 +40,8 @@
  * narrowed case budget and a bare wait, and its setup for the async
  * budget, because the copy carries the same wiring by hand.
  */
-import { readFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -51,6 +56,35 @@ import { ASYNC_UTIL_TIMEOUT_MS as DEMO_ASYNC_UTIL_TIMEOUT_MS } from '../../start
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const demoWebRoot = join(webRoot, '..', 'starters', 'demo', 'web')
+
+/**
+ * The floors the shared defaults must clear, validated. They live outside
+ * the preset so a lowered default cannot lower its own floor in the same
+ * edit; the preset holds only the default, and that file holds only the
+ * floors. It is the one entry point for an intentional floor change, so a
+ * change to it carries its reason in the commit message. A missing file, a
+ * missing key or a non-positive, non-finite value throws here rather than
+ * leaving the comparison to read `undefined` and pass.
+ */
+function readTimeFloors(path) {
+  const floors = JSON.parse(readFileSync(path, 'utf8'))
+  for (const key of [
+    'vitestCaseTimeoutMs',
+    'playwrightCaseTimeoutMs',
+    'asyncUtilTimeoutMs',
+  ]) {
+    const value = floors[key]
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      throw new Error(`${path}: ${key} must be a positive number of milliseconds`)
+    }
+  }
+  return floors
+}
+
+const TIME_FLOORS = readTimeFloors(
+  join(webRoot, 'scripts', 'test-time-floors.json'),
+)
+const SHARED_TIMEOUT_FLOOR_MS = TIME_FLOORS.vitestCaseTimeoutMs
 
 /** Every workspace package directory: packages/* plus test-utils. */
 const packageDirs = [
@@ -70,10 +104,6 @@ const testPackages = packageDirs
   })
   .filter((pkg) => typeof pkg.test === 'string')
 
-/** The agreed floors for the shared budgets, before the caller's scale. */
-const SHARED_TEST_TIMEOUT_FLOOR_MS = 60_000
-const ASYNC_UTIL_TIMEOUT_FLOOR_MS = 30_000
-
 /** Comments are prose, not configuration; drop them before matching. */
 function stripComments(source) {
   return source
@@ -81,9 +111,17 @@ function stripComments(source) {
     .replace(/\/\/.*$/gm, '')
 }
 
-/** A JavaScript numeric literal with optional digit separators. */
+/**
+ * A constant millisecond expression: a numeric literal with optional digit
+ * separators, or factors joined by `*` (`2 * 60_000`). The product of the
+ * factors is the value, so an arithmetic base is not read as its first
+ * factor.
+ */
 function toMs(literal) {
-  return Number(literal.replaceAll('_', ''))
+  return literal
+    .split('*')
+    .map((factor) => Number(factor.trim().replaceAll('_', '')))
+    .reduce((total, factor) => total * factor, 1)
 }
 
 /**
@@ -118,11 +156,17 @@ function callText(source, openIndex) {
   return null
 }
 
-/** The trailing numeric budget of a call whose last argument is a number. */
+/**
+ * The trailing numeric budget of a call whose last argument is a number. A
+ * budget of 0 is no limit, which is a widening and passes.
+ */
 function trailingTimeout(call, floor) {
-  const trailing = /,\s*([\d_]+)\s*\)$/.exec(call)
-  if (trailing !== null && toMs(trailing[1]) < floor) {
-    return [toMs(trailing[1])]
+  const trailing = /,\s*([\d_]+(?:\s*\*\s*[\d_]+)*)\s*\)$/.exec(call)
+  if (trailing !== null) {
+    const ms = toMs(trailing[1])
+    if (ms !== 0 && ms < floor) {
+      return [ms]
+    }
   }
   return []
 }
@@ -138,9 +182,13 @@ function optionTimeout(call, floor) {
   if (named === null) {
     return []
   }
-  const timeout = /\btimeout\s*:\s*([\d_]+)/.exec(named[2])
-  if (timeout !== null && toMs(timeout[1]) < floor) {
-    return [toMs(timeout[1])]
+  const timeout = /\btimeout\s*:\s*([\d_]+(?:\s*\*\s*[\d_]+)*)/.exec(named[2])
+  if (timeout !== null) {
+    const ms = toMs(timeout[1])
+    // 0 is Vitest's and Playwright's "no limit", which is a widening.
+    if (ms !== 0 && ms < floor) {
+      return [ms]
+    }
   }
   return []
 }
@@ -151,7 +199,8 @@ function optionTimeout(call, floor) {
  * (`it(name, fn, 2000)`, `beforeEach(fn, 2000)`), an options object after
  * a name (`it(name, { timeout }, fn)`, `describe(name, { timeout }, fn)`),
  * the call an `it.each(table)`/`test.each(table)` returns, and
- * `test.setTimeout(ms)`. Waits such as `waitFor(..., { timeout })` and
+ * `test.setTimeout(ms)`. A case budget of 0 means no limit in both Vitest
+ * and Playwright and passes. Waits such as `waitFor(..., { timeout })` and
  * `findBy*(..., { timeout })` are not case budgets and are left alone.
  */
 function lowCaseTimeouts(source, floor) {
@@ -186,8 +235,9 @@ function lowCaseTimeouts(source, floor) {
     }
   }
   for (const match of code.matchAll(/\btest\.setTimeout\(\s*([\d_]+)\s*\)/g)) {
-    if (toMs(match[1]) < floor) {
-      lowered.push(toMs(match[1]))
+    const ms = toMs(match[1])
+    if (ms !== 0 && ms < floor) {
+      lowered.push(ms)
     }
   }
   return lowered
@@ -251,6 +301,17 @@ function testSources(dir) {
   return sources
 }
 
+/**
+ * The async defaults that sit below the async floor `floors` names. Both
+ * copies (the workspace's and the demo host's) carry the constant by hand,
+ * and each is held to the floor unscaled, like the preset's test budget.
+ */
+function asyncBudgetsBelowFloor(floors) {
+  return [ASYNC_UTIL_TIMEOUT_MS, DEMO_ASYNC_UTIL_TIMEOUT_MS].filter(
+    (ms) => ms < floors.asyncUtilTimeoutMs,
+  )
+}
+
 describe('workspace test configuration', () => {
   it('finds the packages that run tests', () => {
     expect(testPackages.length).toBeGreaterThan(0)
@@ -281,21 +342,63 @@ describe('workspace test configuration', () => {
     // Compared unscaled: SHARED_TIMEOUT_MS is the preset's constant, so a
     // caller's GATE_TIME_SCALE cannot change this tree's verdict. The
     // options must then be that constant times the scale.
-    expect(SHARED_TIMEOUT_MS).toBeGreaterThanOrEqual(SHARED_TEST_TIMEOUT_FLOOR_MS)
+    expect(SHARED_TIMEOUT_MS).toBeGreaterThanOrEqual(SHARED_TIMEOUT_FLOOR_MS)
     const options = sharedTestOptions()
     expect(options.testTimeout).toBe(SHARED_TIMEOUT_MS * gateTimeScale())
     expect(options.hookTimeout).toBe(SHARED_TIMEOUT_MS * gateTimeScale())
   })
 
+  it('refuses a floor file that names no floor', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'test-time-floors-'))
+    const path = join(dir, 'test-time-floors.json')
+    writeFileSync(path, JSON.stringify({ vitestCaseTimeoutMs: 60_000 }))
+    expect(() => readTimeFloors(path)).toThrow(/playwrightCaseTimeoutMs/)
+    writeFileSync(
+      path,
+      JSON.stringify({
+        vitestCaseTimeoutMs: 0,
+        playwrightCaseTimeoutMs: 120_000,
+        asyncUtilTimeoutMs: 30_000,
+      }),
+    )
+    expect(() => readTimeFloors(path)).toThrow(/vitestCaseTimeoutMs/)
+    // `1e999` parses to Infinity, which `<= 0` alone would let through.
+    writeFileSync(
+      path,
+      '{"vitestCaseTimeoutMs": 60000, "playwrightCaseTimeoutMs": 120000, '
+        + '"asyncUtilTimeoutMs": 1e999}',
+    )
+    expect(() => readTimeFloors(path)).toThrow(/asyncUtilTimeoutMs/)
+  })
+
+  it('takes the async floor from the floor file', () => {
+    // The guard's comparison must read the floor the file names. Raising
+    // it above the shared default makes that default an offender; a guard
+    // that compared against a hardcoded floor would still clear it.
+    const dir = mkdtempSync(join(tmpdir(), 'test-time-floors-'))
+    const path = join(dir, 'test-time-floors.json')
+    const raisedFloorMs = ASYNC_UTIL_TIMEOUT_MS + 15_000
+    writeFileSync(
+      path,
+      JSON.stringify({
+        vitestCaseTimeoutMs: 60_000,
+        playwrightCaseTimeoutMs: 120_000,
+        asyncUtilTimeoutMs: raisedFloorMs,
+      }),
+    )
+    const floors = readTimeFloors(path)
+    expect(floors.asyncUtilTimeoutMs).toBe(raisedFloorMs)
+    expect(asyncBudgetsBelowFloor(floors)).toEqual([
+      ASYNC_UTIL_TIMEOUT_MS,
+      DEMO_ASYNC_UTIL_TIMEOUT_MS,
+    ])
+  })
+
   it('keeps the async budget at or above its floor', () => {
     // Both copies carry the constant by hand; each is held to the floor
-    // unscaled, like the preset's test budget.
-    expect(ASYNC_UTIL_TIMEOUT_MS).toBeGreaterThanOrEqual(
-      ASYNC_UTIL_TIMEOUT_FLOOR_MS,
-    )
-    expect(DEMO_ASYNC_UTIL_TIMEOUT_MS).toBeGreaterThanOrEqual(
-      ASYNC_UTIL_TIMEOUT_FLOOR_MS,
-    )
+    // unscaled, like the preset's test budget, and the floor is the one
+    // the file names rather than a constant of the guard's own.
+    expect(asyncBudgetsBelowFloor(TIME_FLOORS)).toEqual([])
     const setups = [
       join(webRoot, 'test-utils/src/setup.ts'),
       join(webRoot, 'test-utils/src/browser-setup.ts'),
@@ -384,6 +487,27 @@ describe('workspace test configuration', () => {
     expect(
       lowCaseTimeouts("it('a case', { timeout: 120_000 }, async () => {})", 60_000),
     ).toEqual([])
+    // A case budget of 0 is no limit in both Vitest and Playwright, so it is
+    // a widening and passes in every form the gate reads.
+    expect(
+      lowCaseTimeouts("it('a case', { timeout: 0 }, async () => {})", 60_000),
+    ).toEqual([])
+    expect(lowCaseTimeouts('test.setTimeout(0)', 60_000)).toEqual([])
+    expect(
+      lowCaseTimeouts("it('a case', async () => {}, 0)", 60_000),
+    ).toEqual([])
+    // The exception is exactly 0: a 1ms budget is still below the floor.
+    expect(lowCaseTimeouts('test.setTimeout(1)', 60_000)).toEqual([1])
+    expect(
+      lowCaseTimeouts("it('a case', { timeout: 1 }, async () => {})", 60_000),
+    ).toEqual([1])
+    // An arithmetic base is its product, not its first factor.
+    expect(
+      lowCaseTimeouts("it('a case', { timeout: 2 * 60_000 }, async () => {})", 60_000),
+    ).toEqual([])
+    expect(
+      lowCaseTimeouts("it('a case', { timeout: 5 * 1000 }, async () => {})", 60_000),
+    ).toEqual([5_000])
     expect(
       lowCaseTimeouts("await waitFor(() => {}, { timeout: 5_000 })", 60_000),
     ).toEqual([])

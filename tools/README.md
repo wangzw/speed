@@ -48,6 +48,7 @@ python3 tools/check_conflict_markers.py
 python3 tools/check_fixup_commits.py
 python3 tools/check_observability_readiness.py
 python3 tools/check_test_tiers.py
+python3 tools/check_test_limits.py
 python3 tools/check_e2e_honesty.py
 python3 tools/check_platform_errors.py
 python3 tools/check_pnpm_filters.py
@@ -235,6 +236,107 @@ directory, the Makefile passes no tag, a workflow names a runner label
 whose platform the gate does not know, a constraint does not parse, or a
 check found no subject at all — the integration layer gone, or no library
 to read).
+
+`check_test_limits.py` — holds the test-side half of the load policy: a
+test does not choose its width from the machine, and a declared case or
+wait budget does not undercut the shared default. In test files and test
+configuration only, it fails a read of the host's core count:
+`runtime.NumCPU()` under any `runtime` import alias; `runtime.GOMAXPROCS`
+with `0`, a negative argument or a variable argument of unknown origin (a
+positive literal and a save/restore pair are not probes — the saved value
+may be read back from a `0`, negative or positive-literal call, and is not
+reported when it is used only to restore the width; the pairing is per
+top-level function body, so two saves of one name inside the same function
+are judged together and a same-named save in a nested block that escapes
+also reports the outer save even when it is restored cleanly, while naming
+the two saves differently or moving one to another function keeps them
+apart; a range variable iterating a table the test wrote is that test's own
+choice); and in JavaScript `os.cpus()` and
+`os.availableParallelism()` under the module name or a default, namespace
+or named-import alias, a destructured `require('os')` alias, an inline
+`require('os').cpus()`, a member read off an awaited `import('node:os')` or
+its destructured form, `navigator.hardwareConcurrency`, and a
+`maxWorkers`/`minWorkers`/`workers` percentage string. The width is the
+caller's `GATE_JOBS`, because a process inside a container sees the node's
+cores rather than the cores it was given.
+
+It also fails a per-case, per-hook or per-suite time limit below the shared
+default. A case budget of `0` means no limit in both Vitest and Playwright
+and passes; a wait timeout of `0` does not. `waitForCondition`, the
+project's own wrapper in `web/test-utils/src/wait.ts`, is the one exempt
+wait: it passes the larger of the caller's `timeout` and the configured
+`asyncUtilTimeout`, so a caller's `0` or `500` cannot lower the budget and
+there is no limit to check. The gate asserts that premise on every run —
+`waitForCondition`'s body must still compute a `Math.max` over both values —
+and exits 2, rather than passing the call silently, when the wrapper no
+longer does or the file is missing. The Testing Library `findBy*` and
+`waitFor` timeouts and `vi.waitFor` stay under the rule: their `0` and any
+value below the shared async default are findings. The Vitest forms read are
+an options object after the case name, a trailing budget or options object
+(`it(name, fn, 5000)`, `it(name, fn, { timeout })`), the call returned by
+`it.each`/`it.for`/`it.skipIf`/`it.runIf`, both the table form
+(`it.each([[1]])`) and the tagged template form (`` it.each`...` ``),
+`test.setTimeout` and `vi.setConfig`; `testTimeout`/`hookTimeout` in a
+config; and a
+`findBy*`/`waitFor` wait timeout or a Testing Library
+`configure({ asyncUtilTimeout })` against the shared async default. A
+numeric budget is a literal or a constant arithmetic expression
+(`5 * 1000`), optionally wrapped in the one recognised scaling call
+(`scaledTimeout(5_000)`); only that name is peeled, so a table
+(`it.each(range(5))`) is not read as its first argument. Playwright's
+`test.setTimeout`, `testInfo.setTimeout`, `test.info().setTimeout` and
+`test.describe.configure({ timeout })` are read against the Playwright
+config's top-level `timeout`, which is found by its position in the config
+object rather than by indentation. Assertion, element and retry waits that
+are not Testing Library queries are not case limits and are left alone, and
+Go has no declared case budget to read.
+
+The shared defaults are read from the tree: `SHARED_TIMEOUT_MS` in
+`web/vitest.shared.ts`, `ASYNC_UTIL_TIMEOUT_MS` in
+`web/test-utils/src/gate-time.ts`, and the Playwright config's top-level
+`timeout`. Their floors live in `web/scripts/test-time-floors.json`, a file
+that holds only floors — `vitestCaseTimeoutMs`, `playwrightCaseTimeoutMs`
+and `asyncUtilTimeoutMs` — so a lowered default cannot lower its own floor
+in the same edit (the workspace guard reads the same file). Each default
+must clear its own floor; a lowered default would make every per-case limit
+below it pass. The file is the one entry point for an intentional floor
+change: a change to it carries its reason in the commit message. A floors
+file that is missing, unreadable (invalid JSON), or lacks a positive finite
+value for any key is an infrastructure error, never a silent pass.
+
+Scope is Go `_test.go` files; any non-test Go file whose import block names
+`"testing"` (the test-support packages: dbsuite, bussuite, cutproxy,
+routecontract, routefixture and the like); any Go file in a package or
+directory whose name ends in `test` (the Go convention for a helper
+package: coretest, provisioningtest, authntest and the like); JavaScript
+and TypeScript test files; Vitest/Playwright configuration; and the
+`test-utils` and `e2e` trees. In the `e2e` tree, specs and their support
+files (fixtures, helpers, global setup) are all read for Playwright case
+budgets, because a helper that lowered a bound would narrow every case that
+used it; only the Vitest-shaped `*.test.*` files there take the Vitest
+budget. Product runtime code matches none of the Go shapes and is out of
+scope.
+
+The read is a text heuristic with comments, string contents and regex
+bodies masked, so a token in prose is not a finding; an inline or dynamic
+`os` import is matched on a copy that keeps its module specifier, then kept
+only when its keyword survives the mask, so a `require('os')` named inside a
+string stays prose. Its known blind spots are a reviewer's obligation, not
+the gate's, and a clean run does not stand for them: a dot import of
+`runtime` (`import . "runtime"`) makes `NumCPU()` unqualified; a named
+constant passed as a budget (`const ms = 5_000; it('x', { timeout: ms })`);
+a budget built from a variable or from a longer expression than constant
+arithmetic; a width returned by a helper; a `findBy*`/`waitFor` timeout
+passed through a variable; an `os` member reached through a binding the
+scan does not model (`const m = require('os'); m['cpus']()`); and a
+function that saves one name twice, which the per-body pairing judges
+together, so a clean save can be reported because its same-named sibling in
+a nested block escaped. Exit codes: 0 clean, 1 a finding (file, line and
+what it is), 2 infrastructure error (the root is not a directory, nothing
+test-shaped was found, a shared default or one of its floors is missing,
+unreadable or not a positive finite number, or
+`web/test-utils/src/wait.ts` is missing, unreadable or no longer takes the
+larger of the caller's timeout and the shared async budget).
 
 `check_platform_errors.py` — holds the platform error-copy bundle
 (`web/packages/i18n/src/platform-errors/locales/{zh-CN,en-US}.json`) to

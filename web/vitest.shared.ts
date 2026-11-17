@@ -63,10 +63,15 @@ export const sharedCoverage = {
 /**
  * The one timeout a case and each of its hooks get, before the caller's
  * `GATE_TIME_SCALE` is applied. Wide enough that a case running beside a
- * saturated machine fails on its assertion rather than on the clock, and
- * still finite so a genuine hang is reported instead of holding the gate.
- * Exported so the workspace guard can compare the floor against the
- * unscaled constant rather than the caller-multiplied value.
+ * saturated machine fails on its assertion rather than on the clock, and a
+ * finite value rather than `0`, which Vitest reads as no limit: a case that
+ * keeps the default still reports a genuine hang instead of holding the
+ * gate.
+ *
+ * The floor this default must clear lives outside this file, in
+ * `web/scripts/test-time-floors.json`, so the value being guarded and the
+ * floor guarding it are never edited in one place: a lowered default that
+ * lowered its own floor with it would pass a guard that read both here.
  */
 export const SHARED_TIMEOUT_MS = 60_000
 
