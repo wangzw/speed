@@ -31,12 +31,14 @@
  * Library's budget does not reach: neither has a global default, and both
  * use a fixed one second per call. Every `vi.waitFor` must go through
  * `waitForCondition` (@speed/test-utils/wait), which supplies the shared
- * budget, and `vi.waitUntil` is forbidden; a bare call, a bracket-access
- * call, a destructured alias of either (`const { waitFor } = vi`), or a
- * reference kept uncalled (`const wait = vi.waitFor`) in a test source is
- * red here. Testing Library's own `waitFor` and `findBy*` queries are
- * outside this guard: they wait under the `asyncUtilTimeout` budget the
- * setup configures.
+ * budget, and `vi.waitUntil` is forbidden. A test source is red here for
+ * any member access to either name -- a call, a bracket-access call,
+ * optional chaining, a destructured alias (`const { waitFor } = vi`), an
+ * argument, a property value, an arrow's return, or a reference kept
+ * uncalled (`const wait = vi.waitFor`) -- because outside `wait.ts` no use
+ * of either is permitted. Testing Library's own `waitFor` and `findBy*`
+ * queries are outside this guard: they wait under the `asyncUtilTimeout`
+ * budget the setup configures.
  *
  * The demo host (starters/demo/web) is a copyable application whose
  * repository-internal test wiring is dropped on copy out, so it is not
@@ -119,6 +121,56 @@ function stripComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/.*$/gm, '')
+}
+
+/**
+ * The source with comments and every string literal removed, so that a name
+ * spelled out in prose is not read as a use of it. A template literal is
+ * removed whole, `${...}` included: code inside a substitution is not scanned,
+ * and no test source reaches a wait that way.
+ */
+function stripCommentsAndStrings(source) {
+  let out = ''
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i]
+    const next = source[i + 1]
+    if (char === '/' && next === '/') {
+      while (i < source.length && source[i] !== '\n') i += 1
+      out += '\n'
+      continue
+    }
+    if (char === '/' && next === '*') {
+      i += 2
+      while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) {
+        if (source[i] === '\n') out += '\n'
+        i += 1
+      }
+      i += 1
+      continue
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      const start = i
+      i += 1
+      while (i < source.length && source[i] !== char) {
+        if (source[i] === '\\') i += 1
+        else if (source[i] === '\n') out += '\n'
+        i += 1
+      }
+      // A string between brackets is a property key, not prose: `vi['waitFor']`
+      // names the wait the same way `vi.waitFor` does, so it is kept.
+      const before = out.trimEnd().at(-1)
+      let after = i + 1
+      while (after < source.length && /\s/.test(source[after])) after += 1
+      if (before === '[' && source[after] === ']') {
+        out += source.slice(start, i + 1)
+      } else {
+        out += ' '
+      }
+      continue
+    }
+    out += char
+  }
+  return out
 }
 
 /**
@@ -254,29 +306,28 @@ function lowCaseTimeouts(source, floor) {
 }
 
 /**
- * The bare waits in a test source, which lack the shared budget: a
- * `vi.waitFor` or `vi.waitUntil` call (directly or by bracket access), a
- * destructuring that binds either name from `vi`, and a reference to either
- * assigned without being called (`const wait = vi.waitFor`).
+ * The uses of `vi.waitFor` or `vi.waitUntil` in a test source that bypass the
+ * shared budget. Outside `wait.ts` there is no permitted use of either name,
+ * so every member access counts, whatever becomes of it: a call, an argument,
+ * a property value, an arrow's return or a reference kept for later. Optional
+ * chaining and bracket access are the same access. A destructuring that binds
+ * either name from `vi` is listed too. Comments and strings are removed first,
+ * so prose that spells a wait out is not a use.
  */
 function bareWaitUses(source) {
-  const code = stripComments(source)
+  const code = stripCommentsAndStrings(source)
   return [
-    ...(code.match(/\bvi\s*\.\s*(?:waitFor|waitUntil)\s*\(/g) ?? []),
-    ...(code.match(/\bvi\s*\[\s*(['"])(?:waitFor|waitUntil)\1\s*\]\s*\(/g) ?? []),
+    ...(code.match(
+      /\bvi\s*\??\.\s*(?:waitFor|waitUntil)\b/g,
+    ) ?? []),
+    ...(code.match(
+      /\bvi\s*(?:\?\.)?\s*\[\s*(['"])(?:waitFor|waitUntil)\1\s*\]/g,
+    ) ?? []),
     ...(code.match(
       /\b(?:const|let|var)\s*\{[^}]*\b(?:waitFor|waitUntil)\b[^}]*\}\s*=\s*vi\b/g,
     ) ?? []),
     ...(code.match(
       /\(\s*\{[^}]*\b(?:waitFor|waitUntil)\b[^}]*\}\s*=\s*vi\s*\)/g,
-    ) ?? []),
-    // A reference kept without being called: the call's one-second default
-    // applies once it is invoked, and the alias hides it from the call scan.
-    ...(code.match(
-      /(?:\b(?:const|let|var)\s+[\w$]+\s*=|\b[\w$]+\s*=)\s*vi\s*\.\s*(?:waitFor|waitUntil)\b(?!\s*\()/g,
-    ) ?? []),
-    ...(code.match(
-      /(?:\b(?:const|let|var)\s+[\w$]+\s*=|\b[\w$]+\s*=)\s*vi\s*\[\s*(['"])(?:waitFor|waitUntil)\1\s*\](?!\s*\()/g,
     ) ?? []),
   ]
 }
@@ -479,8 +530,9 @@ describe('workspace test configuration', () => {
     expect(
       offenders,
       'call waitForCondition (@speed/test-utils/wait) instead of vi.waitFor '
-        + 'or vi.waitUntil, directly, through a destructured alias, or through '
-        + "a reference kept uncalled; both waits' one-second default is outside "
+        + 'or vi.waitUntil: either name is reached only through that helper, '
+        + "so a call, an alias, an argument, a property value and a returned "
+        + "reference all count, and both waits' one-second default is outside "
         + 'the setup budget and GATE_TIME_SCALE',
     ).toEqual([])
   })
@@ -555,9 +607,21 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses('const wait = vi.waitFor')).toHaveLength(1)
     expect(bareWaitUses('let wait = vi.waitUntil')).toHaveLength(1)
     expect(bareWaitUses("const wait = vi['waitFor']")).toHaveLength(1)
+    // Every use of either name is a member access, however it is reached:
+    // passed as an argument, kept as a property value, returned from an
+    // arrow, read through optional chaining, or invoked through a method of
+    // its own.
+    expect(bareWaitUses('wrap(vi.waitFor)')).toHaveLength(1)
+    expect(bareWaitUses('const w = { run: vi.waitFor }')).toHaveLength(1)
+    expect(bareWaitUses('const w = () => vi.waitFor')).toHaveLength(1)
+    expect(bareWaitUses('await vi?.waitFor(() => {})')).toHaveLength(1)
+    expect(bareWaitUses('vi.waitFor.call(null, () => {})')).toHaveLength(1)
+    expect(bareWaitUses("await vi?.['waitUntil'](() => true)")).toHaveLength(1)
     // A string that names the call is prose, not a reference; a called wait
     // is counted once, by the call scan rather than the reference scan.
     expect(bareWaitUses("it('names vi.waitFor in prose', () => {})")).toHaveLength(0)
+    // A string that spells out an assignment is prose too.
+    expect(bareWaitUses("it('x = vi.waitFor', () => {})")).toHaveLength(0)
     expect(bareWaitUses('await waitForCondition(() => {})')).toHaveLength(0)
     expect(bareWaitUses('const { spyOn } = vi')).toHaveLength(0)
     expect(bareWaitUses('// await vi.waitFor(() => {})')).toHaveLength(0)

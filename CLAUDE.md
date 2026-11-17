@@ -75,9 +75,10 @@ change spends most of its time on the side that did not move.
 variable, default 1) multiplies the frontend suites' wait limits: Vitest's
 test and hook budget, Testing Library's async budget, and `vi.waitFor`
 through the shared `waitForCondition` helper. `vi.waitUntil` has no budget
-the setup reaches and is not wrapped: the workspace guard rejects a bare
-`vi.waitFor` or `vi.waitUntil`, whether it is called, destructured or kept
-as an uncalled reference, and every `vi.waitFor` goes through
+the setup reaches and is not wrapped: the workspace guard rejects every
+member access to `vi.waitFor` or `vi.waitUntil` in a test source — a call,
+a destructured alias, an argument, a property value, an arrow's return or
+a reference kept uncalled — and every `vi.waitFor` goes through
 `waitForCondition`. Testing Library's `waitFor` and `findBy*` queries wait
 under the async budget instead, without going through the helper. A
 normal run leaves it at 1; a run that shares the machine with other heavy
