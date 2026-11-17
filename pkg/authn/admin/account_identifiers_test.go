@@ -218,12 +218,14 @@ func TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership(t *testing.T) {
 	r.accounts.putIdentifiers(userID,
 		authn.Identifier{Kind: authn.IdentifierEmail, Value: "proved@example.com", VerifiedVia: authn.VerifiedViaEmailCode},
 		authn.Identifier{Kind: authn.IdentifierUsername, Value: "asserted", VerifiedVia: authn.VerifiedViaAdmin},
+		authn.Identifier{Kind: authn.IdentifierEmail, Value: "invited@example.com", VerifiedVia: authn.VerifiedViaInvite},
 		authn.Identifier{Kind: authn.IdentifierEmail, Value: "self@example.com", VerifiedVia: authn.VerifiedViaSelf},
 		authn.Identifier{Kind: authn.IdentifierPhone, Value: "+15550000002", VerifiedVia: authn.VerifiedViaSMSCode},
 	)
 	got := decodeIdentifiers(t, identifiersField(t, singleAccountView(t, r, userID)))
 	want := []wireIdentifier{
 		{Kind: "username", Value: "asserted", Proven: false},
+		{Kind: "email", Value: "invited@example.com", Proven: false},
 		{Kind: "email", Value: "proved@example.com", Proven: true},
 		{Kind: "email", Value: "self@example.com", Proven: false},
 		{Kind: "phone", Value: "+15550000002", Proven: true},
