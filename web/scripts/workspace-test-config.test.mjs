@@ -124,10 +124,32 @@ function stripComments(source) {
 }
 
 /**
- * The source with comments and every string literal removed, so that a name
- * spelled out in prose is not read as a use of it. A template literal is
- * removed whole, `${...}` included: code inside a substitution is not scanned,
- * and no test source reaches a wait that way.
+ * The source with comments removed and every string, template literal and
+ * regex literal collapsed to a value placeholder, so that a name spelled out
+ * in prose is not read as a use of it. A template literal is removed whole,
+ * `${...}` included: code inside a substitution is not scanned, and no test
+ * source reaches a wait that way.
+ *
+ * A `/` opens a regex literal rather than dividing when the last emitted
+ * token is one that expects an expression there, the rule
+ * `tools/check_test_limits.py` applies. Treating a regex literal as code
+ * would let a quote inside it open a string and swallow the text after it.
+ * An apostrophe directly after an identifier character is JSX text
+ * (`<p>it's</p>`), not a string opener; treating it as one swallows the text
+ * after it the same way.
+ *
+ * A single- or double-quoted string is confined to its line. A quote with no
+ * closing partner on that line is not a string: it is emitted as ordinary
+ * text and scanning continues after it, so a lone quote can hide at most the
+ * rest of its own line. A template literal is the one string allowed to span
+ * lines, and it is removed whole.
+ *
+ * The approximations that remain all fail open -- they can hide a use, never
+ * invent one: a regex whose opening `/` follows a token this rule does not
+ * recognise is read as a division, and a quote inside it then starts a
+ * string; and a quoted run at the start of JSX text (`<p>'quoted'</p>`) is
+ * read as a string and collapses that line's text. Each affects at most its
+ * own line, so neither can hide a wait below it.
  */
 function stripCommentsAndStrings(source) {
   let out = ''
@@ -148,29 +170,126 @@ function stripCommentsAndStrings(source) {
       i += 1
       continue
     }
-    if (char === "'" || char === '"' || char === '`') {
-      const start = i
-      i += 1
-      while (i < source.length && source[i] !== char) {
-        if (source[i] === '\\') i += 1
-        else if (source[i] === '\n') out += '\n'
-        i += 1
+    if (char === '/' && regexCanStart(out)) {
+      let end = i + 1
+      let inClass = false
+      while (end < source.length) {
+        const inner = source[end]
+        if (inner === '\\') {
+          end += 2
+          continue
+        }
+        if (inner === '[') inClass = true
+        else if (inner === ']') inClass = false
+        else if (inner === '/' && !inClass) break
+        else if (inner === '\n') break
+        end += 1
       }
-      // A string between brackets is a property key, not prose: `vi['waitFor']`
-      // names the wait the same way `vi.waitFor` does, so it is kept.
-      const before = out.trimEnd().at(-1)
+      if (end < source.length && source[end] === '/') {
+        i = end
+        while (i + 1 < source.length && /[A-Za-z]/.test(source[i + 1])) i += 1
+        out += '0'
+        continue
+      }
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      // An apostrophe that follows an identifier cannot open a string in
+      // JavaScript, so it is JSX text such as a contraction.
+      const preceding = out.at(-1)
+      if (
+        char === "'"
+        && preceding !== undefined
+        && /[A-Za-z0-9_$]/.test(preceding)
+      ) {
+        out += char
+        continue
+      }
+      const start = i
+      let end = i + 1
+      let closed = false
+      while (end < source.length) {
+        const inner = source[end]
+        if (inner === '\\') {
+          end += 2
+          continue
+        }
+        if (inner === char) {
+          closed = true
+          break
+        }
+        // Only a template literal spans lines. A quoted string with no
+        // closing quote on its line is not a string here: the quote is
+        // emitted as ordinary text below and scanning continues after it.
+        if (inner === '\n' && char !== '`') break
+        if (inner === '\n') out += '\n'
+        end += 1
+      }
+      if (!closed) {
+        // An unterminated template literal runs to the end of the source.
+        if (char === '`') {
+          i = source.length
+          out += '0'
+          continue
+        }
+        out += char
+        continue
+      }
+      i = end
+      // A string behind a member access is a property key, not prose:
+      // `vi['waitFor']` names the wait the same way `vi.waitFor` does, so it
+      // is kept. An array element is prose like any other string, so the
+      // bracket must follow the object it reads from.
+      const trimmed = out.trimEnd()
+      let base = trimmed.length - 2
+      while (base >= 0 && /\s/.test(trimmed[base])) base -= 1
+      const memberAccess =
+        trimmed.at(-1) === '['
+        && base >= 0
+        && /[A-Za-z0-9_$.]/.test(trimmed[base])
       let after = i + 1
       while (after < source.length && /\s/.test(source[after])) after += 1
-      if (before === '[' && source[after] === ']') {
+      if (memberAccess && source[after] === ']') {
         out += source.slice(start, i + 1)
       } else {
-        out += ' '
+        out += '0'
       }
       continue
     }
     out += char
   }
   return out
+}
+
+/** The tokens after which a JavaScript `/` opens a regex literal. */
+const REGEX_PRECEDER_CHARS = new Set('(,=:[!&|?{};+-*%^~<>')
+const REGEX_PRECEDER_WORDS = new Set([
+  'return',
+  'typeof',
+  'case',
+  'in',
+  'of',
+  'delete',
+  'void',
+  'new',
+  'do',
+  'else',
+  'yield',
+  'await',
+])
+
+/**
+ * Whether a `/` at the current position of `emitted` opens a regex literal
+ * rather than dividing, judged by the last token emitted. A string is
+ * emitted as `0`, so a division after it (`'a' / 2`) is still a division.
+ */
+function regexCanStart(emitted) {
+  let previous = emitted.length - 1
+  while (previous >= 0 && /\s/.test(emitted[previous])) previous -= 1
+  if (previous < 0) return true
+  if (REGEX_PRECEDER_CHARS.has(emitted[previous])) return true
+  let start = previous
+  while (start >= 0 && /[A-Za-z0-9_$]/.test(emitted[start])) start -= 1
+  return REGEX_PRECEDER_WORDS.has(emitted.slice(start + 1, previous + 1))
 }
 
 /**
@@ -617,14 +736,76 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses('await vi?.waitFor(() => {})')).toHaveLength(1)
     expect(bareWaitUses('vi.waitFor.call(null, () => {})')).toHaveLength(1)
     expect(bareWaitUses("await vi?.['waitUntil'](() => true)")).toHaveLength(1)
-    // A string that names the call is prose, not a reference; a called wait
-    // is counted once, by the call scan rather than the reference scan.
+    // A string that names the call is prose; stripping removes it before any
+    // of the patterns above run, so it is not counted.
     expect(bareWaitUses("it('names vi.waitFor in prose', () => {})")).toHaveLength(0)
     // A string that spells out an assignment is prose too.
     expect(bareWaitUses("it('x = vi.waitFor', () => {})")).toHaveLength(0)
     expect(bareWaitUses('await waitForCondition(() => {})')).toHaveLength(0)
     expect(bareWaitUses('const { spyOn } = vi')).toHaveLength(0)
     expect(bareWaitUses('// await vi.waitFor(() => {})')).toHaveLength(0)
+    // An array element is prose: a string is a property key only when the
+    // bracket that holds it follows the object it is read from.
+    expect(bareWaitUses("const allowed = ['vi.waitFor']")).toHaveLength(0)
+    expect(bareWaitUses("check(['vi.waitUntil'])")).toHaveLength(0)
+    expect(bareWaitUses("const [first] = ['vi.waitFor']")).toHaveLength(0)
+  })
+
+  it('scans a wait after a regex literal or JSX text that carries a quote', () => {
+    // A quote inside a regex literal must not open a string: doing so drops
+    // every later line up to the next matching quote, and the wait below it
+    // goes unseen.
+    expect(
+      bareWaitUses("const single = /'/g\nawait vi.waitFor(() => {})"),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses('const double = /"/g\nawait vi.waitFor(() => {})'),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses('const backtick = /`/g\nawait vi.waitFor(() => {})'),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses("const pattern = /['\"]x/g\nawait vi.waitFor(() => {})"),
+    ).toHaveLength(1)
+    // A stripper that does not recognise regex literals pairs these quotes as
+    // string delimiters and hides the wait below; both shapes occur in this
+    // repository's test sources.
+    expect(
+      bareWaitUses(
+        "const literal = /(['\"`])([^'\"`\\\\]*)\\1/g\nawait vi.waitFor(() => {})",
+      ),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses(
+        "/(?:^|\\n)\\s*import\\b[^\\n]*['\"]qrcode-generator['\"]/.test(code)\n"
+          + 'await vi.waitFor(() => {})',
+      ),
+    ).toHaveLength(1)
+    // An apostrophe inside JSX text is prose, not a string opener.
+    expect(
+      bareWaitUses("<p>it's a member</p>\nawait vi.waitFor(() => {})"),
+    ).toHaveLength(1)
+    // A quoted string never spans lines: a quote with no partner on its line
+    // is ordinary text, so the line below it is still scanned.
+    expect(
+      bareWaitUses("const label = 'unfinished\nawait vi.waitFor(() => {})"),
+    ).toHaveLength(1)
+    expect(
+      bareWaitUses('const label = "unfinished\nawait vi.waitFor(() => {})'),
+    ).toHaveLength(1)
+    // A template literal is still free to span lines, and the wait spelled
+    // out inside it stays prose.
+    expect(
+      bareWaitUses('const text = `a\nvi.waitFor`\nawait vi.waitFor(() => {})'),
+    ).toHaveLength(1)
+    // A division is not a regex, so it masks nothing after it.
+    expect(
+      bareWaitUses('const half = total / 2\nawait vi.waitFor(() => {})'),
+    ).toHaveLength(1)
+    // A string is a value: the division after it is still a division.
+    expect(
+      bareWaitUses("const half = 'a'.length / 2\nawait vi.waitFor"),
+    ).toHaveLength(1)
   })
 
   it('scans the async budget argument it is meant to catch', () => {
