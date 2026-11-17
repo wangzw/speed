@@ -667,6 +667,11 @@ describe('the invitation landing is ungated', () => {
       if (path === '/api/v1/auth/invitations/token-1') {
         return pendingView
       }
+      // The app reads the caller's profile on every authenticated mount; the
+      // real route answers 200 with this body, never an empty one.
+      if (path === '/api/v1/auth/me') {
+        return principal()
+      }
       return undefined
     }) as RequestFn)
     window.history.replaceState({}, '', '/invitations/token-1')

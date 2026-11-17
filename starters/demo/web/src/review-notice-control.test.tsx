@@ -22,6 +22,7 @@ import {
   createTestSession,
   readyFeatures,
 } from './test-utils/session.js'
+import { principal } from './test-utils/session-harness.js'
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
@@ -72,6 +73,11 @@ describe('the review-only notice control', () => {
     const calls: { path: string; method: string | undefined }[] = []
     bindRequestFn(<T,>(path: string, options?: RequestOptions): Promise<T> => {
       calls.push({ path, method: options?.method })
+      // The app reads the caller's profile on every authenticated mount; the
+      // real route answers 200 with this body, never an empty one.
+      if (path === '/api/v1/auth/me' && (options?.method ?? 'GET') === 'GET') {
+        return Promise.resolve(principal() as T)
+      }
       return Promise.resolve(undefined as T)
     })
     renderDemoApp({ session: sessionWith('review.notification.control') })

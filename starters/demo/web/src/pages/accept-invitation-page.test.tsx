@@ -204,6 +204,18 @@ function makeInvitationBackend(
         sso_exempt: false,
       } as T)
     }
+    // The app reads the caller's profile on every authenticated mount; the
+    // real route answers 200 with this body (never an empty one), and the
+    // home it navigates to also reads the unread count.
+    if (path === '/api/v1/auth/me' && method === 'GET') {
+      return Promise.resolve(principal() as T)
+    }
+    if (
+      path === '/api/v1/notifications/messages/unread-count' &&
+      method === 'GET'
+    ) {
+      return Promise.resolve({ unread: 0 } as T)
+    }
     return Promise.resolve(undefined as T)
   }
   return { fn, accepted, eligibilityReads, selfReads }

@@ -24,6 +24,7 @@ import {
   createTestSession,
   readyFeatures,
 } from './test-utils/session.js'
+import { principal } from './test-utils/session-harness.js'
 
 const CODE = 'review-notice-en'
 
@@ -52,6 +53,11 @@ function listStub<T>(path: string, options?: RequestOptions): Promise<T> {
     (options?.method ?? 'GET') === 'GET'
   ) {
     return Promise.resolve({ templates: [] } as T)
+  }
+  // The console frame reads the caller's profile on every authenticated
+  // mount. The real route answers 200 with this body, never an empty one.
+  if (path === '/api/v1/auth/me' && (options?.method ?? 'GET') === 'GET') {
+    return Promise.resolve(principal() as T)
   }
   return Promise.resolve(undefined as T)
 }
