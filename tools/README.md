@@ -102,9 +102,13 @@ pass, to falling back to the public `/healthz` probe only when they cannot be
 read, and to rebuilding the volume otherwise. It drives the real script with
 stand-ins for `flyctl`, `make`, `curl` and `python3` first on `PATH`, each
 logging its arguments and answering from a control file, so the cases cover a
-healthy deploy, a failed deploy command whose checks still pass, the
-confirmation refusal, `--yes` rebuilding in order, `--dry-run`, `--help` and
-an unknown argument without a network, a cloud account or a real deployment.
+healthy deploy, a failed deploy command whose checks still pass, the health
+wait after the second deploy, a failed second deploy, a destroy that fails
+midway and reports what was done, the confirmation refusal, a typed
+`rebuild` acceptance, `--yes` rebuilding in order, fly.toml values overriding
+the built-in defaults, environment values overriding both, `--dry-run`,
+`--help` and an unknown argument without a network, a cloud account or a real
+deployment.
 
 ## The integration stack
 
