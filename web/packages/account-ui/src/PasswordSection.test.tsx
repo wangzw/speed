@@ -679,6 +679,7 @@ describe('PasswordSection', () => {
   })
 
   it('releases the window a refused password change opened', async () => {
+    captureRefreshWarning({ expected: true })
     // A refused change must not leave its window open: the next genuine
     // anonymous read has to end the session. The current-password 401 makes
     // the silent leg answer anonymous as well, and the open window discards

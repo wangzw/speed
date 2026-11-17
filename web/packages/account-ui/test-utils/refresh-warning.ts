@@ -14,25 +14,54 @@
  * swallowed with the known one.
  */
 
-import { onTestFinished, vi } from 'vitest'
+import { expect, onTestFinished, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 
 const REFRESH_WARNING = 'access token refresh failed'
+
+/** How strictly the capture treats the diagnostic as required. */
+export interface RefreshWarningOptions {
+  /**
+   * Assert, when the test finishes, that the diagnostic was reported. A case
+   * whose path must produce it sets this, so a silent removal of the client's
+   * report fails the case; a case that merely silences a diagnostic its path
+   * may or may not reach leaves it off.
+   */
+  readonly expected?: boolean
+}
 
 /**
  * Captures `access token refresh failed` for the current test, forwarding
  * every other warning to the real console. The spy is restored when the
  * test finishes, so a failing assertion cannot leak it into the next test.
+ * With `expected`, the finish also asserts the diagnostic was reported.
  */
-export function captureRefreshWarning(): MockInstance {
+export function captureRefreshWarning(
+  options: RefreshWarningOptions = {},
+): MockInstance {
   const original = console.warn
   const warn = vi.spyOn(console, 'warn').mockImplementation((message, attrs) => {
     if (message !== REFRESH_WARNING) {
       original(message, attrs)
     }
   })
+  // Registered first so it runs LAST: onTestFinished callbacks run in reverse
+  // order, and a restored spy has cleared its calls.
   onTestFinished(() => {
     warn.mockRestore()
   })
+  if (options.expected === true) {
+    // Some paths report the failure from a read the test does not await, so
+    // the diagnostic can land a tick after the body; wait for it rather than
+    // reading an empty spy. A path that never reports it still fails here.
+    onTestFinished(async () => {
+      await vi.waitFor(() =>
+        expect(warn).toHaveBeenCalledWith(
+          REFRESH_WARNING,
+          expect.objectContaining({ status: 401 }),
+        ),
+      )
+    })
+  }
   return warn
 }

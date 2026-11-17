@@ -2083,6 +2083,7 @@ describe('IdentifiersSection', () => {
   })
 
   it('renders a step-up refusal of an email add as an ordinary failure, with no dialog', async () => {
+    captureRefreshWarning({ expected: true })
     // Registering a contact address is not a change of what proves the
     // account; the route asks for no fresh authentication. A step-up refusal
     // that reached the add face renders its code text instead of opening the
@@ -2123,6 +2124,7 @@ describe('IdentifiersSection', () => {
   })
 
   it('re-proves an SMS first factor past the window and re-runs the username add', async () => {
+    captureRefreshWarning({ expected: true })
     // The registration journey: an account opened by SMS sign-up has no
     // factor and no username. Past the five-minute window its identifier
     // write is refused for a fresh first factor -- which enrolling a
@@ -2627,6 +2629,7 @@ describe('IdentifiersSection', () => {
   })
 
   it('releases the window a refused username add opened', async () => {
+    captureRefreshWarning({ expected: true })
     // A refused one-step username add must not leave its window open: the
     // next genuine anonymous read has to end the session. The add is refused
     // 409 (the name is taken), so no silent leg runs; once the failure is on

@@ -1161,6 +1161,7 @@ describe('StepUpChallenge', () => {
   })
 
   it('offers a restart when the answer finds its flow gone', async () => {
+    captureRefreshWarning({ expected: true })
     // A flow the deployment no longer holds (expired, or lost with the
     // process that stored it) can never accept another answer, so the
     // dialog drops the step form and offers a fresh flow instead of a

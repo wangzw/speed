@@ -1587,6 +1587,7 @@ describe('SocialBindingsSection', () => {
   })
 
   it('releases the window a refused unlink opened', async () => {
+    captureRefreshWarning({ expected: true })
     // A refused unlink must not leave its window open: the next genuine
     // anonymous read has to end the session. The unlink is refused 409, so
     // no silent leg runs; once the failure is on screen the window is

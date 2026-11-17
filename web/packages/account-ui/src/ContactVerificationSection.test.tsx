@@ -396,6 +396,7 @@ describe('ContactVerificationSection', () => {
   })
 
   it('keeps the sent notice when the verify scope fails', async () => {
+    captureRefreshWarning({ expected: true })
     // The destination notice is the code step's own state, not the send
     // scope's slot: the other control group's failure must not clear it.
     const respond: RealResponder = (call: RealCall) => {
@@ -533,6 +534,7 @@ describe('ContactVerificationSection', () => {
   })
 
   it('drops the code step’s result when the target address changes', async () => {
+    captureRefreshWarning({ expected: true })
     // Replacing the target is a change of context: the wrong-code answer
     // describes the address being replaced and must not stand beside the
     // new one.
@@ -807,6 +809,7 @@ describe('ContactVerificationSection', () => {
   })
 
   it('states the automatic step-up refusal instead of opening the dialog, then retries the send on the visitor click', async () => {
+    captureRefreshWarning({ expected: true })
     // The automatic attempt cannot open a dialog the visitor did not ask
     // for, so it states why it could not send and leaves the manual action.
     // The send is not a gated write: the visitor's click retries it like any
@@ -862,6 +865,7 @@ describe('ContactVerificationSection', () => {
   })
 
   it('clears the automatic step-up explanation when a verification starts', async () => {
+    captureRefreshWarning({ expected: true })
     // The explanation describes the automatic send's refusal, not a standing
     // state: a verification is a new attempt in the shared result position,
     // so it must not stand beside the attempt's answer.
@@ -1086,6 +1090,7 @@ describe('ContactVerificationSection', () => {
   })
 
   it('renders a wrong code as the unified invalid-code text and clears the field', async () => {
+    captureRefreshWarning({ expected: true })
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -1203,6 +1208,7 @@ describe('ContactVerificationSection', () => {
   })
 
   it('renders a step-up refusal of the send as an ordinary failure, with no dialog', async () => {
+    captureRefreshWarning({ expected: true })
     // Registering the address is not a change of what proves the account; the
     // route asks for no fresh authentication. A step-up refusal renders its
     // code text instead of opening the dialog, and the send is not replayed.
@@ -1375,6 +1381,7 @@ describe('ContactVerificationSection', () => {
   })
 
   it('opens no identity-transition window for a refused verification', async () => {
+    captureRefreshWarning({ expected: true })
     // The wrong-code refusal is an ordinary failure: no window is opened, so
     // a later genuine anonymous read still ends the session with one edge.
     let refused = false

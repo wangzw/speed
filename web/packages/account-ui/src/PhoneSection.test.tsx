@@ -738,6 +738,7 @@ describe('PhoneSection', () => {
   })
 
   it('renders a refused verification beneath the code controls', async () => {
+    captureRefreshWarning({ expected: true })
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'POST' && call.path === PHONE_PATH) {
         return jsonResponse(200, { expires_in: 300, resend_after: 60 })
@@ -774,6 +775,7 @@ describe('PhoneSection', () => {
   })
 
   it('renders a step-up refusal of the send as an ordinary failure, with no dialog', async () => {
+    captureRefreshWarning({ expected: true })
     // Registering a phone number is not a change of what proves the account;
     // the route asks for no fresh authentication. A step-up refusal renders
     // its code text in the section's region instead of opening the dialog,
@@ -974,6 +976,7 @@ describe('PhoneSection', () => {
   })
 
   it('opens no identity-transition window for a refused verification', async () => {
+    captureRefreshWarning({ expected: true })
     // The wrong-code refusal is an ordinary failure: no window is opened, so
     // a later genuine anonymous read still ends the session with one edge.
     let refused = false

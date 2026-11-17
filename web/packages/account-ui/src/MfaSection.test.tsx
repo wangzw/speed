@@ -800,6 +800,7 @@ describe('MfaSection', () => {
   })
 
   it('lets a real anonymous answer end the session when a disabled factor removal rotates nothing', async () => {
+    captureRefreshWarning({ expected: true })
     // Removing a disabled factor replaces no credential: the route settles
     // the sessions only for a factor that was active. The removal therefore
     // runs bare, without an identity-transition window, so a read that lands
@@ -859,6 +860,7 @@ describe('MfaSection', () => {
   })
 
   it('releases the window a refused active-factor removal opened', async () => {
+    captureRefreshWarning({ expected: true })
     // A refused write must not leave its window open: the next genuine
     // anonymous read has to end the session. The removal is refused 409 (the
     // factor is the account's last one); after that failure the session read
@@ -1855,6 +1857,7 @@ describe('MfaSection', () => {
   })
 
   it('stays quiet about the single-factor consequence when another method remains', async () => {
+    captureRefreshWarning({ expected: true })
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -1944,6 +1947,7 @@ describe('MfaSection', () => {
   })
 
   it('walks the password channel when the removed factor is the last one', async () => {
+    captureRefreshWarning({ expected: true })
     let elevated = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
@@ -2687,6 +2691,7 @@ describe('MfaSection', () => {
   })
 
   it('asks for a name only on the passkey panel', async () => {
+    captureRefreshWarning({ expected: true })
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
