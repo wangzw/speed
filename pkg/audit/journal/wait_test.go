@@ -122,11 +122,26 @@ func requireRefusedForWaiting(t *testing.T, err error) {
 	}
 }
 
+// lockHeadroom is how far past the delivered connection's busy timeout a write
+// may return: a fifth of the timeout, which is room for a loaded machine's
+// scheduling and still far short of the driver's own busy timeout, the finite
+// wrong time the upper bound rejects in the cases that do not widen it.
+const lockHeadroom = 300 * time.Millisecond
+
+// driverBusyTimeout is the busy timeout the SQLite driver applies to a
+// connection whose locator sets none: the wait a delivered connection that
+// ignored its locator's pragma would give the insert, and the wrong time the
+// upper bound rejects where the case does not widen the connection wait.
+const driverBusyTimeout = 5 * time.Second
+
 // requireRefusedForTheLock checks that a write whose row met the delivered
 // database's lock was refused with ErrWriteFailed and SQLite's refusal of the
 // lock, once the delivered connection's busy timeout had passed and not long
-// after.
-func requireRefusedForTheLock(t *testing.T, err error, took time.Duration) {
+// after. wrong is the time the wrong implementation this case rejects needs,
+// which the two callers state: the driver's own busy timeout where the case
+// leaves the locator's in place, and the widened connection wait where it
+// widens it.
+func requireRefusedForTheLock(t *testing.T, err error, took, wrong time.Duration) {
 	t.Helper()
 	if !errors.Is(err, audit.ErrWriteFailed) || !strings.Contains(err.Error(), "SQLITE_BUSY") {
 		t.Errorf("the write gave %v, want ErrWriteFailed with SQLite's refusal of the lock", err)
@@ -135,7 +150,7 @@ func requireRefusedForTheLock(t *testing.T, err error, took time.Duration) {
 		t.Errorf("the write failed after %v, before the delivered connection's busy timeout of %v",
 			took, deliveredBusyTimeout)
 	}
-	if limit := deliveredBusyTimeout + coretest.Declared(2*time.Second); took > limit {
+	if limit := coretest.DeclaredAgainst(t, deliveredBusyTimeout, lockHeadroom, wrong); took > limit {
 		t.Errorf("the write failed after %v, well past the delivered connection's busy timeout of %v",
 			took, deliveredBusyTimeout)
 	}
@@ -198,13 +213,13 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T
 				}
 				if shape.lock {
 					// The upper bound in requireRefusedForTheLock is the delivered
-					// busy timeout plus two seconds through GATE_TIME_SCALE alone,
+					// busy timeout plus lockHeadroom through GATE_TIME_SCALE alone,
 					// and the timer around this write carries the race factor as
 					// well. A wrong implementation that applies the connection wait
 					// here answers before the busy timeout, so the unscaled lower
-					// bound catches it; the upper bound is the backstop for one that
-					// waits past the busy timeout.
-					requireRefusedForTheLock(t, err, took)
+					// bound catches it; the upper bound rejects one that waits past
+					// the busy timeout, which is the driver's own.
+					requireRefusedForTheLock(t, err, took, driverBusyTimeout)
 				} else {
 					requireRefusedForWaiting(t, err)
 				}
@@ -285,9 +300,9 @@ func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsOnceTheBu
 			return errCaseFailed
 		}
 		// The same bound as the call site above: the delivered busy timeout plus
-		// two seconds through GATE_TIME_SCALE alone for the upper bound, and the
+		// lockHeadroom through GATE_TIME_SCALE alone for the upper bound, and the
 		// unscaled busy timeout for the lower one that catches a connection wait.
-		requireRefusedForTheLock(t, err, took)
+		requireRefusedForTheLock(t, err, took, driverBusyTimeout)
 		requireBusyTimeoutsAsOpened(ctx, t, handle)
 		return nil
 	})
@@ -505,10 +520,9 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses
 	// A wrong implementation applies the connection wait where the engine's
 	// busy timeout bounds the lock, so widening it makes that implementation
 	// need an hour while the right one still gives up after the delivered
-	// connection's 1.5 seconds. The bound in requireRefusedForTheLock is that
-	// timeout plus two seconds through GATE_TIME_SCALE alone, and the hour
-	// meets it at a caller's scale of about eighteen hundred: at or past that
-	// scale the case stops telling the two apart.
+	// connection's busy timeout. The bound in requireRefusedForTheLock is that
+	// timeout plus lockHeadroom through GATE_TIME_SCALE alone; the hour is the
+	// wrong time the case states to it.
 	j.connectWithin = time.Hour
 	holding, err := dbtest.SQLite(t, file, nil).DB().DB()
 	if err != nil {
@@ -533,7 +547,7 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses
 	if !returned {
 		t.Fatalf("Record while the delivered database was held was still waiting after %v", connectionTimer)
 	}
-	requireRefusedForTheLock(t, err, time.Since(started))
+	requireRefusedForTheLock(t, err, time.Since(started), time.Hour)
 }
 
 // A row this module writes itself while another writer briefly holds the one
