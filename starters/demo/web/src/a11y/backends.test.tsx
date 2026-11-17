@@ -58,6 +58,20 @@ describe('scripted backend tables', () => {
     }
   })
 
+  it('answers the profile and unread count the account menu reads', () => {
+    // The menu and avatar badge render from these two reads, and their
+    // suites bind the backend without an unscripted-read reporter: a
+    // removed entry would fall through to undefined and no case would fail.
+    expect(resolveBody('data', '/api/v1/auth/me')).toMatchObject({
+      account_id: 'account-1',
+      kind: 'user',
+      display_name: 'Test User',
+    })
+    expect(
+      resolveBody('data', '/api/v1/notifications/messages/unread-count'),
+    ).toEqual({ unread: 1 })
+  })
+
   it('answers every pattern entry in both modes, unshadowed by an earlier entry', () => {
     for (const [pattern, entry] of PATTERNS) {
       const url = sampleUrl(pattern)
