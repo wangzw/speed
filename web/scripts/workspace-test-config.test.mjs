@@ -697,6 +697,12 @@ function asyncBudgetScale(source, filePath = 'constructed.ts') {
   return argument === undefined ? null : argument.getText(sourceFile)
 }
 
+/** The async budget a setup file names, read from `path` so a parse failure
+ * names the real file rather than the constructed placeholder. */
+function setupAsyncBudgetScale(path) {
+  return asyncBudgetScale(readFileSync(path, 'utf8'), path)
+}
+
 /** The expressions that carry the caller's scale into a setup. */
 const SCALE_SOURCE = /^(?:gateTimeScale\(\)|__SPEED_GATE_TIME_SCALE__)$/
 
@@ -900,7 +906,7 @@ describe('workspace test configuration', () => {
       join(demoWebRoot, 'src/test-utils/setup.ts'),
     ]
     for (const path of setups) {
-      const scale = asyncBudgetScale(readFileSync(path, 'utf8'), path)
+      const scale = setupAsyncBudgetScale(path)
       expect(
         scale,
         `${path} names no async budget for the guard to check`,
@@ -909,6 +915,22 @@ describe('workspace test configuration', () => {
         scale,
         `${path} pins the async budget instead of taking the caller's scale`,
       ).toMatch(SCALE_SOURCE)
+    }
+  })
+
+  it('names the setup file it cannot parse', () => {
+    // The setups loop reads and parses real files; a setup that stops
+    // parsing must be reported under its own path, not under the
+    // placeholder asyncBudgetScale uses for constructed sources. A call
+    // site that reads the file without handing over the path would leave
+    // the failing setup unidentified.
+    const dir = mkdtempSync(join(tmpdir(), 'workspace-test-setup-'))
+    try {
+      const path = join(dir, 'setup.ts')
+      writeFileSync(path, 'configure({ asyncUtilTimeout: asyncBudgetMs(')
+      expect(() => setupAsyncBudgetScale(path)).toThrow(path)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 
