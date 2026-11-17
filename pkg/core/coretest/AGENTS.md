@@ -20,10 +20,12 @@ product default or poll interval the case cannot move is stated as it is.
 
 ## Boundaries
 
-- **It imports no `testing`.** A product test and a `starters/demo` test both
-  import it, so it stays a plain library: a helper that pulled in the test
-  framework would link it into every binary that imports its caller's test
-  binary.
+- **It imports no `testing`.** `DeclaredAgainst` fails a case through its own
+  `Fataler` (`Helper`, `Fatalf`), which `*testing.T` satisfies. Its own cases
+  pass a recorder instead, so they can check the points around the margin
+  without ending the run that exercises them; `testing.TB` carries a method
+  no other package can implement, so a recorder cannot stand in for it. The
+  interface, not an import, is what keeps the test framework out.
 - **It carries its own tests**, which pin the parse of `GATE_TIME_SCALE` and
   the two factors apart.
 - **It sits beside `core` and not under `pkg/internal`, because
