@@ -16,6 +16,7 @@
 
 import { expect, onTestFinished, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 
 const REFRESH_WARNING = 'access token refresh failed'
 
@@ -55,7 +56,7 @@ export function captureRefreshWarning(
     // the diagnostic can land a tick after the body; wait for it rather than
     // reading an empty spy. A path that never reports it still fails here.
     onTestFinished(async () => {
-      await vi.waitFor(() =>
+      await waitForCondition(() =>
         expect(warn).toHaveBeenCalledWith(
           REFRESH_WARNING,
           expect.objectContaining({ status: 401 }),
