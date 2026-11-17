@@ -8,9 +8,9 @@
  * scroll.
  */
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import Box from '@mui/material/Box'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { AccountsPage } from './AccountsPage.js'
 import {
   accountUsername,
@@ -23,6 +23,7 @@ import {
   makeAdminBackend,
 } from '../test-utils/operations.js'
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
+import { expectNoAxeViolations } from '../test-utils/axe.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
@@ -137,5 +138,53 @@ describe('AccountsPage row actions at 375 in Chromium', () => {
     const after = manage.getBoundingClientRect()
     expect(after.left).toBeGreaterThanOrEqual(box.left - PIN_TOLERANCE)
     expect(after.right).toBeLessThanOrEqual(box.right + PIN_TOLERANCE)
+  })
+})
+
+describe('AccountsPage focus traps in Chromium', () => {
+  /** Renders the page over the fixture accounts and opens the detail panel. */
+  async function openDetail(): Promise<HTMLElement> {
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: () =>
+          Promise.resolve({ accounts: ACCOUNTS, next_cursor: '' }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations, language: 'en-US' })
+    await screen.findByText('Ada Lovelace')
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: enUS.accounts.manageAria.replace('{{name}}', 'Ada Lovelace'),
+      }),
+    )
+    return screen.findByRole('dialog')
+  }
+
+  it('keeps the detail panel focus trap holding over a hidden page', async () => {
+    // The unit suite's open-panel scan cannot press Tab, so aria-hidden-focus
+    // is indeterminate there; the helper's browser pass exercises the trap
+    // and decides it (@speed/test-utils/axe).
+    const panel = await openDetail()
+    expect(panel).toBeInTheDocument()
+    await expectNoAxeViolations()
+  })
+
+  it('keeps the one-time secret focus trap holding over a hidden page', async () => {
+    const panel = await openDetail()
+    await userEvent.type(
+      within(panel).getByLabelText(enUS.accounts.createSecret.labelLabel),
+      'ci',
+    )
+    await userEvent.click(
+      within(panel).getByRole('button', {
+        name: enUS.accounts.createSecret.submit,
+      }),
+    )
+    await within(panel).findByText(
+      enUS.accounts.createSecret.handedOver
+        .replace('{{label}}', 'label')
+        .replace('{{secret}}', 'one-time'),
+    )
+    await expectNoAxeViolations()
   })
 })

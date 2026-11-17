@@ -49,7 +49,10 @@ import {
   makeAdminBackend,
   type AdminBackend,
 } from '../test-utils/operations.js'
-import { expectNoAxeViolations } from '../test-utils/axe.js'
+import {
+  BROWSER_DETERMINATIONS,
+  expectNoAxeViolations,
+} from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
@@ -1062,7 +1065,11 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
-    await expectNoAxeViolations()
+    // The open panel's focus trap needs a real Tab, which jsdom lacks; the
+    // named browser case exercises it and decides aria-hidden-focus.
+    await expectNoAxeViolations({
+      decidedInBrowser: BROWSER_DETERMINATIONS.accountsDetailPanel,
+    })
   })
 
   it('has no axe violations with the one-time secret displayed', async () => {
@@ -1079,7 +1086,9 @@ describe('AccountsPage', () => {
         secret: 'one-time',
       }),
     )
-    await expectNoAxeViolations()
+    await expectNoAxeViolations({
+      decidedInBrowser: BROWSER_DETERMINATIONS.accountsOneTimeSecret,
+    })
   })
 
   it('renders the empty state when no account matches', async () => {
@@ -1657,10 +1666,16 @@ describe('AccountsPage', () => {
           ),
       }),
     )
-    renderWithProviders(<AccountsPage />, { operations })
+    const { queryClient } = renderWithProviders(<AccountsPage />, { operations })
     await screen.findByText('Ada Lovelace')
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     await screen.findByText('Grace Hopper')
+    // The page swap is more than the new row: the footer's next-cursor
+    // state and the row replacement are separate commits of the same read.
+    // Scan only once the cache has no read in flight, so axe never reads a
+    // heading tree that is being replaced under it (the transient
+    // heading-order incomplete this case used to report).
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0))
     await expectNoAxeViolations()
   })
 
