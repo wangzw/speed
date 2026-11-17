@@ -204,7 +204,7 @@ describe('PasswordSection', () => {
                 kind: 'email',
                 proven: false,
                 verified_at: '2026-01-01T00:00:00Z',
-                verified_via: '',
+                verified_via: 'admin',
               }),
             ],
           }),
