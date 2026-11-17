@@ -112,10 +112,11 @@ func Declared(d time.Duration) time.Duration {
 	return time.Duration(float64(d) * scale)
 }
 
-// Fataler is what a case is failed through: *testing.T satisfies it. Declaring
-// it here rather than importing testing keeps this package a plain library, so
-// that importing it into a test binary does not link the test framework into
-// every binary that imports that test.
+// Fataler is what a case is failed through: *testing.T satisfies it. The
+// interface is what lets this package's own cases observe the failure instead
+// of stopping the run: testing.TB carries a method no other package can
+// implement, so a recorder could not stand in for it, and a case checking the
+// points around the margin would have to fail the test that exercises them.
 type Fataler interface {
 	Helper()
 	Fatalf(format string, args ...any)
