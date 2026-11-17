@@ -61,7 +61,16 @@ through `node_modules` rather than the map.
   `expectNoAxeViolationsForPage` (the page tier for packages whose unit
   under test is page-level chrome), and `runHeadingOrderCheck` (the
   single-rule probe for level-dependent headings). Each package's
-  `test-utils/axe.ts` re-exports the tier its scans need.
+  `test-utils/axe.ts` re-exports the tier its scans need. Two DOM
+  indeterminacies are pinned rather than left to whoever reads the log:
+  while an overlay is open, the page-context exemption is applied only
+  after the helper asserts the page behind it is `aria-hidden` (the
+  ARIA-forbidden tags aside), and the browser tier decides
+  `aria-hidden-focus` for an open aria-modal MUI Dialog or Drawer by
+  pressing Tab and Shift+Tab through the overlay's focus trap — a trap
+  that holds resolves the rule with no report, an escape fails the scan.
+  Overlays Tab would dismiss (Menu, Select) keep their report, which
+  names that reason.
 - `render.tsx` — the render-primitive layer: `TEST_LANGUAGES`, the
   deterministic bilingual `createTestI18n` base, the
   retries-nothing `createTestQueryClient`, and the shared
@@ -97,6 +106,12 @@ through `node_modules` rather than the map.
 ## Testing
 
 `src/session-harness.test.ts` is the harness's own regression (the
-script dispatch gate's prototype-chain branch); `src/axe.test.ts` pins
-the environment label the indeterminate report interpolates. Run them
-with `pnpm test` from this directory.
+script dispatch gate's prototype-chain branch); `src/axe.test.ts` pins the
+pure decisions the axe harness makes without a DOM (the environment
+label, the tags that cannot carry `aria-hidden`, the overlay family a
+marker class list names), and `src/axe.browser.test.tsx` pins the two
+assertions an open overlay now faces: a trapped dialog passes with no
+report while an untrapped one's focus escape fails the scan, and a
+background left readable fails the page-context exemption. Run them with
+`pnpm test` from this directory; the browser case runs under
+`make web-browser`.
