@@ -87,7 +87,12 @@ finite number of at least 1 — a typo, a non-number or a value that would
 lower the limits fails the run rather than falling back to 1. No limit is
 derived from the machine's load or core count. The Playwright end-to-end
 tier and the Go test tiers read the same variable for their own wait
-budgets.
+budgets. A Go case whose bound tells a right implementation from a wrong one
+by elapsed time states the wrong implementation's time to
+`coretest.DeclaredAgainst`, which fails that case explicitly, naming the
+scale, the bound, the wrong implementation's time and the meeting point,
+before the scale reaches that point rather than letting the case pass
+silently.
 
 A change that crosses the boundary is two changes: run each side's gate.
 

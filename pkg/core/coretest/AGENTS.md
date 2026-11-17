@@ -8,6 +8,15 @@ their own helpers and do not import it.
 once, make a test slower rather than failing it. `Declared(d)` multiplies by
 `GATE_TIME_SCALE` alone, for the upper bound of a case that tells a right
 implementation from a wrong one by how long it took.
+`DeclaredAgainst(t, fixed, declared, wrong)` is that upper bound with the
+wrong implementation's own time stated in code: it returns
+`fixed + Declared(declared)` and fails the case through `t.Fatalf` once that
+bound reaches nine tenths of `wrong`, which is before the two meet. A run
+whose scale reaches the meeting point therefore fails the case loudly, naming
+the scale, the bound, the wrong time and the meeting point, rather than
+letting the case pass without telling the two implementations apart. A wrong
+implementation whose time the case controls is widened far past the bound; a
+product default or poll interval the case cannot move is stated as it is.
 
 ## Boundaries
 
@@ -42,7 +51,11 @@ implementation from a wrong one by how long it took.
   and the race factor slows the program under test rather than the difference
   being measured. The case widens the wrong implementation's own time far
   past the bound, so a larger `GATE_TIME_SCALE` does not bring the two
-  together.
+  together. **Where the wrong implementation's time can be named, the bound
+  goes through `DeclaredAgainst`**, which states that time and fails the case
+  before the scaled bound meets it; a hand-written meeting point in a comment
+  drifts from the constants, and a case that meets the wrong implementation
+  passes without saying so.
 
 ## Running it
 

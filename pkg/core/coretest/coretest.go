@@ -5,8 +5,8 @@
 //
 // A test's bounds are written for an idle machine. Under the race detector, and
 // on a machine that several gates share, the same work takes longer, and a bound
-// meant to catch a hang must not decide a slow machine instead. Two functions
-// apply two factors:
+// meant to catch a hang must not decide a slow machine instead. The functions
+// below apply two factors:
 //
 //   - Scale multiplies a bound by the race factor and by GATE_TIME_SCALE. It is
 //     for a bound that waits for an event: a slow machine makes the event later,
@@ -17,8 +17,13 @@
 //     bound by the same factor erases the difference the case exists to measure.
 //     A case using Declared widens the wrong implementation's own time far
 //     enough past the bound that the scale a run declares stays below the point
-//     where the two meet, and the case states that point: the room is finite,
-//     and a scale past it lets the wrong implementation pass.
+//     where the two meet. The room is finite, and a scale past that point lets
+//     the wrong implementation pass.
+//   - DeclaredAgainst is Declared for a bound whose wrong implementation has a
+//     finite time the case can name. It returns the same scaled bound and fails
+//     the case when that bound reaches nine tenths of the wrong time, which is
+//     before the two meet: a run past the meeting point fails loudly instead of
+//     passing the case silently.
 //
 // The race factor is 3 when the test binary is built with the race detector and
 // 1 otherwise: the program under test runs several times slower there.
@@ -32,7 +37,7 @@
 // once rather than get the default back. The wording is the one the frontend's
 // readers of the same variable use.
 //
-// A lower bound -- "this took at least X" -- goes through neither function. A
+// A lower bound -- "this took at least X" -- goes through none of them. A
 // slow machine only makes such a bound easier to satisfy, and scaling it would
 // stop it from holding the code to having waited at all.
 package coretest
@@ -105,4 +110,51 @@ func Scale(d time.Duration) time.Duration {
 // to the program under test rather than to the difference being measured.
 func Declared(d time.Duration) time.Duration {
 	return time.Duration(float64(d) * scale)
+}
+
+// Fataler is what a case is failed through: *testing.T satisfies it. Declaring
+// it here rather than importing testing keeps this package a plain library, so
+// that importing it into a test binary does not link the test framework into
+// every binary that imports that test.
+type Fataler interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}
+
+// meetingMargin is the share of a wrong implementation's time at which
+// DeclaredAgainst stops the case: nine tenths, because the wrong time is a
+// coarse figure, a product default or a poll interval, and the elapsed time a
+// case reads jitters. Failing at nine tenths leaves the tenth as a guard band,
+// so the case fails before the scaled bound and the wrong time overlap rather
+// than straddling the point where one run passes and the next does not.
+const meetingMargin = 10
+
+// DeclaredAgainst returns fixed + declared*GATE_TIME_SCALE, the upper bound of a
+// behaviour case, and fails the case when that bound reaches nine tenths of
+// wrong, the time a wrong implementation needs.
+//
+// fixed is the part of the bound the declaration does not scale, and declared
+// is the part it does; a bound with no fixed part passes 0. wrong is what the
+// wrong implementation costs, which the case widens far past the bound when it
+// controls that time: a product default or a poll interval the case cannot
+// move is the wrong time as it stands.
+//
+// The two meet at the scale where the whole bound equals wrong. A run at or
+// past it can no longer tell the right implementation from the wrong one, so
+// the function fails rather than returning a bound the case would pass
+// silently. The failure names the scale, the bound, the wrong time and the
+// meeting point.
+func DeclaredAgainst(t Fataler, fixed, declared, wrong time.Duration) time.Duration {
+	t.Helper()
+	if declared <= 0 || wrong <= 0 || fixed < 0 {
+		t.Fatalf("coretest: DeclaredAgainst needs a positive declared bound and wrong time and a non-negative "+
+			"fixed part; got fixed %v, declared %v, wrong %v", fixed, declared, wrong)
+	}
+	limit := fixed + Declared(declared)
+	if margin := wrong - wrong/meetingMargin; limit >= margin {
+		t.Fatalf("coretest: GATE_TIME_SCALE=%v brings the bound to %v, which has passed nine tenths of the %v a "+
+			"wrong implementation needs; the two meet at a scale of about %.2f, so at this scale the case can "+
+			"no longer tell them apart", scale, limit, wrong, float64(wrong-fixed)/float64(declared))
+	}
+	return limit
 }
