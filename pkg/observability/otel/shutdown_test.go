@@ -296,10 +296,12 @@ func TestASuppliedBackendIsReleasedByTheAssembler(t *testing.T) {
 const metricExportTimeoutPastTheCeiling = 2 * time.Minute
 
 // boundedConfig gives this module a service name and a short shutdown bound,
-// and optionally a metric export timeout for the stop cases that need one.
+// and optionally a metric export timeout and a batch export timeout for the
+// stop cases that need one.
 type boundedConfig struct {
 	bound         time.Duration
 	metricTimeout time.Duration
+	exportTimeout time.Duration
 }
 
 func (c boundedConfig) Decode(namespace string, target any) error {
@@ -309,6 +311,9 @@ func (c boundedConfig) Decode(namespace string, target any) error {
 		cfg.ShutdownTimeout = c.bound
 		if c.metricTimeout > 0 {
 			cfg.Metric.Timeout = c.metricTimeout
+		}
+		if c.exportTimeout > 0 {
+			cfg.Batch.ExportTimeout = c.exportTimeout
 		}
 	}
 	return nil
@@ -641,21 +646,20 @@ func metricBackend(name string, exporter sdkmetric.Exporter) core.Module {
 	}
 }
 
-// driveOverMetricBackend runs one command with a shutdown bound of the given
-// length and an optional metric export timeout over the one backend, records a
-// data point while it is up, and returns what the drive returned and how long it
-// took. A zero timeout keeps the reader's default.
-func driveOverMetricBackend(bound, metricTimeout time.Duration, backend core.Module) (time.Duration, error) {
-	return driveOverMetricBackends(bound, metricTimeout, &bytes.Buffer{}, backend)
+// driveOverMetricBackend runs one command under the module configuration given
+// over the one backend, records a data point while it is up, and returns what
+// the drive returned and how long it took.
+func driveOverMetricBackend(cfg boundedConfig, backend core.Module) (time.Duration, error) {
+	return driveOverMetricBackends(cfg, &bytes.Buffer{}, backend)
 }
 
 // driveOverMetricBackends is driveOverMetricBackend over every backend given,
 // with the module's lines written to logged.
-func driveOverMetricBackends(bound, metricTimeout time.Duration, logged io.Writer, backends ...core.Module) (time.Duration, error) {
+func driveOverMetricBackends(cfg boundedConfig, logged io.Writer, backends ...core.Module) (time.Duration, error) {
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(log.Module())
-	reg.Supply(boundedConfig{bound: bound, metricTimeout: metricTimeout}, config.ModuleName)
+	reg.Supply(cfg, config.ModuleName)
 	reg.Supply(stubLogger{lg: slog.New(slog.NewTextHandler(logged, nil))}, log.ModuleName)
 	reg.Register(otel.Module())
 	participants := []string{otel.ModuleName}
@@ -691,7 +695,7 @@ func driveOverMetricBackends(bound, metricTimeout time.Duration, logged io.Write
 // with its error would fail the stop for that wait alone.
 func TestTheReleaseDoesNotReuseTheContextTheFlushExpired(t *testing.T) {
 	const bound = 100 * time.Millisecond
-	elapsed, err := driveOverMetricBackend(bound, 0,
+	elapsed, err := driveOverMetricBackend(boundedConfig{bound: bound},
 		metricBackend("observability.test-overrunning", overrunningMetrics{takes: 3 * bound}))
 	if err != nil {
 		t.Errorf("a stop whose final export outlasted the bound ended the drive with %v, want nil: the "+
@@ -727,7 +731,8 @@ func (waitingMetrics) Export(ctx context.Context, _ *metricdata.ResourceMetrics)
 func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 	const bound = time.Second
 	logged := &lockedBuffer{}
-	elapsed, err := driveOverMetricBackends(bound, metricExportTimeoutPastTheCeiling, logged,
+	elapsed, err := driveOverMetricBackends(
+		boundedConfig{bound: bound, metricTimeout: metricExportTimeoutPastTheCeiling}, logged,
 		metricBackend("observability.test-waiting-first", waitingMetrics{}),
 		metricBackend("observability.test-waiting-second", waitingMetrics{}))
 	if err != nil {
@@ -794,7 +799,8 @@ func TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	)
 	slow := slowMetrics{takes: bound / 5, mu: &mu, delivered: &delivered}
 
-	elapsed, err := driveOverMetricBackend(bound, 0, metricBackend("observability.test-slow-metrics", slow))
+	elapsed, err := driveOverMetricBackend(boundedConfig{bound: bound},
+		metricBackend("observability.test-slow-metrics", slow))
 	if err != nil {
 		t.Errorf("a stop whose final metric export fits inside the bound ended the drive with %v, want nil", err)
 	}
@@ -824,6 +830,13 @@ func (hangingMetrics) Shutdown(ctx context.Context) error {
 	return ctx.Err()
 }
 
+// releaseWrongTimeout is the time a wrong release needs in
+// TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded: one that bounds
+// the release with the batch export timeout instead of the module's own bound
+// takes that timeout. The case configures it far past the release bound, so
+// the wrong time is its own to set rather than a constant no test can move.
+const releaseWrongTimeout = 3 * time.Minute
+
 // TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded pins that the
 // release has a bound at all: the context it runs under is not the flush's, and
 // the registry imposes no timeout of its own, so without one an exporter whose
@@ -835,7 +848,8 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		elapsed, err := driveOverMetricBackend(50*time.Millisecond, 0,
+		elapsed, err := driveOverMetricBackend(
+			boundedConfig{bound: 50 * time.Millisecond, exportTimeout: releaseWrongTimeout},
 			metricBackend("observability.test-hanging", hangingMetrics{}))
 		done <- outcome{elapsed, err}
 	}()
@@ -846,11 +860,11 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 	// longer -- while the ceiling carries the caller's scale alone. A release
 	// with no bound never returns, and the wait below is its guard; a release
 	// reusing the expired flush context returns before the lower bound. A
-	// release bounded far too long is the finite wrong implementation: one that
-	// reuses the SDK's default export timeout for its bound takes that timeout,
+	// release bounded far too long is the finite wrong implementation: one
+	// that takes its bound from the batch export timeout takes that timeout,
 	// while the module's release bound is a few seconds. That export timeout is
 	// the wrong time stated to DeclaredAgainst.
-	ceiling := coretest.DeclaredAgainst(t, 0, 6*time.Second, time.Duration(sdktrace.DefaultExportTimeout)*time.Millisecond)
+	ceiling := coretest.DeclaredAgainst(t, 0, 6*time.Second, releaseWrongTimeout)
 	select {
 	case got := <-done:
 		if !errors.Is(got.err, context.DeadlineExceeded) {
@@ -858,8 +872,8 @@ func TestTheReleaseOfAnExporterThatWaitsForItsContextIsBounded(t *testing.T) {
 		}
 		if got.elapsed < time.Second || got.elapsed > ceiling {
 			t.Errorf("the stop took %v, want between 1s and %v: the release bounded at the module's %v, "+
-				"not at the SDK's default export timeout of %v", got.elapsed, ceiling, otel.ReleaseTimeout,
-				time.Duration(sdktrace.DefaultExportTimeout)*time.Millisecond)
+				"not at the batch export timeout of %v", got.elapsed, ceiling, otel.ReleaseTimeout,
+				releaseWrongTimeout)
 		}
 	case <-time.After(ceiling + coretest.Scale(24*time.Second)):
 		t.Fatal("the stop did not return: the release of an exporter that waits for its context is unbounded")
