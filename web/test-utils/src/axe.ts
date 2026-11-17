@@ -28,7 +28,7 @@
  * empty hit stack -- the truthful answer for a document jsdom lays out
  * not at all -- and it detects a really open overlay itself (a visible
  * `[aria-modal="true"]` paper or any other visible MUI Modal-based
- * overlay root, see hasOpenOverlay) to reproduce the browser's
+ * overlay root, see openOverlays) to reproduce the browser's
  * passForModal exemption, because the modal-open part of axe's own
  * probe cannot run under jsdom. The consequence component suites must
  * live with: a scan whose document contains no h1 FAILS with a
@@ -63,21 +63,32 @@
  *   host content must supply the `main` and any page heading the chrome
  *   does not render itself.
  *
- * Remaining indeterminacies (a rule that cannot answer in the environment
- * the scan runs in and is not on the page-context list, e.g.
- * aria-hidden-focus deciding whether an aria-hidden modal background
- * stays out of the tab order while an overlay is open) are REPORTED
- * through console.warn -- surfaced, never silently dropped -- and do not
- * fail the scan. They are not a jsdom artefact that a real browser
- * clears: the Chromium browser tier reports the same aria-hidden-focus
- * indeterminacy on the same open-overlay scan, because axe's static
- * analysis cannot tell whether the overlay's focus trap keeps the
- * aria-hidden content out of the tab order. jsdom carries its own
- * indeterminacies on top: it lays nothing out and has no canvas 2D
- * context, so text-measurement rules (label-content-name-mismatch) and
- * anything else needing rendered geometry cannot decide either. The
- * report names the environment it ran in; the behaviour is the same in
- * both -- report, never assert.
+ * aria-hidden-focus under an open overlay: axe's static analysis cannot
+ * tell whether an overlay's focus trap keeps the aria-hidden background
+ * out of the tab order, so it reports the rule as incomplete in both
+ * tiers. The browser tier can answer the question the rule is asking, so
+ * it does: when the topmost open overlay is an aria-modal MUI Dialog or
+ * Drawer, the helper presses Tab and Shift+Tab through more steps than
+ * the overlay has tabbable elements, and fails the scan if focus leaves
+ * the overlay or lands on one of the rule's incomplete targets. A trap
+ * that holds makes the rule determined, and nothing is reported.
+ * Overlays that Tab would dismiss -- MUI Menu and Select, whose root is a
+ * Modal but whose paper is not aria-modal -- cannot be exercised that
+ * way; their indeterminacy is still REPORTED through console.warn,
+ * naming the reason. Rules that cannot decide in the scan's environment
+ * at all (jsdom lays nothing out and has no canvas 2D context, so
+ * text-measurement rules such as label-content-name-mismatch cannot
+ * answer) are reported the same way and do not fail the scan. The report
+ * names the environment it ran in.
+ *
+ * The open-overlay page-context exemption is asserted rather than
+ * announced. While an overlay is open the helper first checks that every
+ * element beside it is hidden from assistive technology -- aria-hidden
+ * on everything the overlay does not contain, the ARIA-forbidden tags
+ * aside, exactly MUI's own contract. The exemption is only sound when
+ * the background really is hidden, so a page that does not hide it fails
+ * the scan; when it does, the page-context rules are exempted without a
+ * console.warn.
  */
 
 import { expect } from 'vitest'
@@ -124,32 +135,172 @@ function polyfillElementsFromPoint(): void {
 }
 
 /**
- * Whether the scan's document currently shows an open MUI overlay,
- * judged the way a browser would: axe exempts the page-context rules
- * for a really open dialog through its own passForModal option, and its
- * modal probe first looks for a visible `[aria-modal="true"]` element.
- * jsdom cannot run that probe (see polyfillElementsFromPoint), so the
- * helper asks the question itself over the DOM -- an aria-modal paper
- * (dialog/drawer) or any other visible Modal-based overlay root (MUI's
- * Popover/Menu/Select are a styled Modal); a closed but keepMounted
- * overlay is `visibility: hidden` and an open one is not -- and
- * reproduces the exemption. While ANY of these overlays is open, MUI
- * aria-hides the page behind it, so the page-context rules cannot be
- * answered against content hidden from assistive tech -- the state
- * passForModal exists to skip -- which is why the exemption below keys
- * on this detector rather than on aria-modal alone.
+ * Body-child tags that cannot carry aria-hidden -- the ARIA conformance
+ * list MUI's own modal manager skips -- plus a hidden input. The
+ * background check below exempts them: they are not content an assistive
+ * technology could reach, and the attribute would be invalid on them.
  */
-function hasOpenOverlay(): boolean {
-  for (const element of document.querySelectorAll('[aria-modal="true"], .MuiModal-root')) {
-    if (element.getAttribute('aria-hidden') === 'true') {
+const ARIA_HIDDEN_FORBIDDEN_TAGS: ReadonlySet<string> = new Set([
+  'TEMPLATE',
+  'SCRIPT',
+  'STYLE',
+  'LINK',
+  'MAP',
+  'META',
+  'NOSCRIPT',
+  'PICTURE',
+  'COL',
+  'COLGROUP',
+  'PARAM',
+  'SLOT',
+  'SOURCE',
+  'TRACK',
+])
+
+/**
+ * Whether an element with this tag (and, for an input, this type) may
+ * carry aria-hidden. Pure, so the conformance list is pinned without a
+ * DOM.
+ */
+export function isAriaHiddenForbiddenTag(
+  tagName: string,
+  inputType: string | null = null,
+): boolean {
+  const tag = tagName.toUpperCase()
+  return (
+    ARIA_HIDDEN_FORBIDDEN_TAGS.has(tag) ||
+    (tag === 'INPUT' && inputType === 'hidden')
+  )
+}
+
+/** The overlay families whose focus trap real key presses can exercise. */
+export type OverlayKind = 'dialog' | 'drawer' | 'other'
+
+/**
+ * Maps the marker classes on an overlay root to the family it belongs
+ * to. Pure, so the mapping is pinned without a DOM; the DOM-side caller
+ * hands in the class list of the nearest MUI dialog/drawer root.
+ */
+export function overlayKindFromClasses(
+  classes: readonly string[],
+): OverlayKind {
+  if (classes.includes('MuiDialog-root')) {
+    return 'dialog'
+  }
+  if (classes.includes('MuiDrawer-root')) {
+    return 'drawer'
+  }
+  return 'other'
+}
+
+/** An overlay the scan found open in the document. */
+interface OpenOverlay {
+  /** The overlay's outermost element: the scope its focus trap owns. */
+  readonly root: HTMLElement
+  /** The visible aria-modal element inside it, when there is one. */
+  readonly ariaModal: HTMLElement | null
+  readonly kind: OverlayKind
+}
+
+function isShown(element: HTMLElement): boolean {
+  const style = window.getComputedStyle(element)
+  return style.display !== 'none' && style.visibility !== 'hidden'
+}
+
+/**
+ * Every overlay currently open in the document, bottom to top, judged the
+ * way a browser would: an overlay is MUI's Modal root (dialog, drawer,
+ * menu, popover, select) or any visible aria-modal element without one;
+ * a closed but keepMounted overlay is `visibility: hidden` and is not
+ * open. axe exempts the page-context rules for a really open dialog
+ * through its own passForModal option, and its modal probe first looks
+ * for a visible `[aria-modal="true"]` element; jsdom cannot run that
+ * probe (see polyfillElementsFromPoint), so the helper asks the question
+ * itself over the DOM. The last entry is the topmost overlay -- the trap
+ * that owns the keyboard.
+ */
+function openOverlays(): OpenOverlay[] {
+  const overlays: OpenOverlay[] = []
+  const seen = new Set<HTMLElement>()
+  for (const element of document.querySelectorAll<HTMLElement>(
+    '[aria-modal="true"], .MuiModal-root',
+  )) {
+    if (element.getAttribute('aria-hidden') === 'true' || !isShown(element)) {
       continue
     }
-    const style = window.getComputedStyle(element)
-    if (style.display !== 'none' && style.visibility !== 'hidden') {
-      return true
+    const root = element.closest<HTMLElement>('.MuiModal-root') ?? element
+    if (seen.has(root)) {
+      continue
+    }
+    seen.add(root)
+    const marker = root.matches('[aria-modal="true"]')
+      ? root
+      : root.querySelector<HTMLElement>('[aria-modal="true"]')
+    const ariaModal = marker !== null && isShown(marker) ? marker : null
+    const familyRoot =
+      ariaModal?.closest('.MuiDialog-root, .MuiDrawer-root') ?? null
+    overlays.push({
+      root,
+      ariaModal,
+      kind:
+        familyRoot === null
+          ? 'other'
+          : overlayKindFromClasses([...familyRoot.classList]),
+    })
+  }
+  return overlays
+}
+
+/**
+ * Asserts the page behind `overlay` is hidden from assistive technology,
+ * which is what makes the page-context exemption sound. Mirrors MUI's own
+ * contract: every body child outside the overlay's ancestor chain carries
+ * aria-hidden="true", the ARIA-forbidden tags aside. While ANY of these
+ * overlays is open MUI aria-hides the page behind it, so the page-context
+ * rules cannot be answered against content hidden from assistive tech --
+ * the state passForModal exists to skip. A page that does not hide its
+ * background could let a screen reader reach content the overlay covers,
+ * so the scan fails instead of exempting the rules silently.
+ */
+function assertBackgroundAriaHidden(overlay: OpenOverlay): void {
+  const keepChain = new Set<Element>()
+  for (
+    let current: Element | null = overlay.root.parentElement;
+    current !== null && current !== document.body;
+    current = current.parentElement
+  ) {
+    keepChain.add(current)
+  }
+  const offenders: Element[] = []
+  const collect = (parent: Element): void => {
+    for (const child of parent.children) {
+      // The overlay and its contents are what stays readable; an ancestor
+      // in the chain is stepped through so only its other children are
+      // checked.
+      if (
+        child === overlay.root ||
+        isAriaHiddenForbiddenTag(child.tagName, child.getAttribute('type'))
+      ) {
+        continue
+      }
+      if (keepChain.has(child)) {
+        collect(child)
+        continue
+      }
+      if (child.getAttribute('aria-hidden') !== 'true') {
+        offenders.push(child)
+      }
     }
   }
-  return false
+  collect(document.body)
+  if (offenders.length > 0) {
+    const summary = offenders
+      .map((element) => `<${element.tagName.toLowerCase()}>`)
+      .join(', ')
+    expect.fail(
+      `axe page-context exemption refused: an ${overlay.kind === 'other' ? 'overlay' : overlay.kind} is open, but its background is not aria-hidden. Elements outside it without aria-hidden="true": ${summary}`,
+    )
+  }
 }
 
 function summarizeTargets(rule: axe.Result): string {
@@ -185,15 +336,23 @@ function describeEnvironment(): string {
   )
 }
 
-function reportNonCriticalIncomplete(incomplete: readonly axe.Result[]): void {
+function reportNonCriticalIncomplete(
+  incomplete: readonly axe.Result[],
+  overlay: OpenOverlay | null,
+): void {
   for (const rule of incomplete) {
     // Deliberate, documented report (never a silent drop): this rule
     // cannot be determined in the environment the scan runs in (see the
     // header comment) and is not on the PAGE_CONTEXT_RULES list that must
-    // fail when indeterminate. The report names that environment, so its
-    // result is not misread as a jsdom-only artefact a browser would clear.
+    // fail when indeterminate. An aria-hidden-focus report under a menu
+    // or select says why the focus trap was not exercised; a real
+    // dialog/drawer's trap was, and never reaches here.
+    const untestedTrap =
+      rule.id === 'aria-hidden-focus' &&
+      overlay !== null &&
+      overlay.kind === 'other'
     console.warn(
-      `[test-utils/axe] indeterminate in ${describeEnvironment()} (reported, not asserted): ${summarizeTargets(rule)}`,
+      `[test-utils/axe] indeterminate in ${describeEnvironment()} (reported, not asserted): ${summarizeTargets(rule)}${untestedTrap ? '; the open overlay is not an aria-modal dialog or drawer, so its focus trap was not exercised' : ''}`,
     )
   }
 }
@@ -206,6 +365,138 @@ async function runAxeScan(options: axe.RunOptions = {}): Promise<axe.AxeResults>
   document.title = document.title || 'test document'
   document.documentElement.lang = document.documentElement.lang || 'en'
   return axe.run(document, options)
+}
+
+/** The tabbable elements inside an overlay's focus trap, in DOM order. */
+function tabbableElements(root: HTMLElement): HTMLElement[] {
+  const selector = [
+    'a[href]',
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'iframe',
+    'summary',
+    'audio[controls]',
+    'video[controls]',
+    '[contenteditable]:not([contenteditable="false"])',
+    '[tabindex]',
+  ].join(', ')
+  return [...root.querySelectorAll<HTMLElement>(selector)].filter((element) => {
+    if (element.hasAttribute('disabled')) {
+      return false
+    }
+    if (element.getAttribute('aria-hidden') === 'true') {
+      return false
+    }
+    if (
+      element.tagName === 'INPUT' &&
+      element.getAttribute('type') === 'hidden'
+    ) {
+      return false
+    }
+    if (element.tabIndex < 0) {
+      return false
+    }
+    // A laid-out element has a client rect; a display:none or detached
+    // one does not. This is the browser tier, where layout is real.
+    if (element.getClientRects().length === 0) {
+      return false
+    }
+    return window.getComputedStyle(element).visibility !== 'hidden'
+  })
+}
+
+/** The elements axe named as an incomplete rule's targets. */
+function targetElements(rule: axe.Result): Element[] {
+  const found: Element[] = []
+  for (const node of rule.nodes) {
+    try {
+      const element = document.querySelector(node.target.join(' '))
+      if (element !== null) {
+        found.push(element)
+      }
+    } catch {
+      // A selector this engine will not parse names no target to check;
+      // the scope assertion in verifyFocusTrap still covers the escape.
+    }
+  }
+  return found
+}
+
+function describeActiveElement(element: Element | null): string {
+  if (!(element instanceof HTMLElement)) {
+    return 'no element'
+  }
+  const label =
+    element.getAttribute('aria-label') ?? element.textContent?.trim() ?? ''
+  const suffix = label === '' ? '' : ` "${label.slice(0, 60)}"`
+  return `<${element.tagName.toLowerCase()}${suffix}>`
+}
+
+/**
+ * The real-keyboard driver the browser setup installs
+ * (web/test-utils/src/browser-setup.ts). The harness cannot import
+ * `vitest/browser` itself: that module's declarations augment Vitest's
+ * matchers with an older jest-dom set whose `toHaveStyle` rejects
+ * kebab-case keys, and this shared module is compiled into every jsdom
+ * program, where the augmentation would narrow unrelated assertions.
+ * The setup runs only in the browser tier, so the import -- and its
+ * augmentation -- stays there.
+ */
+export type AxeKeyboardDriver = (keys: string) => Promise<void>
+
+function realKeyboard(): AxeKeyboardDriver {
+  const driver = (
+    globalThis as { __speedAxeKeyboardDriver?: AxeKeyboardDriver }
+  ).__speedAxeKeyboardDriver
+  if (driver === undefined) {
+    expect.fail(
+      'the axe focus-trap check needs the browser tier\'s real keyboard, but its setup did not install the driver',
+    )
+  }
+  return driver
+}
+
+/**
+ * Answers the question axe's aria-hidden-focus leaves open by exercising
+ * the overlay's focus trap with real key presses: pressing Tab (and
+ * Shift+Tab) more times than the overlay has tabbable elements would
+ * leave a working trap cycling inside it. Each press is asserted to keep
+ * focus inside the overlay and off the rule's incomplete targets. A
+ * failure is a real defect -- the background is aria-hidden yet keyboard
+ * focus reaches it -- so the scan fails instead of reporting.
+ */
+async function verifyFocusTrap(
+  overlay: OpenOverlay,
+  rule: axe.Result,
+): Promise<void> {
+  // The browser setup's driver drives the provider's real keyboard, so a
+  // native Tab reaches MUI's FocusTrap. The jsdom leg never takes this
+  // path (the caller checks the environment first).
+  const pressKeys = realKeyboard()
+  const targets = targetElements(rule)
+  const steps = tabbableElements(overlay.root).length + 2
+  const directions = [
+    { keys: '{Tab}', label: 'Tab' },
+    { keys: '{Shift>}{Tab}{/Shift}', label: 'Shift+Tab' },
+  ]
+  for (const direction of directions) {
+    for (let step = 0; step < steps; step += 1) {
+      await pressKeys(direction.keys)
+      const active = document.activeElement
+      if (!(active instanceof HTMLElement) || !overlay.root.contains(active)) {
+        expect.fail(
+          `axe aria-hidden-focus is undecided and the open ${overlay.kind}'s focus trap does not hold: ${direction.label} moved focus to ${describeActiveElement(active)}, outside the overlay`,
+        )
+      }
+      if (targets.some((target) => target.contains(active))) {
+        expect.fail(
+          `axe aria-hidden-focus is undecided and the open ${overlay.kind}'s focus trap does not hold: ${direction.label} left focus on an aria-hidden background target (${describeActiveElement(active)})`,
+        )
+      }
+    }
+  }
 }
 
 async function runAxeAssertions(
@@ -223,21 +514,21 @@ async function runAxeAssertions(
     ...(pageTier ? [] : ['region', 'landmark-one-main']),
     ...disabledRules,
   ])
-  if (hasOpenOverlay()) {
+  const overlays = openOverlays()
+  const topOverlay = overlays.at(-1) ?? null
+  if (topOverlay !== null) {
     // A really open overlay exempts the page-context rules in a browser
-    // (axe's passForModal -- and while MUI aria-hides the page behind
-    // any Modal-based overlay, the same reasoning holds for its menus
-    // and popovers); jsdom cannot run axe's own modal probe, so the
-    // helper's DOM-based detector (hasOpenOverlay) stands in and the
-    // exemption is applied up front. Reported, not silent -- an
-    // open-overlay scan asserts everything except the page structure the
-    // overlay itself suspends.
+    // (axe's passForModal -- and while MUI aria-hides the page behind any
+    // Modal-based overlay, the same reasoning holds for its menus and
+    // popovers); jsdom cannot run axe's own modal probe, so the helper's
+    // DOM-based detector (openOverlays) stands in. The exemption is
+    // applied only after the background is asserted hidden: an open
+    // overlay that leaves the page readable to assistive technology is a
+    // defect, not a reason to skip the page rules.
+    assertBackgroundAriaHidden(topOverlay)
     for (const rule of PAGE_CONTEXT_RULES) {
       disabled.add(rule)
     }
-    console.warn(
-      `[test-utils/axe] open overlay detected: page-context rule(s) ${PAGE_CONTEXT_RULES.join(', ')} exempted; the overlay does not resolve aria-hidden-focus -- whether its focus trap keeps aria-hidden content out of the tab order cannot be decided by static analysis, and both jsdom and Chromium report it as indeterminate`,
-    )
   }
   const result = await runAxeScan({
     rules: Object.fromEntries([...disabled].map((rule) => [rule, { enabled: false }])),
@@ -253,7 +544,7 @@ async function runAxeAssertions(
     // reported, not asserted; without one (nothing to trap focus) it
     // fails the scan like any other violation.
     const focusTrapDependent = result.violations.filter(
-      (rule) => rule.id === 'aria-hidden-focus' && hasOpenOverlay(),
+      (rule) => rule.id === 'aria-hidden-focus' && topOverlay !== null,
     )
     const failing = result.violations.filter(
       (rule) => !focusTrapDependent.includes(rule),
@@ -280,7 +571,23 @@ async function runAxeAssertions(
         'landmark) in the render, or disable the rule explicitly in disabledRules.',
     )
   }
-  reportNonCriticalIncomplete(incomplete)
+  const focusTrapRule =
+    topOverlay !== null && topOverlay.kind !== 'other'
+      ? incomplete.find((rule) => rule.id === 'aria-hidden-focus')
+      : undefined
+  let verifiedFocusTrap: axe.Result | undefined
+  if (
+    focusTrapRule !== undefined &&
+    topOverlay !== null &&
+    describeEnvironment() === 'the browser'
+  ) {
+    await verifyFocusTrap(topOverlay, focusTrapRule)
+    verifiedFocusTrap = focusTrapRule
+  }
+  reportNonCriticalIncomplete(
+    incomplete.filter((rule) => rule !== verifiedFocusTrap),
+    topOverlay,
+  )
 }
 
 /**
@@ -331,7 +638,7 @@ export async function runHeadingOrderCheck(): Promise<readonly axe.Result[]> {
     runOnly: { type: 'rule', values: ['heading-order'] },
   })
   if (result.incomplete.length > 0) {
-    reportNonCriticalIncomplete(result.incomplete)
+    reportNonCriticalIncomplete(result.incomplete, null)
   }
   return result.violations
 }

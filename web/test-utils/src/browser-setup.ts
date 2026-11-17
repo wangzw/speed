@@ -11,7 +11,25 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { asyncBudgetMs } from './gate-time.js'
+import type { AxeKeyboardDriver } from './axe.js'
+
+/**
+ * The real-keyboard driver the axe harness reads when it exercises a
+ * focus trap (see axe.ts). The harness cannot import `vitest/browser`
+ * itself: that module's declarations augment Vitest's matchers with an
+ * older jest-dom set whose `toHaveStyle` rejects kebab-case keys, and
+ * the harness is compiled into every jsdom program, where the
+ * augmentation would narrow unrelated assertions. This setup runs only
+ * in the browser tier, so the import -- and its augmentation -- stays
+ * here, and the harness reads the driver off the global.
+ */
+const keyboardDriverHost = globalThis as {
+  __speedAxeKeyboardDriver?: AxeKeyboardDriver
+}
+keyboardDriverHost.__speedAxeKeyboardDriver = (keys) =>
+  userEvent.keyboard(keys)
 
 /**
  * The caller's `GATE_TIME_SCALE`, injected by the browser tier's config
