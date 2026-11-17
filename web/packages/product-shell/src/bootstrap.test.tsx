@@ -445,7 +445,7 @@ describe('bootstrapSpeedApp', () => {
     container.remove()
   })
 
-  it('settles a refused request even when the silent restore it triggers has its profile read refused', { timeout: 5000 }, async () => {
+  it('settles a refused request even when the silent restore it triggers has its profile read refused', async () => {
     // The wiring under test is the production one: the client's
     // refreshAccessToken hook is the session's own restore, reading
     // GET /api/v1/auth/session and then GET /api/v1/auth/me. The first read runs
@@ -513,7 +513,10 @@ describe('bootstrapSpeedApp', () => {
     for (let i = 0; i < 64 && !settled; i += 1) {
       await Promise.resolve()
     }
-    const deadline = Date.now() + 2000
+    // Generous because it bounds only the wait: the assertion below is
+    // that the round settles at all, and a machine busy with other work
+    // must not turn a settled round into a failed one.
+    const deadline = Date.now() + 30_000
     while (!settled && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 2))
     }

@@ -110,6 +110,19 @@ PYTHON ?= python3
 # per-process budget, not a ceiling on the leg.
 GATE_JOBS ?= 4
 
+# The caller's multiplier for the test tiers' wait limits: Vitest's shared
+# test and hook budget (web/vitest.shared.ts), Testing Library's async budget
+# and vi.waitFor/vi.waitUntil through the shared waitForCondition helper
+# (web/test-utils/src/setup.ts, web/test-utils/src/wait.ts), and the Playwright
+# end-to-end and Go test tiers. The limits bound a wait, so a run that shares
+# the machine with other heavy work raises this and a real hang still fails; no
+# limit is derived from the machine's load or core count. The value reaches the
+# suites through the environment. Unset or empty means 1; the suites refuse any
+# other value that is not a finite number of at least 1, so a typo fails the run
+# instead of falling back to 1.
+GATE_TIME_SCALE ?= 1
+export GATE_TIME_SCALE
+
 # Go caches a passing test result and replays it while the test's inputs are
 # unchanged. Those inputs are the package's files, the environment variables
 # the test read and the files it opened under the module root; a file read
@@ -447,9 +460,13 @@ web-a11y: ## Run the frontend's route-level accessibility sweep
 # separate -- so a machine runs `pnpm -C web exec playwright install
 # chromium` once; CI installs it before calling this entry. The tier is
 # not part of `make check`; a scheduled workflow calls this same entry
-# (see .github/workflows/browser.yml).
+# (see .github/workflows/browser.yml). The second pass injects a fixed
+# non-default scale so the setup's scale handling is exercised at a value
+# other than 1 (web/vitest.browser.injected-scale.config.ts); it runs one
+# case and leaves the first pass's limits untouched.
 web-browser: ## Run the frontend's browser tier in Chromium (geometry, focus order, focusability)
 	@pnpm -C web exec vitest run --config vitest.browser.config.ts --maxWorkers=$(GATE_JOBS)
+	@pnpm -C web exec vitest run --config vitest.browser.injected-scale.config.ts --maxWorkers=$(GATE_JOBS)
 
 # The end-to-end tier: Playwright drives the built demo binary through a real
 # browser, against a real sqlite file and real HTTP. It is deliberately not

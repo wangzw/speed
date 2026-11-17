@@ -287,15 +287,14 @@ describe('the entry export surface', () => {
       missingAcrossModules,
       'names a consumer cannot import from the package entry:',
     ).toEqual([])
-    // Whole-tree type-checking under coverage instrumentation outruns vitest's 5s default.
-  }, 30000)
+  })
 
   it('exports exactly the fixed public list, types included', () => {
     const { program, entryFile } = createEntryProgram()
     expect(exportedNames(program, entryFile).sort()).toEqual(
       [...PUBLIC_EXPORTS].sort(),
     )
-  }, 30000)
+  })
 
   it('declares module augmentations in modules the entry re-exports from', () => {
     const { program, modulePaths } = createEntryProgram()
@@ -318,5 +317,5 @@ describe('the entry export surface', () => {
       offenders,
       'augmentations a consumer of the emitted declarations cannot see:',
     ).toEqual([])
-  }, 30000)
+  })
 })

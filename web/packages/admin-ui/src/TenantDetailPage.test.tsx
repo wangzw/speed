@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import type { ReactElement } from 'react'
 import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -366,7 +367,7 @@ describe('TenantDetailPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByText(confirmation)).toBeNull()
     })
   })
@@ -398,7 +399,7 @@ describe('TenantDetailPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByRole('alert')).toBeNull()
     })
   })
@@ -659,7 +660,7 @@ describe('TenantDetailPage', () => {
       screen.getByRole('button', { name: zhCN.tenantProfile.form.save }),
     )
 
-    await vi.waitFor(() => expect(updates).toHaveLength(1))
+    await waitForCondition(() => expect(updates).toHaveLength(1))
     expect(updates[0]).toEqual({
       name: 'acme-inc',
       fields: {

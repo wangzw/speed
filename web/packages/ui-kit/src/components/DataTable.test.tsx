@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { checkboxClasses } from '@mui/material/Checkbox'
 import { tableCellClasses } from '@mui/material/TableCell'
 import { tableContainerClasses } from '@mui/material/TableContainer'
@@ -1118,7 +1119,7 @@ describe('DataTable', () => {
       await user.click(button)
 
       expect(button).toHaveFocus()
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(writeText).toHaveBeenCalledWith('member-1')
       })
       const announcement = await utils.findByText(

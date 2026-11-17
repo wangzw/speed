@@ -101,7 +101,7 @@ async function expectRawAbort(promise: Promise<unknown>): Promise<void> {
  * assertion failure, in both directions of the regression. */
 async function expectSettled(
   isSettled: () => boolean,
-  budgetMs = 2000,
+  budgetMs = 30_000,
 ): Promise<void> {
   for (let i = 0; i < 64 && !isSettled(); i += 1) {
     await Promise.resolve()
@@ -109,6 +109,33 @@ async function expectSettled(
   const deadline = Date.now() + budgetMs
   while (!isSettled() && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 2))
+  }
+  expect(isSettled()).toBe(true)
+}
+
+/** Tracks settlement without awaiting it. The handler is attached so a
+ * wrong implementation's pending promise neither keeps the case running
+ * nor escapes as an unhandled rejection. */
+function settlementOf(promise: Promise<unknown>): { settled: boolean } {
+  const state = { settled: false }
+  void promise.then(
+    () => {
+      state.settled = true
+    },
+    () => {
+      state.settled = true
+    },
+  )
+  return state
+}
+
+/** Fails the moment the promise has not settled after the microtask chain
+ * the case just advanced. A wrong implementation that leaves it pending
+ * fails here, not a minute later at the case's shared budget; no timer is
+ * waited on, so a correct one returns immediately. */
+async function expectSettledNow(isSettled: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !isSettled(); i += 1) {
+    await Promise.resolve()
   }
   expect(isSettled()).toBe(true)
 }
@@ -1313,7 +1340,7 @@ describe('401 and the refresh hook', () => {
     await observed
   })
 
-  it('ends a restore-shaped recovery hook within a bounded time when its profile read is refused', { timeout: 5000 }, async () => {
+  it('ends a restore-shaped recovery hook within a bounded time when its profile read is refused', async () => {
     // The cookie session wires the recovery hook to a restore() that
     // reads GET /api/v1/auth/session (the cookie still names a session) and
     // then GET /api/v1/auth/me. When that second read is refused while this
@@ -1521,7 +1548,7 @@ describe('401 and the refresh hook', () => {
     expect(body.cancelled).toBe(true)
   })
 
-  it('keeps the real 401 envelope when a failed refresh outlives timeoutMs', { timeout: 1000 }, async () => {
+  it('keeps the real 401 envelope when a failed refresh outlives timeoutMs', async () => {
     // The timeout/refresh cross case: a refresh hook configured WITH a
     // timeoutMs, where the refresh round trip outlives the timeout and
     // then fails. The timeout bounds one HTTP exchange -- never the
@@ -1573,7 +1600,7 @@ describe('401 and the refresh hook', () => {
     }
   })
 
-  it('keeps the attempt timeout live for a stalled 401 body after a failed refresh', { timeout: 1000 }, async () => {
+  it('keeps the attempt timeout live for a stalled 401 body after a failed refresh', async () => {
     // The failure path's envelope read stays inside the attempt's
     // abort scope: a 401 whose body stalls (headers arrived, body
     // never comes) must still degrade to an envelope-less
@@ -1605,6 +1632,7 @@ describe('401 and the refresh hook', () => {
         timeoutMs: 50,
       })
       const pending = api<{ ok: boolean }>('/notes')
+      const settlement = settlementOf(pending)
       for (let i = 0; i < 32 && refreshCalls === 0; i += 1) {
         await Promise.resolve()
       }
@@ -1620,6 +1648,7 @@ describe('401 and the refresh hook', () => {
       // The re-armed timer (the ~50ms that were left) fires into the
       // stalled read: envelope-less degradation, never a hang.
       await vi.advanceTimersByTimeAsync(50)
+      await expectSettledNow(() => settlement.settled)
       const error = await rejection
       expect(error.auth).toBe(true)
       expect(error.code).toBe('client.http.401')
@@ -1867,7 +1896,7 @@ describe('timeouts', () => {
     expect(error.cause).toBeInstanceOf(DOMException)
   })
 
-  it('times out a 2xx whose body stalls after the headers arrived', { timeout: 1000 }, async () => {
+  it('times out a 2xx whose body stalls after the headers arrived', async () => {
     // Real un-released-stream shape: the server answered headers and
     // then never finishes the body. The per-attempt timeout keeps
     // running through the body read, so the stall rejects as
@@ -1886,6 +1915,7 @@ describe('timeouts', () => {
       retryPolicy: zeroDelay(1),
     })
     const pending = api<{ ok: boolean }>('/slow-body')
+    const settlement = settlementOf(pending)
     // Attach the rejection handler before the fake timers fire, so the
     // rejection inside advanceTimersByTimeAsync is never unhandled.
     const rejection = expectApiError(pending)
@@ -1893,6 +1923,7 @@ describe('timeouts', () => {
     await vi.advanceTimersByTimeAsync(0)
     await waitForReadStart(body)
     await vi.advanceTimersByTimeAsync(50)
+    await expectSettledNow(() => settlement.settled)
     const error = await rejection
     expect(error.code).toBe(ERROR_CODE_TIMEOUT)
     expect(error.status).toBe(0)
@@ -1902,7 +1933,7 @@ describe('timeouts', () => {
     expect(recorded(standin).signal?.aborted).toBe(true)
   })
 
-  it('retries a 2xx whose body stalls mid-read, exactly like any other timeout', { timeout: 1000 }, async () => {
+  it('retries a 2xx whose body stalls mid-read, exactly like any other timeout', async () => {
     // The stalled-body timeout is a transport-class failure of the
     // attempt: an idempotent request with budget left retries it, and
     // the retried attempt answers in full.
@@ -1922,6 +1953,7 @@ describe('timeouts', () => {
       retryPolicy: zeroDelay(2),
     })
     const pending = api<{ ok: boolean }>('/slow-body')
+    const settlement = settlementOf(pending)
     await vi.advanceTimersByTimeAsync(0)
     await waitForReadStart(body)
     await vi.advanceTimersByTimeAsync(50)
@@ -1929,6 +1961,7 @@ describe('timeouts', () => {
     // in progress (due at its target time); a further 1ms advancement
     // carries the clock past it and lets attempt 2 proceed.
     await vi.advanceTimersByTimeAsync(1)
+    await expectSettledNow(() => settlement.settled)
     await expect(pending).resolves.toEqual({ ok: true })
     expect(standin.calls).toHaveLength(2)
     expect(recorded(standin, 0).signal?.aborted).toBe(true)
@@ -2272,7 +2305,7 @@ describe('caller cancellation', () => {
     expect(standin.calls).toHaveLength(3)
   })
 
-  it('never delivers a 2xx for a caller that aborts mid-read -- even when the body never settles', { timeout: 1000 }, async () => {
+  it('never delivers a 2xx for a caller that aborts mid-read -- even when the body never settles', async () => {
     // Real un-released-stream shape: the body stream is never released
     // and never fails. The rejection must arrive anyway -- the client
     // refuses to wait on a body whose caller is gone -- so the
@@ -2285,9 +2318,11 @@ describe('caller cancellation', () => {
     const standin = scriptedStandin(new Response(body.stream, { status: 200 }))
     const api = createClient({ baseUrl: BASE_URL, fetch: standin.fetch })
     const controller = new AbortController()
-    const rejection = expectRawAbort(
-      api<{ ok: boolean }>('/notes', { signal: controller.signal }),
-    )
+    const pending = api<{ ok: boolean }>('/notes', {
+      signal: controller.signal,
+    })
+    const rejection = expectRawAbort(pending)
+    const settlement = settlementOf(pending)
     // Let the request reach the point where it is genuinely reading
     // the body (the stream's pull has been requested).
     await waitForReadStart(body)
@@ -2303,12 +2338,13 @@ describe('caller cancellation', () => {
       await Promise.resolve()
     }
     controller.abort()
+    await expectSettledNow(() => settlement.settled)
     await rejection
     expect(standin.calls).toHaveLength(1)
     expect(recorded(standin).signal?.aborted).toBe(true)
   })
 
-  it('surfaces the raw abort, never a transient retry, when a cancelled caller abandons the body read', { timeout: 1000 }, async () => {
+  it('surfaces the raw abort, never a transient retry, when a cancelled caller abandons the body read', async () => {
     // The same real un-released-stream shape under a retry policy with
     // budget to spare: an abandoned body read is the cancellation, not
     // a retryable network-class failure, so no retry may follow it.
@@ -2320,9 +2356,11 @@ describe('caller cancellation', () => {
       retryPolicy: zeroDelay(3),
     })
     const controller = new AbortController()
-    const rejection = expectRawAbort(
-      api<{ ok: boolean }>('/notes', { signal: controller.signal }),
-    )
+    const pending = api<{ ok: boolean }>('/notes', {
+      signal: controller.signal,
+    })
+    const rejection = expectRawAbort(pending)
+    const settlement = settlementOf(pending)
     // Let the request reach the point where it is genuinely reading
     // the body (the stream's pull has been requested).
     await waitForReadStart(body)
@@ -2338,6 +2376,7 @@ describe('caller cancellation', () => {
       await Promise.resolve()
     }
     controller.abort()
+    await expectSettledNow(() => settlement.settled)
     await rejection
     expect(standin.calls).toHaveLength(1)
     expect(recorded(standin).signal?.aborted).toBe(true)

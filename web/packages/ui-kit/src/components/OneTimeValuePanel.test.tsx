@@ -8,6 +8,7 @@
 
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { OneTimeValuePanel } from './OneTimeValuePanel.js'
@@ -82,7 +83,7 @@ describe('OneTimeValuePanel', () => {
       />,
     )
     await user.click(screen.getByRole('button', { name: COPY_LABEL }))
-    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(VALUE))
+    await waitForCondition(() => expect(writeText).toHaveBeenCalledWith(VALUE))
     expect(await screen.findByText(zhCN.oneTimeValuePanel.copied)).toHaveAttribute(
       'role',
       'status',
@@ -119,11 +120,11 @@ describe('OneTimeValuePanel', () => {
     // Each copy control hands over exactly its own value, not the primary
     // value and not another detail's.
     await user.click(screen.getByRole('button', { name: DETAILS[0].copyLabel }))
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(writeText).toHaveBeenLastCalledWith(DETAILS[0].value),
     )
     await user.click(screen.getByRole('button', { name: DETAILS[1].copyLabel }))
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(writeText).toHaveBeenLastCalledWith(DETAILS[1].value),
     )
   })

@@ -14,7 +14,10 @@
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../../web/scripts/speed-aliases.mjs'
-import { TEST_BROWSER_TIME_ZONE } from '../../../web/vitest.shared.ts'
+import {
+  sharedTimeoutMs,
+  TEST_BROWSER_TIME_ZONE,
+} from '../../../web/vitest.shared.ts'
 
 export default defineConfig({
   resolve: {
@@ -28,12 +31,13 @@ export default defineConfig({
     // browser zone keeps every rendered time independent of the runner.
     // See TEST_BROWSER_TIME_ZONE.
     env: { TZ: TEST_BROWSER_TIME_ZONE },
-    // The same per-case budget the workspace preset gives every package
-    // (web/vitest.shared.ts). These cases drive the assembled program --
-    // route changes, settles and announcements -- and vitest's 5s default
-    // fails them on the clock when the workspace's suites run in parallel,
-    // not on an assertion.
-    testTimeout: 20_000,
+    // The workspace's scaled per-case budget (web/vitest.shared.ts, the
+    // caller's GATE_TIME_SCALE applied). These cases drive the assembled
+    // program -- route changes, settles and announcements -- and vitest's
+    // 5s default fails them on the clock when the workspace's suites run
+    // in parallel, not on an assertion. The hook budget is the same value.
+    testTimeout: sharedTimeoutMs(),
+    hookTimeout: sharedTimeoutMs(),
     // Vitest's own defaults are restated because naming `exclude` replaces
     // them rather than extending them. src/a11y/** (the route-level
     // accessibility sweep) is excluded here and run by its own config

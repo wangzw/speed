@@ -70,6 +70,18 @@ change spends most of its time on the side that did not move.
   and `make tools-test`. When the change touches a document, also run the
   `document-standards` checker and render every diagram in it.
 
+`GATE_TIME_SCALE` (a Make variable, read from the same-named environment
+variable, default 1) multiplies the frontend suites' wait limits: Vitest's
+test and hook budget, Testing Library's async budget, and `vi.waitFor` and
+`vi.waitUntil` through the shared `waitForCondition` helper. A normal run
+leaves it at 1; a run that shares the machine with other heavy work raises
+it. It must be a
+finite number of at least 1 — a typo, a non-number or a value that would
+lower the limits fails the run rather than falling back to 1. No limit is
+derived from the machine's load or core count. The Playwright end-to-end
+tier and the Go test tiers read the same variable for their own wait
+budgets.
+
 A change that crosses the boundary is two changes: run each side's gate.
 
 **The gate's CPU budget is `GATE_JOBS`**, default 4. Every tool a gate leg

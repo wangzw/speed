@@ -164,6 +164,15 @@ the root `make web-browser` entry runs only them, and the
 `.github/workflows/browser.yml` job, which runs daily and on manual
 dispatch, calls that same entry.
 
+The entry also runs a short second pass
+(`web/vitest.browser.injected-scale.config.ts`) over one case, with a
+fixed scale of 2.5 injected instead of the caller's `GATE_TIME_SCALE`. At
+the default scale of 1 a setup that hardcoded the unscaled wait budget
+would configure exactly what a correct setup does, so the second pass
+pins that the browser setup applies the injected value; its limits come
+from the same shared preset, and its include names that one file, so the
+first pass's cases keep their own.
+
 The tier's `include` also names the demo host's route-level sweep
 (`starters/demo/web/src/a11y/routes.browser.test.tsx`): it walks the
 assembled app's routes in real Chromium to settle axe's

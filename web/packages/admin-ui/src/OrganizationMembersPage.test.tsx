@@ -1111,7 +1111,7 @@ describe('the role filter', () => {
       composedName(BOB),
     )
     expect(
-      await screen.findByText(removedMessage, undefined, { timeout: 3000 }),
+      await screen.findByText(removedMessage),
     ).toBeInTheDocument()
 
     const select = screen.getByRole('combobox', {
@@ -1438,8 +1438,6 @@ describe('the member management panel', () => {
     expect(
       await screen.findByText(
         zhCN.members.removed.replace('{{account}}', composedName(BOB)),
-        undefined,
-        { timeout: 3000 },
       ),
     ).toBeInTheDocument()
   })

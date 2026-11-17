@@ -8,6 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import type { FeatureName } from '@speed/api-sdk/features'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -242,7 +243,7 @@ async function expectRefreshInert(
   memberReads: number,
 ): Promise<void> {
   const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-  await vi.waitFor(() => {
+  await waitForCondition(() => {
     expect(refresh).toBeDisabled()
   })
   expect(refresh).not.toHaveAttribute('aria-describedby')
@@ -491,7 +492,7 @@ describe('InvitationsPage', () => {
     // The role name belongs to the tenant it was chosen in; the next tenant
     // starts from no grant, so the control no longer carries the old name
     // and the issue body names no role at all.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(
         screen.getByLabelText(zhCN.invitations.issue.roleLabel),
       ).not.toHaveTextContent('admin')
@@ -503,7 +504,7 @@ describe('InvitationsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(issueInvitation).toHaveBeenCalledTimes(1)
     })
     expect(issueInvitation.mock.calls[0]?.[0]).not.toHaveProperty('role')
@@ -547,7 +548,7 @@ describe('InvitationsPage', () => {
     await act(async () => {
       await queryClient.refetchQueries()
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(
         screen.queryByLabelText(zhCN.invitations.issue.roleLabel),
       ).toBeNull()
@@ -560,7 +561,7 @@ describe('InvitationsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(issueInvitation).toHaveBeenCalledTimes(1)
     })
     expect(issueInvitation.mock.calls[0]?.[0]).not.toHaveProperty('role')
@@ -575,7 +576,7 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await vi.waitFor(() => expect(listTenantRoles).toHaveBeenCalledWith('acme'))
+    await waitForCondition(() => expect(listTenantRoles).toHaveBeenCalledWith('acme'))
     // Until the read answers, whether the caller may grant roles is unknown, and
     // a control that offered every role would be a guess.
     expect(
@@ -592,8 +593,8 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    await vi.waitFor(() => expect(listTenantRoles).toHaveBeenCalledWith('acme'))
-    await vi.waitFor(() => {
+    await waitForCondition(() => expect(listTenantRoles).toHaveBeenCalledWith('acme'))
+    await waitForCondition(() => {
       expect(
         screen.queryByLabelText(zhCN.invitations.issue.roleLabel),
       ).toBeNull()
@@ -899,7 +900,7 @@ describe('InvitationsPage', () => {
     // While the next page loads, `keepPreviousData` still holds the first
     // page's envelope, whose next_cursor names the same page. The control is
     // busy for the read and the handler refuses a second advance.
-    await vi.waitFor(() => expect(next).toBeDisabled())
+    await waitForCondition(() => expect(next).toBeDisabled())
     expect(listMembers).toHaveBeenCalledTimes(2)
 
     await act(async () => {
@@ -1003,7 +1004,7 @@ describe('InvitationsPage', () => {
     ).toBeInTheDocument()
     // The first page is read again by no cursor at all, not by the cursor the
     // second page left on the stack.
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(listMembers).toHaveBeenLastCalledWith('acme', { limit: 100 }),
     )
   })
@@ -1059,7 +1060,7 @@ describe('InvitationsPage', () => {
 
     // The new tenant's first read carries no cursor: the stack belonged to the
     // tenant the viewer left, and no frame may hand its cursor to the new one.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(
         listMembers.mock.calls.some(([tenant]) => tenant === 'globex'),
       ).toBe(true)
@@ -1164,7 +1165,7 @@ describe('InvitationsPage', () => {
     ).toBeInTheDocument()
     // The first page is read again by no cursor at all, not by the cursor the
     // second page left on the stack.
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(listInvitations).toHaveBeenLastCalledWith('acme', {
         limit: 50,
         status: 'pending',
@@ -1220,7 +1221,7 @@ describe('InvitationsPage', () => {
 
     // The new tenant's first read carries no cursor: the stack belonged to the
     // tenant the viewer left, and no frame may hand its cursor to the new one.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(
         listInvitations.mock.calls.some(([tenant]) => tenant === 'globex'),
       ).toBe(true)
@@ -1626,7 +1627,7 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(issued).toEqual(['new@example.com'])
     })
   })
@@ -1662,7 +1663,7 @@ describe('InvitationsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(expiresSent).toHaveLength(1)
     })
     const sent = expiresSent[0]
@@ -1705,7 +1706,7 @@ describe('InvitationsPage', () => {
       fireEvent.click(
         screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
       )
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(expiresSent).toHaveLength(1)
       })
       // Thirty days from the request, not the form's seven-day default.
@@ -1747,7 +1748,7 @@ describe('InvitationsPage', () => {
       fireEvent.click(
         screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
       )
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(expiresSent).toHaveLength(1)
       })
       expect(expiresSent[0]).toBe(
@@ -1796,7 +1797,7 @@ describe('InvitationsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(issued).toEqual([
         { email: 'new@example.com', role: 'tenant-inviter' },
       ])
@@ -1902,7 +1903,7 @@ describe('InvitationsPage', () => {
     const link = `${window.location.origin}/invitations/spd_inv_test_token`
     await screen.findByText(link)
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issued.copyLink }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(writeText).toHaveBeenCalledWith(link)
     })
   })
@@ -2132,7 +2133,7 @@ describe('InvitationsPage', () => {
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(revoked).toEqual(['inv-1'])
     })
     // The revoked row's menu is gone; focus lands on the invitation section's
@@ -2141,7 +2142,7 @@ describe('InvitationsPage', () => {
     const heading = within(invitationSection).getByRole('heading', {
       name: zhCN.invitations.section.title,
     })
-    await vi.waitFor(() => expect(document.activeElement).toBe(heading))
+    await waitForCondition(() => expect(document.activeElement).toBe(heading))
     expect(heading).toHaveAttribute('tabindex', '-1')
     expect(
       within(invitationSection)
@@ -2210,7 +2211,7 @@ describe('InvitationsPage', () => {
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     // No further operator action: the refused write re-reads the list, and
     // the server's judgement replaces the stale pending label.
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(
         within(section(zhCN.invitations.section.title)).getByText(
           zhCN.invitations.status.expired,
@@ -2280,8 +2281,8 @@ describe('InvitationsPage', () => {
       'heading',
       { name: zhCN.invitations.section.title },
     )
-    await vi.waitFor(() => expect(screen.queryByText('ada@example.com')).toBeNull())
-    await vi.waitFor(() => expect(document.activeElement).toBe(heading))
+    await waitForCondition(() => expect(screen.queryByText('ada@example.com')).toBeNull())
+    await waitForCondition(() => expect(document.activeElement).toBe(heading))
     expect(heading).toHaveAttribute('tabindex', '-1')
   })
 
@@ -2328,7 +2329,7 @@ describe('InvitationsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(resent).toEqual(['acme:inv-1'])
     })
     // The resend answer carries the new one-time value, so the page shows it
@@ -2404,7 +2405,7 @@ describe('InvitationsPage', () => {
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     // No further operator action: the refused write re-reads the list, and
     // the server's judgement replaces the stale pending label.
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(
         within(section(zhCN.invitations.section.title)).getByText(
           zhCN.invitations.status.expired,
@@ -2561,7 +2562,7 @@ describe('InvitationsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(removed).toEqual(['acc-1'])
     })
   })
@@ -2761,7 +2762,7 @@ describe('InvitationsPage', () => {
     // never the typed name.
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(written).toEqual([
         { tenant: 'acme', account: 'acc-2', active: true, sso_exempt: false },
       ])
@@ -3015,7 +3016,7 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await screen.findByText('Member One')
     await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(toggled).toEqual([
         { tenant: 'acme', account: 'acc-1', sso_exempt: true },
       ])
@@ -3076,7 +3077,7 @@ describe('InvitationsPage', () => {
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     // The modal hides the page from assistive technology until its exit
     // transition ends; the region is readable after that.
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await within(section(zhCN.members.title)).findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
@@ -3407,10 +3408,10 @@ describe('InvitationsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(listInvitations.mock.calls.length).toBe(invitationBefore + 1),
     )
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(listMembers.mock.calls.length).toBe(memberBefore + 1),
     )
   })
@@ -3426,7 +3427,7 @@ describe('InvitationsPage', () => {
       const operations = withTenant({ listInvitations, listMembers })
       renderWithProviders(<InvitationsPage tenant="acme" />, { operations })
 
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listInvitations).toHaveBeenCalledWith(
           'acme',
           expect.objectContaining({ limit: 50, status: 'pending' }),
@@ -3462,13 +3463,13 @@ describe('InvitationsPage', () => {
         { operations },
       )
 
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listInvitations).toHaveBeenCalledWith(
           'acme',
           expect.objectContaining({ status: 'pending' }),
         )
       })
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent(
           'Acme',
         )
@@ -3477,7 +3478,7 @@ describe('InvitationsPage', () => {
       await user.click(screen.getByLabelText(zhCN.common.tenant))
       await user.click(await screen.findByRole('option', { name: 'Globex' }))
       expect(onTenantChange).toHaveBeenCalledWith('globex')
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listInvitations).toHaveBeenCalledWith(
           'globex',
           expect.objectContaining({ status: 'pending' }),
@@ -3525,7 +3526,7 @@ describe('InvitationsPage', () => {
     // The membership write still works, and carries no exemption field.
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(written).toEqual([
         { tenant: 'acme', account: 'acc-2', active: true },
       ])

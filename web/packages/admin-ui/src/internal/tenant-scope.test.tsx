@@ -10,6 +10,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TenantScope } from './tenant-scope.js'
@@ -51,7 +52,7 @@ describe('TenantScope', () => {
       makeAdminBackend({ listTenants: () => Promise.resolve([TENANT]) }),
     )
     renderWithProviders(<Scope />, { operations })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByText(zhCN.common.tenantLoading)).toBeNull()
     })
     expect(screen.getByLabelText(TENANT_LABEL)).not.toHaveAttribute(
@@ -92,7 +93,7 @@ describe('TenantScope', () => {
     renderWithProviders(<Scope />, { operations })
     expect(await screen.findByText(zhCN.common.tenantLoadFailed)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: zhCN.common.tenantRetry }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByText(zhCN.common.tenantLoadFailed)).toBeNull()
     })
     await user.click(screen.getByLabelText(TENANT_LABEL))

@@ -7,8 +7,12 @@
  * suites run concurrently under `pnpm -r test`, and that load pushes
  * individual cases past 5s on a machine running every package at once,
  * failing the gate on the clock rather than on an assertion. The budget
- * is the wait, not the work: a genuine hang still fails, twenty seconds
- * later.
+ * is the wait, not the work: a genuine hang still fails, a minute later.
+ *
+ * The caller sets `GATE_TIME_SCALE` (a multiplier it decides on, never a
+ * value measured from the machine) when it runs the gate beside other
+ * heavy work; the budget is multiplied by it. The wait bounds scale;
+ * nothing else about a case changes.
  *
  * What stays package-specific is what actually differs: the environment
  * (`jsdom` for DOM-rendering packages, node otherwise), the setup file,
@@ -57,13 +61,76 @@ export const sharedCoverage = {
 } satisfies NonNullable<TestOptions['coverage']>
 
 /**
+ * The one timeout a case and each of its hooks get, before the caller's
+ * `GATE_TIME_SCALE` is applied. Wide enough that a case running beside a
+ * saturated machine fails on its assertion rather than on the clock, and
+ * still finite so a genuine hang is reported instead of holding the gate.
+ * Exported so the workspace guard can compare the floor against the
+ * unscaled constant rather than the caller-multiplied value.
+ */
+export const SHARED_TIMEOUT_MS = 60_000
+
+/**
+ * A decimal numeric literal: digits with an optional fraction and exponent.
+ * The variable means a decimal number, so this excludes the other literal
+ * forms `Number` would otherwise take -- hex (`0x10`), binary (`0b101`),
+ * octal (`0o17`) and digit-separating underscores (`1_000`) -- as well as
+ * the non-numeric names (`Infinity`, `NaN`).
+ */
+const DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+
+/**
+ * The caller's `GATE_TIME_SCALE`: a multiplier for the limits that bound
+ * a wait, defaulting to 1. The caller -- the person or job scheduling the
+ * gate -- decides it; nothing here inspects the machine's load or core
+ * count. Unset, empty or nothing but whitespace is 1; any other value is
+ * trimmed and must then be a decimal number of at least 1, fractions and
+ * exponents included. A hexadecimal literal, a non-finite value or one
+ * below 1 fails here rather than silently becoming 1. A silent 1 would let
+ * a caller's typo reintroduce the load failures the scale exists to
+ * prevent, and a value below 1 would push the wait under the default the
+ * gate is built around.
+ *
+ * `web/test-utils/src/gate-time.ts` reads the same variable for the
+ * Testing Library async budgets; that package cannot import this preset,
+ * so the parse is restated there, and the demo host's own copy of the
+ * test support -- a copyable skeleton that imports nothing private --
+ * restates it once more. All three apply this one rule.
+ */
+export function gateTimeScale(): number {
+  const raw = process.env.GATE_TIME_SCALE?.trim() ?? ''
+  if (raw === '') {
+    return 1
+  }
+  const scale = Number(raw)
+  if (!DECIMAL.test(raw) || !Number.isFinite(scale) || scale < 1) {
+    throw new Error(
+      `GATE_TIME_SCALE must be a finite number of at least 1; got ${JSON.stringify(raw)}`,
+    )
+  }
+  return scale
+}
+
+/**
+ * The budget one case and each of its hooks get: the shared value above,
+ * multiplied by the caller's scale. The preset applies it, and a config
+ * that builds its own `test` block for a different environment (the demo
+ * host's two) takes it from here rather than restating the number.
+ */
+export function sharedTimeoutMs(): number {
+  return SHARED_TIMEOUT_MS * gateTimeScale()
+}
+
+/**
  * The common test options with the package's own options merged in.
  * Package-level values win: `coverage` merges one level deep, so a
  * package replaces a field (a different `include`, a stricter threshold)
  * or adds an `exclude` or drops the thresholds without restating the
- * block. `testTimeout` is applied after the overrides: one budget for the
- * whole workspace is the point, so a package does not get to name its
- * own.
+ * block. `testTimeout` and `hookTimeout` are applied after the
+ * overrides: one budget for the whole workspace is the point, so a
+ * package does not get to name its own. `hookTimeout` shares the value
+ * because a hook waits on the same machine as the cases around it, so a
+ * fixture gets the budget its case gets.
  */
 export function sharedTestOptions(
   overrides: TestOptions = {},
@@ -78,7 +145,8 @@ export function sharedTestOptions(
     // Vitest's default include would.
     exclude: [...configDefaults.exclude, '**/*.browser.test.tsx'],
     ...overrides,
-    testTimeout: 20_000,
+    testTimeout: sharedTimeoutMs(),
+    hookTimeout: sharedTimeoutMs(),
     coverage: { ...sharedCoverage, ...overrides.coverage },
   }
 }

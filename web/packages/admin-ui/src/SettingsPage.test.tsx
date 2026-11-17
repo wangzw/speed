@@ -17,6 +17,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { zhCN as muiZhCN } from '@mui/material/locale'
@@ -608,7 +609,7 @@ describe('SettingsPage', () => {
     // One attempt for the whole batch: both PUTs are issued, and one
     // confirmation names the kind of object that was saved -- never a
     // success per item.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(writes).toEqual(['retry=9', 'limit=7'])
     })
     expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()

@@ -16,6 +16,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
@@ -198,7 +199,7 @@ async function expectRefreshInert(
   readsBefore: readonly [number, number],
 ): Promise<void> {
   const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-  await vi.waitFor(() => {
+  await waitForCondition(() => {
     expect(refresh).toBeDisabled()
   })
   expect(refresh).not.toHaveAttribute('aria-describedby')
@@ -436,7 +437,7 @@ describe('ImpersonationsPage', () => {
       }),
     })
     await pickTenant(user)
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(
         screen.getAllByTitle(zhCN.common.accountUnresolved),
       ).toHaveLength(2),
@@ -515,12 +516,12 @@ describe('ImpersonationsPage', () => {
     await pickTenant(user)
     await screen.findByText('Staff One')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.terminate }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(ended).toEqual(['imp-1'])
     })
     // A termination can change what the operator's own status read names,
     // so it is re-read alongside the record list the bundle invalidates.
-    await vi.waitFor(() => expect(statusReads).toBeGreaterThan(1))
+    await waitForCondition(() => expect(statusReads).toBeGreaterThan(1))
   })
 
   // Every impersonation success notice names the account in the shared four
@@ -549,7 +550,7 @@ describe('ImpersonationsPage', () => {
     getAccount: ReturnType<typeof vi.fn>,
     account: string,
   ): Promise<void> {
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(getAccount).toHaveBeenCalledWith({ id: account }),
     )
     await act(async () => {
@@ -808,10 +809,10 @@ describe('ImpersonationsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(backend.statusReads()).toBe(statusBefore + 1),
     )
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(listImpersonations.mock.calls.length).toBe(recordsBefore + 1),
     )
   })
@@ -850,13 +851,13 @@ describe('ImpersonationsPage', () => {
         },
       )
 
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listImpersonations).toHaveBeenCalledWith({ tenant: 'acme' })
       })
       await user.click(screen.getByLabelText(zhCN.common.tenant))
       await user.click(await screen.findByRole('option', { name: 'Globex' }))
       expect(onTenantChange).toHaveBeenCalledWith('globex')
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listImpersonations).toHaveBeenCalledWith({ tenant: 'globex' })
       })
     } finally {
@@ -1047,7 +1048,7 @@ describe('ImpersonationsPage', () => {
     )
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(backend.started).toEqual([
         {
           account: 'acc-9',
@@ -1076,7 +1077,7 @@ describe('ImpersonationsPage', () => {
     await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(backend.started).toEqual([{ account: 'acc-9', tenant: 'acme' }])
     })
   })
@@ -1099,7 +1100,7 @@ describe('ImpersonationsPage', () => {
     await pickStartAccount(user, 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
-    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
+    await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('started'))
     expect(onChange).toHaveBeenCalledTimes(1)
     // The success copy rendered while the host action is still pending.
     expect(
@@ -1124,7 +1125,7 @@ describe('ImpersonationsPage', () => {
     await pickStartAccount(user, 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
-    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
+    await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('started'))
     // No failure rendering: the start landed, and the host's own failure is
     // not the page's to report.
     expect(
@@ -1157,7 +1158,7 @@ describe('ImpersonationsPage', () => {
     ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
 
-    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('ended'))
+    await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('ended'))
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(
       await screen.findByText(fill(zhCN.impersonations.current.ended, { account: byName('Target Seven') })),
@@ -1208,7 +1209,7 @@ describe('ImpersonationsPage', () => {
     ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
 
-    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('ended'))
+    await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('ended'))
     expect(deletes).toBe(1)
     // The same closing path a successful end takes: the success copy, no
     // failure banner, and the section lands on "not impersonating".
@@ -1244,7 +1245,7 @@ describe('ImpersonationsPage', () => {
     expect(screen.queryByLabelText(zhCN.impersonations.start.accountLabel)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(backend.ended).toHaveLength(1)
     })
   })
@@ -1332,12 +1333,12 @@ describe('ImpersonationsPage', () => {
 
     expect(await screen.findByText(targetLine('Target Seven'))).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
-    await vi.waitFor(() => expect(ended).toBe(1))
+    await waitForCondition(() => expect(ended).toBe(1))
 
     // The end resets the status cache and re-reads it: the retired grant is
     // gone from the screen while the new read is still in flight (an
     // invalidate would keep it there until the refetch settled).
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByText(targetLine('Target Seven'))).toBeNull()
     })
     expect(reads).toBeGreaterThan(1)
@@ -1373,7 +1374,7 @@ describe('ImpersonationsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
     // A start writes a record into the tenant's list as well, so the list
     // is re-read (the read ran once when the tenant was selected).
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(listImpersonations.mock.calls.length).toBeGreaterThan(1),
     )
 
@@ -1456,7 +1457,7 @@ describe('ImpersonationsPage', () => {
     expect(
       await screen.findByText(zhCN.errors.authn.forbidden),
     ).toBeInTheDocument()
-    await vi.waitFor(() => expect(posts).toHaveLength(2))
+    await waitForCondition(() => expect(posts).toHaveLength(2))
     expect(posts[1]).toEqual(posts[0])
     expect(posts[0]).toEqual({ account: 'acc-9', tenant: 'acme' })
   })
@@ -1499,7 +1500,7 @@ describe('ImpersonationsPage', () => {
     await pickStartAccount(user, 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
-    await vi.waitFor(() => expect(starting).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(starting).toHaveBeenCalledTimes(1))
     expect(release).not.toHaveBeenCalled()
 
     await act(async () => {
@@ -1514,7 +1515,7 @@ describe('ImpersonationsPage', () => {
       })
     })
 
-    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('started'))
+    await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('started'))
     // A landed write is the host's to release once its change action
     // settles; the page never releases it.
     expect(release).not.toHaveBeenCalled()
@@ -1553,7 +1554,7 @@ describe('ImpersonationsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     expect(await screen.findByText(zhCN.errors.authn.forbidden)).toBeInTheDocument()
-    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(release).toHaveBeenCalledTimes(1))
   })
 
   it('releases the blocked attempt and fires the hook again for the step-up replay', async () => {
@@ -1620,7 +1621,7 @@ describe('ImpersonationsPage', () => {
     // The gate took the first refusal over and the replay is a new run, so
     // the hook fired again; the blocked attempt's release ran, the landed
     // replay's did not.
-    await vi.waitFor(() => expect(starting).toHaveBeenCalledTimes(2))
+    await waitForCondition(() => expect(starting).toHaveBeenCalledTimes(2))
     expect(releases[0]).toHaveBeenCalledTimes(1)
     expect(releases[1]).not.toHaveBeenCalled()
     expect(posts[1]).toEqual(posts[0])
@@ -1832,12 +1833,12 @@ describe('ImpersonationsPage', () => {
       expect(await screen.findByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
-      await vi.waitFor(() => expect(backend.ended).toHaveLength(1))
+      await waitForCondition(() => expect(backend.ended).toHaveLength(1))
 
       // The surface returns without a refresh and issues a new read. The
       // cached pre-impersonation list is gone while that read is in flight:
       // it describes a state the end just changed.
-      await vi.waitFor(() => expect(reads).toBe(3))
+      await waitForCondition(() => expect(reads).toBe(3))
       expect(screen.queryByText(RECORDS_UNAVAILABLE)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
       expect(screen.queryByText('Staff One')).toBeNull()

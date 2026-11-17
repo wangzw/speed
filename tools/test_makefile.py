@@ -173,7 +173,9 @@ sys.exit(1)
 # tools-test` would otherwise hand them to the make it starts. GATE_JOBS is
 # one of them: GNU make exports a variable set on its own command line, so
 # `make check GATE_JOBS=8` puts the width in this process's environment and
-# every case that expects the default 4 would read 8 instead.
+# every case that expects the default 4 would read 8 instead. GATE_TIME_SCALE
+# is exported by the Makefile, so a scale set for one gate run reaches the
+# make a case starts the same way.
 MAKE_ENVIRONMENT = (
     "MAKEFLAGS",
     "MFLAGS",
@@ -182,6 +184,7 @@ MAKE_ENVIRONMENT = (
     "GNUMAKEFLAGS",
     "GOWORK",
     "GATE_JOBS",
+    "GATE_TIME_SCALE",
 )
 
 # The segments `check` runs, in the order a plain `make check` runs them: the
@@ -1159,6 +1162,44 @@ class EntryPointTests(unittest.TestCase):
         result = self.make("deploy")
         self.assertNotEqual(result.returncode, 0, "make deploy still resolves")
         self.assertIn("No rule to make target", result.stderr)
+
+
+class GateTimeScaleTests(unittest.TestCase):
+    """GATE_TIME_SCALE defaults to 1 and a caller's value reaches the Makefile.
+
+    The frontend suites multiply their wait limits by it, so its default is
+    part of what the gate relies on. The suite strips it from the make runs it
+    starts, like every other inherited Make variable, so a gate that sets a
+    scale does not change the default these cases read.
+    """
+
+    def scale(self, caller: str | None = None) -> str:
+        env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        if caller is not None:
+            env["GATE_TIME_SCALE"] = caller
+        result = subprocess.run(
+            ["make", "-C", str(ROOT), "--no-print-directory", "-p", "-n", "help"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        match = re.search(r"(?m)^GATE_TIME_SCALE = (\S+)$", result.stdout)
+        self.assertIsNotNone(
+            match, "make's database does not carry GATE_TIME_SCALE"
+        )
+        return match.group(1)
+
+    def test_gate_time_scale_defaults_to_one(self) -> None:
+        self.assertEqual(self.scale(), "1")
+
+    def test_an_outer_gate_time_scale_does_not_reach_the_default(self) -> None:
+        with mock.patch.dict(os.environ, {"GATE_TIME_SCALE": "2.5"}):
+            self.assertEqual(self.scale(), "1")
+
+    def test_a_caller_value_reaches_the_makefile(self) -> None:
+        self.assertEqual(self.scale("2.5"), "2.5")
 
 
 if __name__ == "__main__":

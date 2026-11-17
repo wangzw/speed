@@ -10,6 +10,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
@@ -178,7 +179,7 @@ describe('SmsPage', () => {
     expect(refresh).toBeDisabled()
 
     pending.resolve()
-    await vi.waitFor(() => expect(refresh).not.toBeDisabled())
+    await waitForCondition(() => expect(refresh).not.toBeDisabled())
   })
 
   it('disables the refresh while the offer scope is in flight', async () => {
@@ -199,7 +200,7 @@ describe('SmsPage', () => {
     expect(refresh).toBeDisabled()
 
     pending.resolve()
-    await vi.waitFor(() => expect(refresh).not.toBeDisabled())
+    await waitForCondition(() => expect(refresh).not.toBeDisabled())
   })
 
   it('disables the refresh while a table scope write is in flight', async () => {
@@ -218,7 +219,7 @@ describe('SmsPage', () => {
     expect(refresh).toBeDisabled()
 
     pending.resolve()
-    await vi.waitFor(() => expect(refresh).not.toBeDisabled())
+    await waitForCondition(() => expect(refresh).not.toBeDisabled())
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
@@ -383,7 +384,7 @@ describe('SmsPage', () => {
     await user.type(screen.getAllByLabelText(zhCN.sms.register.paramsLabel)[0]!, 'code, name')
     await user.type(screen.getByLabelText(zhCN.sms.register.codesLabel), 'zh-CN:1001')
     await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(registered).toEqual(['welcome'])
     })
   })
@@ -406,7 +407,7 @@ describe('SmsPage', () => {
     await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
     await user.type(screen.getByLabelText(zhCN.sms.offer.localeLabel), 'zh-CN')
     await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(offered).toEqual(['welcome'])
     })
   })
@@ -431,7 +432,7 @@ describe('SmsPage', () => {
     await user.click(screen.getByRole('button', { name: text(zhCN.sms.removeAria, { name: 'login-code' }) }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(toggles).toEqual([false])
       expect(removed).toEqual(['login-code'])
     })

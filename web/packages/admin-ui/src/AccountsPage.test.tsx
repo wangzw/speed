@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { chipClasses } from '@mui/material/Chip'
@@ -773,7 +774,7 @@ describe('AccountsPage', () => {
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
-  }, 20_000)
+  })
 
   it('opens the account detail in a dialog instead of expanding the row', async () => {
     const user = userEvent.setup()
@@ -1131,7 +1132,7 @@ describe('AccountsPage', () => {
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.identifierKind.email }))
     await user.type(screen.getByLabelText(zhCN.accounts.identifierLabel), 'ada')
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toContainEqual({
         method: 'GET',
         path: '/api/v1/system/auth/accounts',
@@ -1154,7 +1155,7 @@ describe('AccountsPage', () => {
     await user.click(screen.getByLabelText(zhCN.accounts.filter.kind))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.create.kind.service }))
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toContainEqual({
         method: 'GET',
         path: '/api/v1/system/auth/accounts',
@@ -1174,7 +1175,7 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations: adminOperations })
     await user.type(screen.getByLabelText(zhCN.accounts.displayNamePrefixLabel), 'Ada')
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toContainEqual({
         method: 'GET',
         path: '/api/v1/system/auth/accounts',
@@ -1193,7 +1194,7 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations: adminOperations })
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       const call = calls.find((entry) => entry.path === '/api/v1/system/auth/accounts')
       expect(call).toBeDefined()
       // No filter is set, so the call carries the page size and nothing else.
@@ -1790,7 +1791,7 @@ describe('AccountsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(deleted).toEqual(['acc-1'])
     })
   })
@@ -1958,7 +1959,7 @@ describe('AccountsPage', () => {
     await confirmDialog(user)
     await user.click(screen.getByRole('button', { name: zhCN.accounts.revokeSessions }))
     await confirmDialog(user)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(reset).toEqual(['acc-1'])
       expect(revoked).toEqual(['acc-1'])
     })
@@ -2082,12 +2083,12 @@ describe('AccountsPage', () => {
     // session's id), so the two are picked apart by object, not by order.
     await user.click(screen.getByRole('button', { name: REVOKE_SECRET_CI_NAME }))
     await confirmDialog(user)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(secret).toEqual(['sec-1'])
     })
     await user.click(screen.getByRole('button', { name: REVOKE_SESSION_SESS_1_NAME }))
     await confirmDialog(user)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(session).toEqual(['sess-1'])
     })
   })
@@ -2133,7 +2134,7 @@ describe('AccountsPage', () => {
     )
     await user.click(screen.getByRole('button', { name: zhCN.accounts.removeIdentifier.submit }))
     await confirmDialog(user)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(removed).toEqual(['ada@example.com'])
     })
   })
@@ -3045,7 +3046,7 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(created).toEqual([
         { kind: 'user', display_name: 'Grace', username: 'grace' },
       ])
@@ -3077,7 +3078,7 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), '  grace  ')
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.phoneLabel), '  +8613800000000  ')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(created).toEqual([
         {
           kind: 'user',
@@ -3132,9 +3133,9 @@ describe('AccountsPage', () => {
 
     // Both together make the account creatable.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
-    await vi.waitFor(() => expect(submit).toBeEnabled())
+    await waitForCondition(() => expect(submit).toBeEnabled())
     await user.click(submit)
-    await vi.waitFor(() => expect(created).toHaveLength(1))
+    await waitForCondition(() => expect(created).toHaveLength(1))
   })
 
   it('creates an identifier-less service account from a display name alone', async () => {
@@ -3156,9 +3157,9 @@ describe('AccountsPage', () => {
     await user.click(within(panel).getByLabelText(zhCN.accounts.create.kindLabel))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.create.kind.service }))
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Nightly')
-    await vi.waitFor(() => expect(submit).toBeEnabled())
+    await waitForCondition(() => expect(submit).toBeEnabled())
     await user.click(submit)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(created).toEqual([{ kind: 'service', display_name: 'Nightly' }])
     })
   })
@@ -3182,7 +3183,7 @@ describe('AccountsPage', () => {
     await user.click(screen.getByLabelText(zhCN.accounts.status.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([{ id: 'acc-1', status: 'disabled' }])
     })
   })
@@ -3257,10 +3258,10 @@ describe('AccountsPage', () => {
     await user.click(save)
     // The refusal opens the re-auth dialog rather than a plain error, and
     // the write is replayed exactly once.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(startFlow).toHaveBeenCalled()
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([
         { id: 'acc-1', status: 'disabled' },
         { id: 'acc-1', status: 'disabled' },
@@ -3318,7 +3319,7 @@ describe('AccountsPage', () => {
     await user.click(save)
     // A 401 on a session that already ended is not a strength shortfall:
     // the write fires once, no re-auth dialog opens, and no replay happens.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls.length).toBe(1)
     })
     expect(startFlow).not.toHaveBeenCalled()
@@ -3345,7 +3346,7 @@ describe('AccountsPage', () => {
     await user.click(screen.getByLabelText(zhCN.accounts.mfa.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.mfa.required }))
     await user.click(save)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([{ id: 'acc-1', required: true }])
     })
   })
@@ -3369,7 +3370,7 @@ describe('AccountsPage', () => {
     await user.clear(name)
     await user.type(name, 'Ada II')
     await user.click(screen.getByRole('button', { name: zhCN.accounts.patch.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([{ id: 'acc-1', display_name: 'Ada II' }])
     })
   })
@@ -3397,7 +3398,7 @@ describe('AccountsPage', () => {
     await user.click(screen.getByLabelText(zhCN.accounts.patch.protectedLabel))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.patch.protected.unchanged }))
     await user.click(screen.getByRole('button', { name: zhCN.accounts.patch.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([{ id: 'acc-1', display_name: 'Ada II' }])
     })
   })
@@ -3415,7 +3416,7 @@ describe('AccountsPage', () => {
     await openDetail(user)
     await user.type(await screen.findByLabelText(zhCN.accounts.password.label), 'secret123')
     await user.click(screen.getByRole('button', { name: zhCN.accounts.password.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([{ id: 'acc-1', password: 'secret123' }])
     })
   })
@@ -3433,7 +3434,7 @@ describe('AccountsPage', () => {
     await openDetail(user)
     await user.type(await screen.findByLabelText(zhCN.accounts.addIdentifier.valueLabel), 'ada@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.accounts.addIdentifier.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([
         { id: 'acc-1', kind: 'username', value: 'ada@example.com' },
       ])
@@ -3458,7 +3459,7 @@ describe('AccountsPage', () => {
     await openDetail(user)
     await user.type(await screen.findByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
     await user.click(screen.getByRole('button', { name: zhCN.accounts.createSecret.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(calls).toEqual([{ id: 'acc-1', label: 'ci' }])
     })
     expect(
@@ -4074,7 +4075,7 @@ describe('AccountsPage', () => {
     await user.click(
       within(panel).getByRole('button', { name: zhCN.accounts.create.submit }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(created).toEqual([
         {
           kind: 'user',
@@ -4120,7 +4121,7 @@ describe('AccountsPage', () => {
     )
     // The declared key takes the typed value; the key the host did not
     // declare survives the patch.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(patched).toEqual([
         {
           id: ACCOUNT_ID,

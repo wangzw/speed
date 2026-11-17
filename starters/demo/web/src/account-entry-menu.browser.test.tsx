@@ -396,9 +396,7 @@ describe('the account menu across theme presets', () => {
         }
 
         await userEvent.setup().click(trigger)
-        const menu = await screen.findByRole('menu', undefined, {
-          timeout: 5000,
-        })
+        const menu = await screen.findByRole('menu')
         const paper = menu.parentElement as HTMLElement
         // The Grow transition scales the paper while it opens; measure the
         // settled box.
@@ -671,7 +669,7 @@ describe('the account menu section rhythm', () => {
 
     const trigger = await screen.findByTestId('account-entry-trigger')
     await userEvent.setup().click(trigger)
-    const menu = await screen.findByRole('menu', undefined, { timeout: 5000 })
+    const menu = await screen.findByRole('menu')
     const paper = menu.parentElement as HTMLElement
     // The Grow transition scales the paper while it opens; measure the
     // settled box.

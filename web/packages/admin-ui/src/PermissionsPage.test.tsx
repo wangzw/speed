@@ -11,6 +11,7 @@
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { typographyClasses } from '@mui/material/Typography'
@@ -189,7 +190,7 @@ async function expectRefreshInert(
   readsBefore: number,
 ): Promise<void> {
   const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-  await vi.waitFor(() => {
+  await waitForCondition(() => {
     expect(refresh).toBeDisabled()
   })
   expect(refresh).not.toHaveAttribute('aria-describedby')
@@ -297,7 +298,7 @@ describe('PermissionsPage', () => {
     await act(async () => {
       pending.resolve()
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.getByRole('button', { name: zhCN.common.refresh })).not.toBeDisabled()
     })
   })
@@ -339,7 +340,7 @@ describe('PermissionsPage', () => {
     // A landed create returns both fields to their initial values.
     expect(name).toHaveValue('')
     expect(description).toHaveValue('')
-  }, 60_000)
+  })
 
   it('disables the refresh while the grants scope is in flight', async () => {
     const user = userEvent.setup()
@@ -443,7 +444,7 @@ describe('PermissionsPage', () => {
       const operations = withAuthz({ listRoles })
       renderWithProviders(<PermissionsPage tenant="acme" />, { operations })
 
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listRoles).toHaveBeenCalledWith('acme')
       })
       expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
@@ -471,10 +472,10 @@ describe('PermissionsPage', () => {
         { operations },
       )
 
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listRoles).toHaveBeenCalledWith('acme')
       })
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent(
           'Acme',
         )
@@ -483,7 +484,7 @@ describe('PermissionsPage', () => {
       await user.click(screen.getByLabelText(zhCN.common.tenant))
       await user.click(await screen.findByRole('option', { name: 'Globex' }))
       expect(onTenantChange).toHaveBeenCalledWith('globex')
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listRoles).toHaveBeenCalledWith('globex')
       })
     } finally {
@@ -811,16 +812,16 @@ describe('PermissionsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(granted).toEqual(['crm.deal.read'])
     })
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     // A permission the server does not mark dangerous submits at once.
     await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
     await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(granted).toEqual(['crm.deal.read', 'crm.deal.write'])
     })
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -900,7 +901,7 @@ describe('PermissionsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(written).toEqual([
         {
           tenant: 'acme',
@@ -955,7 +956,7 @@ describe('PermissionsPage', () => {
     expect(screen.queryByRole('checkbox')).toBeNull()
     await user.type(screen.getByLabelText(zhCN.permissions.roles.create.roleLabel), 'auditor')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(written).toEqual([
         { tenant: 'acme', role: 'auditor', description: '' },
       ])
@@ -993,7 +994,7 @@ describe('PermissionsPage', () => {
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
     await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
     await user.click(screen.getByRole('button', { name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.read' }) }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       // Grant and revoke name the permission by its CODE, symmetrically:
       // the granted code is sent back on revoke through the catalog map.
       expect(granted).toEqual(['crm.deal.write'])
@@ -1039,7 +1040,7 @@ describe('PermissionsPage', () => {
       .closest('section') as HTMLElement
     await within(grantsSection).findByText('authn.mfa.reset')
     await user.click(screen.getByRole('button', { name: text(zhCN.permissions.grants.revokeAria, { permission: 'authn.mfa.reset' }) }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(revoked).toEqual(['authn.mfa.reset'])
     })
   })
@@ -1109,7 +1110,7 @@ describe('PermissionsPage', () => {
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
     await user.click(screen.getByRole('button', { name: text(zhCN.permissions.bindings.unbindAria, { account: 'Operator', role: 'editor' }) }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(bound).toEqual(['acc-2:viewer'])
       expect(unbound).toEqual(['editor'])
     })
@@ -1191,7 +1192,7 @@ describe('PermissionsPage', () => {
     await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
     // The read is addressed by the account id, not the typed name.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(looked).toEqual(['acc-2'])
     })
     expect(await screen.findByText('viewer')).toBeInTheDocument()
@@ -1281,12 +1282,12 @@ describe('PermissionsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(removed).toEqual(['editor'])
     })
     // The dialog closes on the confirming click, and the landed delete
     // fills the role scope's success region after it closes.
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await screen.findByText(text(zhCN.permissions.roles.removed, { role: 'editor' }))).toBeInTheDocument()
   })
 
@@ -1318,7 +1319,7 @@ describe('PermissionsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
     )
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     // While the deletion is in flight the operator moves to alpha. The
     // settlement must clear a selection only if it still names beta.
@@ -1330,7 +1331,7 @@ describe('PermissionsPage', () => {
     await act(async () => {
       removal.resolve()
     })
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(screen.queryByText(text(zhCN.permissions.roles.removed, { role: 'beta' }))).toBeInTheDocument(),
     )
     expect(screen.getByText(text(zhCN.permissions.grants.forRole, { role: 'alpha' }))).toBeInTheDocument()
@@ -1361,7 +1362,7 @@ describe('PermissionsPage', () => {
     // click, so the refusal lands in the role scope's region where it is
     // readable rather than behind an aria-hidden modal. The same text marks
     // the failed row inline, so the region is addressed by its role.
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authz.forbidden,
     )
@@ -1714,7 +1715,7 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     // The unbind control resolves the row's account through the shared unit;
     // wait for that read before the click captures the identity.
-    await vi.waitFor(() => expect(getAccount).toHaveBeenCalled())
+    await waitForCondition(() => expect(getAccount).toHaveBeenCalled())
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })

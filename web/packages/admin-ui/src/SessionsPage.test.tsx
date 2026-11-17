@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { uiKitResources } from '@speed/ui-kit'
@@ -156,7 +157,7 @@ describe('SessionsPage', () => {
     )
 
     await loadAccount(user)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.getByRole('button', { name: zhCN.common.refresh })).not.toBeDisabled()
     })
     const enabled = screen.getByRole('button', { name: zhCN.common.refresh })
@@ -185,7 +186,7 @@ describe('SessionsPage', () => {
 
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).toHaveAttribute('aria-busy', 'true')
     })
     // A busy read keeps the control enabled and focused: the read itself
@@ -200,7 +201,7 @@ describe('SessionsPage', () => {
     await act(async () => {
       finishRefresh([session()])
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).not.toHaveAttribute('aria-busy')
     })
     expect(reads).toBe(2)
@@ -234,12 +235,12 @@ describe('SessionsPage', () => {
     )
     // While the dialog's exit transition runs the page behind it is
     // hidden from the accessibility tree; the revoke is already in flight.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).toBeDisabled()
     })
     // The scope is chosen, so the disabled control does not claim it is
@@ -254,7 +255,7 @@ describe('SessionsPage', () => {
     await act(async () => {
       pending.resolve()
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).not.toBeDisabled()
     })
   })
@@ -295,7 +296,7 @@ describe('SessionsPage', () => {
     )
     // Wait out the dialog's exit transition: while it runs the page behind
     // it is hidden from the accessibility tree.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
@@ -305,14 +306,14 @@ describe('SessionsPage', () => {
     const picker = screen.getByRole('combobox', {
       name: zhCN.sessions.accountLabel,
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(picker).toBeDisabled()
     })
 
     await act(async () => {
       pending.resolve()
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(picker).not.toBeDisabled()
     })
     // The result belongs to the account it was issued for, which is still
@@ -335,7 +336,7 @@ describe('SessionsPage', () => {
     // Choosing the account is the whole gesture: no further control stands
     // between the picker and the read.
     await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (ada)')
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(queried).toEqual(['acc-9'])
     })
     expect(await screen.findByText('sess-1')).toBeInTheDocument()
@@ -479,7 +480,7 @@ describe('SessionsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(revoked).toEqual(['sess-1'])
     })
     // The landed revoke fills the page's standing status region.
@@ -516,7 +517,7 @@ describe('SessionsPage', () => {
     // While the dialog's exit transition runs the page behind it is hidden
     // from the accessibility tree; wait for the dialog to leave before
     // reaching for the page's controls.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
@@ -525,7 +526,7 @@ describe('SessionsPage', () => {
     )
     // The refresh resets the scope before re-reading: the confirmation
     // described the list as it stood before the re-read.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByText(zhCN.sessions.revokedNotice)).toBeNull()
     })
   })
@@ -554,14 +555,14 @@ describe('SessionsPage', () => {
     // failure alert.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.conflict)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByRole('alert')).toBeNull()
     })
   })
@@ -602,7 +603,7 @@ describe('SessionsPage', () => {
     expect(
       await screen.findByText(zhCN.sessions.revokedNotice),
     ).toBeInTheDocument()
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
@@ -610,7 +611,7 @@ describe('SessionsPage', () => {
     // a context change: the previous account's confirmation must not stand
     // beside the new list the picker is about to read.
     await chooseAccount(user, zhCN.sessions.accountLabel, 'Bob', 'Bob (bob)')
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.queryByText(zhCN.sessions.revokedNotice)).toBeNull()
     })
   })
@@ -745,7 +746,7 @@ describe('SessionsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(listAccountSessions.mock.calls.length).toBe(before + 1),
     )
   })

@@ -11,6 +11,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
@@ -301,7 +302,7 @@ describe('TenantRosterPage', () => {
     // natively disabled. The scope is chosen, so the disabled control
     // carries no "choose a scope first" description.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).toBeDisabled()
     })
     expect(refresh).not.toHaveAttribute('aria-describedby')
@@ -316,7 +317,7 @@ describe('TenantRosterPage', () => {
     await act(async () => {
       pending.resolve()
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).not.toBeDisabled()
     })
   })
@@ -347,7 +348,7 @@ describe('TenantRosterPage', () => {
     )
 
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).toBeDisabled()
     })
     expect(refresh).not.toHaveAttribute('aria-describedby')
@@ -360,7 +361,7 @@ describe('TenantRosterPage', () => {
     await act(async () => {
       pending.resolve()
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refresh).not.toBeDisabled()
     })
   })

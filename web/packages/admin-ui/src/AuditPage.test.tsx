@@ -11,7 +11,8 @@
  */
 
 import { useState } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuditAdminRecordsExportParams } from '@speed/api-sdk'
@@ -283,7 +284,7 @@ describe('AuditPage', () => {
       target: { value: '2026-10-15T10:00' },
     })
     await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       // 09:30 and 10:00 in Tokyo (UTC+9) are 00:30 and 01:00 UTC.
       expect(seen.since).toBe('2026-10-15T00:30:00.000Z')
       expect(seen.until).toBe('2026-10-15T01:00:00.000Z')
@@ -315,7 +316,7 @@ describe('AuditPage', () => {
     // instant: 07:30Z.
     fireEvent.change(since, { target: { value: '2026-03-08T03:30' } })
     await user.click(apply)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.at(-1)?.since).toBe('2026-03-08T07:30:00.000Z')
     })
 
@@ -453,7 +454,7 @@ describe('AuditPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.audit.filters.apply }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.since).toBe('2026-11-01T05:30:00.000Z')
     })
   })
@@ -483,7 +484,7 @@ describe('AuditPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.audit.filters.apply }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.until).toBe('2026-11-01T06:30:00.000Z')
     })
   })
@@ -515,7 +516,7 @@ describe('AuditPage', () => {
     // Apply 06:30Z, the second 01:30 of New York's fall-back overlap.
     fireEvent.change(since, { target: { value: '2026-11-01T06:30' } })
     await user.click(apply)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.at(-1)?.since).toBe('2026-11-01T06:30:00.000Z')
     })
 
@@ -526,7 +527,7 @@ describe('AuditPage', () => {
     // names both 05:30Z and 06:30Z. The draft was generated from the applied
     // instant, so it must resolve to that instant rather than to the earlier
     // occurrence the field would pick for a new reading.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(since).toHaveValue('2026-11-01T01:30')
     })
     const control = screen.getByRole('button', {
@@ -545,7 +546,7 @@ describe('AuditPage', () => {
       seen.filter((params) => params.since === '2026-11-01T05:30:00.000Z'),
     ).toHaveLength(0)
     await user.click(control)
-    await vi.waitFor(() => expect(exports).toHaveLength(1))
+    await waitForCondition(() => expect(exports).toHaveLength(1))
     expect(exports[0]?.since).toBe('2026-11-01T06:30:00.000Z')
   })
 
@@ -576,7 +577,7 @@ describe('AuditPage', () => {
     // Apply 05:30Z, the first 01:30 of New York's fall-back overlap.
     fireEvent.change(until, { target: { value: '2026-11-01T05:30' } })
     await user.click(apply)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.at(-1)?.until).toBe('2026-11-01T05:30:00.000Z')
     })
 
@@ -587,7 +588,7 @@ describe('AuditPage', () => {
     // names both 05:30Z and 06:30Z. The draft was generated from the applied
     // instant, so it must resolve to that instant rather than to the later
     // occurrence the field would pick for a new reading.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(until).toHaveValue('2026-11-01T01:30')
     })
     const control = screen.getByRole('button', {
@@ -604,7 +605,7 @@ describe('AuditPage', () => {
     const requestsBefore = seen.length
     await user.click(apply)
     await user.click(screen.getByRole('button', { name: COPY.refresh }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.length).toBeGreaterThan(requestsBefore)
       expect(seen.at(-1)?.until).toBe('2026-11-01T05:30:00.000Z')
     })
@@ -614,7 +615,7 @@ describe('AuditPage', () => {
         .filter((params) => params.until === '2026-11-01T06:30:00.000Z'),
     ).toHaveLength(0)
     await user.click(control)
-    await vi.waitFor(() => expect(exports).toHaveLength(1))
+    await waitForCondition(() => expect(exports).toHaveLength(1))
     expect(exports[0]?.until).toBe('2026-11-01T05:30:00.000Z')
   })
 
@@ -643,7 +644,7 @@ describe('AuditPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.audit.filters.apply }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.since).toBe('2026-11-01T05:30:00.000Z')
     })
 
@@ -653,7 +654,7 @@ describe('AuditPage', () => {
     // 05:30Z reads as 14:30 the same day in Tokyo. The applied instant is
     // unchanged; the draft is regenerated from it, so the export still
     // carries the instant the operator applied.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(since).toHaveValue('2026-11-01T14:30')
     })
     const control = screen.getByRole('button', {
@@ -661,7 +662,7 @@ describe('AuditPage', () => {
     })
     expect(control).toBeEnabled()
     await user.click(control)
-    await vi.waitFor(() => expect(exports).toHaveLength(1))
+    await waitForCondition(() => expect(exports).toHaveLength(1))
     expect(exports[0]?.since).toBe('2026-11-01T05:30:00.000Z')
   })
 
@@ -767,7 +768,7 @@ describe('AuditPage', () => {
       'tenant.create, account.delete',
     )
     await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.action).toEqual(['tenant.create', 'account.delete'])
     })
   })
@@ -789,7 +790,7 @@ describe('AuditPage', () => {
     await user.type(screen.getByLabelText(zhCN.audit.filters.outcome), 'ok, denied')
     await user.type(screen.getByLabelText(zhCN.audit.filters.actor), 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(seen.outcome).toEqual(['ok', 'denied'])
       expect(seen.actor).toEqual(['acc-1'])
     })
@@ -820,7 +821,7 @@ describe('AuditPage', () => {
     await user.type(screen.getByLabelText(zhCN.audit.filters.outcome), 'ok')
     await user.type(screen.getByLabelText(zhCN.audit.filters.actor), 'acc-1')
     await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(
         requests.some(
           (request) =>
@@ -831,7 +832,7 @@ describe('AuditPage', () => {
       ).toBe(true)
     })
     await user.click(screen.getByRole('button', { name: zhCN.audit.filters.reset }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       const last = requests.at(-1)
       expect(last?.action ?? []).toEqual([])
       expect(last?.outcome ?? []).toEqual([])
@@ -1064,7 +1065,7 @@ describe('AuditPage', () => {
       expect(control).not.toHaveAttribute('aria-busy')
 
       await user.click(control)
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(control).toHaveAttribute('aria-busy', 'true')
       })
       expect(screen.getByText(zhCN.audit.export.note)).toBeInTheDocument()
@@ -1072,7 +1073,7 @@ describe('AuditPage', () => {
       await act(async () => {
         resolveExport(new Blob([]))
       })
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(control).not.toHaveAttribute('aria-busy')
       })
       // The explanation is not a progress message: it stays after the
@@ -1131,7 +1132,7 @@ describe('AuditPage', () => {
       await user.click(apply)
       expect(control).toBeEnabled()
       await user.click(control)
-      await vi.waitFor(() => expect(seen).toHaveLength(1))
+      await waitForCondition(() => expect(seen).toHaveLength(1))
       expect(seen[0]).toEqual({ since: '2026-10-15T00:30:00.000Z' })
 
       // Changing the draft to C without applying makes the visible field
@@ -1156,7 +1157,7 @@ describe('AuditPage', () => {
       await user.click(apply)
       expect(control).toBeEnabled()
       await user.click(control)
-      await vi.waitFor(() => expect(seen).toHaveLength(2))
+      await waitForCondition(() => expect(seen).toHaveLength(2))
       expect(seen[1]).toEqual({ since: '2026-10-15T01:30:00.000Z' })
       // An export is not a page: it carries no cursor and no page size.
       expect(seen[1]).not.toHaveProperty('cursor')
@@ -1291,7 +1292,7 @@ describe('AuditPage', () => {
       await user.click(
         screen.getByRole('button', { name: zhCN.audit.filters.reset }),
       )
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(
           screen.queryByText(zhCN.errors.client.httpForbidden),
         ).toBeNull()
@@ -1316,7 +1317,7 @@ describe('AuditPage', () => {
       await user.click(
         screen.getByRole('button', { name: zhCN.audit.export.label }),
       )
-      await vi.waitFor(() => expect(capture.downloads()).toHaveLength(1))
+      await waitForCondition(() => expect(capture.downloads()).toHaveLength(1))
 
       const download = capture.downloads()[0]!
       const match = /^audit-records-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.ndjson$/.exec(
@@ -1361,7 +1362,7 @@ describe('AuditPage', () => {
       })
 
       await user.click(control)
-      await vi.waitFor(() => expect(calls).toBe(1))
+      await waitForCondition(() => expect(calls).toBe(1))
       expect(control).toHaveAttribute('aria-busy', 'true')
 
       // A second activation while the first is in flight issues nothing.
@@ -1374,7 +1375,7 @@ describe('AuditPage', () => {
       await act(async () => {
         resolveExport(new Blob([]))
       })
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(control).not.toHaveAttribute('aria-busy')
       })
       expect(control).toBeEnabled()

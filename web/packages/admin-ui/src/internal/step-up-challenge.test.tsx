@@ -26,6 +26,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@speed/api-client'
@@ -420,7 +421,7 @@ describe('StepUpChallenge', () => {
     )
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(onSuccess).toHaveBeenCalledTimes(1)
     })
     // The factor-choice answer carries the id; the code answer carries the
@@ -477,7 +478,7 @@ describe('StepUpChallenge', () => {
     )
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
-    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
 
     expect(answers.map((answer) => answer.step)).toEqual([
       'factor',
@@ -527,7 +528,7 @@ describe('StepUpChallenge', () => {
     expect(onSuccess).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
-    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(
       answers.filter((answer) => answer.step === 'complete'),
     ).toHaveLength(2)
@@ -693,7 +694,7 @@ describe('StepUpChallenge', () => {
       // The assertion step starts its ceremony on arrival -- choosing the
       // passkey factor was the only click -- and its answer travels under
       // the second factor's step (`factor`), not the enrollment one.
-      await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+      await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     } finally {
       if (original === undefined) {
         delete (window.navigator as { credentials?: unknown }).credentials
@@ -818,9 +819,9 @@ describe('StepUpChallenge', () => {
 
     // The start is in flight when the operator cancels: the dialog closes
     // and its driver unmounts.
-    await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(start).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     // The start then settles elevated. The host must not replay the write
     // the operator cancelled, so the elevation is dropped.
@@ -864,7 +865,7 @@ describe('StepUpChallenge', () => {
       zhCN.errors.authn.bad_request,
     )
     await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     await act(async () => {
       await Promise.resolve()
     })
@@ -899,11 +900,11 @@ describe('StepUpChallenge', () => {
     )
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
-    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
 
     // The server consumed the settled flow: the closed dialog has no
     // binding to release.
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     await act(async () => {
       await Promise.resolve()
     })
@@ -944,7 +945,7 @@ describe('StepUpChallenge', () => {
     // layer that happens to unmount.
     await screen.findByLabelText(/code/)
     await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
-    await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     await act(async () => {
       await Promise.resolve()
     })
@@ -1039,7 +1040,7 @@ describe('StepUpChallenge', () => {
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.restart }))
     // The restart drives a fresh flow locally; the second start settles
     // the elevation and the refused write is replayed.
-    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(start).toHaveBeenCalledTimes(2)
 
     await user.click(screen.getByRole('button', { name: zhCN.common.cancel }))
@@ -1098,7 +1099,7 @@ describe('StepUpChallenge', () => {
     expect(screen.getByRole('button', { name: zhCN.common.cancel })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.restart }))
-    await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     expect(start).toHaveBeenCalledTimes(2)
   })
 
@@ -1168,7 +1169,7 @@ describe('StepUpChallenge', () => {
       // The next ceremony is dismissed: the newer failure replaces the
       // server banner, so the two are never on screen together.
       await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(screen.getAllByRole('alert')).toHaveLength(1)
       })
       const alerts = screen.getAllByRole('alert')

@@ -14,7 +14,10 @@
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../../web/scripts/speed-aliases.mjs'
-import { TEST_BROWSER_TIME_ZONE } from '../../../web/vitest.shared.ts'
+import {
+  sharedTimeoutMs,
+  TEST_BROWSER_TIME_ZONE,
+} from '../../../web/vitest.shared.ts'
 
 export default defineConfig({
   resolve: {
@@ -33,10 +36,12 @@ export default defineConfig({
     // them rather than extending them. e2e/** is the Playwright tier and is
     // run by `make e2e`, never by this sweep.
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/*.browser.test.tsx'],
-    // The workspace preset's per-case budget (web/vitest.shared.ts): a sweep
-    // renders every route of the area it scans, so vitest's 5s default would
-    // fail it on the clock under parallel load.
-    testTimeout: 20_000,
+    // The workspace's scaled per-case budget (web/vitest.shared.ts, the
+    // caller's GATE_TIME_SCALE applied): a sweep renders every route of the
+    // area it scans, so vitest's 5s default would fail it on the clock under
+    // parallel load. The hook budget is the same value.
+    testTimeout: sharedTimeoutMs(),
+    hookTimeout: sharedTimeoutMs(),
     // The verbose reporter is deliberate: the default reporter emits a test's
     // console output (the gate's advisory warnings and its closing report)
     // only when that test failed, so a green run would hide the registered

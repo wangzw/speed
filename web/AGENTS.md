@@ -46,7 +46,10 @@ this file adds what is specific to the npm side.
 - Vitest runs from the package directory, and every package with tests
   carries a `vitest.config.ts` whose `test` block is built with
   `sharedTestOptions()` from `web/vitest.shared.ts` -- the workspace's one
-  timeout and coverage block. A package config declares only what differs:
+  pair of test and hook timeouts and its coverage block, multiplied by the
+  caller's `GATE_TIME_SCALE` (default 1). A case does not lower its own
+  budget, and nothing probes the machine's load or core count to widen
+  one. A package config declares only what differs:
   a DOM-rendering package sets the jsdom environment and its setup file,
   and keeps jsdom, Testing Library and friends in its own devDependencies,
   never the shared root. The workspace guard

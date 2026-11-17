@@ -10,6 +10,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AccountSelector } from './account-selector.js'
@@ -84,7 +85,7 @@ describe('AccountSelector', () => {
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(listAccounts).toHaveBeenCalledWith({
         limit: 20,
         display_name_prefix: 'Ada',
@@ -115,7 +116,7 @@ describe('AccountSelector', () => {
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ab')
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(listAccounts).toHaveBeenCalledWith({
         limit: 20,
         display_name_prefix: 'Ab',
@@ -148,7 +149,7 @@ describe('AccountSelector', () => {
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada Lovelace')
     // The display-name read is the only one issued; wait for it to settle
     // before reading the popup, so the empty state is the settled one.
-    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(1))
+    await waitForCondition(() => expect(listAccounts).toHaveBeenCalledTimes(1))
     await waitFor(() => {
       expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
     })
@@ -178,7 +179,7 @@ describe('AccountSelector', () => {
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     // The name read plus the two applicable identifier reads.
-    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(3))
+    await waitForCondition(() => expect(listAccounts).toHaveBeenCalledTimes(3))
     // Re-query rather than hold the element: the popup re-renders as the
     // reads settle and a held node can be replaced between find and assert.
     await waitFor(() => {
@@ -204,7 +205,7 @@ describe('AccountSelector', () => {
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     // The name read plus the two applicable identifier reads.
-    await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(3))
+    await waitForCondition(() => expect(listAccounts).toHaveBeenCalledTimes(3))
     await waitFor(() => {
       expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
     })

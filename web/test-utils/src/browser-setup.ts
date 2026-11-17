@@ -11,11 +11,22 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach } from 'vitest'
+import { asyncBudgetMs } from './gate-time.js'
+
+/**
+ * The caller's `GATE_TIME_SCALE`, injected by the browser tier's config
+ * (`web/vitest.browser.config.ts`) because the browser page has no process
+ * global to read it from: the read the unit setup uses would always yield
+ * 1 here. The config parses the variable in Node, where the environment is
+ * real, and a bad value fails the config load before a browser starts.
+ */
+declare const __SPEED_GATE_TIME_SCALE__: number
 
 // The same widened async budget the unit suites use: a case waits on the
 // event it asserts, and a loaded machine may take longer than the default
-// one-second poll to settle it.
-configure({ asyncUtilTimeout: 5_000 })
+// one-second poll to settle it. The caller's GATE_TIME_SCALE multiplies it,
+// with the value injected by the config (there is no process global here).
+configure({ asyncUtilTimeout: asyncBudgetMs(__SPEED_GATE_TIME_SCALE__) })
 
 /**
  * The metric-stable families every element's text is measured in. macOS

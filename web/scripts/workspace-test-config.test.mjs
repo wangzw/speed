@@ -7,25 +7,50 @@
  * on a loaded machine -- the failure lands on the clock, not on an
  * assertion. This suite makes that omission red at the source: each
  * package with a `test` script must import `sharedTestOptions` from the
- * preset, must not pin its own `testTimeout`, and its exported config
- * must carry the preset's timeout and coverage options.
+ * preset, must not pin its own `testTimeout` or `hookTimeout`, and its
+ * exported config must carry the preset's budgets and coverage options.
  *
  * The preset also owns the boundary between the unit tier and the
  * browser tier: `*.browser.test.tsx` cases run only through the root
  * `make web-browser` entry, so the preset must keep excluding them from
  * every package's `test` leg. The last case pins that exclusion.
  *
- * The demo host (starters/demo/web) is out of scope: it is a copyable
- * application whose repository-internal test wiring is dropped on copy
- * out, and it carries its own setup instead of consuming web/'s.
+ * The guard holds the budgets themselves too, not just their provenance:
+ * a preset that lowers its shared default, a setup that lowers the async
+ * budget, or a case that pins its own budget below the shared default is
+ * red here. Comparing a package's config with the preset alone would
+ * accept a preset lowered along with it. The floors are compared against
+ * the unscaled preset constants, so a caller's GATE_TIME_SCALE cannot
+ * change this tree's verdict.
+ *
+ * Vitest's `vi.waitFor` and `vi.waitUntil` are the waits Testing
+ * Library's budget does not reach: neither has a global default, and both
+ * use a fixed one second per call. Every wait must go through
+ * `waitForCondition` (@speed/test-utils/wait), which supplies the shared
+ * budget; a bare call, a bracket-access call or a destructured alias of
+ * either (`const { waitFor } = vi`) in a test source is red here.
+ *
+ * The demo host (starters/demo/web) is a copyable application whose
+ * repository-internal test wiring is dropped on copy out, so it is not
+ * checked for the preset's provenance. Its test sources are scanned for a
+ * narrowed case budget and a bare wait, and its setup for the async
+ * budget, because the copy carries the same wiring by hand.
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { sharedCoverage, sharedTestOptions } from '../vitest.shared'
+import {
+  gateTimeScale,
+  SHARED_TIMEOUT_MS,
+  sharedCoverage,
+  sharedTestOptions,
+} from '../vitest.shared'
+import { ASYNC_UTIL_TIMEOUT_MS } from '../test-utils/src/gate-time'
+import { ASYNC_UTIL_TIMEOUT_MS as DEMO_ASYNC_UTIL_TIMEOUT_MS } from '../../starters/demo/web/src/test-utils/gate-time'
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+const demoWebRoot = join(webRoot, '..', 'starters', 'demo', 'web')
 
 /** Every workspace package directory: packages/* plus test-utils. */
 const packageDirs = [
@@ -45,11 +70,185 @@ const testPackages = packageDirs
   })
   .filter((pkg) => typeof pkg.test === 'string')
 
+/** The agreed floors for the shared budgets, before the caller's scale. */
+const SHARED_TEST_TIMEOUT_FLOOR_MS = 60_000
+const ASYNC_UTIL_TIMEOUT_FLOOR_MS = 30_000
+
 /** Comments are prose, not configuration; drop them before matching. */
 function stripComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/.*$/gm, '')
+}
+
+/** A JavaScript numeric literal with optional digit separators. */
+function toMs(literal) {
+  return Number(literal.replaceAll('_', ''))
+}
+
+/**
+ * The text of the call whose opening parenthesis is at `openIndex`, with
+ * nested parentheses and quoted strings respected, or null when the
+ * source ends first.
+ */
+function callText(source, openIndex) {
+  let depth = 0
+  let quote = null
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index]
+    if (quote !== null) {
+      if (char === '\\') {
+        index += 1
+      } else if (char === quote) {
+        quote = null
+      }
+      continue
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      quote = char
+    } else if (char === '(') {
+      depth += 1
+    } else if (char === ')') {
+      depth -= 1
+      if (depth === 0) {
+        return source.slice(openIndex, index + 1)
+      }
+    }
+  }
+  return null
+}
+
+/** The trailing numeric budget of a call whose last argument is a number. */
+function trailingTimeout(call, floor) {
+  const trailing = /,\s*([\d_]+)\s*\)$/.exec(call)
+  if (trailing !== null && toMs(trailing[1]) < floor) {
+    return [toMs(trailing[1])]
+  }
+  return []
+}
+
+/** The `timeout` in the options object a call passes after a name string. */
+function optionTimeout(call, floor) {
+  // `it('name', { timeout }, fn)`, and the call an `it.each(table)` returns
+  // (`it.each(table)('name', { timeout }, fn)`): the name string is
+  // followed by the options object. A `{ timeout }` deeper in an arrow
+  // function's body belongs to a wait or a nested call, not to this case.
+  const named =
+    /\(\s*(?:(['"`])(?:\\.|(?!\1).)*\1)\s*,\s*\{([^}]*)\}/.exec(call)
+  if (named === null) {
+    return []
+  }
+  const timeout = /\btimeout\s*:\s*([\d_]+)/.exec(named[2])
+  if (timeout !== null && toMs(timeout[1]) < floor) {
+    return [toMs(timeout[1])]
+  }
+  return []
+}
+
+/**
+ * The per-case, per-hook and per-suite budgets in one test source that sit
+ * below `floor`. Four forms are scanned: a trailing numeric budget
+ * (`it(name, fn, 2000)`, `beforeEach(fn, 2000)`), an options object after
+ * a name (`it(name, { timeout }, fn)`, `describe(name, { timeout }, fn)`),
+ * the call an `it.each(table)`/`test.each(table)` returns, and
+ * `test.setTimeout(ms)`. Waits such as `waitFor(..., { timeout })` and
+ * `findBy*(..., { timeout })` are not case budgets and are left alone.
+ */
+function lowCaseTimeouts(source, floor) {
+  const code = stripComments(source)
+  const lowered = []
+  for (const match of code.matchAll(
+    /\b(?:it|test|beforeEach|afterEach|beforeAll|afterAll|describe)(?:\.(?!each\b)\w+)?\(/g,
+  )) {
+    const call = callText(code, match.index + match[0].length - 1)
+    if (call === null) {
+      continue
+    }
+    lowered.push(...trailingTimeout(call, floor), ...optionTimeout(call, floor))
+  }
+  // `it.each(table)` returns a function that is then called with the case.
+  // The table is not a budget, so the scan continues past it and inspects
+  // that call instead.
+  for (const match of code.matchAll(/\b(?:it|test|describe)\.each\s*\(/g)) {
+    const openIndex = match.index + match[0].length - 1
+    const table = callText(code, openIndex)
+    if (table === null) {
+      continue
+    }
+    const rest = code.slice(openIndex + table.length)
+    const open = rest.search(/\S/)
+    if (open === -1 || rest[open] !== '(') {
+      continue
+    }
+    const call = callText(code, openIndex + table.length + open)
+    if (call !== null) {
+      lowered.push(...trailingTimeout(call, floor), ...optionTimeout(call, floor))
+    }
+  }
+  for (const match of code.matchAll(/\btest\.setTimeout\(\s*([\d_]+)\s*\)/g)) {
+    if (toMs(match[1]) < floor) {
+      lowered.push(toMs(match[1]))
+    }
+  }
+  return lowered
+}
+
+/**
+ * The bare waits in a test source, which lack the shared budget: a
+ * `vi.waitFor` or `vi.waitUntil` call (directly or by bracket access), and
+ * a destructuring that binds either name from `vi`.
+ */
+function bareWaitUses(source) {
+  const code = stripComments(source)
+  return [
+    ...(code.match(/\bvi\s*\.\s*(?:waitFor|waitUntil)\s*\(/g) ?? []),
+    ...(code.match(/\bvi\s*\[\s*(['"])(?:waitFor|waitUntil)\1\s*\]\s*\(/g) ?? []),
+    ...(code.match(
+      /\b(?:const|let|var)\s*\{[^}]*\b(?:waitFor|waitUntil)\b[^}]*\}\s*=\s*vi\b/g,
+    ) ?? []),
+    ...(code.match(
+      /\(\s*\{[^}]*\b(?:waitFor|waitUntil)\b[^}]*\}\s*=\s*vi\s*\)/g,
+    ) ?? []),
+  ]
+}
+
+/**
+ * The argument a setup hands `asyncBudgetMs` for its async timeout, or null
+ * when it names no such budget. The argument must be the caller's scale --
+ * `gateTimeScale()`, or the browser tier's injected
+ * `__SPEED_GATE_TIME_SCALE__` -- rather than a literal: a literal pins the
+ * budget on the setup's own value and drops the callers' scale, and even
+ * the literal 1 would leave the floor in place while ignoring a caller who
+ * raised it.
+ */
+function asyncBudgetScale(source) {
+  const match = /asyncUtilTimeout\s*:\s*asyncBudgetMs\s*\(\s*((?:[^()]|\([^()]*\))+?)\s*\)/.exec(
+    stripComments(source),
+  )
+  return match?.[1] ?? null
+}
+
+/** The expressions that carry the caller's scale into a setup. */
+const SCALE_SOURCE = /^(?:gateTimeScale\(\)|__SPEED_GATE_TIME_SCALE__)$/
+
+/** Every test source under `dir`, skipping installed and built output. */
+function testSources(dir) {
+  const sources = []
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === 'dist') {
+        continue
+      }
+      const path = join(current, entry.name)
+      if (entry.isDirectory()) {
+        walk(path)
+      } else if (/\.test\.(?:[cm]?[jt]sx?)$/.test(entry.name)) {
+        sources.push(path)
+      }
+    }
+  }
+  walk(dir)
+  return sources
 }
 
 describe('workspace test configuration', () => {
@@ -64,6 +263,173 @@ describe('workspace test configuration', () => {
     // keep them too -- which it derives from configDefaults rather than
     // restates.
     expect(options.exclude).toContain('**/node_modules/**')
+  })
+
+  it('gives the root eslint-rules/scripts leg the shared preset', () => {
+    // Those tests live outside every package, so no package config covers
+    // them; without a config at the web root the leg runs on Vitest's
+    // fixed 5s default.
+    const source = stripComments(
+      readFileSync(join(webRoot, 'vitest.config.ts'), 'utf8'),
+    )
+    expect(source).toContain('sharedTestOptions(')
+    expect(source).not.toMatch(/testTimeout\s*:/)
+    expect(source).not.toMatch(/hookTimeout\s*:/)
+  })
+
+  it('keeps the shared case budget at or above its floor', () => {
+    // Compared unscaled: SHARED_TIMEOUT_MS is the preset's constant, so a
+    // caller's GATE_TIME_SCALE cannot change this tree's verdict. The
+    // options must then be that constant times the scale.
+    expect(SHARED_TIMEOUT_MS).toBeGreaterThanOrEqual(SHARED_TEST_TIMEOUT_FLOOR_MS)
+    const options = sharedTestOptions()
+    expect(options.testTimeout).toBe(SHARED_TIMEOUT_MS * gateTimeScale())
+    expect(options.hookTimeout).toBe(SHARED_TIMEOUT_MS * gateTimeScale())
+  })
+
+  it('keeps the async budget at or above its floor', () => {
+    // Both copies carry the constant by hand; each is held to the floor
+    // unscaled, like the preset's test budget.
+    expect(ASYNC_UTIL_TIMEOUT_MS).toBeGreaterThanOrEqual(
+      ASYNC_UTIL_TIMEOUT_FLOOR_MS,
+    )
+    expect(DEMO_ASYNC_UTIL_TIMEOUT_MS).toBeGreaterThanOrEqual(
+      ASYNC_UTIL_TIMEOUT_FLOOR_MS,
+    )
+    const setups = [
+      join(webRoot, 'test-utils/src/setup.ts'),
+      join(webRoot, 'test-utils/src/browser-setup.ts'),
+      join(demoWebRoot, 'src/test-utils/setup.ts'),
+    ]
+    for (const path of setups) {
+      const scale = asyncBudgetScale(readFileSync(path, 'utf8'))
+      expect(
+        scale,
+        `${path} names no async budget for the guard to check`,
+      ).not.toBeNull()
+      expect(
+        scale,
+        `${path} pins the async budget instead of taking the caller's scale`,
+      ).toMatch(SCALE_SOURCE)
+    }
+  })
+
+  /** Every test source the budgets and the wait rule apply to. */
+  const scopedTestSources = [
+    ...testPackages.flatMap((pkg) => testSources(pkg.dir)),
+    ...testSources(demoWebRoot),
+  ]
+
+  it('keeps no case budget below the shared one', () => {
+    // The unscaled constant: a caller's GATE_TIME_SCALE must not change this
+    // tree's verdict. Comparing the scaled options would let a case budget
+    // between the floor and the scaled value pass only when a caller raised
+    // the scale.
+    const floor = SHARED_TIMEOUT_MS
+    const offenders = []
+    for (const source of scopedTestSources) {
+      for (const ms of lowCaseTimeouts(readFileSync(source, 'utf8'), floor)) {
+        offenders.push(`${source}: a case budget of ${ms}ms`)
+      }
+    }
+    expect(
+      offenders,
+      'a case pins a budget below the shared default; drop it or raise it',
+    ).toEqual([])
+  })
+
+  it('routes every wait through the shared async budget', () => {
+    const offenders = []
+    for (const source of scopedTestSources) {
+      const count = bareWaitUses(readFileSync(source, 'utf8')).length
+      if (count > 0) {
+        offenders.push(`${source}: ${count} bare wait use(s)`)
+      }
+    }
+    expect(
+      offenders,
+      'call waitForCondition (@speed/test-utils/wait) instead of vi.waitFor '
+        + "or vi.waitUntil, directly or through a destructured alias; both "
+        + "waits' one-second default is outside the setup budget and "
+        + 'GATE_TIME_SCALE',
+    ).toEqual([])
+  })
+
+  it('scans the case budgets it is meant to catch', () => {
+    expect(
+      lowCaseTimeouts("it('a case', { timeout: 5_000 }, async () => {})", 60_000),
+    ).toEqual([5_000])
+    expect(lowCaseTimeouts('test.setTimeout(1_000)', 60_000)).toEqual([1_000])
+    expect(
+      lowCaseTimeouts("it('a case', async () => {}, 2_000)", 60_000),
+    ).toEqual([2_000])
+    expect(
+      lowCaseTimeouts('beforeEach(async () => {}, 2_000)', 60_000),
+    ).toEqual([2_000])
+    expect(
+      lowCaseTimeouts("describe('a suite', { timeout: 5_000 }, () => {})", 60_000),
+    ).toEqual([5_000])
+    expect(
+      lowCaseTimeouts(
+        "it.each([[1]])('a case', { timeout: 5_000 }, async () => {})",
+        60_000,
+      ),
+    ).toEqual([5_000])
+    expect(
+      lowCaseTimeouts(
+        "it.each([[1]])('a case', async () => {}, 2_000)",
+        60_000,
+      ),
+    ).toEqual([2_000])
+    expect(
+      lowCaseTimeouts("it('a case', { timeout: 120_000 }, async () => {})", 60_000),
+    ).toEqual([])
+    expect(
+      lowCaseTimeouts("await waitFor(() => {}, { timeout: 5_000 })", 60_000),
+    ).toEqual([])
+    expect(
+      lowCaseTimeouts("// it('a case', { timeout: 5_000 }, async () => {})", 60_000),
+    ).toEqual([])
+  })
+
+  it('scans the wait uses it is meant to catch', () => {
+    expect(bareWaitUses('await vi.waitFor(() => {})')).toHaveLength(1)
+    expect(bareWaitUses('await vi.waitUntil(() => true)')).toHaveLength(1)
+    expect(bareWaitUses("await vi['waitFor'](() => {})")).toHaveLength(1)
+    expect(bareWaitUses('const { waitFor } = vi')).toHaveLength(1)
+    expect(bareWaitUses('const { waitUntil } = vi')).toHaveLength(1)
+    expect(bareWaitUses('const { waitFor: wrapped } = vi')).toHaveLength(1)
+    expect(bareWaitUses('let { waitFor, waitUntil } = vi')).toHaveLength(1)
+    expect(bareWaitUses('({ waitFor } = vi)')).toHaveLength(1)
+    expect(bareWaitUses('await waitForCondition(() => {})')).toHaveLength(0)
+    expect(bareWaitUses('const { spyOn } = vi')).toHaveLength(0)
+    expect(bareWaitUses('// await vi.waitFor(() => {})')).toHaveLength(0)
+  })
+
+  it('scans the async budget argument it is meant to catch', () => {
+    expect(
+      asyncBudgetScale(
+        'configure({ asyncUtilTimeout: asyncBudgetMs(gateTimeScale()) })',
+      ),
+    ).toBe('gateTimeScale()')
+    expect(
+      asyncBudgetScale(
+        'configure({ asyncUtilTimeout: asyncBudgetMs(__SPEED_GATE_TIME_SCALE__) })',
+      ),
+    ).toBe('__SPEED_GATE_TIME_SCALE__')
+    // A literal is reported and refused by SCALE_SOURCE even at the floor:
+    // it would ignore a caller who raised the scale.
+    expect(
+      asyncBudgetScale('configure({ asyncUtilTimeout: asyncBudgetMs(1) })'),
+    ).toBe('1')
+    expect(
+      asyncBudgetScale('configure({ asyncUtilTimeout: asyncBudgetMs(0.5) })'),
+    ).toBe('0.5')
+    expect(asyncBudgetScale('configure({ asyncUtilTimeout: 30_000 })')).toBeNull()
+    expect(SCALE_SOURCE.test('gateTimeScale()')).toBe(true)
+    expect(SCALE_SOURCE.test('__SPEED_GATE_TIME_SCALE__')).toBe(true)
+    expect(SCALE_SOURCE.test('1')).toBe(false)
+    expect(SCALE_SOURCE.test('0.5')).toBe(false)
   })
 
   for (const pkg of testPackages) {
@@ -81,10 +447,16 @@ describe('workspace test configuration', () => {
       )
       expect(source).toContain('sharedTestOptions(')
       expect(source).not.toMatch(/testTimeout\s*:/)
+      expect(source).not.toMatch(/hookTimeout\s*:/)
 
       const config = (await import(pathToFileURL(configPath).href)).default
 
-      expect(config.test?.testTimeout).toBe(20_000)
+      // Compared against the preset rather than a literal: the shared
+      // budget is multiplied by the caller's GATE_TIME_SCALE, and the
+      // guard is that the package took it, not a particular number. The
+      // floor case above is what stops the preset itself being lowered.
+      expect(config.test?.testTimeout).toBe(sharedTestOptions().testTimeout)
+      expect(config.test?.hookTimeout).toBe(sharedTestOptions().hookTimeout)
       expect(config.test?.coverage).toMatchObject({
         provider: sharedCoverage.provider,
         include: sharedCoverage.include,

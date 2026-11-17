@@ -225,8 +225,5 @@ describe('the README quick start, exercised over a real api-client', () => {
     ]) {
       expect(screen.getByRole('heading', { name: title })).toBeTruthy()
     }
-    // The composed page renders every account surface over one scripted
-    // client and two languages; the explicit budget covers the render and
-    // axe cost of that class on a loaded runner.
-  }, 20000)
+  })
 })

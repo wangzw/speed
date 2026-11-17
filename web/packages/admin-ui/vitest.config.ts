@@ -6,7 +6,7 @@
  * The page cases drive userEvent through MUI menus, dialogs, debounced
  * search reads and data tables; the shared budget covers them under the
  * parallel workspace run. The budget is the wait, not the work: a genuine
- * hang still fails, twenty seconds later.
+ * hang still fails, a minute later.
  *
  * The aliases come from the workspace's single package map
  * (web/scripts/speed-aliases.mjs): every @speed/* specifier -- subpaths

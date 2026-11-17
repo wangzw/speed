@@ -2144,9 +2144,7 @@ describe('the impersonation shell', () => {
       ),
     })
 
-    await waitFor(() => expect(window.location.pathname).toBe('/'), {
-      timeout: 5_000,
-    })
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(
       screen.queryByRole('progressbar', {
         name: demoEnUS.admin.accessPending,

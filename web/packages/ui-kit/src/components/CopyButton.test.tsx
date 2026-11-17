@@ -8,6 +8,7 @@
 
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CopyButton } from './CopyButton.js'
@@ -48,7 +49,7 @@ describe('CopyButton', () => {
     })
     await user.click(button)
 
-    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('member-1'))
+    await waitForCondition(() => expect(writeText).toHaveBeenCalledWith('member-1'))
     const announcement = await screen.findByText(
       renderTemplate(zhCN.copyButton.copiedLabel, { value: 'member-1' }),
     )

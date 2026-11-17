@@ -8,6 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForCondition } from '@speed/test-utils/wait'
 import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SsoPage, ssoProviderWriteBody } from './SsoPage.js'
@@ -399,7 +400,7 @@ describe('SsoPage', () => {
     await chooseProviderAction(user, zhCN.sso.delete)
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(deleted).toEqual(['idp-1'])
     })
   })
@@ -423,7 +424,7 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await chooseProviderAction(user, zhCN.sso.refreshMetadata)
     await chooseProviderAction(user, zhCN.sso.reverifyDomains)
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(refreshed).toEqual(['idp-1'])
       expect(reverified).toEqual(['idp-1'])
     })
@@ -474,7 +475,7 @@ describe('SsoPage', () => {
       screen.getByRole('menuitem', { name: zhCN.sso.domains.remove }),
     ).toBeInTheDocument()
     await user.keyboard('{Escape}')
-    await vi.waitFor(() => expect(screen.queryByRole('menuitem')).toBeNull())
+    await waitForCondition(() => expect(screen.queryByRole('menuitem')).toBeNull())
 
     await user.click(
       within(list).getByRole('button', {
@@ -523,7 +524,7 @@ describe('SsoPage', () => {
 
     // The write re-reads the provider list, so the same row turns verified
     // without a new one appearing.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       const list = screen.getByRole('list', {
         name: zhCN.sso.domains.listLabel,
       })
@@ -565,7 +566,7 @@ describe('SsoPage', () => {
     await chooseDomainAction(user, 'acme.example', zhCN.sso.domains.remove)
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(removed).toEqual(['acme.example'])
     })
   })
@@ -647,7 +648,7 @@ describe('SsoPage', () => {
         name: zhCN.sso.domains.claimRecordNameCopy,
       }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(writeText).toHaveBeenLastCalledWith(recordName)
     })
     await user.click(
@@ -655,7 +656,7 @@ describe('SsoPage', () => {
         name: zhCN.sso.domains.claimRecordValueCopy,
       }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(writeText).toHaveBeenLastCalledWith(recordValue)
     })
   })
@@ -707,7 +708,7 @@ describe('SsoPage', () => {
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
     await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(created).toEqual([
         { tenant: 'acme', protocol: 'oidc', name: 'New IdP', provisioning: 'preprovisioned' },
       ])
@@ -744,7 +745,7 @@ describe('SsoPage', () => {
       name: zhCN.sso.provider.usernameClaimLabel,
     })
     await user.click(claimField)
-    await vi.waitFor(() =>
+    await waitForCondition(() =>
       expect(
         screen.getAllByRole('option').map((option) => option.textContent),
       ).toEqual([
@@ -757,7 +758,7 @@ describe('SsoPage', () => {
     )
 
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(created).toEqual([
         {
           tenant: 'acme',
@@ -787,7 +788,7 @@ describe('SsoPage', () => {
     await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
     await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'jit')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(created).toEqual([
         {
           tenant: 'acme',
@@ -821,7 +822,7 @@ describe('SsoPage', () => {
     // A landed create returns the form to its initial state: every input is
     // empty, the three-state selects read "unchanged", and the write-only
     // client secret is cleared with the rest.
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.getByLabelText(zhCN.sso.provider.protocolLabel)).toHaveValue('')
       expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('')
       expect(screen.getByLabelText(zhCN.sso.provider.provisioningLabel)).toHaveValue('')
@@ -881,7 +882,7 @@ describe('SsoPage', () => {
     await user.clear(nameField)
     await user.type(nameField, 'Acme IdP 2')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(updates).toEqual([
         {
           id: 'idp-1',
@@ -928,7 +929,7 @@ describe('SsoPage', () => {
       }),
     )
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(updates).toEqual([
         {
           id: 'idp-1',
@@ -983,7 +984,7 @@ describe('SsoPage', () => {
       }),
     )
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(updates).toEqual([
         {
           id: 'idp-1',
@@ -1027,7 +1028,7 @@ describe('SsoPage', () => {
     await user.clear(provisioningField)
     await user.type(provisioningField, 'preprovisioned')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(updates).toEqual([
         {
           id: 'idp-1',
@@ -1076,7 +1077,7 @@ describe('SsoPage', () => {
     // Saving unchanged succeeds -- no retype -- and the stored configuration
     // travels with the write.
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(updates).toEqual([
         {
           id: 'idp-1',
@@ -1107,7 +1108,7 @@ describe('SsoPage', () => {
     await pickProvider(user)
     await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(claims).toEqual([{ id: 'idp-1', tenant: 'acme', domain: 'acme.com' }])
     })
     expect(
@@ -1484,7 +1485,7 @@ describe('SsoPage', () => {
     await user.type(screen.getByLabelText(zhCN.sso.provider.provisioningLabel), 'preprovisioned')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveAttribute(
         'aria-disabled',
         'true',
@@ -1504,7 +1505,7 @@ describe('SsoPage', () => {
     await act(async () => {
       finish(providerFixture({ name: 'New IdP' }))
     })
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(screen.getByLabelText(zhCN.common.tenant)).not.toHaveAttribute(
         'aria-disabled',
         'true',
@@ -1556,7 +1557,7 @@ describe('SsoPage', () => {
 
       expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
       expect(listSsoProviders).toHaveBeenCalledWith('acme')
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent(
           'Acme',
         )
@@ -1565,7 +1566,7 @@ describe('SsoPage', () => {
       await user.click(screen.getByLabelText(zhCN.common.tenant))
       await user.click(await screen.findByRole('option', { name: 'Globex' }))
       expect(onTenantChange).toHaveBeenCalledWith('globex')
-      await vi.waitFor(() => {
+      await waitForCondition(() => {
         expect(listSsoProviders).toHaveBeenCalledWith('globex')
       })
     } finally {
@@ -1616,7 +1617,7 @@ describe('SsoPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.sso.domains.claimTokenCopy }),
     )
-    await vi.waitFor(() => {
+    await waitForCondition(() => {
       expect(writeText).toHaveBeenCalledWith('tok-1')
     })
   })

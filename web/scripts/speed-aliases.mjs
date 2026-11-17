@@ -127,6 +127,7 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
     specifier: '@speed/test-utils/turnstile',
     entry: 'test-utils/src/turnstile.ts',
   },
+  { specifier: '@speed/test-utils/wait', entry: 'test-utils/src/wait.ts' },
   { specifier: '@speed/test-utils/setup', entry: 'test-utils/src/setup.ts' },
   {
     specifier: '@speed/theme-presets',

@@ -25,13 +25,16 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
+import { asyncBudgetMs, gateTimeScale } from './gate-time.js'
 
-// findBy*/waitFor default to a one-second async budget. The workspace
-// runs every package's suite concurrently; under that load a query a
-// case waits on can settle just after the default expires, failing the
-// case on the clock rather than on the behaviour it asserts. A wider
-// budget keeps the gate repeatable without loosening any assertion.
-configure({ asyncUtilTimeout: 5_000 })
+// The testing-library async budget: how long findBy*/waitFor keep
+// polling for the condition a case asserts. It is the wait, not the
+// work -- a case whose condition never arrives still fails. The default
+// (one second) and a narrow value under a loaded machine expire while a
+// query is about to settle, failing the case on the clock rather than on
+// the behaviour it asserts. The caller's GATE_TIME_SCALE multiplies it,
+// the same variable web/vitest.shared.ts multiplies the test budgets by.
+configure({ asyncUtilTimeout: asyncBudgetMs(gateTimeScale()) })
 
 afterEach(() => {
   cleanup()
