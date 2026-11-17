@@ -29,10 +29,14 @@
  *
  * Vitest's `vi.waitFor` and `vi.waitUntil` are the waits Testing
  * Library's budget does not reach: neither has a global default, and both
- * use a fixed one second per call. Every wait must go through
+ * use a fixed one second per call. Every `vi.waitFor` must go through
  * `waitForCondition` (@speed/test-utils/wait), which supplies the shared
- * budget; a bare call, a bracket-access call or a destructured alias of
- * either (`const { waitFor } = vi`) in a test source is red here.
+ * budget, and `vi.waitUntil` is forbidden; a bare call, a bracket-access
+ * call, a destructured alias of either (`const { waitFor } = vi`), or a
+ * reference kept uncalled (`const wait = vi.waitFor`) in a test source is
+ * red here. Testing Library's own `waitFor` and `findBy*` queries are
+ * outside this guard: they wait under the `asyncUtilTimeout` budget the
+ * setup configures.
  *
  * The demo host (starters/demo/web) is a copyable application whose
  * repository-internal test wiring is dropped on copy out, so it is not
@@ -245,8 +249,9 @@ function lowCaseTimeouts(source, floor) {
 
 /**
  * The bare waits in a test source, which lack the shared budget: a
- * `vi.waitFor` or `vi.waitUntil` call (directly or by bracket access), and
- * a destructuring that binds either name from `vi`.
+ * `vi.waitFor` or `vi.waitUntil` call (directly or by bracket access), a
+ * destructuring that binds either name from `vi`, and a reference to either
+ * assigned without being called (`const wait = vi.waitFor`).
  */
 function bareWaitUses(source) {
   const code = stripComments(source)
@@ -258,6 +263,14 @@ function bareWaitUses(source) {
     ) ?? []),
     ...(code.match(
       /\(\s*\{[^}]*\b(?:waitFor|waitUntil)\b[^}]*\}\s*=\s*vi\s*\)/g,
+    ) ?? []),
+    // A reference kept without being called: the call's one-second default
+    // applies once it is invoked, and the alias hides it from the call scan.
+    ...(code.match(
+      /(?:\b(?:const|let|var)\s+[\w$]+\s*=|\b[\w$]+\s*=)\s*vi\s*\.\s*(?:waitFor|waitUntil)\b(?!\s*\()/g,
+    ) ?? []),
+    ...(code.match(
+      /(?:\b(?:const|let|var)\s+[\w$]+\s*=|\b[\w$]+\s*=)\s*vi\s*\[\s*(['"])(?:waitFor|waitUntil)\1\s*\](?!\s*\()/g,
     ) ?? []),
   ]
 }
@@ -441,7 +454,7 @@ describe('workspace test configuration', () => {
     ).toEqual([])
   })
 
-  it('routes every wait through the shared async budget', () => {
+  it('rejects every vi.waitFor and vi.waitUntil use outside waitForCondition', () => {
     const offenders = []
     for (const source of scopedTestSources) {
       const count = bareWaitUses(readFileSync(source, 'utf8')).length
@@ -452,9 +465,9 @@ describe('workspace test configuration', () => {
     expect(
       offenders,
       'call waitForCondition (@speed/test-utils/wait) instead of vi.waitFor '
-        + "or vi.waitUntil, directly or through a destructured alias; both "
-        + "waits' one-second default is outside the setup budget and "
-        + 'GATE_TIME_SCALE',
+        + 'or vi.waitUntil, directly, through a destructured alias, or through '
+        + "a reference kept uncalled; both waits' one-second default is outside "
+        + 'the setup budget and GATE_TIME_SCALE',
     ).toEqual([])
   })
 
@@ -525,6 +538,12 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses('const { waitFor: wrapped } = vi')).toHaveLength(1)
     expect(bareWaitUses('let { waitFor, waitUntil } = vi')).toHaveLength(1)
     expect(bareWaitUses('({ waitFor } = vi)')).toHaveLength(1)
+    expect(bareWaitUses('const wait = vi.waitFor')).toHaveLength(1)
+    expect(bareWaitUses('let wait = vi.waitUntil')).toHaveLength(1)
+    expect(bareWaitUses("const wait = vi['waitFor']")).toHaveLength(1)
+    // A string that names the call is prose, not a reference; a called wait
+    // is counted once, by the call scan rather than the reference scan.
+    expect(bareWaitUses("it('names vi.waitFor in prose', () => {})")).toHaveLength(0)
     expect(bareWaitUses('await waitForCondition(() => {})')).toHaveLength(0)
     expect(bareWaitUses('const { spyOn } = vi')).toHaveLength(0)
     expect(bareWaitUses('// await vi.waitFor(() => {})')).toHaveLength(0)

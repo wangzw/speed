@@ -19,8 +19,9 @@
  *
  * Package tests use this instead of `vi.waitFor` (and `vi.waitUntil`,
  * which shares the fixed default); the workspace guard
- * (`web/scripts/workspace-test-config.test.mjs`) rejects a bare call or a
- * destructured alias in any test source it scans.
+ * (`web/scripts/workspace-test-config.test.mjs`) rejects a bare call, a
+ * destructured alias, or an uncalled reference to either in any test source it
+ * scans.
  */
 import { getConfig } from '@testing-library/react'
 import { vi } from 'vitest'
