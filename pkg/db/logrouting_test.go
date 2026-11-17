@@ -13,7 +13,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -199,26 +201,48 @@ var routingValues = []string{failedValue, debugValue, slowValue, scannedValue}
 // work on is created with the logger silenced, so that the setup is not among
 // the records. The threshold of the Debug session is raised to an hour, so that
 // a machine that stalls cannot turn its statement into a slow one.
-func issueStatements(t *testing.T, handle *gorm.DB) {
+//
+// It returns the call site of each statement, in wantedRecords order: the line
+// that issued it, which is the site the record has to name.
+func issueStatements(t *testing.T, handle *gorm.DB) []string {
 	t.Helper()
 	ctx := t.Context()
 	quiet := handle.Session(&gorm.Session{Logger: logger.Discard})
 	if err := quiet.Exec(createNotes).Error; err != nil {
 		t.Fatalf("creating the table the statements write to: %v", err)
 	}
+	callers := make([]string, 0, len(wantedRecords))
+	callers = append(callers, thisFile+":"+strconv.Itoa(nextCallLine()))
 	if err := handle.WithContext(ctx).Exec(insertMissing, failedValue).Error; err == nil {
 		t.Error("an insert into a table that does not exist succeeded, and the case needs it to fail")
 	}
+	callers = append(callers, thisFile+":"+strconv.Itoa(nextCallLine()))
 	if err := db.SlowAfter(handle, time.Hour).Debug().WithContext(ctx).Exec(insertNote, debugValue).Error; err != nil {
 		t.Errorf("an insert in a Debug session failed: %v", err)
 	}
+	callers = append(callers, thisFile+":"+strconv.Itoa(nextCallLine()))
 	if err := db.SlowAfter(handle, time.Nanosecond).WithContext(ctx).Exec(insertNote, slowValue).Error; err != nil {
 		t.Errorf("an insert in a session that counts every statement as slow failed: %v", err)
 	}
 	var note string
+	callers = append(callers, thisFile+":"+strconv.Itoa(nextCallLine()))
 	if err := handle.WithContext(ctx).Raw(selectMissing, scannedValue).Scan(&note).Error; err == nil {
 		t.Error("a select from a table that does not exist succeeded, and the case needs it to fail")
 	}
+	return callers
+}
+
+// thisFile is this file's path as the runtime reports it in a frame.
+var thisFile = func() string {
+	_, file, _, _ := runtime.Caller(0)
+	return file
+}()
+
+// nextCallLine is the line of the call written on the next line, which is the
+// call site a record of that statement names.
+func nextCallLine() int {
+	_, _, line, _ := runtime.Caller(1)
+	return line + 1
 }
 
 // openedHandle builds a connection through the delivered capability, to a
@@ -680,9 +704,15 @@ var resultCode = regexp.MustCompile(`^result code \d+$`)
 
 // requireStatementRecords holds the log file to holding the records of the
 // statements issueStatements runs that kept, indexes into wantedRecords, and
-// those alone, each in the shape the design gives it, and to holding none of the
-// values the statements bind anywhere.
-func requireStatementRecords(t *testing.T, file logFile, kept ...int) {
+// those alone, each in the shape the design gives it, naming the line that
+// issued it, and to holding none of the values the statements bind anywhere.
+//
+// callers are the sites issueStatements issued the statements from, one per
+// wantedRecords entry. Comparing against them is what holds the caller
+// attribute to the statement's own line: the filter above already tells a
+// record of this case from the module's own, so a check on that same shape
+// would pass whatever line it named.
+func requireStatementRecords(t *testing.T, file logFile, callers []string, kept ...int) {
 	t.Helper()
 	for _, value := range routingValues {
 		if strings.Contains(file.raw, value) {
@@ -709,9 +739,9 @@ func requireStatementRecords(t *testing.T, file logFile, kept ...int) {
 		if statement := str(got, "statement"); statement != want.statement {
 			t.Errorf("%s carries the statement %q, want %q", want.what, statement, want.statement)
 		}
-		if caller := str(got, "caller"); !callerOfTheCase.MatchString(caller) {
-			t.Errorf("%s carries the caller %q, want a call site in logrouting_test.go: the first frame "+
-				"outside GORM is the one that issued the statement", want.what, caller)
+		if caller, issuedAt := str(got, "caller"), callers[index]; caller != issuedAt {
+			t.Errorf("%s carries the caller %q, want %q: the first frame outside GORM is the line that "+
+				"issued the statement", want.what, caller, issuedAt)
 		}
 		if _, ok := got["elapsed"].(float64); !ok {
 			t.Errorf("%s carries the elapsed time %v, want a number", want.what, got["elapsed"])
@@ -746,8 +776,8 @@ func TestTheRecordsOfTheStatementsReachTheConfiguredDestination(t *testing.T) {
 	} {
 		t.Run(source.name, func(t *testing.T) {
 			h, path := startLogged(t, "")
-			issueStatements(t, source.handle(t, h))
-			requireStatementRecords(t, readLog(t, path), 0, 1, 2, 3)
+			callers := issueStatements(t, source.handle(t, h))
+			requireStatementRecords(t, readLog(t, path), callers, 0, 1, 2, 3)
 		})
 	}
 }
@@ -823,8 +853,8 @@ func TestTheConfiguredLevelGovernsWhichStatementsAreWritten(t *testing.T) {
 	} {
 		t.Run(level.name, func(t *testing.T) {
 			h, path := startLogged(t, level.name)
-			issueStatements(t, h.Instance.DB())
-			requireStatementRecords(t, readLog(t, path), level.kept...)
+			callers := issueStatements(t, h.Instance.DB())
+			requireStatementRecords(t, readLog(t, path), callers, level.kept...)
 		})
 	}
 }
