@@ -127,6 +127,29 @@ export function sharedTimeoutMs(): number {
 }
 
 /**
+ * The test reporters for a run: the base reporter, plus the
+ * `github-actions` reporter when the run is a GitHub Actions job. The
+ * second one only turns a failure into an annotation; it prints no test
+ * output of its own, so the base reporter's log is unchanged.
+ *
+ * Vitest appends that reporter itself only when it chose the reporters
+ * (its default is `['default', 'github-actions']` under
+ * `GITHUB_ACTIONS=true`). The workspace pins its reporters so an agent
+ * environment cannot swap in the silent reporter, and a pinned list stops
+ * that default from running; this helper appends the annotation reporter
+ * explicitly so the CI failure still appears on the workflow run.
+ *
+ * The demo host builds its own test blocks and takes this helper too, so
+ * both of its configs carry the same rule.
+ */
+export function sharedReporters(
+  base: string = 'default',
+  env: { GITHUB_ACTIONS?: string } = process.env,
+): string | string[] {
+  return env.GITHUB_ACTIONS === 'true' ? [base, 'github-actions'] : base
+}
+
+/**
  * The common test options with the package's own options merged in.
  * Package-level values win: `coverage` merges one level deep, so a
  * package replaces a field (a different `include`, a stricter threshold)
@@ -141,14 +164,15 @@ export function sharedTestOptions(
   overrides: TestOptions = {},
 ): TestOptions {
   return {
-    // The reporter is pinned rather than left to Vitest's choice, which
+    // The reporters are pinned rather than left to Vitest's choice, which
     // is not the same in every run: with no configured reporter Vitest 4
     // selects MinimalReporter (silent "passed-only") whenever std-env
     // reports an agent environment, and that reporter discards the
     // console output of passing cases. The gate would then show a
     // passing case's console.warn only when a person ran it. One fixed
-    // reporter makes the log independent of who starts the run.
-    reporters: 'default',
+    // base reporter makes the log independent of who starts the run, and
+    // `sharedReporters` adds the GitHub Actions annotation on CI.
+    reporters: sharedReporters(),
     // Vitest's own defaults are restated because naming `exclude`
     // replaces them rather than extending them. The browser cases
     // (`*.browser.test.tsx`) are measured in real Chromium by the

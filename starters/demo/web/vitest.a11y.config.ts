@@ -15,6 +15,7 @@
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../../web/scripts/speed-aliases.mjs'
 import {
+  sharedReporters,
   sharedTimeoutMs,
   TEST_BROWSER_TIME_ZONE,
 } from '../../../web/vitest.shared.ts'
@@ -42,14 +43,15 @@ export default defineConfig({
     // parallel load. The hook budget is the same value.
     testTimeout: sharedTimeoutMs(),
     hookTimeout: sharedTimeoutMs(),
-    // The verbose reporter is deliberate: the default reporter emits a test's
-    // console output (the gate's advisory warnings and its closing report)
-    // only when that test failed, so a green run would hide the registered
-    // moderate/minor findings. Verbose surfaces every swept route and its
-    // warnings, so the report the gate promises is actually printed. The
-    // configuration key is `reporters`, not the CLI's `reporter`; the
-    // singular spelling is ignored, which would leave Vitest's own default
-    // (and its agent-environment silent variant) in charge.
-    reporters: 'verbose',
+    // The verbose reporter is deliberate: it names every swept route, so the
+    // report the gate promises shows which routes were scanned, and it prints
+    // each case's annotations beside its name. The default reporter prints a
+    // passing case's console output too (its `silent` default is false), but
+    // it names only the failing cases, so a green sweep's routes would not
+    // appear in the log. The configuration key is `reporters` (plural); the
+    // singular `reporter` is the CLI alias, which Vitest 4 merges into the
+    // options, and this file keeps the plural spelling. `sharedReporters`
+    // adds the GitHub Actions annotation reporter on CI.
+    reporters: sharedReporters('verbose'),
   },
 })

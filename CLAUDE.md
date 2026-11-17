@@ -117,7 +117,11 @@ N segments run at once, each able to use `GATE_JOBS` cores, so a caller
 running segments in parallel divides its budget between the two.
 
 **The test reporter is pinned, not selected by the runner**, so a warning a
-passing case prints is in the log whichever way the gate was started.
+passing case prints is in the log whichever way the gate was started. Under
+GitHub Actions the pinned `default` is followed by the `github-actions`
+reporter, which adds failure annotations and no test output of its own;
+Vitest appends that reporter itself only when no reporter is configured, so
+the shared preset appends it explicitly.
 
 **Gate stages.** A fix round re-runs only the touched packages' tests and the
 generated-artifact checks below. The whole-side gate — the gate commands the

@@ -62,6 +62,7 @@ import {
   gateTimeScale,
   SHARED_TIMEOUT_MS,
   sharedCoverage,
+  sharedReporters,
   sharedTestOptions,
 } from '../vitest.shared'
 import { ASYNC_UTIL_TIMEOUT_MS } from '../test-utils/src/gate-time'
@@ -328,14 +329,26 @@ function importsFrom(sourceFile, pattern) {
 }
 
 /**
- * The string a `reporters` property is written as, or null when it is not a
- * string literal.
+ * Whether the `reporters` property is the shared helper's result, with the
+ * given base reporter when one is named.
  */
-function reportersLiteral(sourceFile) {
+function reportersComeFromShared(sourceFile, base) {
   const initializer = propertyInitializer(sourceFile, 'reporters')
-  return initializer !== null && ts.isStringLiteral(initializer)
-    ? initializer.text
-    : null
+  if (
+    initializer === null
+    || !ts.isCallExpression(initializer)
+    || !ts.isIdentifier(initializer.expression)
+    || initializer.expression.text !== 'sharedReporters'
+  ) {
+    return false
+  }
+  if (base === undefined) {
+    return initializer.arguments.length === 0
+  }
+  const [argument] = initializer.arguments
+  return initializer.arguments.length === 1
+    && ts.isStringLiteral(argument)
+    && argument.text === base
 }
 
 /** The calls that declare a case, hook or suite. */
@@ -583,20 +596,32 @@ describe('workspace test configuration', () => {
     // Vitest 4 picks MinimalReporter (silent "passed-only") when std-env
     // reports an agent environment, which drops the console output of
     // passing cases. A pinned reporter is what keeps a warning from
-    // appearing only when a person runs the gate.
-    expect(sharedTestOptions().reporters).toBe('default')
+    // appearing only when a person runs the gate. A pinned list also
+    // stops Vitest from appending its own github-actions reporter, so the
+    // shared helper appends it under GitHub Actions instead.
+    expect(sharedReporters('default', {})).toBe('default')
+    expect(sharedReporters('default', { GITHUB_ACTIONS: 'true' })).toEqual([
+      'default',
+      'github-actions',
+    ])
+    expect(sharedReporters('verbose', {})).toBe('verbose')
+    expect(sharedReporters('verbose', { GITHUB_ACTIONS: 'true' })).toEqual([
+      'verbose',
+      'github-actions',
+    ])
+    expect(sharedTestOptions().reporters).toEqual(sharedReporters())
     const configPath = join(demoWebRoot, 'vitest.config.ts')
     expect(
-      reportersLiteral(
+      reportersComeFromShared(
         parseTestSource(readFileSync(configPath, 'utf8'), configPath),
       ),
-    ).toBe('default')
+    ).toBe(true)
     // The a11y sweep's verbose reporter is the other fixed choice; the
-    // singular CLI spelling is ignored by the config, so it is checked
-    // for as well.
+    // singular CLI spelling is a different key, so the config keeps the
+    // plural one.
     const a11yPath = join(demoWebRoot, 'vitest.a11y.config.ts')
     const a11yFile = parseTestSource(readFileSync(a11yPath, 'utf8'), a11yPath)
-    expect(reportersLiteral(a11yFile)).toBe('verbose')
+    expect(reportersComeFromShared(a11yFile, 'verbose')).toBe(true)
     expect(hasPropertyNamed(a11yFile, 'reporter')).toBe(false)
   })
 
