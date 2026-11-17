@@ -35,6 +35,7 @@ import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
 import { RouteProvider } from '@speed/route-kit'
 import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
 import { AppServicesProvider } from '../app-services.js'
+import type { AuthzTenantAdminRoleView } from '../app-api/index.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { invitationPath } from '../paths.js'
 import { DEMO_NAMESPACE, demoResources } from '../resources.js'
@@ -93,6 +94,22 @@ const textI18n = createSpeedI18n({
   ],
 })
 const tAdmin = textI18n.getFixedT('en-US', ADMIN_UI_NAMESPACE)
+
+/**
+ * One row of the tenant roles read, in the shape the generated view carries.
+ * Typed rather than asserted, so a contract field this view gains fails the
+ * typecheck instead of slipping through a cast.
+ */
+const tenantRoleRow: AuthzTenantAdminRoleView = {
+  builtin: false,
+  can_manage: true,
+  created_at: '2026-10-15T12:00:00Z',
+  description: 'Administrator',
+  member_count: null,
+  permission_count: 0,
+  role: 'admin',
+  tenant: 'acme',
+}
 
 function renderAdminArea(
   children: ReactNode = <p>admin page</p>,
@@ -364,19 +381,7 @@ describe('AdminArea', () => {
         return Promise.resolve({ invitations: [], next_cursor: '' } as T)
       }
       if (path === '/api/v1/tenants/acme/roles' && method === 'GET') {
-        return Promise.resolve({
-          roles: [
-            {
-              builtin: false,
-              can_manage: true,
-              created_at: '2026-10-15T12:00:00Z',
-              description: 'Administrator',
-              permission_count: 0,
-              role: 'admin',
-              tenant: 'acme',
-            },
-          ],
-        } as T)
+        return Promise.resolve({ roles: [tenantRoleRow] } as T)
       }
       if (path === '/api/v1/tenants/acme/members' && method === 'GET') {
         return Promise.resolve({ members: [], next_cursor: '' } as T)
@@ -450,19 +455,7 @@ describe('AdminArea', () => {
         return Promise.resolve({ invitations: [], next_cursor: '' } as T)
       }
       if (path === '/api/v1/tenants/acme/roles' && method === 'GET') {
-        return Promise.resolve({
-          roles: [
-            {
-              builtin: false,
-              can_manage: true,
-              created_at: '2026-10-15T12:00:00Z',
-              description: 'Administrator',
-              permission_count: 0,
-              role: 'admin',
-              tenant: 'acme',
-            },
-          ],
-        } as T)
+        return Promise.resolve({ roles: [tenantRoleRow] } as T)
       }
       if (path === '/api/v1/tenants/acme/members' && method === 'GET') {
         return Promise.resolve({ members: [], next_cursor: '' } as T)

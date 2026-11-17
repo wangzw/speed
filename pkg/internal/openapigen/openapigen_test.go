@@ -109,6 +109,19 @@ type pointerInMapOfSlices struct {
 	ByName map[string][]*int `json:"by_name" required:"true" description:"Values reached through a map of slices."`
 }
 
+// pointerInSliceOfMaps reaches a pointer through a map nested in a slice, so
+// the walk's map arm is only reached after the first container level.
+type pointerInSliceOfMaps struct {
+	ByName []map[string]*int `json:"by_name" required:"true" description:"Values reached through a slice of maps."`
+}
+
+// pointerInSliceOfMapOfArrays reaches a pointer through a map value that is an
+// array, all inside a slice, so the walk's array arm is only reached after the
+// first container level.
+type pointerInSliceOfMapOfArrays struct {
+	Counts []map[string][2]*int `json:"counts" required:"true" description:"Counts reached through a slice of maps of arrays."`
+}
+
 // inlineStruct is the structure an untagged anonymous pointer embeds. It holds
 // only non-pointer fields, so the inline exemption is what the case reads.
 type inlineStruct struct {
@@ -727,6 +740,43 @@ func TestAPointerInAMapOfSlicesIsRefused(t *testing.T) {
 	}
 }
 
+// TestAPointerInASliceOfMapsIsRefused holds that the walk unwraps a map after
+// the first container level: the map arm is only reachable inside the loop.
+func TestAPointerInASliceOfMapsIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInSliceOfMaps](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a slice of maps of pointers")
+	}
+	if !strings.Contains(err.Error(), "by_name") {
+		t.Errorf("the error reads %v, want it to name by_name", err)
+	}
+}
+
+// TestAPointerInASliceOfMapOfArraysIsRefused holds that the walk unwraps an
+// array after the first container level: the array arm is only reachable
+// inside the loop.
+func TestAPointerInASliceOfMapOfArraysIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, pointerInSliceOfMapOfArrays](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "The fields",
+			Body: &speedhttp.Body{MediaType: "application/json"},
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted a slice of maps of arrays of pointers")
+	}
+	if !strings.Contains(err.Error(), "counts") {
+		t.Errorf("the error reads %v, want it to name counts", err)
+	}
+}
+
 // TestAnUntaggedAnonymousStructPointerIsAcceptedInline holds the positive side
 // of the anonymous-field exemption: an anonymous pointer to a struct with no
 // json tag is inlined, so a nil one contributes no keys and no null to declare.
@@ -891,6 +941,24 @@ func TestMarkingANullableFieldOmitZeroIsRefused(t *testing.T) {
 	)})
 	if err == nil {
 		t.Fatal("generating accepted nullable:\"true\" on a field with omitzero")
+	}
+	if !strings.Contains(err.Error(), "omitzero") {
+		t.Errorf("the error reads %v, want it to name omitzero", err)
+	}
+}
+
+// TestMarkingANullableRequestFieldOmitZeroIsRefused holds that the request side
+// carries the same rule: a request struct's nullable marker with omitzero would
+// leave the key out rather than write null.
+func TestMarkingANullableRequestFieldOmitZeroIsRefused(t *testing.T) {
+	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[nullableOmitZero, struct{}](
+		"the.module.write", http.MethodPost, "/items", "", "", requestBody("application/json"),
+		[]speedhttp.Response{{
+			Status: 204, Description: "No content",
+		}},
+	)})
+	if err == nil {
+		t.Fatal("generating accepted nullable:\"true\" on a request field with omitzero")
 	}
 	if !strings.Contains(err.Error(), "omitzero") {
 		t.Errorf("the error reads %v, want it to name omitzero", err)
