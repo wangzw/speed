@@ -1,5 +1,7 @@
-// Package coretest holds the value functions the time bounds of every test tier
-// go through.
+// Package coretest holds the value functions the Go test bounds go through:
+// the packages of the pkg module and the demo server. The frontend and
+// end-to-end tiers read GATE_TIME_SCALE through their own helpers and do not
+// import this package.
 //
 // A test's bounds are written for an idle machine. Under the race detector, and
 // on a machine that several gates share, the same work takes longer, and a bound

@@ -669,7 +669,12 @@ func TestTheReleaseDoesNotReuseTheContextTheFlushExpired(t *testing.T) {
 		t.Errorf("a stop whose final export outlasted the bound ended the drive with %v, want nil: the "+
 			"release must not be handed the expired context", err)
 	}
-	if elapsed > 5*time.Second {
+	// The ceiling is a behaviour criterion: it tells a release bounded to a
+	// few seconds from one bounded far longer, so it carries the caller's
+	// scale alone. The race detector slows the program under test rather than
+	// the difference this bound measures, and widening it by the race factor
+	// would let a release that runs to batch.export-timeout pass.
+	if elapsed > coretest.Declared(5*time.Second) {
 		t.Errorf("the stop took %v against a shutdown bound of 100ms", elapsed)
 	}
 }
@@ -700,7 +705,11 @@ func TestAStopOverTwoMetricBackendsThatWaitIsCutInsideTheBound(t *testing.T) {
 			"want nil: each final export is cut inside the bound and its failure absorbed\n"+
 			"the module logged:\n%s", err, logged)
 	}
-	if elapsed > bound+otel.ReleaseTimeout+releaseSlack {
+	// The ceiling tells a stop that ends inside the bound and the release
+	// bound from one that runs to the batch export's own timeout, so it goes
+	// through Declared: the race factor belongs to the program under test, not
+	// to the difference this bound measures.
+	if elapsed > coretest.Declared(bound+otel.ReleaseTimeout+releaseSlack) {
 		t.Errorf("the stop took %v, want at most %v", elapsed, bound+otel.ReleaseTimeout+releaseSlack)
 	}
 	if got := strings.Count(logged.String(), "telemetry export failed"); got != 2 {
@@ -755,7 +764,10 @@ func TestAFinalMetricExportThatFitsBeforeTheCutoffIsDelivered(t *testing.T) {
 	if err != nil {
 		t.Errorf("a stop whose final metric export fits inside the bound ended the drive with %v, want nil", err)
 	}
-	if elapsed > bound+otel.ReleaseTimeout+releaseSlack {
+	// The ceiling tells a stop that ends within the bound and the release
+	// bound from one that runs on to an export's own timeout, so it carries
+	// the caller's scale alone.
+	if elapsed > coretest.Declared(bound+otel.ReleaseTimeout+releaseSlack) {
 		t.Errorf("the stop took %v, want at most %v", elapsed, bound+otel.ReleaseTimeout+releaseSlack)
 	}
 	mu.Lock()

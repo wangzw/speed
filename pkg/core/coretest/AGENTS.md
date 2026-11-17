@@ -1,6 +1,8 @@
 # pkg/core/coretest
 
-The shared value functions the test bounds of every tier go through.
+The shared value functions the Go test bounds of `pkg` and the demo server
+go through. The frontend and end-to-end tiers read `GATE_TIME_SCALE` through
+their own helpers and do not import it.
 `Scale(d)` multiplies a bound by the binary's race factor and by
 `GATE_TIME_SCALE`, so that a loaded machine, or several gates running at
 once, make a test slower rather than failing it. `Declared(d)` multiplies by
