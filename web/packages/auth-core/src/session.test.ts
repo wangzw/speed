@@ -1835,6 +1835,8 @@ describe('response guards reject a contract-violating 2xx', () => {
           contact: true,
           default_contact: false,
         },
+        // The server cannot produce this document: a row carrying only an
+        // id, so every field decodes to its empty value.
         {
           id: 'i-2',
           kind: '',
