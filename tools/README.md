@@ -96,6 +96,16 @@ pull-request run or a run on another branch, to granting `actions: read` to
 step carrying no `continue-on-error` and only the tip guard that lets it run,
 and to installing go alone through the setup action's `tools` input.
 
+`test_demo_redeploy_script.py` is likewise no script's suite: it holds
+`starters/demo/deploy/redeploy.sh` to keeping the data when the machine checks
+pass, to falling back to the public `/healthz` probe only when they cannot be
+read, and to rebuilding the volume otherwise. It drives the real script with
+stand-ins for `flyctl`, `make`, `curl` and `python3` first on `PATH`, each
+logging its arguments and answering from a control file, so the cases cover a
+healthy deploy, a failed deploy command whose checks still pass, the
+confirmation refusal, `--yes` rebuilding in order, `--dry-run`, `--help` and
+an unknown argument without a network, a cloud account or a real deployment.
+
 ## The integration stack
 
 `backends.py` is not a gate and takes no part in `make repo-check`. It brings

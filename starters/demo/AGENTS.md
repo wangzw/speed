@@ -890,6 +890,36 @@ there, with an error that names the `production` environment and
 environment. GitHub creates the environment the first time the deploy job
 starts, and the secret is added by hand afterwards.
 
+**Rebuilding a deployment the new version cannot start on.**
+`deploy/redeploy.sh` is for the case a deploy cannot repair: the new version
+crash-loops against the existing database, `flyctl ssh console` cannot attach,
+and the volume therefore cannot be emptied from inside. The script deploys
+first and keeps the data when the new deployment is healthy: every machine is
+started and both checks `fly.toml` declares pass within five minutes, read from
+`flyctl machines list --json` — the named `ready` check on port 8083 and the
+service check on port 8080 (`servicecheck-*`, which flyctl generates from
+`[[http_service.checks]]`). Only when those checks cannot be read does the
+script fall back to polling `GET /healthz` on the public address, and its output
+says which route each attempt used. When the deployment is not healthy,
+including when the deploy command itself failed and may have taken effect in
+part, it destroys every Machine, destroys the volume and creates a fresh one,
+then deploys again; the entrypoint builds the database on first boot. The final
+`ssh console` commands print evidence only: a failure there is reported and does
+not fail a rebuild that already succeeded. The rebuild is destructive: the
+database, the token signing key under `/data/var` and the object store under
+`/data/objects` live on that volume, so all three are lost and every session is
+invalidated. Unless `--yes` is given, the script prints that list and waits for
+the word `rebuild`; `--dry-run` prints the commands and the decision logic and
+runs nothing.
+
+The script reads its defaults from `fly.toml` (`app`, `primary_region` and the
+mounts entry's `source`) and takes `APP`, `REGION`, `VOLUME`, `BASE`,
+`HEALTH_TIMEOUT` and `HEALTH_INTERVAL` from the environment when they are set.
+It runs `make fly` directly from the checkout it lives in, so it bypasses the
+`deploy.yml` gate that deploys only a commit whose `check` succeeded: running it
+is an operational repair, not a deployment path, and it does not replace that
+gate.
+
 ## Endpoints and guards
 
 The product declares five endpoints, and what this program says about them is
