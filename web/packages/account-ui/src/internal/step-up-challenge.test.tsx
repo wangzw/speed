@@ -441,7 +441,7 @@ function scriptedPasswordSession(
           id: 'identifier-1',
           kind: 'username',
           value: 'ada',
-          proven: true,
+          proven: false,
           contact: false,
           default_contact: false,
           sign_in: true,
@@ -493,13 +493,16 @@ function scriptedPasswordSession(
 }
 
 /** One identifier row of the authenticated profile, as GET
- * /api/v1/auth/me publishes it. */
+ * /api/v1/auth/me publishes it. A username defaults to an unproved row the
+ * self way wrote, since the self and admin ways do not prove it; any other
+ * kind defaults to a proved row, with the way that proves it. */
 function profileIdentifier(
   id: string,
   kind: string,
   value: string,
-  proven = true,
+  proven = kind !== 'username',
 ): AuthnProfileIdentifier {
+  const username = kind === 'username'
   return {
     id,
     kind,
@@ -509,7 +512,13 @@ function profileIdentifier(
     default_contact: false,
     sign_in: true,
     verified_at: '2026-01-01T00:00:00Z',
-    verified_via: proven ? 'sms-code' : 'admin',
+    verified_via: username
+      ? proven
+        ? 'idp:google'
+        : 'self'
+      : proven
+        ? 'sms-code'
+        : 'admin',
   }
 }
 
