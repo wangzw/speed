@@ -26,6 +26,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-utils/setup.ts'],
+    // This host builds its own test block rather than taking the workspace
+    // preset, so the preset's fixed reporter (web/vitest.shared.ts) is
+    // restated here: without it Vitest 4 falls back to MinimalReporter
+    // under an agent environment and drops a passing case's console output,
+    // making the log depend on who started the run.
+    reporters: 'default',
     // The assembled app renders times under the account's display zone and
     // falls to the browser zone before a profile arrives; pinning the
     // browser zone keeps every rendered time independent of the runner.

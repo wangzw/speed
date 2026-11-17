@@ -141,6 +141,14 @@ export function sharedTestOptions(
   overrides: TestOptions = {},
 ): TestOptions {
   return {
+    // The reporter is pinned rather than left to Vitest's choice, which
+    // is not the same in every run: with no configured reporter Vitest 4
+    // selects MinimalReporter (silent "passed-only") whenever std-env
+    // reports an agent environment, and that reporter discards the
+    // console output of passing cases. The gate would then show a
+    // passing case's console.warn only when a person ran it. One fixed
+    // reporter makes the log independent of who starts the run.
+    reporters: 'default',
     // Vitest's own defaults are restated because naming `exclude`
     // replaces them rather than extending them. The browser cases
     // (`*.browser.test.tsx`) are measured in real Chromium by the

@@ -46,7 +46,10 @@ export default defineConfig({
     // console output (the gate's advisory warnings and its closing report)
     // only when that test failed, so a green run would hide the registered
     // moderate/minor findings. Verbose surfaces every swept route and its
-    // warnings, so the report the gate promises is actually printed.
-    reporter: 'verbose',
+    // warnings, so the report the gate promises is actually printed. The
+    // configuration key is `reporters`, not the CLI's `reporter`; the
+    // singular spelling is ignored, which would leave Vitest's own default
+    // (and its agent-environment silent variant) in charge.
+    reporters: 'verbose',
   },
 })

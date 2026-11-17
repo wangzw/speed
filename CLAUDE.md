@@ -116,6 +116,9 @@ square. `web-a11y` and `web-browser` start a single vitest process, so their
 N segments run at once, each able to use `GATE_JOBS` cores, so a caller
 running segments in parallel divides its budget between the two.
 
+**The test reporter is pinned, not selected by the runner**, so a warning a
+passing case prints is in the log whichever way the gate was started.
+
 **Gate stages.** A fix round re-runs only the touched packages' tests and the
 generated-artifact checks below. The whole-side gate — the gate commands the
 change's own bullet above lists, or `make check` when the change crosses the

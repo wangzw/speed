@@ -557,6 +557,25 @@ describe('workspace test configuration', () => {
     expect(source).not.toMatch(/hookTimeout\s*:/)
   })
 
+  it('fixes the test reporter so the log does not depend on the runner', () => {
+    // Vitest 4 picks MinimalReporter (silent "passed-only") when std-env
+    // reports an agent environment, which drops the console output of
+    // passing cases. A pinned reporter is what keeps a warning from
+    // appearing only when a person runs the gate.
+    expect(sharedTestOptions().reporters).toBe('default')
+    const configPath = join(demoWebRoot, 'vitest.config.ts')
+    const source = stripComments(readFileSync(configPath, 'utf8'))
+    expect(source).toContain("reporters: 'default'")
+    // The a11y sweep's verbose reporter is the other fixed choice; the
+    // singular CLI spelling is ignored by the config, so it is checked
+    // for as well.
+    const a11ySource = stripComments(
+      readFileSync(join(demoWebRoot, 'vitest.a11y.config.ts'), 'utf8'),
+    )
+    expect(a11ySource).toContain("reporters: 'verbose'")
+    expect(a11ySource).not.toContain('reporter:')
+  })
+
   it('keeps the shared case budget at or above its floor', () => {
     // Compared unscaled: SHARED_TIMEOUT_MS is the preset's constant, so a
     // caller's GATE_TIME_SCALE cannot change this tree's verdict. The
