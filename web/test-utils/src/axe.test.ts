@@ -1,15 +1,13 @@
 /**
  * axe.test.ts -- the pure decisions the axe harness makes without a DOM:
- * the environment label the indeterminate report names, the tags that
- * cannot carry aria-hidden, and the overlay family a marker class list
- * names.
+ * the tier the scan runs in, the tags that cannot carry aria-hidden, and
+ * the overlay family a marker class list names.
  *
- * reportNonCriticalIncomplete interpolates environmentLabel's result into
- * "indeterminate in <label>", so the label is the report's wording for
- * where a rule could not be decided. Mapping a user agent string is pure
- * and needs no DOM, so it is pinned here in the package's node suite:
- * the Chromium tier's user agent, jsdom's (which also carries an engine
- * token, so the jsdom branch must win), and a string that is neither.
+ * The tier is read from whether the browser setup installed the real
+ * keyboard driver (see axe.ts), so a scan is never handed keys the
+ * environment cannot press on the say-so of a user agent a test set for
+ * its own subject. The decision is pure over an injected driver, so it is
+ * pinned here in the package's node suite.
  */
 
 import { readFileSync } from 'node:fs'
@@ -18,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   BROWSER_DETERMINATIONS,
-  environmentLabel,
+  isBrowserTier,
   isAriaHiddenForbiddenTag,
   overlayKindFromClasses,
 } from './axe'
@@ -26,26 +24,26 @@ import {
 /** The workspace root (`web/`), the base every declared file is relative to. */
 const WEB_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
-const CHROMIUM_UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+const driver = async (): Promise<void> => undefined
 
-const JSDOM_UA =
-  'Mozilla/5.0 (darwin) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/24.1.0'
-
-const NEITHER_UA = 'curl/8.7.1'
-
-describe('environmentLabel', () => {
-  it('names the browser tier', () => {
-    expect(environmentLabel(CHROMIUM_UA)).toBe('the browser')
+describe('isBrowserTier', () => {
+  it('names the browser tier when its setup installed the real keyboard', () => {
+    expect(isBrowserTier(driver)).toBe(true)
   })
 
-  it('names jsdom even when the user agent also carries a browser token', () => {
-    expect(environmentLabel(JSDOM_UA)).toBe('the jsdom')
+  it('names the jsdom tier when no driver is installed', () => {
+    expect(isBrowserTier(undefined)).toBe(false)
   })
 
-  it('falls back to an unknown environment for anything else', () => {
-    expect(environmentLabel(NEITHER_UA)).toBe('an unknown environment')
+  it('reads the installed driver off the global the browser setup writes', () => {
+    const host = globalThis as { __speedAxeKeyboardDriver?: () => Promise<void> }
+    expect(isBrowserTier()).toBe(false)
+    host.__speedAxeKeyboardDriver = driver
+    try {
+      expect(isBrowserTier()).toBe(true)
+    } finally {
+      delete host.__speedAxeKeyboardDriver
+    }
   })
 })
 

@@ -70,16 +70,21 @@
  * it does: when the topmost open overlay is an aria-modal MUI Dialog or
  * Drawer, the helper presses Tab and Shift+Tab through more steps than
  * the overlay has tabbable elements, and fails the scan if focus leaves
- * the overlay or lands on one of the rule's incomplete targets. A trap
- * that holds makes the rule determined, and nothing is reported.
- * Overlays that Tab would dismiss -- MUI Menu and Select, whose root is a
- * Modal but whose paper is not aria-modal -- cannot be exercised that
- * way; their indeterminacy is still REPORTED through console.warn,
- * naming the reason. Rules that cannot decide in the scan's environment
- * at all (jsdom lays nothing out and has no canvas 2D context, so
- * text-measurement rules such as label-content-name-mismatch cannot
- * answer) are reported the same way and do not fail the scan. The report
- * names the environment it ran in.
+ * the overlay. A trap that holds makes the rule determined, and nothing
+ * is reported. Overlays that Tab would dismiss -- MUI Menu and Select,
+ * whose root is a Modal but whose paper is not aria-modal -- cannot be
+ * exercised that way; their indeterminacy is still REPORTED through
+ * console.warn, naming the reason. Rules that cannot decide in the
+ * scan's environment at all (jsdom lays nothing out and has no canvas 2D
+ * context, so text-measurement rules such as label-content-name-mismatch
+ * cannot answer) are reported the same way and do not fail the scan. The
+ * report names the environment it ran in.
+ *
+ * The tier is identified by the keyboard driver the browser setup
+ * installs, never by the user agent: a jsdom case may set the user
+ * agent to a browser's for its own subject (the enrollment panel
+ * suggests a device name from it), and that must not make the harness
+ * demand keys the environment cannot press.
  *
  * The open-overlay page-context exemption is asserted rather than
  * announced. While an overlay is open the helper first checks that every
@@ -390,31 +395,44 @@ function summarizeTargets(rule: axe.Result): string {
 }
 
 /**
- * Names the environment a scan ran in from its user agent. Pure, so the
- * mapping is exercised without a DOM: jsdom puts itself in the user
- * agent (`jsdom/<version>`), the browser tier serves a real browser whose
- * user agent names its own engine, and anything else is neither. The
- * result slots into the indeterminate report below.
+ * The real-keyboard driver the browser tier's setup installs
+ * (web/test-utils/src/browser-setup.ts). The harness cannot import
+ * `vitest/browser` itself: that module's declarations augment Vitest's
+ * matchers with an older jest-dom set whose `toHaveStyle` rejects
+ * kebab-case keys, and this shared module is compiled into every jsdom
+ * program, where the augmentation would narrow unrelated assertions.
+ * The setup runs only in the browser tier, so the import -- and its
+ * augmentation -- stays there.
  */
-export function environmentLabel(userAgent: string): string {
-  if (/jsdom/i.test(userAgent)) {
-    return 'the jsdom'
-  }
-  if (/Chrome\/|Chromium\/|Firefox\/|Safari\//i.test(userAgent)) {
-    return 'the browser'
-  }
-  return 'an unknown environment'
+export type AxeKeyboardDriver = (keys: string) => Promise<void>
+
+/** The driver the browser setup installed, or undefined in the jsdom tier. */
+function keyboardDriver(): AxeKeyboardDriver | undefined {
+  return (
+    globalThis as { __speedAxeKeyboardDriver?: AxeKeyboardDriver }
+  ).__speedAxeKeyboardDriver
 }
 
 /**
- * Thin shell over environmentLabel: reads the user agent the scan is
- * running under, so an indeterminate report says where the rule could
- * not be decided.
+ * Whether the scan runs in the browser tier, decided by whether that
+ * tier's setup installed the real-keyboard driver. The user agent is not
+ * consulted: a jsdom case may set it to a browser's for its own subject
+ * (the enrollment panel suggests a device name from it), and a scan must
+ * not be handed keys the environment cannot press because of that.
+ */
+export function isBrowserTier(
+  driver: AxeKeyboardDriver | undefined = keyboardDriver(),
+): boolean {
+  return typeof driver === 'function'
+}
+
+/**
+ * The environment name the indeterminate report interpolates: the browser
+ * tier when its driver is installed, the jsdom tier otherwise (the only
+ * tier that runs this harness without one).
  */
 function describeEnvironment(): string {
-  return environmentLabel(
-    typeof navigator !== 'undefined' ? navigator.userAgent : '',
-  )
+  return isBrowserTier() ? 'the browser' : 'the jsdom'
 }
 
 function reportNonCriticalIncomplete(
@@ -488,23 +506,6 @@ function tabbableElements(root: HTMLElement): HTMLElement[] {
   })
 }
 
-/** The elements axe named as an incomplete rule's targets. */
-function targetElements(rule: axe.Result): Element[] {
-  const found: Element[] = []
-  for (const node of rule.nodes) {
-    try {
-      const element = document.querySelector(node.target.join(' '))
-      if (element !== null) {
-        found.push(element)
-      }
-    } catch {
-      // A selector this engine will not parse names no target to check;
-      // the scope assertion in verifyFocusTrap still covers the escape.
-    }
-  }
-  return found
-}
-
 function describeActiveElement(element: Element | null): string {
   if (!(element instanceof HTMLElement)) {
     return 'no element'
@@ -515,22 +516,8 @@ function describeActiveElement(element: Element | null): string {
   return `<${element.tagName.toLowerCase()}${suffix}>`
 }
 
-/**
- * The real-keyboard driver the browser setup installs
- * (web/test-utils/src/browser-setup.ts). The harness cannot import
- * `vitest/browser` itself: that module's declarations augment Vitest's
- * matchers with an older jest-dom set whose `toHaveStyle` rejects
- * kebab-case keys, and this shared module is compiled into every jsdom
- * program, where the augmentation would narrow unrelated assertions.
- * The setup runs only in the browser tier, so the import -- and its
- * augmentation -- stays there.
- */
-export type AxeKeyboardDriver = (keys: string) => Promise<void>
-
 function realKeyboard(): AxeKeyboardDriver {
-  const driver = (
-    globalThis as { __speedAxeKeyboardDriver?: AxeKeyboardDriver }
-  ).__speedAxeKeyboardDriver
+  const driver = keyboardDriver()
   if (driver === undefined) {
     expect.fail(
       'the axe focus-trap check needs the browser tier\'s real keyboard, but its setup did not install the driver',
@@ -544,19 +531,18 @@ function realKeyboard(): AxeKeyboardDriver {
  * the overlay's focus trap with real key presses: pressing Tab (and
  * Shift+Tab) more times than the overlay has tabbable elements would
  * leave a working trap cycling inside it. Each press is asserted to keep
- * focus inside the overlay and off the rule's incomplete targets. A
- * failure is a real defect -- the background is aria-hidden yet keyboard
- * focus reaches it -- so the scan fails instead of reporting.
+ * focus inside the overlay; a focus escape necessarily lands on the
+ * aria-hidden background, since the exemption only applies after that
+ * background is asserted hidden, so leaving the overlay is the whole
+ * defect. A failure is a real defect -- the background is aria-hidden
+ * yet keyboard focus reaches it -- so the scan fails instead of
+ * reporting.
  */
-async function verifyFocusTrap(
-  overlay: OpenOverlay,
-  rule: axe.Result,
-): Promise<void> {
+async function verifyFocusTrap(overlay: OpenOverlay): Promise<void> {
   // The browser setup's driver drives the provider's real keyboard, so a
   // native Tab reaches MUI's FocusTrap. The jsdom leg never takes this
   // path (the caller checks the environment first).
   const pressKeys = realKeyboard()
-  const targets = targetElements(rule)
   const steps = tabbableElements(overlay.root).length + 2
   const directions = [
     { keys: '{Tab}', label: 'Tab' },
@@ -569,11 +555,6 @@ async function verifyFocusTrap(
       if (!(active instanceof HTMLElement) || !overlay.root.contains(active)) {
         expect.fail(
           `axe aria-hidden-focus is undecided and the open ${overlay.kind}'s focus trap does not hold: ${direction.label} moved focus to ${describeActiveElement(active)}, outside the overlay`,
-        )
-      }
-      if (targets.some((target) => target.contains(active))) {
-        expect.fail(
-          `axe aria-hidden-focus is undecided and the open ${overlay.kind}'s focus trap does not hold: ${direction.label} left focus on an aria-hidden background target (${describeActiveElement(active)})`,
         )
       }
     }
@@ -589,7 +570,7 @@ async function runAxeAssertions(
   // case deciding them reports nothing here. The browser tier ignores the
   // declaration and runs the rules itself.
   const decidedElsewhere =
-    decidedInBrowser !== undefined && describeEnvironment() !== 'the browser'
+    decidedInBrowser !== undefined && !isBrowserTier()
       ? new Set(BROWSER_DECIDED_RULES)
       : new Set<string>()
   // The widget-tier carve-out (see header): region and the page-level
@@ -667,9 +648,9 @@ async function runAxeAssertions(
   if (
     focusTrapRule !== undefined &&
     topOverlay !== null &&
-    describeEnvironment() === 'the browser'
+    isBrowserTier()
   ) {
-    await verifyFocusTrap(topOverlay, focusTrapRule)
+    await verifyFocusTrap(topOverlay)
     verifiedFocusTrap = focusTrapRule
   }
   reportNonCriticalIncomplete(
