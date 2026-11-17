@@ -18,6 +18,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
 import { waitForVerificationCode } from '../fixtures/log'
+import { scaledTimeout } from '../fixtures/time-scale'
 import { copy } from './i18n'
 
 /** The reset channel a case drives. */
@@ -161,6 +162,14 @@ export async function requestResetCode(
  * first send was suppressed by the destination's outstanding resend window.
  * The return value is the newest code for the destination at or after the
  * cursor the caller took before the first send (or before the resend).
+ *
+ * Both outcomes of the first send are observable, so the branch is chosen by
+ * the state the product shows rather than by a test-chosen timeout: a delivered
+ * send writes its code to the log, and a suppressed one writes none and leaves
+ * the surface's resend control counting down the window it must wait out. The
+ * first of those two states to appear decides; a loaded machine that delays the
+ * log write falls through to the resend the window already allows, which is
+ * correct rather than a false failure.
  */
 export async function readResetCode(
   page: Page,
@@ -169,21 +178,27 @@ export async function readResetCode(
   address: string,
   afterSend: number,
 ): Promise<string> {
-  try {
-    const first = await waitForVerificationCode(log, kind, address, {
-      after: afterSend,
-      timeoutMs: 8_000,
-    })
-    return first.code
-  } catch {
-    // The first send met the destination's resend window and was suppressed.
-    // Wait for the surface's own countdown, then resend and read that message.
-  }
   const resend = page.getByRole('button', {
     name: copy('authUi', 'passwordReset.resend'),
     exact: true,
   })
-  await expect(resend).toBeEnabled({ timeout: 45_000 })
+  const firstCode = waitForVerificationCode(log, kind, address, {
+    after: afterSend,
+  }).then(
+    (message) => message.code,
+    () => 'window',
+  )
+  const windowElapsed = expect(resend)
+    .toBeEnabled({ timeout: scaledTimeout(60_000) })
+    .then(
+      () => 'window',
+      () => 'window',
+    )
+  const branch = await Promise.race([firstCode, windowElapsed])
+  if (branch !== 'window') {
+    return branch
+  }
+  await expect(resend).toBeEnabled({ timeout: scaledTimeout(60_000) })
   const afterResend = log.mark()
   await resend.click()
   await expect(sentNotice(page)).toBeVisible()

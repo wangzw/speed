@@ -288,7 +288,6 @@ async function refreshUntil(
         return (await templateRow(page, name).textContent()) ?? ''
       },
       {
-        timeout: 20_000,
         message: `the ${name} row never showed ${wanted}`,
       },
     )

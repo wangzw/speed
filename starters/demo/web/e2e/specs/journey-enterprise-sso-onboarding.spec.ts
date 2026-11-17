@@ -227,7 +227,7 @@ async function expectClaimRefused(page: Page): Promise<void> {
     page.getByText(copy('authUi', 'errors.authn.login_failed'), {
       exact: true,
     }),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
   await expect(
     page.getByText(copy('authUi', 'errors.authn.unavailable'), {
       exact: true,
@@ -552,7 +552,7 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
 
     // The callback establishes the session and returns the employee to the
     // initiating page, the tenant home.
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
 
     // The account is the one the operator prepared: the user menu names the
     // display name the operator typed, which differs from the provider's name
@@ -760,7 +760,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
       name: copy('authUi', 'signInFlow.usernameLabel'),
       exact: true,
     })
-    await expect(username).toBeVisible({ timeout: 15_000 })
+    await expect(username).toBeVisible()
     await expect(
       page.getByText(copy('authUi', 'signInFlow.usernameHelper'), {
         exact: true,
@@ -777,7 +777,7 @@ test('enterprise-sso-onboarding: a just-in-time provider asks for a username bef
   })
 
   await test.step('step 5: the account opens with the chosen username and the provider display name', async () => {
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
 
     // The account carries the provider's display name, because no
     // administrator prepared one. The operator typed nothing for this
@@ -983,7 +983,7 @@ test('enterprise-sso-onboarding: a claim-strategy provider opens the account wit
 
   await test.step('step 7: a legal claim opens the account directly, with no username step', async () => {
     await attemptClaimSignIn(demo, CLAIM_USERNAME)
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
     await expect(usernameStep(page)).toHaveCount(0)
 
     // No administrator prepared a display name, so the account carries the

@@ -95,6 +95,7 @@ import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import { scaledTimeout } from '../fixtures/time-scale'
 import {
   adminEntry,
   closeAccountMenu,
@@ -294,7 +295,6 @@ async function accountIdFromRoster(
     (candidate) =>
       candidate.request().method() === 'GET' &&
       new URL(candidate.url()).pathname === '/api/v1/system/auth/accounts',
-    { timeout: 30_000 },
   )
   expect(response.ok()).toBe(true)
   const body = (await response.json()) as {
@@ -333,7 +333,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
   // The freshness window is a real backend minute, and the journey around it
   // (two-factor sign-in, admin navigation, the impersonation, the end, the
   // record and the audit reads) does not fit the tier's default bound.
-  test.setTimeout(180_000)
+  test.setTimeout(scaledTimeout(180_000))
 
   const { page, server, accounts } = demo
   let operatorAccountId = ''
@@ -507,7 +507,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
       await chooseTarget(page)
       await reasonField(page).fill(OVERLONG_REASON)
       await expect(startButton(page)).toBeEnabled()
-      await startButton(page).click({ timeout: 3_000 })
+      await startButton(page).click()
     }
 
     // Wait for whichever answer the server gives first. The restricted text is
@@ -517,10 +517,10 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // both are caught, so the race settles as soon as either appears.
     await Promise.race([
       restricted
-        .waitFor({ state: 'visible', timeout: 20_000 })
+        .waitFor({ state: 'visible', timeout: scaledTimeout(20_000) })
         .catch(() => undefined),
       dialog
-        .waitFor({ state: 'visible', timeout: 20_000 })
+        .waitFor({ state: 'visible', timeout: scaledTimeout(20_000) })
         .catch(() => undefined),
     ])
 
@@ -534,7 +534,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
         if (await restricted.isVisible()) return
         await submitProbe()
         throw new Error('the start has answered neither outcome yet')
-      }).toPass({ timeout: 120_000, intervals: [2_000] })
+      }).toPass({ timeout: scaledTimeout(120_000), intervals: [2_000] })
     }
 
     if (await restricted.isVisible()) {
@@ -548,7 +548,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
         if (await dialog.isVisible()) return
         await submitProbe()
         throw new Error('the step-up dialog has not opened yet')
-      }).toPass({ timeout: 120_000, intervals: [2_000] })
+      }).toPass({ timeout: scaledTimeout(120_000), intervals: [2_000] })
     } else {
       // The window had already elapsed before the first submission, so the
       // in-window refusal is not observable on this run. The step-up branch
@@ -589,9 +589,9 @@ test('impersonation-for-support: the operator acts as a member and the record an
       await chooseTarget(page)
       await reasonField(page).fill(REASON)
       await expect(startButton(page)).toBeEnabled()
-      await startButton(page).click({ timeout: 3_000 })
-      await expect(dialog).toBeVisible({ timeout: 8_000 })
-    }).toPass({ timeout: 30_000, intervals: [1_000] })
+      await startButton(page).click({ timeout: scaledTimeout(3_000) })
+      await expect(dialog).toBeVisible({ timeout: scaledTimeout(8_000) })
+    }).toPass({ timeout: scaledTimeout(30_000), intervals: [1_000] })
     const beforeSmsCode = server.log.mark()
     await dialog
       .getByRole('button', {
@@ -630,7 +630,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
 
     // The won challenge replays the refused start once; it lands, and the host
     // takes the operator to the tenant area as the target member.
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/')
   })
 
@@ -704,7 +704,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     await page.goto(
       new URL('/admin/impersonations?tenant=acme', page.url()).toString(),
     )
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/')
     await expect(banner(page)).toBeVisible()
     await expect(adminNav(page)).toHaveCount(0)
@@ -810,13 +810,11 @@ test('impersonation-for-support: the operator acts as a member and the record an
       OPERATOR.displayName,
     )
     await openAccountMenu(page)
-    await expect(adminEntry(page)).toBeVisible({ timeout: 10_000 })
+    await expect(adminEntry(page)).toBeVisible()
     // The organization row names the organization the operator's own
     // membership list settles (the system organization); the grant's
     // organization was never the operator's own.
-    await expect(organizationRow(page, OPERATOR_TENANT)).toBeVisible({
-      timeout: 10_000,
-    })
+    await expect(organizationRow(page, OPERATOR_TENANT)).toBeVisible()
     await closeAccountMenu(page)
 
     // No re-login happened: the ended-session surface never appears.

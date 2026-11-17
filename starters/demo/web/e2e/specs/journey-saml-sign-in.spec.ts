@@ -281,7 +281,7 @@ test('saml-sign-in: an employee signs in at a SAML provider through the same-sit
 
     // REQ-signin-027: the callback establishes the session and returns the
     // employee to the page that started the sign-in, the tenant home.
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
 
     // The account the sign-in opened carries the provider's display name: no
     // administrator prepared one.
@@ -350,7 +350,7 @@ test('saml-sign-in: a response the provider signed for another flow does not sig
         page.getByText(copy('authUi', 'errors.authn.login_failed'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(homeHeading(page)).toHaveCount(0)
 
       // The bounce happened, so the refusal is the flow binding's work: the

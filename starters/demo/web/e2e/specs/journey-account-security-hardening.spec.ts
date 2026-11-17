@@ -71,6 +71,7 @@ import {
   selectAccountSection,
 } from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
+import { scaledTimeout } from '../fixtures/time-scale'
 import { copy, copyPattern } from '../helpers/i18n'
 import { fillFactorName } from '../helpers/mfa'
 import { totpCode } from '../helpers/totp'
@@ -86,7 +87,7 @@ test.use({ recentWindow: '1m', viewport: { width: 1440, height: 1200 } })
 // The file's per-test bound covers fixture assembly as well as the journey:
 // the server's seed, start and probes run inside the same clock, so a slow
 // assembly reports the harness's own diagnostics instead of a bare timeout.
-test.describe.configure({ timeout: 300_000 })
+test.describe.configure({ timeout: scaledTimeout(300_000) })
 
 /** The lowered `authn.mfa.recent-window`, in milliseconds. */
 const RECENT_WINDOW_MS = 60_000
@@ -226,13 +227,13 @@ async function expectSessionEnded(page: Page): Promise<void> {
     }
     const trigger = page.getByTestId('account-entry-trigger')
     if ((await trigger.count()) > 0) {
-      await trigger.click({ timeout: 1_000 }).catch(() => undefined)
+      await trigger.click({ timeout: scaledTimeout(1_000) }).catch(() => undefined)
       await page
         .getByRole('menuitem', {
           name: copy('demo', 'account.sections.profile'),
           exact: true,
         })
-        .click({ timeout: 1_000 })
+        .click({ timeout: scaledTimeout(1_000) })
         .catch(() => undefined)
     } else {
       // No header left to click: the next request is the reload.
@@ -243,7 +244,7 @@ async function expectSessionEnded(page: Page): Promise<void> {
         'the ended device still shows an authenticated surface after a request',
       )
     }
-  }).toPass({ timeout: 15_000, intervals: [500] })
+  }).toPass({ timeout: scaledTimeout(15_000), intervals: [500] })
   await expect(ended).toBeVisible()
   await expect(
     page.getByRole('button', {
@@ -342,7 +343,7 @@ async function completeTotpFactor(page: Page, secret: string): Promise<void> {
       exact: true,
     })
     .click()
-  await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+  await expect(homeHeading(page)).toBeVisible()
 }
 
 /**
@@ -537,7 +538,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
         .click()
       // One confirmation takes the whole flow: the ready step that follows the
       // code is submitted without another click, and the panel closes.
-      await expect(codeField).toHaveCount(0, { timeout: 15_000 })
+      await expect(codeField).toHaveCount(0)
 
       // The settled enrolment confirms itself and the list re-reads: the
       // authenticator group lists the one enabled row under its own heading.
@@ -641,7 +642,6 @@ test('account-security-hardening: an account enrols two factors, ends another de
         (response) =>
           response.request().method() === 'DELETE' &&
           new URL(response.url()).pathname === '/api/v1/auth/flows/current',
-        { timeout: 15_000 },
       )
       await mfa
         .getByRole('button', {
@@ -736,7 +736,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
         mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
           exact: true,
         }),
-      ).toHaveCount(0, { timeout: 20_000 })
+      ).toHaveCount(0)
 
       await expect(
         mfa.getByText(
@@ -745,7 +745,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
           }),
           { exact: true },
         ),
-      ).toBeVisible({ timeout: 20_000 })
+      ).toBeVisible()
       // The passkey group lists the one enabled passkey now.
       const passkeyGroup = mfaGroup(page, 'webauthn')
       await expect(passkeyGroup.getByRole('listitem')).toHaveCount(1)
@@ -807,7 +807,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
         password.getByText(copy('accountUi', 'password.currentRejected'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(
         page.getByText(copy('accountUi', 'password.changed'), {
           exact: true,
@@ -910,7 +910,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
       // this session already proved and is therefore not offered. With one
       // factor of each kind, the dialog names each entry by its kind.
       const dialog = stepUpDialog(page)
-      await expect(dialog).toBeVisible({ timeout: 15_000 })
+      await expect(dialog).toBeVisible()
       await expect(
         dialog.getByText(copy('accountUi', 'mfa.stepUp.description'), {
           exact: true,
@@ -947,8 +947,8 @@ test('account-security-hardening: an account enrols two factors, ends another de
         dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
           exact: true,
         }),
-      ).toHaveCount(0, { timeout: 30_000 })
-      await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+      ).toHaveCount(0)
+      await expect(dialog).toHaveCount(0)
 
       // The won challenge replays the refused change exactly once: the
       // landed write renders its success notice, while a second replay would
@@ -962,7 +962,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
         page.getByText(copy('accountUi', 'password.changed'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(
         page.getByText(copy('accountUi', 'password.currentRejected'), {
           exact: true,
@@ -1049,7 +1049,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
         oldPasswordPage.getByText(copy('authUi', 'passwordSignIn.loginFailed'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
     })
   } finally {
     // The passkey device and the extra contexts are the spec's own; closing

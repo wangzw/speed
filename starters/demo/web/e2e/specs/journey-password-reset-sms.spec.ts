@@ -290,7 +290,7 @@ test('password-reset-sms: a phone-code reset writes a new password and ends the 
         page.getByText(copy('authUi', 'passwordSignIn.loginFailed'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
     })
   } finally {
     await otherContext?.close().catch(() => undefined)

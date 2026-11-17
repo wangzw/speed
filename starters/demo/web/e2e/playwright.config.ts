@@ -40,6 +40,7 @@
 import { defineConfig } from '@playwright/test'
 
 import { ARTIFACT_ROOT } from './fixtures/paths'
+import { scaledTimeout } from './fixtures/time-scale'
 
 export default defineConfig({
   testDir: './specs',
@@ -49,8 +50,21 @@ export default defineConfig({
   // probes and a journey's clicks; the fixture bounds below stay strictly
   // inside it so the harness's own diagnostics (log tail, stderr) win over a
   // bare Playwright timeout. The width is the entry point's (--workers from
-  // GATE_JOBS): several files at once, one journey at a time within a file.
-  timeout: 120_000,
+  // GATE_JOBS): several files at once, one journey at a time within a file. It
+  // is a wait, not work -- a passing case returns at once -- so it is
+  // generous, and the caller's GATE_TIME_SCALE widens it further on a loaded
+  // machine. A spec that needs a longer bound raises it through the same
+  // scale, so every per-test bound a spec names stays at or above this default
+  // rather than lowering it.
+  timeout: scaledTimeout(180_000),
+  // Every assertion that names no bound of its own waits here instead of
+  // Playwright's 5s default. Most cases read a result already on the page; the
+  // few that wait for the product to settle are given room, and a genuinely
+  // wrong assertion still fails once the bound expires. Scaled like the
+  // per-test bound.
+  expect: {
+    timeout: scaledTimeout(30_000),
+  },
   fullyParallel: false,
   outputDir: `${ARTIFACT_ROOT}/artifacts`,
   reporter: [

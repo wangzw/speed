@@ -41,6 +41,7 @@ import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts, type Accounts } from '../helpers/accounts'
 import { expect, test } from '../fixtures/demo'
+import { scaledTimeout } from '../fixtures/time-scale'
 import {
   expandAccountRows,
   openAccountSection,
@@ -57,7 +58,7 @@ import {
 // Registration, two factor enrolments, several sign-ins and a second account
 // assembly; the file-level bound covers fixture assembly as well as the
 // journey, so a slow assembly reports the harness's own diagnostics.
-test.describe.configure({ timeout: 300_000 })
+test.describe.configure({ timeout: scaledTimeout(300_000) })
 
 // The names this journey gives its factors. The account surface lists each
 // factor row under the name it was enrolled with; the sign-in surface names
@@ -214,7 +215,7 @@ async function completeTotpFactor(page: Page, secret: string): Promise<void> {
       exact: true,
     })
     .click()
-  await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+  await expect(homeHeading(page)).toBeVisible()
 }
 
 /**
@@ -276,7 +277,7 @@ async function enrolTotp(page: Page): Promise<string> {
     .click()
   // One confirmation takes the whole flow: the ready step that follows the
   // code is submitted without another click, and the panel closes.
-  await expect(codeField).toHaveCount(0, { timeout: 15_000 })
+  await expect(codeField).toHaveCount(0)
 
   await expect(
     mfa.getByText(
@@ -325,7 +326,7 @@ async function enrolPasskey(page: Page): Promise<void> {
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,
     }),
-  ).toHaveCount(0, { timeout: 20_000 })
+  ).toHaveCount(0)
   await expect(
     mfa.getByText(
       copy('accountUi', 'mfa.enroll.enrolled', {
@@ -333,7 +334,7 @@ async function enrolPasskey(page: Page): Promise<void> {
       }),
       { exact: true },
     ),
-  ).toBeVisible({ timeout: 20_000 })
+  ).toBeVisible()
   // The settled enrolment lists one enabled passkey in the passkey group,
   // whose heading offers the same plain add.
   const group = mfaGroup(page, 'webauthn')
@@ -417,7 +418,7 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       await choosePasskeySignIn(page)
       // The user-verified assertion is two factors already, so the login
       // lands in the application without a factor step.
-      await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
+      await expect(homeHeading(page)).toBeVisible()
       await expect(factorStepTitle(page)).toHaveCount(0)
       await expect(signInHeading(page)).toHaveCount(0)
     })
@@ -431,7 +432,7 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       // its failure.
       await authenticator?.setUserVerified(false)
       await choosePasskeySignIn(page)
-      await expect(passkeyFailure(page)).toBeVisible({ timeout: 30_000 })
+      await expect(passkeyFailure(page)).toBeVisible()
       await expect(homeHeading(page)).toHaveCount(0)
       await expect(signInHeading(page)).toBeVisible()
       // The login must not fall back to a first factor whose second factor
@@ -470,7 +471,7 @@ test('passkey-user-verification: a user-verifying passkey signs in without a sec
       await otherAccounts.signOut()
       await otherAccounts.openSignIn()
       await choosePasskeySignIn(otherPage)
-      await expect(homeHeading(otherPage)).toBeVisible({ timeout: 30_000 })
+      await expect(homeHeading(otherPage)).toBeVisible()
       await expect(factorStepTitle(otherPage)).toHaveCount(0)
       await expect(signInHeading(otherPage)).toHaveCount(0)
     })

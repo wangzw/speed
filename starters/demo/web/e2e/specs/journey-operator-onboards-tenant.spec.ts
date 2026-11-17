@@ -85,6 +85,7 @@ import { reviewInvitee, reviewOrdinaryMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { ReviewServer } from '../fixtures/server'
+import { scaledTimeout } from '../fixtures/time-scale'
 import {
   adminEntry,
   backToApp,
@@ -776,7 +777,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
         exact: true,
       })
-      await expect(armAgain).toBeEnabled({ timeout: 5_000 })
+      await expect(armAgain).toBeEnabled()
       await armAgain.click()
       await expect(
         page.getByText(
@@ -1273,7 +1274,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           name: copy('authUi', 'acceptInvitation.title'),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       expect(new URL(invitee.url()).pathname).toBe(invitationPath)
 
       // The summary names the inviter and the tenant by its display name, the
@@ -1325,7 +1326,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           name: copy('demo', 'home.heading'),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       expect(new URL(invitee.url()).pathname).toBe('/')
 
       const dismiss = invitee.getByRole('button', {
@@ -1347,9 +1348,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // name is the fallback when no display name is set); the accept
       // summary names it by the name.
       await openAccountMenu(invitee)
-      await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeVisible({
-        timeout: 15_000,
-      })
+      await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeVisible()
       await expect(organizationRow(invitee, TENANT_DISPLAY_NAME)).toBeEnabled()
       await closeAccountMenu(invitee)
     })
@@ -1400,7 +1399,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           }),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(
         invitee.getByRole('button', {
           name: copy('authUi', 'acceptInvitation.member.open'),
@@ -1426,7 +1425,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           name: copy('demo', 'home.heading'),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
 
       // REQ-platform-admin-001's member facet: a plain member is offered
       // neither the account menu's admin entry nor the start page's admin
@@ -1479,7 +1478,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           copy('adminUi', 'invitations.status.accepted'),
           { exact: true },
         ),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
 
       // REQ-tenancy-008: the member list now holds the invited address's
       // account, sourced from the invitation and active. The operator was
@@ -1646,7 +1645,7 @@ async function confirmTwice(dialog: Locator, confirmLabel: string): Promise<void
     name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
     exact: true,
   })
-  await expect(again).toBeEnabled({ timeout: 5_000 })
+  await expect(again).toBeEnabled()
   await again.click()
 }
 
@@ -1698,7 +1697,7 @@ test.describe('the platform lifecycle controls', () => {
   test('operator-onboards-tenant: the operator transfers a tenant owner through the member selector', async ({
     demo,
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(scaledTimeout(180_000))
 
     const { page, server, accounts } = demo
 
@@ -1772,7 +1771,7 @@ test.describe('the platform lifecycle controls', () => {
   test('operator-onboards-tenant: with only tenant.manage the operator uses the account selector and a non-member is refused', async ({
     demo,
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(scaledTimeout(180_000))
 
     const { page, server, accounts } = demo
 
@@ -1796,7 +1795,7 @@ test.describe('the platform lifecycle controls', () => {
     ).toBeVisible()
     await switchOrganization(page, OPERATOR.displayName)
     await page.goBack()
-    await expect(adminNav(page)).toBeVisible({ timeout: 15_000 })
+    await expect(adminNav(page)).toBeVisible()
 
     await adminLink(page, copy('adminUi', 'tenants.title')).click()
     await expect(
@@ -1876,7 +1875,7 @@ test.describe('the platform lifecycle delete', () => {
   test('operator-onboards-tenant: the operator deletes a tenant and its name cannot be reused', async ({
     demo,
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(scaledTimeout(180_000))
 
     const { page, server, accounts } = demo
 
@@ -1977,7 +1976,7 @@ test.describe('the platform lifecycle delete', () => {
       tombstone.getByText(copy('adminUi', 'tenants.status.deleted'), {
         exact: true,
       }),
-    ).toBeVisible({ timeout: 15_000 })
+    ).toBeVisible()
     // The tombstone names the tenant by name and display name only; its
     // row carries exactly the roster's four cells.
     await expect(tombstone.getByRole('cell')).toHaveCount(

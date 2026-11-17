@@ -215,7 +215,7 @@ test('password-reset-email: an addressed code resets the password and ends the o
         page.getByText(copy('authUi', 'passwordSignIn.loginFailed'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
     })
   } finally {
     await otherContext?.close().catch(() => undefined)

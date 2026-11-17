@@ -113,6 +113,7 @@ import {
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import type { ReviewServer } from '../fixtures/server'
+import { scaledTimeout } from '../fixtures/time-scale'
 import { createAccounts } from '../helpers/accounts'
 import type { Accounts } from '../helpers/accounts'
 import {
@@ -359,12 +360,12 @@ async function switchOrganization(
 ): Promise<void> {
   await openAccountMenu(page)
   const currentRow = organizationRow(page, current)
-  await expect(currentRow).toBeVisible({ timeout: 15_000 })
+  await expect(currentRow).toBeVisible()
   await currentRow.click()
   const row = page
     .getByRole('menu')
     .getByRole('menuitem', { name: target, exact: true })
-  await expect(row).toBeVisible({ timeout: 15_000 })
+  await expect(row).toBeVisible()
   await row.click()
   await expect(page.getByRole('menu')).toHaveCount(0)
   await expect(
@@ -455,7 +456,7 @@ test.describe('the tenant administrator manages the organization', () => {
     // panel's five writes, the invitation resend/revoke cycle, the role
     // surface, the settings write and two tenant switches; the tier's default
     // bound covers one server and one journey, not this many settle points.
-    test.setTimeout(600_000)
+    test.setTimeout(scaledTimeout(600_000))
 
     const { page, server, accounts } = demo
     // The account ids the organization surface reads must never reach the
@@ -588,9 +589,7 @@ test.describe('the tenant administrator manages the organization', () => {
         // rather than reporting an empty organization.
         await memberSearchField(page).fill('Demo Member')
         await expect
-          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count(), {
-            timeout: 15_000,
-          })
+          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count())
           .toBe(1)
         await expect(memberRow(page, reviewTenantAdmin.displayName)).toHaveCount(0)
 
@@ -630,9 +629,7 @@ test.describe('the tenant administrator manages the organization', () => {
           .getByRole('option', { name: 'tenant-admin', exact: true })
           .click()
         await expect
-          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count(), {
-            timeout: 15_000,
-          })
+          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count())
           .toBe(1)
         await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(0)
         expect(new URL(page.url()).search).toBe(
@@ -651,11 +648,9 @@ test.describe('the tenant administrator manages the organization', () => {
             name: copy('adminUi', 'invitations.title'),
             exact: true,
           }),
-        ).toBeVisible({ timeout: 15_000 })
+        ).toBeVisible()
         await expect
-          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count(), {
-            timeout: 15_000,
-          })
+          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count())
           .toBe(1)
         await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(0)
 
@@ -668,9 +663,7 @@ test.describe('the tenant administrator manages the organization', () => {
           })
           .click()
         await expect
-          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count(), {
-            timeout: 15_000,
-          })
+          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count())
           .toBe(1)
         expect(new URL(page.url()).search).toBe('')
       })
@@ -887,7 +880,7 @@ test.describe('the tenant administrator manages the organization', () => {
             name: copy('authUi', 'acceptInvitation.title'),
             exact: true,
           }),
-        ).toBeVisible({ timeout: 15_000 })
+        ).toBeVisible()
         expect(new URL(invitee.url()).pathname).toBe(invitationPath)
         await expect(
           invitee.getByText(
@@ -922,7 +915,7 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           })
           .click()
-        await expect(homeHeading(invitee)).toBeVisible({ timeout: 15_000 })
+        await expect(homeHeading(invitee)).toBeVisible()
         expect(new URL(invitee.url()).pathname).toBe('/')
         await expect(
           invitee.getByRole('button', {
@@ -952,7 +945,7 @@ test.describe('the tenant administrator manages the organization', () => {
         // retryable failure page.
         for (const path of [organizationPath(''), organizationPath('/invitations')]) {
           await invitee.goto(`${server.url}${path}`)
-          await expect(homeHeading(invitee)).toBeVisible({ timeout: 15_000 })
+          await expect(homeHeading(invitee)).toBeVisible()
           expect(new URL(invitee.url()).pathname).toBe('/')
           await expect(
             invitee.getByRole('heading', {
@@ -981,7 +974,7 @@ test.describe('the tenant administrator manages the organization', () => {
             }),
             exact: true,
           }),
-        ).toBeVisible({ timeout: 15_000 })
+        ).toBeVisible()
         await expect(
           invitee.getByRole('button', {
             name: copy('authUi', 'acceptInvitation.member.open'),
@@ -1015,9 +1008,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await chooseInvitationStatus(page, 'invitations.status.accepted')
         // The invitation reached its accepted terminal state.
         await expect
-          .poll(() => invitationStatus(page, reviewInvitee.identifier), {
-            timeout: 15_000,
-          })
+          .poll(() => invitationStatus(page, reviewInvitee.identifier))
           .toBe(copy('adminUi', 'invitations.status.accepted'))
 
         // The member table gained the colleague, active, role-less and
@@ -1209,7 +1200,7 @@ test.describe('the tenant administrator manages the organization', () => {
           name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
           exact: true,
         })
-        await expect(armAgain).toBeEnabled({ timeout: 5_000 })
+        await expect(armAgain).toBeEnabled()
         await armAgain.click()
         await expect(
           page.getByText(
@@ -1407,7 +1398,6 @@ test.describe('the tenant administrator manages the organization', () => {
                   rolesColumn,
                 ).innerText()
               ).trim(),
-            { timeout: 15_000 },
           )
           .toBe(ROLE)
       })
@@ -2135,7 +2125,7 @@ test.describe('the tenant administrator manages the organization', () => {
         // account's non-personal membership, so it cannot exercise this
         // branch; the history visit reaches the same guard.
         await page.goBack()
-        await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+        await expect(homeHeading(page)).toBeVisible()
         expect(new URL(page.url()).pathname).toBe('/')
         await expectOrganizationEntryAbsent(page)
         await expect(
@@ -2173,7 +2163,7 @@ test.describe('the organization SSO page', () => {
   }) => {
     // The branch signs in and out several times to observe discovery after
     // each provider state, so it needs more than the tier's default bound.
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
     const enterprise = server.enterpriseIdentityProvider
@@ -2582,7 +2572,7 @@ test.describe('the system tenant is not manageable', () => {
       organizationPath('/settings'),
     ]) {
       await page.goto(`${server.url}${path}`)
-      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+      await expect(homeHeading(page)).toBeVisible()
       expect(new URL(page.url()).pathname).toBe('/')
       await expect(
         page.getByRole('heading', {
@@ -2606,7 +2596,7 @@ test.describe('an impersonated session hides the organization', () => {
   test('tenant-admin: impersonating the administrator renders no organization surface', async ({
     demo,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
 
@@ -2652,9 +2642,9 @@ test.describe('an impersonated session hides the organization', () => {
         if (await homeHeading(page).isVisible()) return
         await chooseImpersonationTarget(page)
         await reasonField(page).fill(IMPERSONATION_REASON)
-        await startButton(page).click({ timeout: 3_000 })
+        await startButton(page).click({ timeout: scaledTimeout(3_000) })
         throw new Error('the impersonation start has not answered yet')
-      }).toPass({ timeout: 60_000, intervals: [2_000] })
+      }).toPass({ timeout: scaledTimeout(60_000), intervals: [2_000] })
 
       if (await dialog.isVisible()) {
         // The sign-in used the authenticator factor, so the SMS factor is the
@@ -2687,7 +2677,7 @@ test.describe('an impersonated session hides the organization', () => {
         await expect(dialog).toHaveCount(0)
       }
 
-      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+      await expect(homeHeading(page)).toBeVisible()
       expect(new URL(page.url()).pathname).toBe('/')
       await expect(impersonationBanner(page)).toBeVisible()
     })
@@ -2704,7 +2694,7 @@ test.describe('an impersonated session hides the organization', () => {
         organizationPath('/settings'),
       ]) {
         await page.goto(`${server.url}${path}`)
-        await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+        await expect(homeHeading(page)).toBeVisible()
         expect(new URL(page.url()).pathname).toBe('/')
         await expect(
           page.getByRole('heading', {
@@ -2875,7 +2865,7 @@ test.describe('a policy the platform holds on', () => {
   test('tenant-admin: a platform-enforced policy is read-only and cannot be turned off', async ({
     demo,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
 
@@ -2971,7 +2961,7 @@ test.describe('a policy the platform does not hold', () => {
   test('tenant-admin: an administrator turns a policy on, reads it back, and turns it off', async ({
     demo,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, accounts } = demo
     const mfaTitle = copy('adminUi', 'organization.security.mfa.title')
@@ -3225,7 +3215,6 @@ function waitForProfileOwner(
         response.request().method() === 'GET' &&
         new URL(response.url()).pathname ===
           `/api/v1/tenants/${name}/profile`,
-      { timeout: 30_000 },
     )
     .then(async (response) => {
       expect(response.ok()).toBe(true)
@@ -3300,7 +3289,7 @@ async function requestOwnerTransfer(
     name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
     exact: true,
   })
-  await expect(again).toBeEnabled({ timeout: 5_000 })
+  await expect(again).toBeEnabled()
   await again.click()
 
   // The confirmation says the request was sent and that ownership has not
@@ -3311,7 +3300,7 @@ async function requestOwnerTransfer(
         account: `${escapeRegExp(target.displayName)} \\(.+\\)`,
       }),
     ),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
   await expect(
     ownershipSection(page).getByRole('region', {
       name: copy('adminUi', 'tenantProfile.ownership.pending.title'),
@@ -3344,7 +3333,7 @@ async function confirmOwnerTransfer(
       name: copy('accountUi', 'transferRequests.title'),
       exact: true,
     }),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
 
   // The list addresses a request by the organization's own name; the row's
   // Review action opens the detail view.
@@ -3363,7 +3352,7 @@ async function confirmOwnerTransfer(
     name: organizationName,
     exact: true,
   })
-  await expect(detail).toBeVisible({ timeout: 15_000 })
+  await expect(detail).toBeVisible()
   await detail
     .getByRole('button', {
       name: copy('accountUi', 'transferRequests.confirm'),
@@ -3390,7 +3379,7 @@ async function confirmOwnerTransfer(
     name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
     exact: true,
   })
-  await expect(again).toBeEnabled({ timeout: 5_000 })
+  await expect(again).toBeEnabled()
   await again.click()
 
   await expect(
@@ -3400,7 +3389,7 @@ async function confirmOwnerTransfer(
       }),
       { exact: true },
     ),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
 }
 
 /** The notification surface's inbox list. */
@@ -3449,7 +3438,7 @@ async function openNotificationCentre(
       }
       return (body.messages ?? []).some((message) => message.title === title)
     },
-    { timeout: 45_000 },
+    { timeout: scaledTimeout(45_000) },
   )
   const menu = await openAccountMenu(page)
   // The row's accessible name appends the unread count ("Messages, 1 unread")
@@ -3520,7 +3509,7 @@ async function createOrganization(
       name: copy('adminUi', 'organization.nav.profile'),
       exact: true,
     }),
-  ).toBeVisible({ timeout: 30_000 })
+  ).toBeVisible()
   expect(new URL(page.url()).pathname).toBe(organizationPath('/profile'))
 }
 
@@ -3623,14 +3612,14 @@ async function acceptInvitationAsInvitee(
       name: copy('authUi', 'acceptInvitation.title'),
       exact: true,
     }),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
   await invitee
     .getByRole('button', {
       name: copy('authUi', 'acceptInvitation.accept'),
       exact: true,
     })
     .click()
-  await expect(homeHeading(invitee)).toBeVisible({ timeout: 15_000 })
+  await expect(homeHeading(invitee)).toBeVisible()
 }
 
 /**
@@ -3701,7 +3690,7 @@ async function registerAndAcceptThroughLink(
       name: copy('accountUi', 'verification.title'),
       exact: true,
     }),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
   const section = verificationSection(invitee)
   const { code } = await waitForVerificationCode(
     server.log,
@@ -3722,7 +3711,7 @@ async function registerAndAcceptThroughLink(
   // The remembered landing returns the proved viewer to the link, which now
   // offers the acceptance; the arrival itself proves the settled proof.
   await expect
-    .poll(() => new URL(invitee.url()).pathname, { timeout: 15_000 })
+    .poll(() => new URL(invitee.url()).pathname)
     .toBe(invitationPath)
   await expect(
     invitee.getByRole('heading', {
@@ -3730,14 +3719,14 @@ async function registerAndAcceptThroughLink(
       name: copy('authUi', 'acceptInvitation.title'),
       exact: true,
     }),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
   await invitee
     .getByRole('button', {
       name: copy('authUi', 'acceptInvitation.accept'),
       exact: true,
     })
     .click()
-  await expect(homeHeading(invitee)).toBeVisible({ timeout: 15_000 })
+  await expect(homeHeading(invitee)).toBeVisible()
 }
 
 /** Bind a role to one member through the members page's management panel. */
@@ -3840,7 +3829,7 @@ test.describe('the organization profile page belongs to its owner', () => {
   test('tenant-admin: the owner reads the profile and saves its four descriptive fields', async ({
     demo,
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(scaledTimeout(180_000))
 
     const { page, accounts } = demo
 
@@ -3929,9 +3918,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     // The landed save reaches the host's tenant-list reload, so the account
     // menu's organization row shows the new name at once.
     await openAccountMenu(page)
-    await expect(organizationRow(page, RENAMED_ORG)).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(organizationRow(page, RENAMED_ORG)).toBeVisible()
     await closeAccountMenu(page)
 
     // A full document load re-settles the current tenant from the caller's
@@ -3944,7 +3931,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         name: copy('adminUi', 'organization.nav.profile'),
         exact: true,
       }),
-    ).toBeVisible({ timeout: 30_000 })
+    ).toBeVisible()
     await switchOrganization(page, 'acme', RENAMED_ORG)
     await openOrganizationPage(page, 'profile')
 
@@ -3974,7 +3961,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     demo,
     browser,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
     let inviteeContext: BrowserContext | undefined
@@ -4040,7 +4027,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     demo,
     browser,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
     let inviteeContext: BrowserContext | undefined
@@ -4126,7 +4113,6 @@ test.describe('the organization profile page belongs to its owner', () => {
       )
       await expect(owner).toHaveText(
         `${reviewInvitee.displayName} (${reviewInvitee.username})`,
-        { timeout: 15_000 },
       )
       await expect(transferOwnerButton(page)).toHaveCount(0)
       await expect(deleteOrganizationButton(page)).toHaveCount(0)
@@ -4152,9 +4138,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         password: reviewInvitee.password,
       })
       await expect(homeHeading(invitee)).toBeVisible()
-      await expect(organizationHomeCard(invitee)).toBeVisible({
-        timeout: 15_000,
-      })
+      await expect(organizationHomeCard(invitee)).toBeVisible()
       await openOrganizationPage(invitee, 'profile')
       const promotedOwner = definitionValue(
         invitee,
@@ -4192,9 +4176,9 @@ test.describe('the organization profile page belongs to its owner', () => {
       await menu.getByRole('menuitem').first().click()
       await expect(
         menu.getByRole('menuitem', { name: 'acme', exact: true }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
-      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+      await expect(homeHeading(page)).toBeVisible()
       await expectOrganizationEntryPresent(page)
 
       const backMenu = await openAccountMenu(page)
@@ -4203,9 +4187,9 @@ test.describe('the organization profile page belongs to its owner', () => {
         name: OWNED_DISPLAY_NAME,
         exact: true,
       })
-      await expect(destination).toBeVisible({ timeout: 15_000 })
+      await expect(destination).toBeVisible()
       await destination.click()
-      await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+      await expect(homeHeading(page)).toBeVisible()
       await expectOrganizationEntryPresent(page)
     } finally {
       await inviteeContext?.close().catch(() => undefined)
@@ -4216,7 +4200,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     demo,
     browser,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
     let inviteeContext: BrowserContext | undefined
@@ -4275,7 +4259,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
         exact: true,
       })
-      await expect(again).toBeEnabled({ timeout: 5_000 })
+      await expect(again).toBeEnabled()
 
       // A second session of the same account requests the organization for
       // the colleague. The request changes nothing by itself: the target's
@@ -4327,7 +4311,7 @@ test.describe('the organization profile page belongs to its owner', () => {
   test('tenant-admin: the owner types the name, deletes the organization, and the name stays taken', async ({
     demo,
   }) => {
-    test.setTimeout(180_000)
+    test.setTimeout(scaledTimeout(180_000))
 
     const { page, accounts } = demo
 
@@ -4375,12 +4359,12 @@ test.describe('the organization profile page belongs to its owner', () => {
       name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
       exact: true,
     })
-    await expect(again).toBeEnabled({ timeout: 5_000 })
+    await expect(again).toBeEnabled()
     await again.click()
 
     // The caller is no longer a member: the host leaves the organization and
     // the confirmation survives the move to the home page.
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/')
     const confirmation = page
       .getByRole('button', {
@@ -4402,12 +4386,10 @@ test.describe('the organization profile page belongs to its owner', () => {
     // tenant-scoped request that announced it would be refused before the
     // create handler runs.
     const menu = await openAccountMenu(page)
-    await expect(organizationRow(page, OWNED_NAME)).toBeVisible({
-      timeout: 15_000,
-    })
+    await expect(organizationRow(page, OWNED_NAME)).toBeVisible()
     await organizationRow(page, OWNED_NAME).click()
     await menu.getByRole('menuitem', { name: 'acme', exact: true }).click()
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
 
     // The tombstone keeps the name: a second creation with the same name is
     // refused as an identifier conflict, and the form keeps the values.
@@ -4447,7 +4429,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     demo,
     browser,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
     let otherContext: BrowserContext | undefined
@@ -4552,7 +4534,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
         exact: true,
       })
-      await expect(again).toBeEnabled({ timeout: 5_000 })
+      await expect(again).toBeEnabled()
       await again.click()
       // The refusal closes the dialog and reports beside the controls, which
       // the refused write leaves in place.
@@ -4572,7 +4554,7 @@ test.describe('the organization profile page belongs to its owner', () => {
     demo,
     browser,
   }) => {
-    test.setTimeout(300_000)
+    test.setTimeout(scaledTimeout(300_000))
 
     const { page, server, accounts } = demo
     let operatorContext: BrowserContext | undefined
@@ -4674,7 +4656,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
         exact: true,
       })
-      await expect(platformAgain).toBeEnabled({ timeout: 5_000 })
+      await expect(platformAgain).toBeEnabled()
       await platformAgain.click()
       await expect(
         operator.getByText(
@@ -4712,7 +4694,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         name: copy('uiKit', 'confirmDialog.confirmAgainLabel'),
         exact: true,
       })
-      await expect(again).toBeEnabled({ timeout: 5_000 })
+      await expect(again).toBeEnabled()
       await again.click()
       // The organization is gone, so the answer is the surface's not-found
       // copy. The conflict copy belongs to the member-state refusal the

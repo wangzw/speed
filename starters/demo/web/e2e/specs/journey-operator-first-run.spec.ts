@@ -121,12 +121,12 @@ const SYSTEM_ORGANIZATION = 'system'
 async function enterSystemOrganization(page: Page): Promise<void> {
   await openAccountMenu(page)
   const currentRow = organizationRow(page, OPERATOR.organization)
-  await expect(currentRow).toBeVisible({ timeout: 15_000 })
+  await expect(currentRow).toBeVisible()
   await currentRow.click()
   const row = page
     .getByRole('menu')
     .getByRole('menuitem', { name: SYSTEM_ORGANIZATION, exact: true })
-  await expect(row).toBeVisible({ timeout: 15_000 })
+  await expect(row).toBeVisible()
   await row.click()
   await expect(page.getByRole('menu')).toHaveCount(0)
   await expect(
@@ -276,7 +276,6 @@ function observeLoginActor(page: Page): () => Promise<string> {
   return async () => {
     await expect
       .poll(() => actor, {
-        timeout: 15_000,
         message: 'the audit list read never answered the login record actor',
       })
       .not.toBe('')
@@ -361,7 +360,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
         exact: true,
       })
       .locator('xpath=ancestor::a[1]')
-    await expect(adminCard).toBeVisible({ timeout: 15_000 })
+    await expect(adminCard).toBeVisible()
     const cardHref = await adminCard.getAttribute('href')
     expect(cardHref).not.toBeNull()
 
@@ -644,7 +643,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
     ).toBeVisible()
     await expect
       .poll(() => valueField(page).inputValue(), {
-        timeout: 10_000,
         message: 'the row did not re-read the written value',
       })
       .toBe(NEW_VALUE)
@@ -659,7 +657,6 @@ test('operator-first-run: the operator proves the email and lands the first sett
       .click()
     await expect
       .poll(() => valueField(page).inputValue(), {
-        timeout: 10_000,
         message: 'the refreshed row lost the written value',
       })
       .toBe(NEW_VALUE)

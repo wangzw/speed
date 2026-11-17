@@ -589,7 +589,7 @@ async function registerAndProve(
       name: copy('accountUi', 'verification.title'),
       exact: true,
     }),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
   // The account route lands on the profile pane, which hosts the email card.
   expect(new URL(page.url()).pathname).toBe('/account/profile')
 
@@ -616,7 +616,7 @@ async function registerAndProve(
   // verified, and it unmounts before a verified banner on that page could be
   // observed.
   await expect
-    .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
+    .poll(() => new URL(page.url()).pathname)
     .toBe(invitationPath)
   await expect(
     page.getByRole('heading', {
@@ -624,7 +624,7 @@ async function registerAndProve(
       name: copy('authUi', 'acceptInvitation.title'),
       exact: true,
     }),
-  ).toBeVisible({ timeout: 15_000 })
+  ).toBeVisible()
   return page
 }
 
@@ -904,7 +904,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
           name: copy('demo', 'home.heading'),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       expect(new URL(invitee.url()).pathname).toBe('/')
 
       const dismiss = invitee.getByRole('button', {
@@ -982,7 +982,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
             name: copy('demo', 'home.heading'),
             exact: true,
           }),
-        ).toBeVisible({ timeout: 15_000 })
+        ).toBeVisible()
         await expect(
           invitee.getByRole('navigation', {
             name: copy('adminUi', 'shell.navLabel'),
@@ -1016,7 +1016,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
           }),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(
         invitee.getByRole('button', {
           name: copy('authUi', 'acceptInvitation.member.open'),
@@ -1072,7 +1072,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // refused second issue never created a superseded row.
       await expect(
         invitationRowInStatus(page, 'invitations.status.accepted'),
-      ).toHaveCount(1, { timeout: 15_000 })
+      ).toHaveCount(1)
       await expect(
         invitationRowInStatus(page, 'invitations.status.revoked'),
       ).toHaveCount(0)
@@ -1187,7 +1187,7 @@ test('invitation-to-tenant: an account that proves a different address cannot ac
           name: copy('authUi', 'acceptInvitation.unproved.title'),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(
         outsider.getByText(
           copy('authUi', 'acceptInvitation.unproved.description', {
@@ -1227,7 +1227,7 @@ test('invitation-to-tenant: an account that proves a different address cannot ac
           name: copy('authUi', 'acceptInvitation.unproved.title'),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
     })
 
     await test.step('step 3: the invitation stays pending and no membership is written', async () => {
@@ -1241,7 +1241,7 @@ test('invitation-to-tenant: an account that proves a different address cannot ac
         .click()
       await expect(
         invitationRowInStatus(page, 'invitations.status.pending'),
-      ).toHaveCount(1, { timeout: 15_000 })
+      ).toHaveCount(1)
       await expect(
         invitationRowInStatus(page, 'invitations.status.accepted'),
       ).toHaveCount(0)

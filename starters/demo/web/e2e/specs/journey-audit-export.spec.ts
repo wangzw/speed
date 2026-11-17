@@ -66,6 +66,7 @@ import type { Locator, Page, Request } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import { scaledTimeout } from '../fixtures/time-scale'
 import {
   adminEntry,
   openAccountMenu,
@@ -81,7 +82,7 @@ test.use({ viewport: { width: 1920, height: 1080 } })
 
 // The minute crossing in step 6 legitimately waits for the wall clock, so the
 // file's bound is above the tier's default rather than the wait being cut off.
-test.describe.configure({ timeout: 300_000 })
+test.describe.configure({ timeout: scaledTimeout(300_000) })
 
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
@@ -416,7 +417,6 @@ function observeRawActors(page: Page): RawActors {
     of: async (id: string) => {
       await expect
         .poll(() => actors.get(id) ?? '', {
-          timeout: 15_000,
           message: `the audit list read never answered the actor of record ${id}`,
         })
         .not.toBe('')
@@ -445,7 +445,7 @@ async function collectListedRecords(
 
   for (;;) {
     const rows = auditRows(page)
-    await expect(rows.first()).toBeVisible({ timeout: 15_000 })
+    await expect(rows.first()).toBeVisible()
     // The header is read once the table is rendered: applying a filter can
     // leave the section in its loading placeholder for a moment, and a header
     // read then would find no table at all.
@@ -540,7 +540,7 @@ async function collectListedRecords(
           }
           return link.getAttribute('href')
         },
-        { timeout: 15_000, message: 'the next audit page did not arrive' },
+        { message: 'the next audit page did not arrive' },
       )
       .not.toBe(firstHref)
     await expect(previousPageButton(page)).toBeEnabled()
@@ -761,7 +761,6 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
       ).toBeVisible()
       await expect
         .poll(() => auditPageSize, {
-          timeout: 15_000,
           message: 'the audit page never issued a list request with a limit',
         })
         .toBeGreaterThan(0)
@@ -801,10 +800,9 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     // landed write the draft is cleared and the count leaves the page.
     await expect(pendingCount(page)).toBeVisible()
     await saveButton(page).click()
-    await expect(pendingCount(page)).toHaveCount(0, { timeout: 15_000 })
+    await expect(pendingCount(page)).toHaveCount(0)
     await expect
       .poll(() => valueField(page).inputValue(), {
-        timeout: 15_000,
         message: 'the row did not settle on the saved value',
       })
       .toBe(value)
@@ -865,7 +863,6 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
       .click()
     await expect
       .poll(() => valueField(page).inputValue(), {
-        timeout: 15_000,
         message: 'the refreshed row lost the last saved value',
       })
       .toBe(value)
@@ -885,7 +882,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
     // itself; the same text resolves both. The draft stays for correction.
     await expect(
       page.getByRole('alert').filter({ hasText: invalidCopy }),
-    ).toBeVisible({ timeout: 15_000 })
+    ).toBeVisible()
     const row = settingsTable(page)
       .getByRole('row')
       .filter({
@@ -907,7 +904,6 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
       .click()
     await expect
       .poll(() => valueField(page).inputValue(), {
-        timeout: 15_000,
         message: 'the refused write changed the stored value',
       })
       .toBe(lastSavedValue)
@@ -954,14 +950,14 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
         name: copy('adminUi', 'audit.empty.title'),
         exact: true,
       }),
-    ).toBeVisible({ timeout: 15_000 })
+    ).toBeVisible()
 
     // The window that covers the whole run and the action filter leave this
     // run's writes and nothing else.
     await sinceFilter(page).fill(since)
     await untilFilter(page).fill(until)
     await applyButton(page).click()
-    await expect(auditRows(page)).toHaveCount(pageSize, { timeout: 15_000 })
+    await expect(auditRows(page)).toHaveCount(pageSize)
 
     // The match is longer than one page, and the pager offers the next one.
     await expect(nextPageButton(page)).toBeEnabled()
@@ -1029,7 +1025,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
 
     // Applying resets the list to its first page; the narrowed match fits on
     // that one page.
-    await expect(previousPageButton(page)).toBeDisabled({ timeout: 15_000 })
+    await expect(previousPageButton(page)).toBeDisabled()
     const secondListed = await collectListedRecords(page, pageSize, rawActors)
     expect(secondListed).toHaveLength(FIRST_PHASE_SAVES)
     expect(secondListed.filter((record) => record.outcome === FAILED)).toHaveLength(0)

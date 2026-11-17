@@ -75,6 +75,7 @@ import {
 } from '../fixtures/identity-provider'
 import type { EnterpriseIdentityProvider } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
+import { scaledTimeout } from '../fixtures/time-scale'
 import { expectAccountMenuName } from '../helpers/account-menu'
 import { createAccounts, type Accounts } from '../helpers/accounts'
 import { adminEntry, openAccountMenu } from '../helpers/account-menu'
@@ -93,7 +94,7 @@ import {
 
 // The operator's sign-in, the provider's round trip, the passkey ceremonies and
 // the step-up run inside this file's per-test bound; fixture assembly included.
-test.describe.configure({ timeout: 420_000 })
+test.describe.configure({ timeout: scaledTimeout(420_000) })
 
 /** The seeded platform administrator the review assembly writes. */
 const OPERATOR = {
@@ -287,20 +288,20 @@ function providerRow(page: Page, name: string): Locator {
  */
 async function registerPasskeyOnSignIn(scope: Page | Locator): Promise<void> {
   const choice = passkeyKind(scope)
-  await expect(choice).toBeVisible({ timeout: 30_000 })
+  await expect(choice).toBeVisible()
   await choice.click()
   const prompt = scope.getByText(
     copy('authUi', 'signInFlow.passkeyRegisterPrompt'),
     { exact: true },
   )
-  await expect(prompt).toBeVisible({ timeout: 15_000 })
+  await expect(prompt).toBeVisible()
   await scope
     .getByRole('button', {
       name: copy('authUi', 'signInFlow.submit'),
       exact: true,
     })
     .click()
-  await expect(prompt).toHaveCount(0, { timeout: 20_000 })
+  await expect(prompt).toHaveCount(0)
 }
 
 /** Confirm one danger dialog by the label the caller's section supplies. */
@@ -322,12 +323,12 @@ async function proveWithPasskey(page: Page): Promise<void> {
     name: copy('accountUi', 'mfa.stepUp.title'),
     exact: true,
   })
-  await expect(dialog).toBeVisible({ timeout: 15_000 })
+  await expect(dialog).toBeVisible()
   const passkey = dialog.getByRole('button', {
     name: copy('accountUi', 'mfa.factor.kind.webauthn'),
     exact: true,
   })
-  await expect(passkey).toBeVisible({ timeout: 15_000 })
+  await expect(passkey).toBeVisible()
   await passkey.click()
 
   // Choosing the passkey starts the assertion ceremony on arrival, so there
@@ -339,8 +340,8 @@ async function proveWithPasskey(page: Page): Promise<void> {
     dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
       exact: true,
     }),
-  ).toHaveCount(0, { timeout: 30_000 })
-  await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+  ).toHaveCount(0)
+  await expect(dialog).toHaveCount(0)
 }
 
 /** Select one organization through a tenant-addressed page's selector. */
@@ -553,7 +554,7 @@ async function prepareOperator(
     operatorPage,
   )
   await registerPasskeyOnSignIn(passwordPanel)
-  await expect(homeHeading(operatorPage)).toBeVisible({ timeout: 30_000 })
+  await expect(homeHeading(operatorPage)).toBeVisible()
 
   // The journey starts with an operator whose address is proved. The review
   // seed writes the address as an administrator's assertion, so the spec
@@ -599,11 +600,11 @@ async function prepareOperator(
     name: copy('accountUi', 'mfa.stepUp.title'),
     exact: true,
   })
-  await expect(verified.or(stepUp)).toBeVisible({ timeout: 15_000 })
+  await expect(verified.or(stepUp)).toBeVisible()
   if (await stepUp.isVisible()) {
     await proveWithPasskey(operatorPage)
   }
-  await expect(verified).toBeVisible({ timeout: 15_000 })
+  await expect(verified).toBeVisible()
   await expect(banner).toHaveCount(0)
 
   return authenticator
@@ -729,7 +730,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         name: copy('authUi', 'signInFlow.usernameLabel'),
         exact: true,
       })
-      await expect(username).toBeVisible({ timeout: 15_000 })
+      await expect(username).toBeVisible()
       await accounts.answerSignupUsername(JIT_USERNAME)
 
       // The deployment requires a factor, so the flow parks at the enroll step
@@ -741,10 +742,10 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         page.getByText(copy('authUi', 'signInFlow.enrollTitle'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 30_000 })
+      ).toBeVisible()
       authenticator = await addVirtualAuthenticator(page.context(), page)
       await registerPasskeyOnSignIn(page)
-      await expect(homeHeading(page)).toBeVisible({ timeout: 30_000 })
+      await expect(homeHeading(page)).toBeVisible()
 
       // The account carries the provider's display name, because no
       // administrator prepared one.
@@ -872,7 +873,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         bindingsSection(page)
           .getByRole('alert')
           .filter({ hasText: copy('accountUi', 'errors.authn.last_login_method') }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(ssoRow(page)).toBeVisible()
       await expect(
         bindingsSection(page).getByText(
@@ -907,7 +908,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         page.getByText(copy('accountUi', 'password.changedFirst'), {
           exact: true,
         }),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       // The write keeps the page on the security pane that started it.
       await expect(securityHeading(page)).toBeVisible()
     })
@@ -925,7 +926,7 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
             provider: 'oidc:.+',
           }),
         ),
-      ).toBeVisible({ timeout: 15_000 })
+      ).toBeVisible()
       await expect(ssoUnlink(page)).toHaveCount(0)
     })
   } finally {

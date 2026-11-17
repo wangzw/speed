@@ -27,22 +27,28 @@ import { join } from 'node:path'
 import { writeDeployConfig, type DeployConfig } from './config'
 import { ProcessLog, waitForReady } from './log'
 import { readHarnessManifest } from './server'
+import { scaledTimeout } from './time-scale'
 
-// Every bound sits strictly inside the Playwright test timeout (120s), with
-// room left for the journey and teardown. The fixture's diagnostics win over a
-// bare Playwright timeout.
+// Every bound sits strictly inside the Playwright test timeout (three minutes
+// before GATE_TIME_SCALE), with room left for the journey and teardown. Each
+// bound is a wait, so it is generous and it widens with the test timeout
+// through the same scale. The fixture's diagnostics win over a bare Playwright
+// timeout.
 
 /** How long the seed command may run. */
-const SEED_TIMEOUT_MS = 20_000
+const SEED_TIMEOUT_MS = scaledTimeout(30_000)
 
 /** How long serve may take to write its ready record. */
-const START_TIMEOUT_MS = 20_000
+const START_TIMEOUT_MS = scaledTimeout(30_000)
 
 /** How long SIGTERM may take before SIGKILL follows. */
-const STOP_TIMEOUT_MS = 15_000
+const STOP_TIMEOUT_MS = scaledTimeout(25_000)
 
 /** How long a probe may take to answer. */
-const PROBE_TIMEOUT_MS = 10_000
+const PROBE_TIMEOUT_MS = scaledTimeout(15_000)
+
+/** How long one probe request may take to answer. */
+const PROBE_REQUEST_TIMEOUT_MS = scaledTimeout(5_000)
 
 /** How many times a bind failure is retried with fresh ports. */
 const MAX_BIND_ATTEMPTS = 3
@@ -208,8 +214,10 @@ function fetchAnswer(url: string): Promise<HttpAnswer> {
       response.on('error', reject)
     })
     outgoing.on('error', reject)
-    outgoing.setTimeout(5_000, () => {
-      outgoing.destroy(new Error(`${url} did not answer within 5s`))
+    outgoing.setTimeout(PROBE_REQUEST_TIMEOUT_MS, () => {
+      outgoing.destroy(
+        new Error(`${url} did not answer within ${PROBE_REQUEST_TIMEOUT_MS}ms`),
+      )
     })
   })
 }

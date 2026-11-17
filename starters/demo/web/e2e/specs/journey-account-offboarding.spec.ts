@@ -541,7 +541,7 @@ test('account-offboarding: an operator disables a member and the member returns 
         }
       }
 
-      await expect(ended).toBeVisible({ timeout: 15_000 })
+      await expect(ended).toBeVisible()
       await expect(
         memberB.getByText(copy('authUi', 'sessionEnded.description'), {
           exact: true,
@@ -588,14 +588,14 @@ test('account-offboarding: an operator disables a member and the member returns 
       await identifierField(memberB).fill(MEMBER.identifier)
       await passwordField(memberB).fill(WRONG_PASSWORD)
       await signInButton(memberB).click()
-      await expect(failure).toBeVisible({ timeout: 15_000 })
+      await expect(failure).toBeVisible()
 
       // ... and the account's own correct credentials are answered the same
       // way while the account is disabled. The account-unavailable text never
       // replaces the collapsed failure.
       await passwordField(memberB).fill(MEMBER.password)
       await signInButton(memberB).click()
-      await expect(failure).toBeVisible({ timeout: 15_000 })
+      await expect(failure).toBeVisible()
       await expect(
         memberB.getByText(copy('authUi', 'errors.authn.account_unavailable'), {
           exact: true,
@@ -677,7 +677,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       await identifierField(memberB).fill(MEMBER.identifier)
       await passwordField(memberB).fill(MEMBER.password)
       await signInButton(memberB).click()
-      await expect(profileHeading(memberB)).toBeVisible({ timeout: 15_000 })
+      await expect(profileHeading(memberB)).toBeVisible()
       expect(new URL(memberB.url()).pathname).toBe(ACCOUNT_PROFILE_PATH)
     })
 
@@ -692,9 +692,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       await selectAccountSection(memberB, 'sessions')
       const sessions = sessionsSection(memberB)
       // The header row and the one remaining session.
-      await expect(sessions.getByRole('listitem')).toHaveCount(1, {
-        timeout: 15_000,
-      })
+      await expect(sessions.getByRole('listitem')).toHaveCount(1)
       await expect(
         sessions.getByText(copy('accountUi', 'sessions.current'), {
           exact: true,
@@ -708,9 +706,7 @@ test('account-offboarding: an operator disables a member and the member returns 
       // not offer it again among the choices.
       await switchToTenant(memberB, TENANT)
       const menu = await openAccountMenu(memberB)
-      await expect(menu.getByText(TENANT, { exact: true })).toBeVisible({
-        timeout: 15_000,
-      })
+      await expect(menu.getByText(TENANT, { exact: true })).toBeVisible()
       if ((await organizationRow(memberB, TENANT).count()) > 0) {
         await organizationRow(memberB, TENANT).click()
         await expect(

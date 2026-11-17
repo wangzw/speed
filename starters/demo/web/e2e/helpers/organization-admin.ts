@@ -508,7 +508,7 @@ export async function switchTenant(
   await expect(trigger).toBeVisible()
   await trigger.click()
   const row = page.getByRole('menuitem', { name: target, exact: true })
-  await expect(row).toBeVisible({ timeout: 15_000 })
+  await expect(row).toBeVisible()
   await row.click()
 }
 

@@ -36,6 +36,7 @@ import type { Locator, Page } from '@playwright/test'
 
 import { reviewMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
+import { scaledTimeout } from '../fixtures/time-scale'
 import { switchToTenant } from '../helpers/switch-tenant'
 import { copy } from '../helpers/i18n'
 import { homeHeading } from '../helpers/organization-admin'
@@ -106,7 +107,7 @@ async function revealedTotpSecret(panel: Locator): Promise<string> {
 test('tenant-required-mfa-enrollment: a required factor is enrolled, the password proved again, and the new factor used before the session exists', async ({
   demo,
 }) => {
-  test.setTimeout(180_000)
+  test.setTimeout(scaledTimeout(180_000))
   const { page, server, accounts } = demo
   const panel = passwordPanel(page)
 
@@ -123,7 +124,7 @@ test('tenant-required-mfa-enrollment: a required factor is enrolled, the passwor
       name: copy('authUi', 'signInFlow.factorKind.totp'),
       exact: true,
     })
-    await expect(totpKind).toBeVisible({ timeout: 30_000 })
+    await expect(totpKind).toBeVisible()
     await expect(
       panel.getByText(copy('authUi', 'signInFlow.enrollTitle'), {
         exact: true,
@@ -144,7 +145,7 @@ test('tenant-required-mfa-enrollment: a required factor is enrolled, the passwor
           name: copy('demo', 'signIn.heading'),
           exact: true,
         }),
-      ).toBeVisible({ timeout: 20_000 })
+      ).toBeVisible()
       await expect(homeHeading(other)).toHaveCount(0)
     } finally {
       await other.close()
@@ -188,7 +189,7 @@ test('tenant-required-mfa-enrollment: a required factor is enrolled, the passwor
       name: copy('authUi', 'passwordSignIn.identifierLabel'),
       exact: true,
     })
-    await expect(identifier).toBeVisible({ timeout: 20_000 })
+    await expect(identifier).toBeVisible()
     await identifier.fill(MEMBER.username)
     await panel
       .getByRole('textbox', {
@@ -209,7 +210,7 @@ test('tenant-required-mfa-enrollment: a required factor is enrolled, the passwor
       name: copy('authUi', 'signInFlow.factorKind.totp'),
       exact: true,
     })
-    await expect(totpChoice).toBeVisible({ timeout: 20_000 })
+    await expect(totpChoice).toBeVisible()
     await totpChoice.click()
 
     const code = panel.getByRole('textbox', {
@@ -227,11 +228,11 @@ test('tenant-required-mfa-enrollment: a required factor is enrolled, the passwor
   })
 
   await test.step('the member reaches the organization home', async () => {
-    await expect(homeHeading(page)).toBeVisible({ timeout: 20_000 })
+    await expect(homeHeading(page)).toBeVisible()
     // The member's own organization is the personal one the host settles
     // first; moving to the tenant that requires the factor exercises the
     // tenant-scoped reads with the session the login just established.
     await switchToTenant(page, TENANT)
-    await expect(homeHeading(page)).toBeVisible({ timeout: 20_000 })
+    await expect(homeHeading(page)).toBeVisible()
   })
 })

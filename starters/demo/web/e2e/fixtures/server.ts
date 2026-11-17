@@ -48,24 +48,34 @@ import {
   startSamlIdentityProvider,
   type SamlIdentityProvider,
 } from './saml-identity-provider'
+import { scaledTimeout } from './time-scale'
 
-// Every bound below is strictly inside the Playwright test timeout (120s in
-// playwright.config.ts), with room left for the journey and for teardown. A
-// fixture that used the whole test bound would be killed by Playwright first,
-// and the harness's own diagnostics -- the log tail and standard error --
-// would never be printed.
+// Every bound below is strictly inside the Playwright test timeout (three
+// minutes before GATE_TIME_SCALE, in playwright.config.ts), with room left for
+// the journey and for teardown. A fixture that used the whole test bound would
+// be killed by Playwright first, and the harness's own diagnostics -- the log
+// tail and standard error -- would never be printed. Each bound is a wait, not
+// work -- it returns as soon as the thing it waits for happens -- so it is
+// generous, and it widens with the test timeout through the same
+// GATE_TIME_SCALE.
 
 /** How long the seed command may run. */
-const SEED_TIMEOUT_MS = 20_000
+const SEED_TIMEOUT_MS = scaledTimeout(30_000)
 
 /** How long serve may take to write its ready record. */
-const START_TIMEOUT_MS = 20_000
+const START_TIMEOUT_MS = scaledTimeout(30_000)
 
 /** How long SIGTERM may take before SIGKILL follows. */
-const STOP_TIMEOUT_MS = 15_000
+const STOP_TIMEOUT_MS = scaledTimeout(25_000)
 
 /** How long the readiness probes may take to answer after the ready record. */
-const PROBE_TIMEOUT_MS = 10_000
+const PROBE_TIMEOUT_MS = scaledTimeout(15_000)
+
+/** How long one readiness probe request may take to answer. */
+const PROBE_REQUEST_TIMEOUT_MS = scaledTimeout(5_000)
+
+/** How long one API request the fixture makes may take to answer. */
+const API_REQUEST_TIMEOUT_MS = scaledTimeout(10_000)
 
 /** How many times a bind failure is retried with fresh ports. */
 const MAX_BIND_ATTEMPTS = 3
@@ -199,8 +209,10 @@ function probe(url: string): Promise<number> {
       resolve(response.statusCode ?? 0)
     })
     probeRequest.on('error', reject)
-    probeRequest.setTimeout(5_000, () => {
-      probeRequest.destroy(new Error(`${url} did not answer within 5s`))
+    probeRequest.setTimeout(PROBE_REQUEST_TIMEOUT_MS, () => {
+      probeRequest.destroy(
+        new Error(`${url} did not answer within ${PROBE_REQUEST_TIMEOUT_MS}ms`),
+      )
     })
   })
 }
@@ -314,8 +326,10 @@ function callApi(
       },
     )
     call.on('error', reject)
-    call.setTimeout(10_000, () => {
-      call.destroy(new Error(`${url} did not answer within 10s`))
+    call.setTimeout(API_REQUEST_TIMEOUT_MS, () => {
+      call.destroy(
+        new Error(`${url} did not answer within ${API_REQUEST_TIMEOUT_MS}ms`),
+      )
     })
     if (options.body !== undefined) {
       call.write(options.body)

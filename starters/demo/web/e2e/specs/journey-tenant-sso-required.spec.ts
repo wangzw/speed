@@ -715,7 +715,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
     // The callback lands on the tenant home. The user menu names the display
     // name the seed wrote, which differs from the provider's `name` claim: a
     // just-in-time account opened from the claims would carry the claim.
-    await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
+    await expect(homeHeading(page)).toBeVisible()
     const userMenu = page
       .getByTestId('account-entry-trigger')
     await expectAccountMenuName(userMenu, tenantSSOAdmin.displayName)

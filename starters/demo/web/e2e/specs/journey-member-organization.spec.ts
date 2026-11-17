@@ -252,7 +252,6 @@ async function afterNextNotice(page: Page): Promise<number> {
   const previous = await unreadCount(page)
   await expect
     .poll(() => unreadCount(page), {
-      timeout: 25_000,
       message: 'the worker never dispatched another notice',
     })
     .toBeGreaterThan(previous)
@@ -309,7 +308,6 @@ test('member-organization: a member receives, reads and configures notifications
     // sleep -- before taking the baseline the arrival step measures against.
     await expect
       .poll(() => unreadCount(page), {
-        timeout: 25_000,
         message: 'the member never received the first notice',
       })
       .toBeGreaterThanOrEqual(1)
@@ -388,14 +386,12 @@ test('member-organization: a member receives, reads and configures notifications
           (await unreadCount(page)) -
           (await rowsWithMark(page, 'inbox.unread').count()),
         {
-          timeout: 10_000,
           message: 'the bell and the inbox disagree on the unread total',
         },
       )
       .toBe(0)
     await expect
       .poll(() => unreadCount(page), {
-        timeout: 10_000,
         message: 'the bell did not fall after the message was marked read',
       })
       .toBeLessThan(before)
@@ -436,7 +432,6 @@ test('member-organization: a member receives, reads and configures notifications
     // checked.
     await expect
       .poll(() => rowsWithMark(page, 'inbox.read').count(), {
-        timeout: 10_000,
         message: 'a row the mark-all click saw is still unread',
       })
       .toBeGreaterThanOrEqual(rowsBefore)
@@ -514,14 +509,12 @@ test('member-organization: a member receives, reads and configures notifications
     // no browser surface -- see the file header.)
     await expect
       .poll(() => unreadCount(page), {
-        timeout: 25_000,
         message: 'no notice reached the bell after the email channel was turned off',
       })
       .toBeGreaterThan(before)
 
     await expect
       .poll(() => rows.count(), {
-        timeout: 15_000,
         message: 'the inbox did not gain the notice the bell reported',
       })
       .toBeGreaterThan(rowsBefore)

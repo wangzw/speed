@@ -70,6 +70,7 @@ import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
 import { identityProviderUser } from '../fixtures/identity-provider'
+import { scaledTimeout } from '../fixtures/time-scale'
 import {
   expandAccountRows,
   openAccountSection,
@@ -235,7 +236,7 @@ async function enrolPasskey(page: Page): Promise<void> {
     mfa.getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
       exact: true,
     }),
-  ).toHaveCount(0, { timeout: 20_000 })
+  ).toHaveCount(0)
   await expect(
     mfa.getByText(
       copy('accountUi', 'mfa.enroll.enrolled', {
@@ -243,7 +244,7 @@ async function enrolPasskey(page: Page): Promise<void> {
       }),
       { exact: true },
     ),
-  ).toBeVisible({ timeout: 20_000 })
+  ).toBeVisible()
   // The settled enrolment lists one enabled passkey in the passkey group.
   const group = mfaGroup(page, 'webauthn')
   await expect(group.getByRole('listitem')).toHaveCount(1)
@@ -410,7 +411,7 @@ test('social-account-linking: a password account links Google, then signs in wit
 // and the provider round trip; the bound covers fixture assembly as well as
 // the journey, so a slow assembly reports the harness's own diagnostics.
 test.describe('a passkey enrolled in this session', () => {
-  test.describe.configure({ timeout: 300_000 })
+  test.describe.configure({ timeout: scaledTimeout(300_000) })
 
   test('social-account-linking: a passkey enrolled in this session carries the binding step-up', async ({
     demo,
@@ -458,7 +459,7 @@ test.describe('a passkey enrolled in this session', () => {
         // the server starts the flow at the password and offers the passkey
         // afterwards. The dialog therefore shows the credential form.
         const dialog = stepUpDialog(page)
-        await expect(dialog).toBeVisible({ timeout: 15_000 })
+        await expect(dialog).toBeVisible()
         await expect(
           dialog.getByText(copy('accountUi', 'mfa.stepUp.description'), {
             exact: true,
@@ -472,7 +473,7 @@ test.describe('a passkey enrolled in this session', () => {
           name: copy('accountUi', 'flowStep.field.password'),
           exact: true,
         })
-        await expect(identifierField).toBeVisible({ timeout: 15_000 })
+        await expect(identifierField).toBeVisible()
         await expect(passwordField).toBeVisible()
         // The pre-fix outcome is the refusal this path rules out: a session
         // that cannot be confirmed at all, ending in a re-login.
@@ -509,7 +510,7 @@ test.describe('a passkey enrolled in this session', () => {
           name: copy('accountUi', 'mfa.factor.kind.webauthn'),
           exact: true,
         })
-        await expect(factorChoice).toBeVisible({ timeout: 15_000 })
+        await expect(factorChoice).toBeVisible()
         await factorChoice.click()
 
         // Choosing the factor is the whole interaction: the assertion step
@@ -520,8 +521,8 @@ test.describe('a passkey enrolled in this session', () => {
           dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
             exact: true,
           }),
-        ).toHaveCount(0, { timeout: 30_000 })
-        await expect(dialog).toHaveCount(0, { timeout: 30_000 })
+        ).toHaveCount(0)
+        await expect(dialog).toHaveCount(0)
       })
 
       await test.step('step 4: the replayed binding completes at the provider and returns to the security pane it started from', async () => {
@@ -532,7 +533,6 @@ test.describe('a passkey enrolled in this session', () => {
         // profile the account group opens at.
         await expect(page).toHaveURL(
           new URL('/account/security', server.url).toString(),
-          { timeout: 30_000 },
         )
         await expect(securityPaneHeading(page)).toBeVisible()
         await expandAccountRows(page)

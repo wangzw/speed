@@ -83,10 +83,14 @@ keeps. One project is run on its own with `--project webkit`.
   then hands the server to the test. Ports are allocated after the seed (which
   does not listen), and a bind failure — another process took the port in the
   short window before `serve` bound it — is retried with a fresh pair, bounded
-  at three attempts. The fixture's own bounds (seed 20s, start 20s, probes 10s,
-  stop 15s) sit inside Playwright's 120s test timeout, so a slow start reports
+  at three attempts. The fixture's own bounds (seed 30s, start 30s, probes 15s,
+  stop 25s) sit inside Playwright's 180s test timeout, so a slow start reports
   the process log and standard error instead of being killed by the test
-  timeout first.
+  timeout first. They are waits — each returns as soon as the thing it waits
+  for happens — so they are generous, and the caller's `GATE_TIME_SCALE`
+  multiplies them together with the test timeout and the 30s `expect.timeout`
+  that every assertion without a bound of its own inherits. A loaded machine
+  gets a larger scale; the tier never probes the machine to choose one.
 - **Stopping is ordered.** Hooks registered with `beforeStop` run first — the
   demo fixture closes the browser context there, because the notification
   stream keeps a connection open and would otherwise hold shutdown open — then
