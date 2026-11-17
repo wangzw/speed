@@ -1204,6 +1204,7 @@ describe('401 and the refresh hook', () => {
   })
 
   it('does not recurse when the refresh request itself is refused', async () => {
+    const memory = createMemoryReporter()
     // The session wiring a host builds -- the refresh operation
     // declared credential-less via omitAccessToken, travelling through
     // this same client -- must not deadlock when the endpoint refuses
@@ -1243,10 +1244,22 @@ describe('401 and the refresh hook', () => {
           return false
         }
       },
+      reporter: memory.reporter,
     })
     const error = await expectApiError(api<{ ok: boolean }>('/notes'))
     expect(error.auth).toBe(true)
     expect(error.code).toBe('authn.session_expired')
+    // The failed refresh is reported with the original 401's envelope.
+    expect(memory.warns).toEqual([
+      {
+        message: 'access token refresh failed',
+        attrs: {
+          status: 401,
+          code: 'authn.session_expired',
+          trace_id: 'trace-1',
+        },
+      },
+    ])
     // The original 401's own envelope is delivered (trace-1), not the
     // refresh request's (trace-2).
     expect(error.traceId).toBe('trace-1')
@@ -1560,6 +1573,7 @@ describe('401 and the refresh hook', () => {
     // a timeout, losing the envelope's code and trace id.)
     vi.useFakeTimers()
     try {
+      const memory = createMemoryReporter()
       const store = createMemoryAccessTokenStore()
       store.set('stale-token')
       let refreshCalls = 0
@@ -1577,6 +1591,7 @@ describe('401 and the refresh hook', () => {
           return refreshGate
         },
         timeoutMs: 50,
+        reporter: memory.reporter,
       })
       const pending = api<{ ok: boolean }>('/notes')
       // Flush until the 401 has started the refresh round.
@@ -1595,6 +1610,17 @@ describe('401 and the refresh hook', () => {
       expect(error.traceId).toBe('trace-1')
       expect(error.attempts).toBe(1)
       expect(standin.calls).toHaveLength(1)
+      // The failed refresh is reported with the original 401's envelope.
+      expect(memory.warns).toEqual([
+        {
+          message: 'access token refresh failed',
+          attrs: {
+            status: 401,
+            code: 'authn.session_expired',
+            trace_id: 'trace-1',
+          },
+        },
+      ])
     } finally {
       vi.useRealTimers()
     }
@@ -1610,6 +1636,7 @@ describe('401 and the refresh hook', () => {
     // resumed, this read would hang on the stalled stream.
     vi.useFakeTimers()
     try {
+      const memory = createMemoryReporter()
       const store = createMemoryAccessTokenStore()
       store.set('stale-token')
       let refreshCalls = 0
@@ -1630,6 +1657,7 @@ describe('401 and the refresh hook', () => {
           return refreshGate
         },
         timeoutMs: 50,
+        reporter: memory.reporter,
       })
       const pending = api<{ ok: boolean }>('/notes')
       const settlement = settlementOf(pending)
@@ -1654,6 +1682,11 @@ describe('401 and the refresh hook', () => {
       expect(error.code).toBe('client.http.401')
       expect(error.traceId).toBeUndefined()
       expect(standin.calls).toHaveLength(1)
+      // The stalled body yields no envelope, so the report carries the
+      // status alone.
+      expect(memory.warns).toEqual([
+        { message: 'access token refresh failed', attrs: { status: 401 } },
+      ])
     } finally {
       vi.useRealTimers()
     }
