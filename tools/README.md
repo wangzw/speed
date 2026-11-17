@@ -83,10 +83,12 @@ written out in the test instead of derived from the file. The width cases
 drive the legs under the stand-ins and read what each tool was handed.
 
 `test_deploy_workflow.py` is likewise no script's suite: it holds
-`.github/workflows/deploy.yml` to failing a manual dispatch outside `main`
-(it runs the `refuse` job's script and requires a non-zero exit and an error
-naming the ref), to keeping `decide` on `main`, and to installing go alone
-through the setup action's `tools` input.
+`.github/workflows/deploy.yml` to running only on a manual dispatch, to failing
+a dispatch outside `main` (it runs the `refuse` job's script and requires a
+non-zero exit and an error naming the ref), to keeping `decide` on `main`, and
+to refusing a commit whose `check` did not succeed (it runs the gate against a
+stubbed Actions API with a failed, an empty and a successful run set), and to
+installing go alone through the setup action's `tools` input.
 
 ## The integration stack
 

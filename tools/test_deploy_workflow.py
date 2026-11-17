@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Cases for .github/workflows/deploy.yml and the setup action it uses.
 
-The workflow ships the tip of main and nothing else. A dispatch on another ref
-must fail loudly rather than end with every job skipped, and the job that
-deploys installs go alone. The cases read the workflow text, run the refusal
-script the way the runner does, and hold the conditions that keep the other
+The workflow is dispatched by hand, ships the tip of main and nothing else, and
+only once that commit's check succeeded. A dispatch on another ref must fail
+loudly rather than end with every job skipped, and the job that deploys installs
+go alone. The cases read the workflow text, run the refusal and check-gate
+scripts the way the runner does, and hold the conditions that keep the other
 jobs on main.
 
 Stdlib-only (unittest, subprocess). Run directly:
@@ -56,6 +57,22 @@ def run_script_of(block: str) -> str:
     """The body of the first block-scalar `run:` in a job."""
     lines = block.splitlines()
     start = next(i for i, line in enumerate(lines) if re.match(r"^\s+run: \|\s*$", line))
+    return script_from(lines, start)
+
+
+def step_block(job: str, name: str) -> str:
+    """The lines of one `- name:` step in a job, up to the next step."""
+    lines = job.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {name}")
+    end = next(
+        (i for i in range(start + 1, len(lines)) if re.match(r"^\s+- name: ", lines[i])),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
+def script_from(lines: list[str], start: int) -> str:
+    """The body of the block-scalar `run:` whose header is at `start`."""
     indent = len(lines[start]) - len(lines[start].lstrip())
     body: list[str] = []
     for line in lines[start + 1 :]:
@@ -63,6 +80,13 @@ def run_script_of(block: str) -> str:
             break
         body.append(line[indent + 2 :] if line.strip() else "")
     return "\n".join(body) + "\n"
+
+
+def run_script_of_step(step: str) -> str:
+    """The body of the first block-scalar `run:` in a step."""
+    lines = step.splitlines()
+    start = next(i for i, line in enumerate(lines) if re.match(r"^\s+run: \|\s*$", line))
+    return script_from(lines, start)
 
 
 class TestADispatchOutsideMainFails(unittest.TestCase):
@@ -102,12 +126,90 @@ class TestADispatchOutsideMainFails(unittest.TestCase):
         self.assertNotIn("${{", run_script_of(self.refuse))
 
     def test_decide_still_requires_main_for_a_dispatch(self) -> None:
-        condition = condition_of(job_block(self.text, "decide"))
-        self.assertIn(
+        self.assertEqual(
             "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'",
-            condition,
+            condition_of(job_block(self.text, "decide")),
         )
-        self.assertIn("github.event_name == 'workflow_run'", condition)
+
+    def test_nothing_runs_the_workflow_but_a_dispatch(self) -> None:
+        # A push must not deploy; only a hand dispatch on main may.
+        self.assertNotIn("\n  workflow_run:", self.text)
+        on_block = re.search(r"(?ms)^on:\n(.*?)(?=^\S)", self.text)
+        self.assertIsNotNone(on_block, "no on: block")
+        self.assertEqual("workflow_dispatch:", on_block.group(1).strip())
+
+
+class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
+    def setUp(self) -> None:
+        self.text = WORKFLOW.read_text(encoding="utf-8")
+        self.decide = job_block(self.text, "decide")
+
+    def run_gate(self, fixture: str) -> subprocess.CompletedProcess[str]:
+        """Run the check-gate script against a stubbed Actions API."""
+        with tempfile.TemporaryDirectory() as scratch:
+            stub = pathlib.Path(scratch)
+            (stub / "curl").write_text('#!/bin/sh\ncat "${FIXTURE}"\n', encoding="utf-8")
+            (stub / "curl").chmod(0o755)
+            payload = stub / "payload.json"
+            payload.write_text(fixture, encoding="utf-8")
+            env = {
+                "PATH": f"{stub}{os.pathsep}{os.environ['PATH']}",
+                "FIXTURE": str(payload),
+                "COMMIT": "0123456789abcdef",
+                "GITHUB_REPOSITORY": "owner/repo",
+                "GITHUB_API_URL": "https://api.github.com",
+                "GITHUB_TOKEN": "token",
+            }
+            script = run_script_of_step(
+                step_block(self.decide, "Refuse a commit whose check did not succeed")
+            )
+            return subprocess.run(
+                ["bash", "-e", "-c", script],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+    def test_the_workflow_may_read_the_check_runs(self) -> None:
+        permissions = re.search(r"(?ms)^permissions:\n(.*?)(?=^\S)", self.text)
+        self.assertIsNotNone(permissions, "no permissions block")
+        self.assertIn("actions: read", permissions.group(1))
+
+    def test_the_gate_reads_the_runs_for_the_dispatched_commit(self) -> None:
+        script = run_script_of_step(
+            step_block(self.decide, "Refuse a commit whose check did not succeed")
+        )
+        self.assertIn("actions/workflows/ci.yml/runs?head_sha=${COMMIT}", script)
+        self.assertIn("Authorization: Bearer ${GITHUB_TOKEN}", script)
+        self.assertIn("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", self.decide)
+
+    def test_a_successful_check_lets_the_run_through(self) -> None:
+        result = self.run_gate(
+            '{"workflow_runs":[{"conclusion":"failure"},{"conclusion":"success"}]}'
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_a_failed_check_refuses_the_run(self) -> None:
+        result = self.run_gate(
+            '{"workflow_runs":[{"conclusion":"failure"},'
+            '{"conclusion":null,"status":"in_progress"}]}'
+        )
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "its check workflow runs are failure, in_progress;",
+            result.stdout,
+        )
+
+    def test_a_commit_with_no_check_run_refuses_the_run(self) -> None:
+        result = self.run_gate('{"workflow_runs":[]}')
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "::error::deploy requires a successful check run for 0123456789abcdef: "
+            "its check workflow runs are none;",
+            result.stdout,
+        )
 
     def test_no_job_but_refuse_runs_for_a_dispatch_off_main(self) -> None:
         # deploy follows decide, which a dispatch off main does not satisfy.

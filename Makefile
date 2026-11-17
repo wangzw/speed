@@ -494,9 +494,9 @@ dev: ## Run the demo locally: vite dev server plus the default build under air
 # The fly leg releases the demo program to Fly.io. It is deliberately not
 # part of `check`: it needs a Fly account and the FLY_API_TOKEN secret (a secret
 # of the workflow's `production` environment), and the workflow that calls it
-# (.github/workflows/deploy.yml) runs it only for the commit at the tip of main:
-# the one `check` passed on a push to main, or the one a manual dispatch from
-# main names. flyctl is deployment machinery rather than a build input, so
+# (.github/workflows/deploy.yml) is dispatched by hand on main and runs it only
+# for the tip commit and only when that commit's `check` succeeded. flyctl is
+# deployment machinery rather than a build input, so
 # .mise.toml does not pin it; the workflow installs the pinned version and this
 # target calls what is on PATH.
 #

@@ -846,26 +846,30 @@ because the operations listener is not a service; top-level checks report
 Machine health and gate no routing.
 
 **Deploying.** `.github/workflows/deploy.yml` has a `refuse` job, a `decide` job
-and a `deploy` job. `decide` runs when the `check` workflow has completed successfully for a
-push to `main`, and on a manual dispatch on `main`; a dispatch does not wait
-for `check`. A dispatch on any other ref runs only a `refuse` job, which fails
-with an error naming the ref and asking for a dispatch on `main`; `decide` and
-`deploy` do not run for it, so the run ends red rather than skipped. `decide`
-resolves the commit to deploy (the completed `check` run's head commit, or the
-dispatched commit) and compares it with the current tip of `main`, which it
-reads from the public origin. It has no secret, no environment and no
-concurrency group. When `main` no longer points at that commit it ends with a
-notice, so a queued run does not put an older commit over a newer one.
+and a `deploy` job, and runs only when dispatched by hand. A dispatch on `main`
+ships the commit it was dispatched on. A dispatch on any other ref runs only the
+`refuse` job, which fails with an error naming the ref and asking for a dispatch
+on `main`; `decide` and `deploy` do not run for it, so the run ends red rather
+than skipped.
 
-Apart from a dispatch on `main`, the tip of `main` is deployed only by the run
-that follows a successful push-triggered `check` of that very commit. A tip
-whose push-triggered `check` failed, was cancelled or was replaced in its
-concurrency group stays undeployed, and a commit pushed with `[skip ci]` gets no
-`check` at all. Such a tip is deployed when its push-triggered `check` is re-run
-and passes (a `[skip ci]` commit has no run to re-run), when a later push
-passes `check`, or when `deploy` is dispatched on `main`.
+Nothing deploys on a push. `decide` requires the `check` workflow to have a
+completed successful run for the dispatched commit, which it lists through the
+Actions API with the workflow's automatic token (the workflow declares `actions:
+read`); a commit with no check run, a check still running, or any conclusion
+other than success fails the run with an error naming the runs it found. It then
+compares the commit with the current tip of `main`, which it reads from the
+public origin. It has no deploy secret, no environment and no concurrency group.
+When `main` no longer points at that commit it ends with a notice, so a queued
+run does not put an older commit over a newer one.
 
-`deploy` runs only when `decide` found the commit at the tip. The `deploy`
+A tip whose check failed, was cancelled or was replaced in its concurrency group
+is deployed by re-running that push-triggered `check` and then dispatching
+`deploy` on `main` once it passes. A commit pushed with `[skip ci]` gets no
+`check` at all, so it is deployed after `check` is dispatched on `main` for it
+and passes, and then `deploy` is dispatched on `main`.
+
+`deploy` runs only when `decide` found the commit at the tip and its check
+passed. The `deploy`
 concurrency group is declared on this job, so only a run whose commit `decide`
 found at the tip can take a place in it and replace a waiting deploy. Its first
 step reads the tip again, because the job may have waited behind a running
