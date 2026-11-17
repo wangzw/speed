@@ -16,9 +16,11 @@ default, read from `test.setTimeout`, `testInfo.setTimeout`,
 `test.info().setTimeout`, `configure({ asyncUtilTimeout })`, an `it.each`
 table or tagged template, and the usual options objects. The exceptions are
 pinned too: saving and restoring the process width is not a probe (whatever
-its argument, and even with two same-named saves in one file), a fixed width
-or a range-table width is not a probe, a case budget of 0 means no limit, a
-token named in a comment or a string is prose, an apostrophe inside a regex
+its argument; two saves that share a name inside one top-level function are
+judged together, so a clean one is reported when its sibling escapes), a
+fixed width or a range-table width is not a probe, a case budget of 0 means
+no limit, a token named in a comment or a string is prose, an apostrophe
+inside a regex
 is not a string delimiter, a division is not a regex, an `it.each` table is
 not its first argument read as a budget, and a wait that is not a Testing
 Library query is not a case budget. The project's own `waitForCondition`

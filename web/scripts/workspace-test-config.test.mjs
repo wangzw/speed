@@ -423,8 +423,8 @@ describe('workspace test configuration', () => {
 
   it('keeps the async budget at or above its floor', () => {
     // Both copies carry the constant by hand; each is held to the floor
-    // unscaled, like the preset's test budget, and the floor is the one
-    // the file names rather than a constant of the guard's own.
+    // unscaled, like the preset's test budget. The floor compared against is
+    // the one the floor file names.
     expect(asyncBudgetsBelowFloor(TIME_FLOORS)).toEqual([])
     const setups = [
       join(webRoot, 'test-utils/src/setup.ts'),

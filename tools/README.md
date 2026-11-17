@@ -288,10 +288,10 @@ numeric budget is a literal or a constant arithmetic expression
 (`it.each(range(5))`) is not read as its first argument. Playwright's
 `test.setTimeout`, `testInfo.setTimeout`, `test.info().setTimeout` and
 `test.describe.configure({ timeout })` are read against the Playwright
-config's top-level `timeout`, which is found by its position in the config
-object rather than by indentation. Assertion, element and retry waits that
-are not Testing Library queries are not case limits and are left alone, and
-Go has no declared case budget to read.
+config's top-level `timeout`, found by its brace depth: a `timeout` inside
+`use`, `expect` or a project sits deeper and is skipped. Assertion, element
+and retry waits that are not Testing Library queries are not case limits and
+are left alone, and Go has no declared case budget to read.
 
 The shared defaults are read from the tree: `SHARED_TIMEOUT_MS` in
 `web/vitest.shared.ts`, `ASYNC_UTIL_TIMEOUT_MS` in

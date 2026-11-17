@@ -241,11 +241,13 @@ EACH_TAG_TEMPLATE = re.compile(
 # a waitForOptions object whose `timeout` is the shared async budget.
 # `waitForCondition` is the project's own wrapper in web/test-utils/src/wait.ts:
 # it passes `Math.max(options.timeout ?? 0, asyncUtilTimeout)`, so a caller's
-# value cannot lower the budget and its timeout is exempt. The lookahead makes
-# that exemption explicit rather than an accident of the name, and the gate
-# asserts the premise on every run (`wait_condition_takes_larger_timeout`).
+# value cannot lower the budget and its timeout is exempt. The exemption is a
+# consequence of the name: `waitFor` matched only when a parenthesis follows,
+# and `waitForCondition` continues with a word character there, so this rule
+# never reads it. The gate asserts the premise on every run
+# (`wait_condition_takes_larger_timeout`).
 ASYNC_WAIT_CALL = re.compile(
-    r"\b(?:findBy|findAllBy)\w+\s*\(|\bwaitFor(?!\w)\s*\("
+    r"\b(?:findBy|findAllBy)\w+\s*\(|\bwaitFor\s*\("
     r"|\bwaitForElementToBeRemoved\s*\("
 )
 
