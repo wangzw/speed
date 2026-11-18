@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Cases for starters/demo/deploy/redeploy.sh.
 
-The script keeps a deploy's data only when the machine checks pass, falls back
-to the public /healthz probe when they cannot be read, and rebuilds the volume
-otherwise. These cases run the real script against stand-ins for `flyctl`,
+The script judges health three ways: it keeps a deploy's data when the machine
+checks pass (healthy), rebuilds the volume when a started machine's check stays
+failing (unhealthy), and destroys nothing when it cannot tell (indeterminate).
+A stopped machine is woken and read again, and before it destroys anything the
+script re-reads the machine and volume lists, once before the confirmation and
+once after it. These cases run the real script against stand-ins for `flyctl`,
 `make`, `curl` and `python3` placed first on PATH. Every stand-in logs its
 arguments and answers from a control file, so a case chooses each machine's
 state, each check's status, the deploy command's exit code and the probe's
@@ -59,6 +62,8 @@ def checks(config):
         return []
     if mode == "by_make":
         healthy = succeeded_deploys() >= 1
+    elif mode == "crit_then_healthy":
+        healthy = succeeded_deploys() >= 2
     else:
         healthy = mode == "healthy"
     status = "passing" if healthy else "critical"
@@ -66,6 +71,18 @@ def checks(config):
         {"name": "servicecheck-00-http-8080", "status": config.get("service_status", status)},
         {"name": "ready", "status": config.get("ready_status", status)},
     ]
+
+
+def machine_state(config, machine_id):
+    mode = config.get("machine_state", "started")
+    if mode != "stopped":
+        return mode
+    path = os.path.join(os.environ["STUB_STATE"], "started-machines")
+    started = []
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as handle:
+            started = [line.strip() for line in handle if line.strip()]
+    return "started" if machine_id in started else "stopped"
 
 
 argv = sys.argv[1:]
@@ -81,16 +98,32 @@ if argv[0] in ("machine", "machines") and "list" in argv:
             log(argv, 1)
             sys.exit(1)
         ids = config.get("machine_ids") or [config.get("machine_id", "m-1")]
-        machines = [{
-            "id": machine_id,
-            "name": "demo",
-            "state": config.get("machine_state", "started"),
-            "checks": checks(config),
-        } for machine_id in ids]
+        machines = []
+        for machine_id in ids:
+            machine = {
+                "name": "demo",
+                "state": machine_state(config, machine_id),
+                "checks": checks(config),
+            }
+            if not config.get("machines_omit_id"):
+                machine["id"] = machine_id
+            machines.append(machine)
         print(json.dumps(machines))
         log(argv, 0)
         sys.exit(0)
     print("ID\tSTATE")
+    log(argv, 0)
+    sys.exit(0)
+
+if argv[0] in ("machine", "machines") and "start" in argv:
+    machine_id = argv[2] if len(argv) > 2 else ""
+    if machine_id in config.get("machine_start_fail_ids", []):
+        print("error: the machine start failed", file=sys.stderr)
+        log(argv, 1)
+        sys.exit(1)
+    path = os.path.join(os.environ["STUB_STATE"], "started-machines")
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(machine_id + "\n")
     log(argv, 0)
     sys.exit(0)
 
@@ -101,10 +134,14 @@ if argv[0] == "status":
 
 if argv[0] == "volumes" and "list" in argv:
     if "--json" in argv:
-        volumes = [{
-            "id": config.get("volume_id", "vol-1"),
-            "name": config.get("volume_name", "speed_demo_data"),
-        }]
+        if config.get("volumes_list_json_fail"):
+            print("error: the volumes API did not answer", file=sys.stderr)
+            log(argv, 1)
+            sys.exit(1)
+        volume = {"name": config.get("volume_name", "speed_demo_data")}
+        if not config.get("volumes_omit_id"):
+            volume["id"] = config.get("volume_id", "vol-1")
+        volumes = [volume]
         print(json.dumps(volumes))
     else:
         print("ID\tNAME")
@@ -459,32 +496,32 @@ class RedeployScriptTest(unittest.TestCase):
                 self.assertTrue(probes)
                 self.assertTrue(any("/healthz" in " ".join(argv) for argv in probes))
 
-    def test_public_probe_not_200_enters_the_rebuild_confirmation(self):
+    def test_a_public_probe_that_is_not_200_is_indeterminate(self):
         self.harness.configure(machines="unreadable-nochecks", curl_codes=[503])
-        result = self.harness.run(stdin="no\n")
+        result = self.harness.run()
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.harness.rebuild_calls(), [])
         self.assertIn("falling back to the public probe", result.stdout)
         self.assertIn("answered 503", result.stdout)
         self.assertNotIn("health via public probe", result.stdout)
         self.assertNotIn("nothing was cleared", result.stdout)
-        self.assertIn('type "rebuild"', result.stdout)
-        self.assertIn("stopped: nothing was destroyed", result.stdout)
+        self.assertIn("cannot determine health", result.stderr)
+        self.assertNotIn('type "rebuild"', result.stdout)
         probes = self.harness.by_program("curl")
         self.assertTrue(probes)
         self.assertTrue(any("/healthz" in " ".join(argv) for argv in probes))
         self.assertEqual(len(self.harness.by_program("make")), 1)
 
-    def test_a_machine_that_is_still_starting_is_not_healthy(self):
-        self.harness.configure(machines="healthy", machine_state="starting")
-        result = self.harness.run(stdin="no\n")
+    def test_a_machine_that_never_starts_is_indeterminate(self):
+        self.harness.configure(
+            machines="healthy", machine_state="starting", curl_codes=["000"]
+        )
+        result = self.harness.run()
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.harness.rebuild_calls(), [])
         self.assertIn("machine checks: m-1 is starting", result.stdout)
         self.assertNotIn("healthy via machine checks", result.stdout)
-        self.assertEqual(self.harness.by_program("curl"), [])
-        self.assertIn('type "rebuild"', result.stdout)
-        self.assertIn("stopped: nothing was destroyed", result.stdout)
+        self.assertIn("cannot determine health", result.stderr)
         self.assertEqual(len(self.harness.by_program("make")), 1)
 
     def test_each_declared_check_gates_health_on_its_own(self):
@@ -511,6 +548,145 @@ class RedeployScriptTest(unittest.TestCase):
                 self.assertIn('type "rebuild"', result.stdout)
                 self.assertIn("stopped: nothing was destroyed", result.stdout)
                 self.assertEqual(len(self.harness.by_program("make")), 1)
+
+    def test_a_stopped_machine_is_woken_then_judged_healthy(self):
+        self.harness.configure(machines="healthy", machine_state="stopped")
+        result = self.harness.run(extra_env={"HEALTH_TIMEOUT": "5"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.harness.rebuild_calls(), [])
+        self.assertEqual(self.harness.by_program("curl"), [])
+        starts = [
+            argv
+            for argv in self.harness.by_program("flyctl")
+            if argv[:2] == ["machine", "start"]
+        ]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(starts[0][2], "m-1")
+        self.assertIn("woke the stopped machines", result.stdout)
+        self.assertIn("healthy via machine checks", result.stdout)
+
+    def test_a_machine_that_cannot_be_woken_is_indeterminate(self):
+        self.harness.configure(
+            machines="healthy",
+            machine_state="stopped",
+            machine_start_fail_ids=["m-1"],
+        )
+        result = self.harness.run(extra_env={"HEALTH_TIMEOUT": "5"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot determine health", result.stderr)
+        self.assertIn("could not wake the stopped machines", result.stdout)
+        self.assertEqual(self.harness.rebuild_calls(), [])
+
+    def test_a_network_failure_is_indeterminate_and_destroys_nothing(self):
+        self.harness.configure(machines="unreadable-fail", curl_codes=["000"])
+        result = self.harness.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot determine health", result.stderr)
+        self.assertEqual(self.harness.rebuild_calls(), [])
+        destroys = [
+            entry["argv"]
+            for entry in self.harness.calls()
+            if entry["program"] == "flyctl"
+            and (
+                entry["argv"][:2] in (["machine", "destroy"], ["machines", "destroy"])
+                or entry["argv"][:2] == ["volumes", "destroy"]
+            )
+        ]
+        self.assertEqual(destroys, [])
+        self.assertIn("answered 000", result.stdout)
+
+    def test_a_started_machine_with_failing_checks_reaches_the_rebuild(self):
+        self.harness.configure(make_exit_codes=[0, 0], machines="crit_then_healthy")
+        result = self.harness.run("--yes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.harness.calls()
+
+        def first(predicate):
+            for index, entry in enumerate(calls):
+                if predicate(entry):
+                    return index
+            return -1
+
+        destroy_machine = first(
+            lambda entry: entry["program"] == "flyctl"
+            and entry["argv"][:2] in (["machine", "destroy"], ["machines", "destroy"])
+        )
+        destroy_volume = first(
+            lambda entry: entry["program"] == "flyctl"
+            and entry["argv"][:2] == ["volumes", "destroy"]
+        )
+        create_volume = first(
+            lambda entry: entry["program"] == "flyctl"
+            and entry["argv"][:2] == ["volumes", "create"]
+        )
+        self.assertGreater(destroy_machine, -1)
+        self.assertGreater(destroy_volume, destroy_machine)
+        self.assertGreater(create_volume, destroy_volume)
+        self.assertEqual(len(self.harness.by_program("make")), 2)
+        self.assertIn("machine checks not passing yet", result.stdout)
+        self.assertIn("volume rebuilt", result.stdout)
+
+    def test_a_failed_cloud_state_read_stops_before_destroying(self):
+        self.harness.configure(
+            machines="healthy",
+            ready_status="critical",
+            volumes_list_json_fail=True,
+        )
+        result = self.harness.run("--yes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot determine cloud state", result.stderr)
+        self.assertEqual(self.harness.rebuild_calls(), [])
+        destroys = [
+            entry["argv"]
+            for entry in self.harness.calls()
+            if entry["program"] == "flyctl"
+            and ("destroy" in entry["argv"])
+            and entry["argv"][0] in ("machine", "machines", "volumes")
+        ]
+        self.assertEqual(destroys, [])
+
+    def test_a_list_entry_without_id_stops_before_destroying(self):
+        # A machines or volumes list that parses but has an entry with no id
+        # cannot name what to destroy. The id fetch before each destroy must
+        # fail and stop the run: a machine entry without an id leaves every
+        # machine undestroyed, and a volume entry without an id leaves the
+        # volume undestroyed and unrecreated.
+        cases = (
+            (
+                "machines_omit_id",
+                "cannot determine cloud state: the machine list has no ids",
+                None,
+            ),
+            (
+                "volumes_omit_id",
+                "cannot determine cloud state: the volume list has no ids",
+                (("volumes", "destroy"), ("volumes", "create")),
+            ),
+        )
+        for setting, reason, guarded in cases:
+            with self.subTest(setting=setting):
+                self.harness = Harness()
+                self.addCleanup(self.harness.directory.cleanup)
+                self.harness.install("flyctl", FLYCTL_STUB)
+                self.harness.install("make", MAKE_STUB)
+                self.harness.install("curl", CURL_STUB)
+                self.harness.install("python3", PYTHON_STUB)
+                settings = {"make_exit_codes": [1, 0], "machines": "by_make"}
+                settings[setting] = True
+                self.harness.configure(**settings)
+
+                result = self.harness.run("--yes")
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(reason, result.stderr)
+                if guarded is None:
+                    self.assertEqual(self.harness.rebuild_calls(), [])
+                else:
+                    writes = [
+                        argv
+                        for argv in self.harness.by_program("flyctl")
+                        if tuple(argv[:2]) in guarded
+                    ]
+                    self.assertEqual(writes, [])
 
     def test_the_redeploy_waits_for_health_after_the_second_deploy(self):
         self.harness.configure(make_exit_codes=[1, 0], machines="by_make")

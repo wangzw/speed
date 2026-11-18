@@ -97,18 +97,28 @@ step carrying no `continue-on-error` and only the tip guard that lets it run,
 and to installing go alone through the setup action's `tools` input.
 
 `test_demo_redeploy_script.py` is likewise no script's suite: it holds
-`starters/demo/deploy/redeploy.sh` to keeping the data when the machine checks
-pass, to falling back to the public `/healthz` probe only when they cannot be
-read, and to rebuilding the volume otherwise. It drives the real script with
-stand-ins for `flyctl`, `make`, `curl` and `python3` first on `PATH`, each
-logging its arguments and answering from a control file, so the cases cover a
-healthy deploy, a failed deploy command whose checks still pass, the health
-wait after the second deploy, a failed second deploy, a destroy that fails
-midway and reports what was done, the confirmation refusal, a typed
-`rebuild` acceptance, `--yes` rebuilding in order, fly.toml values overriding
-the built-in defaults, environment values overriding both, `--dry-run`,
-`--help` and an unknown argument without a network, a cloud account or a real
-deployment.
+`starters/demo/deploy/redeploy.sh` to a three-valued health verdict. It keeps
+the data when the machine checks pass (healthy), wakes a machine that
+auto-stop left stopped and reads it again, falls back to the public `/healthz`
+probe only when the checks cannot be read, rebuilds the volume only when a
+started machine's check stays failing (unhealthy), and destroys nothing when
+it cannot tell (indeterminate: flyctl failed, the output was not usable, a
+required check was absent, a wake failed, or the probe did not answer 200). It
+also holds the pre-destruction gate: the script re-reads the machine and volume
+lists once before the confirmation and once after, and reports "cannot
+determine cloud state" instead of destroying when either read fails. It drives
+the real script with stand-ins for `flyctl`, `make`, `curl` and `python3` first
+on `PATH`, each logging its arguments and answering from a control file, so the
+cases cover a healthy deploy, a failed deploy command whose checks still pass,
+a stopped machine that wakes to passing, a wake that fails, a network failure
+with a 000 probe that destroys nothing, a started machine with a failing check
+that reaches the rebuild, a failed cloud-state read that stops before
+destroying, the health wait after the second deploy, a failed second deploy, a
+destroy that fails midway and reports what was done, the confirmation refusal,
+a typed `rebuild` acceptance, `--yes` rebuilding in order, fly.toml values
+overriding the built-in defaults, environment values overriding both,
+`--dry-run`, `--help` and an unknown argument without a network, a cloud
+account or a real deployment.
 
 ## The integration stack
 

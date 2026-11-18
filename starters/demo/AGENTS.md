@@ -894,23 +894,34 @@ starts, and the secret is added by hand afterwards.
 `deploy/redeploy.sh` is for the case a deploy cannot repair: the new version
 crash-loops against the existing database, `flyctl ssh console` cannot attach,
 and the volume therefore cannot be emptied from inside. The script deploys
-first and keeps the data when the new deployment is healthy: every machine is
-started and both checks `fly.toml` declares pass within five minutes, read from
-`flyctl machines list --json` — the named `ready` check on port 8083 and the
-service check on port 8080 (`servicecheck-*`, which flyctl generates from
-`[[http_service.checks]]`). Only when those checks cannot be read does the
-script fall back to polling `GET /healthz` on the public address, and its output
-says which route each attempt used. When the deployment is not healthy,
-including when the deploy command itself failed and may have taken effect in
-part, it destroys every Machine, destroys the volume and creates a fresh one,
-then deploys again; the entrypoint builds the database on first boot. The final
-`ssh console` commands print evidence only: a failure there is reported and does
-not fail a rebuild that already succeeded. The rebuild is destructive: the
-database, the token signing key under `/data/var` and the object store under
-`/data/objects` live on that volume, so all three are lost and every session is
-invalidated. Unless `--yes` is given, the script prints that list and waits for
-the word `rebuild`; `--dry-run` prints the commands and the decision logic and
-runs nothing.
+first and keeps the data when the new deployment is healthy, judged three ways.
+Health is healthy when every machine is started and both checks `fly.toml`
+declares pass within five minutes, read from `flyctl machines list --json` —
+the named `ready` check on port 8083 and the service check on port 8080
+(`servicecheck-*`, which flyctl generates from `[[http_service.checks]]`). A
+machine `auto_stop_machines` left stopped is woken with `flyctl machine start`
+and read again, so a stopped machine is not mistaken for an unhealthy one. Only
+when the checks cannot be read does the script fall back to polling
+`GET /healthz` on the public address, and its output says which route each
+attempt used. Health is unhealthy only when a started machine's required check
+is still warning or critical after the window; that, and nothing else, leads to
+the rebuild. Health is indeterminate when flyctl failed, its output was not
+usable, a required check was absent, a stopped machine could not be woken, or
+the public probe did not answer 200; the script then ends the run with "cannot
+determine health" and destroys nothing, so a network failure can never take a
+healthy deployment's volume. Before it destroys anything the script re-reads
+the machine and volume lists, once before the confirmation and once after it; a
+read that fails ends the run with "cannot determine cloud state" and destroys
+nothing. When the deployment is unhealthy — including when the deploy command
+itself failed and may have taken effect in part — it destroys every Machine,
+destroys the volume and creates a fresh one, then deploys again; the entrypoint
+builds the database on first boot. The final `ssh console` commands print
+evidence only: a failure there is reported and does not fail a rebuild that
+already succeeded. The rebuild is destructive: the database, the token signing
+key under `/data/var` and the object store under `/data/objects` live on that
+volume, so all three are lost and every session is invalidated. Unless `--yes`
+is given, the script prints that list and waits for the word `rebuild`;
+`--dry-run` prints the commands and the decision logic and runs nothing.
 
 The script reads its defaults from `fly.toml` (`app`, `primary_region` and the
 mounts entry's `source`) and takes `APP`, `REGION`, `VOLUME`, `BASE`,

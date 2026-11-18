@@ -3,17 +3,36 @@
 # start against the existing database.
 #
 # Order: deploy first and keep the data when the new version is healthy. Health
-# is read from `flyctl machines list --json`: every machine must be started,
-# and both checks fly.toml declares must pass -- the named `ready` check and
-# the service check flyctl generates from [[http_service.checks]], named
-# servicecheck-* (port 8080 here). Only when those checks cannot be read
-# (flyctl fails, the output is not JSON, or a required check is absent) does
-# the script fall back to polling GET /healthz on the public address. A deploy
-# that fails or does not become healthy is rebuilt, because a failed deploy can
-# still leave part of itself in place; only health ends the run with the data
-# untouched. The rebuild destroys the machine, destroys the volume, creates a
-# fresh one, and deploys again; the entrypoint builds the database on first
-# boot. Nothing here needs ssh, so a crash loop cannot block the repair.
+# is a three-valued verdict, not a boolean:
+#
+#   healthy        every machine is started and both checks pass, or the public
+#                  /healthz probe answers 200 when the checks cannot be read.
+#   unhealthy      a started machine's required check is still warning or
+#                  critical after the poll window.
+#   indeterminate  health could not be determined: flyctl failed, its output
+#                  was not usable, a required check was absent, a machine was
+#                  in a state other than started or stopped, a stopped machine
+#                  could not be woken, or the public probe did not answer 200.
+#
+# Only `unhealthy` leads to the rebuild. `indeterminate` ends the run with
+# "cannot determine health" and nothing is destroyed, so a network failure can
+# never take a healthy deployment's volume with it.
+#
+# Health is read from `flyctl machines list --json`: the named `ready` check
+# and the service check flyctl generates from [[http_service.checks]], named
+# servicecheck-* (port 8080 here). A machine fly.toml's auto_stop_machines may
+# have stopped is woken with `flyctl machine start` and read again, so a stopped
+# machine is not mistaken for an unhealthy one. When the checks cannot be read
+# the script falls back to polling GET /healthz on the public address.
+#
+# Before it destroys anything the script reads the machine and volume lists
+# again, twice: once before the confirmation and once after it. A read that
+# fails ends the run with "cannot determine cloud state" and nothing is
+# destroyed.
+#
+# The rebuild destroys the machine, destroys the volume, creates a fresh one,
+# and deploys again; the entrypoint builds the database on first boot. Nothing
+# here needs ssh, so a crash loop cannot block the repair.
 #
 # The rebuild is destructive: the volume carries the database, the token
 # signing key (/data/var) and the object store (/data/objects), so every
@@ -42,14 +61,31 @@ Options:
 Steps:
   1. print the current state: flyctl status, flyctl volumes list
   2. make -C <repo> fly, then poll the machine checks up to five minutes:
-     every machine must be started, and the ready check and the service
-     check (servicecheck-*) must pass. Only when those checks
-     cannot be read does the script fall back to polling <base>/healthz.
-     A passing check ends the run and nothing is cleared, and a failed
-     deploy command is polled too because it can still take effect in part
-  3. destroy every machine, destroy the volume, create a fresh one
+     a machine stopped by auto_stop_machines is woken with flyctl machine
+     start and read again, and every machine must be started with the ready
+     check and the service check (servicecheck-*) passing. Only when those
+     checks cannot be read does the script fall back to polling <base>/healthz.
+     The verdict is one of three values:
+       healthy        end the run and clear nothing
+       unhealthy      a started machine's check is still warning or critical,
+                      so continue to step 3
+       indeterminate  flyctl failed, its output was not usable, a required
+                      check was absent, a machine was in a state other than
+                      started or stopped, a stopped machine could not be
+                      woken, or the public probe did not answer 200 -- end the
+                      run with "cannot determine health" and destroy nothing
+     A failed deploy command is polled too because it can still take effect
+     in part.
+  3. read the machine and volume lists again, once before the confirmation and
+     once after it; a read that fails ends the run with "cannot determine
+     cloud state" and destroys nothing, then destroy every machine, destroy
+     the volume and create a fresh one
   4. deploy again, wait for health, and read /data through flyctl ssh console
      as evidence
+
+Only an unhealthy deployment is rebuilt. A network failure, an unreadable
+list or a woken machine that never comes up ends the run and never destroys
+the volume.
 
 The rebuild is destructive: the database, the token signing key (/data/var)
 and the object store (/data/objects) on the volume are lost, and every session
@@ -192,41 +228,45 @@ HEALTH_ROUTE=none
 say() { printf '\n== %s\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
 
-# One verdict per machines list: healthy, "unhealthy: <reasons>", or
-# unreadable. The named check is the top-level [checks.ready] block in
-# fly.toml; the service check is the one flyctl generates from
-# [[http_service.checks]], named servicecheck-*. A machine list with neither
-# name, or with no checks at all, cannot judge health, so it reports
-# unreadable and the caller probes the public address.
+# One verdict per machines list: "healthy", "unhealthy: <reasons>",
+# "indeterminate: <reason>", or "stopped: <ids>". The named check is the
+# top-level [checks.ready] block in fly.toml; the service check is the one
+# flyctl generates from [[http_service.checks]], named servicecheck-*. A
+# machine that is not started and not stopped, a list with no checks at all, or
+# a list missing a required check cannot judge health, so it reports
+# indeterminate. A stopped machine reports its id so the caller can wake it and
+# read again; only a started machine with a failing check is unhealthy.
 MACHINE_HEALTH_PY='
 import json, sys
 
 try:
     machines = json.load(sys.stdin)
 except Exception:
-    print("unreadable")
+    print("indeterminate: the machines list is not JSON")
     raise SystemExit(0)
 
 if not isinstance(machines, list) or not machines:
-    print("unreadable")
+    print("indeterminate: the machines list is empty or is not a list")
     raise SystemExit(0)
 
-ready_seen = False
-service_seen = False
-readable = True
-reasons = []
+stopped = []
+started = []
 for machine in machines:
     if not isinstance(machine, dict):
-        print("unreadable")
+        print("indeterminate: a machine entry is not an object")
         raise SystemExit(0)
     ident = machine.get("id") or machine.get("name") or "?"
     state = machine.get("state") or ""
+    if state == "stopped":
+        stopped.append(ident)
+        continue
     if state != "started":
-        reasons.append("%s is %s" % (ident, state or "in an unknown state"))
+        print("indeterminate: %s is %s" % (ident, state or "in an unknown state"))
+        raise SystemExit(0)
     checks = machine.get("checks")
     if not isinstance(checks, list):
-        readable = False
-        continue
+        print("indeterminate: %s reports no checks" % ident)
+        raise SystemExit(0)
     ready_status = None
     service_status = None
     for check in checks:
@@ -239,26 +279,32 @@ for machine in machines:
         elif name.startswith("servicecheck-"):
             service_status = status
     if ready_status is None or service_status is None:
-        readable = False
-        continue
-    ready_seen = True
-    service_seen = True
+        print("indeterminate: %s is missing the ready or service check" % ident)
+        raise SystemExit(0)
+    started.append((ident, ready_status, service_status))
+
+if stopped:
+    print("stopped: " + " ".join(stopped))
+    raise SystemExit(0)
+
+reasons = []
+for ident, ready_status, service_status in started:
     if ready_status != "passing":
         reasons.append("%s: check ready is %s" % (ident, ready_status))
     if service_status != "passing":
         reasons.append("%s: the service check is %s" % (ident, service_status))
 
-if not readable or not ready_seen or not service_seen:
-    print("unreadable")
-elif reasons:
+if reasons:
     print("unhealthy: " + "; ".join(reasons))
 else:
     print("healthy")
 '
 
-# 0: every machine is started and both checks pass; 1: readable but not
-# healthy; 2: the checks cannot be read, so the caller falls back to the
-# public probe.
+# 0: every machine is started and both checks pass; 1: a started machine's
+# required check is not passing; 2: the checks cannot be read (flyctl failed,
+# the output was not usable, or a required check is absent); 3: a machine is
+# stopped, so its id is left in MACHINE_STOPPED_IDS to be woken and read again.
+MACHINE_STOPPED_IDS=""
 machine_health() {
   local json status verdict
   if ! json=$(flyctl machines list -a "$APP" --json 2>/dev/null); then
@@ -276,8 +322,13 @@ machine_health() {
       printf '  machine checks: every machine is started and both checks pass\n'
       return 0
       ;;
-    unreadable)
-      printf '  machine checks: no usable ready or service check in the machines list\n'
+    "stopped: "*)
+      MACHINE_STOPPED_IDS=${verdict#stopped: }
+      printf '  machine checks: stopped machines need waking: %s\n' "$MACHINE_STOPPED_IDS"
+      return 3
+      ;;
+    "indeterminate: "*)
+      printf '  machine checks: %s\n' "${verdict#indeterminate: }"
       return 2
       ;;
     *)
@@ -287,34 +338,62 @@ machine_health() {
   esac
 }
 
-# Health is judged from the machine checks. The public listener answers
-# /healthz from the frontend's fallback once the process serves: an
-# extensionless path is a client-side route, so the entry document answers
-# with 200. That probe runs only when the machine checks cannot be read, and
-# the output names the route each attempt used.
+# Wakes every machine id in $1. Non-zero when a wake call fails.
+wake_machines() {
+  local id
+  for id in $1; do
+    printf '  waking machine %s\n' "$id"
+    if ! flyctl machine start "$id" -a "$APP" >/dev/null 2>&1; then
+      printf '  waking machine %s failed\n' "$id"
+      return 1
+    fi
+  done
+  return 0
+}
+
+# Health is judged from the machine checks, with three outcomes:
+#   0  healthy: a machine check passed, or the probe answered 200
+#   1  unhealthy: the final attempt read a started machine with a failing check
+#   2  indeterminate: health could not be determined
+# The public listener answers /healthz from the frontend's fallback once the
+# process serves: an extensionless path is a client-side route, so the entry
+# document answers with 200. That probe runs only when the machine checks
+# cannot be read. Any attempt that is indeterminate (flyctl failed, the output
+# was not usable, a required check was absent, a wake failed, or the probe did
+# not answer 200) leaves the run indeterminate, so the caller never destroys on
+# a reading it could not take.
 health() {
-  local attempts=0 code deadline machine_status use_probe=0
+  local attempts=0 code deadline machine_status use_probe verdict=indeterminate
   deadline=$((SECONDS + HEALTH_TIMEOUT))
   while [ "$SECONDS" -lt "$deadline" ]; do
     attempts=$((attempts + 1))
-    if [ "$use_probe" -eq 0 ]; then
-      machine_status=0
-      machine_health || machine_status=$?
-      case $machine_status in
-        0)
-          printf '  attempt %d (%ds elapsed): healthy via machine checks\n' "$attempts" "$SECONDS"
-          HEALTH_ROUTE="machine checks"
-          return 0
-          ;;
-        2)
-          use_probe=1
-          printf '  attempt %d (%ds elapsed): falling back to the public probe %s/healthz\n' "$attempts" "$SECONDS" "$BASE"
-          ;;
-        *)
-          printf '  attempt %d (%ds elapsed): machine checks not passing yet\n' "$attempts" "$SECONDS"
-          ;;
-      esac
-    fi
+    use_probe=0
+    machine_status=0
+    machine_health || machine_status=$?
+    case $machine_status in
+      0)
+        printf '  attempt %d (%ds elapsed): healthy via machine checks\n' "$attempts" "$SECONDS"
+        HEALTH_ROUTE="machine checks"
+        return 0
+        ;;
+      1)
+        verdict=unhealthy
+        printf '  attempt %d (%ds elapsed): machine checks not passing yet\n' "$attempts" "$SECONDS"
+        ;;
+      3)
+        verdict=indeterminate
+        if wake_machines "${MACHINE_STOPPED_IDS:-}"; then
+          printf '  attempt %d (%ds elapsed): woke the stopped machines; reading again\n' "$attempts" "$SECONDS"
+        else
+          printf '  attempt %d (%ds elapsed): could not wake the stopped machines\n' "$attempts" "$SECONDS"
+        fi
+        ;;
+      *)
+        verdict=indeterminate
+        use_probe=1
+        printf '  attempt %d (%ds elapsed): falling back to the public probe %s/healthz\n' "$attempts" "$SECONDS" "$BASE"
+        ;;
+    esac
     if [ "$use_probe" -eq 1 ]; then
       code=$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 \
         "$BASE/healthz" || true)
@@ -323,13 +402,17 @@ health() {
         HEALTH_ROUTE="public probe"
         return 0
       fi
+      verdict=indeterminate
     fi
     if [ "$SECONDS" -ge "$deadline" ]; then
       break
     fi
     sleep "$HEALTH_INTERVAL"
   done
-  return 1
+  if [ "$verdict" = unhealthy ]; then
+    return 1
+  fi
+  return 2
 }
 
 STEP="startup"
@@ -351,6 +434,35 @@ die() {
   exit 1
 }
 
+# Reads the machine and volume lists, requiring both to answer with usable
+# JSON, and leaves them in MACHINES_JSON and VOLUMES_JSON for the destroy step.
+# Non-zero means the cloud state cannot be determined, so nothing may be
+# destroyed.
+MACHINES_JSON=""
+VOLUMES_JSON=""
+read_cloud_state() {
+  local machines volumes
+  if ! machines=$(flyctl machine list -a "$APP" --json 2>/dev/null); then
+    printf '  cloud state: flyctl machine list --json did not answer\n' >&2
+    return 1
+  fi
+  if ! volumes=$(flyctl volumes list -a "$APP" --json 2>/dev/null); then
+    printf '  cloud state: flyctl volumes list --json did not answer\n' >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$machines" | python3 -I -c 'import json, sys; json.load(sys.stdin)' >/dev/null 2>&1; then
+    printf '  cloud state: the machine list is not usable JSON\n' >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$volumes" | python3 -I -c 'import json, sys; json.load(sys.stdin)' >/dev/null 2>&1; then
+    printf '  cloud state: the volume list is not usable JSON\n' >&2
+    return 1
+  fi
+  MACHINES_JSON=$machines
+  VOLUMES_JSON=$volumes
+  return 0
+}
+
 say "settings"
 note "app:    $APP ($app_source)"
 note "region: $REGION ($region_source)"
@@ -366,12 +478,21 @@ if [ "$DRY_RUN" -eq 1 ]; then
 2/5 deploy the new version
      make -C $REPO fly
      poll flyctl machines list -a $APP --json every ${HEALTH_INTERVAL}s, within ${HEALTH_TIMEOUT}s:
-     every machine started, and the ready check and the service check
-     (servicecheck-*) passing
-     fall back to polling $BASE/healthz only when those checks cannot be read
-     a passing check ends the run and nothing is cleared; a failed make fly is
-     polled too, and no passing check continues to step 3
-3/5 confirm the rebuild
+     a machine stopped by auto_stop_machines is woken with flyctl machine start
+     and read again, and every machine started must show the ready check and
+     the service check (servicecheck-*) passing
+     fall back to polling $BASE/healthz with the public probe only when those
+     checks cannot be read
+     healthy ends the run and nothing is cleared; unhealthy (a started machine's
+     check is still warning or critical) continues to step 3; indeterminate
+     (flyctl failed, no usable output, a required check was absent, a wake
+     failed, or the probe did not answer 200) ends the run with "cannot
+     determine health" and destroys nothing; a failed make fly is polled too
+3/5 read the cloud state and confirm the rebuild
+     flyctl machine list -a $APP --json
+     flyctl volumes list -a $APP --json
+     both once before the confirmation and once after it; a read that fails
+     ends the run with "cannot determine cloud state" and destroys nothing
 EOF
   if [ "$ASSUME_YES" -eq 1 ]; then
     note "confirmation: skipped by --yes"
@@ -407,14 +528,25 @@ if ! make -C "$REPO" fly; then
   deploy_failed=1
   note "the deploy command failed; probing health anyway, since the deploy may have taken effect in part"
 fi
-if health; then
+health_status=0
+health || health_status=$?
+if [ "$health_status" -eq 0 ]; then
   say "done: the new version is healthy on the existing database (health via $HEALTH_ROUTE), nothing was cleared"
   exit 0
+fi
+if [ "$health_status" -eq 2 ]; then
+  die "cannot determine health: the machine checks and the public probe did not give a verdict; refusing to destroy anything"
 fi
 if [ "$deploy_failed" -eq 1 ]; then
   note "the deploy failed and the new version did not come up healthy"
 else
   note "the new version did not come up healthy on the existing database"
+fi
+
+STEP="reading the cloud state before the rebuild"
+say "re-reading the cloud state before the rebuild"
+if ! read_cloud_state; then
+  die "cannot determine cloud state; refusing to destroy anything"
 fi
 
 if [ "$ASSUME_YES" -ne 1 ]; then
@@ -432,12 +564,16 @@ if [ "$ASSUME_YES" -ne 1 ]; then
   fi
 fi
 
+say "re-reading the cloud state after the confirmation"
+if ! read_cloud_state; then
+  die "cannot determine cloud state; refusing to destroy anything"
+fi
+
 STEP="3/5 destroy every machine"
 say "3/5 destroy every machine (a volume cannot be destroyed while one uses it)"
-machine_ids=$(flyctl machine list -a "$APP" --json |
-  python3 -I -c 'import json, sys
+machine_ids=$(printf '%s\n' "$MACHINES_JSON" | python3 -I -c 'import json, sys
 for machine in json.load(sys.stdin):
-    print(machine["id"])')
+    print(machine["id"])') || die "cannot determine cloud state: the machine list has no ids"
 destroyed_machines=""
 if [ -z "$machine_ids" ]; then
   note "no machines are listed"
@@ -462,12 +598,11 @@ fi
 
 STEP="4/5 destroy the volume and create a fresh one"
 say "4/5 destroy the volume and create a fresh one"
-volume_ids=$(flyctl volumes list -a "$APP" --json |
-  python3 -I -c 'import json, sys
+volume_ids=$(printf '%s\n' "$VOLUMES_JSON" | python3 -I -c 'import json, sys
 name = sys.argv[1]
 for volume in json.load(sys.stdin):
     if volume["name"] == name:
-        print(volume["id"])' "$VOLUME")
+        print(volume["id"])' "$VOLUME") || die "cannot determine cloud state: the volume list has no ids"
 destroyed_volumes=""
 if [ -n "$volume_ids" ]; then
   while IFS= read -r id; do
@@ -495,7 +630,12 @@ say "5/5 deploy again so a new machine boots on the fresh volume"
 if ! make -C "$REPO" fly; then
   die "the deploy command failed after the volume was recreated"
 fi
-if ! health; then
+health_status=0
+health || health_status=$?
+if [ "$health_status" -eq 2 ]; then
+  die "cannot determine health on the fresh volume"
+fi
+if [ "$health_status" -ne 0 ]; then
   die "the new version did not become healthy on the fresh volume"
 fi
 if ! flyctl ssh console -a "$APP" -C "ls -l /data"; then
