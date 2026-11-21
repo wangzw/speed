@@ -93,6 +93,10 @@ if not argv:
 
 if argv[0] in ("machine", "machines") and "list" in argv:
     if "--json" in argv:
+        if config.get("machines_list_non_json"):
+            print("this is not a JSON machines list")
+            log(argv, 0)
+            sys.exit(0)
         if config.get("machines") == "unreadable-fail":
             print("error: the machines API did not answer", file=sys.stderr)
             log(argv, 1)
@@ -134,7 +138,15 @@ if argv[0] == "status":
 
 if argv[0] == "volumes" and "list" in argv:
     if "--json" in argv:
-        if config.get("volumes_list_json_fail"):
+        path = os.path.join(os.environ["STUB_STATE"], "volumes-json-count")
+        count = 0
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as handle:
+                count = int(handle.read().strip() or 0)
+        count += 1
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(str(count))
+        if count in config.get("volumes_list_json_fail_calls", []):
             print("error: the volumes API did not answer", file=sys.stderr)
             log(argv, 1)
             sys.exit(1)
@@ -366,6 +378,13 @@ class RedeployScriptTest(unittest.TestCase):
         self.harness.install("curl", CURL_STUB)
         self.harness.install("python3", PYTHON_STUB)
         self.harness.configure()
+
+    def volumes_list_json_calls(self):
+        return [
+            argv
+            for argv in self.harness.by_program("flyctl")
+            if argv[:2] == ["volumes", "list"] and "--json" in argv
+        ]
 
     def test_deploy_with_passing_checks_keeps_the_data(self):
         self.harness.configure(make_exit_codes=[0], machines="healthy")
@@ -647,24 +666,64 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("machine checks not passing yet", result.stdout)
         self.assertIn("volume rebuilt", result.stdout)
 
-    def test_a_failed_cloud_state_read_stops_before_destroying(self):
+    def test_a_failed_cloud_state_read_before_the_confirmation_stops_before_destroying(self):
+        # The first of the run's two volumes list --json reads fails, so the
+        # guard before the confirmation must end the run. Only the read-failure
+        # path prints the exact sentence below; the id guard prints a different
+        # one, so this assertion fails if read_cloud_state is skipped. The run
+        # is given "rebuild" on standard input, so the absence of the prompt
+        # and of the post-confirmation phase proves the run stopped before the
+        # confirmation rather than later.
         self.harness.configure(
             machines="healthy",
             ready_status="critical",
-            volumes_list_json_fail=True,
+            volumes_list_json_fail_calls=[1],
+        )
+        result = self.harness.run(stdin="rebuild\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "cannot determine cloud state; refusing to destroy anything",
+            result.stderr,
+        )
+        self.assertEqual(self.harness.rebuild_calls(), [])
+        self.assertEqual(len(self.volumes_list_json_calls()), 1)
+        self.assertNotIn('type "rebuild" to continue', result.stdout)
+        self.assertNotIn(
+            "re-reading the cloud state after the confirmation", result.stdout
+        )
+
+    def test_a_failed_cloud_state_read_after_the_confirmation_stops_before_destroying(self):
+        # The second read fails, after --yes skipped the confirmation, so the
+        # run must still stop before destroying anything.
+        self.harness.configure(
+            machines="healthy",
+            ready_status="critical",
+            volumes_list_json_fail_calls=[2],
         )
         result = self.harness.run("--yes")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("cannot determine cloud state", result.stderr)
+        self.assertIn(
+            "cannot determine cloud state; refusing to destroy anything",
+            result.stderr,
+        )
         self.assertEqual(self.harness.rebuild_calls(), [])
-        destroys = [
-            entry["argv"]
-            for entry in self.harness.calls()
-            if entry["program"] == "flyctl"
-            and ("destroy" in entry["argv"])
-            and entry["argv"][0] in ("machine", "machines", "volumes")
-        ]
-        self.assertEqual(destroys, [])
+        self.assertEqual(len(self.volumes_list_json_calls()), 2)
+
+    def test_a_machines_list_that_is_not_json_is_indeterminate(self):
+        # flyctl exits 0 with a line that is not JSON, so the checks cannot be
+        # read and the run falls back to the public probe. With the probe
+        # answering 000, health is indeterminate and nothing is destroyed.
+        self.harness.configure(
+            machines_list_non_json=True,
+            curl_codes=["000"],
+        )
+        result = self.harness.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot determine health", result.stderr)
+        self.assertEqual(self.harness.rebuild_calls(), [])
+        self.assertIn("the machines list is not JSON", result.stdout)
+        self.assertIn("falling back to the public probe", result.stdout)
+        self.assertIn("answered 000", result.stdout)
 
     def test_a_list_entry_without_id_stops_before_destroying(self):
         # A machines or volumes list that parses but has an entry with no id
