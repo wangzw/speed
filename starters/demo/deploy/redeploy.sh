@@ -10,9 +10,11 @@
 #   unhealthy      a started machine's required check is still warning or
 #                  critical after the poll window.
 #   indeterminate  health could not be determined: flyctl failed, its output
-#                  was not usable, a required check was absent, a machine was
-#                  in a state other than started or stopped, a stopped machine
-#                  could not be woken, or the public probe did not answer 200.
+#                  was not usable, a required check was absent or reported no
+#                  readable status (unknown, missing, empty or not a string),
+#                  a machine was in a state other than started or stopped, a
+#                  stopped machine could not be woken, or the public probe did
+#                  not answer 200.
 #
 # Only `unhealthy` leads to the rebuild. `indeterminate` ends the run with
 # "cannot determine health" and nothing is destroyed, so a network failure can
@@ -70,10 +72,12 @@ Steps:
        unhealthy      a started machine's check is still warning or critical,
                       so continue to step 3
        indeterminate  flyctl failed, its output was not usable, a required
-                      check was absent, a machine was in a state other than
-                      started or stopped, a stopped machine could not be
-                      woken, or the public probe did not answer 200 -- end the
-                      run with "cannot determine health" and destroy nothing
+                      check was absent or reported no readable status
+                      (unknown, missing, empty or not a string), a machine was
+                      in a state other than started or stopped, a stopped
+                      machine could not be woken, or the public probe did not
+                      answer 200 -- end the run with "cannot determine health"
+                      and destroy nothing
      A failed deploy command is polled too because it can still take effect
      in part.
   3. read the machine and volume lists again, once before the confirmation and
@@ -269,14 +273,26 @@ for machine in machines:
         raise SystemExit(0)
     ready_status = None
     service_status = None
+    readable = ("passing", "warning", "critical")
     for check in checks:
         if not isinstance(check, dict):
             continue
         name = check.get("name") or ""
-        status = check.get("status") or "unknown"
+        if not isinstance(name, str):
+            continue
+        required = name == "ready" or name.startswith("servicecheck-")
+        if not required:
+            continue
+        status = check.get("status")
+        if not isinstance(status, str) or status not in readable:
+            print(
+                "indeterminate: %s reports no readable status for check %s: %r"
+                % (ident, name, status)
+            )
+            raise SystemExit(0)
         if name == "ready":
             ready_status = status
-        elif name.startswith("servicecheck-"):
+        else:
             service_status = status
     if ready_status is None or service_status is None:
         print("indeterminate: %s is missing the ready or service check" % ident)
@@ -302,8 +318,9 @@ else:
 
 # 0: every machine is started and both checks pass; 1: a started machine's
 # required check is not passing; 2: the checks cannot be read (flyctl failed,
-# the output was not usable, or a required check is absent); 3: a machine is
-# stopped, so its id is left in MACHINE_STOPPED_IDS to be woken and read again.
+# the output was not usable, a required check is absent, or a required check
+# reports no readable status); 3: a machine is stopped, so its id is left in
+# MACHINE_STOPPED_IDS to be woken and read again.
 MACHINE_STOPPED_IDS=""
 machine_health() {
   local json status verdict
@@ -363,7 +380,8 @@ wake_machines() {
 # wins: a later definite unhealthy reading replaces an earlier attempt that
 # could not read the checks, and vice versa. An attempt that cannot read the
 # checks (flyctl failed, the output was not usable, a required check was
-# absent, a wake failed, or the probe did not answer 200) sets indeterminate.
+# absent or reported no readable status, a wake failed, or the probe did not
+# answer 200) sets indeterminate.
 # The run returns unhealthy only when the final attempt was a definite reading
 # of a started machine with a failing required check; otherwise it returns
 # indeterminate, so the caller never destroys on a reading it could not take or
@@ -495,9 +513,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
      checks cannot be read
      healthy ends the run and nothing is cleared; unhealthy (a started machine's
      check is still warning or critical) continues to step 3; indeterminate
-     (flyctl failed, no usable output, a required check was absent, a wake
-     failed, or the probe did not answer 200) ends the run with "cannot
-     determine health" and destroys nothing; a failed make fly is polled too
+     (flyctl failed, no usable output, a required check was absent or reported
+     no readable status, a wake failed, or the probe did not answer 200) ends
+     the run with "cannot determine health" and destroys nothing; a failed
+     make fly is polled too
 3/5 read the cloud state and confirm the rebuild
      flyctl machine list -a $APP --json
      flyctl volumes list -a $APP --json

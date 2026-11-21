@@ -906,8 +906,9 @@ when the checks cannot be read does the script fall back to polling
 attempt used. Health is unhealthy only when a started machine's required check
 is still warning or critical after the window; that, and nothing else, leads to
 the rebuild. Health is indeterminate when flyctl failed, its output was not
-usable, a required check was absent, a stopped machine could not be woken, or
-the public probe did not answer 200; the script then ends the run with "cannot
+usable, a required check was absent or reported no readable status (unknown,
+missing, empty or not a string), a stopped machine could not be woken, or the
+public probe did not answer 200; the script then ends the run with "cannot
 determine health" and destroys nothing, so a network failure can never take a
 healthy deployment's volume. Before it destroys anything the script re-reads
 the machine and volume lists, once before the confirmation and once after it; a

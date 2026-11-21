@@ -62,15 +62,23 @@ def checks(config):
         return []
     if mode == "by_make":
         healthy = succeeded_deploys() >= 1
-    elif mode == "crit_then_healthy":
+    elif mode in ("crit_then_healthy", "warn_then_healthy"):
         healthy = succeeded_deploys() >= 2
     else:
         healthy = mode == "healthy"
     status = "passing" if healthy else "critical"
-    return [
-        {"name": "servicecheck-00-http-8080", "status": config.get("service_status", status)},
-        {"name": "ready", "status": config.get("ready_status", status)},
-    ]
+    ready_code = status
+    service_code = status
+    if mode == "warn_then_healthy":
+        ready_code = "passing" if healthy else "warning"
+        service_code = "passing"
+    service = {"name": "servicecheck-00-http-8080"}
+    ready = {"name": "ready"}
+    if not config.get("service_status_missing"):
+        service["status"] = config.get("service_status", service_code)
+    if not config.get("ready_status_missing"):
+        ready["status"] = config.get("ready_status", ready_code)
+    return [service, ready]
 
 
 def machine_state(config, machine_id):
@@ -564,6 +572,72 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("cannot determine health", result.stderr)
         self.assertEqual(len(self.harness.by_program("make")), 1)
 
+    def test_a_required_check_with_no_readable_status_is_indeterminate(self):
+        # A required check whose status is not exactly passing, warning or
+        # critical says nothing about health. Treating it as unhealthy would
+        # let a malformed reading reach the destructive rebuild, so every such
+        # reading must stop the run as indeterminate and name the check.
+        cases = (
+            ({"ready_status_missing": True}, "ready"),
+            ({"ready_status": "unknown"}, "ready"),
+            ({"ready_status": ""}, "ready"),
+            ({"ready_status": 1}, "ready"),
+            ({"ready_status": "passed"}, "ready"),
+            ({"service_status_missing": True}, "servicecheck-00-http-8080"),
+            ({"service_status": "PASSING"}, "servicecheck-00-http-8080"),
+        )
+        for settings, check_name in cases:
+            with self.subTest(settings=settings):
+                self.harness = Harness()
+                self.addCleanup(self.harness.directory.cleanup)
+                self.harness.install("flyctl", FLYCTL_STUB)
+                self.harness.install("make", MAKE_STUB)
+                self.harness.install("curl", CURL_STUB)
+                self.harness.install("python3", PYTHON_STUB)
+                self.harness.configure(
+                    machines="healthy", curl_codes=["000"], **settings
+                )
+
+                result = self.harness.run()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("cannot determine health", result.stderr)
+                self.assertEqual(self.harness.rebuild_calls(), [])
+                self.assertIn("no readable status", result.stdout)
+                self.assertIn("check %s" % check_name, result.stdout)
+
+    def test_a_warning_check_still_reaches_the_rebuild(self):
+        # warning is unhealthy, not indeterminate: the status validation must
+        # accept it and let the run continue to the destructive rebuild.
+        self.harness.configure(make_exit_codes=[0], machines="warn_then_healthy")
+        result = self.harness.run("--yes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        calls = self.harness.calls()
+
+        def first(predicate):
+            for index, entry in enumerate(calls):
+                if predicate(entry):
+                    return index
+            return -1
+
+        destroy_machine = first(
+            lambda entry: entry["program"] == "flyctl"
+            and entry["argv"][:2] in (["machine", "destroy"], ["machines", "destroy"])
+        )
+        destroy_volume = first(
+            lambda entry: entry["program"] == "flyctl"
+            and entry["argv"][:2] == ["volumes", "destroy"]
+        )
+        create_volume = first(
+            lambda entry: entry["program"] == "flyctl"
+            and entry["argv"][:2] == ["volumes", "create"]
+        )
+        self.assertGreater(destroy_machine, -1)
+        self.assertGreater(destroy_volume, destroy_machine)
+        self.assertGreater(create_volume, destroy_volume)
+        self.assertIn("check ready is warning", result.stdout)
+        self.assertIn("volume rebuilt", result.stdout)
+
     def test_each_declared_check_gates_health_on_its_own(self):
         cases = (
             ({"ready_status": "critical"}, "check ready is critical"),
@@ -668,12 +742,13 @@ class RedeployScriptTest(unittest.TestCase):
 
     def test_a_failed_cloud_state_read_before_the_confirmation_stops_before_destroying(self):
         # The first of the run's two volumes list --json reads fails, so the
-        # guard before the confirmation must end the run. Only the read-failure
-        # path prints the exact sentence below; the id guard prints a different
-        # one, so this assertion fails if read_cloud_state is skipped. The run
-        # is given "rebuild" on standard input, so the absence of the prompt
-        # and of the post-confirmation phase proves the run stopped before the
-        # confirmation rather than later.
+        # guard before the confirmation must end the run. The exact sentence
+        # alone does not prove that: if the first read_cloud_state call were
+        # deleted, the same failure would land on the second read and print the
+        # same sentence. What catches the deletion is the confirmation being
+        # skipped: the run is given "rebuild" on standard input, so a prompt or
+        # the post-confirmation phase in the output means the run reached them
+        # and the two absence assertions below fail.
         self.harness.configure(
             machines="healthy",
             ready_status="critical",
