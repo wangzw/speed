@@ -896,7 +896,7 @@ crash-loops against the existing database, `flyctl ssh console` cannot attach,
 and the volume therefore cannot be emptied from inside. The script deploys
 first and keeps the data when the new deployment is healthy, judged three ways.
 Health is healthy when every machine is started and both checks `fly.toml`
-declares pass within five minutes, read from `flyctl machines list --json` —
+declares pass within five minutes, read from `flyctl machine list --json` —
 the named `ready` check on port 8083 and the service check on port 8080
 (`servicecheck-*`, which flyctl generates from `[[http_service.checks]]`). A
 machine `auto_stop_machines` left stopped is woken with `flyctl machine start`

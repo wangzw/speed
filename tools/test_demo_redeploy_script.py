@@ -487,7 +487,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.harness.calls(), [])
         self.assertIn("dry run", result.stdout)
-        self.assertIn("flyctl machines list", result.stdout)
+        self.assertIn("flyctl machine list", result.stdout)
         self.assertIn("public probe", result.stdout)
         self.assertIn("servicecheck-*", result.stdout)
 

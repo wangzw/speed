@@ -18,7 +18,7 @@
 # "cannot determine health" and nothing is destroyed, so a network failure can
 # never take a healthy deployment's volume with it.
 #
-# Health is read from `flyctl machines list --json`: the named `ready` check
+# Health is read from `flyctl machine list --json`: the named `ready` check
 # and the service check flyctl generates from [[http_service.checks]], named
 # servicecheck-* (port 8080 here). A machine fly.toml's auto_stop_machines may
 # have stopped is woken with `flyctl machine start` and read again, so a stopped
@@ -307,8 +307,8 @@ else:
 MACHINE_STOPPED_IDS=""
 machine_health() {
   local json status verdict
-  if ! json=$(flyctl machines list -a "$APP" --json 2>/dev/null); then
-    printf '  machine checks: flyctl machines list --json did not answer\n'
+  if ! json=$(flyctl machine list -a "$APP" --json 2>/dev/null); then
+    printf '  machine checks: flyctl machine list --json did not answer\n'
     return 2
   fi
   status=0
@@ -487,7 +487,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
      flyctl volumes list -a $APP
 2/5 deploy the new version
      make -C $REPO fly
-     poll flyctl machines list -a $APP --json every ${HEALTH_INTERVAL}s, within ${HEALTH_TIMEOUT}s:
+     poll flyctl machine list -a $APP --json every ${HEALTH_INTERVAL}s, within ${HEALTH_TIMEOUT}s:
      a machine stopped by auto_stop_machines is woken with flyctl machine start
      and read again, and every machine started must show the ready check and
      the service check (servicecheck-*) passing
