@@ -331,9 +331,13 @@ machine_health() {
       printf '  machine checks: %s\n' "${verdict#indeterminate: }"
       return 2
       ;;
-    *)
+    "unhealthy: "*)
       printf '  machine checks: %s\n' "${verdict#unhealthy: }"
       return 1
+      ;;
+    *)
+      printf '  machine checks: the health check gave an unrecognised verdict: %s\n' "$verdict"
+      return 2
       ;;
   esac
 }
@@ -351,17 +355,23 @@ wake_machines() {
   return 0
 }
 
-# Health is judged from the machine checks, with three outcomes:
+# Health is judged over repeated attempts, with three outcomes:
 #   0  healthy: a machine check passed, or the probe answered 200
 #   1  unhealthy: the final attempt read a started machine with a failing check
 #   2  indeterminate: health could not be determined
+# Each attempt overwrites the verdict, so the most recent attempt's reading
+# wins: a later definite unhealthy reading replaces an earlier attempt that
+# could not read the checks, and vice versa. An attempt that cannot read the
+# checks (flyctl failed, the output was not usable, a required check was
+# absent, a wake failed, or the probe did not answer 200) sets indeterminate.
+# The run returns unhealthy only when the final attempt was a definite reading
+# of a started machine with a failing required check; otherwise it returns
+# indeterminate, so the caller never destroys on a reading it could not take or
+# one that did not say the checks fail.
 # The public listener answers /healthz from the frontend's fallback once the
 # process serves: an extensionless path is a client-side route, so the entry
 # document answers with 200. That probe runs only when the machine checks
-# cannot be read. Any attempt that is indeterminate (flyctl failed, the output
-# was not usable, a required check was absent, a wake failed, or the probe did
-# not answer 200) leaves the run indeterminate, so the caller never destroys on
-# a reading it could not take.
+# cannot be read.
 health() {
   local attempts=0 code deadline machine_status use_probe verdict=indeterminate
   deadline=$((SECONDS + HEALTH_TIMEOUT))

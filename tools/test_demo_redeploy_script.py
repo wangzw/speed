@@ -242,6 +242,13 @@ while index < len(argv):
 if code is None:
     sys.exit(0)
 
+with open(os.environ["STUB_CONFIG"], encoding="utf-8") as handle:
+    config = json.load(handle)
+verdict = config.get("machine_health_verdict")
+if verdict and "indeterminate: a machine entry is not an object" in code:
+    sys.stdout.write(verdict + "\\n")
+    sys.exit(0)
+
 sys.argv = ["-c"] + rest
 exec(compile(code, "<demo-redeploy-stub>", "exec"), {"__name__": "__main__"})
 """
@@ -511,6 +518,20 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertTrue(probes)
         self.assertTrue(any("/healthz" in " ".join(argv) for argv in probes))
         self.assertEqual(len(self.harness.by_program("make")), 1)
+
+    def test_an_unrecognised_health_verdict_is_indeterminate(self):
+        # A verdict the script does not recognise must count as indeterminate,
+        # not as unhealthy, so the run stops instead of destroying the volume.
+        self.harness.configure(
+            machines="healthy",
+            machine_health_verdict="confusing",
+            curl_codes=["000"],
+        )
+        result = self.harness.run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot determine health", result.stderr)
+        self.assertEqual(self.harness.rebuild_calls(), [])
+        self.assertIn("unrecognised verdict", result.stdout)
 
     def test_a_machine_that_never_starts_is_indeterminate(self):
         self.harness.configure(
