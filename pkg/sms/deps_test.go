@@ -46,7 +46,7 @@ const (
 	awsCarrierLeaf = smsRootPath + "/aws"
 
 	twilioSDKPath     = "github.com/twilio/twilio-go"
-	twilioSDKVersion  = "v1.33.0"
+	twilioSDKVersion  = "v1.33.1"
 	twilioCarrierLeaf = smsRootPath + "/twilio"
 )
 
