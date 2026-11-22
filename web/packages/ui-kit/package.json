@@ -22,7 +22,7 @@
     "@speed/i18n": "workspace:*",
     "@speed/theme-presets": "workspace:*",
     "@speed/tokens": "workspace:*",
-    "libphonenumber-js": "^1.13.16",
+    "libphonenumber-js": "^1.13.17",
     "qrcode-generator": "^2.0.4"
   },
   "peerDependencies": {
@@ -41,11 +41,11 @@
     "@speed/test-utils": "workspace:*",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.10",
+    "@testing-library/user-event": "^14.6.13",
     "@types/node": "^26.6.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
-    "axe-core": "^4.13.0",
+    "axe-core": "^4.14.1",
     "jsdom": "^31.0.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
