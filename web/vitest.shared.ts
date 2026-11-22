@@ -165,7 +165,7 @@ export function sharedTestOptions(
 ): TestOptions {
   return {
     // The reporters are pinned rather than left to Vitest's choice, which
-    // is not the same in every run: with no configured reporter Vitest 4
+    // is not the same in every run: with no configured reporter Vitest
     // selects MinimalReporter (silent "passed-only") whenever std-env
     // reports an agent environment, and that reporter discards the
     // console output of passing cases. The gate would then show a

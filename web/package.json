@@ -16,13 +16,13 @@
     "api:gen": "node scripts/feature-names.mjs ../contracts/features.json packages/api-sdk/src/features.ts && pnpm dlx orval@8.17.0 --config orval.config.ts && node scripts/orval-nodenext-fixup.mjs"
   },
   "devDependencies": {
-    "@vitest/browser": "4.1.12",
-    "@vitest/browser-playwright": "4.1.12",
-    "@vitest/coverage-v8": "4.1.12",
+    "@vitest/browser": "5.1.1",
+    "@vitest/browser-playwright": "5.1.1",
+    "@vitest/coverage-v8": "5.1.1",
     "eslint": "^10.15.0",
     "playwright": "^1.65.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.73.0",
-    "vitest": "^4.1.12"
+    "vitest": "5.1.1"
   }
 }

@@ -49,7 +49,7 @@ export default defineConfig({
     // passing case's console output too (its `silent` default is false), but
     // it names only the failing cases, so a green sweep's routes would not
     // appear in the log. The configuration key is `reporters` (plural); the
-    // singular `reporter` is the CLI alias, which Vitest 4 merges into the
+    // singular `reporter` is the CLI alias, which Vitest merges into the
     // options, and this file keeps the plural spelling. `sharedReporters`
     // adds the GitHub Actions annotation reporter on CI.
     reporters: sharedReporters('verbose'),

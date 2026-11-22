@@ -816,7 +816,7 @@ describe('workspace test configuration', () => {
   })
 
   it('fixes the test reporter so the log does not depend on the runner', () => {
-    // Vitest 4 picks MinimalReporter (silent "passed-only") when std-env
+    // Vitest picks MinimalReporter (silent "passed-only") when std-env
     // reports an agent environment, which drops the console output of
     // passing cases. A pinned reporter is what keeps a warning from
     // appearing only when a person runs the gate. A pinned list also

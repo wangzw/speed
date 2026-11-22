@@ -29,7 +29,7 @@ export default defineConfig({
     setupFiles: ['./src/test-utils/setup.ts'],
     // This host builds its own test block rather than taking the workspace
     // preset, so the preset's fixed reporters (web/vitest.shared.ts) are
-    // taken from the same helper here: without them Vitest 4 falls back to
+    // taken from the same helper here: without them Vitest falls back to
     // MinimalReporter under an agent environment and drops a passing case's
     // console output, making the log depend on who started the run; under
     // GitHub Actions the helper also appends the annotation reporter.

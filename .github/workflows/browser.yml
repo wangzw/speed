@@ -9,9 +9,11 @@
 # it with its system libraries. The command list stays in the Makefile
 # (`make web-browser`), exactly as ci.yml's does.
 #
-# A failing case leaves its screenshot beside the test file, under
-# __screenshots__, and a copy under web/.vitest-attachments; both are uploaded.
-# The attachments directory is hidden, hence include-hidden-files.
+# Vitest writes a failing case's screenshots and attachments under the
+# browser project's `.vitest/` directory (its default attachmentsDir); a
+# `page.screenshot()` call with no explicit path still writes beside the
+# test file, under `__screenshots__`. Both locations are uploaded, and
+# `.vitest` is hidden, hence include-hidden-files.
 #
 # The cron is off the hour on purpose, like integration.yml's and e2e.yml's.
 
@@ -57,7 +59,8 @@ jobs:
         with:
           name: browser-failure-screenshots-${{ github.run_attempt }}
           path: |
-            web/.vitest-attachments/**
+            web/.vitest/**
+            starters/demo/web/.vitest/**
             web/packages/*/src/**/__screenshots__/**
             starters/demo/web/src/**/__screenshots__/**
           include-hidden-files: true

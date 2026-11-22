@@ -28,10 +28,12 @@ dist/
 # Vitest's coverage output, written beside each package's config by a run
 # that asks for it (`pnpm -C web -r test --coverage`).
 coverage/
-# The browser tier's failure artifacts: Vitest writes screenshots beside
-# the failing case and attachments under the workspace root.
+# Vitest's run artifacts (failure screenshots, attachments, and any
+# reporter output written to a file) live under a `.vitest/` directory at
+# the project root. A `page.screenshot()` call with no explicit path still
+# writes beside the test file, under `__screenshots__`.
+.vitest/
 **/__screenshots__/
-.vitest-attachments/
 .turbo/
 *.tsbuildinfo
 

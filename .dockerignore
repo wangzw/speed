@@ -13,14 +13,16 @@
 .pytest_cache
 .venv
 
-# Local runtime state and build products. The frontend bundle is excluded on
-# purpose: the image builds it in the web stage, and a checkout's copy may
-# carry artifacts from earlier runs.
+# Local runtime state and build products, including the output of a test
+# run (Vitest's `.vitest` directory and any `__screenshots__` beside a
+# test). The frontend bundle is excluded on purpose: the image builds it in
+# the web stage, and a checkout's copy may carry artifacts from earlier runs.
 **/node_modules
 **/dist
 **/dist-e2e
 **/.playwright-cli
 **/__screenshots__
+**/.vitest
 **/coverage
 **/*.tsbuildinfo
 **/*.test
