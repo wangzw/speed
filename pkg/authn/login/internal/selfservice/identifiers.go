@@ -183,7 +183,7 @@ func (r *routes) unlink(ctx context.Context, in linkPathInput, meta *speedhttp.M
 
 // providerClass is the class of a provider in the closed set the event payload
 // carries: google, github, wechat, oidc or saml. A provider written in none of
-// the namespaces of the account design has no class, and its unlinking publishes
+// the known namespaces has no class, and its unlinking publishes
 // no event rather than one with a value outside the set.
 func providerClass(provider string) (string, bool) {
 	switch {

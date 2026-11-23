@@ -113,9 +113,9 @@ func (r *Resolver) aliasOwner(ctx context.Context, p authn.Proof) (authn.Account
 	return owner, nil
 }
 
-// boundExternal is A2: the identity is bound, the login is that account's, and
-// only the display fields of the binding change. Memberships are neither read
-// nor written.
+// boundExternal resolves a login whose identity is already bound: the login is
+// that account's, and only the display fields of the binding change.
+// Memberships are neither read nor written.
 func (r *Resolver) boundExternal(ctx context.Context, id authn.AccountID, l authn.ExternalLink) (Result, error) {
 	if err := r.externalAccount(ctx, id); err != nil {
 		return Result{}, err
@@ -142,10 +142,10 @@ func (r *Resolver) refreshDisplay(ctx context.Context, id authn.AccountID, l aut
 	return r.admin.LinkExternal(ctx, id, l)
 }
 
-// upgradeBinding is A8: an earlier key of the identity is bound and the new key
-// is not, so the new key is bound to the same account. A key that has been taken
-// by another account in the meantime is authn.ErrBindingConflict and nothing is
-// merged.
+// upgradeBinding binds a new key of an identity that is already bound under an
+// earlier key: the new key is bound to the same account. A key that has been
+// taken by another account in the meantime is authn.ErrBindingConflict and
+// nothing is merged.
 func (r *Resolver) upgradeBinding(ctx context.Context, id authn.AccountID, l authn.ExternalLink) (Result, error) {
 	if err := r.externalAccount(ctx, id); err != nil {
 		return Result{}, err

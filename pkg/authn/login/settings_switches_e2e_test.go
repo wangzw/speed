@@ -14,7 +14,7 @@ import (
 
 // The account switch this package reads as a setting. It is written out here
 // rather than read from the account module so that the cases name the key the
-// design lists.
+// account module declares.
 const testSignupKey = "authn.account.signup"
 
 // writeASetting writes one value into the settings store the assembly

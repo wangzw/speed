@@ -28,7 +28,10 @@ const (
 type AuthnLoginPhoneChallenge struct {
 	_ struct{} `description:"The answer to a phone-verification send: how long the code lives and how soon another code may be asked for, both in whole seconds. It carries neither the challenge identifier nor any fact about whether the number is already held by another account."`
 
-	ExpiresIn   int `json:"expires_in" required:"true" description:"How long the code lives, in seconds"`
+	// ExpiresIn is how long the code lives, in whole seconds.
+	ExpiresIn int `json:"expires_in" required:"true" description:"How long the code lives, in seconds"`
+	// ResendAfter is how many seconds must pass before another code may be
+	// asked for.
 	ResendAfter int `json:"resend_after" required:"true" description:"How soon another code may be asked for, in seconds"`
 }
 
@@ -38,9 +41,15 @@ type AuthnLoginPhoneChallenge struct {
 type AuthnLoginIdentifierState struct {
 	_ struct{} "description:\"The answer of adding an identifier: `added` when the identifier is written, `pending` when a code was sent to an email address and the answer is still to come. The two durations are present only in the pending state.\""
 
-	State       string `json:"state" required:"true" enum:"added,pending" description:"added when the identifier is written; pending when a code was sent to an address and its answer is still to come"`
-	ExpiresIn   int    `json:"expires_in,omitempty" description:"How long the code lives, in seconds; absent when the state is added"`
-	ResendAfter int    `json:"resend_after,omitempty" description:"How soon another code may be asked for, in seconds; absent when the state is added"`
+	// State is added when the identifier is written, or pending when a code was
+	// sent and its answer is still to come.
+	State string `json:"state" required:"true" enum:"added,pending" description:"added when the identifier is written; pending when a code was sent to an address and its answer is still to come"`
+	// ExpiresIn is how long the pending code lives, in whole seconds; it is zero
+	// when State is added.
+	ExpiresIn int `json:"expires_in,omitempty" description:"How long the code lives, in seconds; absent when the state is added"`
+	// ResendAfter is how many seconds must pass before another code may be
+	// asked for in the pending state; it is zero when State is added.
+	ResendAfter int `json:"resend_after,omitempty" description:"How soon another code may be asked for, in seconds; absent when the state is added"`
 }
 
 // The internal names the handlers use for the wire shapes.

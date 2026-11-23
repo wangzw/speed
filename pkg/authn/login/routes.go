@@ -77,8 +77,8 @@ func (p *product) mountRoutes() {
 }
 
 // bindingPrecheck refuses an answer whose flow binding is missing or wrong
-// before the entry point reads the body, which is the order the design gives the
-// answer route: the content type, then the binding, then the body's own fields.
+// before the entry point reads the body, which is the answer route's order: the
+// content type, then the binding, then the body's own fields.
 // The body is read only after the binding holds.
 func (r *routes) bindingPrecheck(c *gin.Context) bool {
 	call := r.call(c.Request.Context(), nil)
@@ -176,9 +176,8 @@ func localeOf(c *call) string {
 	return ""
 }
 
-// fail maps an error from the engine or a dependency to the answer the design
-// gives it. Every case names a code; the default is the 503 that never says
-// which dependency failed.
+// fail maps an error from the engine or a dependency to its answer. Every case
+// names a code; the default is the 503 that never says which dependency failed.
 func (r *routes) fail(c *call, err error) {
 	var throttled *authn.ThrottledError
 	switch {
@@ -247,8 +246,8 @@ func (r *routes) fail(c *call, err error) {
 }
 
 // refusedStep answers a first-factor method's refusal. A refusal is a credential
-// that did not hold, which is login-failed, except for the two causes the design
-// answers as a 400: a phone prefix the deployment does not allow, and an
+// that did not hold, which is login-failed, except for the two causes answered
+// as a 400: a phone prefix the deployment does not allow, and an
 // identifier that cannot name an account. The cause goes to no body.
 func (r *routes) refusedStep(c *call, cause error) {
 	switch {

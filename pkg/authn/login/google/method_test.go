@@ -122,8 +122,8 @@ func TestBeginKeepsTheSecretsInThePrivateState(t *testing.T) {
 	}
 }
 
-// TestTheAuthorizationEndpointAcceptsTheS256Challenge is the design's named
-// assumption: the provider's authorization endpoint accepts a code_challenge
+// TestTheAuthorizationEndpointAcceptsTheS256Challenge holds the assumption: the
+// provider's authorization endpoint accepts a code_challenge
 // with the S256 method. The mock refuses any other request, so a redirect back
 // is the acceptance.
 func TestTheAuthorizationEndpointAcceptsTheS256Challenge(t *testing.T) {
@@ -165,8 +165,8 @@ func TestTheHostedDomainIsSentAndChecked(t *testing.T) {
 	}
 }
 
-// TestTheIdentityTokenChecks holds the checks on the token and the redirect that
-// the negative design lists: the state, the issuer, the audience, the expiry,
+// TestTheIdentityTokenChecks holds the checks on the token and the redirect:
+// the state, the issuer, the audience, the expiry,
 // the nonce, the verifier and the subject. Each case starts a valid flow and
 // then breaks one thing; script may adjust the callback query and return a
 // replacement for the flow's private state.
@@ -348,7 +348,7 @@ func TestTheEmailVerifiedFlagIsReadAsABoolean(t *testing.T) {
 	}
 }
 
-// TestTheProviderErrorParameterIsRefusedBeforeAnythingElse holds the design's
+// TestTheProviderErrorParameterIsRefusedBeforeAnythingElse holds the
 // first step: a redirect carrying an error is refused before the state, the code
 // or the token endpoint is reached, so a callback that would otherwise prove is
 // still refused.

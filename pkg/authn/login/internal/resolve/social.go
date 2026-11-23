@@ -8,12 +8,11 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// socialUnbound resolves a social identity with no binding by the rules of A3:
-// an address the provider declares verified and an existing account holds is
-// link-required, and without such an address the first login opens a new
-// account. A first login that would open an account parks at the pending signup,
-// which asks its person for a username and a password before anything is
-// written.
+// socialUnbound resolves a social identity with no binding: an address the
+// provider declares verified and an existing account holds is link-required,
+// and without such an address the first login opens a new account. A first
+// login that would open an account parks at the pending signup, which asks its
+// person for a username and a password before anything is written.
 //
 // The address a provider declared is a clue only when the provider says it
 // verified it. An address it says it did not verify is treated as absent, so

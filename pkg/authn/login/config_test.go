@@ -31,7 +31,7 @@ func TestTheSettingDomainsAdmitTheirBounds(t *testing.T) {
 		t.Error("an ip-limit past its bound is inside the domain")
 	}
 	// The ip-limit setting is per minute, so its ceiling is stated in per-minute
-	// terms and matches the design's 0..10000.
+	// terms and matches the 0..10000 range.
 	if maxIPLimit != 10000 {
 		t.Errorf("maxIPLimit = %d, want 10000", maxIPLimit)
 	}
@@ -86,8 +86,8 @@ func TestTheEmailBudgetDomainsAdmitTheirBounds(t *testing.T) {
 			t.Errorf("%s: the declared default %d is outside the domain", c.name, c.def)
 		}
 	}
-	// The declared defaults are the design's table; a change here is a change of
-	// the contract, so the numbers are pinned rather than only checked in-domain.
+	// The declared defaults are part of the contract, so the numbers are pinned
+	// rather than only checked in-domain.
 	if defaults.EmailPerAddressHourly != 5 || defaults.EmailPerAddressDaily != 10 ||
 		defaults.EmailPerAccountHourly != 10 || defaults.EmailPerAccountDaily != 100 ||
 		defaults.EmailPerSourceHourly != 30 || defaults.EmailPerSourceDaily != 100 ||

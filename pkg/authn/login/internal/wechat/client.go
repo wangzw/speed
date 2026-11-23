@@ -107,6 +107,7 @@ var (
 // credentials with errors.Is, and the errcode reaches the log. The text carries
 // no part of the request.
 type RefusalError struct {
+	// Code is the provider's non-zero errcode.
 	Code  int
 	class error
 }
@@ -137,7 +138,9 @@ type Options struct {
 	// RootCAs and AllowLoopback shape the restricted client built when HTTP is
 	// nil, for a deployment that terminates its own certificate or a
 	// development run against a local stub.
-	RootCAs       *x509.CertPool
+	RootCAs *x509.CertPool
+	// AllowLoopback lets the restricted client reach a loopback address, which a
+	// development run against a local stub needs.
 	AllowLoopback bool
 }
 

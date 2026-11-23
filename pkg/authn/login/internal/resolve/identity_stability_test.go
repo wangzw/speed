@@ -30,7 +30,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// REQ-signin-033. The key of an external identity is the provider and the
+// The key of an external identity is the provider and the
 // stable subject, and the address a provider declares is display data only.
 
 // TestExternalIdentityStillResolvesToItsAccountAfterTheProviderChangesTheEmail
@@ -155,7 +155,7 @@ func TestTwoSubjectsOfOneProviderOnFirstLoginOpenTwoAccounts(t *testing.T) {
 	}
 }
 
-// REQ-signup-043 and REQ-signup-044. The account identifier is minted by the
+// The account identifier is minted by the
 // account store and belongs to no login identifier and no external identity.
 
 // createdBy is one creation path's account: the identifier it minted and the
@@ -422,7 +422,7 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 }
 
 // TestSocialAccountWithoutAVerifiedAddressIsCompleteAndKeepsItsIdentifier holds
-// REQ-signup-044 on its own: a first social login whose provider does not stand
+// the rule on its own: a first social login whose provider does not stand
 // behind the declared address still opens a complete account with an identifier
 // of its own, writes no address, and logs the same identity back in.
 func TestSocialAccountWithoutAVerifiedAddressIsCompleteAndKeepsItsIdentifier(t *testing.T) {

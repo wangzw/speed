@@ -1042,7 +1042,7 @@ func TestAnAnswerCarryingAnUnknownStateFieldIsRefused(t *testing.T) {
 }
 
 // TestAReadFailureOfTheRegistrationSwitchIsLoggedAndReadAsClosed holds the
-// observability the design promises for a relaxation switch: a read that fails
+// observability of a relaxation switch: a read that fails
 // is reported at Error, once for as long as the same fault stands, and the
 // switch reads as closed. An assembly without a settings store is a legal one
 // and is not a fault.

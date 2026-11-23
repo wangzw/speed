@@ -88,9 +88,8 @@ func TestARefusedUsernameCountsAgainstTheAnswerLimit(t *testing.T) {
 		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
 		_, seq, _ := signupStep(t, h.startSocialSignup())
 
-		// The flow accepts eight answers; see design-authn-login's answer table
-		// and flow.go's maxAnswers. The case is external to the package, so the
-		// number is restated here as the contract's.
+		// The flow accepts eight answers. The case is external to the package, so
+		// the number is restated here as the contract's.
 		const answerLimit = 8
 		for i := 1; i <= answerLimit; i++ {
 			refused := h.answerSignup(seq, "admin", socialPassword)
@@ -644,7 +643,7 @@ func TestASocialFirstLoginWritesTheDeclaredAddressAsAContactAndTakesAPassword(t 
 }
 
 // TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount holds
-// the race the design settles: another account takes the address the provider
+// the race: another account takes the address the provider
 // declared verified between the read that found it free and this login's
 // account write. The answer is the link-required refusal an address registered
 // all along gives, the flow is spent, and the failed write leaves no half-built

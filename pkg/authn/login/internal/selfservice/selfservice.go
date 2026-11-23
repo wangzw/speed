@@ -41,16 +41,25 @@ import (
 // Deps is what a Service is built from.
 type Deps struct {
 	// Accounts, Admin, Passwords, Sessions and MFA are required.
-	Accounts  authn.Accounts
-	Admin     authn.AccountAdmin
+	Accounts authn.Accounts
+	// Admin performs the account writes the routes need, such as binding an
+	// account's membership.
+	Admin authn.AccountAdmin
+	// Passwords verifies the current password and applies a new one.
 	Passwords authn.Passwords
-	Sessions  authn.Sessions
-	MFA       authn.MFA
+	// Sessions rotates and revokes the account's sessions.
+	Sessions authn.Sessions
+	// MFA answers the effective account's active factors, which decide whether a
+	// change asks for a fresh multi-factor authentication.
+	MFA authn.MFA
 
 	// SMSCodes switches the two phone routes on: without it they are not
 	// registered. With it, KV and Throttle are required as well.
 	SMSCodes authn.SMSCodes
-	KV       kv.KV
+	// KV holds the pending verification records the phone and email routes
+	// write.
+	KV kv.KV
+	// Throttle counts a failed code and answers the back-off of the phone routes.
 	Throttle authn.Throttle
 
 	// EmailSender is the channel a self-service email verification code goes out
@@ -82,7 +91,8 @@ type Deps struct {
 	Settings settings.Store
 	// Bus and Audit are optional: without them the event and the audit row are
 	// not written.
-	Bus   event.Bus
+	Bus event.Bus
+	// Audit is the audit sink; without it no audit row is written.
 	Audit audit.Audit
 	// ThrottleEngaged is called after the event of a back-off that a failed phone
 	// code started, so that the module that owns the engagement counter can

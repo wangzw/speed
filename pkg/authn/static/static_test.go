@@ -686,9 +686,9 @@ func TestTheBackoffParametersAreSettings(t *testing.T) {
 	})
 }
 
-// TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold holds the defaults and
-// the domains against the design's numbers, which a setting's reader and its
-// declaration both lean on.
+// TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold holds the declared
+// defaults and the domains, which a setting's reader and its declaration both
+// lean on.
 func TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold(t *testing.T) {
 	if defaults.CacheTTL != time.Minute || defaults.FreeAttempts != 5 ||
 		defaults.FailWindow != 15*time.Minute || defaults.MaxBackoff != 15*time.Minute {

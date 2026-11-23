@@ -252,12 +252,12 @@ func emailGlobalHourlyInDomain(n int) bool {
 
 // methodPassword is the login method the disabled-methods switch cannot turn
 // off. Whether it is in force depends only on the password module being
-// assembled, and the assembly is the host's call (REQ-signin-039).
+// assembled, and the assembly is the host's call.
 const methodPassword = "password"
 
 // methodSMS is the SMS login method's stable name, which the module publishes.
 // The step-up start reads it to tell whether a session established by an SMS
-// code may re-prove that channel (REQ-security-016).
+// code may re-prove that channel.
 const methodSMS = "sms"
 
 // deliveryModesTextInDomain reports whether a JSON array of strings is a legal
@@ -480,7 +480,7 @@ var errSettingRead = errors.New("the setting cannot be read")
 //
 // The password method is filtered out of what is read, since no deployment turns
 // it off, and a raw value that named it is reported once per value so an
-// operator can correct the row (REQ-signin-039).
+// operator can correct the row.
 func (r *reader) disabledMethods() ([]string, error) {
 	if r.store == nil {
 		return nil, nil

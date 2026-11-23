@@ -517,11 +517,11 @@ func (a *fakeAdmin) Touch(context.Context, authn.AccountID, time.Time) error {
 // and which identity reached it. An armed err is returned to the caller, which
 // is how a case makes a best-effort write fail.
 //
-// The sink completes the detail the way the audit module's documented contract
-// does, so a case sees the row the journal would write: an impersonating
-// identity fills on_behalf_of, impersonation_scope and session, and on every
-// other row those keys are stripped. Without this the double would show only
-// the caller's half of the row.
+// The sink completes the detail as the audit module does, so a case sees the row
+// the journal would write: an impersonating identity fills on_behalf_of,
+// impersonation_scope and session, and on every other row those keys are
+// stripped. Without this the double would show only the caller's half of the
+// row.
 type auditing struct {
 	audit.Audit
 	mu      sync.Mutex

@@ -76,7 +76,8 @@ const recordVersion = 1
 const flowKeyPrefix = "authn:flow:"
 
 // record is one login flow, the key-value store's value. Its JSON field names
-// are the design's, and it is read back with unknown fields refused.
+// are part of the stored format, and it is read back with unknown fields
+// refused.
 type record struct {
 	Version  int          `json:"v"`
 	Purpose  string       `json:"purpose"`

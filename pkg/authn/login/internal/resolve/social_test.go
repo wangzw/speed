@@ -8,7 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A3 and first-login provisioning for a social identity with no binding.
+// Link-required for a verified address an existing account holds, and
+// first-login provisioning for a social identity with no binding.
 
 func TestSocialLinkRequiredOnlyForAVerifiedAddressOnAnExistingAccount(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))

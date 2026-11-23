@@ -14,7 +14,7 @@ import (
 // provider created, followed by the provider's identifier.
 const membershipSource = "jit:"
 
-// enterpriseUnbound resolves an enterprise identity with no binding (A5). The
+// enterpriseUnbound resolves an enterprise identity with no binding. The
 // provider's row, not the method, says which tenant it belongs to and how its
 // users get accounts. A just-in-time first login parks at the pending signup,
 // which asks its person for a username before anything is written.

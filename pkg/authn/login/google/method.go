@@ -104,7 +104,7 @@ func (p *product) Begin(ctx context.Context, s authn.Start) (authn.Step, error) 
 // Answer handles the redirect back from the provider. The engine has already
 // checked the flow's state, the method's name and the path, and moved the record
 // to processing, so the authorization code is exchanged at most once. The order
-// is the design's: an error parameter first, then the state, then the issuer,
+// is fixed: an error parameter first, then the state, then the issuer,
 // then the exchange and the token checks.
 func (p *product) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputCallback {

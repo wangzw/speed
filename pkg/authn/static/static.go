@@ -61,8 +61,7 @@ const backendName = "static"
 const basicScheme = "basic"
 
 // reasonClassThrottled is the reason_class of the line that says a name has
-// passed its free attempts. It is one of the closed values the events design
-// registers for the field.
+// passed its free attempts.
 const reasonClassThrottled = "throttled"
 
 // noWait is how long a derivation that found no capacity waits for it: no time
@@ -117,8 +116,7 @@ var _ authn.Verifier = (*backend)(nil)
 // this backend reads its parameters from is declared in the package that
 // carries its implementation. The go.sum and the `go mod tidy` fetch are not held
 // to that face — they follow the test closures of the imported packages — and
-// whole-graph reads see every library an implementation binds
-// (ADR-module-layout).
+// whole-graph reads see every library an implementation binds.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.

@@ -378,8 +378,8 @@ func (r *routes) defaultReturnTarget() string {
 }
 
 // maxCallbackFormBytes is the bound on a callback's posted body, before the form
-// is parsed. The design gives SAML's ACS a 512 KiB body limit; the bound is
-// applied here, so an oversized POST is refused rather than read.
+// is parsed. SAML's ACS takes a 512 KiB body limit; the bound is applied here,
+// so an oversized POST is refused rather than read.
 const maxCallbackFormBytes = 512 << 10
 
 // formValues reads a posted form without consuming a JSON body, for SAML's POST

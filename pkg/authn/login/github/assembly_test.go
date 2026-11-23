@@ -31,8 +31,8 @@ func registryWithReader(t *testing.T, body string) *core.Registry {
 	return reg
 }
 
-// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt holds the shape the
-// design names: the login method delivered non-exclusively, so several methods
+// TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt holds the descriptor's
+// shape: the login method delivered non-exclusively, so several methods
 // stand side by side, one schema resource and the optional logging capability.
 func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	m := Module()

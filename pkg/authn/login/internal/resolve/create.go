@@ -88,7 +88,7 @@ type newAccount struct {
 // it and writes the membership, in an order that lets the uniqueness constraint
 // of the binding arbitrate a race: the account first, the binding second, the
 // membership last. The loser of a race deletes the account it made and reads the
-// winner's binding (A9), so two concurrent first logins end in one account. A
+// winner's binding, so two concurrent first logins end in one account. A
 // failure after the account exists deletes it, so that the next attempt starts
 // clean.
 //

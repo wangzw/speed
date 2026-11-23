@@ -1077,7 +1077,7 @@ func TestACallbackOfAnUnregisteredMethodIsRefused(t *testing.T) {
 }
 
 // TestACallbackBodyOverTheLimitIsRefused holds the callback's posted-body bound
-// (the design's 512 KiB for SAML's ACS) on both routes a post reaches. On the
+// (SAML's ACS body limit is 512 KiB) on both routes a post reaches. On the
 // resume route a body over it is refused before any method reads it and the flow
 // is left a tombstone, and a body within it is dispatched. On the callback route
 // a body over it is refused without a page and without touching the flow.

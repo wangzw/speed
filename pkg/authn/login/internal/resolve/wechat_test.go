@@ -7,8 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A8: a WeChat identity that was bound under the application's open identifier
-// and now comes with a union identifier.
+// A WeChat identity that was bound under the application's open identifier and
+// now comes with a union identifier.
 
 func wechat(union, open string) authn.Proof {
 	p := social("wechat", union, "", false)

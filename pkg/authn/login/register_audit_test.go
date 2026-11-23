@@ -17,8 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The audit action and detail of a registration, as design-authn-events.md's
-// action table and detail paragraph name them. They are host-visible names, so
+// The audit action and detail of a registration. They are host-visible names, so
 // the cases spell them out instead of reading the package's own constants.
 const (
 	wantSignupAction       = "authn.signup"
@@ -242,8 +241,7 @@ func TestAFailedSignupAuditDoesNotBlockTheRegistration(t *testing.T) {
 }
 
 // auditFailurePoints collects authn.audit.write-failures and returns its counts
-// keyed by the mandatory attribute, which the design makes the instrument's one
-// attribute.
+// keyed by the mandatory attribute, the instrument's one attribute.
 func auditFailurePoints(t *testing.T, reader *sdkmetric.ManualReader) map[bool]int {
 	t.Helper()
 	var rm metricdata.ResourceMetrics

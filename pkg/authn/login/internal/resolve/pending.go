@@ -58,11 +58,12 @@ type Pending struct {
 	// EmailVerifiedVia is the way Email was proved, idp: followed by the social
 	// provider's identifier. It is empty exactly when Email is.
 	EmailVerifiedVia string `json:"email_verified_via,omitempty"`
-	// Provider is the enterprise provider's identifier and Tenant is its tenant,
-	// which the account joins through a membership. Both are empty for a social
+	// Provider is the enterprise provider's identifier. It is empty for a social
 	// or phone login.
 	Provider string `json:"provider,omitempty"`
-	Tenant   string `json:"tenant,omitempty"`
+	// Tenant is the provider's tenant, which the account joins through a
+	// membership. It is empty for a social or phone login.
+	Tenant string `json:"tenant,omitempty"`
 	// DisplayName is the provider's name for the person, made fit to store. A
 	// social first login carries it back to the client, read-only, on the
 	// pending-signup step.

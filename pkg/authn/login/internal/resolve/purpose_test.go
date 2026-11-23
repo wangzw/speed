@@ -14,8 +14,7 @@ func (e *env) resolveFor(purpose string, account authn.AccountID, p authn.Proof)
 }
 
 // A link, a step-up and an enrollment never create, link, merge or touch a
-// membership; the explicit link of A6 writes nothing before the caller acts on
-// it.
+// membership; the explicit link writes nothing before the caller acts on it.
 
 func TestLinkAnswersWhetherTheKeyIsFreeAndWritesNothing(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))

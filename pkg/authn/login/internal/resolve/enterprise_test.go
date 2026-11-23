@@ -22,7 +22,7 @@ func wantNamedLinkRequired(t *testing.T, err error, want string) {
 	}
 }
 
-// A5: an enterprise identity with no binding.
+// An enterprise identity with no binding.
 
 func TestEnterpriseDomainMustBeVerifiedForTheProvidersTenant(t *testing.T) {
 	// Someone who administers a provider can make it declare any address. The

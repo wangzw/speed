@@ -24,10 +24,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases built on this file hold what only the real entry point and the real
-// gateway can decide: that a route this middleware guards is reached the way the
-// requirement says, and that the full header a client reads off a refusal is the
-// one the design names. The entry point, the gateway and the logging capability
+// The cases in this file exercise what only the real entry point and the real
+// gateway can decide: that a route this middleware guards is reached when the
+// authn.Requirement holds, and that a refusal carries the full challenge a
+// client acts on. The entry point, the gateway and the logging capability
 // are the real modules, on a real loopback port, with this package between the
 // gateway and the handler.
 

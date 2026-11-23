@@ -276,8 +276,7 @@ func TestASettingsStoreThatCannotBeTakenUpStopsTheStartup(t *testing.T) {
 	}
 }
 
-// the module is registered under the name the design and the hosts' command
-// trees give it.
+// The module is registered under the name its hosts' command trees give it.
 func TestTheModuleAndItsSectionKeepTheirDocumentedNames(t *testing.T) {
 	if ModuleName != "authn.static" || ConfigNamespace != "authn.static" || backendName != "static" {
 		t.Errorf("the module is %q, its section %q and its backend %q, want authn.static, authn.static and static",

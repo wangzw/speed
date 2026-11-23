@@ -172,7 +172,7 @@ func (c *call) stepUp(id authn.Identity, req authn.Requirement) {
 	}
 }
 
-// fail maps an error from a dependency to the answer the design gives it.
+// fail maps an error from a dependency to its answer.
 func (r *routes) fail(c *call, err error) {
 	var throttled *authn.ThrottledError
 	switch {

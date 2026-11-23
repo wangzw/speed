@@ -7,7 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A2: an existing binding is the account's login, and nothing but the binding's
+// An existing binding is the account's login, and nothing but the binding's
 // display fields change.
 func TestExistingBindingLogsInAndTouchesOnlyDisplayFields(t *testing.T) {
 	e := newEnv(t)

@@ -192,7 +192,7 @@ func TestARegistrationRefusesAClosedSwitch(t *testing.T) {
 }
 
 // TestARegistrationMapsTheModulesRefusals holds each failure the account module
-// reports to the answer the design gives it.
+// reports to its answer.
 func TestARegistrationMapsTheModulesRefusals(t *testing.T) {
 	cases := []struct {
 		name   string

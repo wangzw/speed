@@ -2,8 +2,7 @@
 // method hands the engine a [authn.Proof]; this package says which account the
 // proof belongs to, and for a first login it decides whether an account is
 // created, an existing one is bound to, or the login is refused.
-// The rules are those of the account design (A1 to A10 and first-login
-// provisioning), and the package holds nothing else: it writes no HTTP answer,
+// The package holds nothing else: it writes no HTTP answer,
 // builds no session and imports neither the login engine nor a login method
 // nor the tenant module.
 //
@@ -33,15 +32,22 @@ type Signup string
 
 // The values of Signup.
 const (
+	// SignupClosed refuses a first login by a social provider or a phone: no
+	// account is opened.
 	SignupClosed Signup = "closed"
-	SignupOpen   Signup = "open"
+	// SignupOpen lets a first login by a social provider or a phone open an
+	// account.
+	SignupOpen Signup = "open"
 )
 
 // Config is what a [Resolver] is built from.
 type Config struct {
 	// Accounts, Admin and Memberships are required.
-	Accounts    authn.Accounts
-	Admin       authn.AccountAdmin
+	Accounts authn.Accounts
+	// Admin performs the account writes a resolution needs, including creating
+	// an account and binding an identity.
+	Admin authn.AccountAdmin
+	// Memberships answers and writes an account's tenant memberships.
 	Memberships authn.Memberships
 	// SSO is the register of enterprise providers. Without it an enterprise
 	// identity cannot be resolved without a binding.
@@ -122,6 +128,8 @@ func (r *Resolver) signupOpen() bool {
 
 // Request is one resolution.
 type Request struct {
+	// Proof is the credential a login method handed over; the resolution decides
+	// which account it belongs to.
 	Proof authn.Proof
 	// Purpose is one of authn.PurposeLogin, PurposeLink, PurposeStepUp and
 	// PurposeEnroll. Any other value, the empty one included, is refused.
@@ -258,6 +266,8 @@ type seamFault struct {
 	cause error
 }
 
+// Error reports the seam failure, naming the seam and carrying the cause's text
+// when there is one.
 func (e *seamFault) Error() string {
 	if e.cause == nil {
 		return "authn: resolve: " + e.seam + " is unavailable"
@@ -265,6 +275,8 @@ func (e *seamFault) Error() string {
 	return "authn: resolve: " + e.seam + " failed: " + e.cause.Error()
 }
 
+// Is matches only authn.ErrUnavailable, so a caller reads the failure as an
+// unavailable dependency and as nothing else.
 func (e *seamFault) Is(target error) bool { return target == authn.ErrUnavailable }
 
 // Cause is what the seam returned.

@@ -639,8 +639,8 @@ func TestAbandonedFlowRefusesANextAnswer(t *testing.T) {
 // TestAnOversizedBodyIsRefused holds the capability's 64 KiB body limit. The
 // body is a valid start request padded with white space past the limit, so the
 // refusal cannot come from a field's own bound: without the limit the request
-// would begin a flow. The problem type is the capability's code, because the
-// design groups a body over the limit with one that does not parse.
+// would begin a flow. The problem type is the capability's code, because a body
+// over the limit is grouped with one that does not parse.
 func TestAnOversizedBodyIsRefused(t *testing.T) {
 	assemble(t, func(h *harness) {
 		padded := `{"method":"password"}` + strings.Repeat(" ", 70_000)
@@ -693,8 +693,8 @@ func TestABindingRefusalCarriesTheCapabilityCode(t *testing.T) {
 	}
 }
 
-// TestTheAnswerChecksTheBindingBeforeTheBody holds the order the design gives
-// the answer route: the content type, then the flow binding, then the body. A
+// TestTheAnswerChecksTheBindingBeforeTheBody holds the answer route's order: the
+// content type, then the flow binding, then the body. A
 // request with no binding and a malformed body is refused the flow-invalid 401
 // with the capability's challenge, not a 400 about the body it was never
 // allowed to send.

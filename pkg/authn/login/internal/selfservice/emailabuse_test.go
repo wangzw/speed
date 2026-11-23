@@ -297,7 +297,7 @@ func TestDotsAreFoldedOnlyForGmail(t *testing.T) {
 	}
 }
 
-// TestAFailedSendRefundsItsBudget holds REQ-abuse-005 for the email channel: a
+// TestAFailedSendRefundsItsBudget holds the refund rule for the email channel: a
 // failure the channel certifies left no message behind gives back every budget
 // count the request took, so the next attempt still reaches the limit.
 func TestAFailedSendRefundsItsBudget(t *testing.T) {

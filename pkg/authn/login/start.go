@@ -360,7 +360,7 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 		return "", "", nil, false, fmt.Errorf("%w: the step-up names a method not taken in", authn.ErrInvalidArgument)
 	}
 	// An account with no factor proves again the first-factor channel its
-	// session was established with, and nothing else (REQ-security-016). Any
+	// session was established with, and nothing else. Any
 	// other assembled method is refused before a record is written or a step
 	// begins, so a password session cannot start an SMS code and an SMS session
 	// cannot start a password.
@@ -375,7 +375,7 @@ func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, re
 
 // stepUpChannel reports whether name is the first-factor channel the session was
 // established with, which is the only first factor an account with no factors
-// may prove again (REQ-security-016). A password proves the password method and
+// may prove again. A password proves the password method and
 // an SMS code the SMS method; a redirect method proves an external identity,
 // which a session records as one of the OAuth, OIDC or SAML methods. A method
 // this rule cannot place is never the session's channel.

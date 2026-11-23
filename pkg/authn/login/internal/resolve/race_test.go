@@ -10,10 +10,10 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A9: the same identity logging in for the first time twice at once ends in one
+// The same identity logging in for the first time twice at once ends in one
 // account and one binding. The request that lost the binding reads the winner's;
 // one that lost an address the winner's creation took is refused that address,
-// which the engine answers as link-required (A3).
+// which the engine answers as link-required.
 
 type answer struct {
 	res Result

@@ -15,7 +15,7 @@ const (
 	// the flow's account, and nothing was written.
 	OutcomeVerified
 	// OutcomeUpgraded: a binding under an earlier key of the same external identity
-	// was found and the new key was bound to its account (A8).
+	// was found and the new key was bound to its account.
 	OutcomeUpgraded
 	// OutcomeMatched: an enterprise identity was bound to the account an
 	// administrator had prepared for it.
@@ -26,7 +26,10 @@ const (
 
 // Result is what a resolution decided.
 type Result struct {
+	// Account is the account the resolution reached; it is zero when Pending is
+	// set.
 	Account authn.AccountID
+	// Outcome says how the resolution reached the account.
 	Outcome Outcome
 	// Pending, when it is set, is the account a first login would open: the
 	// resolution decided to open one and wrote nothing, and Create opens it

@@ -10,7 +10,7 @@ import (
 )
 
 // The audit action of an anonymous registration and the one detail its rows
-// carry, from design-authn-events.md's action table and detail paragraph.
+// carry.
 const (
 	actionSignup = "authn.signup"
 	signupMethod = "password"
@@ -27,7 +27,7 @@ const (
 //
 // Every row's only detail is method=password. The address, the username and any
 // verification code are never written; this build writes no identifier_mac
-// either, since the design's "only" sentence makes it the complete detail set.
+// either, so method=password is the complete detail set.
 //
 // The row is best-effort: a failure is an Error, a count on
 // authn.audit.write-failures with mandatory=false, and nothing else. The
@@ -56,7 +56,7 @@ func (r *routes) auditSignup(c *call, account authn.AccountID, outcome string) {
 }
 
 // signupAuditOutcome is the audit outcome of a registration's failure, and
-// whether the design's closed set names one for it. A back-off is throttled. A
+// whether the closed outcome set names one for it. A back-off is throttled. A
 // refusal the server could decide — the switch, the name, the address, the
 // password policy or an argument outside its domain — is refused. An outage or
 // a capacity failure is neither: the action never reached a decision, the closed

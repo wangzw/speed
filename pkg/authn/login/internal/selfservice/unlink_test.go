@@ -88,7 +88,7 @@ func TestTheIdentifiersThatCannotBeListedAreA503(t *testing.T) {
 }
 
 // TestUnlinkingRotatesRevokesTheOthersAndPublishes holds the success path of
-// DELETE /links/:id, with the order the design gives: the unbinding, then the
+// DELETE /links/:id, with the order: the unbinding, then the
 // settling of the sessions, and the event with the provider's class and no
 // subject, and the audit row.
 func TestUnlinkingRotatesRevokesTheOthersAndPublishes(t *testing.T) {
@@ -209,9 +209,9 @@ func TestUnlinkingMapsTheAccountModulesAnswers(t *testing.T) {
 }
 
 // TestTheProviderClassIsInTheClosedSet holds the class of each provider
-// namespace of the account design, and that a provider outside them is unlinked
-// without an event, which is logged, rather than published with a value the
-// payload does not allow.
+// namespace, and that a provider outside them is unlinked without an event,
+// which is logged, rather than published with a value the payload does not
+// allow.
 func TestTheProviderClassIsInTheClosedSet(t *testing.T) {
 	for provider, class := range map[string]string{
 		"google": "google", "github": "github", "wechat": "wechat", "wechat-openid:wx123": "wechat",

@@ -42,7 +42,7 @@ const (
 // self, the password credential and the email contact awaiting verification —
 // and sends no email and makes no session.
 //
-// The order is the design's: the registration switch is read here only as a
+// The order is deliberate: the registration switch is read here only as a
 // pre-check, so that a closed deployment refuses before any count or derivation;
 // the two budgets then bound the route; and only then is Signups.Register called,
 // which reads the same switch again as the authority and holds the username
@@ -147,7 +147,7 @@ func untilNextBucket(now time.Time, bucket time.Duration) time.Duration {
 	return wait
 }
 
-// failRegister maps a registration's failure to the answer the design gives it.
+// failRegister maps a registration's failure to its answer.
 // The register route's two 409s are username-taken for a login name and
 // email-taken for an address another account reserved or holds, not the conflict
 // the other routes answer with; the signup-username back-off and the two budgets

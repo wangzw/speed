@@ -10,7 +10,7 @@ import (
 )
 
 // The account module's settings this package reads by path. They are written out
-// here so that the cases name the keys the design lists.
+// here so that the cases name the keys the account module declares.
 const (
 	testPasswordSignupKey = "authn.account.password-signup"
 	testSignupIPLimitKey  = "authn.account.signup-ip-limit"

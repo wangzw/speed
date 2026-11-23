@@ -14,7 +14,7 @@ import (
 
 // The meter every module of the capability directory reports under, the
 // instruments this module reports through, and the attributes they carry, whose
-// sets design-authn-events.md makes a closed set.
+// value sets are closed.
 const (
 	meterName               = "authn"
 	completionsInstrument   = "authn.login.completions"

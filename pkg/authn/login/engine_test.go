@@ -83,7 +83,7 @@ func TestFirstFactorPromptRefuseAndProveWalksTheStateMachine(t *testing.T) {
 	}
 }
 
-// TestARefusedFirstFactorKeepsItsStepForTheSameSequence holds the design's rule
+// TestARefusedFirstFactorKeepsItsStepForTheSameSequence holds the rule
 // for a submit-class refusal: the sequence number does not move and the method's
 // step and private state stay in the record, because that step is what the
 // retry answers. The refusal reply carries no sequence number, so the client has
@@ -238,7 +238,7 @@ func TestARefusedChallengeKeepsTheOfferedFactorsForTheSameSequence(t *testing.T)
 	}
 }
 
-// TestARefusalIsAnsweredByItsCause holds the design's rule that a first factor's
+// TestARefusalIsAnsweredByItsCause holds that a first factor's
 // refusal is not always login-failed: a phone prefix outside the allow-list is a
 // 400 unsupported-region and an identifier that cannot name an account is a 400
 // bad-request, while a credential that did not hold stays a 401 login-failed.
@@ -720,7 +720,7 @@ func TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused(t *tes
 }
 
 // TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith holds
-// REQ-security-016's first-factor channel: an account with no factors re-proves
+// the first-factor channel rule: an account with no factors re-proves
 // the channel its session was established with, so a password session naming an
 // assembled SMS method is a bad request at the start, and the method never
 // begins.

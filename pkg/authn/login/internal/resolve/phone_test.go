@@ -34,10 +34,10 @@ func TestPhoneUnknownWithSignupOpenCreatesAnAccountWithTheProvedPhone(t *testing
 	}
 }
 
-// TestAPhoneTheAccountDidNotChooseAsASignInWayIsACredentialFailure holds the
-// rule of the account design: an account that holds a number but did not choose
-// it as a way in is refused like a credential that did not hold, and the login
-// neither treats the number as unknown nor opens an account in its place.
+// TestAPhoneTheAccountDidNotChooseAsASignInWayIsACredentialFailure holds that
+// an account which holds a number but did not choose it as a way in is refused
+// like a credential that did not hold, and the login neither treats the number
+// as unknown nor opens an account in its place.
 func TestAPhoneTheAccountDidNotChooseAsASignInWayIsACredentialFailure(t *testing.T) {
 	e := newEnv(t, withSignup(SignupOpen))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, phone: "+8613800000001", phoneNotSignIn: true})

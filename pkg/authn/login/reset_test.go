@@ -932,7 +932,7 @@ func TestResetSMSChannelClosesWhenItsMethodIsDisabled(t *testing.T) {
 	}
 }
 
-// TestResetImpersonationAsymmetry holds the interaction the design states: the
+// TestResetImpersonationAsymmetry holds the interaction: the
 // reset advances the target's valid_after and revokes only the target's sessions,
 // so the target's bearer impersonation tokens lapse while an operator's cookie
 // impersonation session, which belongs to another account, continues.

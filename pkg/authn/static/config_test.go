@@ -157,9 +157,9 @@ func TestABackendWithNobodyToVouchForRefusesToStart(t *testing.T) {
 	}
 }
 
-// TestTheNameKeyIsGone holds that authn.static.name is no longer a key. Left in
-// place and ignored it would make a configuration look as though it still did
-// something, which is worse than refusing to start: the name is a constant now.
+// TestTheNameKeyIsGone holds that a configuration setting authn.static.name is
+// refused rather than ignored: accepting it silently would make the
+// configuration look as though it did something, and the name is a constant.
 func TestTheNameKeyIsGone(t *testing.T) {
 	body := `{"authn":{"static":{"name":"local","subjects":{"alice":"` + cheapEntry(t, "x") + `"}}}}`
 	if _, err := load(t, body); err == nil {

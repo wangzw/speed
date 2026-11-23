@@ -73,7 +73,7 @@ const diagnosticPrefix = "authn: "
 // static declaration fixed before configuration is read, so the field carries
 // this default; the merged document takes it as the endpoint of these
 // operations. A deployment that mounts the routes elsewhere is drift, which the
-// fragment is allowed to have and which produces no failure signal (see pkg/ops).
+// fragment is allowed to have and which produces no failure signal.
 const defaultEndpoint = "account"
 
 //go:embed openapi/login.json

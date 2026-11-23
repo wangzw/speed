@@ -96,7 +96,7 @@ func (r *routes) identity(c *call) (caller, bool) {
 // freshIdentity holds the identity of a request whose guard carried its caller
 // without asking for freshness to the requirement its change calls for. It is
 // the freshness half of authorize, for a handler that decided from its body that
-// the change is one the design protects.
+// the change needs a fresh authentication.
 func (r *routes) freshIdentity(c *call, action string) bool {
 	id, ok := authn.FromContext(c.ctx)
 	if !ok {
@@ -108,13 +108,13 @@ func (r *routes) freshIdentity(c *call, action string) bool {
 
 // contactProofNeedsFreshness reports whether proving one contact address would
 // change what proves or recovers the account, which is the half of a contact
-// write the design holds to a fresh authentication. Registering and proving an
+// write that needs a fresh authentication. Registering and proving an
 // address asks for none by itself; these consequences do:
 //
 //   - an email that would become the account's default contact -- where
 //     notifications and a password reset go -- because the account has none;
 //   - an email that would become the account's only address and so its
-//     automatic login way (REQ-account-068);
+//     automatic login way;
 //   - a phone number, while the account holds an active SMS factor, because
 //     the number is that factor's target.
 //

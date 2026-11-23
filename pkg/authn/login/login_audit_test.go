@@ -9,9 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// wantLoginAction is the audit action of a login, from design-authn-events.md's
-// action table. It is a host-visible name, so the cases spell it out instead of
-// reading the package's own constant.
+// wantLoginAction is the audit action of a login. It is a host-visible name, so
+// the cases spell it out instead of reading the package's own constant.
 const wantLoginAction = "authn.login"
 
 // oneLoginRow holds a case to exactly one login audit row and returns it.
@@ -43,7 +42,7 @@ func expectDetail(t *testing.T, row loginRow, method, delivery string) {
 	}
 }
 
-// expectEmptyActor holds a failure row to the empty actor the design gives it.
+// expectEmptyActor holds a failure row to the empty actor.
 func expectEmptyActor(t *testing.T, row loginRow) {
 	t.Helper()
 	if len(row.actors) != 1 || row.actors[0] != "" {

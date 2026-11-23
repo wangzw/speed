@@ -49,11 +49,17 @@ const (
 type AuthnLoginMethods struct {
 	_ struct{} `description:"The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, the second-factor kinds the deployment takes in, and the human-verification gate this deployment requires before a verification message is sent. Enterprise identity providers are not listed here; they are discovered through the SSO module."`
 
+	// Methods lists the descriptors of the methods taking part and not turned off, sorted by name.
 	Methods []AuthnMethodDescriptor `json:"methods" required:"true" description:"The methods taking part that are not turned off, one descriptor each, sorted by name"`
-	Signup  AuthnLoginSignup        "json:\"signup\" required:\"true\" description:\"Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`.\""
-	MFA     AuthnLoginMFA           `json:"mfa" required:"true" description:"The second-factor kinds the deployment takes in."`
-	Human   AuthnLoginHuman         `json:"human" required:"true" description:"The human-verification gate a send must satisfy."`
+	// Signup reports whether registration is open on this deployment.
+	Signup AuthnLoginSignup "json:\"signup\" required:\"true\" description:\"Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`.\""
+	// MFA lists the second-factor kinds the deployment takes in.
+	MFA AuthnLoginMFA `json:"mfa" required:"true" description:"The second-factor kinds the deployment takes in."`
+	// Human is the human-verification gate a send must satisfy.
+	Human AuthnLoginHuman `json:"human" required:"true" description:"The human-verification gate a send must satisfy."`
 
+	// PasswordReset reports whether the deployment offers the anonymous password reset,
+	// and the channels it may use.
 	PasswordReset AuthnLoginPasswordReset `json:"password_reset" required:"true" description:"Whether this deployment offers the anonymous password reset, and the channels it may use."`
 }
 
@@ -62,7 +68,9 @@ type AuthnLoginMethods struct {
 type AuthnLoginPasswordReset struct {
 	_ struct{} `description:"Whether this deployment offers the anonymous password reset and through which channels. It is a deployment fact, the same for every anonymous caller, and it says nothing about whether any account can be reset."`
 
-	Enabled bool     `json:"enabled" required:"true" description:"Whether the anonymous password reset is open: the switch is open, the audit record is present, and at least one channel is available"`
+	// Enabled is true when the anonymous password reset is open.
+	Enabled bool `json:"enabled" required:"true" description:"Whether the anonymous password reset is open: the switch is open, the audit record is present, and at least one channel is available"`
+	// Methods lists the channels the reset may be sent through, sorted.
 	Methods []string `json:"methods" required:"true" description:"The channels the reset may be sent through: email and sms, sorted, leaving out a channel that is not assembled, whose template is missing or that a disabled method turned off"`
 }
 
@@ -73,7 +81,9 @@ type AuthnLoginPasswordReset struct {
 type AuthnLoginHuman struct {
 	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment whose gate is off reports the off mechanism on both surfaces."`
 
+	// Phone is the gate on a send that delivers a message to a phone number.
 	Phone AuthnLoginHumanGate `json:"phone" required:"true" description:"The gate on a send that delivers a message to a phone number: login, second factor, enrollment and anonymous reset by SMS."`
+	// Other is the gate on every send that does not address a phone number.
 	Other AuthnLoginHumanGate `json:"other" required:"true" description:"The gate on every send that does not address a phone number: an email reset code and a self-service email addition."`
 }
 
@@ -83,10 +93,16 @@ type AuthnLoginHuman struct {
 type AuthnLoginHumanGate struct {
 	_ struct{} `description:"The human-verification gate one surface runs: whether a proof is required, the mechanism that checks it, the public identifier a client-side widget needs, and the action that widget must be rendered with. A surface whose gate is off reports the off mechanism and requires nothing."`
 
-	Required bool   "json:\"required\" required:\"true\" description:\"Whether every send on this surface must first present a valid, single-use proof\""
+	// Required is true when every send on this surface must first present a valid proof.
+	Required bool "json:\"required\" required:\"true\" description:\"Whether every send on this surface must first present a valid, single-use proof\""
+	// Provider names the mechanism that checks a proof on this surface.
 	Provider string "json:\"provider\" required:\"true\" description:\"The mechanism that checks a proof on this surface: `off` when the gate is off, `pow` for the self-hosted proof of work, `captcha` for the self-hosted captcha, or `turnstile` for Cloudflare's widget\""
-	SiteKey  string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`\""
-	Action   string "json:\"action,omitempty\" description:\"The action a client-side widget must be rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`. The provider's answer must name it.\""
+	// SiteKey is the public identifier a client-side widget renders with; absent for a
+	// mechanism that needs none.
+	SiteKey string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`\""
+	// Action is the action a client-side widget must be rendered with; absent for a
+	// mechanism that needs none.
+	Action string "json:\"action,omitempty\" description:\"The action a client-side widget must be rendered with, for a mechanism that needs one; absent for `off`, `pow` and `captcha`. The provider's answer must name it.\""
 }
 
 // AuthnMethodDescriptor is one login method as the discovery document reports
@@ -94,13 +110,24 @@ type AuthnLoginHumanGate struct {
 type AuthnMethodDescriptor struct {
 	_ struct{} `description:"One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, the provider values its bindings appear under, and the inputs its first step asks for."`
 
-	Name             string            `json:"name" required:"true" description:"The method's stable name"`
-	Kind             string            `json:"kind" required:"true" description:"How a client renders the method: form, redirect, enterprise or webauthn"`
-	Protocol         string            `json:"protocol,omitempty" description:"The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"`
-	Label            string            `json:"label,omitempty" description:"The method's brand name where it has one, otherwise empty for a name-keyed translation"`
-	OpensAccount     bool              "json:\"opens_account,omitempty\" description:\"Whether the method may open an account for an identifier it does not yet know; false for the phone and social methods when `authn.account.signup` is closed\""
-	BindingProviders []string          `json:"binding_providers,omitempty" description:"The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name"`
-	Fields           []AuthnLoginField `json:"fields,omitempty" description:"The inputs the method's first step asks for, empty for a method that does not open with a form"`
+	// Name is the method's stable name.
+	Name string `json:"name" required:"true" description:"The method's stable name"`
+	// Kind is how a client renders the method: form, redirect, enterprise or webauthn.
+	Kind string `json:"kind" required:"true" description:"How a client renders the method: form, redirect, enterprise or webauthn"`
+	// Protocol is the wire protocol a redirect or enterprise method speaks; empty
+	// otherwise.
+	Protocol string `json:"protocol,omitempty" description:"The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"`
+	// Label is the method's brand name where it has one.
+	Label string `json:"label,omitempty" description:"The method's brand name where it has one, otherwise empty for a name-keyed translation"`
+	// OpensAccount is true when the method may open an account for an identifier it
+	// does not yet know.
+	OpensAccount bool "json:\"opens_account,omitempty\" description:\"Whether the method may open an account for an identifier it does not yet know; false for the phone and social methods when `authn.account.signup` is closed\""
+	// BindingProviders is the stored provider values or namespace prefixes the
+	// method's bindings appear under; absent means the method's name.
+	BindingProviders []string `json:"binding_providers,omitempty" description:"The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name"`
+	// Fields lists the inputs the method's first step asks for, and is empty for a
+	// method that does not open with a form.
+	Fields []AuthnLoginField `json:"fields,omitempty" description:"The inputs the method's first step asks for, empty for a method that does not open with a form"`
 }
 
 // AuthnLoginSignup says whether anonymous self-registration is available: either
@@ -109,7 +136,10 @@ type AuthnMethodDescriptor struct {
 type AuthnLoginSignup struct {
 	_ struct{} `description:"Whether anonymous self-registration is available on this deployment: either a first login may open an account, or the name-and-password register route is open. The two switches are independent; each member below reports its own."`
 
-	Enabled  bool                     `json:"enabled" required:"true" description:"Whether anonymous self-registration is available: true when either a first login may open an account or the name-and-password register route is open"`
+	// Enabled is true when either a first login may open an account or the
+	// name-and-password register route is open.
+	Enabled bool `json:"enabled" required:"true" description:"Whether anonymous self-registration is available: true when either a first login may open an account or the name-and-password register route is open"`
+	// Password reports whether the name-and-password register route is open.
 	Password AuthnLoginSignupPassword `json:"password" required:"true" description:"Whether the name-and-password register route is open."`
 }
 
@@ -117,6 +147,7 @@ type AuthnLoginSignup struct {
 type AuthnLoginSignupPassword struct {
 	_ struct{} `description:"Whether the anonymous name-and-password register route is open, reported on its own because it is independent of a first login opening an account."`
 
+	// Enabled is true when the name-and-password register route is open.
 	Enabled bool `json:"enabled" required:"true" description:"Whether POST /auth/register is open"`
 }
 
@@ -124,6 +155,7 @@ type AuthnLoginSignupPassword struct {
 type AuthnLoginMFA struct {
 	_ struct{} `description:"The second-factor kinds the deployment takes in, as the multi-factor module reports them. This is a deployment-level list, not the caller's own registered factors."`
 
+	// Factors lists the kinds of second factor the deployment takes in.
 	Factors []string `json:"factors" required:"true" description:"The kinds of second factor the deployment takes in"`
 }
 
@@ -133,46 +165,78 @@ type AuthnLoginMFA struct {
 type AuthnLoginFlow struct {
 	_ struct{} `description:"One open login flow, as returned by a start, by an answer that keeps the flow open, or by the current-flow read: the step number the next answer must echo, the flow's state, the flow token when the flow is bound by the header, and what the client does next."`
 
-	Seq       int            `json:"seq" required:"true" description:"The step number the next answer must echo"`
-	State     string         `json:"state" required:"true" description:"The flow's state: first, signup, second, enroll, reprove, ready, processing, done or failed"`
-	FlowToken string         `json:"flow_token,omitempty" description:"The flow token, set only when the flow is bound by the Authn-Flow header"`
-	Next      AuthnLoginStep `json:"next" required:"true" description:"What the client does at the flow's current step."`
+	// Seq is the step number the next answer must echo.
+	Seq int `json:"seq" required:"true" description:"The step number the next answer must echo"`
+	// State is the flow's state, one of the closed set of flow states.
+	State string `json:"state" required:"true" description:"The flow's state: first, signup, second, enroll, reprove, ready, processing, done or failed"`
+	// FlowToken is the flow token, present only when the flow is bound by the
+	// Authn-Flow header.
+	FlowToken string `json:"flow_token,omitempty" description:"The flow token, set only when the flow is bound by the Authn-Flow header"`
+	// Next is what the client does at the flow's current step.
+	Next AuthnLoginStep `json:"next" required:"true" description:"What the client does at the flow's current step."`
 }
 
 // AuthnLoginStep is what the client does next.
 type AuthnLoginStep struct {
 	_ struct{} "description:\"What the client does at the flow's current step. Only the members that belong to `kind` are present: `challenge` carries `fields`; a pending signup of a social first login also carries `provided_method`, `provided_display_name` and `provided_email`; `redirect` carries `url` and `method`; `factor` carries `factors`; `enroll` carries `kinds`; `webauthn` carries `options`; `complete` carries nothing.\""
 
-	Kind                string             `json:"kind" required:"true" description:"What the client does next: challenge, redirect, factor, enroll, complete or webauthn"`
-	Fields              []AuthnLoginField  `json:"fields,omitempty" description:"The inputs a challenge step asks for"`
-	ProvidedMethod      string             `json:"provided_method,omitempty" description:"The stable name of the login method that started this flow, in the same vocabulary as methods[].name in the discovery document, such as github, google, wechat.mp or wechat.web; carried by the pending signup of a social first login so the client can name the provider; absent for every other step"`
-	ProvidedDisplayName string             `json:"provided_display_name,omitempty" description:"The provider's name for the person, carried by the pending signup of a social first login for the client to show read-only; absent when the provider gave none and for every other step"`
-	ProvidedEmail       string             `json:"provided_email,omitempty" description:"The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step"`
-	ExpiresIn           int                `json:"expires_in,omitempty" description:"How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
-	ResendAfter         int                `json:"resend_after,omitempty" description:"How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
-	URL                 string             `json:"url,omitempty" description:"Where a redirect step sends the user agent"`
-	Method              string             `json:"method,omitempty" description:"The HTTP method the redirect uses"`
-	Factors             []AuthnLoginFactor `json:"factors,omitempty" description:"The factors a second-factor step offers"`
-	Kinds               []string           `json:"kinds,omitempty" description:"The factor kinds an enroll step takes in"`
-	Options             any                "json:\"options,omitempty\" description:\"The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code.\""
+	// Kind says what the client does next.
+	Kind string `json:"kind" required:"true" description:"What the client does next: challenge, redirect, factor, enroll, complete or webauthn"`
+	// Fields lists the inputs a challenge step asks for.
+	Fields []AuthnLoginField `json:"fields,omitempty" description:"The inputs a challenge step asks for"`
+	// ProvidedMethod is the stable name of the login method that started the flow,
+	// carried by a social pending signup.
+	ProvidedMethod string `json:"provided_method,omitempty" description:"The stable name of the login method that started this flow, in the same vocabulary as methods[].name in the discovery document, such as github, google, wechat.mp or wechat.web; carried by the pending signup of a social first login so the client can name the provider; absent for every other step"`
+	// ProvidedDisplayName is the provider's name for the person, carried read-only by
+	// a social pending signup.
+	ProvidedDisplayName string `json:"provided_display_name,omitempty" description:"The provider's name for the person, carried by the pending signup of a social first login for the client to show read-only; absent when the provider gave none and for every other step"`
+	// ProvidedEmail is the verified address the provider declared, carried read-only
+	// by a social pending signup.
+	ProvidedEmail string `json:"provided_email,omitempty" description:"The address the provider declared verified, carried by the pending signup of a social first login for the client to show read-only; absent when the provider declared no verified address and for every other step"`
+	// ExpiresIn is how long a challenge lives, in seconds; no handler of this fragment
+	// sets it.
+	ExpiresIn int `json:"expires_in,omitempty" description:"How long a challenge lives, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
+	// ResendAfter is how soon a challenge may be asked for again, in seconds; no
+	// handler of this fragment sets it.
+	ResendAfter int `json:"resend_after,omitempty" description:"How soon a challenge may be asked for again, in seconds. No handler of this fragment sets it, so the member is absent from every answer."`
+	// URL is where a redirect step sends the user agent.
+	URL string `json:"url,omitempty" description:"Where a redirect step sends the user agent"`
+	// Method is the HTTP method the redirect uses.
+	Method string `json:"method,omitempty" description:"The HTTP method the redirect uses"`
+	// Factors lists the second factors a second-factor step offers.
+	Factors []AuthnLoginFactor `json:"factors,omitempty" description:"The factors a second-factor step offers"`
+	// Kinds lists the factor kinds an enroll step takes in.
+	Kinds []string `json:"kinds,omitempty" description:"The factor kinds an enroll step takes in"`
+	// Options is the data a webauthn step carries, either a ceremony's public-key
+	// options or a TOTP enrollment's otpauth URI.
+	Options any "json:\"options,omitempty\" description:\"The data a webauthn step carries: the public-key creation or request options of a WebAuthn ceremony, or, for a TOTP enrollment, an object with an `otpauth_uri` the client renders as a QR code.\""
 }
 
 // AuthnLoginField is one input a method asks the client for.
 type AuthnLoginField struct {
 	_ struct{} `description:"One input a method asks the client for, named by the method and rendered according to its kind."`
 
-	Name     string "json:\"name\" required:\"true\" description:\"The input's key: the client submits its value under this name in the `input` map of the start request or of the answer.\""
-	Kind     string "json:\"kind\" required:\"true\" description:\"How the client renders the input: `text`, `password`, `code` or `phone`.\""
-	Required bool   `json:"required,omitempty" description:"Whether the step needs a value; absent means the field may be left out."`
-	Secret   bool   `json:"secret,omitempty" description:"Whether the value must not be displayed or echoed, as for a password or a code; absent means it is not secret."`
+	// Name is the input's key, under which the client submits its value in the input
+	// map.
+	Name string "json:\"name\" required:\"true\" description:\"The input's key: the client submits its value under this name in the `input` map of the start request or of the answer.\""
+	// Kind is how the client renders the input: text, password, code or phone.
+	Kind string "json:\"kind\" required:\"true\" description:\"How the client renders the input: `text`, `password`, `code` or `phone`.\""
+	// Required is true when the step needs a value.
+	Required bool `json:"required,omitempty" description:"Whether the step needs a value; absent means the field may be left out."`
+	// Secret is true when the value must not be displayed or echoed.
+	Secret bool `json:"secret,omitempty" description:"Whether the value must not be displayed or echoed, as for a password or a code; absent means it is not secret."`
 }
 
 // AuthnLoginFactor is one second factor the flow offers to verify.
 type AuthnLoginFactor struct {
 	_ struct{} `description:"One second factor the flow offers to verify: its identifier, its kind and a display label. It carries nothing secret."`
 
-	ID    string "json:\"id\" required:\"true\" description:\"The factor's identifier; send it as `input.factor` when answering the second-factor step.\""
-	Kind  string "json:\"kind\" required:\"true\" description:\"The factor kind, such as `totp`, `sms` or `webauthn`; the client renders the challenge according to it.\""
+	// ID identifies the factor and is sent as input.factor when answering the
+	// second-factor step.
+	ID string "json:\"id\" required:\"true\" description:\"The factor's identifier; send it as `input.factor` when answering the second-factor step.\""
+	// Kind is the factor kind, such as totp, sms or webauthn.
+	Kind string "json:\"kind\" required:\"true\" description:\"The factor kind, such as `totp`, `sms` or `webauthn`; the client renders the challenge according to it.\""
+	// Label is a display label for the factor; it may be empty.
 	Label string `json:"label,omitempty" description:"A display label for the factor; it may be empty, in which case the client falls back to the kind's own name."`
 }
 
@@ -180,7 +244,9 @@ type AuthnLoginFactor struct {
 type AuthnLoginSession struct {
 	_ struct{} "description:\"The answer of a login completed with `delivery=session`, and of a step-up completed on a cookie session: the state name `authenticated` and the public facts of the session that was created or elevated. The session cookie is set in the same response.\""
 
-	State   string                "json:\"state\" required:\"true\" enum:\"authenticated\" description:\"The literal `authenticated`, marking a completed login.\""
+	// State is the literal authenticated, marking a completed login.
+	State string "json:\"state\" required:\"true\" enum:\"authenticated\" description:\"The literal `authenticated`, marking a completed login.\""
+	// Session is the public facts of the session the login created.
 	Session AuthnLoginSessionView `json:"session" required:"true" description:"The public facts of the session the login created."`
 }
 
@@ -188,7 +254,9 @@ type AuthnLoginSession struct {
 type AuthnLoginSessionView struct {
 	_ struct{} `description:"The public facts of the session a login created. No token or secret is included."`
 
-	ID        string    `json:"id" required:"true" description:"The session identifier; the browser client holds the session cookie written in the same response."`
+	// ID is the session identifier.
+	ID string `json:"id" required:"true" description:"The session identifier; the browser client holds the session cookie written in the same response."`
+	// ExpiresAt is the session's expiry, an RFC 3339 instant in UTC.
 	ExpiresAt time.Time `json:"expires_at" required:"true" description:"The session's expiry, as an RFC 3339 instant in UTC."`
 }
 
@@ -197,10 +265,16 @@ type AuthnLoginSessionView struct {
 type AuthnLoginToken struct {
 	_ struct{} "description:\"The answer of a login completed with `delivery=token`, and of a token-delivered step-up: the state name, the token type, the access token, its lifetime and the refresh token.\""
 
-	State        string `json:"state" required:"true" enum:"authenticated,elevated" description:"authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty"`
-	TokenType    string "json:\"token_type\" required:\"true\" enum:\"Bearer\" description:\"The authorization scheme the access token is sent with; it is always `Bearer`.\""
-	AccessToken  string "json:\"access_token\" required:\"true\" description:\"The access token, sent in the `Authorization` header as `Bearer <value>`.\""
-	ExpiresIn    int    `json:"expires_in" required:"true" description:"The access token's lifetime in seconds"`
+	// State is authenticated for a login or elevated for a step-up.
+	State string `json:"state" required:"true" enum:"authenticated,elevated" description:"authenticated for a login; elevated for a step-up, which issues no refresh token and carries it empty"`
+	// TokenType is the authorization scheme the access token is sent with; it is
+	// always Bearer.
+	TokenType string "json:\"token_type\" required:\"true\" enum:\"Bearer\" description:\"The authorization scheme the access token is sent with; it is always `Bearer`.\""
+	// AccessToken is the token sent in the Authorization header as Bearer <value>.
+	AccessToken string "json:\"access_token\" required:\"true\" description:\"The access token, sent in the `Authorization` header as `Bearer <value>`.\""
+	// ExpiresIn is the access token's lifetime in seconds.
+	ExpiresIn int `json:"expires_in" required:"true" description:"The access token's lifetime in seconds"`
+	// RefreshToken is empty on a step-up, which issues no refresh token.
 	RefreshToken string `json:"refresh_token" required:"true" description:"Empty on a step-up, which issues no refresh token"`
 }
 
@@ -209,6 +283,8 @@ type AuthnLoginToken struct {
 type AuthnLoginActionResult struct {
 	_ struct{} "description:\"The answer of a flow that finished by binding an external identity (`linked`) or registering a factor (`enrolled`); neither issues a session or a token.\""
 
+	// State is linked when the flow bound an external identity, or enrolled when it
+	// registered a factor.
 	State string `json:"state" required:"true" enum:"linked,enrolled" description:"linked when the flow bound an external identity; enrolled when it registered a factor"`
 }
 
@@ -217,8 +293,11 @@ type AuthnLoginActionResult struct {
 type AuthnLoginRegistration struct {
 	_ struct{} "description:\"The answer of an anonymous self-registration: the state name `registered`, the account that was opened, and the email address awaiting verification. No session is made and no email is sent.\""
 
-	State        string                        "json:\"state\" required:\"true\" enum:\"registered\" description:\"The literal `registered`, marking that an account was opened\""
-	AccountID    string                        `json:"account_id" required:"true" description:"The identifier of the account that was opened"`
+	// State is the literal registered, marking that an account was opened.
+	State string "json:\"state\" required:\"true\" enum:\"registered\" description:\"The literal `registered`, marking that an account was opened\""
+	// AccountID identifies the account that was opened.
+	AccountID string `json:"account_id" required:"true" description:"The identifier of the account that was opened"`
+	// Verification is the contact awaiting verification.
 	Verification AuthnLoginRegistrationContact `json:"verification" required:"true" description:"The contact awaiting verification."`
 }
 
@@ -226,7 +305,9 @@ type AuthnLoginRegistration struct {
 type AuthnLoginRegistrationContact struct {
 	_ struct{} "description:\"The contact a new registration has to prove: the pending state of the email address the caller gave, which is not yet a login name.\""
 
+	// State is pending until the address is proved after signing in.
 	State string "json:\"state\" required:\"true\" enum:\"pending\" description:\"The verification state of the email address: `pending` until the address is proved after signing in\""
+	// Email is the address the caller gave, awaiting verification.
 	Email string `json:"email" required:"true" description:"The email address the caller gave, awaiting verification"`
 }
 
@@ -345,9 +426,13 @@ type passwordResetCompleteInput struct {
 type AuthnLoginPasswordResetState struct {
 	_ struct{} `description:"The state of the bound anonymous password reset: whether a code was sent or the identifier is proved, how long the code or the proved ticket lives, and, while a code is outstanding, how soon another may be asked for. It carries no account, no identifier and no code."`
 
-	State       string `json:"state" required:"true" enum:"sent,verified" description:"sent after a code was sent, verified once the code held"`
-	ExpiresIn   int    `json:"expires_in" required:"true" description:"How long the code or the proved ticket lives, in whole seconds"`
-	ResendAfter int    `json:"resend_after,omitempty" description:"How soon another code may be asked for, in whole seconds; absent once the identifier is proved"`
+	// State is sent after a code was sent, or verified once the code held.
+	State string `json:"state" required:"true" enum:"sent,verified" description:"sent after a code was sent, verified once the code held"`
+	// ExpiresIn is how long the code or the proved ticket lives, in whole seconds.
+	ExpiresIn int `json:"expires_in" required:"true" description:"How long the code or the proved ticket lives, in whole seconds"`
+	// ResendAfter is how soon another code may be asked for, in whole seconds; absent
+	// once the identifier is proved.
+	ResendAfter int `json:"resend_after,omitempty" description:"How soon another code may be asked for, in whole seconds; absent once the identifier is proved"`
 }
 
 // passwordResetState is the internal name of that reply.
