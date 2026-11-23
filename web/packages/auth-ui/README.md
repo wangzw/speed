@@ -421,9 +421,10 @@ closed signup, a throttle and an unavailable dependency render their
 `register.*` text in one banner, and every other code -- a 400 with a
 malformed body included -- resolves through the shared banner's
 `errors.*` text instead of being recast as a password-policy refusal.
-A 429 carrying `Retry-After` disables the submit for the stated wait
-(the banner counts the seconds) and re-enables it on its own; a 429
-without the header keeps the submit available at once. A refused
+A 429 carrying `Retry-After` makes the submit unavailable for the stated
+wait: it stays focusable, carries `aria-disabled`, and its description is
+the countdown the banner shows; the wait ending restores it on its own. A
+429 without the header keeps the submit available at once. A refused
 auto-login is not a registration failure: the account exists, so the form
 shows the account-created notice, keeps the username and retries only the
 login -- or reports the username through `onSignInRequired` for a host
@@ -514,14 +515,16 @@ that method's login flow (`session.startFlow`, the provider as the flow's
 carrying the provider's authorization URL, reported upward through
 `onAuthorizeUrl` and the host decides what it is for (a redirect in the
 host's router, a popup, a new tab). Each flight is tracked per provider:
-while one request is in flight its own button disables and the others stay
-live, and an earlier attempt's return can never re-enable a later
-provider's button mid-flight. A refused start (an unknown or disabled
-method, an account-unavailable answer) renders through the one banner --
-but the banner belongs to the newest attempt only (attempts are numbered
-at start; a failure writes its code only while it is still the newest
-attempt, and each new attempt clears the banner), so an earlier attempt's
-failure can never paint over a newer attempt's success or linger past it.
+while one request is in flight its own button stays focusable, reports
+`aria-disabled` and `aria-busy`, and refuses a second activation, while
+the other providers' buttons stay live; an earlier attempt's return can
+never clear a later provider's busy state mid-flight. A refused start (an
+unknown or disabled method, an account-unavailable answer) renders
+through the one banner -- but the banner belongs to the newest attempt
+only (attempts are numbered at start; a failure writes its code only while
+it is still the newest attempt, and each new attempt clears the banner),
+so an earlier attempt's failure can never paint over a newer attempt's
+success or linger past it.
 
 The provider's own redirect address is the server's: the method builds
 `redirect_uri` from the deployment's public URL, so the client sends no
@@ -599,8 +602,9 @@ account-opening step appears in the same card as the sign-in page. The
 ## SignOutButton
 
 The sign-out action over `session.logout()`. A click drives the logout;
-while the request is in flight the button disables and shows the busy
-label; a refused logout renders the answer's code text in one banner.
+while the request is in flight the button stays focusable, reports
+`aria-disabled` and `aria-busy`, refuses a second activation and shows the
+busy label; a refused logout renders the answer's code text in one banner.
 Logout is terminal either way: auth-core clears the local session and
 flips the snapshot to anonymous whether or not the server's revocation
 answered (a session it could not revoke is no longer trustworthy
@@ -750,11 +754,26 @@ names no account and no address. The code field carries the collapsed
 wrong-code refusal; the new-password field carries the password policy;
 the whole-attempt banner carries a closed deployment, an unavailable
 dependency and an invalidated flow, and the last offers a start-over exit.
-A stated `Retry-After` wait disables the send until it elapses, and the
-resend control states its own remaining interval. A host that binds
+A stated `Retry-After` wait makes the send unavailable until it elapses --
+focusable, `aria-disabled`, with the wait as its description -- and the
+resend control's own label states its remaining interval. A host that binds
 `currentReset` resumes the bound record on mount; a sent record names no
 channel or identifier, so a resumed surface offers no resend.
 `onBackToSignIn` abandons an in-flight record first (best-effort).
+
+When the password write lands `done` and the host binds no `onDone`, the
+form leaves with the focused submit: the surface hands focus to the done
+heading -- a programmatic target outside the tab order -- and the way back
+is the next tab stop after it. A host that binds `onDone` navigates and the
+new page takes focus; a viewer who moved focus to another mounted control
+during the write keeps that resting place.
+
+A send that leaves `request` for `sent` replaces the request fields, and
+the sent surface's first control (the code field) takes focus -- but only
+when focus was still at the submit origin, or had fallen to the document
+body with the field, when the code landed. The back entry and the submit
+key stay mounted across both states, so a viewer who moves focus to one of
+them while the send runs keeps it; the switch does not take it back.
 
 | Prop | Type | Notes |
 |---|---|---|
@@ -779,7 +798,9 @@ impersonation is current (`impersonation`, or `null`), starts its one
 end write attempt (`onEnd`), and reports that attempt's state
 (`pending`, `failureCode`, `successMessage`). The banner, the chip and
 the menu item are the same attempt's entry points: while `pending`, the
-banner's control and the menu item are disabled and labelled busy.
+banner's control stays focusable, reports `aria-disabled` and `aria-busy`,
+refuses a second activation and is labelled busy, while the menu item is
+disabled and labelled busy.
 
 One polite live region is mounted for the banner's whole life, never
 conditionally: empty while idle, filled with the "acting as" announcement
@@ -790,6 +811,15 @@ impersonation renders a named `region` landmark stating who the operator
 is acting as, the tenant and expiry when the host read them, and that
 management features are unavailable. The banner adds no live region of
 its own, so the failure alert inside it is announced once.
+
+When the end succeeds and the host clears `impersonation`, the end control
+leaves the document. If it held focus at that moment, the banner hands
+focus to the settlement section that stays in the banner slot and carries
+the end announcement -- a programmatic target outside the tab order --
+instead of letting focus fall to the document body. A control that did not
+hold focus (an end from the account menu keeps focus on the menu's
+trigger) or a viewer who moved focus elsewhere during the attempt leaves
+focus where it is.
 
 `dismissed` unmounts the visible region but not the live region: the
 host holds the dismissal, and `onDismiss` (the close control, named
@@ -810,7 +840,7 @@ status.
 |---|---|---|
 | `impersonation` | `ImpersonationBannerState \| null` (required) | `{ subject, tenant?, expiresAt?, grantId? }`; `subject` is the impersonated account's display name, the rest come from the host's status read. A new `grantId` is a new impersonation, which resets a dismissal |
 | `onEnd` | `() => void` (required) | starts the host's one end-impersonation write attempt; its result arrives through the three props below |
-| `pending` | `boolean` | whether the shared attempt is in flight; the end control is disabled and marked busy |
+| `pending` | `boolean` | whether the shared attempt is in flight; the end control stays focusable, reports `aria-disabled` and `aria-busy`, refuses activation and is labelled busy |
 | `failureCode` | `string \| null` | the attempt's failure code, rendered inside the banner |
 | `successMessage` | `string \| null` | the attempt's success message, announced in the permanent live region |
 | `dismissed` | `boolean` | unmounts the visible region; the live region stays mounted and keeps announcing |
@@ -906,9 +936,11 @@ the authenticator-app symbol is a `role="img"` carrying the bundle's
 accessible name and its manual-entry disclosure is a button with
 `aria-expanded`/`aria-controls`,
 every failure renders in one `role="alert"`,
-buttons disable while their request is in flight, the channel strip is MUI
-`Tabs` (arrow-key navigation, labelled by the channel titles) whose tabs
-each carry an `id` and the `aria-controls` of their own panel -- the
+buttons stay focusable and carry `aria-disabled` while their request is
+in flight, refusing activation instead of dropping focus, the channel
+strip is MUI `Tabs` (arrow-key navigation, labelled by the channel
+titles) whose tabs each carry an `id` and the `aria-controls` of their own
+panel -- the
 mounted channel renders as the `role="tabpanel"` with that id and the tab
 as its `aria-labelledby`, so the tabs never point at nothing -- and each
 field carries the `autoComplete` value matching its channel (`username`,
