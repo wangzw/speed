@@ -5,6 +5,10 @@
   // program, so one typecheck covers them with the rest of src.
   "include": ["src"],
   "compilerOptions": {
+    // TypeScript 6 defaults `types` to [] (5.x included every visible
+    // @types package), so the Node globals and `node:` built-ins the test
+    // files use are named here.
+    "types": ["node"],
     // The demo host is a DOM-rendering browser application: JSX compiles
     // through the automatic runtime, the same setting every DOM package in
     // web/ uses and the one vite's esbuild transform reads, so no separate

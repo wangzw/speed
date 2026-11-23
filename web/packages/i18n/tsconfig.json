@@ -1,4 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src", "test-utils"]
+  "include": ["src", "test-utils"],
+  "compilerOptions": {
+    // TypeScript 6 defaults `types` to [] (5.x included every visible
+    // @types package), so the Node globals and `node:` built-ins the test
+    // files use are named here.
+    "types": ["node"]
+  }
 }
