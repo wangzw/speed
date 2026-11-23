@@ -26,6 +26,7 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 /** The shipped en-US strings the cases assert on. */
 const END_LABEL = enUS.impersonation.end
+const ENDING_LABEL = enUS.impersonation.ending
 const ENDED_TEXT = enUS.impersonation.ended
 
 /** Render in en-US so the live region's measured text is Latin-only. */
@@ -47,6 +48,78 @@ async function scrollableRegionViolations(): Promise<readonly axe.Result[]> {
   expect(result.incomplete).toEqual([])
   return result.violations
 }
+
+/** The shared end control in a real browser: starting the attempt must
+ * not move focus off the button, either while it is in flight or after a
+ * refusal settles on it, and the button must stay in the tab order. */
+describe('ImpersonationBanner end control in Chromium', () => {
+  it('keeps focus on the end control through the attempt and a refusal', async () => {
+    await page.viewport(900, 900)
+
+    function Host() {
+      const [pending, setPending] = useState(false)
+      const [failure, setFailure] = useState<string | null>(null)
+      const [attempts, setAttempts] = useState(0)
+      return (
+        <>
+          <ImpersonationBanner
+            impersonation={{ subject: SUBJECT }}
+            pending={pending}
+            failureCode={failure}
+            onEnd={() => {
+              setAttempts((count) => count + 1)
+              setPending(true)
+            }}
+          />
+          {/* The host's own settlement control, after the banner in DOM
+              order so the end control is the first Tab stop. */}
+          <button
+            type="button"
+            onClick={() => {
+              setPending(false)
+              setFailure('authn.unavailable')
+            }}
+          >
+            fail
+          </button>
+          <output data-testid="attempts">{attempts}</output>
+        </>
+      )
+    }
+
+    renderBanner(<Host />)
+    const end = screen.getByRole('button', { name: END_LABEL })
+    end.focus()
+    await userEvent.click(end)
+
+    // In flight: the label changes on the same element, which still holds
+    // focus and reports the state without going natively disabled.
+    expect(end.textContent).toBe(ENDING_LABEL)
+    expect(document.activeElement).toBe(end)
+    expect(end).toHaveAttribute('aria-disabled', 'true')
+    expect(end).toHaveAttribute('aria-busy', 'true')
+
+    // It stays in the tab order while it cannot run: tabbing backwards
+    // from the host's own control lands on it rather than skipping it.
+    const fail = screen.getByRole('button', { name: 'fail' })
+    fail.focus()
+    await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
+    expect(document.activeElement).toBe(end)
+
+    // A refused attempt settles while the control keeps focus, and the
+    // next activation is a new attempt rather than a repeated one.
+    fireEvent.click(fail)
+    await waitFor(() => {
+      expect(end).not.toHaveAttribute('aria-busy', 'true')
+    })
+    expect(end.textContent).toBe(END_LABEL)
+    expect(end).not.toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(end)
+    expect(screen.getByTestId('attempts').textContent).toBe('1')
+    await userEvent.click(end)
+    expect(screen.getByTestId('attempts').textContent).toBe('2')
+  })
+})
 
 describe('ImpersonationBanner live region in Chromium', () => {
   it('mounts an empty live region that is not a keyboard stop while idle', async () => {
