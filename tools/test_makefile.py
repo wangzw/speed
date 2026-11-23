@@ -68,6 +68,7 @@ with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
         "args": args,
         "gowork": os.environ.get("GOWORK", ""),
         "gomaxprocs": os.environ.get("GOMAXPROCS", ""),
+        "gate_jobs": os.environ.get("GATE_JOBS", ""),
         "backend_env": {{
             name: os.environ[name]
             for name in os.environ
@@ -840,9 +841,14 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertIn(f"--maxWorkers={width}", self.pnpm_call(calls, "vitest")["args"])
             with self.subTest(leg="e2e", gate_jobs=gate_jobs):
                 calls = self.leg_calls("e2e", gate_jobs)
-                self.assertIn(
-                    f"--workers={width}", self.pnpm_call(calls, "playwright")["args"]
-                )
+                playwright = self.pnpm_call(calls, "playwright")
+                self.assertIn(f"--workers={width}", playwright["args"])
+                # The global setup's Go builds take -p and GOMAXPROCS from the
+                # same value, so the recipe has to put it in the Playwright
+                # process's environment. GNU make exports a value given on its
+                # command line but not the default this file defines, so the
+                # un-overridden case is the one that proves the recipe does it.
+                self.assertEqual(playwright["gate_jobs"], width)
 
     def test_a_wrapper_target_fails_when_its_segment_does(self) -> None:
         # A wrapper pipes its segment through awk to prefix the lines, and a

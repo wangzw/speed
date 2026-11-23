@@ -482,13 +482,16 @@ web-browser: ## Run the frontend's browser tier in Chromium (geometry, focus ord
 # drives: Chromium for every journey, and WebKit for the journey that holds the
 # cookies of a loopback http deployment, unprefixed and without Secure, to
 # what WebKit keeps, since WebKit on Linux refuses any Secure cookie set over
-# http, loopback host included.
+# http, loopback host included. The global setup's three Go builds take their
+# width from GATE_JOBS too (go build -p, and GOMAXPROCS for the compiler's
+# threads), so the recipe hands the Playwright process GATE_JOBS in its
+# environment; the variable this file defines is not exported otherwise.
 e2e-install: ## Install the Chromium and WebKit builds the end-to-end tier drives
 	@pnpm -C web exec playwright install chromium webkit
 
 e2e: ## Run the end-to-end journey specs against the built demo binary
 	@pnpm -C web --filter demo-web --fail-if-no-match run typecheck:e2e
-	@pnpm -C web --filter demo-web --fail-if-no-match exec playwright test --config e2e/playwright.config.ts --workers=$(GATE_JOBS)
+	@GATE_JOBS=$(GATE_JOBS) pnpm -C web --filter demo-web --fail-if-no-match exec playwright test --config e2e/playwright.config.ts --workers=$(GATE_JOBS)
 
 # The local development loop: the frontend's vite dev server in the background
 # and the Go program under air in the foreground. Air builds the default binary

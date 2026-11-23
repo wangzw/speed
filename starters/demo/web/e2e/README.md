@@ -18,9 +18,13 @@ make e2e           # type-checks the tier, then runs every spec
 A single journey, without the `make` wrapper:
 
 ```sh
-pnpm -C web --filter demo-web exec playwright test \
+GATE_JOBS=8 pnpm -C web --filter demo-web exec playwright test \
   --config e2e/playwright.config.ts -g first-registration
 ```
+
+The global setup hands `GATE_JOBS` to its three Go builds as `-p` and
+`GOMAXPROCS`, so it must be set: a run without it fails rather than choosing a
+width of its own. `make e2e` passes it from the gate's CPU budget.
 
 The Playwright runner transpiles TypeScript but does not check it, so the tier
 has its own type-check:
@@ -58,11 +62,15 @@ keeps. One project is run on its own with `--project webkit`.
   there: the harness passes the directory's absolute path, and a person
   reproducing the command by hand writes the web-root-relative
   `../server/dist-e2e`, because vite resolves a relative `outDir` against the
-  web package. It then builds two binaries: the review binary
-  (`go -C starters/demo/server build -tags review,e2e`) and the default binary
-  (`go -C starters/demo/server build -tags e2e`). The default binary is the
+  web package. It then builds three Go targets. The review binary:
+  `go -C starters/demo/server build -tags review,e2e -p=$GATE_JOBS -o
+  <root>/harness/demo-review .`; the default binary:
+  `go -C starters/demo/server build -tags e2e -p=$GATE_JOBS -o
+  <root>/harness/demo-deploy .`; and the SAML signing helper:
+  `go -C starters/demo/server build -p=$GATE_JOBS -o
+  <root>/harness/saml-signer ./e2e/samlsign`. The default binary is the
   deployment assembly -- every capability compiled in and no review controls;
-  run-time configuration decides which capabilities start. Both binaries go
+  run-time configuration decides which capabilities start. All three go
   under `<root>/harness`, and a manifest records the binaries and the tree they
   came from. The bundle stays in `starters/demo/server/dist-e2e`, outside the
   tree `make dev` builds into, so the run never touches

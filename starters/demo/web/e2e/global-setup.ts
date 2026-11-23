@@ -18,6 +18,13 @@
  * repeating a minute of compilation per test, and keeps the build's output out
  * of the tree.
  *
+ * The three Go builds take their width from GATE_JOBS, which `make e2e` puts
+ * in this process's environment: each passes -p and sets GOMAXPROCS for the
+ * compiler's own threads, so the run stays inside the CPU share it was given
+ * instead of probing the host's core count. The value is required -- the build
+ * fails loudly when it is absent or invalid, rather than running at a width
+ * nobody chose.
+ *
  * A failed build fails the run with the command's whole output: a harness that
  * silently fell back to a stale binary would report journeys it never ran.
  */
@@ -37,6 +44,7 @@ import {
   WEB_DIR,
 } from './fixtures/paths'
 import { FRONT_END_BUILD_ARGS } from './fixtures/front-end-build'
+import { GATE_JOBS_ENV, parseGateJobs } from './fixtures/gate-jobs'
 import {
   removeExpiredPerSpecDirectories,
   removeExpiredRunDirectories,
@@ -108,6 +116,11 @@ function build(
 }
 
 export default async function globalSetup(): Promise<void> {
+  // The width every Go build below runs at. It is read before anything is
+  // built: a run started outside `make e2e` has no value to run at, and the
+  // parse fails with a message naming that entry point.
+  const width = parseGateJobs(process.env[GATE_JOBS_ENV])
+
   // Sweep before the harness directory is created: the directory about to be
   // made is fresh and therefore outside the window, so the only candidates are
   // runs that have already finished (or died) more than a day ago.
@@ -152,9 +165,10 @@ export default async function globalSetup(): Promise<void> {
   const binary = join(HARNESS_DIR, BINARY_NAME)
   await build(
     'go',
-    ['-C', SERVER_DIR, 'build', '-tags', 'review,e2e', '-o', binary, '.'],
+    ['-C', SERVER_DIR, 'build', `-p=${width}`, '-tags', 'review,e2e', '-o', binary, '.'],
     REPO_ROOT,
     'building the review binary',
+    { GOMAXPROCS: String(width) },
   )
 
   // The deployment build is the default build: every capability is compiled in,
@@ -167,9 +181,10 @@ export default async function globalSetup(): Promise<void> {
   const deployBinary = join(HARNESS_DIR, DEPLOY_BINARY_NAME)
   await build(
     'go',
-    ['-C', SERVER_DIR, 'build', '-tags', 'e2e', '-o', deployBinary, '.'],
+    ['-C', SERVER_DIR, 'build', `-p=${width}`, '-tags', 'e2e', '-o', deployBinary, '.'],
     REPO_ROOT,
     'building the default binary',
+    { GOMAXPROCS: String(width) },
   )
 
   // The SAML identity provider fixture signs its responses with the library the
@@ -178,9 +193,10 @@ export default async function globalSetup(): Promise<void> {
   const samlSigner = join(HARNESS_DIR, SAML_SIGNER_NAME)
   await build(
     'go',
-    ['-C', SERVER_DIR, 'build', '-o', samlSigner, './e2e/samlsign'],
+    ['-C', SERVER_DIR, 'build', `-p=${width}`, '-o', samlSigner, './e2e/samlsign'],
     REPO_ROOT,
     'building the SAML signing helper',
+    { GOMAXPROCS: String(width) },
   )
 
   const manifest = {
