@@ -39,7 +39,7 @@
  * (src/app.tsx) rather than through the shells' content area.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -65,6 +65,11 @@ import type {
 import { useAppNotice } from '../app-notice.js'
 import { useAppServices } from '../app-services.js'
 import { getCurrentTenant, setCurrentTenant } from '../chrome.js'
+import {
+  findPageHeading,
+  focusFellWithPageSwap,
+  focusPageEntry,
+} from '../focus-landing.js'
 import { ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 import { loadSelfTenants, selfTenantName, useSelfTenantState } from '../tenant-self.js'
@@ -89,10 +94,69 @@ export function AcceptInvitationPage({
   // the viewer picked. The page's URL does not change, so the token survives
   // the session flip and the landing re-renders as the signed-in one.
   const [authMode, setAuthMode] = useState<SignInMode | null>(null)
+  // The in-place sign-in surface, and the landing it returns to: the surface
+  // unmounts with the control the operator activated, so the landing takes
+  // the focus the surface held -- see the effect below. Whether that swap is
+  // what took the focus is decided before the surface closes.
+  const signInSurface = useRef<HTMLDivElement | null>(null)
+  const landing = useRef<HTMLDivElement | null>(null)
+  const restoreLandingFocus = useRef(false)
   // The tenant the acceptance wrote, as its answer named it. The screen's own
   // onAccepted callback takes no argument, so the tenant identifier is
   // captured where the acceptance resolves and read back when it lands.
   const acceptedTenantName = useRef<string | null>(null)
+
+  // Closes the in-place sign-in surface from either of its exits (the way
+  // back, and a settled sign-in or registration). Its control unmounts with
+  // it, so record whether the swap took the focus before the state change
+  // removes the surface; a place the operator moved to keeps its focus.
+  const closeSignIn = useCallback((): void => {
+    restoreLandingFocus.current = focusFellWithPageSwap(signInSurface.current)
+    setAuthMode(null)
+  }, [])
+
+  // The landing takes the focus the closed surface held. While the signed-in
+  // read has not answered there is no heading yet, so the landing takes the
+  // focus on its main landmark first, and moves it to the heading when the
+  // read supplies one -- only while the landing still holds it. A place the
+  // operator moved to keeps its focus.
+  useEffect(() => {
+    if (authMode !== null || !restoreLandingFocus.current) {
+      return
+    }
+    restoreLandingFocus.current = false
+    focusPageEntry(landing.current)
+  }, [authMode])
+
+  // The heading arrives with the signed-in invitation read, after the landing
+  // has taken the focus on its landmark. Promote that focus to the heading
+  // when a visible one appears, while the landing still holds it; a hiding
+  // heading does not count, and a place the operator moved to disconnects the
+  // observer instead.
+  useEffect(() => {
+    if (authMode !== null) {
+      return
+    }
+    const container = landing.current
+    if (container === null) {
+      return
+    }
+    const observer = new MutationObserver(() => {
+      if (document.activeElement !== container) {
+        observer.disconnect()
+        return
+      }
+      if (findPageHeading(container) === null) {
+        return
+      }
+      observer.disconnect()
+      focusPageEntry(container)
+    })
+    observer.observe(container, { childList: true, subtree: true })
+    return () => {
+      observer.disconnect()
+    }
+  }, [authMode])
 
   // The screen drives these operations; they reach the backend through
   // the generated surface over the request function the assembly bound
@@ -187,18 +251,22 @@ export function AcceptInvitationPage({
   // signed-in surface without navigating away from the token.
   if (authMode !== null) {
     return (
-      <SignInView
-        keepLanding
-        initialMode={authMode}
-        onBack={() => setAuthMode(null)}
-        onSignedIn={() => setAuthMode(null)}
-      />
+      <Box ref={signInSurface}>
+        <SignInView
+          keepLanding
+          initialMode={authMode}
+          onBack={closeSignIn}
+          onSignedIn={closeSignIn}
+        />
+      </Box>
     )
   }
 
   return (
     <Box
+      ref={landing}
       component="main"
+      tabIndex={-1}
       sx={{
         minHeight: '100vh',
         display: 'flex',
