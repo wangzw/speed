@@ -239,6 +239,7 @@ const PUBLIC_EXPORTS = [
   'createAppTheme',
   'defaultPhoneCountry',
   'errorCodeOf',
+  'focusPageLanding',
   'formatNationalPhoneNumber',
   'httpStatusOf',
   'retryAfterSecondsOf',
