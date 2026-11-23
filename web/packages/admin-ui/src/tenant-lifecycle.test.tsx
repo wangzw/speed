@@ -14,8 +14,8 @@
  * the delete's own copy.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { attachSession } from '@speed/auth-core'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
@@ -44,6 +44,21 @@ const CONFIRM_AGAIN_LABEL = (
     readonly confirmDialog: { readonly confirmAgainLabel: string }
   }
 ).confirmDialog.confirmAgainLabel
+
+/** A promise the case settles by hand, so one write can be held in flight. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+  readonly reject: (reason: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
 
 /** Fills a locale template's `{{name}}` placeholders. */
 function text(
@@ -327,12 +342,17 @@ describe('platform tenant lifecycle entries', () => {
         }),
       ),
     ).toBeInTheDocument()
-    // The request control is held while one is pending.
-    expect(
-      screen.getByRole('button', {
-        name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
-      }),
-    ).toBeDisabled()
+    // A pending request is a precondition whose explanation already stands
+    // on the page: the control stays focusable and points at it.
+    const transfer = screen.getByRole('button', {
+      name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+    })
+    expect(transfer).toHaveAttribute('aria-disabled', 'true')
+    expect(transfer).toHaveAccessibleDescription(
+      zhCN.tenantLifecycle.transfer.pendingTitle,
+    )
+    await user.click(transfer)
+    expect(screen.queryByRole('dialog')).toBeNull()
 
     await user.click(
       screen.getByRole('button', {
@@ -356,6 +376,316 @@ describe('platform tenant lifecycle entries', () => {
     await waitFor(() =>
       expect(
         screen.queryByText(zhCN.tenantLifecycle.transfer.pendingTitle),
+      ).toBeNull(),
+    )
+    // The panel that carried the cancel control is gone with the settled
+    // request; focus hands off to the control group that stays, never to the
+    // document body.
+    expect(
+      screen.getByRole('group', { name: zhCN.tenantLifecycle.sectionTitle }),
+    ).toHaveFocus()
+  })
+
+  it('leaves focus where the operator moved it when the cancel lands', async () => {
+    const user = userEvent.setup()
+    const settled = deferred<void>()
+    let pending: ReturnType<typeof transferFixture> | null = transferFixture({
+      target_display_name: 'Ada Lovelace',
+      target_username: 'ada',
+    })
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        getPendingTenantOwner: () => Promise.resolve(pending),
+        cancelTenantOwner: () => {
+          pending = null
+          return settled.promise
+        },
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.pendingCancel,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.tenantLifecycle.transfer.pendingCancelTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.pendingCancel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The operator moves to another control before the request settles; the
+    // landing must not pull focus back to the group.
+    const transfer = screen.getByRole('button', {
+      name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+    })
+    transfer.focus()
+    await act(async () => {
+      settled.resolve()
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.tenantLifecycle.transfer.pendingTitle),
+      ).toBeNull(),
+    )
+    expect(transfer).toHaveFocus()
+  })
+
+  it('makes the delete entry unavailable while the cancel is in flight', async () => {
+    const user = userEvent.setup()
+    const settled = deferred<void>()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        getPendingTenantOwner: () =>
+          Promise.resolve(
+            transferFixture({
+              target_display_name: 'Ada Lovelace',
+              target_username: 'ada',
+            }),
+          ),
+        cancelTenantOwner: () => settled.promise,
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.pendingCancel,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.tenantLifecycle.transfer.pendingCancelTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.tenantLifecycle.transfer.pendingCancel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    const remove = screen.getByRole('button', {
+      name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
+    })
+    expect(remove).toHaveAttribute('aria-disabled', 'true')
+    expect(remove).not.toHaveAttribute('aria-describedby')
+
+    await act(async () => {
+      settled.resolve()
+    })
+  })
+
+  it('marks the withdraw control unavailable without a reason while the delete is in flight', async () => {
+    const user = userEvent.setup()
+    const removed = deferred<void>()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        getPendingTenantOwner: () =>
+          Promise.resolve(
+            transferFixture({
+              target_display_name: 'Ada Lovelace',
+              target_username: 'ada',
+            }),
+          ),
+        deleteTenant: () => removed.promise,
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+    await screen.findByText(zhCN.tenantLifecycle.transfer.pendingTitle)
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
+      }),
+    )
+    await confirmDelete(user, 'acme')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // The delete is in flight; the pending request's withdraw control stays
+    // focusable and unavailable, with no reason of its own: the write that
+    // blocks it is the visible delete, not a precondition to explain.
+    const withdraw = screen.getByRole('button', {
+      name: zhCN.tenantLifecycle.transfer.pendingCancel,
+    })
+    expect(withdraw).toHaveAttribute('aria-disabled', 'true')
+    expect(withdraw).not.toHaveAttribute('aria-busy')
+    expect(withdraw).not.toHaveAttribute('aria-describedby')
+
+    await act(async () => {
+      removed.resolve()
+    })
+  })
+
+  it('keeps the transfer submit unavailable with a reason until a target is chosen', async () => {
+    const user = userEvent.setup()
+    const writes: Array<{ name: string; account: string }> = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        requestTenantOwner: (input) => {
+          writes.push(input)
+          return Promise.resolve(transferFixture())
+        },
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    const submit = within(dialog).getByRole('button', {
+      name: zhCN.tenantLifecycle.transfer.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.tenantLifecycle.transfer.targetRequired,
+    )
+
+    // Activation is swallowed for click, Enter and Space alike: no target
+    // is chosen, so the confirmation never opens and nothing is written.
+    await user.click(submit)
+    submit.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(
+      screen.queryByText(
+        text(zhCN.tenantLifecycle.transfer.confirmTitle, { name: 'Acme' }),
+      ),
+    ).toBeNull()
+    expect(writes).toEqual([])
+    // The dialog is the only one open, and the button kept its focus.
+    expect(document.activeElement).toBe(submit)
+  })
+
+  it('keeps focus on the transfer submit while the request is in flight', async () => {
+    const user = userEvent.setup()
+    const written = deferred<ReturnType<typeof transferFixture>>()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        listMembers: () =>
+          Promise.resolve({ members: [...MEMBERS], next_cursor: '' }),
+        requestTenantOwner: () => written.promise,
+      }),
+    )
+    attachPermissions({
+      system: ['tenant.manage'],
+      tenant: ['authn.membership.manage'],
+    })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    const member = within(dialog).getByRole('combobox', {
+      name: zhCN.tenantLifecycle.transfer.memberLabel,
+    })
+    await chooseAccount(
+      user,
+      zhCN.tenantLifecycle.transfer.memberLabel,
+      'Ada',
+      'Ada Lovelace (ada)',
+    )
+    const submit = within(dialog).getByRole('button', {
+      name: zhCN.tenantLifecycle.transfer.submit,
+    })
+    expect(submit).not.toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(submit)
+    await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
+
+    // The write runs behind the closed confirmation. The button that
+    // started it stays focusable and busy, and the member field it belongs
+    // to turns read-only instead of dropping out of the Tab sequence.
+    await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
+    expect(document.activeElement).toBe(submit)
+    expect(member).toHaveAttribute('readonly')
+    const cancel = within(dialog).getByRole('button', {
+      name: zhCN.common.cancel,
+    })
+    expect(cancel).toHaveAttribute('aria-disabled', 'true')
+    await user.click(cancel)
+    // The unavailable cancel swallowed the activation; the dialog stays.
+    expect(
+      screen.getByRole('heading', {
+        name: text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
+      }),
+    ).toBeInTheDocument()
+
+    await act(async () => {
+      written.resolve(transferFixture())
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('keeps focus on the member retry while its re-read is in flight', async () => {
+    const user = userEvent.setup()
+    const retry = deferred<{
+      members: AdminMember[]
+      next_cursor: string
+    }>()
+    let reads = 0
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([acme]),
+        listMembers: () => {
+          reads += 1
+          return reads === 1
+            ? Promise.reject({ status: 500, code: 'client.http.500' })
+            : retry.promise
+        },
+      }),
+    )
+    attachPermissions({
+      system: ['tenant.manage'],
+      tenant: ['authn.membership.manage'],
+    })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    const button = await within(dialog).findByRole('button', {
+      name: zhCN.tenantLifecycle.transfer.membersRetry,
+    })
+    await user.click(button)
+
+    await waitFor(() => expect(button).toHaveAttribute('aria-busy', 'true'))
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(button)
+
+    await act(async () => {
+      retry.resolve({ members: [...MEMBERS], next_cursor: '' })
+    })
+    // The re-read landed, so the failure and its retry leave the page.
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.tenantLifecycle.transfer.membersFailed),
       ).toBeNull(),
     )
   })
@@ -565,9 +895,175 @@ describe('platform tenant deletion', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Acme')).toBeNull())
     await waitFor(() => expect(reads).toBeGreaterThan(1))
+    // The last row took the delete control out of the document; focus lands
+    // on the roster's own container, which stays on screen.
+    expect(
+      screen.getByRole('group', { name: zhCN.tenants.title }),
+    ).toHaveFocus()
   })
 
-  it('keeps the delete confirmation disabled until the exact name is typed', async () => {
+  it('hands focus to the next row\'s delete control when a row is deleted', async () => {
+    const user = userEvent.setup()
+    let tenants: AdminTenant[] = [
+      tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
+      tenantFixture({ name: 'bravo', display_name: 'Bravo', status: 'active' }),
+      tenantFixture({ name: 'charlie', display_name: 'Charlie', status: 'active' }),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve(tenants),
+        deleteTenant: (input) => {
+          tenants = tenants.filter((tenant) => tenant.name !== input.name)
+          return Promise.resolve()
+        },
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Bravo')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { name: 'bravo' }),
+      }),
+    )
+    await confirmDelete(user, 'bravo')
+
+    const next = await screen.findByRole('button', {
+      name: text(zhCN.tenantLifecycle.deleteAria, { name: 'charlie' }),
+    })
+    await waitFor(() => expect(screen.queryByText('Bravo')).toBeNull())
+    expect(next).toHaveFocus()
+  })
+
+  it('hands focus to the previous row\'s delete control when the last row is deleted', async () => {
+    const user = userEvent.setup()
+    let tenants: AdminTenant[] = [
+      tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
+      tenantFixture({ name: 'bravo', display_name: 'Bravo', status: 'active' }),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve(tenants),
+        deleteTenant: (input) => {
+          tenants = tenants.filter((tenant) => tenant.name !== input.name)
+          return Promise.resolve()
+        },
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Bravo')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { name: 'bravo' }),
+      }),
+    )
+    await confirmDelete(user, 'bravo')
+
+    const previous = await screen.findByRole('button', {
+      name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
+    })
+    await waitFor(() => expect(screen.queryByText('Bravo')).toBeNull())
+    expect(previous).toHaveFocus()
+  })
+
+  it('keeps focus on the delete entry while the delete is in flight', async () => {
+    const user = userEvent.setup()
+    const removed = deferred<void>()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () =>
+          Promise.resolve([
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
+          ]),
+        deleteTenant: () => removed.promise,
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    const remove = screen.getByRole('button', {
+      name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
+    })
+    await user.click(remove)
+    await confirmDelete(user, 'acme')
+
+    // The confirmation closed and the write runs; the control that started it
+    // keeps its focus instead of handing it to the document body.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      document.activeElement,
+      `focus after confirming the delete; document.activeElement is ${
+        document.activeElement?.tagName ?? 'null'
+      }`,
+    ).toBe(remove)
+    expect(remove).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => {
+      removed.resolve()
+    })
+  })
+
+  it('forgets a deletion when its confirming re-read fails, so a later read leaves focus alone', async () => {
+    const user = userEvent.setup()
+    let fail = false
+    let tenants: AdminTenant[] = [
+      tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
+      tenantFixture({ name: 'bravo', display_name: 'Bravo', status: 'active' }),
+    ]
+    const listTenants = vi.fn(() => {
+      if (fail) {
+        return Promise.reject({ status: 500, code: 'client.http.500' })
+      }
+      return Promise.resolve([...tenants])
+    })
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants,
+        deleteTenant: (input) => {
+          tenants = tenants.filter((tenant) => tenant.name !== input.name)
+          return Promise.resolve()
+        },
+      }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
+      }),
+    )
+    // The write lands but the re-read that confirms it fails. The failed
+    // read must drop the remembered row; otherwise a later successful read
+    // moves focus on its own.
+    fail = true
+    await confirmDelete(user, 'acme')
+    await waitFor(() =>
+      expect(listTenants.mock.calls.length).toBeGreaterThan(1),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fail = false
+
+    // The stale list still shows the removed row. Focus its delete control,
+    // then re-read the roster: the control leaves with the old data and
+    // focus drops to the body, the one place a remembered deletion would
+    // take over.
+    const stale = screen.getByRole('button', {
+      name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
+    })
+    stale.focus()
+    expect(stale).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: zhCN.common.refresh }))
+    await waitFor(() => expect(screen.queryByText('Acme')).toBeNull())
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('keeps the delete confirmation unavailable until the exact name is typed', async () => {
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -598,11 +1094,21 @@ describe('platform tenant deletion', () => {
     // exact name opens it.
     expect(field).toHaveValue('')
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    // The typed-name guard explains itself on the confirming button.
+    expect(confirm).toHaveAccessibleDescription(
+      zhCN.tenantLifecycle.deleteConfirm.nameMismatch,
+    )
     await user.type(field, 'acm')
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).toHaveAccessibleDescription(
+      zhCN.tenantLifecycle.deleteConfirm.nameMismatch,
+    )
     await user.clear(field)
     await user.type(field, 'acme')
     expect(confirm).not.toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).not.toHaveAccessibleDescription(
+      zhCN.tenantLifecycle.deleteConfirm.nameMismatch,
+    )
   })
 
   it('renders the tombstone refusal as the delete copy, not the registration conflict', async () => {
@@ -874,5 +1380,10 @@ describe('tenant detail lifecycle', () => {
       screen.queryByText(zhCN.tenantLifecycle.sectionTitle),
     ).toBeNull()
     expect(screen.getByText(confirmation)).toBeInTheDocument()
+    // With the whole control group withdrawn, the page's summary heading is
+    // the stable landmark the departed control hands focus to.
+    expect(
+      screen.getByRole('heading', { name: zhCN.tenantDetail.summary }),
+    ).toHaveFocus()
   })
 })

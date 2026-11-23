@@ -52,3 +52,18 @@ export function useSectionHeadingFocus(): SectionHeadingFocus {
 
   return { sectionRef: setSection, focusHeading }
 }
+
+/**
+ * Whether the focus a settled write started with is on its way out: the
+ * removal left it on the document body, or still inside the confirmation
+ * that is playing its exit transition. A reader who moved the focus to a
+ * control that stays on the page keeps it.
+ */
+export function removedControlHeldFocus(): boolean {
+  const active = document.activeElement
+  return (
+    active === null ||
+    active === document.body ||
+    active.closest('[role="dialog"]') !== null
+  )
+}
