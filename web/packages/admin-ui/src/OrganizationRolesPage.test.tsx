@@ -15,8 +15,8 @@
  * driven through auth-core's attached session, the same seam the host uses.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { attachSession } from '@speed/auth-core'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
@@ -53,6 +53,21 @@ function text(template: string, values: Record<string, string | number> = {}): s
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
     String(values[key] ?? match),
   )
+}
+
+/** A promise the case settles by hand, so one write can be held in flight. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+  readonly reject: (reason: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle
+    reject = fail
+  })
+  return { promise, resolve, reject }
 }
 
 const CONFIRM_AGAIN_LABEL = (
@@ -438,12 +453,94 @@ describe('the role catalog', () => {
     expect(
       screen.getByText(zhCN.permissions.roles.create.duplicate),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', {
-        name: zhCN.permissions.roles.create.submit,
-      }),
-    ).toBeDisabled()
+    const submit = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    // The duplicate hint stands on the page; the unavailable button points
+    // at it rather than repeating the text.
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.permissions.roles.create.duplicate,
+    )
+
+    // A precondition-unmet submit refuses click, Enter and Space alike.
+    await user.click(submit)
+    const field = screen.getByLabelText(zhCN.permissions.roles.create.roleLabel)
+    await user.click(field)
+    await user.keyboard('{Enter}')
+    submit.focus()
+    await user.keyboard(' ')
     expect(recorder.writes).toEqual([])
+  })
+
+  it('keeps the create button focusable and explains an empty name', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+
+    const submit = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.permissions.roles.create.roleRequired,
+    )
+    await user.click(submit)
+    expect(recorder.writes).toEqual([])
+  })
+
+  it('explains an over-long create description on the submit button', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
+      'reviewer',
+    )
+    const description = screen.getByLabelText(
+      zhCN.permissions.roles.create.descriptionLabel,
+    )
+    await user.click(description)
+    await user.paste('x'.repeat(501))
+
+    const submit = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      text(zhCN.permissions.roles.create.tooLong, { max: 500 }),
+    )
+    await user.click(submit)
+    expect(recorder.writes).toEqual([])
+  })
+
+  it('keeps focus on the create button while the create is in flight', async () => {
+    const user = userEvent.setup()
+    const written = deferred<void>()
+    const { backend } = scripted({ writeTenantRole: () => written.promise })
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
+      'reviewer',
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    await user.click(submit)
+    await waitFor(() =>
+      expect(submit).toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(document.activeElement).toBe(submit)
+
+    written.resolve()
+    await waitFor(() =>
+      expect(submit).not.toHaveAttribute('aria-busy', 'true'),
+    )
   })
 
   it('edits a role description in the side panel and sends the free text', async () => {
@@ -502,6 +599,36 @@ describe('the role catalog', () => {
         }),
       ),
     ).toBeInTheDocument()
+  })
+
+  it('points the description save button at the over-long length hint', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+
+    await chooseRowAction(
+      user,
+      ROLE_AUDITOR.role,
+      zhCN.permissions.roles.editDescription,
+    )
+    const panel = await screen.findByRole('dialog')
+    const field = within(panel).getByLabelText(
+      zhCN.permissions.roles.description.descriptionLabel,
+    )
+    await user.clear(field)
+    await user.click(field)
+    await user.paste('x'.repeat(501))
+
+    const save = within(panel).getByRole('button', {
+      name: zhCN.permissions.roles.description.save,
+    })
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAccessibleDescription(
+      text(zhCN.permissions.roles.description.tooLong, { max: 500 }),
+    )
+    await user.click(save)
+    expect(recorder.writes).toEqual([])
   })
 
   it('deletes a role only after the two-step confirmation', async () => {
@@ -831,11 +958,89 @@ describe('the selected role grants', () => {
         permission: 'tenant_role/write',
       }),
     })
-    expect(revoke).toBeDisabled()
+    expect(revoke).toHaveAttribute('aria-disabled', 'true')
+    expect(revoke).toHaveAccessibleDescription(
+      zhCN.permissions.grants.revokeUnavailable,
+    )
     expect(
       screen.getByText(zhCN.permissions.grants.revokeUnavailable),
     ).toBeInTheDocument()
     expect(recorder.revokes).toEqual([])
+  })
+
+  it('keeps the grant button unavailable with a reason until a permission is chosen', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderRolesPage(backend)
+    await selectRole(user, ROLE_AUDITOR.role)
+    await screen.findByText(
+      text(zhCN.permissions.grants.forRole, { role: ROLE_AUDITOR.role }),
+    )
+
+    const add = screen.getByRole('button', {
+      name: zhCN.permissions.grants.add,
+    })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    expect(add).toHaveAccessibleDescription(
+      zhCN.permissions.grants.pickPermission,
+    )
+    await user.click(add)
+    expect(recorder.grants).toEqual([])
+  })
+
+  it('keeps focus on the grant button while the grant is in flight', async () => {
+    const user = userEvent.setup()
+    const written = deferred<void>()
+    const { backend } = scripted({
+      grantTenantPermission: () => written.promise,
+    })
+    renderRolesPage(backend)
+    await selectRole(user, ROLE_AUDITOR.role)
+    await screen.findByText(
+      text(zhCN.permissions.grants.forRole, { role: ROLE_AUDITOR.role }),
+    )
+
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.grants.permissionLabel,
+      }),
+    )
+    await user.click(await screen.findByRole('option', { name: /Read roles/ }))
+    const add = screen.getByRole('button', {
+      name: zhCN.permissions.grants.add,
+    })
+    await user.click(add)
+    await waitFor(() => expect(add).toHaveAttribute('aria-busy', 'true'))
+    expect(document.activeElement).toBe(add)
+
+    written.resolve()
+    await waitFor(() => expect(add).not.toHaveAttribute('aria-busy', 'true'))
+  })
+
+  it('keeps focus on the revoke button while the revoke is in flight', async () => {
+    const user = userEvent.setup()
+    const written = deferred<void>()
+    const { backend } = scripted({
+      revokeTenantPermission: () => written.promise,
+    })
+    renderRolesPage(backend)
+    await selectRole(user, ROLE_AUDITOR.role)
+    const grantsSection = section(zhCN.permissions.grants.title)
+    await within(grantsSection).findByText('authz.tenant.role.read')
+
+    const revoke = within(grantsSection).getByRole('button', {
+      name: text(zhCN.permissions.grants.revokeAria, {
+        permission: 'authz.tenant.role.read',
+      }),
+    })
+    await user.click(revoke)
+    await waitFor(() => expect(revoke).toHaveAttribute('aria-busy', 'true'))
+    expect(document.activeElement).toBe(revoke)
+
+    written.resolve()
+    await waitFor(() =>
+      expect(revoke).not.toHaveAttribute('aria-busy', 'true'),
+    )
   })
 
   it('resolves a refused grant through the error-text whitelist', async () => {
@@ -1239,5 +1444,226 @@ describe('the page-level writes and accessibility', () => {
       await expectNoAxeViolations()
       unmount()
     }
+  })
+})
+
+/** Asserts a sibling control is unavailable without being busy or naming a
+ * reason of its own. */
+function expectSiblingUnavailable(control: HTMLElement): void {
+  expect(control).toHaveAttribute('aria-disabled', 'true')
+  expect(control).not.toHaveAttribute('aria-busy')
+  expect(control).not.toHaveAttribute('aria-describedby')
+}
+
+describe('OrganizationRolesPage write attribution', () => {
+  it('keeps the create control unavailable, not busy, while a role delete is in flight', async () => {
+    const user = userEvent.setup()
+    const removal = deferred<void>()
+    const { backend } = scripted({ removeTenantRole: () => removal.promise })
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+
+    await chooseRowAction(
+      user,
+      ROLE_AUDITOR.role,
+      zhCN.permissions.roles.remove,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.permissions.roles.removeConfirm,
+      }),
+    )
+    await waitForArmedConfirm()
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    const create = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    expect(create).toHaveAttribute('aria-disabled', 'true')
+    expect(create).not.toHaveAttribute('aria-busy')
+
+    await act(async () => {
+      removal.resolve()
+      await removal.promise
+    })
+  })
+
+  it('marks only the activated grant control busy and its sibling unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const revokeTenantPermission = vi.fn(() => Promise.resolve())
+    const rows = [
+      grant('authz.tenant.role.read', 'tenant_role', 'read'),
+      grant('authn.membership.manage', 'membership', 'manage'),
+    ]
+    const { backend } = scripted({
+      listTenantGrants: () => Promise.resolve(rows),
+      grantTenantPermission: () => pending.promise,
+      revokeTenantPermission,
+    })
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+    await selectRole(user, ROLE_AUDITOR.role)
+    await screen.findByText(
+      text(zhCN.permissions.grants.forRole, { role: ROLE_AUDITOR.role }),
+    )
+
+    await user.click(
+      screen.getByRole('combobox', {
+        name: zhCN.permissions.grants.permissionLabel,
+      }),
+    )
+    await user.click(await screen.findByRole('option', { name: /Read roles/ }))
+    const add = screen.getByRole('button', { name: zhCN.permissions.grants.add })
+    await user.click(add)
+
+    expect(add).toHaveAttribute('aria-busy', 'true')
+    const revoke = screen.getByRole('button', {
+      name: text(zhCN.permissions.grants.revokeAria, {
+        permission: 'authz.tenant.role.read',
+      }),
+    })
+    expectSiblingUnavailable(revoke)
+    fireEvent.click(revoke)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(revokeTenantPermission).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the revoking row busy and the grant control unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const rows = [
+      grant('authz.tenant.role.read', 'tenant_role', 'read'),
+      grant('authn.membership.manage', 'membership', 'manage'),
+    ]
+    const { backend } = scripted({
+      listTenantGrants: () => Promise.resolve(rows),
+      revokeTenantPermission: () => pending.promise,
+      grantTenantPermission: vi.fn(() => Promise.resolve()),
+    })
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+    await selectRole(user, ROLE_AUDITOR.role)
+
+    const revoke = await screen.findByRole('button', {
+      name: text(zhCN.permissions.grants.revokeAria, {
+        permission: 'authz.tenant.role.read',
+      }),
+    })
+    await user.click(revoke)
+
+    expect(revoke).toHaveAttribute('aria-busy', 'true')
+    expectSiblingUnavailable(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.grants.revokeAria, {
+          permission: 'authn.membership.manage',
+        }),
+      }),
+    )
+    const add = screen.getByRole('button', { name: zhCN.permissions.grants.add })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    expect(add).not.toHaveAttribute('aria-busy')
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('swallows a programmatic form submit while the create is unavailable or in flight', async () => {
+    const user = userEvent.setup()
+    const written = deferred<void>()
+    const writes: AdminTenantWriteRoleInput[] = []
+    const { backend } = scripted({
+      writeTenantRole: (input) => {
+        writes.push(input)
+        return written.promise
+      },
+    })
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+    const form = screen
+      .getByLabelText(zhCN.permissions.roles.create.roleLabel)
+      .closest('form')
+    expect(form).not.toBeNull()
+
+    // An empty draft leaves the control unavailable; a programmatic submit
+    // is swallowed by the form-level guard.
+    fireEvent.submit(form as HTMLFormElement)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(writes).toEqual([])
+
+    // A second submit while the first create is in flight sends nothing new.
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
+      'reviewer',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }),
+    )
+    fireEvent.submit(form as HTMLFormElement)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(writes).toHaveLength(1)
+
+    await act(async () => {
+      written.resolve()
+      await written.promise
+    })
+  })
+
+  it('moves focus to the next grant revoke control after a revoke lands', async () => {
+    const user = userEvent.setup()
+    let rows = [
+      grant('authz.tenant.role.read', 'tenant_role', 'read'),
+      grant('authn.membership.manage', 'membership', 'manage'),
+    ]
+    const { backend } = scripted({
+      listTenantGrants: () => Promise.resolve(rows),
+      revokeTenantPermission: (input) => {
+        rows = rows.filter((row) => row.permission !== input.permission)
+        return Promise.resolve()
+      },
+    })
+    renderRolesPage(backend)
+    await screen.findByText(ROLE_AUDITOR.role)
+    await selectRole(user, ROLE_AUDITOR.role)
+    const grantsSection = section(zhCN.permissions.grants.title)
+
+    await user.click(
+      await within(grantsSection).findByRole('button', {
+        name: text(zhCN.permissions.grants.revokeAria, {
+          permission: 'authz.tenant.role.read',
+        }),
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        within(grantsSection).queryByText('authz.tenant.role.read'),
+      ).toBeNull(),
+    )
+    await waitFor(() =>
+      expect(
+        within(grantsSection).getByRole('button', {
+          name: text(zhCN.permissions.grants.revokeAria, {
+            permission: 'authn.membership.manage',
+          }),
+        }),
+      ).toHaveFocus(),
+    )
   })
 })

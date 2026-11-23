@@ -10,12 +10,12 @@
  * closes only when the page reports the save landed.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { SidePanel } from '@speed/ui-kit'
+import { ActionButton, SidePanel } from '@speed/ui-kit'
+import type { ActionButtonUnavailableExplanation } from '@speed/ui-kit'
 import type { AdminTenantRole } from '../../organization-operations.js'
 import { useAdminUiTranslation } from '../translation.js'
 
@@ -50,6 +50,7 @@ export function RoleDescriptionPanel({
 }: RoleDescriptionPanelProps) {
   const { t } = useAdminUiTranslation()
   const [draft, setDraft] = useState(role?.description ?? '')
+  const lengthHintId = useId()
 
   // A new role or a re-opened panel starts from the role's current
   // description, never from the previous role's draft.
@@ -62,6 +63,12 @@ export function RoleDescriptionPanel({
   const length = [...draft].length
   const tooLong = length > ROLE_DESCRIPTION_MAX
 
+  // An over-long draft cannot be saved; the button points at the field's
+  // standing length text for its reason.
+  const saveExplanation: ActionButtonUnavailableExplanation = tooLong
+    ? { unavailableDescribedBy: lengthHintId }
+    : {}
+
   return (
     <SidePanel
       open={open}
@@ -73,18 +80,19 @@ export function RoleDescriptionPanel({
       onExited={onExited}
       actions={
         <>
-          <Button type="button" variant="outlined" disabled={saving} onClick={onClose}>
+          <ActionButton type="button" unavailable={saving} onClick={onClose}>
             {t('permissions.roles.description.cancel')}
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
             type="button"
-            variant="contained"
-            disabled={saving || tooLong}
-            loading={saving}
+            emphasis="primary"
+            busy={saving}
+            unavailable={tooLong}
+            {...saveExplanation}
             onClick={() => onSave(draft)}
           >
             {t('permissions.roles.description.save')}
-          </Button>
+          </ActionButton>
         </>
       }
     >
@@ -103,14 +111,16 @@ export function RoleDescriptionPanel({
           label={t('permissions.roles.description.descriptionLabel')}
           error={tooLong}
           helperText={
-            tooLong
-              ? t('permissions.roles.description.tooLong', {
-                  max: ROLE_DESCRIPTION_MAX,
-                })
-              : t('permissions.roles.description.counter', {
-                  count: length,
-                  max: ROLE_DESCRIPTION_MAX,
-                })
+            <span id={lengthHintId}>
+              {tooLong
+                ? t('permissions.roles.description.tooLong', {
+                    max: ROLE_DESCRIPTION_MAX,
+                  })
+                : t('permissions.roles.description.counter', {
+                    count: length,
+                    max: ROLE_DESCRIPTION_MAX,
+                  })}
+            </span>
           }
         />
         {failureText !== null && (

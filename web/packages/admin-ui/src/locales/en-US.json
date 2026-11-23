@@ -681,7 +681,9 @@
         "roleLabel": "Role name",
         "descriptionLabel": "Description",
         "submit": "Create role",
-        "duplicate": "This role already exists; edit its description instead."
+        "duplicate": "This role already exists; edit its description instead.",
+        "roleRequired": "Enter a role name.",
+        "tooLong": "The description cannot exceed {{max}} characters."
       },
       "actionsAria": "Actions for role {{role}}",
       "editDescription": "Edit description",
@@ -720,6 +722,7 @@
       "permissionLabel": "Permission",
       "add": "Grant",
       "permissionRequired": "Select a permission to grant first.",
+      "pickPermission": "Choose a permission first.",
       "noneGrantable": "The catalog carries no permission you may grant.",
       "dangerousTitle": "Grant a high-risk permission",
       "dangerousMessage": "Permission {{permission}} is high-risk; granting it to role \"{{role}}\" widens that role's power. Click again to confirm.",

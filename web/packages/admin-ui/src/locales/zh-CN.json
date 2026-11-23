@@ -681,7 +681,9 @@
         "roleLabel": "角色名",
         "descriptionLabel": "描述",
         "submit": "创建角色",
-        "duplicate": "角色已存在，请编辑它的描述。"
+        "duplicate": "角色已存在，请编辑它的描述。",
+        "roleRequired": "请输入角色名。",
+        "tooLong": "描述不能超过 {{max}} 个字符。"
       },
       "actionsAria": "角色 {{role}} 的操作",
       "editDescription": "编辑描述",
@@ -720,6 +722,7 @@
       "permissionLabel": "权限",
       "add": "授予",
       "permissionRequired": "请先选择要授予的权限。",
+      "pickPermission": "请先选择一个权限。",
       "noneGrantable": "权限目录里没有你能授予的权限。",
       "dangerousTitle": "授予高风险权限",
       "dangerousMessage": "权限 {{permission}} 的风险较高，授予角色「{{role}}」会扩大该角色的权力。请再次点击确认。",

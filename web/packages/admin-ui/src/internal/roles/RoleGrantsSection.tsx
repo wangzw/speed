@@ -14,15 +14,18 @@
 
 import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import ListSubheader from '@mui/material/ListSubheader'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { DataTable, ListSkeleton } from '@speed/ui-kit'
-import type { DataTableColumn, WriteOutcome } from '@speed/ui-kit'
-import type { RefObject } from 'react'
+import { ActionButton, DataTable, ListSkeleton } from '@speed/ui-kit'
+import type {
+  ActionButtonUnavailableExplanation,
+  DataTableColumn,
+  WriteOutcome,
+} from '@speed/ui-kit'
+import type { Ref, RefObject } from 'react'
 import type {
   AdminTenantGrant,
   AdminTenantPermission,
@@ -56,6 +59,11 @@ export interface RoleGrantsSectionProps {
   readonly lockNote: string | null
   /** Whether a grant or revoke is in flight. */
   readonly busy: boolean
+  /** The grant control the in-flight write belongs to. */
+  readonly pendingWrite:
+    | { readonly kind: 'grant' }
+    | { readonly kind: 'revoke'; readonly key: string }
+    | null
   /** The resolved text of the grants scope's failure, or null. */
   readonly failureText: string | null
   /** The grant row a failure names, or null. */
@@ -64,6 +72,10 @@ export interface RoleGrantsSectionProps {
   readonly outcome: WriteOutcome | null
   /** The grants region's scroll handle. */
   readonly regionRef: RefObject<HTMLDivElement | null>
+  /**
+   * The ref of one grant's revoke control, for the removal focus record.
+   */
+  readonly revokeControlRef: (key: string) => Ref<HTMLButtonElement>
   /** Grants one permission; the page runs the write. */
   readonly onGrant: (entry: AdminTenantPermission) => void
   /** Revokes one grant; the page runs the write. */
@@ -93,10 +105,12 @@ export function RoleGrantsSection({
   selectedRole,
   lockNote,
   busy,
+  pendingWrite,
   failureText,
   failedGrant,
   outcome,
   regionRef,
+  revokeControlRef,
   onGrant,
   onRevoke,
 }: RoleGrantsSectionProps) {
@@ -111,6 +125,11 @@ export function RoleGrantsSection({
     return map
   }, [catalog])
   const chosen = byCode.get(permission)
+  // With no permission picked the grant button is unavailable and says why.
+  const pickExplanation: ActionButtonUnavailableExplanation =
+    chosen === undefined
+      ? { unavailableReason: t('permissions.grants.pickPermission') }
+      : {}
 
   const actionsColumn: DataTableColumn<AdminTenantGrant> = {
     id: 'actions',
@@ -121,30 +140,41 @@ export function RoleGrantsSection({
       const key = `${grant.resource}:${grant.action}`
       const failed = failedGrant === key
       const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
+      const unmappableId = `permissions-grant-unavailable-${encodeURIComponent(key)}`
       const unmappable = grant.permission === ''
       const label = unmappable
         ? `${grant.resource}/${grant.action}`
         : grant.permission
+      // A pair the catalog cannot map has its reason standing beside the
+      // row; the button points at it instead of repeating the text.
+      const explanation: ActionButtonUnavailableExplanation = unmappable
+        ? { unavailableDescribedBy: unmappableId }
+        : {}
+      const revokeBusy =
+        pendingWrite?.kind === 'revoke' && pendingWrite.key === key
       return (
         <Box>
-          <Button
+          <ActionButton
+            ref={revokeControlRef(key)}
             type="button"
             size="small"
-            variant="outlined"
-            color="error"
+            tone="danger"
             aria-label={t('permissions.grants.revokeAria', {
               permission: label,
             })}
             aria-invalid={failed}
             aria-describedby={failed ? errorId : undefined}
-            disabled={busy || unmappable}
-            loading={busy}
+            busy={revokeBusy}
+            unavailable={unmappable || (busy && !revokeBusy)}
+            {...explanation}
+            data-grant-revoke={key}
             onClick={() => onRevoke(grant)}
           >
             {t('permissions.grants.revoke')}
-          </Button>
+          </ActionButton>
           {unmappable && (
             <Typography
+              id={unmappableId}
               variant="caption"
               color="text.secondary"
               sx={{ display: 'block', mt: 0.5 }}
@@ -250,11 +280,15 @@ export function RoleGrantsSection({
                     )),
                   ])}
                 </TextField>
-                <Button
+                <ActionButton
                   type="button"
-                  variant="contained"
-                  disabled={busy || chosen === undefined}
-                  loading={busy}
+                  emphasis="primary"
+                  busy={pendingWrite?.kind === 'grant'}
+                  unavailable={
+                    chosen === undefined ||
+                    (busy && pendingWrite?.kind !== 'grant')
+                  }
+                  {...pickExplanation}
                   onClick={() => {
                     if (chosen !== undefined) {
                       onGrant(chosen)
@@ -263,7 +297,7 @@ export function RoleGrantsSection({
                   }}
                 >
                   {t('permissions.grants.add')}
-                </Button>
+                </ActionButton>
               </Box>
             )
           ) : (
