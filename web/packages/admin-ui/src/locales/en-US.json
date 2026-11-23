@@ -719,6 +719,7 @@
       "noManageReadOnly": "You do not have permission to manage roles; the grants are read-only.",
       "permissionLabel": "Permission",
       "add": "Grant",
+      "permissionRequired": "Select a permission to grant first.",
       "noneGrantable": "The catalog carries no permission you may grant.",
       "dangerousTitle": "Grant a high-risk permission",
       "dangerousMessage": "Permission {{permission}} is high-risk; granting it to role \"{{role}}\" widens that role's power. Click again to confirm.",
@@ -808,6 +809,8 @@
       "accountLabel": "Account to bind",
       "roleLabel": "Role",
       "bind": "Bind",
+      "accountRequired": "Choose an account first.",
+      "roleRequired": "Enter a role name first.",
       "loading": "Loading bindings",
       "empty": {
         "title": "No bindings",
@@ -834,6 +837,7 @@
       "title": "Look up an account's bindings",
       "accountLabel": "Account",
       "apply": "Look up",
+      "accountRequired": "Choose an account first.",
       "loading": "Loading the account's bindings",
       "error": {
         "title": "The account's bindings could not be loaded",

@@ -81,13 +81,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Ref } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   DataTable,
   EmptyState,
   ListSkeleton,
@@ -130,6 +131,11 @@ import {
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
+import {
+  focusAfterRowRemoval,
+  useRowRemovalFocus,
+} from './internal/focus-after-removal.js'
+import { useSectionHeadingFocus } from './internal/section-heading-focus.js'
 import type {
   AdminAccount,
   AdminBinding,
@@ -251,40 +257,51 @@ function groupCatalog(entries: readonly AdminPermission[]) {
 function UnbindButton({
   binding,
   identity,
-  disabled,
+  busy,
+  unavailable,
   invalid,
   describedBy,
+  rowAttribute,
+  controlRef,
   onClick,
 }: {
   readonly binding: AdminBinding
   /** The account's resolved identity, or the neutral copy when none. */
   readonly identity: AccountIdentityValue
-  readonly disabled: boolean
+  /** Whether this row's unbind write is in flight. */
+  readonly busy: boolean
+  /** Whether another write in the scope keeps this control out of reach. */
+  readonly unavailable: boolean
   /** Whether this row is the one the scope's failure names. */
   readonly invalid: boolean
   /** The id of the resolved failure text rendered in this row. */
   readonly describedBy?: string
+  /** The attribute naming this row's control for the unload focus hand-off. */
+  readonly rowAttribute: string
+  /** This row's control ref, for the removal focus record. */
+  readonly controlRef?: Ref<HTMLButtonElement>
   readonly onClick: (identity: AccountIdentityValue) => void
 }) {
   const { t } = useAdminUiTranslation()
   return (
-    <Button
+    <ActionButton
+      ref={controlRef}
       type="button"
       size="small"
-      variant="outlined"
-      color="error"
+      tone="danger"
       aria-label={t('permissions.bindings.unbindAria', {
         account: accountLabel(t, identity),
         role: binding.role,
       })}
       aria-invalid={invalid}
       aria-describedby={invalid ? describedBy : undefined}
-      disabled={disabled}
-      loading={disabled}
+      busy={busy}
+      unavailable={unavailable}
+      {...{ [rowAttribute]: bindingKey(binding) }}
       onClick={() => onClick(identity)}
     >
       {t('permissions.bindings.unbind')}
-    </Button>
+    </ActionButton>
   )
 }
 
@@ -305,6 +322,27 @@ function bindingKey(binding: AdminBinding): string {
 /** The id of one binding row's inline failure text within a scope. */
 function bindingErrorId(scope: string, binding: AdminBinding): string {
   return `permissions-${scope}-error-${encodeURIComponent(bindingKey(binding))}`
+}
+
+/** The role-scope control a write belongs to: the create form or one row. */
+type PendingRoleWrite =
+  | { readonly kind: 'create' }
+  | { readonly kind: 'remove'; readonly role: string }
+
+/** The grants-scope control a write belongs to. */
+type PendingGrantWrite =
+  | { readonly kind: 'grant' }
+  | { readonly kind: 'revoke'; readonly key: string }
+
+/** The bindings-scope control a write belongs to. */
+type PendingBindingWrite =
+  | { readonly kind: 'bind' }
+  | { readonly kind: 'unbind'; readonly key: string }
+
+/** A row a landed write will remove, with the position that row held. */
+interface RowRemoval {
+  readonly value: string
+  readonly index: number
 }
 
 export interface PermissionsPageProps {
@@ -397,6 +435,10 @@ function PermissionsPageBody({
   const grantsRegionRef = useFailureScroll(grantsFeedback.outcome)
   const bindingsRegionRef = useFailureScroll(bindingsFeedback.outcome)
   const lookupRegionRef = useFailureScroll(lookupFeedback.outcome)
+  const rolesSection = useSectionHeadingFocus()
+  const grantsSection = useSectionHeadingFocus()
+  const bindingsSection = useSectionHeadingFocus()
+  const lookupSection = useSectionHeadingFocus()
 
   // The row each scope's failure names. The marker belongs to the row the
   // region reports, and clearing it before an attempt starts keeps it from
@@ -407,6 +449,29 @@ function PermissionsPageBody({
   const [failedLookupBinding, setFailedLookupBinding] = useState<string | null>(
     null,
   )
+  // The control each scope's in-flight write belongs to: only that control
+  // reports busy, while its siblings in the same scope are unavailable.
+  const [pendingRoleWrite, setPendingRoleWrite] =
+    useState<PendingRoleWrite | null>(null)
+  const [pendingGrantWrite, setPendingGrantWrite] =
+    useState<PendingGrantWrite | null>(null)
+  const [pendingBindingWrite, setPendingBindingWrite] =
+    useState<PendingBindingWrite | null>(null)
+  const [pendingLookupWrite, setPendingLookupWrite] = useState<string | null>(
+    null,
+  )
+  // The row a landed write removed, recorded when the attempt starts so the
+  // focus hand-off can name the row that moved up.
+  const roleRemoval = useRef<RowRemoval | null>(null)
+  const grantRemoval = useRef<RowRemoval | null>(null)
+  const bindingRemoval = useRef<RowRemoval | null>(null)
+  const lookupRemoval = useRef<RowRemoval | null>(null)
+  // Whether each scope's control held focus when its row left; only then
+  // does that scope's landing move it.
+  const roleFocus = useRowRemovalFocus()
+  const grantFocus = useRowRemovalFocus()
+  const bindingFocus = useRowRemovalFocus()
+  const lookupFocus = useRowRemovalFocus()
   // Whether the last refresh's roles read dropped the selected role. The
   // page announces it in one standing status region; choosing a role,
   // changing the tenant or refreshing again clears it.
@@ -587,16 +652,19 @@ function PermissionsPageBody({
   const saveRole = () => {
     const role = roleName
     setFailedRole(null)
-    void roleFeedback.run(async () => {
-      await writeRole.mutateAsync({
-        tenant,
-        role,
-        description: roleDescription,
+    setPendingRoleWrite({ kind: 'create' })
+    void roleFeedback
+      .run(async () => {
+        await writeRole.mutateAsync({
+          tenant,
+          role,
+          description: roleDescription,
+        })
+        setRoleName('')
+        setRoleDescription('')
+        return t('permissions.roles.saved', { role })
       })
-      setRoleName('')
-      setRoleDescription('')
-      return t('permissions.roles.saved', { role })
-    })
+      .finally(() => setPendingRoleWrite(null))
   }
 
   const requestRemoveRole = (role: AdminRole) => {
@@ -609,20 +677,28 @@ function PermissionsPageBody({
       doubleConfirm: true,
       run: () => {
         setFailedRole(null)
-        void roleFeedback.run(async () => {
-          try {
-            await removeRole.mutateAsync({ tenant, role: role.role })
-            if (selectedRoleRef.current === role.role) {
-              setSelectedRole('')
-              grantsFeedback.reset()
-              setFailedGrant(null)
+        roleRemoval.current = {
+          value: role.role,
+          index: roleRows?.findIndex((row) => row.role === role.role) ?? -1,
+        }
+        setPendingRoleWrite({ kind: 'remove', role: role.role })
+        void roleFeedback
+          .run(async () => {
+            try {
+              await removeRole.mutateAsync({ tenant, role: role.role })
+              if (selectedRoleRef.current === role.role) {
+                setSelectedRole('')
+                grantsFeedback.reset()
+                setFailedGrant(null)
+              }
+              return t('permissions.roles.removed', { role: role.role })
+            } catch (error) {
+              roleRemoval.current = null
+              setFailedRole(role.role)
+              throw error
             }
-            return t('permissions.roles.removed', { role: role.role })
-          } catch (error) {
-            setFailedRole(role.role)
-            throw error
-          }
-        })
+          })
+          .finally(() => setPendingRoleWrite(null))
       },
     })
   }
@@ -637,18 +713,21 @@ function PermissionsPageBody({
       // from a clean result, so the refused row's marker and its inline reason
       // do not outlive the result they described.
       setFailedGrant(null)
-      void grantsFeedback.run(async () => {
-        await grantPermissionMutation.mutateAsync({
-          tenant,
-          role: selectedRole,
-          permission,
+      setPendingGrantWrite({ kind: 'grant' })
+      void grantsFeedback
+        .run(async () => {
+          await grantPermissionMutation.mutateAsync({
+            tenant,
+            role: selectedRole,
+            permission,
+          })
+          setGrantPermission('')
+          return t('permissions.grants.granted', {
+            permission,
+            role: selectedRole,
+          })
         })
-        setGrantPermission('')
-        return t('permissions.grants.granted', {
-          permission,
-          role: selectedRole,
-        })
-      })
+        .finally(() => setPendingGrantWrite(null))
     }
     // A permission the catalog marks dangerous widens the grantee's power over
     // other accounts or the tenant's policy: the deliberate two-step
@@ -672,22 +751,32 @@ function PermissionsPageBody({
   const revoke = (grant: AdminGrant, code: string) => {
     const key = `${grant.resource}:${grant.action}`
     setFailedGrant(null)
-    void grantsFeedback.run(async () => {
-      try {
-        await revokePermission.mutateAsync({
-          tenant,
-          role: selectedRole,
-          permission: code,
-        })
-        return t('permissions.grants.revoked', {
-          permission: code,
-          role: selectedRole,
-        })
-      } catch (error) {
-        setFailedGrant(key)
-        throw error
-      }
-    })
+    grantRemoval.current = {
+      value: key,
+      index: grants.data?.findIndex(
+        (entry) => `${entry.resource}:${entry.action}` === key,
+      ) ?? -1,
+    }
+    setPendingGrantWrite({ kind: 'revoke', key })
+    void grantsFeedback
+      .run(async () => {
+        try {
+          await revokePermission.mutateAsync({
+            tenant,
+            role: selectedRole,
+            permission: code,
+          })
+          return t('permissions.grants.revoked', {
+            permission: code,
+            role: selectedRole,
+          })
+        } catch (error) {
+          grantRemoval.current = null
+          setFailedGrant(key)
+          throw error
+        }
+      })
+      .finally(() => setPendingGrantWrite(null))
   }
 
   const bind = () => {
@@ -697,20 +786,23 @@ function PermissionsPageBody({
     const account = bindAccount
     const role = bindRoleName
     setFailedBinding(null)
-    void bindingsFeedback.run(async () => {
-      await bindRole.mutateAsync({ tenant, account: account.id, role })
-      setBindAccount(null)
-      setBindRoleName('')
-      return accountNotice(
-        t,
-        {
-          named: 'permissions.bindings.bound',
-          unnamed: 'permissions.bindings.boundUnnamed',
-        },
-        accountIdentityValue(account),
-        { role },
-      )
-    })
+    setPendingBindingWrite({ kind: 'bind' })
+    void bindingsFeedback
+      .run(async () => {
+        await bindRole.mutateAsync({ tenant, account: account.id, role })
+        setBindAccount(null)
+        setBindRoleName('')
+        return accountNotice(
+          t,
+          {
+            named: 'permissions.bindings.bound',
+            unnamed: 'permissions.bindings.boundUnnamed',
+          },
+          accountIdentityValue(account),
+          { role },
+        )
+      })
+      .finally(() => setPendingBindingWrite(null))
   }
 
   // The bindings table and the lookup table keep separate scopes and row
@@ -723,6 +815,7 @@ function PermissionsPageBody({
   ) => {
     const feedback = lookup ? lookupFeedback : bindingsFeedback
     const key = bindingKey(binding)
+    const rows = lookup ? accountBindings.data : bindings.data
     const mark = (value: string | null) => {
       if (lookup) {
         setFailedLookupBinding(value)
@@ -731,30 +824,174 @@ function PermissionsPageBody({
       }
     }
     mark(null)
-    void feedback.run(async () => {
-      try {
-        await unbindRole.mutateAsync({
-          tenant,
-          account: binding.account,
-          role: binding.role,
-        })
-        return accountNotice(
-          t,
-          {
-            named: 'permissions.bindings.unbound',
-            unnamed: 'permissions.bindings.unboundUnnamed',
-          },
-          identity,
-          { role: binding.role },
-        )
-      } catch (error) {
-        mark(key)
-        throw error
-      }
-    })
+    const removal = {
+      value: key,
+      index: rows?.findIndex((row) => bindingKey(row) === key) ?? -1,
+    }
+    if (lookup) {
+      lookupRemoval.current = removal
+      setPendingLookupWrite(key)
+    } else {
+      bindingRemoval.current = removal
+      setPendingBindingWrite({ kind: 'unbind', key })
+    }
+    void feedback
+      .run(async () => {
+        try {
+          await unbindRole.mutateAsync({
+            tenant,
+            account: binding.account,
+            role: binding.role,
+          })
+          return accountNotice(
+            t,
+            {
+              named: 'permissions.bindings.unbound',
+              unnamed: 'permissions.bindings.unboundUnnamed',
+            },
+            identity,
+            { role: binding.role },
+          )
+        } catch (error) {
+          if (lookup) {
+            lookupRemoval.current = null
+          } else {
+            bindingRemoval.current = null
+          }
+          mark(key)
+          throw error
+        }
+      })
+      .finally(() => {
+        if (lookup) {
+          setPendingLookupWrite(null)
+        } else {
+          setPendingBindingWrite(null)
+        }
+      })
   }
 
   const roleRows = roles.data
+
+  // A landed write removes the row whose control started it; the same
+  // control on the next row takes focus, else the previous row's, else the
+  // section heading. A failed re-read never confirms the row left, so it
+  // drops the record instead of letting a later read move focus.
+  useEffect(() => {
+    const removed = roleRemoval.current
+    if (removed === null) {
+      return
+    }
+    if (roles.error !== null) {
+      roleRemoval.current = null
+      return
+    }
+    if (roleRows === undefined) {
+      return
+    }
+    if (roleRows.some((row) => row.role === removed.value)) {
+      return
+    }
+    roleRemoval.current = null
+    focusAfterRowRemoval(
+      'data-role-remove',
+      removed.value,
+      removed.index,
+      roleFocus.takeHeldFocus(removed.value),
+      rolesSection.focusHeading,
+    )
+  }, [roleRows, roles.error, rolesSection.focusHeading, roleFocus.takeHeldFocus])
+
+  useEffect(() => {
+    const removed = grantRemoval.current
+    if (removed === null) {
+      return
+    }
+    if (grants.error !== null) {
+      grantRemoval.current = null
+      return
+    }
+    if (grants.data === undefined) {
+      return
+    }
+    if (
+      grants.data.some(
+        (entry) => `${entry.resource}:${entry.action}` === removed.value,
+      )
+    ) {
+      return
+    }
+    grantRemoval.current = null
+    focusAfterRowRemoval(
+      'data-grant-revoke',
+      removed.value,
+      removed.index,
+      grantFocus.takeHeldFocus(removed.value),
+      grantsSection.focusHeading,
+    )
+  }, [grants.data, grants.error, grantsSection.focusHeading, grantFocus.takeHeldFocus])
+
+  useEffect(() => {
+    const removed = bindingRemoval.current
+    if (removed === null) {
+      return
+    }
+    if (bindings.error !== null) {
+      bindingRemoval.current = null
+      return
+    }
+    if (bindings.data === undefined) {
+      return
+    }
+    if (
+      bindings.data.some((binding) => bindingKey(binding) === removed.value)
+    ) {
+      return
+    }
+    bindingRemoval.current = null
+    focusAfterRowRemoval(
+      'data-binding-unbind',
+      removed.value,
+      removed.index,
+      bindingFocus.takeHeldFocus(removed.value),
+      bindingsSection.focusHeading,
+    )
+  }, [bindings.data, bindings.error, bindingsSection.focusHeading, bindingFocus.takeHeldFocus])
+
+  useEffect(() => {
+    const removed = lookupRemoval.current
+    if (removed === null) {
+      return
+    }
+    if (accountBindings.error !== null) {
+      lookupRemoval.current = null
+      return
+    }
+    if (accountBindings.data === undefined) {
+      return
+    }
+    if (
+      accountBindings.data.some(
+        (binding) => bindingKey(binding) === removed.value,
+      )
+    ) {
+      return
+    }
+    lookupRemoval.current = null
+    focusAfterRowRemoval(
+      'data-lookup-unbind',
+      removed.value,
+      removed.index,
+      lookupFocus.takeHeldFocus(removed.value),
+      lookupSection.focusHeading,
+    )
+  }, [
+    accountBindings.data,
+    accountBindings.error,
+    lookupSection.focusHeading,
+    lookupFocus.takeHeldFocus,
+  ])
+
   // A locked role refuses every write -- role rewrite and delete, and
   // grant/revoke -- but not the reads. Only the server's builtin mark locks
   // a role here: the platform surface has no host-protected role names. The
@@ -818,6 +1055,10 @@ function PermissionsPageBody({
       cell: (role) => {
         const failed = failedRole === role.role
         const errorId = `permissions-role-error-${encodeURIComponent(role.role)}`
+        const removeBusy =
+          pendingRoleWrite?.kind === 'remove' &&
+          pendingRoleWrite.role === role.role
+        const scopePending = pendingRoleWrite !== null
         return (
           <Box>
             {roleLocked(role) ? (
@@ -830,18 +1071,17 @@ function PermissionsPageBody({
                   rowGap: 1,
                 }}
               >
-                <Button
+                <ActionButton
                   type="button"
                   size="small"
-                  variant="outlined"
                   aria-label={t('permissions.roles.viewGrantsAria', {
                     role: role.role,
                   })}
-                  disabled={grantsFeedback.pending}
+                  unavailable={grantsFeedback.pending}
                   onClick={() => selectRole(role.role)}
                 >
                   {t('permissions.roles.viewGrants')}
-                </Button>
+                </ActionButton>
                 <Typography variant="body2" color="text.secondary">
                   {t('permissions.roles.builtinLocked')}
                 </Typography>
@@ -855,34 +1095,34 @@ function PermissionsPageBody({
                   rowGap: 1,
                 }}
               >
-                <Button
+                <ActionButton
                   type="button"
                   size="small"
-                  variant="outlined"
                   aria-label={t('permissions.roles.manageGrantsAria', {
                     role: role.role,
                   })}
-                  disabled={grantsFeedback.pending}
+                  unavailable={grantsFeedback.pending}
                   onClick={() => selectRole(role.role)}
                 >
                   {t('permissions.roles.manageGrants')}
-                </Button>
-                <Button
+                </ActionButton>
+                <ActionButton
+                  ref={roleFocus.controlRef(role.role)}
                   type="button"
                   size="small"
-                  variant="outlined"
-                  color="error"
+                  tone="danger"
                   aria-label={t('permissions.roles.removeAria', {
                     role: role.role,
                   })}
                   aria-invalid={failed}
                   aria-describedby={failed ? errorId : undefined}
-                  disabled={roleFeedback.pending}
-                  loading={roleFeedback.pending}
+                  busy={removeBusy}
+                  unavailable={scopePending && !removeBusy}
+                  data-role-remove={role.role}
                   onClick={() => requestRemoveRole(role)}
                 >
                   {t('permissions.roles.remove')}
-                </Button>
+                </ActionButton>
               </Box>
             )}
             {failed && roleFailureText !== null && (
@@ -946,24 +1186,29 @@ function PermissionsPageBody({
       const failed = failedGrant === key
       const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
       // A grant with no permission code cannot name the permission the
-      // revoke route takes. The control stays visible but disabled, and the
-      // reason sits beneath it as text, so a reader who never focuses the
-      // disabled control still gets the explanation.
+      // revoke route takes. The control stays visible but unavailable, and
+      // the reason sits beneath it as text, so a reader who never focuses
+      // the control still gets the explanation.
       const unmappedId = `permissions-grant-unmapped-${encodeURIComponent(key)}`
+      const revokeBusy =
+        pendingGrantWrite?.kind === 'revoke' && pendingGrantWrite.key === key
+      const scopePending = pendingGrantWrite !== null
       return (
         <Box>
-          <Button
+          <ActionButton
+            ref={grantFocus.controlRef(key)}
             type="button"
             size="small"
-            variant="outlined"
-            color="error"
+            tone="danger"
             aria-label={t('permissions.grants.revokeAria', {
               permission: grantLabel(grant),
             })}
             aria-invalid={failed}
-            aria-describedby={failed ? errorId : code === null ? unmappedId : undefined}
-            disabled={grantsFeedback.pending || code === null}
-            loading={grantsFeedback.pending}
+            aria-describedby={failed ? errorId : undefined}
+            busy={revokeBusy}
+            unavailable={code === null || (scopePending && !revokeBusy)}
+            unavailableDescribedBy={code === null ? unmappedId : undefined}
+            data-grant-revoke={key}
             onClick={() => {
               if (code !== null) {
                 revoke(grant, code)
@@ -971,7 +1216,7 @@ function PermissionsPageBody({
             }}
           >
             {t('permissions.grants.revoke')}
-          </Button>
+          </ActionButton>
           {code === null && (
             <Typography
               id={unmappedId}
@@ -1042,7 +1287,14 @@ function PermissionsPageBody({
   ): DataTableColumn<AdminBinding>[] => {
     const failedKey = lookup ? failedLookupBinding : failedBinding
     const failureText = lookup ? lookupFailureText : bindingsFailureText
-    const feedback = lookup ? lookupFeedback : bindingsFeedback
+    const scopePending = lookup
+      ? pendingLookupWrite !== null
+      : pendingBindingWrite !== null
+    const pendingKey = lookup
+      ? pendingLookupWrite
+      : pendingBindingWrite?.kind === 'unbind'
+        ? pendingBindingWrite.key
+        : null
     return [
       {
         id: 'account',
@@ -1068,18 +1320,27 @@ function PermissionsPageBody({
         header: t('permissions.bindings.column.actions'),
         cellWrap: 'nowrap',
         cell: (binding) => {
-          const failed = failedKey === bindingKey(binding)
+          const key = bindingKey(binding)
+          const failed = failedKey === key
           const errorId = bindingErrorId(
             lookup ? 'lookup' : 'bindings',
             binding,
           )
+          const busy = pendingKey === key
           return (
             <Box>
               <PlatformUnbindButton
                 binding={binding}
-                disabled={feedback.pending}
+                busy={busy}
+                unavailable={scopePending && !busy}
                 invalid={failed}
                 describedBy={errorId}
+                rowAttribute={
+                  lookup ? 'data-lookup-unbind' : 'data-binding-unbind'
+                }
+                controlRef={(lookup ? lookupFocus : bindingFocus).controlRef(
+                  key,
+                )}
                 onClick={(identity) => unbind(binding, lookup, identity)}
               />
               {failed && failureText !== null && (
@@ -1161,7 +1422,11 @@ function PermissionsPageBody({
         />
       ) : (
         <>
-          <SectionCard title={t('permissions.roles.title')} sx={{ mb: 3 }}>
+          <SectionCard
+            ref={rolesSection.sectionRef}
+            title={t('permissions.roles.title')}
+            sx={{ mb: 3 }}
+          >
             <Box
               sx={{
                 display: 'flex',
@@ -1191,17 +1456,24 @@ function PermissionsPageBody({
                 // input at the same bound.
                 slotProps={{ htmlInput: { maxLength: 500 } }}
               />
-              <Button
+              <ActionButton
                 type="button"
-                variant="contained"
-                disabled={
-                  roleFeedback.pending || roleName.trim() === ''
+                emphasis="primary"
+                busy={pendingRoleWrite?.kind === 'create'}
+                unavailable={
+                  roleName.trim() === '' ||
+                  (pendingRoleWrite !== null &&
+                    pendingRoleWrite.kind !== 'create')
                 }
-                loading={roleFeedback.pending}
+                unavailableReason={
+                  roleName.trim() === ''
+                    ? t('permissions.roles.create.roleRequired')
+                    : undefined
+                }
                 onClick={saveRole}
               >
                 {t('permissions.roles.create.submit')}
-              </Button>
+              </ActionButton>
             </Box>
 
             <AdminAsyncSection
@@ -1244,7 +1516,11 @@ function PermissionsPageBody({
             </Box>
           </SectionCard>
 
-          <SectionCard title={t('permissions.grants.title')} sx={{ mb: 3 }}>
+          <SectionCard
+            ref={grantsSection.sectionRef}
+            title={t('permissions.grants.title')}
+            sx={{ mb: 3 }}
+          >
             {selectedRole === '' ? (
               <Typography variant="body2" color="text.secondary">
                 {t('permissions.grants.pickRole')}
@@ -1295,17 +1571,24 @@ function PermissionsPageBody({
                         </MenuItem>
                       ))}
                     </TextField>
-                    <Button
+                    <ActionButton
                       type="button"
-                      variant="contained"
-                      disabled={
-                        grantsFeedback.pending || grantPermission === ''
+                      emphasis="primary"
+                      busy={pendingGrantWrite?.kind === 'grant'}
+                      unavailable={
+                        grantPermission === '' ||
+                        (pendingGrantWrite !== null &&
+                          pendingGrantWrite.kind !== 'grant')
                       }
-                      loading={grantsFeedback.pending}
+                      unavailableReason={
+                        grantPermission === ''
+                          ? t('permissions.grants.permissionRequired')
+                          : undefined
+                      }
                       onClick={grant}
                     >
                       {t('permissions.grants.add')}
-                    </Button>
+                    </ActionButton>
                   </Box>
                 )}
                 <AdminAsyncSection
@@ -1396,7 +1679,11 @@ function PermissionsPageBody({
             </AdminAsyncSection>
           </SectionCard>
 
-          <SectionCard title={t('permissions.bindings.title')} sx={{ mb: 3 }}>
+          <SectionCard
+            ref={bindingsSection.sectionRef}
+            title={t('permissions.bindings.title')}
+            sx={{ mb: 3 }}
+          >
             <Box
               sx={{
                 display: 'flex',
@@ -1418,21 +1705,29 @@ function PermissionsPageBody({
                 value={bindRoleName}
                 onChange={(event) => changeBindRole(event.target.value)}
                 label={t('permissions.bindings.roleLabel')}
-                disabled={bindingsFeedback.pending}
+                slotProps={{ input: { readOnly: bindingsFeedback.pending } }}
               />
-              <Button
+              <ActionButton
                 type="button"
-                variant="contained"
-                disabled={
-                  bindingsFeedback.pending ||
+                emphasis="primary"
+                busy={pendingBindingWrite?.kind === 'bind'}
+                unavailable={
+                  bindAccount === null ||
                   bindRoleName.trim() === '' ||
-                  bindAccount === null
+                  (pendingBindingWrite !== null &&
+                    pendingBindingWrite.kind !== 'bind')
                 }
-                loading={bindingsFeedback.pending}
+                unavailableReason={
+                  bindAccount === null
+                    ? t('permissions.bindings.accountRequired')
+                    : bindRoleName.trim() === ''
+                      ? t('permissions.bindings.roleRequired')
+                      : undefined
+                }
                 onClick={bind}
               >
                 {t('permissions.bindings.bind')}
-              </Button>
+              </ActionButton>
             </Box>
             <AdminAsyncSection
               pending={bindings.isPending && bindings.data === undefined}
@@ -1471,7 +1766,11 @@ function PermissionsPageBody({
             </Box>
           </SectionCard>
 
-          <SectionCard title={t('permissions.lookup.title')} sx={{ mb: 3 }}>
+          <SectionCard
+            ref={lookupSection.sectionRef}
+            title={t('permissions.lookup.title')}
+            sx={{ mb: 3 }}
+          >
             <Box
               sx={{
                 display: 'flex',
@@ -1488,19 +1787,19 @@ function PermissionsPageBody({
                 onChange={setLookupAccount}
                 disabled={lookupFeedback.pending}
               />
-              <Button
+              <ActionButton
                 type="button"
-                variant="outlined"
-                disabled={
-                  lookupAccount === null ||
-                  accountBindings.isFetching ||
-                  lookupFeedback.pending
+                busy={accountBindings.isFetching}
+                unavailable={lookupAccount === null || lookupFeedback.pending}
+                unavailableReason={
+                  lookupAccount === null
+                    ? t('permissions.lookup.accountRequired')
+                    : undefined
                 }
-                loading={accountBindings.isFetching}
                 onClick={applyLookup}
               >
                 {t('permissions.lookup.apply')}
-              </Button>
+              </ActionButton>
             </Box>
             {lookupApplied !== '' && (
               <AdminAsyncSection

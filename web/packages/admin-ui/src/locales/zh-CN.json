@@ -719,6 +719,7 @@
       "noManageReadOnly": "你没有管理角色的权限，授权为只读。",
       "permissionLabel": "权限",
       "add": "授予",
+      "permissionRequired": "请先选择要授予的权限。",
       "noneGrantable": "权限目录里没有你能授予的权限。",
       "dangerousTitle": "授予高风险权限",
       "dangerousMessage": "权限 {{permission}} 的风险较高，授予角色「{{role}}」会扩大该角色的权力。请再次点击确认。",
@@ -808,6 +809,8 @@
       "accountLabel": "要绑定的账户",
       "roleLabel": "角色",
       "bind": "绑定",
+      "accountRequired": "请先选择一个账户。",
+      "roleRequired": "请先输入角色名。",
       "loading": "正在加载绑定",
       "empty": {
         "title": "暂无绑定",
@@ -834,6 +837,7 @@
       "title": "查询账户的绑定",
       "accountLabel": "账户",
       "apply": "查询",
+      "accountRequired": "请先选择一个账户。",
       "loading": "正在加载该账户的绑定",
       "error": {
         "title": "该账户的绑定加载失败",

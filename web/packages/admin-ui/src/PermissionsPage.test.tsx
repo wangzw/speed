@@ -323,15 +323,15 @@ describe('PermissionsPage', () => {
     const submit = screen.getByRole('button', {
       name: zhCN.permissions.roles.create.submit,
     })
-    expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
 
     // Whitespace alone is not a name.
     await user.type(name, '   ')
-    expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
     await user.clear(name)
     await user.type(name, 'auditor')
     await user.type(description, 'reads audit records')
-    expect(submit).toBeEnabled()
+    expect(submit).not.toHaveAttribute('aria-disabled', 'true')
 
     await user.click(submit)
     expect(
@@ -534,7 +534,7 @@ describe('PermissionsPage', () => {
     // an entry that opens the grants it holds.
     expect(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.viewGrantsAria, { role: 'platform-admin' }) }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
     expect(
       screen.queryByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'platform-admin' }) }),
     ).toBeNull()
@@ -543,8 +543,10 @@ describe('PermissionsPage', () => {
     ).toBeNull()
     expect(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }),
-    ).toBeEnabled()
-    expect(screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }) })).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
+    expect(
+      screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }) }),
+    ).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('opens a builtin role grants read-only, with no grant or revoke control', async () => {
@@ -1075,9 +1077,9 @@ describe('PermissionsPage', () => {
         permission: 'retired/op',
       }),
     })
-    expect(revoke).toBeDisabled()
-    // The reason is visible text beneath the disabled control, not only a
-    // hover affordance a keyboard user cannot reach.
+    expect(revoke).toHaveAttribute('aria-disabled', 'true')
+    // The reason is visible text beneath the unavailable control, not only
+    // a hover affordance a keyboard user cannot reach.
     const reason = within(grantsSection).getByText(
       zhCN.permissions.grants.revokeUnavailable,
     )
@@ -1106,7 +1108,7 @@ describe('PermissionsPage', () => {
     // A role alone is not a binding: the account must be chosen, and the
     // picker holds no id until then.
     await user.type(screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }), 'viewer')
-    expect(screen.getByRole('button', { name: zhCN.permissions.bindings.bind })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.permissions.bindings.bind })).toHaveAttribute('aria-disabled', 'true')
     // A display name finds the account; the write carries its id ("acc-2"),
     // never the typed name.
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
@@ -1190,7 +1192,7 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     // No account chosen yet, so the lookup is not offered.
-    expect(screen.getByRole('button', { name: zhCN.permissions.lookup.apply })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.permissions.lookup.apply })).toHaveAttribute('aria-disabled', 'true')
     await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
     // The read is addressed by the account id, not the typed name.
@@ -1579,7 +1581,7 @@ describe('PermissionsPage', () => {
     // every scope: both are out of reach while the grant is in flight.
     expect(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'viewer' }) }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByLabelText(zhCN.common.tenant)).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -1641,6 +1643,73 @@ describe('PermissionsPage', () => {
         }),
       ),
     ).toBeNull()
+  })
+
+  it('keeps the bind control focusable and inert while its precondition is unmet and its write is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const bound: string[] = []
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      bindRole: (input) => {
+        bound.push(`${input.account}:${input.role}`)
+        return pending.promise
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+
+    const bind = screen.getByRole('button', {
+      name: zhCN.permissions.bindings.bind,
+    })
+    // No account is chosen yet: the control is unavailable with a reason,
+    // not natively disabled, so it can hold focus and says why it cannot
+    // run. A forced activation writes nothing.
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveAccessibleDescription(
+      zhCN.permissions.bindings.accountRequired,
+    )
+    bind.focus()
+    expect(bind).toHaveFocus()
+    fireEvent.click(bind)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(bound).toEqual([])
+
+    // With the precondition met, activation starts the write. While it is
+    // in flight the control reports busy and keeps focus, and a further
+    // click, Enter or Space issues no second write.
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }),
+      'viewer',
+    )
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
+    await user.click(bind)
+    expect(bind).toHaveAttribute('aria-busy', 'true')
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveFocus()
+    // The role field is read-only, not natively disabled, while the write
+    // is in flight.
+    expect(
+      screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }),
+    ).toHaveAttribute('readonly')
+    fireEvent.click(bind)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(bound).toEqual(['acc-2:viewer'])
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    // The write settles, the fields clear and the precondition is unmet
+    // again; the control still holds focus.
+    expect(bind).toHaveFocus()
   })
 
   // Both binding writes name the account in the shared four shapes and never
@@ -2073,5 +2142,631 @@ describe('PermissionsPage', () => {
     await screen.findByText('editor')
     await screen.findByText('platform-admin')
     await expectNoAxeViolations()
+  })
+})
+
+/** Arms and confirms the two-step delete dialog. */
+async function confirmRoleRemoval(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  const dialog = await screen.findByRole('dialog')
+  await user.click(
+    within(dialog).getByRole('button', {
+      name: zhCN.permissions.roles.removeConfirm,
+    }),
+  )
+  await act(async () => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+    )
+  })
+  await user.click(
+    within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+  )
+}
+
+function roleRemoveButton(name: string): HTMLElement {
+  return screen.getByRole('button', {
+    name: text(zhCN.permissions.roles.removeAria, { role: name }),
+  })
+}
+
+function grantRevokeButton(code: string): HTMLElement {
+  return screen.getByRole('button', {
+    name: text(zhCN.permissions.grants.revokeAria, { permission: code }),
+  })
+}
+
+/** Asserts a sibling control is unavailable without being busy or naming a
+ * reason of its own. */
+function expectSiblingUnavailable(control: HTMLElement): void {
+  expect(control).toHaveAttribute('aria-disabled', 'true')
+  expect(control).not.toHaveAttribute('aria-busy')
+  expect(control).not.toHaveAttribute('aria-describedby')
+}
+
+describe('PermissionsPage write attribution', () => {
+  it('marks only the create submit busy while a role is created, the remove rows unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const removeRole = vi.fn(() => Promise.resolve())
+    const operations = withAuthz({
+      listRoles: () =>
+        Promise.resolve([role({ role: 'alpha' }), role({ role: 'beta' })]),
+      writeRole: () => pending.promise,
+      removeRole,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('alpha')
+
+    await user.type(
+      screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
+      'reviewer',
+    )
+    const create = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    await user.click(create)
+
+    expect(create).toHaveAttribute('aria-busy', 'true')
+    for (const button of [roleRemoveButton('alpha'), roleRemoveButton('beta')]) {
+      expectSiblingUnavailable(button)
+    }
+    // The create button owns the in-flight write; its own reason is gone.
+    // A forced activation on a sibling row starts no second write.
+    const alpha = roleRemoveButton('alpha')
+    fireEvent.click(alpha)
+    alpha.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(removeRole).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the deleting row busy, the create submit and the other rows unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const removeRole = vi.fn(() => pending.promise)
+    const operations = withAuthz({
+      listRoles: () =>
+        Promise.resolve([role({ role: 'alpha' }), role({ role: 'beta' })]),
+      writeRole: () => Promise.resolve(),
+      removeRole,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('alpha')
+
+    await user.click(roleRemoveButton('alpha'))
+    await confirmRoleRemoval(user)
+
+    const alpha = roleRemoveButton('alpha')
+    const beta = roleRemoveButton('beta')
+    expect(alpha).toHaveAttribute('aria-busy', 'true')
+    expectSiblingUnavailable(beta)
+    const create = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    expect(create).toHaveAttribute('aria-disabled', 'true')
+    expect(create).not.toHaveAttribute('aria-busy')
+
+    // The sibling row does not open a second confirmation.
+    fireEvent.click(beta)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(removeRole).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the activated grant control busy and its grant sibling unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const revokePermission = vi.fn(() => Promise.resolve())
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role({ role: 'alpha' })]),
+      listGrants: () =>
+        Promise.resolve([
+          grant({ role: 'alpha', permission: 'crm.deal.read', resource: 'deal', action: 'read' }),
+          grant({ role: 'alpha', permission: 'crm.deal.write', resource: 'deal', action: 'write' }),
+        ]),
+      grantPermission: () => pending.promise,
+      revokePermission,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'alpha' }),
+      }),
+    )
+    const grantsSection = section(zhCN.permissions.grants.title)
+    await within(grantsSection).findByText('crm.deal.read')
+
+    await user.click(
+      screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
+    )
+    await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
+    const add = screen.getByRole('button', { name: zhCN.permissions.grants.add })
+    await user.click(add)
+
+    expect(add).toHaveAttribute('aria-busy', 'true')
+    const readRevoke = grantRevokeButton('crm.deal.read')
+    expectSiblingUnavailable(readRevoke)
+    fireEvent.click(readRevoke)
+    readRevoke.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(revokePermission).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the revoking row busy and the grant control unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const grantPermission = vi.fn(() => Promise.resolve())
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role({ role: 'alpha' })]),
+      listGrants: () =>
+        Promise.resolve([
+          grant({ role: 'alpha', permission: 'crm.deal.read', resource: 'deal', action: 'read' }),
+          grant({ role: 'alpha', permission: 'crm.deal.write', resource: 'deal', action: 'write' }),
+        ]),
+      revokePermission: () => pending.promise,
+      grantPermission,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'alpha' }),
+      }),
+    )
+    await within(section(zhCN.permissions.grants.title)).findByText(
+      'crm.deal.read',
+    )
+
+    await user.click(grantRevokeButton('crm.deal.read'))
+
+    expect(grantRevokeButton('crm.deal.read')).toHaveAttribute('aria-busy', 'true')
+    expectSiblingUnavailable(grantRevokeButton('crm.deal.write'))
+    const add = screen.getByRole('button', { name: zhCN.permissions.grants.add })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    expect(add).not.toHaveAttribute('aria-busy')
+    fireEvent.click(add)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(grantPermission).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the activated binding control busy and the other binding controls unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const unbindRole = vi.fn(() => Promise.resolve())
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role({ role: 'alpha' })]),
+      listBindings: () =>
+        Promise.resolve([
+          binding({ account: 'acc-1', role: 'editor' }),
+          binding({ account: 'acc-1', role: 'viewer' }),
+        ]),
+      bindRole: () => pending.promise,
+      unbindRole,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('viewer')
+
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }),
+      'viewer',
+    )
+    await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
+    const bind = screen.getByRole('button', { name: zhCN.permissions.bindings.bind })
+    await user.click(bind)
+
+    expect(bind).toHaveAttribute('aria-busy', 'true')
+    const bindingsSection = section(zhCN.permissions.bindings.title)
+    const unbinds = within(bindingsSection).getAllByRole('button', {
+      name: new RegExp(zhCN.permissions.bindings.unbind),
+    })
+    expect(unbinds).toHaveLength(2)
+    for (const control of unbinds) {
+      expectSiblingUnavailable(control)
+    }
+    fireEvent.click(unbinds[0]!)
+    unbinds[0]!.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(unbindRole).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the unbinding row busy and the bind submit unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const bindRole = vi.fn(() => Promise.resolve())
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role({ role: 'alpha' })]),
+      listBindings: () =>
+        Promise.resolve([
+          binding({ account: 'acc-1', role: 'editor' }),
+          binding({ account: 'acc-1', role: 'viewer' }),
+        ]),
+      unbindRole: () => pending.promise,
+      bindRole,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    const bindingsSection = section(zhCN.permissions.bindings.title)
+    const first = await within(bindingsSection).findByRole('button', {
+      name: text(zhCN.permissions.bindings.unbindAria, {
+        account: 'Operator',
+        role: 'editor',
+      }),
+    })
+    await user.click(first)
+
+    expect(first).toHaveAttribute('aria-busy', 'true')
+    const bind = within(bindingsSection).getByRole('button', {
+      name: zhCN.permissions.bindings.bind,
+    })
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).not.toHaveAttribute('aria-busy')
+    fireEvent.click(bind)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(bindRole).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the activated lookup unbind row busy and the apply control unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withAuthz({
+      listAccountBindings: () =>
+        Promise.resolve([
+          binding({ account: 'acc-1', role: 'editor' }),
+          binding({ account: 'acc-1', role: 'viewer' }),
+        ]),
+      unbindRole: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
+    const lookup = section(zhCN.permissions.lookup.title)
+    await user.click(within(lookup).getByRole('button', { name: zhCN.permissions.lookup.apply }))
+    const first = await within(lookup).findByRole('button', {
+      name: text(zhCN.permissions.bindings.unbindAria, {
+        account: 'Operator',
+        role: 'editor',
+      }),
+    })
+    await user.click(first)
+
+    expect(first).toHaveAttribute('aria-busy', 'true')
+    const second = within(lookup).getByRole('button', {
+      name: text(zhCN.permissions.bindings.unbindAria, {
+        account: 'Operator',
+        role: 'viewer',
+      }),
+    })
+    expectSiblingUnavailable(second)
+    const apply = within(lookup).getByRole('button', {
+      name: zhCN.permissions.lookup.apply,
+    })
+    expect(apply).toHaveAttribute('aria-disabled', 'true')
+    expect(apply).not.toHaveAttribute('aria-busy')
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('names the reason on each unavailable form control', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role({ role: 'alpha' })]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'alpha' }),
+      }),
+    )
+
+    expect(
+      screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }),
+    ).toHaveAccessibleDescription(zhCN.permissions.roles.create.roleRequired)
+    expect(
+      screen.getByRole('button', { name: zhCN.permissions.grants.add }),
+    ).toHaveAccessibleDescription(zhCN.permissions.grants.permissionRequired)
+    expect(
+      screen.getByRole('button', { name: zhCN.permissions.bindings.bind }),
+    ).toHaveAccessibleDescription(zhCN.permissions.bindings.accountRequired)
+    expect(
+      screen.getByRole('button', { name: zhCN.permissions.lookup.apply }),
+    ).toHaveAccessibleDescription(zhCN.permissions.lookup.accountRequired)
+  })
+})
+
+describe('PermissionsPage unload focus', () => {
+  it("moves focus to the next role's remove control after a delete lands", async () => {
+    const user = userEvent.setup()
+    let rows = [role({ role: 'alpha' }), role({ role: 'beta' })]
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([...rows]),
+      removeRole: (input) => {
+        rows = rows.filter((row) => row.role !== input.role)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('beta')
+
+    await user.click(roleRemoveButton('alpha'))
+    await confirmRoleRemoval(user)
+
+    await waitFor(() =>
+      expect(screen.queryByText('alpha')).toBeNull(),
+    )
+    await waitForCondition(() => expect(roleRemoveButton('beta')).toHaveFocus())
+  })
+
+  it('moves focus to the roles heading when the last role is removed', async () => {
+    const user = userEvent.setup()
+    let rows = [role({ role: 'alpha' })]
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([...rows]),
+      removeRole: (input) => {
+        rows = rows.filter((row) => row.role !== input.role)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('alpha')
+
+    await user.click(roleRemoveButton('alpha'))
+    await confirmRoleRemoval(user)
+
+    await waitFor(() => expect(screen.queryByText('alpha')).toBeNull())
+    await waitForCondition(() =>
+      expect(
+        screen.getByRole('heading', { name: zhCN.permissions.roles.title }),
+      ).toHaveFocus(),
+    )
+  })
+
+  it("moves focus to the next grant's revoke control after a revoke lands", async () => {
+    const user = userEvent.setup()
+    let rows = [
+      grant({ role: 'alpha', permission: 'crm.deal.read', resource: 'deal', action: 'read' }),
+      grant({ role: 'alpha', permission: 'crm.deal.write', resource: 'deal', action: 'write' }),
+    ]
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role({ role: 'alpha' })]),
+      listGrants: () => Promise.resolve([...rows]),
+      revokePermission: (input) => {
+        rows = rows.filter((row) => row.permission !== input.permission)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'alpha' }),
+      }),
+    )
+    const grantsSection = section(zhCN.permissions.grants.title)
+    await within(grantsSection).findByText('crm.deal.read')
+
+    await user.click(grantRevokeButton('crm.deal.read'))
+    await waitFor(() =>
+      expect(within(grantsSection).queryByText('crm.deal.read')).toBeNull(),
+    )
+    await waitForCondition(() =>
+      expect(grantRevokeButton('crm.deal.write')).toHaveFocus(),
+    )
+  })
+
+  it("moves focus to the next binding's unbind control after an unbind lands", async () => {
+    const user = userEvent.setup()
+    let rows = [
+      binding({ account: 'acc-1', role: 'editor' }),
+      binding({ account: 'acc-1', role: 'viewer' }),
+    ]
+    const operations = withAuthz({
+      listBindings: () => Promise.resolve([...rows]),
+      unbindRole: (input) => {
+        rows = rows.filter((row) => row.role !== input.role)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    const bindingsSection = section(zhCN.permissions.bindings.title)
+    const first = await within(bindingsSection).findByRole('button', {
+      name: text(zhCN.permissions.bindings.unbindAria, {
+        account: 'Operator',
+        role: 'editor',
+      }),
+    })
+    await user.click(first)
+
+    await waitFor(() =>
+      expect(
+        within(bindingsSection).queryByRole('button', {
+          name: text(zhCN.permissions.bindings.unbindAria, {
+            account: 'Operator',
+            role: 'editor',
+          }),
+        }),
+      ).toBeNull(),
+    )
+    await waitForCondition(() =>
+      expect(
+        within(bindingsSection).getByRole('button', {
+          name: text(zhCN.permissions.bindings.unbindAria, {
+            account: 'Operator',
+            role: 'viewer',
+          }),
+        }),
+      ).toHaveFocus(),
+    )
+  })
+
+  it("moves focus to the next lookup unbind control after an unbind lands", async () => {
+    const user = userEvent.setup()
+    let rows = [
+      binding({ account: 'acc-2', role: 'editor' }),
+      binding({ account: 'acc-2', role: 'viewer' }),
+    ]
+    const operations = withAuthz({
+      // The identity read resolves each id to its own row, so the two
+      // unbind controls name different roles on the same account.
+      getAccount: (query) =>
+        Promise.resolve(
+          query.id === 'acc-2'
+            ? account({
+                id: 'acc-2',
+                display_name: 'Ada',
+                identifiers: [
+                  {
+                    kind: 'username',
+                    value: 'ada',
+                    proven: false,
+                    sign_in: true,
+                    contact: false,
+                    default_contact: false,
+                  },
+                ],
+              })
+            : account({ id: query.id ?? 'acc-1' }),
+        ),
+      listAccountBindings: () => Promise.resolve([...rows]),
+      unbindRole: (input) => {
+        rows = rows.filter((row) => row.role !== input.role)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
+    const lookup = section(zhCN.permissions.lookup.title)
+    await user.click(
+      within(lookup).getByRole('button', { name: zhCN.permissions.lookup.apply }),
+    )
+    const first = await within(lookup).findByRole('button', {
+      name: text(zhCN.permissions.bindings.unbindAria, {
+        account: 'Ada (ada)',
+        role: 'editor',
+      }),
+    })
+    await user.click(first)
+
+    await waitFor(() =>
+      expect(
+        within(lookup).queryByRole('button', {
+          name: text(zhCN.permissions.bindings.unbindAria, {
+            account: 'Ada (ada)',
+            role: 'editor',
+          }),
+        }),
+      ).toBeNull(),
+    )
+    await waitForCondition(() =>
+      expect(
+        within(lookup).getByRole('button', {
+          name: text(zhCN.permissions.bindings.unbindAria, {
+            account: 'Ada (ada)',
+            role: 'viewer',
+          }),
+        }),
+      ).toHaveFocus(),
+    )
+  })
+
+  it('does not take focus back when the reader moved it before a removal lands', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    let rows = [
+      grant({ role: 'alpha', permission: 'crm.deal.read', resource: 'deal', action: 'read' }),
+      grant({ role: 'alpha', permission: 'crm.deal.write', resource: 'deal', action: 'write' }),
+    ]
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role({ role: 'alpha' })]),
+      listGrants: () => Promise.resolve([...rows]),
+      revokePermission: () => pending.promise,
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'alpha' }),
+      }),
+    )
+    const grantsSection = section(zhCN.permissions.grants.title)
+    await within(grantsSection).findByText('crm.deal.read')
+
+    await user.click(grantRevokeButton('crm.deal.read'))
+    // The reader moves to a control of their own while the write is in
+    // flight; the settlement must not pull focus back to the table.
+    const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
+    refresh.focus()
+    expect(refresh).toHaveFocus()
+
+    rows = rows.filter((row) => row.permission !== 'crm.deal.read')
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    await waitFor(() =>
+      expect(within(grantsSection).queryByText('crm.deal.read')).toBeNull(),
+    )
+    expect(refresh).toHaveFocus()
   })
 })
