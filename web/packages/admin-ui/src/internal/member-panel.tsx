@@ -49,7 +49,7 @@
  * behind it is reachable again.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -59,11 +59,13 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useAuthState, usePermission } from '@speed/auth-core'
 import {
+  ActionButton,
   ListSkeleton,
   SidePanel,
   useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import type { ActionButtonUnavailableExplanation } from '@speed/ui-kit'
 import type { AdminMember } from '../operations.js'
 import type { AdminTenantBinding } from '../organization-operations.js'
 import { useOrganizationAdminOperations } from '../organization-operations.js'
@@ -79,9 +81,28 @@ import {
 } from './write-feedback.js'
 import { useAdminUiErrorText } from './error-text.js'
 import { useRoleEscalationCheck } from './role-escalation.js'
+import {
+  focusAfterRowRemoval,
+  useRowRemovalFocus,
+} from './focus-after-removal.js'
 
 /** The role permission tier the caller holds in this tenant. */
 type RoleTier = 'none' | 'read' | 'manage'
+
+/**
+ * The texts that explain why the bind control cannot run. Each is the
+ * paragraph the panel already renders for that state, so the control
+ * points at it instead of repeating it; the missing role choice has no
+ * standing text, so the control carries that reason itself.
+ */
+const SUSPENDED_BIND_NOTE_ID = 'member-panel-suspended-bind-note'
+const ROLE_CHECKING_ID = 'member-panel-role-checking'
+const ROLE_FAILED_ID = 'member-panel-role-failed'
+const ROLE_UNCONFIRMED_ID = 'member-panel-role-unconfirmed'
+const ROLE_BLOCKED_ID = 'member-panel-role-blocked'
+/** The note that explains why the current account cannot suspend or remove
+ * its own membership; both controls point at it. */
+const SELF_NOTE_ID = 'member-panel-self-note'
 
 /** The write a failure belongs to, so the panel can mark that control. */
 type FailedWrite =
@@ -176,11 +197,50 @@ export function MemberPanel({
     availableRoles.length === 0
 
   const [failed, setFailed] = useState<FailedWrite | null>(null)
+  // The control the panel's in-flight write belongs to: only that control
+  // reports busy, while the other controls in the panel are unavailable.
+  const [pendingWrite, setPendingWrite] = useState<FailedWrite | null>(null)
+  // The binding row a landed unbind removed, with the position it held.
+  const unbindRemoval = useRef<{ role: string; index: number } | null>(null)
+  // Whether the unbind control held focus when its row left; only then does
+  // the landing move it.
+  const unbindFocus = useRowRemovalFocus()
+  // The roles heading, made programmatically focusable: the stable target
+  // when an unbind leaves no adjacent binding row.
+  const rolesHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const feedback = useWriteFeedback()
   const regionRef = useFailureScroll(feedback.outcome)
   const resolveErrorText = useAdminUiErrorText()
   const failureText = failureTextOf(feedback.outcome, resolveErrorText)
   const confirm = usePendingConfirm()
+
+  // A landed unbind removes one binding row. The same control on the next
+  // row takes focus, else the previous row's, else the roles heading; a
+  // failed re-read drops the record so a later read cannot move focus.
+  useEffect(() => {
+    const removed = unbindRemoval.current
+    if (removed === null) {
+      return
+    }
+    if (bindings.error !== null) {
+      unbindRemoval.current = null
+      return
+    }
+    if (bindings.data === undefined) {
+      return
+    }
+    if (bindings.data.some((binding) => binding.role === removed.role)) {
+      return
+    }
+    unbindRemoval.current = null
+    focusAfterRowRemoval(
+      'data-member-unbind',
+      removed.role,
+      removed.index,
+      unbindFocus.takeHeldFocus(removed.role),
+      () => rolesHeadingRef.current?.focus(),
+    )
+  }, [bindings.data, bindings.error, unbindFocus.takeHeldFocus])
 
   const bindRole = operations.useTenantBindRole()
   const unbindRole = operations.useTenantUnbindRole()
@@ -195,13 +255,23 @@ export function MemberPanel({
     ? t('members.status.active')
     : t('members.status.suspended')
 
-  const bindDisabled =
-    feedback.pending ||
-    !member.active ||
-    !roleSelected ||
-    grantsPending ||
-    grantsFailed ||
-    escalationBlocked
+  // The bind control's unmet preconditions, in the order an operator meets
+  // them. A suspended member and every grant state already render their own
+  // explanation; the missing role choice has no standing text.
+  const bindExplanation: ActionButtonUnavailableExplanation | undefined =
+    !member.active
+      ? { unavailableDescribedBy: SUSPENDED_BIND_NOTE_ID }
+      : !roleSelected
+        ? { unavailableReason: t('members.panel.bindNoRole') }
+        : grantsPending
+          ? { unavailableDescribedBy: ROLE_CHECKING_ID }
+          : grantsFailed
+            ? { unavailableDescribedBy: ROLE_FAILED_ID }
+            : grantPermissionUnconfirmed
+              ? { unavailableDescribedBy: ROLE_UNCONFIRMED_ID }
+              : escalationBlocked
+                ? { unavailableDescribedBy: ROLE_BLOCKED_ID }
+                : undefined
 
   const bindingFailure =
     failed?.kind === 'unbind' && failureText !== null ? failureText : null
@@ -225,47 +295,58 @@ export function MemberPanel({
     }
     const role = selectedRole
     startWrite(null)
-    void feedback.run(async () => {
-      try {
-        await bindRole.mutateAsync({
-          tenant,
-          account: member.account,
-          role,
-        })
-        setSelectedRole('')
-        return displayName === undefined
-          ? t('members.panel.bindSavedUnnamed', { role })
-          : t('members.panel.bindSaved', {
-              account: displayName,
-              role,
-            })
-      } catch (error) {
-        startWrite({ kind: 'bind' })
-        throw error
-      }
-    })
+    setPendingWrite({ kind: 'bind' })
+    void feedback
+      .run(async () => {
+        try {
+          await bindRole.mutateAsync({
+            tenant,
+            account: member.account,
+            role,
+          })
+          setSelectedRole('')
+          return displayName === undefined
+            ? t('members.panel.bindSavedUnnamed', { role })
+            : t('members.panel.bindSaved', {
+                account: displayName,
+                role,
+              })
+        } catch (error) {
+          startWrite({ kind: 'bind' })
+          throw error
+        }
+      })
+      .finally(() => setPendingWrite(null))
   }
 
   const unbind = (role: string) => {
     startWrite(null)
-    void feedback.run(async () => {
-      try {
-        await unbindRole.mutateAsync({
-          tenant,
-          account: member.account,
-          role,
-        })
-        return displayName === undefined
-          ? t('members.panel.bindRemovedUnnamed', { role })
-          : t('members.panel.bindRemoved', {
-              account: displayName,
-              role,
-            })
-      } catch (error) {
-        startWrite({ kind: 'unbind', role })
-        throw error
-      }
-    })
+    unbindRemoval.current = {
+      role,
+      index: bindings.data?.findIndex((row) => row.role === role) ?? -1,
+    }
+    setPendingWrite({ kind: 'unbind', role })
+    void feedback
+      .run(async () => {
+        try {
+          await unbindRole.mutateAsync({
+            tenant,
+            account: member.account,
+            role,
+          })
+          return displayName === undefined
+            ? t('members.panel.bindRemovedUnnamed', { role })
+            : t('members.panel.bindRemoved', {
+                account: displayName,
+                role,
+              })
+        } catch (error) {
+          unbindRemoval.current = null
+          startWrite({ kind: 'unbind', role })
+          throw error
+        }
+      })
+      .finally(() => setPendingWrite(null))
   }
 
   /**
@@ -299,21 +380,24 @@ export function MemberPanel({
       confirmLabel: t('common.confirm'),
       run: () => {
         startWrite(null)
-        void feedback.run(async () => {
-          try {
-            await writeMember.mutateAsync({
-              tenant,
-              account: member.account,
-              active,
-            })
-            return active
-              ? t('members.resumed', { account: memberName })
-              : t('members.suspended', { account: memberName })
-          } catch (error) {
-            startWrite({ kind: active ? 'resume' : 'suspend' })
-            throw error
-          }
-        })
+        setPendingWrite({ kind: active ? 'resume' : 'suspend' })
+        void feedback
+          .run(async () => {
+            try {
+              await writeMember.mutateAsync({
+                tenant,
+                account: member.account,
+                active,
+              })
+              return active
+                ? t('members.resumed', { account: memberName })
+                : t('members.suspended', { account: memberName })
+            } catch (error) {
+              startWrite({ kind: active ? 'resume' : 'suspend' })
+              throw error
+            }
+          })
+          .finally(() => setPendingWrite(null))
       },
     })
   }
@@ -330,23 +414,26 @@ export function MemberPanel({
       doubleConfirm: true,
       run: () => {
         startWrite(null)
-        void feedback.run(async () => {
-          try {
-            await removeMember.mutateAsync({
-              tenant,
-              account: member.account,
-            })
-            onRemoved(
-              composedName === undefined
-                ? t('members.removedUnnamed')
-                : t('members.removed', { account: composedName }),
-            )
-            return null
-          } catch (error) {
-            startWrite({ kind: 'remove' })
-            throw error
-          }
-        })
+        setPendingWrite({ kind: 'remove' })
+        void feedback
+          .run(async () => {
+            try {
+              await removeMember.mutateAsync({
+                tenant,
+                account: member.account,
+              })
+              onRemoved(
+                composedName === undefined
+                  ? t('members.removedUnnamed')
+                  : t('members.removed', { account: composedName }),
+              )
+              return null
+            } catch (error) {
+              startWrite({ kind: 'remove' })
+              throw error
+            }
+          })
+          .finally(() => setPendingWrite(null))
       },
     })
   }
@@ -367,6 +454,12 @@ export function MemberPanel({
           // reason shown rather than offered and refused on submit.
           const ownProtected =
             isSelf && protectedRoles.includes(binding.role)
+          const ownProtectedId = `member-own-protected-${encodeURIComponent(
+            binding.role,
+          )}`
+          const unbindBusy =
+            pendingWrite?.kind === 'unbind' &&
+            pendingWrite.role === binding.role
           return (
             <Box
               component="li"
@@ -385,20 +478,28 @@ export function MemberPanel({
             >
               <Chip size="small" variant="outlined" label={binding.role} />
               {tier === 'manage' && (
-                <Button
+                <ActionButton
+                  ref={unbindFocus.controlRef(binding.role)}
                   type="button"
                   size="small"
-                  variant="outlined"
                   aria-invalid={refused}
                   aria-describedby={refused ? errorId : undefined}
-                  disabled={feedback.pending || ownProtected}
+                  busy={unbindBusy}
+                  unavailable={
+                    ownProtected || (pendingWrite !== null && !unbindBusy)
+                  }
+                  unavailableDescribedBy={
+                    ownProtected ? ownProtectedId : undefined
+                  }
+                  data-member-unbind={binding.role}
                   onClick={() => requestUnbind(binding.role)}
                 >
                   {t('members.panel.unbind')}
-                </Button>
+                </ActionButton>
               )}
               {ownProtected && (
                 <Typography
+                  id={ownProtectedId}
                   variant="body2"
                   color="text.secondary"
                   sx={{ flexBasis: '100%' }}
@@ -474,7 +575,13 @@ export function MemberPanel({
         </Typography>
       </Box>
 
-      <Typography component="h3" variant="subtitle1" sx={{ mb: 1 }}>
+      <Typography
+        ref={rolesHeadingRef}
+        component="h3"
+        variant="subtitle1"
+        tabIndex={-1}
+        sx={{ mb: 1 }}
+      >
         {t('members.panel.rolesLabel')}
       </Typography>
       {tier === 'none' ? (
@@ -549,9 +656,15 @@ export function MemberPanel({
                     setSelectedRole(event.target.value)
                   }}
                   label={t('members.panel.roleLabel')}
-                  disabled={
-                    feedback.pending || roles.isPending || allRolesBound
-                  }
+                  // A write in flight makes the choice read-only: it stays
+                  // focusable and the bind button beside it holds the focus.
+                  slotProps={{ input: { readOnly: feedback.pending } }}
+                  // The roles read in flight and the all-roles-bound state
+                  // keep the native `disabled`: neither is caused by an
+                  // action started on this control, and the read settles
+                  // before the panel offers the choice, so it never holds
+                  // focus at the moment it turns unavailable.
+                  disabled={roles.isPending || allRolesBound}
                   sx={{ minWidth: 200 }}
                 >
                   <MenuItem value="">{t('members.panel.roleNone')}</MenuItem>
@@ -561,18 +674,23 @@ export function MemberPanel({
                     </MenuItem>
                   ))}
                 </TextField>
-                <Button
+                <ActionButton
                   type="button"
-                  variant="contained"
+                  emphasis="primary"
                   aria-invalid={failed?.kind === 'bind'}
                   aria-describedby={
                     failed?.kind === 'bind' ? 'member-bind-error' : undefined
                   }
-                  disabled={bindDisabled}
+                  busy={pendingWrite?.kind === 'bind'}
+                  unavailable={
+                    bindExplanation !== undefined ||
+                    (pendingWrite !== null && pendingWrite.kind !== 'bind')
+                  }
+                  {...(bindExplanation ?? {})}
                   onClick={bind}
                 >
                   {t('members.panel.bind')}
-                </Button>
+                </ActionButton>
               </Box>
               {allRolesBound && (
                 <Typography
@@ -585,6 +703,7 @@ export function MemberPanel({
               )}
               {!member.active && (
                 <Typography
+                  id={SUSPENDED_BIND_NOTE_ID}
                   variant="body2"
                   color="text.secondary"
                   sx={{ mt: 1 }}
@@ -594,6 +713,7 @@ export function MemberPanel({
               )}
               {grantsPending && (
                 <Typography
+                  id={ROLE_CHECKING_ID}
                   variant="body2"
                   color="text.secondary"
                   sx={{ mt: 1 }}
@@ -603,7 +723,11 @@ export function MemberPanel({
               )}
               {grantsFailed && (
                 <Box sx={{ mt: 1 }}>
-                  <Typography variant="body2" color="error">
+                  <Typography
+                    id={ROLE_FAILED_ID}
+                    variant="body2"
+                    color="error"
+                  >
                     {t('members.panel.escalationFailed')}
                   </Typography>
                   <Button
@@ -618,6 +742,7 @@ export function MemberPanel({
               )}
               {grantPermissionUnconfirmed ? (
                 <Typography
+                  id={ROLE_UNCONFIRMED_ID}
                   variant="body2"
                   color="error"
                   sx={{ mt: 1 }}
@@ -627,6 +752,7 @@ export function MemberPanel({
               ) : (
                 escalationBlocked && (
                   <Typography
+                    id={ROLE_BLOCKED_ID}
                     variant="body2"
                     color="error"
                     sx={{ mt: 1 }}
@@ -662,38 +788,49 @@ export function MemberPanel({
           rowGap: 1,
         }}
       >
-        <Button
+        <ActionButton
           type="button"
-          variant="outlined"
           aria-invalid={failed?.kind === 'suspend' || failed?.kind === 'resume'}
           aria-describedby={
             failed?.kind === 'suspend' || failed?.kind === 'resume'
               ? 'member-status-error'
               : undefined
           }
-          disabled={feedback.pending || (isSelf && member.active)}
+          busy={pendingWrite?.kind === (member.active ? 'suspend' : 'resume')}
+          unavailable={
+            (isSelf && member.active) ||
+            (pendingWrite !== null &&
+              pendingWrite.kind !== (member.active ? 'suspend' : 'resume'))
+          }
+          unavailableDescribedBy={
+            isSelf && member.active ? SELF_NOTE_ID : undefined
+          }
           onClick={() => requestActive(!member.active)}
         >
           {member.active
             ? t('members.panel.suspend')
             : t('members.panel.resume')}
-        </Button>
-        <Button
+        </ActionButton>
+        <ActionButton
           type="button"
-          variant="outlined"
-          color="error"
+          tone="danger"
           aria-invalid={failed?.kind === 'remove'}
           aria-describedby={
             failed?.kind === 'remove' ? 'member-remove-error' : undefined
           }
-          disabled={feedback.pending || isSelf}
+          busy={pendingWrite?.kind === 'remove'}
+          unavailable={
+            isSelf || (pendingWrite !== null && pendingWrite.kind !== 'remove')
+          }
+          unavailableDescribedBy={isSelf ? SELF_NOTE_ID : undefined}
           onClick={requestRemove}
         >
           {t('members.remove')}
-        </Button>
+        </ActionButton>
       </Box>
       {isSelf && (
         <Typography
+          id={SELF_NOTE_ID}
           variant="body2"
           color="text.secondary"
           sx={{ mt: 1 }}
