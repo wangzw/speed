@@ -76,7 +76,14 @@
  * form's exemption checkbox render only where `authn.admin.sso` is present.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -87,6 +94,7 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   ConfirmDialog,
   CopyButton,
   DataTable,
@@ -100,7 +108,11 @@ import {
   useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
+import type {
+  ActionButtonUnavailableExplanation,
+  DataTableColumn,
+  WriteFeedback,
+} from '@speed/ui-kit'
 import {
   accountIdentityValue,
   accountNotice,
@@ -328,6 +340,54 @@ export function InvitationsPage({
   // The member read answers the page envelope; the cursor beside the rows is
   // what says another page follows.
   const memberRows = members.data?.members
+  // A landed removal drops its row from the re-read list, taking the control
+  // that started the write with it. The same control on the next row takes
+  // the focus, else the previous row's, else the list container: it never
+  // falls back to the document body.
+  useEffect(() => {
+    const removed = removalFocus.current
+    if (removed === null) {
+      return
+    }
+    // A failed re-read never confirms the row left. Drop the record so a
+    // later read (a page change, the retry) cannot move focus on its own.
+    if (members.error !== null) {
+      removalFocus.current = null
+      return
+    }
+    if (memberRows === undefined) {
+      return
+    }
+    if (memberRows.some((row) => row.account === removed.account)) {
+      return
+    }
+    removalFocus.current = null
+    const list = memberListRef.current
+    if (list === null) {
+      return
+    }
+    // Only recover focus the removed control left on the body or the modal
+    // paper. A reader who moved elsewhere has already chosen a resting place.
+    const active = document.activeElement
+    if (
+      !(
+        active === null ||
+        active === document.body ||
+        (active instanceof Element && active.getAttribute('role') === 'dialog')
+      )
+    ) {
+      return
+    }
+    const controls = Array.from(
+      list.querySelectorAll<HTMLElement>('[data-member-remove]'),
+    )
+    const target = controls[removed.index] ?? controls[removed.index - 1]
+    if (target !== undefined) {
+      target.focus()
+      return
+    }
+    list.focus()
+  }, [memberRows, members.error])
   // An invitation's inviter renders from the invitation's own resolved
   // display name and username, so no member-identity map and no platform
   // account read stands between the row and its inviter.
@@ -361,6 +421,29 @@ export function InvitationsPage({
   const [failedMember, setFailedMember] = useState<{
     readonly account: string
     readonly action: 'remove' | 'sso'
+  } | null>(null)
+  // The member row write in flight, so its own control reports busy while
+  // the other controls in the scope report unavailable.
+  const [pendingMemberWrite, setPendingMemberWrite] = useState<{
+    readonly account: string
+    readonly action: 'remove' | 'sso'
+  } | null>(null)
+  // The invitation-scope control the in-flight write belongs to, so the
+  // issue form is unavailable (not busy) while a row's resend or revoke runs.
+  const [pendingInvitationWrite, setPendingInvitationWrite] = useState<
+    | { readonly kind: 'issue' }
+    | { readonly kind: 'resend'; readonly id: string }
+    | { readonly kind: 'revoke'; readonly id: string }
+    | null
+  >(null)
+  // The member list's container: the focus target when a removal leaves it
+  // with no adjacent row to take the departed control's place.
+  const memberListRef = useRef<HTMLDivElement | null>(null)
+  // The member a landed removal took out, with the index it held, so the
+  // adjacent row's remove control can take the focus.
+  const removalFocus = useRef<{
+    readonly account: string
+    readonly index: number
   } | null>(null)
   const resolveErrorText = useAdminUiErrorText()
   const invitationFailureText = failureTextOf(
@@ -398,6 +481,10 @@ export function InvitationsPage({
     // starts from no grant on screen and in the issue body.
     setRole('')
     setCloseIssuedOpen(false)
+    // A pending removal belongs to the list left behind; its landing must
+    // not run against the new tenant's rows.
+    removalFocus.current = null
+    setPendingMemberWrite(null)
   }, [tenant])
   const changeTenant = (next: string) => {
     setInnerTenant(next)
@@ -443,24 +530,29 @@ export function InvitationsPage({
     // starts from a clean result, so the refused row's marker and its inline
     // reason do not stand beside the new answer.
     setFailedInvitation(null)
-    void invitationFeedback.run(async () => {
-      const answer = await issueInvitation.mutateAsync({
-        tenant,
-        email: address,
-        expiresAt: expiryInstant(expiryDays),
-        // The role travels only while the control that chose it is visible.
-        // When the target tenant's role read stops reporting role management,
-        // the control leaves the form and a value chosen earlier must not
-        // ride along behind it.
-        ...(canManageRoles && grantedRole !== '' ? { role: grantedRole } : {}),
+    setPendingInvitationWrite({ kind: 'issue' })
+    void invitationFeedback
+      .run(async () => {
+        const answer = await issueInvitation.mutateAsync({
+          tenant,
+          email: address,
+          expiresAt: expiryInstant(expiryDays),
+          // The role travels only while the control that chose it is visible.
+          // When the target tenant's role read stops reporting role management,
+          // the control leaves the form and a value chosen earlier must not
+          // ride along behind it.
+          ...(canManageRoles && grantedRole !== ''
+            ? { role: grantedRole }
+            : {}),
+        })
+        setEmail('')
+        setRole('')
+        setIssued({ answer, tenant })
+        return t('invitations.issued.confirm', {
+          email: answer.invitation.email,
+        })
       })
-      setEmail('')
-      setRole('')
-      setIssued({ answer, tenant })
-      return t('invitations.issued.confirm', {
-        email: answer.invitation.email,
-      })
-    })
+      .finally(() => setPendingInvitationWrite(null))
   }
 
   const requestResend = (invitation: AdminInvitation) => {
@@ -475,21 +567,24 @@ export function InvitationsPage({
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedInvitation(null)
-        void invitationFeedback.run(async () => {
-          try {
-            const answer = await resendInvitation.mutateAsync({
-              tenant,
-              id: invitation.id,
-            })
-            setIssued({ answer, tenant })
-            return t('invitations.resent', {
-              email: answer.invitation.email,
-            })
-          } catch (error) {
-            setFailedInvitation(invitation.id)
-            throw error
-          }
-        })
+        setPendingInvitationWrite({ kind: 'resend', id: invitation.id })
+        void invitationFeedback
+          .run(async () => {
+            try {
+              const answer = await resendInvitation.mutateAsync({
+                tenant,
+                id: invitation.id,
+              })
+              setIssued({ answer, tenant })
+              return t('invitations.resent', {
+                email: answer.invitation.email,
+              })
+            } catch (error) {
+              setFailedInvitation(invitation.id)
+              throw error
+            }
+          })
+          .finally(() => setPendingInvitationWrite(null))
       },
     })
   }
@@ -501,31 +596,34 @@ export function InvitationsPage({
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedInvitation(null)
-        void invitationFeedback.run(async () => {
-          try {
-            await revokeInvitation.mutateAsync({
-              tenant,
-              id: invitation.id,
-            })
-            // The row may leave the filtered list; focus lands on the
-            // section's heading, not on the removed row's menu.
-            focusInvitationHeading()
-            return t('invitations.revoked', { email: invitation.email })
-          } catch (error) {
-            setFailedInvitation(invitation.id)
-            // A terminal refusal leaves the row out of the current filter
-            // too, so focus does not fall back to the body when the re-read
-            // drops it. An "all" filter keeps the row, so its menu keeps
-            // focus there.
-            if (
-              statusFilter !== 'all' &&
-              errorCodeOf(error) === INVITATION_TERMINAL_CODE
-            ) {
+        setPendingInvitationWrite({ kind: 'revoke', id: invitation.id })
+        void invitationFeedback
+          .run(async () => {
+            try {
+              await revokeInvitation.mutateAsync({
+                tenant,
+                id: invitation.id,
+              })
+              // The row may leave the filtered list; focus lands on the
+              // section's heading, not on the removed row's menu.
               focusInvitationHeading()
+              return t('invitations.revoked', { email: invitation.email })
+            } catch (error) {
+              setFailedInvitation(invitation.id)
+              // A terminal refusal leaves the row out of the current filter
+              // too, so focus does not fall back to the body when the re-read
+              // drops it. An "all" filter keeps the row, so its menu keeps
+              // focus there.
+              if (
+                statusFilter !== 'all' &&
+                errorCodeOf(error) === INVITATION_TERMINAL_CODE
+              ) {
+                focusInvitationHeading()
+              }
+              throw error
             }
-            throw error
-          }
-        })
+          })
+          .finally(() => setPendingInvitationWrite(null))
       },
     })
   }
@@ -559,25 +657,35 @@ export function InvitationsPage({
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedMember(null)
-        void membersFeedback.run(async () => {
-          try {
-            await removeMember.mutateAsync({
-              tenant,
-              account: member.account,
-            })
-            return accountNotice(
-              t,
-              {
-                named: 'members.removed',
-                unnamed: 'members.removedUnnamed',
-              },
-              identity,
-            )
-          } catch (error) {
-            setFailedMember({ account: member.account, action: 'remove' })
-            throw error
-          }
-        })
+        setPendingMemberWrite({ account: member.account, action: 'remove' })
+        void membersFeedback
+          .run(async () => {
+            try {
+              await removeMember.mutateAsync({
+                tenant,
+                account: member.account,
+              })
+              // The row the write takes away names its position before the
+              // re-read drops it.
+              const rows = memberRows ?? []
+              removalFocus.current = {
+                account: member.account,
+                index: rows.findIndex((row) => row.account === member.account),
+              }
+              return accountNotice(
+                t,
+                {
+                  named: 'members.removed',
+                  unnamed: 'members.removedUnnamed',
+                },
+                identity,
+              )
+            } catch (error) {
+              setFailedMember({ account: member.account, action: 'remove' })
+              throw error
+            }
+          })
+          .finally(() => setPendingMemberWrite(null))
       },
     })
   }
@@ -588,31 +696,34 @@ export function InvitationsPage({
   ) => {
     const exempt = !member.sso_exempt
     setFailedMember(null)
-    void membersFeedback.run(async () => {
-      try {
-        await setMemberSsoExempt.mutateAsync({
-          tenant,
-          account: member.account,
-          sso_exempt: exempt,
-        })
-        return accountNotice(
-          t,
-          exempt
-            ? {
-                named: 'members.ssoExemptSaved',
-                unnamed: 'members.ssoExemptSavedUnnamed',
-              }
-            : {
-                named: 'members.ssoExemptCleared',
-                unnamed: 'members.ssoExemptClearedUnnamed',
-              },
-          identity,
-        )
-      } catch (error) {
-        setFailedMember({ account: member.account, action: 'sso' })
-        throw error
-      }
-    })
+    setPendingMemberWrite({ account: member.account, action: 'sso' })
+    void membersFeedback
+      .run(async () => {
+        try {
+          await setMemberSsoExempt.mutateAsync({
+            tenant,
+            account: member.account,
+            sso_exempt: exempt,
+          })
+          return accountNotice(
+            t,
+            exempt
+              ? {
+                  named: 'members.ssoExemptSaved',
+                  unnamed: 'members.ssoExemptSavedUnnamed',
+                }
+              : {
+                  named: 'members.ssoExemptCleared',
+                  unnamed: 'members.ssoExemptClearedUnnamed',
+                },
+            identity,
+          )
+        } catch (error) {
+          setFailedMember({ account: member.account, action: 'sso' })
+          throw error
+        }
+      })
+      .finally(() => setPendingMemberWrite(null))
   }
 
   // A source the surface names renders its own label; a `jit:<id>` value
@@ -926,6 +1037,7 @@ export function InvitationsPage({
           }
           failureText={memberFailureText}
           pending={membersFeedback.pending}
+          pendingWrite={pendingMemberWrite}
           ssoExemption={ssoExemption}
           onRemove={requestRemoveMember}
           onToggleSsoExempt={toggleSsoExempt}
@@ -1063,6 +1175,13 @@ export function InvitationsPage({
     )
   }
 
+  // The issue control's one unmet precondition: the address is what the form
+  // is for, and it has no standing text of its own to point at.
+  const issueExplanation: ActionButtonUnavailableExplanation | undefined =
+    email.trim() === ''
+      ? { unavailableReason: t('invitations.issue.emailRequired') }
+      : undefined
+
   return (
     <Box>
       <AdminPageHeader
@@ -1178,17 +1297,20 @@ export function InvitationsPage({
                   ))}
                 </TextField>
               )}
-              <Button
+              <ActionButton
                 type="button"
-                variant="contained"
-                disabled={
-                  invitationFeedback.pending || email.trim() === ''
+                emphasis="primary"
+                busy={pendingInvitationWrite?.kind === 'issue'}
+                unavailable={
+                  issueExplanation !== undefined ||
+                  (pendingInvitationWrite !== null &&
+                    pendingInvitationWrite.kind !== 'issue')
                 }
-                loading={invitationFeedback.pending}
+                {...(issueExplanation ?? {})}
                 onClick={issue}
               >
                 {t('invitations.issue.submit')}
-              </Button>
+              </ActionButton>
             </Box>
             {issued != null && (
               <InvitationLinkNotice
@@ -1300,55 +1422,62 @@ export function InvitationsPage({
                 ssoExemption={ssoExemption}
               />
             )}
-            <AdminAsyncSection
-              pending={membersPending}
-              payload={memberRows}
-              error={members.error}
-              refreshing={members.isFetching}
-              empty={memberRows !== undefined && memberRows.length === 0}
-              headingLevel="h3"
-              loading={
-                <ListSkeleton
-                  label={t('members.loading')}
-                  rows={[<Skeleton key="a" variant="text" width="50%" />]}
-                />
-              }
-              errorState={{
-                title: t('members.error.title'),
-                description: t('members.error.description'),
-                retryLabel: t('members.retry'),
-                onRetry: () => void members.refetch(),
-              }}
-              emptyState={{
-                title: t('members.empty.title'),
-                description: t('members.empty.description'),
-              }}
-              mfaRelogin={session === null ? undefined : relogin}
+            <Box
+              ref={memberListRef}
+              role="group"
+              aria-label={t('members.title')}
+              tabIndex={-1}
             >
-              {(settled) => (
-                <DataTable
-                  rows={settled}
-                  columns={memberColumns}
-                  rowKey={(member) => member.account}
+              <AdminAsyncSection
+                pending={membersPending}
+                payload={memberRows}
+                error={members.error}
+                refreshing={members.isFetching}
+                empty={memberRows !== undefined && memberRows.length === 0}
+                headingLevel="h3"
+                loading={
+                  <ListSkeleton
+                    label={t('members.loading')}
+                    rows={[<Skeleton key="a" variant="text" width="50%" />]}
+                  />
+                }
+                errorState={{
+                  title: t('members.error.title'),
+                  description: t('members.error.description'),
+                  retryLabel: t('members.retry'),
+                  onRetry: () => void members.refetch(),
+                }}
+                emptyState={{
+                  title: t('members.empty.title'),
+                  description: t('members.empty.description'),
+                }}
+                mfaRelogin={session === null ? undefined : relogin}
+              >
+                {(settled) => (
+                  <DataTable
+                    rows={settled}
+                    columns={memberColumns}
+                    rowKey={(member) => member.account}
+                  />
+                )}
+              </AdminAsyncSection>
+              {memberRows !== undefined && (
+                <CursorPager
+                  page={memberPage}
+                  hasNext={memberHasNext}
+                  busy={membersFeedback.pending}
+                  reading={members.isFetching}
+                  onPrevious={previousMemberPage}
+                  onNext={nextMemberPage}
                 />
               )}
-            </AdminAsyncSection>
-            {memberRows !== undefined && (
-              <CursorPager
-                page={memberPage}
-                hasNext={memberHasNext}
-                busy={membersFeedback.pending}
-                reading={members.isFetching}
-                onPrevious={previousMemberPage}
-                onNext={nextMemberPage}
-              />
-            )}
-            <Box ref={membersRegionRef}>
-              <WriteFeedbackRegion
-                outcome={membersFeedback.outcome}
-                ssoRelogin={session === null ? undefined : relogin}
-                mfaRelogin={session === null ? undefined : relogin}
-              />
+              <Box ref={membersRegionRef}>
+                <WriteFeedbackRegion
+                  outcome={membersFeedback.outcome}
+                  ssoRelogin={session === null ? undefined : relogin}
+                  mfaRelogin={session === null ? undefined : relogin}
+                />
+              </Box>
             </Box>
           </SectionCard>
         </>
@@ -1381,6 +1510,11 @@ interface MemberRowActionsProps {
   readonly failed: 'remove' | 'sso' | null
   readonly failureText: string | null
   readonly pending: boolean
+  /** The member row write in flight, if one is. */
+  readonly pendingWrite: {
+    readonly account: string
+    readonly action: 'remove' | 'sso'
+  } | null
   /** Whether the SSO surface is present, so the toggle exists. */
   readonly ssoExemption: boolean
   readonly onRemove: (
@@ -1420,6 +1554,7 @@ function MemberActionsBody({
   failed,
   failureText,
   pending,
+  pendingWrite,
   ssoExemption,
   onRemove,
   onToggleSsoExempt,
@@ -1429,38 +1564,47 @@ function MemberActionsBody({
   const errorId = `member-error-${encodeURIComponent(member.account)}`
   const ssoFailed = failed === 'sso'
   const removeFailed = failed === 'remove'
+  // Only the control that started the write reports busy; every other
+  // control in the scope is unavailable without a reason of its own.
+  const ssoBusy =
+    pendingWrite !== null &&
+    pendingWrite.account === member.account &&
+    pendingWrite.action === 'sso'
+  const removeBusy =
+    pendingWrite !== null &&
+    pendingWrite.account === member.account &&
+    pendingWrite.action === 'remove'
   return (
     <Box>
       <Box sx={{ display: 'flex', columnGap: 1 }}>
         {ssoExemption && (
-          <Button
+          <ActionButton
             type="button"
             size="small"
-            variant="outlined"
             aria-invalid={ssoFailed}
             aria-describedby={ssoFailed ? errorId : undefined}
-            disabled={pending}
-            loading={pending}
+            busy={ssoBusy}
+            unavailable={pending && !ssoBusy}
             onClick={() => onToggleSsoExempt(member, identity)}
           >
             {member.sso_exempt
               ? t('members.ssoExemptClear')
               : t('members.ssoExemptSet')}
-          </Button>
+          </ActionButton>
         )}
-        <Button
+        <ActionButton
           type="button"
           size="small"
-          variant="outlined"
-          color="error"
+          tone="danger"
+          data-member-remove={member.account}
           aria-invalid={removeFailed}
           aria-describedby={removeFailed ? errorId : undefined}
-          disabled={pending}
-          loading={pending}
+          busy={removeBusy}
+          unavailable={pending && !removeBusy}
           onClick={() => onRemove(member, identity)}
         >
           {t('members.remove')}
-        </Button>
+        </ActionButton>
       </Box>
       {failureText !== null && failed !== null && (
         <Typography
@@ -1600,6 +1744,10 @@ function MemberWriteForm({
   const [source, setSource] = useState('')
   const [active, setActive] = useState(true)
   const [ssoExempt, setSsoExempt] = useState(false)
+  // Whether this form's own write is in flight. A row write in the same
+  // scope keeps the submit unavailable without naming a reason.
+  const [busy, setBusy] = useState(false)
+  const scopePending = feedback.pending && !busy
 
   return (
     <Box sx={{ mb: 2 }}>
@@ -1643,42 +1791,48 @@ function MemberWriteForm({
             label={t('members.write.ssoExemptLabel')}
           />
         )}
-        <Button
+        <ActionButton
           type="button"
-          variant="contained"
-          disabled={feedback.pending || account === null}
-          loading={feedback.pending}
+          emphasis="primary"
+          busy={busy}
+          unavailable={account === null || scopePending}
+          unavailableReason={
+            account === null ? t('members.write.accountRequired') : undefined
+          }
           onClick={() => {
             if (account === null) {
               return
             }
             const target = account
             const writtenSource = source
-            void feedback.run(async () => {
-              await writeMember.mutateAsync({
-                tenant,
-                account: target.id,
-                active,
-                ...(writtenSource === '' ? {} : { source: writtenSource }),
-                ...(ssoExemption ? { sso_exempt: ssoExempt } : {}),
+            setBusy(true)
+            void feedback
+              .run(async () => {
+                await writeMember.mutateAsync({
+                  tenant,
+                  account: target.id,
+                  active,
+                  ...(writtenSource === '' ? {} : { source: writtenSource }),
+                  ...(ssoExemption ? { sso_exempt: ssoExempt } : {}),
+                })
+                setAccount(null)
+                setSource('')
+                setActive(true)
+                setSsoExempt(false)
+                return accountNotice(
+                  t,
+                  {
+                    named: 'members.write.saved',
+                    unnamed: 'members.write.savedUnnamed',
+                  },
+                  accountIdentityValue(target),
+                )
               })
-              setAccount(null)
-              setSource('')
-              setActive(true)
-              setSsoExempt(false)
-              return accountNotice(
-                t,
-                {
-                  named: 'members.write.saved',
-                  unnamed: 'members.write.savedUnnamed',
-                },
-                accountIdentityValue(target),
-              )
-            })
+              .finally(() => setBusy(false))
           }}
         >
           {t('members.write.submit')}
-        </Button>
+        </ActionButton>
       </Box>
     </Box>
   )

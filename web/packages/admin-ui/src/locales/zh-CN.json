@@ -1452,6 +1452,7 @@
     "ssoExemptClear": "取消 SSO 豁免",
     "write": {
       "accountLabel": "账户",
+      "accountRequired": "请先选择一个账户。",
       "sourceLabel": "来源",
       "activeLabel": "在册",
       "ssoExemptLabel": "SSO 豁免",

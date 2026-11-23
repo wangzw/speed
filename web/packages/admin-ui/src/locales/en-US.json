@@ -1452,6 +1452,7 @@
     "ssoExemptClear": "Clear SSO exemption",
     "write": {
       "accountLabel": "Account",
+      "accountRequired": "Choose an account first.",
       "sourceLabel": "Source",
       "activeLabel": "Active",
       "ssoExemptLabel": "SSO exempt",
