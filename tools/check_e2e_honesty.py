@@ -22,7 +22,7 @@ only. Six things can quietly falsify that claim, and this gate holds each:
   4. Layers. The harness may assemble its environment (build, seed, probe) in
      fixtures/, but a spec or a helper may not reach around the product: it may
      not spawn processes, write files, open a database client, or read the
-     process log beyond the sanctioned reads -- a verification code, the review
+     process log beyond the sanctioned reads -- a verification code, the log
      SMS carrier's accepted-message line, and the delivery pipeline's
      external-send record. Only fixtures/log.ts parses logfmt lines; a spec or
      helper may import only `waitForVerificationCode` and asks the server
@@ -231,7 +231,7 @@ FS_WRITE_FUNCTIONS = {
     "writeSync",
 }
 
-# The one log reader a spec or helper may import directly. The review carrier's
+# The one log reader a spec or helper may import directly. The log carrier's
 # accepted-message and the pipeline's external-send line are read through the
 # server fixture, so they never appear on this import surface.
 ALLOWED_LOG_EXPORTS = {"waitForVerificationCode"}

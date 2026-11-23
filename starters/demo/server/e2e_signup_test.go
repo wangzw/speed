@@ -1,13 +1,10 @@
-//go:build review
-
 package main
 
-// The review build's name-and-password registration walkthrough: the baseline
-// advertises no registration entry, the review build does, a registration sends
-// no mail, the signed-in account adds its address, the code read out of the
-// review mail log verifies it, and the profile reports registered and verified
-// while the account's own tenant list names the personal tenant its creation
-// wrote.
+// The name-and-password registration walkthrough: the baseline advertises no
+// registration entry, the e2e configuration does, a registration sends no mail,
+// the signed-in account adds its address, the code read out of the mail log
+// verifies it, and the profile reports registered and verified while the
+// account's own tenant list names the personal tenant its creation wrote.
 
 import (
 	"encoding/json"
@@ -22,15 +19,15 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// reviewMailLogMarker is what the review mail carrier writes for each message;
+// e2eMailLogMarker is what the log mail carrier writes for each message;
 // the case searches the child's output for it.
-const reviewMailLogMarker = "log mail: a message was sent"
+const e2eMailLogMarker = "log mail: a message was sent"
 
 // The account the walkthrough registers. None of these is an existing seed row.
 const (
-	reviewSignupUsername = "reviewer1"
-	reviewSignupPassword = "review-signup-password-1"
-	reviewSignupEmail    = "reviewer1@example.test"
+	e2eSignupUsername = "signup-member"
+	e2eSignupPassword = "signup-member-password-1"
+	e2eSignupEmail    = "signup-member@example.test"
 )
 
 // signupDiscovery is the part of the methods document this case reads: whether
@@ -63,11 +60,11 @@ type registrationAnswer struct {
 	} `json:"verification"`
 }
 
-// TestReviewBaselineHasNoRegistrationEntry holds the baseline side: the demo
-// binary built without the review tag serves the methods document with
+// TestE2EBaselineHasNoRegistrationEntry holds the baseline side: the demo
+// program on the baseline configuration serves the methods document with
 // name-and-password registration closed, so the login page renders no register
 // entry.
-func TestReviewBaselineHasNoRegistrationEntry(t *testing.T) {
+func TestE2EBaselineHasNoRegistrationEntry(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "baseline.db")
 	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
@@ -95,26 +92,26 @@ func TestReviewBaselineHasNoRegistrationEntry(t *testing.T) {
 	}
 }
 
-// TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant is the
-// walkthrough itself: the review build has the register entry, registering sends
+// TestE2EPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant is the
+// walkthrough itself: the e2e configuration has the register entry, registering sends
 // no mail, the account signs in with the password, its creation transaction has
 // already built the personal tenant, adding the address sends one code, the
-// code read from the review mail log verifies the address, the profile turns
+// code read from the mail log verifies the address, the profile turns
 // verified, and the account's tenant list still names the same tenant.
-func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing.T) {
+func TestE2EPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing.T) {
 	t.Parallel()
-	binary := reviewBinary(t)
+	binary := e2eBinary(t)
 	serve, ports := startServing(t, func(ports []int) *process {
-		config := "file://" + reviewConfig(t,
+		config := "file://" + e2eConfig(t,
 			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-		seedReview(t, binary, config)
-		return startReview(t, binary, config)
+		seedE2E(t, binary, config)
+		return startE2E(t, binary, config)
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: probeTimeout}
 
-	// The review build advertises the register entry the baseline does not.
+	// The e2e configuration advertises the register entry the baseline does not.
 	methods := get(t, base+"/api/v1/auth/methods")
 	if methods.status != http.StatusOK {
 		t.Fatalf("reading the methods document answered %d:\n%s", methods.status, methods.body)
@@ -124,15 +121,15 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the methods document is not JSON: %v\n%s", err, methods.body)
 	}
 	if !discovery.Signup.Password.Enabled || !discovery.Signup.Enabled {
-		t.Fatalf("the review build does not advertise name-and-password registration: %s", methods.body)
+		t.Fatalf("the e2e configuration does not advertise name-and-password registration: %s", methods.body)
 	}
 
 	// Registration writes the account and leaves the email awaiting verification.
 	// It sends no mail: the marker has not been written yet.
 	registered := send(t, client, http.MethodPost, base+"/api/v1/auth/register", map[string]string{
-		"username": reviewSignupUsername,
-		"email":    reviewSignupEmail,
-		"password": reviewSignupPassword,
+		"username": e2eSignupUsername,
+		"email":    e2eSignupEmail,
+		"password": e2eSignupPassword,
 	}, nil)
 	if registered.status != http.StatusCreated {
 		t.Fatalf("registering answered %d:\n%s", registered.status, registered.body)
@@ -144,21 +141,21 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	if created.State != "registered" || created.AccountID == "" {
 		t.Errorf("the registration answered %+v, want a registered account", created)
 	}
-	if created.Verification.State != "pending" || created.Verification.Email != reviewSignupEmail {
+	if created.Verification.State != "pending" || created.Verification.Email != e2eSignupEmail {
 		t.Errorf("the registration reports verification %+v, want pending for %q",
-			created.Verification, reviewSignupEmail)
+			created.Verification, e2eSignupEmail)
 	}
 	// Registration itself sends no verification code. A notice the review
 	// notification worker dispatched to the account's new personal tenant may
 	// already be in the log, so the assertion is about a code addressed to the
 	// registered address, not about the mail log being empty.
-	if code := reviewMailCodeFor(serve, reviewSignupEmail); code != "" {
+	if code := e2eMailCodeFor(serve, e2eSignupEmail); code != "" {
 		t.Fatalf("registration sent a verification code %q to %s:\n%s",
-			code, reviewSignupEmail, serve.output())
+			code, e2eSignupEmail, serve.output())
 	}
 
 	// The account signs in with the password it registered with.
-	token := signIn(t, base, reviewSignupUsername, reviewSignupPassword)
+	token := signIn(t, base, e2eSignupUsername, e2eSignupPassword)
 	auth := map[string]string{"Authorization": "Bearer " + token}
 
 	if state := readVerification(t, client, base, auth); state != "pending" {
@@ -172,15 +169,15 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	if personal.Name == "" || personal.Kind != string(tenant.KindPersonal) {
 		t.Errorf("the account's tenant is %+v, want the personal tenant its creation wrote", personal)
 	}
-	if personal.Name != reviewSignupUsername {
+	if personal.Name != e2eSignupUsername {
 		t.Errorf("the personal tenant's name is %q, want the account's username %q",
-			personal.Name, reviewSignupUsername)
+			personal.Name, e2eSignupUsername)
 	}
 
-	// Adding the address sends the code; the review mail carrier writes it to the
+	// Adding the address sends the code; the log mail carrier writes it to the
 	// process log.
 	added := send(t, client, http.MethodPost, base+"/api/v1/auth/identifiers", map[string]string{
-		"kind": "email", "value": reviewSignupEmail,
+		"kind": "email", "value": e2eSignupEmail,
 	}, auth)
 	if added.status != http.StatusOK {
 		t.Fatalf("adding the address answered %d:\n%s", added.status, added.body)
@@ -191,7 +188,7 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 	if err := json.Unmarshal(added.body, &addedAnswer); err != nil || addedAnswer.State != "pending" {
 		t.Fatalf("adding the address answered %+v (%v), want pending:\n%s", addedAnswer, err, added.body)
 	}
-	code := reviewMailCode(t, serve)
+	code := e2eMailCode(t, serve)
 
 	verified := send(t, client, http.MethodPost, base+"/api/v1/auth/identifiers/verify",
 		map[string]string{"code": code}, auth)
@@ -265,16 +262,16 @@ func readVerification(t *testing.T, client *http.Client, base string, auth map[s
 	return profile.Verification.State
 }
 
-// reviewMailCode polls the child's output for the review mail record and answers
+// e2eMailCode polls the child's output for the mail log record and answers
 // the verification code it carries. The process writes logfmt, so the value is
 // read off the record's last attribute rather than parsed as JSON.
-func reviewMailCode(t *testing.T, p *process) string {
+func e2eMailCode(t *testing.T, p *process) string {
 	t.Helper()
 	const field = "verification_code="
 	deadline := time.Now().Add(startLimit)
 	for {
 		for _, line := range strings.Split(p.output(), "\n") {
-			if !strings.Contains(line, reviewMailLogMarker) {
+			if !strings.Contains(line, e2eMailLogMarker) {
 				continue
 			}
 			at := strings.LastIndex(line, field)
@@ -288,21 +285,21 @@ func reviewMailCode(t *testing.T, p *process) string {
 			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("no review mail record carrying a verification code within %s:\n%s",
+			t.Fatalf("no mail log record carrying a verification code within %s:\n%s",
 				startLimit, p.output())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 }
 
-// reviewMailCodeFor answers the verification code of a review mail addressed to
+// e2eMailCodeFor answers the verification code of a mail log entry addressed to
 // the given address, or the empty string when no such code is in the log. A
-// notice the review notification fixture dispatched to the same address carries
+// notice the demo notification fixture dispatched to the same address carries
 // no code and is not mistaken for one.
-func reviewMailCodeFor(p *process, address string) string {
+func e2eMailCodeFor(p *process, address string) string {
 	const codeField = "verification_code="
 	for _, line := range strings.Split(p.output(), "\n") {
-		if !strings.Contains(line, reviewMailLogMarker) {
+		if !strings.Contains(line, e2eMailLogMarker) {
 			continue
 		}
 		if !strings.Contains(line, "to="+address) && !strings.Contains(line, `to="`+address+`"`) {
@@ -320,10 +317,10 @@ func reviewMailCodeFor(p *process, address string) string {
 	return ""
 }
 
-// TestReviewSixDigitRunReadsOnlyAnExactRun holds the shape the reviewer's code has:
+// TestE2ESixDigitRunReadsOnlyAnExactRun holds the shape the walkthrough's reading has:
 // exactly six digits, so a body with none reports nothing and a longer run is
 // not taken for a code.
-func TestReviewSixDigitRunReadsOnlyAnExactRun(t *testing.T) {
+func TestE2ESixDigitRunReadsOnlyAnExactRun(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, text, want string
@@ -341,10 +338,10 @@ func TestReviewSixDigitRunReadsOnlyAnExactRun(t *testing.T) {
 	}
 }
 
-// TestReviewVerificationCodeReadsTheFirstBodyCarryingOne holds the body order: the
+// TestE2EVerificationCodeReadsTheFirstBodyCarryingOne holds the body order: the
 // plain text is read first, and a body with no exact six-digit run contributes
 // nothing, so a message with no code reports none.
-func TestReviewVerificationCodeReadsTheFirstBodyCarryingOne(t *testing.T) {
+func TestE2EVerificationCodeReadsTheFirstBodyCarryingOne(t *testing.T) {
 	t.Parallel()
 	if got := maillog.VerificationCode("no digits", "the code is 246810"); got != "246810" {
 		t.Errorf("verificationCode fell through to the HTML body as %q, want 246810", got)

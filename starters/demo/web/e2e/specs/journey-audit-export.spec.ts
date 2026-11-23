@@ -6,8 +6,8 @@
  * The seed writes the platform administrator with an unproved email address,
  * and a settings write from an unproved account is refused, so the spec first
  * reaches the journey's precondition the way a person does: the standing
- * notice's verify entry, the code from the review process log (the one non-UI
- * read this spec makes), and the verify action.
+ * notice's verify entry, the code from the server's process log (the one
+ * non-UI read this spec makes), and the verify action.
  *
  * PAGE SIZE. The spec must know how many saves exceed one audit page, and the
  * size belongs to the product, not to the test. The audit page asks its list
@@ -84,7 +84,7 @@ test.use({ viewport: { width: 1920, height: 1080 } })
 // file's bound is above the tier's default rather than the wait being cut off.
 test.describe.configure({ timeout: scaledTimeout(300_000) })
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -680,9 +680,9 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
 
   await test.step('precondition: the operator signs in, proves the email, and the audit page states its page size', async () => {
     // The journey's precondition is an operator whose email is proved. The
-    // review seed writes the address unproved, so the spec reaches the
+    // seed writes the address unproved, so the spec reaches the
     // precondition the way a person does: the standing notice's verify entry,
-    // the code from the review process log, and the verify action.
+    // the code from the server's process log, and the verify action.
     await demo.accounts.signIn({
       identifier: OPERATOR.username,
       password: OPERATOR.password,

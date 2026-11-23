@@ -1,14 +1,11 @@
-//go:build review
-
 package main
 
-// The review assembly's SMS side of the notification fixture: the type carries
-// the closed channel set's sms member and names the template the rollout
-// journey registers, and a recipient is addressed on the external channel their
-// account can actually be reached on. A recipient with a proved phone is
-// addressed by sms; one with only an email address falls back to email, and sms
-// is removed from that recipient's effective set rather than attempted with the
-// email address as its destination.
+// The SMS side of the notification fixture: the type carries the closed channel
+// set's sms member and names the template the rollout journey registers, and a
+// recipient is addressed on the external channel their account can actually be
+// reached on. A recipient with a proved phone is addressed by sms; one with only
+// an email address falls back to email, and sms is removed from that recipient's
+// effective set rather than attempted with the email address as its destination.
 
 import (
 	"context"
@@ -21,7 +18,6 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
-	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/notification"
@@ -29,15 +25,15 @@ import (
 )
 
 const (
-	reviewSMSTestEmail = "member@example.test"
-	reviewSMSTestPhone = "+15551234567"
+	e2eSMSTestEmail = "member@example.test"
+	e2eSMSTestPhone = "+15551234567"
 )
 
-// TestReviewNotificationDeclaresSMSAndItsTemplateBinding holds the declaration
-// side of the rollout journey: the review type's default channels include sms,
+// TestE2ENotificationDeclaresSMSAndItsTemplateBinding holds the declaration
+// side of the rollout journey: the demo notification type's default channels include sms,
 // its recipient-visible whitelist admits the destination the sms channel reads,
 // and its catalog names the template the journey registers in every language.
-func TestReviewNotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
+func TestE2ENotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 	t.Parallel()
 	var declared *notification.TypeSpec
 	for _, resource := range core.Resources[notification.TypeSpec](core.ProcessRegistry) {
@@ -68,8 +64,8 @@ func TestReviewNotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 			declared.RecipientVisibleParams, "to")
 	}
 
-	for _, locale := range []string{reviewDefaultLocale, reviewChineseLocale} {
-		got := reviewCatalogEntry(t, locale, demoNotificationTypeKey+".sms.template")
+	for _, locale := range []string{e2eDefaultLocale, e2eChineseLocale} {
+		got := e2eCatalogEntry(t, locale, demoNotificationTypeKey+".sms.template")
 		if got != demoNotificationSMSTemplate {
 			t.Errorf("the %s catalog names the sms template %q, want %q",
 				locale, got, demoNotificationSMSTemplate)
@@ -77,45 +73,21 @@ func TestReviewNotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 	}
 }
 
-// TestReviewNotificationControlFeatureIsDeclared holds the review-only gate the
-// tenant control reads: the review module declares it as a static feature, so
-// it is present exactly when that module is in force and absent from every
-// assembly that does not compile it.
-func TestReviewNotificationControlFeatureIsDeclared(t *testing.T) {
-	t.Parallel()
-	declared := false
-	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
-		if resource.Module != demoNotificationModuleName ||
-			resource.Value.Name != reviewNotificationControlFeature {
-			continue
-		}
-		if resource.Value.Conditional {
-			t.Errorf("the control feature %q is conditional, so a review run that does not "+
-				"post it offers no control", resource.Value.Name)
-		}
-		declared = true
-	}
-	if !declared {
-		t.Fatalf("the review module declares no %q feature, so the tenant control can never "+
-			"be offered", reviewNotificationControlFeature)
-	}
-}
-
-// TestReviewNoticePlansTheExternalChannelFromTheAccount holds the per-recipient
+// TestE2ENoticePlansTheExternalChannelFromTheAccount holds the per-recipient
 // choice: a proved phone whose template the registry holds for the language is
 // the destination and sms the external channel; without a held template the
 // account falls back to its email address, or to in-app alone when it has none;
 // an account with only an email address falls back to email without sms.
-func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
+func TestE2ENoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	t.Parallel()
 	phone := authn.Identifier{
 		Kind:        authn.IdentifierPhone,
-		Value:       reviewSMSTestPhone,
+		Value:       e2eSMSTestPhone,
 		VerifiedVia: authn.VerifiedViaSMSCode,
 	}
 	email := authn.Identifier{
 		Kind:        authn.IdentifierEmail,
-		Value:       reviewSMSTestEmail,
+		Value:       e2eSMSTestEmail,
 		VerifiedVia: authn.VerifiedViaEmailCode,
 	}
 
@@ -131,7 +103,7 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 			name:           "a proved phone with a held template addresses sms",
 			identifiers:    []authn.Identifier{email, phone},
 			smsAddressable: true,
-			wantTo:         reviewSMSTestPhone,
+			wantTo:         e2eSMSTestPhone,
 			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
 			wantOK:         true,
 		},
@@ -139,7 +111,7 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 			name:           "a proved phone without a held template falls back to email",
 			identifiers:    []authn.Identifier{email, phone},
 			smsAddressable: false,
-			wantTo:         reviewSMSTestEmail,
+			wantTo:         e2eSMSTestEmail,
 			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 			wantOK:         true,
 		},
@@ -147,7 +119,7 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 			name:           "a proved phone without a held template and no email stays in-app",
 			identifiers:    []authn.Identifier{phone},
 			smsAddressable: false,
-			wantTo:         reviewSMSTestPhone,
+			wantTo:         e2eSMSTestPhone,
 			wantChannels:   []notification.Channel{notification.ChannelInApp},
 			wantOK:         true,
 		},
@@ -155,7 +127,7 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 			name:           "an account without a phone falls back to email",
 			identifiers:    []authn.Identifier{email},
 			smsAddressable: true,
-			wantTo:         reviewSMSTestEmail,
+			wantTo:         e2eSMSTestEmail,
 			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 			wantOK:         true,
 		},
@@ -163,10 +135,10 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 			name: "an unproved phone is not an sms destination",
 			identifiers: []authn.Identifier{
 				email,
-				{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSelf},
+				{Kind: authn.IdentifierPhone, Value: e2eSMSTestPhone, VerifiedVia: authn.VerifiedViaSelf},
 			},
 			smsAddressable: false,
-			wantTo:         reviewSMSTestEmail,
+			wantTo:         e2eSMSTestEmail,
 			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 			wantOK:         true,
 		},
@@ -195,30 +167,30 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	}
 }
 
-// TestReviewNoticeSkipsSMSWithoutASendableTemplate drives the decision through
+// TestE2ENoticeSkipsSMSWithoutASendableTemplate drives the decision through
 // notify: a member with a proved phone and an email address whose SMS template
 // the registry cannot resolve is dispatched on in-app and email, and sms is
 // removed from the effective set before the pipeline reads it. The registry is
 // asked first, so a server that never registered the rollout template does not
 // attempt sms at all.
-func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
+func TestE2ENoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 	t.Parallel()
-	templates := &stubReviewSMSTemplates{err: fmt.Errorf("%w: no template", sms.ErrRejected)}
-	prefs := &stubReviewPrefs{
+	templates := &stubE2ESMSTemplates{err: fmt.Errorf("%w: no template", sms.ErrRejected)}
+	prefs := &stubE2EPrefs{
 		effective: []notification.Channel{
 			notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS,
 		},
 	}
-	dispatcher := &stubReviewDispatcher{}
+	dispatcher := &stubE2EDispatcher{}
 	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs:      prefs,
-		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
-			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
-			{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
+		accounts: stubE2EAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: e2eSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+			{Kind: authn.IdentifierPhone, Value: e2eSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
 		}},
 		templates: templates,
-		resolver:  stubReviewResolver{locale: reviewChineseLocale},
+		resolver:  stubE2EResolver{locale: e2eChineseLocale},
 	}
 
 	plan, ok, err := notifier.notify(context.Background(), "acme", "acct-1", "occurrence-1")
@@ -232,8 +204,8 @@ func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 		t.Errorf("the plan's channels are %v, want %v: a phone with no sendable template must not "+
 			"produce an sms attempt", plan.Channels, want)
 	}
-	if plan.To != reviewSMSTestEmail {
-		t.Errorf("the plan's destination is %q, want the email fallback %q", plan.To, reviewSMSTestEmail)
+	if plan.To != e2eSMSTestEmail {
+		t.Errorf("the plan's destination is %q, want the email fallback %q", plan.To, e2eSMSTestEmail)
 	}
 	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelEmail}; !sameChannels(prefs.written, want) {
 		t.Errorf("the effective set written through the preference seam is %v, want %v",
@@ -242,48 +214,48 @@ func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 	if dispatcher.dispatch == nil {
 		t.Fatalf("notify submitted no dispatch")
 	}
-	if got := dispatcher.dispatch.Params["to"]; got != reviewSMSTestEmail {
-		t.Errorf("the dispatch's destination is %v, want the email fallback %q", got, reviewSMSTestEmail)
+	if got := dispatcher.dispatch.Params["to"]; got != e2eSMSTestEmail {
+		t.Errorf("the dispatch's destination is %v, want the email fallback %q", got, e2eSMSTestEmail)
 	}
 	if templates.message.Template != demoNotificationSMSTemplate {
 		t.Errorf("the registry was asked for the template %q, want %q",
 			templates.message.Template, demoNotificationSMSTemplate)
 	}
-	if templates.message.Locale != reviewChineseLocale {
+	if templates.message.Locale != e2eChineseLocale {
 		t.Errorf("the registry was asked for the locale %q, want the recipient's %q",
-			templates.message.Locale, reviewChineseLocale)
+			templates.message.Locale, e2eChineseLocale)
 	}
-	if templates.message.To != reviewSMSTestPhone {
+	if templates.message.To != e2eSMSTestPhone {
 		t.Errorf("the registry was asked about the destination %q, want the proved phone %q",
-			templates.message.To, reviewSMSTestPhone)
+			templates.message.To, e2eSMSTestPhone)
 	}
 }
 
-// TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses holds the other side
+// TestE2ENoticeKeepsSMSForATemplateThePlatformRefuses holds the other side
 // of the selection rule: a template the registry holds for the language but the
 // platform's sending gate refuses (disabled, awaiting review, or the sending
 // switch off) is still chosen, so the delivery pipeline records the refusal.
 // The fixture must not turn the platform's gate into a silent channel swap.
-func TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
+func TestE2ENoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
 	t.Parallel()
-	templates := &stubReviewSMSTemplates{
+	templates := &stubE2ESMSTemplates{
 		err: fmt.Errorf("%w: the template is disabled", sms.ErrNotSendable),
 	}
-	prefs := &stubReviewPrefs{
+	prefs := &stubE2EPrefs{
 		effective: []notification.Channel{
 			notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS,
 		},
 	}
-	dispatcher := &stubReviewDispatcher{}
+	dispatcher := &stubE2EDispatcher{}
 	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs:      prefs,
-		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
-			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
-			{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
+		accounts: stubE2EAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: e2eSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+			{Kind: authn.IdentifierPhone, Value: e2eSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
 		}},
 		templates: templates,
-		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
+		resolver:  stubE2EResolver{locale: e2eDefaultLocale},
 	}
 
 	plan, ok, err := notifier.notify(context.Background(), "acme", "acct-3", "occurrence-3")
@@ -297,37 +269,37 @@ func TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
 		t.Errorf("the plan's channels are %v, want %v: a held template the platform refuses must "+
 			"still reach the pipeline, whose refusal is recorded", plan.Channels, want)
 	}
-	if plan.To != reviewSMSTestPhone {
-		t.Errorf("the plan's destination is %q, want the proved phone %q", plan.To, reviewSMSTestPhone)
+	if plan.To != e2eSMSTestPhone {
+		t.Errorf("the plan's destination is %q, want the proved phone %q", plan.To, e2eSMSTestPhone)
 	}
 	if dispatcher.dispatch == nil {
 		t.Fatalf("notify submitted no dispatch")
 	}
-	if got := dispatcher.dispatch.Params["to"]; got != reviewSMSTestPhone {
-		t.Errorf("the dispatch's destination is %v, want the proved phone %q", got, reviewSMSTestPhone)
+	if got := dispatcher.dispatch.Params["to"]; got != e2eSMSTestPhone {
+		t.Errorf("the dispatch's destination is %v, want the proved phone %q", got, e2eSMSTestPhone)
 	}
 }
 
-// TestReviewNoticeSendsSMSWithASendableTemplate holds the other direction: when
+// TestE2ENoticeSendsSMSWithASendableTemplate holds the other direction: when
 // the registry resolves the type's template in the recipient's language, the
 // phones address is the destination and sms stays in the effective set.
-func TestReviewNoticeSendsSMSWithASendableTemplate(t *testing.T) {
+func TestE2ENoticeSendsSMSWithASendableTemplate(t *testing.T) {
 	t.Parallel()
-	prefs := &stubReviewPrefs{
+	prefs := &stubE2EPrefs{
 		effective: []notification.Channel{
 			notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS,
 		},
 	}
-	dispatcher := &stubReviewDispatcher{}
+	dispatcher := &stubE2EDispatcher{}
 	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs:      prefs,
-		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
-			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
-			{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
+		accounts: stubE2EAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: e2eSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+			{Kind: authn.IdentifierPhone, Value: e2eSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
 		}},
-		templates: &stubReviewSMSTemplates{},
-		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
+		templates: &stubE2ESMSTemplates{},
+		resolver:  stubE2EResolver{locale: e2eDefaultLocale},
 	}
 
 	plan, ok, err := notifier.notify(context.Background(), "acme", "acct-2", "occurrence-2")
@@ -340,8 +312,8 @@ func TestReviewNoticeSendsSMSWithASendableTemplate(t *testing.T) {
 	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelSMS}; !sameChannels(plan.Channels, want) {
 		t.Errorf("the plan's channels are %v, want %v", plan.Channels, want)
 	}
-	if plan.To != reviewSMSTestPhone {
-		t.Errorf("the plan's destination is %q, want the proved phone %q", plan.To, reviewSMSTestPhone)
+	if plan.To != e2eSMSTestPhone {
+		t.Errorf("the plan's destination is %q, want the proved phone %q", plan.To, e2eSMSTestPhone)
 	}
 	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelSMS}; !sameChannels(prefs.written, want) {
 		t.Errorf("the effective set written through the preference seam is %v, want %v",
@@ -350,116 +322,116 @@ func TestReviewNoticeSendsSMSWithASendableTemplate(t *testing.T) {
 	if dispatcher.dispatch == nil {
 		t.Fatalf("notify submitted no dispatch")
 	}
-	if got := dispatcher.dispatch.Params["to"]; got != reviewSMSTestPhone {
-		t.Errorf("the dispatch's destination is %v, want the proved phone %q", got, reviewSMSTestPhone)
+	if got := dispatcher.dispatch.Params["to"]; got != e2eSMSTestPhone {
+		t.Errorf("the dispatch's destination is %v, want the proved phone %q", got, e2eSMSTestPhone)
 	}
 }
 
-// stubReviewSMSTemplates answers Resolve with the error the case set and keeps
+// stubE2ESMSTemplates answers Resolve with the error the case set and keeps
 // the message it was asked about. A nil error is a sendable template.
-type stubReviewSMSTemplates struct {
+type stubE2ESMSTemplates struct {
 	err     error
 	message sms.Message
 }
 
-func (s *stubReviewSMSTemplates) Resolve(m sms.Message) (sms.Resolved, error) {
+func (s *stubE2ESMSTemplates) Resolve(m sms.Message) (sms.Resolved, error) {
 	s.message = m
 	return sms.Resolved{}, s.err
 }
 
-// stubReviewAccounts answers Identifiers; the embedded interface makes the
+// stubE2EAccounts answers Identifiers; the embedded interface makes the
 // other reads unreachable without listing them.
-type stubReviewAccounts struct {
+type stubE2EAccounts struct {
 	authn.Accounts
 	identifiers []authn.Identifier
 }
 
-func (s stubReviewAccounts) Identifiers(context.Context, authn.AccountID) ([]authn.Identifier, error) {
+func (s stubE2EAccounts) Identifiers(context.Context, authn.AccountID) ([]authn.Identifier, error) {
 	return s.identifiers, nil
 }
 
-// stubReviewPrefs answers the effective set and records the write.
-type stubReviewPrefs struct {
+// stubE2EPrefs answers the effective set and records the write.
+type stubE2EPrefs struct {
 	notification.Preferences
 	effective []notification.Channel
 	written   []notification.Channel
 }
 
-func (s *stubReviewPrefs) Effective(context.Context, string, string) ([]notification.Channel, error) {
+func (s *stubE2EPrefs) Effective(context.Context, string, string) ([]notification.Channel, error) {
 	return s.effective, nil
 }
 
-func (s *stubReviewPrefs) Set(_ context.Context, _, _ string, channels []notification.Channel) ([]notification.Channel, error) {
+func (s *stubE2EPrefs) Set(_ context.Context, _, _ string, channels []notification.Channel) ([]notification.Channel, error) {
 	s.written = append([]notification.Channel(nil), channels...)
 	return s.written, nil
 }
 
-// stubReviewDispatcher records the submitted dispatch.
-type stubReviewDispatcher struct {
+// stubE2EDispatcher records the submitted dispatch.
+type stubE2EDispatcher struct {
 	notification.Dispatcher
 	dispatch *notification.Dispatch
 }
 
-func (s *stubReviewDispatcher) Dispatch(_ context.Context, d notification.Dispatch) (jobs.JobID, error) {
+func (s *stubE2EDispatcher) Dispatch(_ context.Context, d notification.Dispatch) (jobs.JobID, error) {
 	s.dispatch = &d
 	return "job-1", nil
 }
 
-// stubReviewResolver answers the run's default language.
-type stubReviewResolver struct {
+// stubE2EResolver answers the run's default language.
+type stubE2EResolver struct {
 	i18n.Resolver
 	locale string
 }
 
-func (s stubReviewResolver) Default() i18n.Locale { return i18n.Locale(s.locale) }
+func (s stubE2EResolver) Default() i18n.Locale { return i18n.Locale(s.locale) }
 
-// stubReviewProfile answers the language an account carries.
-type stubReviewProfile struct {
+// stubE2EProfile answers the language an account carries.
+type stubE2EProfile struct {
 	i18n.Profile
 	locale i18n.Locale
 }
 
-func (s stubReviewProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
+func (s stubE2EProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
 	return s.locale, s.locale != "", nil
 }
 
-func (s stubReviewProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+func (s stubE2EProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
 	return "", false, nil
 }
 
-// failingReviewProfile is a profile whose preference read fails.
-type failingReviewProfile struct{}
+// failingE2EProfile is a profile whose preference read fails.
+type failingE2EProfile struct{}
 
-func (failingReviewProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
+func (failingE2EProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
 	return "", false, errors.New("the account store is unavailable")
 }
 
-func (failingReviewProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
+func (failingE2EProfile) TimeZoneFor(context.Context, string) (string, bool, error) {
 	return "", false, nil
 }
 
-// TestReviewNoticeGoesOutInTheRecipientsStoredLanguage holds the language
+// TestE2ENoticeGoesOutInTheRecipientsStoredLanguage holds the language
 // source: the dispatch's locale is the recipient's stored preference, not the
 // language of the request context. The worker runs with no request at all and
-// the review control runs under the recipient's own request, so a shared rule
+// the direct control runs under the recipient's own request, so a shared rule
 // that read the request language would send the notice in the browser's
 // language instead of the account's.
-func TestReviewNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
+func TestE2ENoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 	t.Parallel()
-	dispatcher := &stubReviewDispatcher{}
+	dispatcher := &stubE2EDispatcher{}
 	notifier := &demoNotifier{
 		dispatcher: dispatcher,
-		prefs: &stubReviewPrefs{
+		prefs: &stubE2EPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 		},
-		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
-			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		accounts: stubE2EAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: e2eSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
 		}},
-		templates: &stubReviewSMSTemplates{},
-		profiles:  []i18n.Profile{stubReviewProfile{locale: reviewChineseLocale}},
-		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
+		templates: &stubE2ESMSTemplates{},
+		profiles:  []i18n.Profile{stubE2EProfile{locale: e2eChineseLocale}},
+		resolver:  stubE2EResolver{locale: e2eDefaultLocale},
 	}
-	ctx := i18n.WithLocale(context.Background(), reviewDefaultLocale)
+	ctx := i18n.WithLocale(context.Background(), e2eDefaultLocale)
 
 	if _, ok, err := notifier.notify(ctx, "acme", "acct-locale", "occurrence-locale"); err != nil || !ok {
 		t.Fatalf("notify: ok=%t err=%v", ok, err)
@@ -467,33 +439,33 @@ func TestReviewNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 	if dispatcher.dispatch == nil {
 		t.Fatalf("notify submitted no dispatch")
 	}
-	if got := dispatcher.dispatch.Locale; got != reviewChineseLocale {
+	if got := dispatcher.dispatch.Locale; got != e2eChineseLocale {
 		t.Errorf("the dispatch's locale is %q, want the recipient's stored %q, not the request's %q",
-			got, reviewChineseLocale, reviewDefaultLocale)
+			got, e2eChineseLocale, e2eDefaultLocale)
 	}
 }
 
-// TestReviewNoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference holds
+// TestE2ENoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference holds
 // the other side: an account that stores no preference receives the notice in
 // the run's default, still regardless of the request's language. The default is
 // a third language, neither the request's nor "en-US", so an implementation
 // that hard-coded English fails this case.
-func TestReviewNoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *testing.T) {
+func TestE2ENoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *testing.T) {
 	t.Parallel()
-	dispatcher := &stubReviewDispatcher{}
+	dispatcher := &stubE2EDispatcher{}
 	notifier := &demoNotifier{
 		dispatcher: dispatcher,
-		prefs: &stubReviewPrefs{
+		prefs: &stubE2EPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 		},
-		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
-			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		accounts: stubE2EAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: e2eSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
 		}},
-		templates: &stubReviewSMSTemplates{},
-		profiles:  []i18n.Profile{stubReviewProfile{}},
-		resolver:  stubReviewResolver{locale: reviewThirdLocale},
+		templates: &stubE2ESMSTemplates{},
+		profiles:  []i18n.Profile{stubE2EProfile{}},
+		resolver:  stubE2EResolver{locale: e2eThirdLocale},
 	}
-	ctx := i18n.WithLocale(context.Background(), reviewChineseLocale)
+	ctx := i18n.WithLocale(context.Background(), e2eChineseLocale)
 
 	if _, ok, err := notifier.notify(ctx, "acme", "acct-default", "occurrence-default"); err != nil || !ok {
 		t.Fatalf("notify: ok=%t err=%v", ok, err)
@@ -501,9 +473,9 @@ func TestReviewNoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *te
 	if dispatcher.dispatch == nil {
 		t.Fatalf("notify submitted no dispatch")
 	}
-	if got := dispatcher.dispatch.Locale; got != reviewThirdLocale {
+	if got := dispatcher.dispatch.Locale; got != e2eThirdLocale {
 		t.Errorf("the dispatch's locale is %q, want the run's default %q, not the request's %q "+
-			"and not a fixed %q", got, reviewThirdLocale, reviewChineseLocale, reviewDefaultLocale)
+			"and not a fixed %q", got, e2eThirdLocale, e2eChineseLocale, e2eDefaultLocale)
 	}
 }
 
@@ -525,29 +497,29 @@ func (r *recordingLogs) Handle(_ context.Context, rec slog.Record) error {
 func (r *recordingLogs) WithAttrs([]slog.Attr) slog.Handler { return r }
 func (r *recordingLogs) WithGroup(string) slog.Handler      { return r }
 
-// TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails holds the
+// TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails holds the
 // state a failed read is: the notice goes out in the run's default, the
 // dispatch still happens, and a warning names the notice's declared type and
 // tenant without the recipient's identifier anywhere in its fields. The default
 // is a third language, so a hard-coded "en-US" fails this case too.
-func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) {
+func TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) {
 	t.Parallel()
-	dispatcher := &stubReviewDispatcher{}
+	dispatcher := &stubE2EDispatcher{}
 	logs := &recordingLogs{}
 	notifier := &demoNotifier{
 		dispatcher: dispatcher,
-		prefs: &stubReviewPrefs{
+		prefs: &stubE2EPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 		},
-		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
-			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		accounts: stubE2EAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: e2eSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
 		}},
-		templates: &stubReviewSMSTemplates{},
-		profiles:  []i18n.Profile{failingReviewProfile{}},
-		resolver:  stubReviewResolver{locale: reviewThirdLocale},
+		templates: &stubE2ESMSTemplates{},
+		profiles:  []i18n.Profile{failingE2EProfile{}},
+		resolver:  stubE2EResolver{locale: e2eThirdLocale},
 		logger:    slog.New(logs),
 	}
-	ctx := i18n.WithLocale(context.Background(), reviewChineseLocale)
+	ctx := i18n.WithLocale(context.Background(), e2eChineseLocale)
 
 	if _, ok, err := notifier.notify(ctx, "acme", "acct-unreadable", "occurrence-unreadable"); err != nil || !ok {
 		t.Fatalf("notify: ok=%t err=%v", ok, err)
@@ -555,9 +527,9 @@ func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.
 	if dispatcher.dispatch == nil {
 		t.Fatalf("notify submitted no dispatch")
 	}
-	if got := dispatcher.dispatch.Locale; got != reviewThirdLocale {
+	if got := dispatcher.dispatch.Locale; got != e2eThirdLocale {
 		t.Errorf("the dispatch's locale is %q, want the run's default %q after a failed read",
-			got, reviewThirdLocale)
+			got, e2eThirdLocale)
 	}
 	logs.mu.Lock()
 	records := append([]slog.Record(nil), logs.records...)
@@ -606,31 +578,31 @@ func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.
 	})
 }
 
-// TestReviewNoticeAsksEveryProfileAfterAFailedRead holds that a failed read in
+// TestE2ENoticeAsksEveryProfileAfterAFailedRead holds that a failed read in
 // one profile does not end the search: a later profile's stored preference
 // decides the dispatch, and exactly one warning is written. The fallback is a
 // third language, so answering with the resolver's default fails this case too.
-func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
+func TestE2ENoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	t.Parallel()
-	dispatcher := &stubReviewDispatcher{}
+	dispatcher := &stubE2EDispatcher{}
 	logs := &recordingLogs{}
 	notifier := &demoNotifier{
 		dispatcher: dispatcher,
-		prefs: &stubReviewPrefs{
+		prefs: &stubE2EPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 		},
-		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
-			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+		accounts: stubE2EAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: e2eSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
 		}},
-		templates: &stubReviewSMSTemplates{},
+		templates: &stubE2ESMSTemplates{},
 		profiles: []i18n.Profile{
-			failingReviewProfile{},
-			stubReviewProfile{locale: reviewChineseLocale},
+			failingE2EProfile{},
+			stubE2EProfile{locale: e2eChineseLocale},
 		},
-		resolver: stubReviewResolver{locale: reviewThirdLocale},
+		resolver: stubE2EResolver{locale: e2eThirdLocale},
 		logger:   slog.New(logs),
 	}
-	ctx := i18n.WithLocale(context.Background(), reviewThirdLocale)
+	ctx := i18n.WithLocale(context.Background(), e2eThirdLocale)
 
 	if _, ok, err := notifier.notify(ctx, "acme", "acct-two-profiles", "occurrence-two-profiles"); err != nil || !ok {
 		t.Fatalf("notify: ok=%t err=%v", ok, err)
@@ -638,9 +610,9 @@ func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	if dispatcher.dispatch == nil {
 		t.Fatalf("notify submitted no dispatch")
 	}
-	if got := dispatcher.dispatch.Locale; got != reviewChineseLocale {
+	if got := dispatcher.dispatch.Locale; got != e2eChineseLocale {
 		t.Errorf("the dispatch's locale is %q, want the second profile's stored %q: "+
-			"one profile's failed read says nothing about the next", got, reviewChineseLocale)
+			"one profile's failed read says nothing about the next", got, e2eChineseLocale)
 	}
 
 	logs.mu.Lock()
@@ -663,18 +635,18 @@ func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	})
 }
 
-// TestReviewNoticePrunesOnlyUnaddressableChannels holds the write the fixture
+// TestE2ENoticePrunesOnlyUnaddressableChannels holds the write the fixture
 // makes before a dispatch: it removes a channel the recipient cannot be
 // addressed on and never adds one back, so a recipient's stored choice survives
 // every window.
-func TestReviewNoticePrunesOnlyUnaddressableChannels(t *testing.T) {
+func TestE2ENoticePrunesOnlyUnaddressableChannels(t *testing.T) {
 	t.Parallel()
 	noPhone := demoNoticePlan{
-		To:       reviewSMSTestEmail,
+		To:       e2eSMSTestEmail,
 		Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 	}
 	withPhone := demoNoticePlan{
-		To:       reviewSMSTestPhone,
+		To:       e2eSMSTestPhone,
 		Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
 	}
 	cases := []struct {

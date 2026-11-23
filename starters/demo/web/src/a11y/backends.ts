@@ -369,7 +369,7 @@ const EMPTY_TENANT_SETTINGS: SettingsTenantAdminSettings = {
 
 const SMS_TEMPLATE: SmsAdminTemplatesList200['templates'][number] = {
   name: 'example',
-  carrier: 'review',
+  carrier: 'log',
   kind: 'notification',
   source: 'runtime',
   params: ['code'],

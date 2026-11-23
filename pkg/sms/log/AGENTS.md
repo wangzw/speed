@@ -38,12 +38,10 @@ one, fails the startup with an error naming the item and the code, and so does a
 entry keyed by an empty code. The item takes its value from the primary config
 source alone and is absent by default, which is an empty map.
 
-`Approval(code)` answers a configured entry first. A code the configuration does
-not name answers what the process recorded — the pending entry `Offer` writes,
-or the verdict `Review` moves — and a code neither knows about answers pending.
-`Offer`, `Review` and `Retire` write the in-memory store alone: they never
-override a configured verdict. `Retire` therefore leaves a configured entry
-answering.
+`Approval(code)` answers a configured entry, and every code the configuration
+does not name answers pending. The carrier keeps no review state of its own:
+`Offer` only derives and returns the code, and `Retire` changes no answer, so a
+configured entry keeps answering before and after either call.
 
 ## Boundaries
 
@@ -56,10 +54,9 @@ answering.
   sensitive key name and the logging layer would mask the value. A notice
   carries no code and its record says a message was sent.
 - **It answers a real per-template review.** `Model` declares
-  `Review.PerTemplate`; `sms.log.approvals` pins a verdict per code, a code the
-  configuration does not name answers pending, and `Review` moves one code's
-  verdict in memory. The review build's control drives `Review`; the carrier
-  itself is present in every build.
+  `Review.PerTemplate`; `sms.log.approvals` pins a verdict per code, and a code
+  the configuration does not name answers pending. The carrier itself is
+  present in every build.
 - **No message is queued, retried or tracked.** Every send goes through the
   real budgets, challenge row and verification in the SMS module.
 

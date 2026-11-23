@@ -4,19 +4,19 @@
  * The run's own directory is created here, so this is also where the retention
  * rule runs: before the harness directory is created, every earlier run
  * directory under /tmp whose modification time is older than the retention
- * window is removed. The per-spec directories a failed test keeps -- the
- * review server's temporary directory and the deploy fixture's volume -- are
- * swept by the same age rule under the system temp directory, each by its own
- * name shape. A fresh directory -- this run's, or one belonging to a run
- * happening in parallel -- is inside the window and is never touched.
+ * window is removed. The per-spec directories a failed test keeps -- the e2e
+ * server's temporary directory and the deploy fixture's volume -- are swept by
+ * the same age rule under the system temp directory, each by its own name
+ * shape. A fresh directory -- this run's, or one belonging to a run happening
+ * in parallel -- is inside the window and is never touched.
  *
  * The Go program embeds starters/demo/server/dist-e2e in an e2e-tagged build,
- * so the front end is built first; the review binary is built second and lands
- * in the harness directory under /tmp. A manifest records where the binary is
- * and which tree it came from, and every per-test server fixture starts that
- * same binary. Building here rather than in each fixture keeps a run from
- * repeating a minute of compilation per test, and keeps the build's output out
- * of the tree.
+ * so the front end is built first; the e2e binary is built second and lands in
+ * the harness directory under /tmp. A manifest records where the binary is and
+ * which tree it came from, and every per-test server fixture starts that same
+ * binary, as does the deployment journey over its own template. Building here
+ * rather than in each fixture keeps a run from repeating a minute of
+ * compilation per test, and keeps the build's output out of the tree.
  *
  * The three Go builds take their width from GATE_JOBS, which `make e2e` puts
  * in this process's environment: each passes -p and sets GOMAXPROCS for the
@@ -24,6 +24,11 @@
  * instead of probing the host's core count. The value is required -- the build
  * fails loudly when it is absent or invalid, rather than running at a width
  * nobody chose.
+ *
+ * The e2e tag changes only the embedded front-end bundle; the capability
+ * roster is the default one. Beside the service the setup builds the two
+ * helpers the journeys drive: the SAML identity provider's signer and the
+ * factor seeding command.
  *
  * A failed build fails the run with the command's whole output: a harness that
  * silently fell back to a stale binary would report journeys it never ran.
@@ -35,7 +40,7 @@ import { join } from 'node:path'
 import {
   ARTIFACT_ROOT,
   BINARY_NAME,
-  DEPLOY_BINARY_NAME,
+  FACTOR_SEED_NAME,
   HARNESS_DIR,
   MANIFEST_PATH,
   REPO_ROOT,
@@ -165,31 +170,15 @@ export default async function globalSetup(): Promise<void> {
   const binary = join(HARNESS_DIR, BINARY_NAME)
   await build(
     'go',
-    ['-C', SERVER_DIR, 'build', `-p=${width}`, '-tags', 'review,e2e', '-o', binary, '.'],
+    ['-C', SERVER_DIR, 'build', `-p=${width}`, '-tags', 'e2e', '-o', binary, '.'],
     REPO_ROOT,
-    'building the review binary',
-    { GOMAXPROCS: String(width) },
-  )
-
-  // The deployment build is the default build: every capability is compiled in,
-  // and what the deployment starts is decided at run time from the rendered
-  // configuration. Only the e2e tag is added, which switches the embedded bundle
-  // to dist-e2e; it embeds the same front end, so it is built after the build
-  // like the review binary. The review-only test controls and loopback guard are
-  // absent from it, which is what keeps the deployment journey's feature set the
-  // deployment's own.
-  const deployBinary = join(HARNESS_DIR, DEPLOY_BINARY_NAME)
-  await build(
-    'go',
-    ['-C', SERVER_DIR, 'build', `-p=${width}`, '-tags', 'e2e', '-o', deployBinary, '.'],
-    REPO_ROOT,
-    'building the default binary',
+    'building the e2e binary',
     { GOMAXPROCS: String(width) },
   )
 
   // The SAML identity provider fixture signs its responses with the library the
   // product validates them with, through this small command. It is built beside
-  // the binaries and used only by the spec that drives that provider.
+  // the binary and used only by the spec that drives that provider.
   const samlSigner = join(HARNESS_DIR, SAML_SIGNER_NAME)
   await build(
     'go',
@@ -199,9 +188,21 @@ export default async function globalSetup(): Promise<void> {
     { GOMAXPROCS: String(width) },
   )
 
+  // The factor seeding command writes the impersonation operator's aged TOTP
+  // factor and its SMS factor. It reads the same configuration the service
+  // runs on, so the fixture invokes it once the seed has written the account.
+  const factorSeed = join(HARNESS_DIR, FACTOR_SEED_NAME)
+  await build(
+    'go',
+    ['-C', SERVER_DIR, 'build', `-p=${width}`, '-o', factorSeed, './e2e/factorseed'],
+    REPO_ROOT,
+    'building the factor seeding helper',
+    { GOMAXPROCS: String(width) },
+  )
+
   const manifest = {
     binary,
-    deployBinary,
+    factorSeed,
     samlSigner,
     artifactsRoot: ARTIFACT_ROOT,
     repoRoot: REPO_ROOT,

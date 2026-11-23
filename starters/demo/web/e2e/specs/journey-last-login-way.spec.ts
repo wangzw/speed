@@ -97,7 +97,7 @@ import {
 // the step-up run inside this file's per-test bound; fixture assembly included.
 test.describe.configure({ timeout: scaledTimeout(420_000) })
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -557,10 +557,10 @@ async function prepareOperator(
   await registerPasskeyOnSignIn(passwordPanel)
   await expect(homeHeading(operatorPage)).toBeVisible()
 
-  // The journey starts with an operator whose address is proved. The review
-  // seed writes the address as an administrator's assertion, so the spec
+  // The journey starts with an operator whose address is proved. The seed
+  // writes the address as an administrator's assertion, so the spec
   // reaches the precondition the way a person does -- the standing notice's
-  // verify entry, then the code the review mail carrier writes to the process
+  // verify entry, then the code the e2e mail carrier writes to the process
   // log.
   const banner = verificationBanner(operatorPage)
   await expect(banner).toBeVisible()

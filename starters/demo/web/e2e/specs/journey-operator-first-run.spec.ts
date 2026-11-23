@@ -12,10 +12,10 @@
  * that says to verify the email on the account page first, not with the
  * server's message -- and the draft stays in the field while the row still
  * reads "Default" and the current value is still the declaration. The operator
- * returns to the tenant area, follows the notice's verify entry (which sends one
- * code on arrival), reads that code out of the review process log -- the one
- * non-UI read this spec makes -- and proves the address. The identifiers list
- * flips the same row to verified and the notice goes.
+ * returns to the tenant area, follows the notice's verify entry (which sends
+ * one code on arrival), reads that code out of the server's process log -- the
+ * one non-UI read this spec makes -- and proves the address. The identifiers
+ * list flips the same row to verified and the notice goes.
  *
  * Back on the settings page, the same item and the same value are written
  * again; this time the row reads "Overridden", the field shows the value the
@@ -37,14 +37,12 @@
  * Three claims in the journey document are narrower here than the document
  * states, and the reasons:
  *
- *  - The admin sidebar's "Platform configuration" group heading does not
- *    render in the review assembly: that group has two declarations, the
- *    settings page and the SMS-template page, and the review binary serves no
- *    `sms.admin` feature, so the group folds to its one served entry. The spec
- *    therefore proves the grouped navigation through the "Identity & access"
- *    group (six entries, its heading rendered) and opens the settings page from
- *    the navigation entry itself. The grouping and the destination are the
- *    step's substance; the group's name is not observable here.
+ *  - The admin sidebar's "Platform configuration" group heading is not
+ *    asserted here: the spec opens the settings page from the navigation
+ *    entry itself, so the step does not observe the group's name. The grouping
+ *    is proved through the "Identity & access" group (six entries, its
+ *    heading rendered). The grouping and the destination are the step's
+ *    substance; the platform group's name is not.
  *  - REQ-presentation-029 (one result at a time, the last settles) is left out
  *    of @covers. The journey's two writes sit on two different mounts of the
  *    settings page -- the account round trip between them unmounts it -- so a
@@ -98,7 +96,7 @@ import { copy, copyPattern } from '../helpers/i18n'
 // for the key, type and current value the journey's settings step documents.
 test.use({ viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -375,8 +373,9 @@ test('operator-first-run: the operator proves the email and lands the first sett
 
     // The admin navigation is grouped: the identity group holds six served
     // pages, so its heading renders as a disclosure control. (The platform
-    // group holds only the settings page in this assembly, so it folds to the
-    // entry itself -- see the file header.)
+    // group holds the settings page and the SMS-template page in this
+    // assembly; this step opens the settings page from its entry -- see the
+    // file header.)
     const nav = adminNav(page)
     await expect(
       nav.getByRole('button', {
@@ -543,7 +542,7 @@ test('operator-first-run: the operator proves the email and lands the first sett
       ),
     ).toBeVisible()
 
-    // The one non-UI read: the code the review mail carrier wrote to the
+    // The one non-UI read: the code the e2e mail carrier wrote to the
     // process log for this address.
     const { code } = await waitForVerificationCode(
       server.log,

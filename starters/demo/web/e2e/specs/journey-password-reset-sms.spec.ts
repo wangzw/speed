@@ -1,15 +1,15 @@
 /**
  * The SMS password-reset journey: a person who forgot their password proves
- * their account's phone number with a code from the review SMS carrier, writes
+ * their account's phone number with a code from the e2e SMS carrier, writes
  * a new password without ever holding a session, and signs in with it.
  *
  * Everything is driven through the rendered product with mouse and keyboard:
  * the sign-in surface's forgot-password entry, the reset page's phone channel,
  * the account page's phone write that produces the proved number, the reset
  * fields and the account menu's sign-out. The single non-UI read is the
- * verification code from the review process log (fixtures/log.ts): the review
+ * verification code from the server's process log (fixtures/log.ts): the e2e
  * carrier reaches no vendor, so the process log is where a person running the
- * review reads it.
+ * e2e suite reads it.
  *
  * The number's own proof send leaves the SMS resend window held against the
  * number (the window is shared across purposes), so the first reset send to it
@@ -49,7 +49,7 @@ import {
 } from '../helpers/password-reset'
 
 /** The number the account proves and resets through: a Chinese mobile number
- * in E.164 form, admitted by the review configuration's allowed prefixes. */
+ * in E.164 form, admitted by the e2e configuration's allowed prefixes. */
 const PHONE_NATIONAL = '13800138000'
 const PHONE_E164 = '+8613800138000'
 
@@ -110,7 +110,7 @@ function phoneSection(page: Page) {
 
 /**
  * Prove the phone number through the account page: the two-part control, the
- * code the review SMS carrier wrote, then the verification.
+ * code the e2e SMS carrier wrote, then the verification.
  */
 async function provePhone(
   page: Page,

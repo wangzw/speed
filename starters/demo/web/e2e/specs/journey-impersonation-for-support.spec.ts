@@ -10,14 +10,14 @@
  * holds two two-step methods: an authenticator factor aged past the factor-age
  * requirement, and an SMS factor on a proven phone. The target is an ordinary
  * member of the tenant, not an administrator. The spec signs in with the
- * password and an authenticator code computed from the review seed's fixed
+ * password and an authenticator code computed from the seeded fixed
  * base32 secret (helpers/totp.ts, the same secret a person imports into an
  * authenticator app), enters the admin, opens the impersonation page and
  * reads the target account's identifier from the admin's own accounts list.
  *
  * THE FRESHNESS WAIT, AND WHY IT IS NOT A SLEEP. The start requires a local
  * multi-factor authentication no older than authn.impersonation.max-auth-age;
- * the review assembly lowers that to its one-minute floor. The spec therefore
+ * the e2e configuration lowers that to its one-minute floor. The spec therefore
  * has to let the window pass before the main-path start is refused and the
  * step-up branch is reached. It observes the window through the product: while
  * the session is still fresh, submitting the start with an over-long reason is
@@ -40,9 +40,9 @@
  * the window. Correctness therefore never depends on setup finishing inside
  * the one-minute wall clock.
  *
- * The target member is seeded without an email address on purpose (the review
- * notification worker addresses a notice only to a member with a mailbox, and
- * an extra mailbox would change the counts another review fixture asserts), so
+ * The target member is seeded without an email address on purpose (the
+ * notification fixture addresses a notice only to a member with a mailbox, and
+ * an extra mailbox would change the counts another fixture asserts), so
  * no notice is addressed to the target. Step 5 therefore proves the inbox
  * opens as the impersonated identity inside the grant's tenant -- its normal
  * empty state rather than the tenant-unavailable state an identity without a
@@ -83,7 +83,7 @@
  * path or a different refusal, so those assertions could not fail on them.
  *
  * Expected copy is read from the shipped en-US locale bundles through
- * helpers/i18n.ts. The SMS code the review carrier writes to the process log
+ * helpers/i18n.ts. The SMS code the log carrier writes to the process log
  * (fixtures/log.ts) is read as on every journey that verifies a code. The
  * accounts page's own roster read is observed for the operator's account id,
  * which the audit actor filter still takes and the page never renders; the
@@ -93,9 +93,15 @@
 // @covers REQ-platform-admin-001, REQ-platform-admin-003, REQ-platform-admin-021, REQ-platform-admin-022, REQ-platform-admin-023, REQ-platform-admin-024, REQ-platform-admin-027, REQ-platform-admin-029, REQ-platform-admin-078, REQ-platform-admin-081, REQ-platform-admin-082, REQ-platform-admin-084, REQ-platform-admin-109, REQ-platform-admin-110, REQ-security-014, REQ-security-015, REQ-tenancy-024, REQ-tenancy-038
 import type { Locator, Page } from '@playwright/test'
 
+import { e2eImpersonationFactors } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import type { E2EServer } from '../fixtures/server'
 import { scaledTimeout } from '../fixtures/time-scale'
+import {
+  expandAccountRows,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import {
   adminEntry,
   closeAccountMenu,
@@ -112,7 +118,7 @@ import { totpCode } from '../helpers/totp'
 // so the desktop viewport is wide enough for every column this journey reads.
 test.use({ seedImpersonation: true, viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e assembly writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -138,15 +144,19 @@ const TENANT = 'acme'
  */
 const OPERATOR_TENANT = 'system'
 
-/** The phone the review fixture proves and binds the operator's SMS factor to. */
-const OPERATOR_PHONE = '+15551234567'
+/** The phone the spec proves through the account page; its region is admitted. */
+const OPERATOR_PHONE = '+8613900139000'
+
+/** The phone's national part and country code, as the two-part control wants. */
+const OPERATOR_PHONE_COUNTRY = '86'
+const OPERATOR_PHONE_NATIONAL = '13900139000'
 
 /**
- * The operator's authenticator seed, fixed by the review fixture in
- * starters/demo/server/review_seed.go. A review fixture and not a credential:
- * it is the value a person imports into an authenticator app.
+ * The operator's authenticator seed, written by the factorseed command
+ * (e2eImpersonationFactors). It is the value a person imports into an
+ * authenticator app, not a credential.
  */
-const TOTP_SEED = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
+const TOTP_SEED = e2eImpersonationFactors.totpSeed
 
 /** The reason recorded on the impersonation and its start audit row. */
 const REASON = 'Support ticket 4711: reproduce the reported inbox problem.'
@@ -316,6 +326,122 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** The profile pane's email card, which carries the verification surface. */
+function emailSection(page: Page): Locator {
+  return page.getByRole('region', {
+    name: copy('demo', 'account.rows.label.email'),
+    exact: true,
+  })
+}
+
+/** The profile pane's phone card. */
+function phoneSection(page: Page): Locator {
+  return page.getByRole('region', {
+    name: copy('demo', 'account.rows.label.phone'),
+    exact: true,
+  })
+}
+
+/**
+ * Prove the operator's email and phone through the account page's own
+ * verification flows. The impersonation needs a proved phone (its SMS factor
+ * binds one and the step-up sends the code there) and a proved email (the
+ * account's own address); neither is seeded as proved any more, so the journey
+ * reaches both the way a person does, reading each code from the process log.
+ */
+async function proveOperatorIdentifiers(
+  page: Page,
+  server: E2EServer,
+): Promise<void> {
+  await selectAccountSection(page, 'profile')
+  await expandAccountRows(page)
+
+  // The phone first: the SMS factor must find a proved number.
+  const phone = phoneSection(page)
+  await phone
+    .getByRole('button', {
+      name: copy('demo', 'account.action.add'),
+      exact: true,
+    })
+    .click()
+  await phone
+    .getByRole('combobox', {
+      name: copy('accountUi', 'phone.country.label'),
+      exact: true,
+    })
+    .fill(OPERATOR_PHONE_COUNTRY)
+  await page.getByRole('option', { name: /\+86$/ }).click()
+  await phone
+    .getByRole('textbox', {
+      name: copy('accountUi', 'phone.phone.label'),
+      exact: true,
+    })
+    .fill(OPERATOR_PHONE_NATIONAL)
+  const phoneAfter = server.log.mark()
+  await phone
+    .getByRole('button', {
+      name: copy('accountUi', 'phone.send'),
+      exact: true,
+    })
+    .click()
+  const phoneCode = await waitForVerificationCode(
+    server.log,
+    'sms',
+    OPERATOR_PHONE,
+    { after: phoneAfter },
+  )
+  await phone
+    .getByRole('textbox', {
+      name: copy('accountUi', 'phone.code.label'),
+      exact: true,
+    })
+    .fill(phoneCode.code)
+  await phone
+    .getByRole('button', {
+      name: copy('accountUi', 'phone.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByText(copy('accountUi', 'phone.added', { phone: OPERATOR_PHONE }), {
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  // Then the address: the email card sends the code to the account's address.
+  const email = emailSection(page)
+  const emailAfter = server.log.mark()
+  await email
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.send'),
+      exact: true,
+    })
+    .click()
+  const emailCode = await waitForVerificationCode(
+    server.log,
+    'mail',
+    OPERATOR.identifier,
+    { after: emailAfter },
+  )
+  await email
+    .getByRole('textbox', {
+      name: copy('accountUi', 'verification.codeLabel'),
+      exact: true,
+    })
+    .fill(emailCode.code)
+  await email
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    email.getByText(copy('accountUi', 'identifiers.verified'), {
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
 /** One definition term of an audit detail, found by its exact text. */
 function term(page: Page, label: string): Locator {
   return page.locator('dt', {
@@ -366,7 +492,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
       exact: true,
     })
     await expect(codeField).toBeVisible()
-    // The code is computed at the moment it is typed, from the fixed review
+    // The code is computed at the moment it is typed, from the fixed seeded
     // seed; the thirty-second step is the one the server verifies.
     await codeField.fill(totpCode(TOTP_SEED))
     await passwordPanel
@@ -375,6 +501,14 @@ test('impersonation-for-support: the operator acts as a member and the record an
         exact: true,
       })
       .click()
+    await expect(homeHeading(page)).toBeVisible()
+
+    // The two identifiers the impersonation needs are proved through the
+    // product's own code flows: the SMS factor binds a proved phone, and the
+    // account's address is its own proved email. The proof leaves the account
+    // page, so the home page is reopened before the assertions below.
+    await proveOperatorIdentifiers(page, server)
+    await page.goto(`${server.url}/`)
     await expect(homeHeading(page)).toBeVisible()
 
     // The operator is platform staff: the account menu's admin entry and the
@@ -606,7 +740,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // The challenge field's label is the server-supplied field name (`code`),
     // which FlowStep renders as the input's label; it is protocol data, not
     // interface copy, so there is no locale bundle key behind it and the
-    // literal is the field's own name. The review carrier writes the code to
+    // literal is the field's own name. The log carrier writes the code to
     // the process log, this spec's one non-UI read.
     const codeField = dialog.getByRole('textbox', {
       name: 'code',

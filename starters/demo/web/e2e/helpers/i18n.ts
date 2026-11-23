@@ -51,13 +51,13 @@ const BUNDLES: Record<CopyBundle, string> = {
   uiKit: '../../../../../web/packages/ui-kit/src/locales',
   adminUi: '../../../../../web/packages/admin-ui/src/locales',
   orgCreateUi: '../../../../../web/packages/org-create-ui/src/locales',
-  // The review assembly's notification catalog. The delivery pipeline renders
-  // an in-app message from "<type_key>.<channel>.<part>" in the module's own
-  // catalog, and the review build is where a type exists, so its text is a
-  // shipped product string like any other. Its keys carry dots as literal
-  // characters; `copyKey` reads them that way.
+  // The notification fixture's catalog. The delivery pipeline renders an
+  // in-app message from "<type_key>.<channel>.<part>" in the module's own
+  // catalog, and the e2e configuration is what enables the fixture, so its
+  // text is a shipped product string like any other. Its keys carry dots as
+  // literal characters; `copyKey` reads them that way.
   demoNotice: '../../../server/demo_notification_locales',
-  // The invitation notice the backend renders and the review mail carrier
+  // The invitation notice the backend renders and the e2e mail carrier
   // writes to the process log. Its keys carry dots as literal characters; read
   // them through `copyKey`.
   invitemail: '../../../../../pkg/authn/invitemail/locales',
@@ -143,8 +143,8 @@ export function copy(
 /**
  * The expected copy for one bundle key read literally.
  *
- * A catalog whose keys are themselves whole strings -- the review fixture's
- * notification text is keyed `<type_key>.<channel>.<part>` -- cannot go through
+ * A catalog whose keys are themselves whole strings -- the notification
+ * fixture's text is keyed `<type_key>.<channel>.<part>` -- cannot go through
  * `copy`'s dot-path lookup, which reads those dots as nesting. This reads the
  * top-level entry under the exact key. A missing key or a non-string value is
  * a harness error, the same as `copy`. `variables` fill the entry's `{{name}}`

@@ -52,7 +52,7 @@ const APPROVAL_LABEL = 'sms-approval-approved'
 function template(overrides: Partial<AdminSmsTemplate> = {}): AdminSmsTemplate {
   return {
     name: 'login-code',
-    carrier: 'review',
+    carrier: 'log',
     kind: 'notification',
     source: 'runtime',
     params: ['code'],

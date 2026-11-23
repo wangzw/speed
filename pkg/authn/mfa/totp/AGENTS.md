@@ -98,23 +98,6 @@ are counted under is the multi-factor module's, reported there and not here.
   what the seed was generated with, and generation reads the first two of them
   (`code.go` `validateOpts`).
 
-## Review-only fixture seams
-
-`review_seed.go` compiles only under the `review` tag and exists for the demo
-starter's review assembly:
-
-- `ReviewSeedFactor` registers an active TOTP factor through the multi-factor
-  register and writes the seed it is given through this module's own
-  `register.insert`, so the secret goes through the encrypted column exactly as a
-  browser enrollment writes it. The demo's walkthrough passes a published
-  fixture secret so a person can import it into an authenticator.
-- `ReviewSecret` reads a seed back through the same model, so a review case that
-  computes a code from it is exercising the serializer and not a copy of the
-  table.
-
-The seed the fixture writes is a fixture, not a credential: the review build is
-a demonstration, and neither function exists in a default build.
-
 ## Running it
 
 From the repository root, over every module in the workspace:

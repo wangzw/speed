@@ -1,13 +1,11 @@
-//go:build review
-
 package main
 
-// The review configuration widens the per-source and per-account send budgets
-// so a walkthrough is not throttled. This case holds the widened keys to three
-// facts at once: each is seeded, each lies inside the domain its module
-// declares, and each is above the declared default. The limits are read from
-// the declarations rather than restated here, so a module that moves a bound
-// moves the case with it.
+// The e2e configuration widens the per-source and per-account send budgets so a
+// walkthrough is not throttled. This case holds the widened keys to three facts
+// at once: each is seeded, each lies inside the domain its module declares, and
+// each is above the declared default. The limits are read from the declarations
+// rather than restated here, so a module that moves a bound moves the case with
+// it.
 
 import (
 	"reflect"
@@ -20,16 +18,16 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// reviewWidenedBudget is one setting the review configuration widens: the
+// e2eWidenedBudget is one setting the e2e configuration widens: the
 // namespace its module declares it under and the item's key within it.
-type reviewWidenedBudget struct {
+type e2eWidenedBudget struct {
 	namespace string
 	key       string
 }
 
-// reviewWidenedBudgets are the send budgets the review configuration raises
+// e2eWidenedBudgets are the send budgets the e2e configuration raises
 // above their declared defaults.
-var reviewWidenedBudgets = []reviewWidenedBudget{
+var e2eWidenedBudgets = []e2eWidenedBudget{
 	{"authn.sms", "per-source-hourly"},
 	{"authn.sms", "per-source-daily"},
 	{"authn.sms", "per-source-distinct-hourly"},
@@ -46,35 +44,35 @@ var reviewWidenedBudgets = []reviewWidenedBudget{
 // another way is reported rather than passed silently.
 var wholeNumberRange = regexp.MustCompile(`^whole numbers from ([0-9]+) to ([0-9]+)$`)
 
-// TestReviewWidensTheSendBudgets holds the review configuration's widened send
+// TestE2EWidensTheSendBudgets holds the e2e configuration's widened send
 // budgets to the declarations of the modules that own them: the keys are
 // seeded, and every value is inside its declared domain and above the declared
 // default.
-func TestReviewWidensTheSendBudgets(t *testing.T) {
+func TestE2EWidensTheSendBudgets(t *testing.T) {
 	t.Parallel()
 	var seed seedInput
-	readEffective(t, "the review configuration", "file:review/sqlite.yaml", "seed", &seed)
+	readEffective(t, "the e2e configuration", "file:e2e/config.yaml", "seed", &seed)
 
 	seeded := make(map[string]string, len(seed.Settings))
 	for _, item := range seed.Settings {
 		seeded[item.Key] = item.Value
 	}
 
-	for _, budget := range reviewWidenedBudgets {
+	for _, budget := range e2eWidenedBudgets {
 		key := budget.namespace + "." + budget.key
 		raw, present := seeded[key]
 		if !present {
-			t.Errorf("the review configuration seeds no %s", key)
+			t.Errorf("the e2e configuration seeds no %s", key)
 			continue
 		}
 		value, err := strconv.Atoi(raw)
 		if err != nil {
-			t.Errorf("the review configuration seeds %s as %q, which is not a whole number", key, raw)
+			t.Errorf("the e2e configuration seeds %s as %q, which is not a whole number", key, raw)
 			continue
 		}
 		item, fallback := declaredIntegerSetting(t, budget)
 		if value <= fallback {
-			t.Errorf("the review configuration seeds %s as %d, which is not above the declared default %d",
+			t.Errorf("the e2e configuration seeds %s as %d, which is not above the declared default %d",
 				key, value, fallback)
 		}
 		rule := item.Domain.Rule()
@@ -94,7 +92,7 @@ func TestReviewWidensTheSendBudgets(t *testing.T) {
 			continue
 		}
 		if value < low || value > high {
-			t.Errorf("the review configuration seeds %s as %d, outside its declared domain %d to %d",
+			t.Errorf("the e2e configuration seeds %s as %d, outside its declared domain %d to %d",
 				key, value, low, high)
 		}
 	}
@@ -104,7 +102,7 @@ func TestReviewWidensTheSendBudgets(t *testing.T) {
 // default, read off the schema the declaring module registers: the item
 // carries the domain, and the mount struct carries the default in the field
 // the same key tags.
-func declaredIntegerSetting(t *testing.T, budget reviewWidenedBudget) (settings.Item, int) {
+func declaredIntegerSetting(t *testing.T, budget e2eWidenedBudget) (settings.Item, int) {
 	t.Helper()
 	for _, resource := range core.Resources[settings.Schema](core.ProcessRegistry) {
 		if resource.Value.Namespace != budget.namespace {
@@ -121,7 +119,7 @@ func declaredIntegerSetting(t *testing.T, budget reviewWidenedBudget) (settings.
 		}
 		return item, fallback
 	}
-	t.Fatalf("the review build declares no settings schema for %q", budget.namespace)
+	t.Fatalf("the binary declares no settings schema for %q", budget.namespace)
 	return settings.Item{}, 0
 }
 

@@ -3,28 +3,27 @@
  *
  * The platform operator opens the admin's SMS page, reads the configuration
  * templates as read-only, registers a runtime template with a vendor code for
- * each of two languages, and observes both languages start pending on a carrier
- * that reviews each template. The review-only control settles the English code
- * alone, which leaves the Chinese code pending. The template is disabled while
- * pending and enabled after approval, so the review state and the sending switch
- * are observed to be independent. The operator then enters the seeded tenant as
- * a member and clicks the review notice control: the notice is rendered in the
- * recipient's language (the platform default) and the approved English code
- * carries it to the review SMS carrier, which writes the message to the process
- * log. Disabling the template and repeating the click is refused locally: the
- * carrier is never called and no external-send record appears.
+ * each of two languages, and observes the languages' review states as the log
+ * carrier reports them: the configured English code reads approved, the Chinese
+ * code has no configured verdict and stays pending. The template is disabled
+ * while the states stand and enabled again, and neither move changes a review
+ * state. A tenant member with a proved phone then lets the notification
+ * fixture's periodic dispatch address the account: the notice is rendered in
+ * the recipient's language (the platform default) and the approved English code
+ * carries it to the log SMS carrier, which writes the message to the process
+ * log. Disabling the template and waiting out the next dispatch windows is
+ * refused locally: the carrier is never called and no successful external-send
+ * record appears.
  *
  * Everything the person does is a mouse or keyboard action on the rendered
- * product: the account controls that prove the email and phone the dispatch
- * needs, the admin navigation, the register and enable/disable controls, the
- * review-only verdict control, the account menu's organization row and the
- * notice control. Two
- * reads are not UI, and each is the harness's own:
+ * product: the account controls that prove the email and phone, the admin
+ * navigation, and the register and enable/disable controls. Two reads are not
+ * UI, and each is the harness's own:
  *
  *   - The email and SMS verification codes come from the process log through
  *     `waitForVerificationCode`, one of the three log reads the honesty rules
  *     allow.
- *   - The messages the review SMS carrier accepted and the delivery pipeline's
+ *   - The messages the log SMS carrier accepted and the delivery pipeline's
  *     external-send records come from their process-log lines through the
  *     fixture's `waitForCarrierMessage` and `waitForOutboundRecord`. The carrier
  *     reaches no vendor, so those lines are the evidence that a message left or
@@ -33,28 +32,30 @@
  * This spec does not claim to cover the delivery ledger. `notification_sends`
  * stays off the product's interface, and an end-to-end spec asserts rendered
  * behaviour rather than a table a fixture reads. The record that a locally
- * refused send is failed with its refusal reason is asserted by the
- * review-tagged Go case `TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger`
- * (`starters/demo/server/review_notification_ledger_test.go`), which queries
+ * refused send is failed with its refusal reason is asserted by the Go case
+ * `TestRefusedSMSTemplateIsRecordedFailedInTheLedger`
+ * (`starters/demo/server/e2e_notification_ledger_test.go`), which queries
  * the ledger directly.
  *
- * The review verdict is driven by a control the review assembly alone compiles
- * and mounts; the page renders it only while the review build publishes the
- * feature, and the component labels itself as review-only. A baseline deployment
- * carries neither the route nor the feature.
+ * The review verdict comes from the configuration's `sms.log.approvals` table,
+ * not from a control the page drives: the log carrier answers the configured
+ * verdict for each vendor code, so the English code reads approved from the
+ * first list refresh and the Chinese code, with no entry, stays pending.
  *
- * The periodic notification worker is turned off for this spec's server
- * (`schedulerTick: '0s'`). It would otherwise address the same tenant's members
- * on its own window, so a notice observed after the click could have come from
- * the worker instead of the action. The control's dispatch travels the job
- * queue, which polls independently of the scheduler.
+ * The dispatch is the notification fixture's periodic one, and the recipient is
+ * the seeded tenant member rather than the operator. The fixture addresses an
+ * account by its proved phone or by any email identifier, and it prunes every
+ * channel a dispatch cannot use from the recipient's effective set without ever
+ * restoring one. The operator owns an email identifier from the seed, so a
+ * dispatch that ran before the runtime template existed would fall back to email
+ * and drop sms for good. The member holds no identifier until this journey proves
+ * its phone, after the template is enabled, so the first window that can address
+ * it chooses sms.
  *
  * The email and phone preconditions are produced through the account page, not
- * seeded: the operator's email is proved from a `mail.review` code and its phone
- * from an `sms.review` code, both read through the allowed code reader. The
- * operator's membership in the seeded tenant is part of this server's seed: the
- * fixture names it acme's second tenant administrator on every server that does
- * not seed the impersonation factors.
+ * seeded. The operator's membership in the seeded tenant is part of this
+ * server's seed: the fixture names it acme's second tenant administrator on
+ * every server that does not shape the impersonation tenant.
  *
  * `@covers` is narrower than the journey document where an assertion cannot fail
  * on the requirement's whole claim:
@@ -82,12 +83,15 @@
 // @covers REQ-notifications-023, REQ-platform-config-010, REQ-platform-config-012, REQ-platform-config-013, REQ-platform-config-014, REQ-platform-config-015, REQ-platform-config-034, REQ-platform-config-036, REQ-presentation-027, REQ-presentation-028
 import type { Locator, Page } from '@playwright/test'
 
-import { smsRolloutOperator } from '../fixtures/config'
+import { e2eOrdinaryMember, smsRolloutOperator } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
+import { NOTIFICATION_INTERVAL_MS } from '../fixtures/notification-fixture'
+import type { E2EServer } from '../fixtures/server'
+import { scaledTimeout } from '../fixtures/time-scale'
+import { createAccounts } from '../helpers/accounts'
 import {
   adminEntry,
-  backToApp,
   closeAccountMenu,
   openAccountMenu,
 } from '../helpers/account-menu'
@@ -98,14 +102,7 @@ import {
 import { copy } from '../helpers/i18n'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
-// This journey's actor is the platform operator as an administrator of the
-// seeded tenant, and its only intended sends are its own control clicks.
-test.use({ schedulerTick: '0s' })
-
-/** The seeded tenant the operator joins. */
-const TENANT = smsRolloutOperator.tenant
-
-/** The runtime template the review notice type's catalog names. */
+/** The runtime template the notification type's catalog names. */
 const TEMPLATE = 'demo-notice'
 
 /** The vendor codes the template is registered with, one per language. */
@@ -114,10 +111,10 @@ const ZH_LOCALE = 'zh-CN'
 const EN_CODE = 'demo-notice-en'
 const ZH_CODE = 'demo-notice-zh'
 
-/** The notification type the review build declares. */
+/** The notification type the e2e assembly declares. */
 const TYPE_KEY = 'demo.notice'
 
-/** The phone the operator proves; its region is admitted by the review config. */
+/** The phone the recipient proves; its region is admitted by the config. */
 const PHONE_NATIONAL = '13800138000'
 const PHONE_E164 = '+8613800138000'
 
@@ -164,14 +161,6 @@ function registerSection(page: Page): Locator {
   })
 }
 
-/** The SMS page's review-only verdict control. */
-function verdictControl(page: Page): Locator {
-  return page.getByRole('region', {
-    name: copy('demo', 'smsReview.title'),
-    exact: true,
-  })
-}
-
 /** The page-header refresh control. */
 function refreshButton(page: Page): Locator {
   return page.getByRole('button', {
@@ -195,7 +184,7 @@ const ADMIN_TENANT = 'system'
 /** The account menu's organization row: the collapsed row that expands the
  * other organizations. Waiting for that shape skips the menu's later entries
  * while the caller tenant read is still settling. */
-function currentOrganizationRow(page: Page): Locator {
+function currentOrganizationRow(page: Page): ReturnType<Page['getByRole']> {
   return page
     .getByRole('menu')
     .getByRole('menuitem', { expanded: false })
@@ -256,12 +245,6 @@ async function openSmsPage(page: Page): Promise<void> {
   await expect(smsHeading(page)).toBeVisible()
 }
 
-/** Return to the tenant area through the admin's account-menu destination. */
-async function returnToApp(page: Page): Promise<void> {
-  await openAccountMenu(page)
-  await backToApp(page).click()
-}
-
 /** One row's approval text for a language, as the page renders it. */
 function approvalText(locale: string, stateKey: string): string {
   return `${locale}: ${copy('adminUi', `sms.approval.${stateKey}`)}`
@@ -294,12 +277,117 @@ async function refreshUntil(
     .toContain(wanted)
 }
 
+/** Prove one account's email address from its own code flow. */
+async function proveEmail(
+  page: Page,
+  server: E2EServer,
+  email: string,
+): Promise<void> {
+  await selectAccountSection(page, 'profile')
+  await expandAccountRows(page)
+  const verification = verificationSection(page)
+  const emailAfter = server.log.mark()
+  await verification
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.send'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByText(copy('accountUi', 'verification.sent', { email }), {
+      exact: true,
+    }),
+  ).toBeVisible()
+  const emailCode = await waitForVerificationCode(server.log, 'mail', email, {
+    after: emailAfter,
+  })
+  await verification
+    .getByRole('textbox', {
+      name: copy('accountUi', 'verification.codeLabel'),
+      exact: true,
+    })
+    .fill(emailCode.code)
+  await verification
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    verification.getByText(email, { exact: true }),
+  ).toBeVisible()
+  await expect(
+    verification.getByText(copy('accountUi', 'identifiers.verified'), {
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
+/** Prove one account's phone number from its own code flow. */
+async function provePhone(page: Page, server: E2EServer): Promise<void> {
+  await selectAccountSection(page, 'profile')
+  await expandAccountRows(page)
+  const phone = phoneSection(page)
+  await phone
+    .getByRole('button', {
+      name: copy('demo', 'account.action.add'),
+      exact: true,
+    })
+    .click()
+  await phone
+    .getByRole('combobox', {
+      name: copy('accountUi', 'phone.country.label'),
+      exact: true,
+    })
+    .fill('86')
+  await page.getByRole('option', { name: /\+86$/ }).click()
+  await phone
+    .getByRole('textbox', {
+      name: copy('accountUi', 'phone.phone.label'),
+      exact: true,
+    })
+    .fill(PHONE_NATIONAL)
+  const phoneAfter = server.log.mark()
+  await phone
+    .getByRole('button', {
+      name: copy('accountUi', 'phone.send'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByText(copy('accountUi', 'phone.sent', { phone: PHONE_E164 }), {
+      exact: true,
+    }),
+  ).toBeVisible()
+  const phoneCode = await waitForVerificationCode(server.log, 'sms', PHONE_E164, {
+    after: phoneAfter,
+  })
+  await phone
+    .getByRole('textbox', {
+      name: copy('accountUi', 'phone.code.label'),
+      exact: true,
+    })
+    .fill(phoneCode.code)
+  await phone
+    .getByRole('button', {
+      name: copy('accountUi', 'phone.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByText(copy('accountUi', 'phone.added', { phone: PHONE_E164 }), {
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
 test('sms-template-rollout: an operator settles one language and a disabled template is refused locally', async ({
   demo,
+  browser,
 }) => {
   const { page, server, accounts } = demo
 
-  await test.step('the operator signs in and proves the email and phone the dispatch needs', async () => {
+  await test.step('the operator signs in and proves the account email', async () => {
     await accounts.signIn({
       identifier: smsRolloutOperator.username,
       password: smsRolloutOperator.password,
@@ -311,134 +399,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
         exact: true,
       }),
     ).toBeVisible()
-
-    // The account page: the two preconditions the journey names, produced by the
-    // product's own verification flows rather than written into the database.
-    await page
-      .getByTestId('account-entry-trigger')
-      .click()
-    await page
-      .getByRole('menuitem', {
-        name: copy('demo', 'account.sections.profile'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: copy('demo', 'account.sections.profile'),
-        exact: true,
-      }),
-    ).toBeVisible()
-
-    // The email address: the profile pane's email card offers the send action
-    // for the unproved address; the code arrives in the review mail carrier's
-    // line.
-    await selectAccountSection(page, 'profile')
-    await expandAccountRows(page)
-    const verification = verificationSection(page)
-    const emailAfter = server.log.mark()
-    await verification
-      .getByRole('button', {
-        name: copy('accountUi', 'verification.send'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByText(
-        copy('accountUi', 'verification.sent', {
-          email: smsRolloutOperator.identifier,
-        }),
-        { exact: true },
-      ),
-    ).toBeVisible()
-    const emailCode = await waitForVerificationCode(
-      server.log,
-      'mail',
-      smsRolloutOperator.identifier,
-      { after: emailAfter },
-    )
-    await verification
-      .getByRole('textbox', {
-        name: copy('accountUi', 'verification.codeLabel'),
-        exact: true,
-      })
-      .fill(emailCode.code)
-    await verification
-      .getByRole('button', {
-        name: copy('accountUi', 'verification.verify'),
-        exact: true,
-      })
-      .click()
-    // The proved address is now the email card's contact row, carrying the
-    // verified state the write established.
-    await expect(
-      verification.getByText(smsRolloutOperator.identifier, { exact: true }),
-    ).toBeVisible()
-    await expect(
-      verification.getByText(copy('accountUi', 'identifiers.verified'), {
-        exact: true,
-      }),
-    ).toBeVisible()
-
-    // The phone number: the two-part control, then the code from the review SMS
-    // carrier's line. The number's region is one the review config admits.
-    const phone = phoneSection(page)
-    // The phone card waits for the visitor to ask; its action opens the two
-    // part control below it.
-    await phone
-      .getByRole('button', {
-        name: copy('demo', 'account.action.add'),
-        exact: true,
-      })
-      .click()
-    const country = phone.getByRole('combobox', {
-      name: copy('accountUi', 'phone.country.label'),
-      exact: true,
-    })
-    await country.fill('86')
-    await page.getByRole('option', { name: /\+86$/ }).click()
-    await phone
-      .getByRole('textbox', {
-        name: copy('accountUi', 'phone.phone.label'),
-        exact: true,
-      })
-      .fill(PHONE_NATIONAL)
-    const phoneAfter = server.log.mark()
-    await phone
-      .getByRole('button', {
-        name: copy('accountUi', 'phone.send'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByText(copy('accountUi', 'phone.sent', { phone: PHONE_E164 }), {
-        exact: true,
-      }),
-    ).toBeVisible()
-    const phoneCode = await waitForVerificationCode(
-      server.log,
-      'sms',
-      PHONE_E164,
-      { after: phoneAfter },
-    )
-    await phone
-      .getByRole('textbox', {
-        name: copy('accountUi', 'phone.code.label'),
-        exact: true,
-      })
-      .fill(phoneCode.code)
-    await phone
-      .getByRole('button', {
-        name: copy('accountUi', 'phone.verify'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByText(copy('accountUi', 'phone.added', { phone: PHONE_E164 }), {
-        exact: true,
-      }),
-    ).toBeVisible()
+    await proveEmail(page, server, smsRolloutOperator.identifier)
   })
 
   await test.step('the configuration template reads as read-only and refuses a write', async () => {
@@ -477,7 +438,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     )
   })
 
-  await test.step('the operator registers the runtime template and both languages start pending', async () => {
+  await test.step('the operator registers the runtime template and its languages read their configured verdicts', async () => {
     const register = registerSection(page)
     await register
       .getByRole('textbox', {
@@ -509,16 +470,16 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
       }),
     ).toBeVisible()
 
-    await refreshUntil(page, TEMPLATE, approvalText(EN_LOCALE, 'pending'))
+    await refreshUntil(page, TEMPLATE, approvalText(EN_LOCALE, 'approved'))
     const row = templateRow(page, TEMPLATE)
     await expect(row).toHaveCount(1)
     await expect(row).toContainText(copy('adminUi', 'sms.source.runtime'))
     await expect(row).toContainText(copy('adminUi', 'sms.enabledYes'))
-    await expect(row).toContainText(approvalText(EN_LOCALE, 'pending'))
+    await expect(row).toContainText(approvalText(EN_LOCALE, 'approved'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
   })
 
-  await test.step('disabling the template leaves both review states pending', async () => {
+  await test.step('disabling the template leaves the review states unchanged', async () => {
     const row = templateRow(page, TEMPLATE)
     await row
       .getByRole('switch', {
@@ -534,58 +495,11 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     ).toBeVisible()
     await refreshUntil(page, TEMPLATE, copy('adminUi', 'sms.enabledNo'))
     await expect(row).toContainText(copy('adminUi', 'sms.enabledNo'))
-    await expect(row).toContainText(approvalText(EN_LOCALE, 'pending'))
-    await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
-  })
-
-  await test.step('the review-only control settles the English language and leaves Chinese pending', async () => {
-    const control = verdictControl(page)
-    await expect(control).toBeVisible()
-    await expect(
-      control.getByText(copy('demo', 'smsReview.description'), { exact: true }),
-    ).toBeVisible()
-    await control
-      .getByRole('textbox', {
-        name: copy('demo', 'smsReview.codeLabel'),
-        exact: true,
-      })
-      .fill(EN_CODE)
-    await control
-      .getByRole('combobox', {
-        name: copy('demo', 'smsReview.stateLabel'),
-        exact: true,
-      })
-      .selectOption('approved')
-    await control
-      .getByRole('button', {
-        name: copy('demo', 'smsReview.submit'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByText(
-        copy('demo', 'smsReview.set', {
-          code: EN_CODE,
-          state: copy('demo', 'smsReview.state.approved'),
-        }),
-        { exact: true },
-      ),
-    ).toBeVisible()
-
-    await refreshUntil(
-      page,
-      TEMPLATE,
-      approvalText(EN_LOCALE, 'approved'),
-    )
-    const row = templateRow(page, TEMPLATE)
     await expect(row).toContainText(approvalText(EN_LOCALE, 'approved'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
-    // The template is still disabled: the verdict changed the review state and
-    // nothing else.
-    await expect(row).toContainText(copy('adminUi', 'sms.enabledNo'))
   })
 
-  await test.step('enabling the template sends and leaves the review states unchanged', async () => {
+  await test.step('enabling the template leaves the review states unchanged', async () => {
     const row = templateRow(page, TEMPLATE)
     await row
       .getByRole('switch', {
@@ -604,38 +518,28 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
   })
 
-  await test.step('the member dispatches a notice and the approved language reaches the SMS carrier', async () => {
-    await returnToApp(page)
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: copy('demo', 'home.heading'),
-        exact: true,
-      }),
-    ).toBeVisible()
-    await switchToTenant(page, TENANT)
-
-    const notice = page.getByRole('region', {
-      name: copy('demo', 'home.reviewNotice.title'),
-      exact: true,
-    })
-    await expect(notice).toBeVisible()
-    await expect(
-      notice.getByText(copy('demo', 'home.reviewNotice.description'), {
-        exact: true,
-      }),
-    ).toBeVisible()
-
-    const logAfter = server.log.mark()
-    await notice
-      .getByRole('button', {
-        name: copy('demo', 'home.reviewNotice.action'),
-        exact: true,
+  await test.step('the recipient proves the phone the dispatch needs', async () => {
+    // The recipient is the seeded tenant member, signed in in its own context
+    // so the operator's admin session stays where the disable step needs it.
+    // The member holds no identifier until this proof, so no earlier dispatch
+    // pruned its sms channel, and the first window that can address it chooses
+    // sms now that the template is enabled.
+    const recipientContext = await browser.newContext()
+    try {
+      const recipientPage = await recipientContext.newPage()
+      const recipient = createAccounts({ page: recipientPage, server })
+      await recipient.signIn({
+        identifier: e2eOrdinaryMember.identifier,
+        password: e2eOrdinaryMember.password,
       })
-      .click()
-    await expect(
-      page.getByText(copy('demo', 'home.reviewNotice.sent'), { exact: true }),
-    ).toBeVisible()
+      await provePhone(recipientPage, server)
+    } finally {
+      await recipientContext.close()
+    }
+  })
+
+  await test.step('the periodic dispatch sends the approved language to the SMS carrier', async () => {
+    const logAfter = server.log.mark()
 
     // The message the carrier accepted: the template, the recipient's language
     // and the destination the dispatch resolved for this phone.
@@ -643,6 +547,7 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
       to: PHONE_E164,
       template: TEMPLATE,
       after: logAfter,
+      timeoutMs: scaledTimeout(3 * NOTIFICATION_INTERVAL_MS),
     })
     expect(carrier.locale).toBe('en-US')
 
@@ -653,13 +558,13 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
       typeKey: TYPE_KEY,
       outcome: 'sent',
       after: logAfter,
+      timeoutMs: scaledTimeout(3 * NOTIFICATION_INTERVAL_MS),
     })
     expect(outbound.providerID).not.toBe('')
     expect(outbound.durationMS).toBeGreaterThanOrEqual(0)
   })
 
   await test.step('a disabled template is refused locally and no message leaves', async () => {
-    await openSmsPage(page)
     const row = templateRow(page, TEMPLATE)
     await row
       .getByRole('switch', {
@@ -678,45 +583,37 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await expect(row).toContainText(approvalText(EN_LOCALE, 'approved'))
     await expect(row).toContainText(approvalText(ZH_LOCALE, 'pending'))
 
-    await returnToApp(page)
-    await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: copy('demo', 'home.heading'),
-        exact: true,
-      }),
-    ).toBeVisible()
-    await switchToTenant(page, TENANT)
-
     const logAfter = server.log.mark()
-    await page
-      .getByRole('button', {
-        name: copy('demo', 'home.reviewNotice.action'),
-        exact: true,
-      })
-      .click()
-    await expect(
-      page.getByText(copy('demo', 'home.reviewNotice.sent'), { exact: true }),
-    ).toBeVisible()
+    const windowMs = scaledTimeout(2 * NOTIFICATION_INTERVAL_MS)
+    const startedAt = Date.now()
 
-    // Nothing left the process: no carrier line and no external-send record
-    // after the click. The SMS page above still renders the template as
-    // disabled with its review states unchanged, which is the refusal the
-    // participant observes. The ledger row that records the refusal is covered
-    // by the review-tagged Go case named in this spec's header, not here.
-    expect(
-      server.countCarrierMessages({
-        to: PHONE_E164,
-        template: TEMPLATE,
-        after: logAfter,
-      }),
-    ).toBe(0)
-    expect(
-      server.countOutboundRecords({
-        channel: 'sms',
-        typeKey: TYPE_KEY,
-        after: logAfter,
-      }),
-    ).toBe(0)
+    // Nothing left the process across the next two dispatch windows: no
+    // carrier line and no external-send record in any outcome. The dispatch
+    // is still attempted, so the ledger records a failed send each window,
+    // which the Go case named in this spec's header asserts; the browser tier
+    // only observes that no message reached the carrier and none left the
+    // process, whatever the record would have called its result.
+    // The loop samples across the window and passes only once it has elapsed,
+    // so a message that arrives late still fails the assertion.
+    await expect(async () => {
+      expect(
+        server.countCarrierMessages({
+          to: PHONE_E164,
+          template: TEMPLATE,
+          after: logAfter,
+        }),
+      ).toBe(0)
+      expect(
+        server.countOutboundRecords({
+          channel: 'sms',
+          typeKey: TYPE_KEY,
+          after: logAfter,
+        }),
+      ).toBe(0)
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(windowMs)
+    }).toPass({
+      timeout: windowMs + scaledTimeout(NOTIFICATION_INTERVAL_MS),
+      intervals: [1_000],
+    })
   })
 })

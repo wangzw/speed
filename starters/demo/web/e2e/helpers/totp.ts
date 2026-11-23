@@ -3,11 +3,11 @@
  * the code a person types.
  *
  * The impersonation journey signs the seeded operator in with the authenticator
- * factor the review build writes. That factor's base32 seed is fixed in
- * starters/demo/server/review_seed.go (`reviewOperatorTOTPSeed`); the seed is
- * a review fixture, not a credential, and the same value is imported into an
- * authenticator app by a person walking the journey. The parameters are the
- * ones the register stores: HMAC-SHA1, a thirty-second step and six digits.
+ * factor the factorseed command writes. That factor's base32 seed is fixed in
+ * `e2eImpersonationFactors` (fixtures/config.ts); the seed is a fixture value,
+ * not a credential, and the same value is imported into an authenticator app by
+ * a person walking the journey. The parameters are the ones the register
+ * stores: HMAC-SHA1, a thirty-second step and six digits.
  *
  * Computing the code here is not a read of product state: the secret is a
  * fixture constant the spec already knows, and the code is what the operator

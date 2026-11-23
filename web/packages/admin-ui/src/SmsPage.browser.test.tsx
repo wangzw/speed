@@ -16,7 +16,7 @@ const FLOOR_WIDTHS = [600, 900, 1200] as const
 const TEMPLATES: readonly AdminSmsTemplate[] = [
   {
     name: 'authn-login-code',
-    carrier: 'review',
+    carrier: 'log',
     kind: 'notification',
     source: 'runtime',
     params: ['code'],

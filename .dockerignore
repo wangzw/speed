@@ -33,7 +33,7 @@
 
 starters/demo/server/var
 starters/demo/server/demo
-starters/demo/server/demo-review
+starters/demo/server/demo-e2e
 var
 
 # Not read by either build stage.

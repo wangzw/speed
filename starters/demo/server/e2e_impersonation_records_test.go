@@ -1,13 +1,11 @@
-//go:build review
-
 package main
 
 // The impersonation record routes are platform administration: the tenant in
 // the path is the data the records are confined to, not the policy domain the
-// decision is made in. These cases drive the review assembly, whose fixture is
-// exactly the shape the rule is about: a platform administrator who is not a
-// member of the target tenant, and a tenant administrator of that tenant
-// holding no platform permission.
+// decision is made in. These cases drive the assembly, whose seed is exactly the
+// shape the rule is about: a platform administrator who is not a member of the
+// target tenant, and a tenant administrator of that tenant holding no platform
+// permission.
 
 import (
 	"encoding/json"
@@ -17,45 +15,45 @@ import (
 	"testing"
 )
 
-// The review fixture's target tenant and its tenant administrator. The operator
+// The e2e fixture's target tenant and its tenant administrator. The operator
 // is deliberately not a member of acme; the member administers it and holds no
 // platform-domain permission.
 const (
-	reviewTargetTenant     = "acme"
-	reviewTargetIdentifier = "member"
-	reviewTargetPassword   = "member-dev-secret"
+	e2eTargetTenant     = "acme"
+	e2eTargetIdentifier = "member"
+	e2eTargetPassword   = "member-dev-secret"
 )
 
-// TestReviewImpersonationRecordsStayInThePlatformDomain holds the record routes
+// TestE2EImpersonationRecordsStayInThePlatformDomain holds the record routes
 // to the platform domain after they moved under the system scope. A platform
 // administrator who is not a member of the tenant lists and revokes that
 // tenant's records; a tenant administrator of the same tenant, holding no
 // platform permission, is refused. The structural condition that a target must
 // be a member of the tenant the impersonation is confined to is held beside
 // them: an account outside the tenant cannot be impersonated.
-func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
+func TestE2EImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	t.Parallel()
-	base, operator := reviewRecordsServer(t)
+	base, operator := e2eRecordsServer(t)
 	operatorAuth := map[string]string{"Authorization": "Bearer " + operator}
 
-	memberID := reviewAccountID(t, base, operatorAuth, "username", reviewTargetIdentifier)
-	grantID := reviewStartImpersonation(t, base, operatorAuth, memberID)
+	memberID := e2eAccountID(t, base, operatorAuth, "username", e2eTargetIdentifier)
+	grantID := e2eStartImpersonation(t, base, operatorAuth, memberID)
 
 	// The platform administrator is not a member of acme and still reads the
 	// tenant's records, because the decision is made in the platform domain and
 	// the tenant is the data the records are confined to.
 	listed := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
-		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations", nil, operatorAuth)
+		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations", nil, operatorAuth)
 	if listed.status != http.StatusOK {
 		t.Fatalf("the platform administrator was refused the tenant's records with %d:\n%s",
 			listed.status, listed.body)
 	}
-	if !reviewPageHoldsGrant(t, listed.body, grantID) {
+	if !e2ePageHoldsGrant(t, listed.body, grantID) {
 		t.Errorf("the page does not hold the record %s just started:\n%s", grantID, listed.body)
 	}
 
 	revoked := send(t, &http.Client{Timeout: probeTimeout}, http.MethodDelete,
-		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations/"+grantID, nil, operatorAuth)
+		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations/"+grantID, nil, operatorAuth)
 	if revoked.status != http.StatusNoContent {
 		t.Fatalf("the platform administrator could not revoke the record: %d\n%s",
 			revoked.status, revoked.body)
@@ -65,15 +63,15 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	// management permission, and still cannot read or revoke the records: the
 	// action is a platform permission, decided in the platform domain.
 	tenantAuth := map[string]string{"Authorization": "Bearer " +
-		signIn(t, base, reviewTargetIdentifier, reviewTargetPassword)}
+		signIn(t, base, e2eTargetIdentifier, e2eTargetPassword)}
 	refusedList := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
-		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations", nil, tenantAuth)
+		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations", nil, tenantAuth)
 	if refusedList.status != http.StatusForbidden {
 		t.Errorf("the tenant administrator reached the tenant's records with %d, want 403:\n%s",
 			refusedList.status, refusedList.body)
 	}
 	refusedRevoke := send(t, &http.Client{Timeout: probeTimeout}, http.MethodDelete,
-		base+"/api/v1/system/tenants/"+reviewTargetTenant+"/impersonations/"+grantID, nil, tenantAuth)
+		base+"/api/v1/system/tenants/"+e2eTargetTenant+"/impersonations/"+grantID, nil, tenantAuth)
 	if refusedRevoke.status != http.StatusForbidden {
 		t.Errorf("the tenant administrator revoked a record with %d, want 403:\n%s",
 			refusedRevoke.status, refusedRevoke.body)
@@ -81,10 +79,10 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 
 	// The target-membership condition is structural: an enabled account outside
 	// the tenant is refused even for the platform administrator.
-	outsider := reviewCreateAccount(t, base, operatorAuth, "outsider")
+	outsider := e2eCreateAccount(t, base, operatorAuth, "outsider")
 	refusedStart := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/auth/impersonation", map[string]any{
-			"account": outsider, "tenant": reviewTargetTenant, "reason": "not a member",
+			"account": outsider, "tenant": e2eTargetTenant, "reason": "not a member",
 		}, operatorAuth)
 	if refusedStart.status != http.StatusForbidden ||
 		!containsJSON(refusedStart.body, "urn:speed:authn:impersonation-restricted") {
@@ -93,28 +91,28 @@ func TestReviewImpersonationRecordsStayInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// reviewRecordsServer builds, seeds and serves the review assembly and answers
-// its address and a signed-in platform administrator's access token.
-func reviewRecordsServer(t *testing.T) (base, token string) {
+// e2eRecordsServer builds, seeds and serves the assembly and answers its
+// address and a signed-in platform administrator's access token.
+func e2eRecordsServer(t *testing.T) (base, token string) {
 	t.Helper()
-	binary := reviewBinary(t)
+	binary := e2eBinary(t)
 	var secret string
 	_, ports := startServing(t, func(ports []int) *process {
-		configPath := reviewConfig(t,
+		configPath := e2eConfig(t,
 			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
 		config := "file://" + configPath
-		seedReview(t, binary, config)
-		secret = reviewSeededTOTPSecret(t, configPath)
-		return startReview(t, binary, config)
+		seedE2E(t, binary, config)
+		secret = seedE2EOperatorFactors(t, configPath)
+		return startE2E(t, binary, config)
 	})
 
 	base = fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	return base, signInWithTOTP(t, base, reviewOperatorUsername, reviewOperatorPassword, secret)
+	return base, signInWithTOTP(t, base, e2eOperatorUsername, e2eOperatorPassword, secret)
 }
 
-// reviewAccountID finds one account by its exact login identifier through the
+// e2eAccountID finds one account by its exact login identifier through the
 // platform account list, the read the console uses to resolve an account.
-func reviewAccountID(t *testing.T, base string, headers map[string]string, kind, value string) string {
+func e2eAccountID(t *testing.T, base string, headers map[string]string, kind, value string) string {
 	t.Helper()
 	listed := send(t, &http.Client{Timeout: probeTimeout}, http.MethodGet,
 		base+"/api/v1/system/auth/accounts?identifier_kind="+kind+"&identifier_prefix="+value,
@@ -145,13 +143,13 @@ func reviewAccountID(t *testing.T, base string, headers map[string]string, kind,
 	return ""
 }
 
-// reviewStartImpersonation starts an impersonation of account in the review
+// e2eStartImpersonation starts an impersonation of account in the target
 // tenant and answers the record's identifier.
-func reviewStartImpersonation(t *testing.T, base string, headers map[string]string, account string) string {
+func e2eStartImpersonation(t *testing.T, base string, headers map[string]string, account string) string {
 	t.Helper()
 	started := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/auth/impersonation", map[string]any{
-			"account": account, "tenant": reviewTargetTenant, "reason": "a support case",
+			"account": account, "tenant": e2eTargetTenant, "reason": "a support case",
 		}, headers)
 	if started.status != http.StatusOK {
 		t.Fatalf("starting the impersonation answered %d:\n%s", started.status, started.body)
@@ -170,9 +168,9 @@ func reviewStartImpersonation(t *testing.T, base string, headers map[string]stri
 	return answer.Grant.ID
 }
 
-// reviewCreateAccount creates a user account with no membership anywhere and
+// e2eCreateAccount creates a user account with no membership anywhere and
 // answers its identifier.
-func reviewCreateAccount(t *testing.T, base string, headers map[string]string, username string) string {
+func e2eCreateAccount(t *testing.T, base string, headers map[string]string, username string) string {
 	t.Helper()
 	created := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
 		base+"/api/v1/system/auth/accounts", map[string]any{
@@ -195,9 +193,9 @@ func reviewCreateAccount(t *testing.T, base string, headers map[string]string, u
 	return answer.Account.ID
 }
 
-// reviewPageHoldsGrant reports whether one page of impersonation records holds
+// e2ePageHoldsGrant reports whether one page of impersonation records holds
 // grant.
-func reviewPageHoldsGrant(t *testing.T, body []byte, grant string) bool {
+func e2ePageHoldsGrant(t *testing.T, body []byte, grant string) bool {
 	t.Helper()
 	var page struct {
 		Impersonations []struct {

@@ -1,9 +1,7 @@
 package main
 
-// What this assembly treats as a loopback listener address. Two startup guards
-// ask the question -- the review build's own from review.go, and the seed
-// guard every build carries -- so the answer lives here, outside either build
-// tag, rather than in one of them.
+// What this assembly treats as a loopback listener address. The seed guard asks
+// the question, so the answer lives here.
 
 import (
 	"net"

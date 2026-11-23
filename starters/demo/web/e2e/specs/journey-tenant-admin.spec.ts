@@ -11,7 +11,7 @@
  * tenant settings layer, the tenant switch, the enterprise providers, the
  * `system` tenant and an impersonated session.
  *
- * The administrator signs in as the review fixture's proved-email account
+ * The administrator signs in as the e2e fixture's proved-email account
  * (`e2eTenantAdmin`). The seed makes it acme's only tenant administrator,
  * which is the journey's precondition for the self-binding refusal: the
  * tenant has exactly one `tenant-admin` binding. The colleague comes through
@@ -50,7 +50,7 @@
  *    whose role list is the tenant's own roles, and `platform-admin` is not
  *    one of them. The refusal is the roles endpoint's, asserted by the unit
  *    tier.
- *  - REQ-tenant-admin-054 (cursor paging) is not driven: the review tenant
+ *  - REQ-tenant-admin-054 (cursor paging) is not driven: the e2e tenant
  *    holds one page of members and invitations, so neither pager renders.
  *  - REQ-tenancy-063 (an owner's account cannot be deleted or deactivated) is
  *    not driven: this spec never deletes or deactivates an account, and the
@@ -60,25 +60,23 @@
  *    to the account's non-personal membership; the history visit keeps the
  *    personal tenant current, which is the state the requirement describes.
  *
- * The settings surface's three refusals have no rendered control to drive.
+ * The settings surface's two refusals have no rendered control to drive.
  * A platform-held policy needs a multi-factor administrator, because the
  * admission layer would challenge every tenant-scoped request of a
- * single-factor one; that server names the review build's operator, whose
- * seasoned authenticator its seed provides, as the tenant's administrator,
- * and the branch signs in with that factor before reading the policy as an
- * enforced, disabled switch. A tenant the review build protects is read-only
- * as a whole, so its page renders no switch at all. A platform-level setting
- * is neither rendered nor addressable from the tenant surface. In all three
- * cases the review server fixture makes the same request through the
- * product's API beside the rendered assertion, as the same administrator
- * account: the protected write answers 403, the enforced policy's disable
- * answers 409, and the tenant surface answers the platform keys' writes and
- * deletes with 404. Those API answers are sibling evidence; the rendered
- * state above each one carries the journey.
+ * single-factor one; that server names the operator, whose seasoned
+ * authenticator the seedImpersonation option has factorseed write, as the
+ * tenant's administrator, and the branch signs in with that factor before
+ * reading the policy as an enforced, disabled switch. A platform-level
+ * setting is neither rendered nor addressable from the tenant surface. In
+ * both cases the server fixture makes the same request through the product's
+ * API beside the rendered assertion, as the same administrator account: the
+ * enforced policy's disable answers 409, and the tenant surface answers the
+ * platform keys' writes and deletes with 404. Those API answers are sibling
+ * evidence; the rendered state above each one carries the journey.
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts. The only non-UI reads are the email verification code and
- * the impersonation step-up SMS code from the review process log, and the
+ * the impersonation step-up SMS code from the server's process log, and the
  * responses the pages themselves receive: the organization profile read, whose
  * owner
  * account identifier never appears on the page, and the tenant's member and
@@ -95,9 +93,9 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import {
+  e2eImpersonationFactors,
   e2eInvitee,
   e2eOrdinaryMember,
-  e2eProtectedTenant,
   e2eSystemTenantAdmin,
   e2eTenantAdmin,
   e2eTenantPolicies,
@@ -116,6 +114,10 @@ import type { E2EServer } from '../fixtures/server'
 import { scaledTimeout } from '../fixtures/time-scale'
 import { createAccounts } from '../helpers/accounts'
 import type { Accounts } from '../helpers/accounts'
+import {
+  expandAccountRows,
+  selectAccountSection,
+} from '../helpers/account-sections'
 import {
   adminEntry,
   closeAccountMenu,
@@ -161,7 +163,7 @@ import { chooseSelectOption } from '../helpers/select-option'
 const TENANT = 'acme'
 
 /**
- * The template's ordinary member's login username. The review seed writes the
+ * The template's ordinary member's login username. The e2e seed writes the
  * account as a username with no separate email identifier, so the member read
  * answers this value.
  */
@@ -389,11 +391,11 @@ const OPERATOR = {
 /** The invited address as the server masks it on the public read. */
 const MASKED_INVITEE = 'i***@demo.test'
 
-/** The operator's authenticator seed, fixed by the review fixture. */
-const TOTP_SEED = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
+/** The operator's authenticator seed, written by the factorseed command. */
+const TOTP_SEED = e2eImpersonationFactors.totpSeed
 
-/** The phone the review fixture proves and binds the operator's SMS factor to. */
-const OPERATOR_PHONE = '+15551234567'
+/** The phone the spec proves, which the operator's SMS factor binds. */
+const OPERATOR_PHONE = '+8613900139000'
 
 /** The reason recorded on the impersonation the branch starts. */
 const IMPERSONATION_REASON =
@@ -437,13 +439,138 @@ async function signInOperatorWithTotp(page: Page, accounts: {
   await expect(homeHeading(page)).toBeVisible()
 }
 
+/** The profile pane's phone card, which carries the number and its code step. */
+function phoneSection(page: Page): Locator {
+  return page.getByRole('region', {
+    name: copy('demo', 'account.rows.label.phone'),
+    exact: true,
+  })
+}
+
+/** The profile pane's email card, which carries the verification surface. */
+function emailSection(page: Page): Locator {
+  return page.getByRole('region', {
+    name: copy('demo', 'account.rows.label.email'),
+    exact: true,
+  })
+}
+
+/**
+ * Prove the operator's email address through the account page's own code flow.
+ * The impersonation start and the organization writes both refuse an account
+ * whose address is unproved; the seed writes it as an administrator's
+ * assertion, so the journey reaches the proof the way a person does.
+ */
+async function proveOperatorEmail(
+  page: Page,
+  server: E2EServer,
+): Promise<void> {
+  await selectAccountSection(page, 'profile')
+  await expandAccountRows(page)
+  const email = emailSection(page)
+  const before = server.log.mark()
+  await email
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.send'),
+      exact: true,
+    })
+    .click()
+  const { code } = await waitForVerificationCode(
+    server.log,
+    'mail',
+    OPERATOR.identifier,
+    { after: before },
+  )
+  await email
+    .getByRole('textbox', {
+      name: copy('accountUi', 'verification.codeLabel'),
+      exact: true,
+    })
+    .fill(code)
+  await email
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    email.getByText(copy('accountUi', 'identifiers.verified'), {
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
+/**
+ * Prove OPERATOR_PHONE through the account page's own verification flow, so the
+ * operator's SMS factor has a proved number to address. The step-up the
+ * impersonation branch may raise sends its code there; without a proved number
+ * the factor has no destination. The code is the one log read this helper makes.
+ */
+async function proveOperatorPhone(
+  page: Page,
+  server: E2EServer,
+): Promise<void> {
+  await selectAccountSection(page, 'profile')
+  await expandAccountRows(page)
+  const phone = phoneSection(page)
+  await phone
+    .getByRole('button', {
+      name: copy('demo', 'account.action.add'),
+      exact: true,
+    })
+    .click()
+  await phone
+    .getByRole('combobox', {
+      name: copy('accountUi', 'phone.country.label'),
+      exact: true,
+    })
+    .fill('86')
+  await page.getByRole('option', { name: /\+86$/ }).click()
+  await phone
+    .getByRole('textbox', {
+      name: copy('accountUi', 'phone.phone.label'),
+      exact: true,
+    })
+    .fill('13900139000')
+  const before = server.log.mark()
+  await phone
+    .getByRole('button', {
+      name: copy('accountUi', 'phone.send'),
+      exact: true,
+    })
+    .click()
+  const { code } = await waitForVerificationCode(
+    server.log,
+    'sms',
+    OPERATOR_PHONE,
+    { after: before },
+  )
+  await phone
+    .getByRole('textbox', {
+      name: copy('accountUi', 'phone.code.label'),
+      exact: true,
+    })
+    .fill(code)
+  await phone
+    .getByRole('button', {
+      name: copy('accountUi', 'phone.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByText(copy('accountUi', 'phone.added', { phone: OPERATOR_PHONE }), {
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
 test.describe('the tenant administrator manages the organization', () => {
   test.use({
     seedTenantAdmin: true,
     seedInvitee: true,
     // The journey's steps, and the platform-item probe inside step 17, make
     // more than the declared hundred requests a minute from this one account.
-    // The review server raises the per-identity quota so the journey reaches
+    // The e2e server raises the per-identity quota so the journey reaches
     // the product instead of the counting layer; the layer stays assembled.
     identityQuota: '10000',
     viewport: { width: 1920, height: 1080 },
@@ -2101,7 +2228,7 @@ test.describe('the tenant administrator manages the organization', () => {
         }
 
         // This journey leaves both policies off. Turning one on would require
-        // it of the single-factor review administrator from the next request
+        // it of the single-factor tenant administrator from the next request
         // onward -- the write itself passes, the read after it is challenged --
         // and every later step would meet that challenge. The toggle itself is
         // driven by `tenant-admin: an administrator turns a policy on, reads
@@ -2597,6 +2724,12 @@ test.describe('an impersonated session hides the organization', () => {
 
     await test.step('precondition: the operator signs in and opens the impersonation page', async () => {
       await signInOperatorWithTotp(page, accounts)
+      // The impersonation start refuses an unproved address, and the step-up
+      // it may raise sends its code to the operator's SMS factor, which binds a
+      // proved phone. Both proofs go through the account page's own flows,
+      // exactly as a person would.
+      await proveOperatorEmail(page, server)
+      await proveOperatorPhone(page, server)
       // The operator's current organization is the platform's own, so the
       // admin entry is offered from the account menu.
       await openAccountMenu(page)
@@ -2643,7 +2776,7 @@ test.describe('an impersonated session hides the organization', () => {
 
       if (await dialog.isVisible()) {
         // The sign-in used the authenticator factor, so the SMS factor is the
-        // one the step-up offers. Its code is the review carrier's log line.
+        // one the step-up offers. Its code is the e2e carrier's log line.
         const before = server.log.mark()
         await dialog
           .getByRole('button', {
@@ -2846,10 +2979,11 @@ test.describe('an unproved email is refused until it is proved', () => {
 test.describe('a policy the platform holds on', () => {
   test.use({
     // A platform requirement binds every tenant, so the tenant-scoped read
-    // that opens the settings page needs a multi-factor session. The review
-    // build seeds its operator's seasoned authenticator, so this branch names
-    // the operator the tenant's administrator. The page under test is the
-    // tenant settings surface; the account's platform role changes nothing on
+    // that opens the settings page needs a multi-factor session. The seed
+    // creates the operator and factorseed writes the seasoned authenticator,
+    // so this branch names the operator the tenant's administrator. The page
+    // under test is the tenant settings surface; the account's platform role
+    // changes nothing on
     // it, and the tenant-admin binding is what admits the read.
     seedImpersonation: true,
     tenantAdmins: { acme: [OPERATOR.identifier] },
@@ -2865,6 +2999,9 @@ test.describe('a policy the platform holds on', () => {
     const { page, server, accounts } = demo
 
     await signInOperatorWithTotp(page, accounts)
+    // The organization write refuses an unproved address, so the operator
+    // proves it through the account page's own code flow first.
+    await proveOperatorEmail(page, server)
     await openOrganizationPage(page, 'settings')
 
     // The platform layer holds the MFA policy on, so the item reads as
@@ -2943,8 +3080,9 @@ test.describe('a policy the platform does not hold', () => {
   test.use({
     // A tenant policy applies at members' next sign-in, not to sessions that
     // already exist, so the session that carries the write is exempt from the
-    // rule it switches on. The review build seeds the operator's seasoned
-    // authenticator, and this branch names the operator acme's administrator;
+    // rule it switches on. The seed creates the operator and factorseed writes
+    // the seasoned authenticator, and this branch names the operator acme's
+    // administrator;
     // the seed writes the first configured administrator as the tenant's
     // owner, so the organization belongs to that operator. The global layer
     // stays off, so the tenant is free to choose the policy.
@@ -2958,7 +3096,7 @@ test.describe('a policy the platform does not hold', () => {
   }) => {
     test.setTimeout(scaledTimeout(300_000))
 
-    const { page, accounts } = demo
+    const { page, server, accounts } = demo
     const mfaTitle = copy('adminUi', 'organization.security.mfa.title')
     const ssoTitle = copy('adminUi', 'organization.security.sso.title')
     const mfaSwitch = (): Locator =>
@@ -2976,6 +3114,9 @@ test.describe('a policy the platform does not hold', () => {
         exact: true,
       })
     await signInOperatorWithTotp(page, accounts)
+    // The tenant policy write refuses an unproved address, so the operator
+    // proves it through the account page's own code flow first.
+    await proveOperatorEmail(page, server)
     await openOrganizationPage(page, 'settings')
 
     // The platform does not enforce either policy, so both are ordinary
@@ -3086,76 +3227,10 @@ test.describe('a policy the platform does not hold', () => {
   })
 })
 
-test.describe('a protected business tenant is read-only', () => {
-  test.use({
-    seedProtectedTenant: true,
-    viewport: { width: 1920, height: 1080 },
-  })
-
-  test('tenant-admin: the protected organization renders no switch and its write is refused', async ({
-    demo,
-  }) => {
-    const { page, server, accounts } = demo
-
-    await accounts.signIn({
-      identifier: e2eProtectedTenant.username,
-      password: e2eProtectedTenant.password,
-    })
-    await expect(homeHeading(page)).toBeVisible()
-
-    // The protected prefix is a settings write policy, not an admission rule:
-    // the tenant's administrator still reaches organization administration.
-    await openOrganizationPage(page, 'settings')
-
-    // The surface says why it cannot be changed and renders no switch at all;
-    // the two policies are still listed with their titles.
-    await expect(
-      page.getByText(
-        copy('adminUi', 'organization.security.readOnly.protected.title'),
-        { exact: true },
-      ),
-    ).toBeVisible()
-    await expect(
-      page.getByText(
-        copy(
-          'adminUi',
-          'organization.security.readOnly.protected.description',
-        ),
-        { exact: true },
-      ),
-    ).toBeVisible()
-    for (const title of [
-      copy('adminUi', 'organization.security.mfa.title'),
-      copy('adminUi', 'organization.security.sso.title'),
-    ]) {
-      await expect(
-        page.getByRole('heading', { level: 3, name: title, exact: true }),
-      ).toBeVisible()
-    }
-    await expect(page.getByRole('switch')).toHaveCount(0)
-
-    // The refused write has no rendered control on a read-only page. The
-    // review server fixture makes the same write the page would, as the same
-    // administrator, and the answer is the host seam's refusal. The rendered
-    // read-only state above is asserted first; this is the write that state
-    // promises cannot land.
-    const refusal = await server.writeTenantSetting({
-      tenant: e2eProtectedTenant.tenant,
-      identifier: e2eProtectedTenant.identifier,
-      password: e2eProtectedTenant.password,
-      namespace: 'tenant.admission',
-      key: 'require-mfa',
-      value: 'true',
-    })
-    expect(refusal.status).toBe(403)
-    expect(refusal.problemType).toBe('urn:speed:settings:protected')
-  })
-})
-
 /**
  * The organization profile page's ownership surface.
  *
- * The review seed registers its business tenants as roster rows, not as
+ * The e2e seed registers its business tenants as roster rows, not as
  * organizations: a seeded tenant carries no owner (`owner_account` stays
  * empty), so the owner-only controls never render on acme. These branches
  * therefore create an organization through the self-service page, whose
@@ -3762,7 +3837,7 @@ async function bindMemberRole(
 }
 
 /**
- * Sign the review template's platform operator in and prove its address. The
+ * Sign the e2e template's platform operator in and prove its address. The
  * platform management writes refuse an account whose email is unproved, and
  * the seed writes the operator's address as an assertion, not a proof.
  */

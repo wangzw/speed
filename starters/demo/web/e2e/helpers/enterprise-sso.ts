@@ -27,7 +27,7 @@ import { copy } from './i18n'
 import { chooseSelectOption } from './select-option'
 import { switchToTenant } from './switch-tenant'
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 export const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -204,10 +204,10 @@ export async function proveOperatorAddress({
   server,
   accounts,
 }: DemoTarget): Promise<void> {
-  // The journey starts with an operator whose address is proved. The review
+  // The journey starts with an operator whose address is proved. The e2e
   // seed writes the address as an administrator's assertion, so the spec
   // reaches the precondition the way a person does -- the standing notice's
-  // verify entry, then the code the review mail carrier writes to the process
+  // verify entry, then the code the e2e mail carrier writes to the process
   // log.
   await accounts.signIn({
     identifier: OPERATOR.username,

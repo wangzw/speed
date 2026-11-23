@@ -1,44 +1,38 @@
-//go:build review
-
 package main
 
-// The review assembly's SMS carrier, tested where it is compiled. A normal
-// deployment's carriers answer a per-template review they do not have; this one
-// answers a real per-language review, so the template registry starts a runtime
-// template pending in every language and a language's verdict can change on its
-// own.
+// The SMS carrier, tested where it is compiled. A normal deployment's carriers
+// answer a per-template review they do not have; this one answers a real
+// per-language review from its configuration, so the template registry starts a
+// runtime template pending in every language and a language's verdict can come
+// from sms.log.approvals.
 
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/core/coretest"
 	"github.com/vislake/speed/pkg/db/sqlite"
-	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/sms"
 	smslog "github.com/vislake/speed/pkg/sms/log"
 	smsregistry "github.com/vislake/speed/pkg/sms/registry"
 )
 
-// TestReviewSMSDeclaresPerTemplateReviewAndStartsPending holds the carrier's
+// TestE2ESMSDeclaresPerTemplateApprovalAndStartsPending holds the carrier's
 // declaration and its initial verdict: the vendor reviews each template, and a
 // code the carrier has not been told about answers pending — the state the
 // registry records for a language a runtime template was registered in.
-func TestReviewSMSDeclaresPerTemplateReviewAndStartsPending(t *testing.T) {
+func TestE2ESMSDeclaresPerTemplateApprovalAndStartsPending(t *testing.T) {
 	t.Parallel()
 	carrier := &smslog.Product{}
 	if !carrier.Model().Review.PerTemplate {
-		t.Fatalf("the review carrier declares PerTemplate %t, want true: the template registry "+
+		t.Fatalf("the carrier declares PerTemplate %t, want true: the template registry "+
 			"would otherwise register every language as not-required",
 			carrier.Model().Review.PerTemplate)
 	}
@@ -53,81 +47,17 @@ func TestReviewSMSDeclaresPerTemplateReviewAndStartsPending(t *testing.T) {
 	}
 }
 
-// TestReviewSMSControlMovesOneVerdict holds the review-only control: a POST
-// moves the named code and leaves a sibling code where it was, and a state the
-// carrier does not review is refused.
-func TestReviewSMSControlMovesOneVerdict(t *testing.T) {
-	t.Parallel()
-	gin.SetMode(gin.TestMode)
-	carrier := smslog.New(nil)
-	engine := gin.New()
-	engine.POST(reviewSMSControlPath, reviewVerdictHandler(carrier))
-
-	post := func(body string) int {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, reviewSMSControlPath, strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		engine.ServeHTTP(rec, req)
-		return rec.Code
-	}
-
-	if code := post(`{"code":"rollout-zh-CN","state":"rejected","reason":"content not allowed"}`); code != http.StatusNoContent {
-		t.Fatalf("the control answered %d for a valid verdict, want %d", code, http.StatusNoContent)
-	}
-	zh, err := carrier.Approval(t.Context(), "rollout-zh-CN")
-	if err != nil {
-		t.Fatalf("Approval(zh): %v", err)
-	}
-	if zh.State != sms.ApprovalRejected || zh.Reason != "content not allowed" {
-		t.Errorf("the Chinese verdict = %+v, want rejected with its reason", zh)
-	}
-	en, err := carrier.Approval(t.Context(), "rollout-en-US")
-	if err != nil {
-		t.Fatalf("Approval(en): %v", err)
-	}
-	if en.State != sms.ApprovalPending {
-		t.Errorf("the English verdict became %q, want it left pending", en.State)
-	}
-
-	if code := post(`{"code":"rollout-zh-CN","state":"not-required"}`); code != http.StatusBadRequest {
-		t.Errorf("the control answered %d for a non-review state, want %d", code, http.StatusBadRequest)
-	}
-	if code := post(`{"code":"","state":"approved"}`); code != http.StatusBadRequest {
-		t.Errorf("the control answered %d for an empty code, want %d", code, http.StatusBadRequest)
-	}
-}
-
-// TestReviewSMSControlDeclaresItsFeature holds the review-only gate the console
-// control reads: the module that mounts the verdict route declares the feature
-// statically, so a review run publishes it and a baseline run, which compiles no
-// such module, does not.
-func TestReviewSMSControlDeclaresItsFeature(t *testing.T) {
-	t.Parallel()
-	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
-		if resource.Module != reviewSMSControlModuleName ||
-			resource.Value.Name != reviewSMSControlFeature {
-			continue
-		}
-		if resource.Value.Conditional {
-			t.Errorf("the control feature %q is conditional, so a review run that does not "+
-				"post it offers no control", resource.Value.Name)
-		}
-		return
-	}
-	t.Fatalf("the review SMS control module declares no %q feature, so the console never "+
-		"offers the verdict control", reviewSMSControlFeature)
-}
-
-// TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage drives the real
-// template registry over the review carrier: a runtime template registered with
+// TestE2ESMSTemplateStartsPendingAndSettlesOneLanguage drives the real
+// template registry over the log SMS carrier: a runtime template registered with
 // a code per language starts pending in both, the control moves one language's
 // verdict and the poller records it there alone, and disabling the template
 // leaves both languages' review states reported.
-func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
+func TestE2ESMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 	t.Parallel()
-	dsn := filepath.Join(t.TempDir(), "review-sms.db")
-	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"sms":{"registry":{"poll-interval":"10ms"}}}`, dsn)
+	dsn := filepath.Join(t.TempDir(), "sms-test.db")
+	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"sms":{"log":{"approvals":{`+
+		`"rollout-en-US":{"state":"approved","reason":"pinned"}}},`+
+		`"registry":{"poll-interval":"10ms"}}}`, dsn)
 	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), smslog.Module(), smsregistry.Module())
 
 	reg := core.New()
@@ -149,14 +79,6 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 			if err != nil {
 				return fmt.Errorf("taking up the template registry: %w", err)
 			}
-			provider, err := core.Resolve[sms.Provider](reg)
-			if err != nil {
-				return fmt.Errorf("taking up the carrier: %w", err)
-			}
-			reviewer, isReviewer := provider.(smslog.Reviewer)
-			if !isReviewer {
-				return fmt.Errorf("the mounted carrier is %T, not the log carrier", provider)
-			}
 			record, err := templates.Register(ctx, "rollout", sms.TemplateSpec{
 				Kind:   sms.KindNotification,
 				Params: []string{"code"},
@@ -174,10 +96,7 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 				}
 			}
 
-			if reviewErr := reviewer.Review("rollout-zh-CN", sms.ApprovalRejected, "content not allowed"); reviewErr != nil {
-				return fmt.Errorf("moving the Chinese verdict: %w", reviewErr)
-			}
-			deadline := time.Now().Add(5 * time.Second)
+			deadline := time.Now().Add(coretest.Scale(5 * time.Second))
 			for {
 				records, listErr := templates.List(ctx)
 				if listErr != nil {
@@ -187,11 +106,11 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 				if !ok {
 					return fmt.Errorf("the registered template is not in the list")
 				}
-				if listed.Approvals["zh-CN"].State == sms.ApprovalRejected {
+				if listed.Approvals["en-US"].State == sms.ApprovalApproved {
 					break
 				}
 				if time.Now().After(deadline) {
-					return fmt.Errorf("the poller had not recorded the Chinese verdict: %+v", listed.Approvals)
+					return fmt.Errorf("the poller had not recorded the English verdict: %+v", listed.Approvals)
 				}
 				time.Sleep(5 * time.Millisecond)
 			}
@@ -204,8 +123,11 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 			if !ok {
 				return fmt.Errorf("the registered template is not in the list")
 			}
-			if got := listed.Approvals["en-US"].State; got != sms.ApprovalPending {
-				return fmt.Errorf("the English verdict became %q, want it left pending", got)
+			if got := listed.Approvals["en-US"].State; got != sms.ApprovalApproved {
+				return fmt.Errorf("the English verdict became %q, want approved", got)
+			}
+			if got := listed.Approvals["zh-CN"].State; got != sms.ApprovalPending {
+				return fmt.Errorf("the Chinese verdict became %q, want it left pending", got)
 			}
 			if !listed.Enabled {
 				return fmt.Errorf("the template is disabled before the case disables it")
@@ -225,10 +147,10 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 			if listed.Enabled {
 				return fmt.Errorf("the template still reports enabled after disabling")
 			}
-			if got := listed.Approvals["en-US"].State; got != sms.ApprovalPending {
+			if got := listed.Approvals["en-US"].State; got != sms.ApprovalApproved {
 				return fmt.Errorf("disabling changed the English verdict to %q", got)
 			}
-			if got := listed.Approvals["zh-CN"].State; got != sms.ApprovalRejected {
+			if got := listed.Approvals["zh-CN"].State; got != sms.ApprovalPending {
 				return fmt.Errorf("disabling changed the Chinese verdict to %q", got)
 			}
 			return nil
@@ -239,37 +161,37 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 	}
 }
 
-// TestReviewCarrierNamesTheMessageKindItSent holds the carrier's log record:
+// TestE2ECarrierNamesTheMessageKindItSent holds the carrier's log record:
 // a notice says a message was sent and carries no verification_code, while a
 // verification message keeps the verification-code line and its code. The two
 // kinds travel through one carrier, so the declaration's kind is what keeps a
 // reader from reading a notice as a code.
-func TestReviewCarrierNamesTheMessageKindItSent(t *testing.T) {
+func TestE2ECarrierNamesTheMessageKindItSent(t *testing.T) {
 	t.Parallel()
 	notice := sms.Resolved{
-		To:       reviewSMSTestPhone,
+		To:       e2eSMSTestPhone,
 		Template: demoNotificationSMSTemplate,
-		Locale:   reviewDefaultLocale,
+		Locale:   e2eDefaultLocale,
 		Kind:     sms.KindNotification,
-		Params:   map[string]string{"to": reviewSMSTestPhone},
+		Params:   map[string]string{"to": e2eSMSTestPhone},
 	}
 	msg, attrs := smslog.Record(notice)
 	if strings.Contains(msg, "verification") {
 		t.Errorf("the notice line is %q; a notification must not claim to be a verification code", msg)
 	}
-	if value, ok := reviewSMSAttr(attrs, "verification_code"); ok {
+	if value, ok := e2eSMSAttr(attrs, "verification_code"); ok {
 		t.Errorf("the notice line carries verification_code=%q; a notification carries no code", value)
 	}
 	for _, key := range []string{"to", "template", "locale"} {
-		if _, ok := reviewSMSAttr(attrs, key); !ok {
+		if _, ok := e2eSMSAttr(attrs, key); !ok {
 			t.Errorf("the notice line carries no %q attribute: %v", key, attrs)
 		}
 	}
 
 	verification := sms.Resolved{
-		To:       reviewSMSTestPhone,
+		To:       e2eSMSTestPhone,
 		Template: "authn.code.login",
-		Locale:   reviewDefaultLocale,
+		Locale:   e2eDefaultLocale,
 		Kind:     sms.KindVerification,
 		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
 	}
@@ -277,15 +199,15 @@ func TestReviewCarrierNamesTheMessageKindItSent(t *testing.T) {
 	if want := "log sms: a verification code was sent"; msg != want {
 		t.Errorf("the verification line is %q, want %q", msg, want)
 	}
-	if value, ok := reviewSMSAttr(attrs, "verification_code"); !ok || value != "123456" {
+	if value, ok := e2eSMSAttr(attrs, "verification_code"); !ok || value != "123456" {
 		t.Errorf("the verification line carries verification_code=%q (present %t), want %q",
 			value, ok, "123456")
 	}
 }
 
-// reviewSMSAttr reads one string attribute out of the pair list a log record is
+// e2eSMSAttr reads one string attribute out of the pair list a log record is
 // built from.
-func reviewSMSAttr(attrs []any, key string) (string, bool) {
+func e2eSMSAttr(attrs []any, key string) (string, bool) {
 	for i := 0; i+1 < len(attrs); i += 2 {
 		if name, ok := attrs[i].(string); ok && name == key {
 			value, ok := attrs[i+1].(string)

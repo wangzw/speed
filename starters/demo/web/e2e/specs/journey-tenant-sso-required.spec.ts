@@ -31,7 +31,7 @@
  * Two things are non-UI, and only these:
  *
  *   - The platform operator's own e-mail address, and the administrator's, are
- *     proved through the review mail carrier's verification code, which
+ *     proved through the e2e mail carrier's verification code, which
  *     fixtures/log.ts reads from the process log (the sanctioned
  *     verification-code read). Both admin writes and the invitation write are
  *     gated on a proved address, so the journey starts from that state.
@@ -102,7 +102,7 @@ import { approveEnterpriseSignIn } from '../helpers/social'
 import { switchToTenant } from '../helpers/switch-tenant'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -302,7 +302,7 @@ function memberSection(page: Page): Locator {
 
 /**
  * Prove the signed-in account's own e-mail address through the rendered
- * notice, the review process log's code and the verification action. The
+ * notice, the server's process log's code and the verification action. The
  * cursor is taken before the entry is followed, so only the code this arrival
  * sends may be used.
  */
@@ -544,7 +544,7 @@ test("tenant-sso-required: a member re-invites a colleague through the tenant's 
 
   await test.step('precondition: the operator registers the tenant provider and verifies its e-mail domain', async () => {
     // The operator's own address must be proved before the admin's human
-    // writes answer; it is the review seed's administrator assertion until
+    // writes answer; it is the seed's administrator assertion until
     // then.
     await accounts.signIn({
       identifier: OPERATOR.username,

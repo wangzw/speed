@@ -3,9 +3,9 @@
  * drives it: the forgot-password entry, the channel choice, the identifier and
  * code fields, the new password and the done state.
  *
- * The one non-UI read is the verification code, which the review carriers write
- * to the process log (fixtures/log.ts). The review build lowers the inbox and
- * number resend intervals to their floor, and the resend window is held by the
+ * The one non-UI read is the verification code, which the e2e carriers write
+ * to the process log (fixtures/log.ts). The e2e configuration lowers the inbox
+ * and number resend intervals to their floor, and the resend window is held by the
  * destination itself across purposes: the code the account proved its own email
  * or phone with shortly before can still hold the window open, so the first
  * reset send is suppressed (the product still answers its sent notice). The

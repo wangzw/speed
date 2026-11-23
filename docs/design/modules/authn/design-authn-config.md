@@ -132,20 +132,20 @@
 | `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方在用户设备上显示的站点名；部署方自行设置 |
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |
 
-样例与测试夹具保留各自的示例值（`testdata/` 与审查装配里的 `issuer`、`rp-name` 仍写 `demo`），它们不代表产品默认；产品默认只写在编译默认文档与部署模板里。
+样例与测试夹具保留各自的示例值（`testdata/` 与端到端配置模板里的 `issuer`、`rp-name` 仍写 `demo`），它们不代表产品默认；产品默认只写在编译默认文档与部署模板里。
 
 登录方式的端点覆盖项与根证书文件由部署方给出：指向自定义端点即由部署方自行信任该端点与其证书，缺省仍是内置端点、拒回环与系统根（[ADR-authn-social-endpoints](../../../adr/adr-authn-social-endpoints.md)）。
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 
-下表是人机验证的配置项（封闭集合）。两个发送面各选一种机制：手机号面由 `authn.humanverify.phone-mode` 选择，缺省自托管人机验证码；其余面由 `authn.humanverify.mode` 选择，缺省自托管工作量证明。两个键都有缺省值，因此都不是必填。Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由选中 Turnstile 的面判定，不由加载器判定：两个面都关闭或运行自托管机制时，它们不必给值；任一面选 `turnstile` 时要求站点键、密钥、主机名与 action 齐备，缺任一项即 `ErrInvalidConfig`，不退回其它机制；Turnstile 还要求键值存储，因为它在那里声明已消费的令牌。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出；评审装配在 `starters/demo/server/review/sqlite.yaml` 显式把两个面写成 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 同样把两个面写成 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写两个面 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_PHONE_MODE` 以 `captcha` 为缺省、`DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
+下表是人机验证的配置项（封闭集合）。两个发送面各选一种机制：手机号面由 `authn.humanverify.phone-mode` 选择，缺省自托管人机验证码；其余面由 `authn.humanverify.mode` 选择，缺省自托管工作量证明。两个键都有缺省值，因此都不是必填。Turnstile（[REF-cloudflare-turnstile](../../../references.md)）的几项由选中 Turnstile 的面判定，不由加载器判定：两个面都关闭或运行自托管机制时，它们不必给值；任一面选 `turnstile` 时要求站点键、密钥、主机名与 action 齐备，缺任一项即 `ErrInvalidConfig`，不退回其它机制；Turnstile 还要求键值存储，因为它在那里声明已消费的令牌。缺省值由 `pkg/authn/humanverify/config.go` 的 `configDefaults` 给出；端到端配置模板 `starters/demo/server/e2e/config.yaml` 显式把两个面写成 `off`，端到端走查夹具在 `starters/demo/web/e2e/fixtures/config.ts` 同样把两个面写成 `off`，本地回路的模板 `starters/demo/server/local.yaml.example` 也显式写两个面 `off`：`make dev` 的短信与邮件都经日志载体发送，一份证明会挡住每一次发送。部署入口 `starters/demo/deploy/entrypoint.sh` 的 `DEMO_HUMANVERIFY_PHONE_MODE` 以 `captcha` 为缺省、`DEMO_HUMANVERIFY_MODE` 以 `pow` 为缺省。
 
 **既有配置的迁移。** `authn.humanverify.mode` 只选择其余面；手机号面由新增的 `authn.humanverify.phone-mode` 选择，不写时取 `captcha`。只写过 `mode` 的配置因此按下列方式迁移：`mode` 为 `off` 只关闭其余面，要两个面都不设闸须同时写 `phone-mode: off`；`mode` 为 `turnstile` 的配置无论手机号面取什么机制都要求键值存储，并在手机号面运行 `pow` 或 `captcha` 时另要求路由挂载口（手机号面缺省 `captcha`，因此缺省情况下两项依赖都要）；`mode` 省略时其余面运行 `pow`、手机号面运行 `captcha`。迁移是宿主可见的变更：升级后两个面都要求证明，且机制与从前不同。
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
-| `authn.humanverify.mode` | 字符串 | `pow` | 默认 | |其余面（不落地到手机号的发送）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管的工作量证明；评审装配与端到端装配显式写 `off` |
-| `authn.humanverify.phone-mode` | 字符串 | `captcha` | 默认 | | 手机号面（短信登录、第二因素、手机登记与匿名短信重置）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管人机验证码；评审装配与端到端装配显式写 `off` |
+| `authn.humanverify.mode` | 字符串 | `pow` | 默认 | |其余面（不落地到手机号的发送）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管的工作量证明；示范的端到端走查（端到端装配与部署夹具）显式写 `off` |
+| `authn.humanverify.phone-mode` | 字符串 | `captcha` | 默认 | | 手机号面（短信登录、第二因素、手机登记与匿名短信重置）要满足的机制：`off`、`pow`、`captcha` 或 `turnstile`；不在集合内即 `ErrInvalidConfig`。缺省是自托管人机验证码；示范的端到端走查（端到端装配与部署夹具）显式写 `off` |
 | `authn.humanverify.site-key` | 字符串 | 空 | 默认 | | Turnstile 控件的前端公开标识；任一面选 `turnstile` 时必填 |
 | `authn.humanverify.secret-key` | 字符串 | 空 | 默认 | 敏 | 认证 siteverify 调用的密钥；任一面选 `turnstile` 时必填，登记为日志的字面量脱敏规则 |
 | `authn.humanverify.verify-url` | 字符串 | `https://challenges.cloudflare.com/turnstile/v0/siteverify` | 默认 | | siteverify 端点；须是带主机的绝对 https URL |
@@ -167,6 +167,7 @@
 | `authn.sms.queue-size` | 整数 | `1024` | 默认 | | 异步发送队列的容量 |
 | `authn.sso.allow-private-egress` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放开出站调用对回环地址的拒绝；改动要重启 |
 | `authn.sso.oidc.enabled` | 布尔 | `false` | 默认 | | 是否为本次运行提供企业 OIDC 登录方式；关闭时方法不交付，登录页不出现企业入口。提供方是运行期的行，注册表为空不表示部署没有这项意图，所以开关独立于提供方数据 |
+| `authn.sso.saml.enabled` | 布尔 | `false` | 默认 | | 是否为本次运行提供企业 SAML 登录方式；关闭时方法与元数据刷新都不交付，SP 元数据路由不挂，登录发现里不出现 `saml`。提供方是运行期的行，注册表为空不表示部署没有这项意图，所以开关独立于提供方数据 |
 | `authn.sso.dns-resolver` | 字符串，`host:port` | 空 | 主 | | 域所有权证明查 TXT 记录所用的 DNS 解析器地址；空时用系统解析器，配置后该查询由这个解析器作答 |
 | `authn.sso.oidc-ca-file` | 字符串，文件路径 | 空 | 主 | | 企业 OIDC 出站客户端在系统根证书之外额外信任的 PEM 根证书文件；空时只用系统根证书，配置后文件里的证书追加到系统根证书 |
 | `authn.sso.saml.sp-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 服务提供方私钥；只在 IdP 配了 `sign_requests` 或要加密断言时需要，缺则 `Validate` 拒绝 |

@@ -2,10 +2,11 @@
  * A real OpenID Connect provider on loopback, for the social and enterprise
  * journeys.
  *
- * The review assembly used to carry fake client credentials and no provider, so
- * a social method could build an authorization URL but no callback could ever
- * reach it. This fixture stands up the provider the review configuration points
- * the Google method at: a discovery document, a key set, a token endpoint, a
+ * The e2e configuration's client credentials are fixture values, and without a
+ * provider behind them a social method could build an authorization URL but no
+ * callback could ever reach it. This fixture stands up the provider the
+ * configuration points the Google method at: a discovery document, a key set, a
+ * token endpoint, a
  * userinfo endpoint, and an authorization page a person reaches and approves in
  * the browser. The round trip is genuine -- the browser leaves for this page,
  * clicks its control, and comes back to the product's own callback route.
@@ -24,7 +25,7 @@
  *     restricted egress client reaches: discovery, the key set, the token
  *     exchange and userinfo. The product refuses plain http on that client, so
  *     this half is TLS. The certificate chains to a CA written into the run's
- *     temporary directory, and the review configuration names that CA file; the
+ *     temporary directory, and the e2e configuration names that CA file; the
  *     product appends its certificate to the system roots it verifies against.
  *   - The authorization page is served over plain http on a second loopback
  *     port, and the discovery document names it as `authorization_endpoint`.
@@ -70,7 +71,7 @@ export const identityProviderUser = {
   name: 'Social Signin',
 } as const
 
-/** The client the review configuration gives the Google method. */
+/** The client the e2e configuration gives the Google method. */
 export const identityProviderClient = {
   id: 'e2e-google-client',
   secret: 'e2e-google-secret',
@@ -140,7 +141,7 @@ export interface StartedIdentityProvider {
   stop(): Promise<void>
 }
 
-/** The provider a started review server points the Google method at. */
+/** The provider a started e2e server points the Google method at. */
 export interface IdentityProvider extends StartedIdentityProvider {
   readonly user: typeof identityProviderUser
 }
@@ -153,7 +154,7 @@ export interface EnterpriseIdentityProvider extends StartedIdentityProvider {
 }
 
 export interface IdentityProviderInput {
-  /** The review server's temporary directory; the certificates live under it. */
+  /** The e2e server's temporary directory; the certificates live under it. */
   readonly dir: string
 }
 
@@ -342,7 +343,7 @@ function authorizePage(
  * Mint a private CA and a server leaf under `directory`, and answer the leaf
  * and the CA path.
  *
- * The CA file is what a review configuration names for the restricted egress
+ * The CA file is what the e2e configuration names for the restricted egress
  * client, whose certificate verification is extended with it. The leaf's
  * subject alternative names cover the loopback host the issuer is written with.
  * Each provider gets its own directory, so one run's providers never overwrite
@@ -498,7 +499,7 @@ interface ProviderDefinition {
  *
  * The certificate material is minted into `<dir>/<definition.directory>`, so
  * stopping the server's temporary directory cleans it up with everything else.
- * The CA path is what a review configuration names as the CA file; the issuer
+ * The CA path is what the e2e configuration names as the CA file; the issuer
  * is the HTTPS listener the product discovers.
  */
 async function startProvider(
@@ -633,7 +634,7 @@ async function startProvider(
         }
         // A real provider never sends a code anywhere but a registered
         // address. This one registers nothing, so it refuses anything that is
-        // not loopback: the review browser is the only user agent it serves,
+        // not loopback: the e2e browser is the only user agent it serves,
         // and a code must not leave the machine.
         const back = new URL(redirectURI)
         if (
@@ -782,7 +783,7 @@ async function startProvider(
 }
 
 /**
- * Start the social provider: the Google method the review configuration points
+ * Start the social provider: the Google method the e2e configuration points
  * at, one fixed user, its certificate material under `dir/identity-provider`.
  */
 export async function startIdentityProvider(

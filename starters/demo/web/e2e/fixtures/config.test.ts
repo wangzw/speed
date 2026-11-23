@@ -1,5 +1,5 @@
 /**
- * The review configuration's enterprise SSO block.
+ * The e2e configuration's enterprise SSO block.
  *
  * The template states the deployment defaults -- the loopback relaxation off
  * and both outbound seams empty -- and the server fixture replaces the block
@@ -16,7 +16,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   e2eImpersonationAdmin,
   e2eOrdinaryMember,
-  e2eProtectedTenant,
   e2eSystemTenantAdmin,
   e2eTenantAdmin,
   e2eTenantPolicies,
@@ -30,7 +29,7 @@ import {
 // does not turn into a file URL, so this suite names the templates from the
 // package's working directory instead. Vitest runs from the package directory.
 vi.mock('./paths', () => ({
-  E2E_CONFIG_TEMPLATE: `${process.cwd()}/../server/review/sqlite.yaml`,
+  E2E_CONFIG_TEMPLATE: `${process.cwd()}/../server/e2e/config.yaml`,
   DEPLOY_CONFIG_TEMPLATE: `${process.cwd()}/../deploy/fly.yaml.tmpl`,
 }))
 
@@ -71,7 +70,7 @@ function accountEntry(body: string, identifier: string): string {
   return body.slice(at, end)
 }
 
-describe('the review configuration', () => {
+describe('the e2e configuration', () => {
   it('renders one listener and moves every origin onto its port', async () => {
     const body = await rendered({})
     expect(body).toContain('    backend:\n      address: "127.0.0.1:41080"')
@@ -103,7 +102,7 @@ describe('the review configuration', () => {
     expect(body).not.toContain('    allow-private-egress: false')
   })
 
-  it('keeps the operator out of acme while it seeds the impersonation factors', async () => {
+  it('keeps the operator out of acme on the impersonation server', async () => {
     const body = await rendered({ seedImpersonation: true })
     // The impersonation requirement is a target inside the tenant and an
     // initiator outside it, so the operator holds no grant in acme on this
@@ -116,7 +115,6 @@ describe('the review configuration', () => {
     expect(body).toContain(
       `    - identifier: ${JSON.stringify(e2eImpersonationAdmin.identifier)}`,
     )
-    expect(body).toContain('\n  impersonation: true\n')
   })
 
   it('gives a tenant exactly the administrators the override names', async () => {
@@ -136,19 +134,20 @@ describe('the review configuration', () => {
     expect(body).not.toContain('        - operator@demo.test\n')
   })
 
-  it('seeds the proved-email administrator as the tenant\'s only administrator', async () => {
+  it('seeds the tenant administrator as the tenant\'s only administrator', async () => {
     const body = await rendered({ seedTenantAdmin: true })
     expect(body).toContain(
       `    - name: acme\n      admins:\n        - ${e2eTenantAdmin.identifier}\n  members:`,
     )
-    // The address is the one the review build proves; the account carries the
-    // username it signs in with and no platform-administrator mark.
+    // The account carries the username it signs in with, no platform mark and
+    // no proof flag: the server fixture proves the address through the
+    // product's own flow once the service is up.
     expect(body).toContain(
       `    - identifier: ${JSON.stringify(e2eTenantAdmin.identifier)}\n` +
         `      username: ${JSON.stringify(e2eTenantAdmin.username)}\n`,
     )
-    expect(body).toContain('      proved-email: true')
     const entry = accountEntry(body, e2eTenantAdmin.identifier)
+    expect(entry).not.toContain('proved-email')
     expect(entry).not.toContain('platform-admin')
   })
 
@@ -172,21 +171,21 @@ describe('the review configuration', () => {
     expect(entry).not.toContain('platform-admin')
   })
 
-  it('seeds the protected business tenant and its proved administrator on request', async () => {
-    const body = await rendered({ seedProtectedTenant: true })
-    expect(body).toContain(
-      `    - name: ${e2eProtectedTenant.tenant}\n` +
-        `      admins:\n        - ${e2eProtectedTenant.identifier}\n`,
-    )
-    const entry = accountEntry(body, e2eProtectedTenant.identifier)
-    expect(entry).toContain('proved-email: true')
-    expect(entry).not.toContain('platform-admin')
+  it('keeps the protected tenant out of the seed', async () => {
+    const body = await rendered({})
+    expect(body).not.toContain('protected-acme')
+    expect(body).not.toContain('protected-admin')
   })
 
-  it('keeps the protected tenant out of the default seed', async () => {
+  it('carries the log carrier\'s configured verdict and the SAML switch', async () => {
     const body = await rendered({})
-    expect(body).not.toContain(e2eProtectedTenant.tenant)
-    expect(body).not.toContain(e2eProtectedTenant.identifier)
+    // The rollout journey's English code is approved by configuration; its
+    // Chinese code is absent and therefore pending. The SAML method is on only
+    // in this assembly.
+    expect(body).toContain('demo-notice-en')
+    expect(body).toContain('state: approved')
+    expect(body).not.toContain('demo-notice-zh')
+    expect(body).toContain('    saml:\n      enabled: true')
   })
 
   it('holds the admission policy on at the platform layer on request', async () => {

@@ -4,12 +4,12 @@
  * audit trail.
  *
  * The platform administrator's email is proved first (the account page's
- * verification section, whose code comes from the review process log -- the
+ * verification section, whose code comes from the server's process log -- the
  * one non-UI read this spec makes), because a settings write from an
  * unproved account is refused. The operator then enters the admin, opens
  * the settings page, narrows it to the setting's namespace and finds the
  * password-signup switch: current value "open", state "Overridden" (the
- * review assembly's seed wrote the global row). The operator types "closed"
+ * seed wrote the global row). The operator types "closed"
  * into the row's value cell and saves; the one feedback region says the
  * setting was saved, the row re-reads as overridden with the new value, and
  * a page refresh shows the write is stored, not draft state.
@@ -74,7 +74,7 @@ import { copy } from '../helpers/i18n'
 // for the key, type and current value the journey's settings step documents.
 test.use({ viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -286,9 +286,9 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
   try {
     await test.step('precondition: the operator signs in and proves the account email', async () => {
       // The journey's precondition is an operator whose email is proved. The
-      // review seed writes the address unproved, so the spec reaches the
+      // seed writes the address unproved, so the spec reaches the
       // precondition the way a person does: the standing notice's verify entry,
-      // the code from the review process log, and the verify action.
+      // the code from the server's process log, and the verify action.
       await demo.accounts.signIn({
         identifier: OPERATOR.username,
         password: OPERATOR.password,
@@ -421,7 +421,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       ).toHaveCount(0)
 
       // The item names its key, its declared type and its current value; the
-      // review assembly's seed wrote the global row, so its state is the
+      // seed wrote the global row, so its state is the
       // override rather than the declaration.
       const row = settingRow(page)
       await expect(row.getByText(SETTING_KEY, { exact: true })).toBeVisible()
@@ -569,7 +569,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
 
     await test.step('step 6: the audit query finds both writes in the time window', async () => {
       // The lower bound is the first save's own minute, not a minute-wide
-      // bracket around the run. The review seed writes its settings through
+      // bracket around the run. The seed writes its settings through
       // the settings store directly and leaves no `settings.set` audit row --
       // the precondition this exact-two count rests on. A wider bound would let
       // a settings.set row written before the journey (were the seeding path

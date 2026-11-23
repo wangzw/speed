@@ -82,7 +82,7 @@ GOOD_REGISTRY = registry(
   {
     journey: 'journey-beta.md',
     status: 'unreachable',
-    reason: 'requires a mail carrier the review assembly does not configure',
+    reason: 'requires a mail carrier the demo configuration does not configure',
     covers: ['REQ-beta-001'],
   },"""
 )
@@ -285,7 +285,7 @@ class TestCoverage(GateCase):
   {
     journey: 'journey-beta.md',
     status: 'unreachable',
-    reason: 'requires a mail carrier the review assembly does not configure',
+    reason: 'requires a mail carrier the demo configuration does not configure',
     covers: ['REQ-beta-001'],
   },
   {

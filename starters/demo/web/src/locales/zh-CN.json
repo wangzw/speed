@@ -58,29 +58,7 @@
         "title": "通知",
         "description": "你的收件箱，以及每类通知的送达偏好。"
       }
-    },
-    "reviewNotice": {
-      "title": "仅审查版通知控件",
-      "description": "此控件仅在审查版中提供。它会通过本版本可用的渠道向你发送一条审查通知。",
-      "action": "向我发送一条审查通知",
-      "sent": "审查通知已发送。",
-      "failed": "审查通知未能发送。"
     }
-  },
-  "smsReview": {
-    "title": "仅审查版：设置厂商审核结果",
-    "description": "此控件仅在审查版中提供。它设置一个厂商编号的审核结果；这个编号代表一条短信模板的一种语言版本。",
-    "codeLabel": "厂商编号",
-    "stateLabel": "审核结果",
-    "state": {
-      "pending": "待审核",
-      "approved": "已通过",
-      "rejected": "已拒绝",
-      "withdrawn": "已撤回"
-    },
-    "submit": "设置结果",
-    "set": "厂商编号 {{code}} 的审核结果已设为{{state}}。",
-    "failed": "审核结果未能设置。"
   },
   "account": {
     "title": "账户设置",

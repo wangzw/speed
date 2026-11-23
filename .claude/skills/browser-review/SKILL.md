@@ -86,8 +86,6 @@ The profile keeps those cookies across restarts, so this happens once.
   front end into `starters/demo/server/dist-e2e` and its binaries with the
   `e2e` build tag, so it writes nothing the dev server reads. Two heavy gates
   at once still compete for machine resources.
-- Do not start the `-tags=review` assembly while `make dev` is up. It binds
-  `127.0.0.1:8080` too.
 
 ## Driving the review
 

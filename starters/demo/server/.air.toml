@@ -8,10 +8,10 @@
 #
 # The run reads no configuration file: its values are the defaults compiled into
 # the binary (defaults.go) and whatever variables `mise exec` loaded from .env,
-# and the command line carries no --config. The review tag belongs to the
-# end-to-end tier alone; its test controls and loopback guard are no part of
-# local development. Only Go sources are build inputs, so only they restart the
-# server; the frontend is vite's job, so its tree is not watched here.
+# and the command line carries no --config. The e2e tier belongs to the
+# end-to-end run; its build and configuration are no part of local development.
+# Only Go sources are build inputs, so only they restart the server; the
+# frontend is vite's job, so its tree is not watched here.
 #
 # web/ is the frontend package's own tree, and var/ is the running program's
 # state (the SQLite file, the token signing key and the object store root).

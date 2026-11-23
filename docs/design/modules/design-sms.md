@@ -297,11 +297,11 @@ type Resolved struct {
 以下是宿主写进配置文件、或在命令树与网关上点名的接口。
 
 - **模块名**：`sms.registry`、`sms.budget`、`sms.admin`、`sms.aliyun`、`sms.tencent`、`sms.aws`、`sms.twilio`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
-- **配置命名空间与输入项**：`sms.registry` 下的 `templates`（容器叶子，`map[string]sms.TemplateSpec`，取主配置源）与 `poll-interval`（时长，缺省 `1m`，取主配置源与环境变量）；`sms.admin` 下的 `endpoints`（字符串列表，无缺省；缺席时管理面自行关闭，点名后必须非空、只收具体端名、不收 `*`，取主配置源）；每个载体自己的命名空间下的凭据、`region`、`endpoint`、`configuration-set-name`、`identities` 与 `default-identity`（见“配置与设置的划分”）。
+- **配置命名空间与输入项**：`sms.registry` 下的 `templates`（容器叶子，`map[string]sms.TemplateSpec`，取主配置源）与 `poll-interval`（时长，缺省 `1m`，取主配置源与环境变量）；`sms.admin` 下的 `endpoints`（字符串列表，无缺省；缺席时管理面自行关闭，点名后必须非空、只收具体端名、不收 `*`，取主配置源）；每个载体自己的命名空间下的凭据、`region`、`endpoint`、`configuration-set-name`、`identities` 与 `default-identity`（见“配置与设置的划分”）；`sms.log` 下的 `approvals`（厂商编号到 `{state, reason}` 的映射，缺省为空，取主配置源；见“日志载体的审核状态”）。
 - **设置项**：`sms.budget` 在共享的 `sms` 命名空间下声明 `ceiling-hourly`（整数，缺省 `5000`，取值域 1 到 1000000），认证与通知两个渠道读同一个键与同一个缺省。
 - **管理端点**：`sms.admin.endpoints` 列出的端，`/api/v1/system/sms/*` 下的模板读写路由与载体路由（路由见“管理面模块”一节）。
 
-**配置与设置的划分。** 启动期需要、改动要重启的取值是配置；运行期可改、不需要重启的取值是设置（[ADR-config-scope](../../adr/adr-config-scope.md)）。凭据、`region`、`endpoint`、`configuration-set-name`、`identities`、`default-identity`、模板集、`poll-interval` 与 `sms.admin.endpoints` 都是配置。设置项是 `sms.registry.sending-enabled`（布尔，缺省 `true`）与 `sms.ceiling-hourly`（整数，缺省 `5000`）：`sending-enabled` 每次 `Resolve` 都读一次，置为 `false` 时 `Resolve` 答 `ErrNotSendable`，运维不必重启即可停止发送；`ceiling-hourly` 是跨渠道的发送上界，由两个使用方每次发送时读取，改动不需要重启。重试次数不是配置项：载体从不重试，一次 `Send` 对应一次厂商调用。
+**配置与设置的划分。** 启动期需要、改动要重启的取值是配置；运行期可改、不需要重启的取值是设置（[ADR-config-scope](../../adr/adr-config-scope.md)）。凭据、`region`、`endpoint`、`configuration-set-name`、`identities`、`default-identity`、模板集、`poll-interval`、`sms.admin.endpoints` 与日志载体的审核判定表 `sms.log.approvals` 都是配置。设置项是 `sms.registry.sending-enabled`（布尔，缺省 `true`）与 `sms.ceiling-hourly`（整数，缺省 `5000`）：`sending-enabled` 每次 `Resolve` 都读一次，置为 `false` 时 `Resolve` 答 `ErrNotSendable`，运维不必重启即可停止发送；`ceiling-hourly` 是跨渠道的发送上界，由两个使用方每次发送时读取，改动不需要重启。重试次数不是配置项：载体从不重试，一次 `Send` 对应一次厂商调用。
 
 `templates` 的结构是嵌套的：键是逻辑模板名，值是用途、有序参数名表、语言到编号的映射、语言到正文的映射与厂商登记标识。命名空间按 `.` 分段在配置数据里嵌套，所以 `sms.registry.templates` 写成：
 
@@ -608,11 +608,11 @@ type Spec[C any] struct {
 
 **提交正文的改写按厂商各自的占位符语法进行，次序只有一处定义。** 腾讯的模板管理面把 `${name}` 改写为位置占位符（一个 `${name}` 变 `{1}`、`{2}`……，按声明参数名的次序编号），Twilio 把它改写为双花括号位置占位符；一个重复声明的参数、或一个正文用到而提交未声明的参数都被拒。阿里云的已审模板本就用 `${name}`，正文原样传；AWS 直接使用注册表渲染后的正文。
 
-### 评审装配的短信载体（仅评审构建）
+### 日志载体的审核状态
 
-日志载体 `sms.log` 由 `sms.NewModule` 工厂构造并排他交付 `Sender` 与 `Provider`，编入所有构建。它声明 `Review.PerTemplate` 为真，运行期模板经 `Register` 或 `Offer` 进入时由注册表把每个语言记为 `Pending`，注册表再按语言轮询载体的 `Approval`。载体的判定保存在进程内一张按厂商编号的表里，未被告知的编号答 `Pending`，`Review(code, state, reason)` 只改一个编号：编号是厂商的逐语言标识，因此改一个语言的判定不影响其余语言；`Offer` 把新编号记为 `Pending`，`Retire` 忘掉它。
+日志载体 `sms.log` 由 `sms.NewModule` 工厂构造并排他交付 `Sender` 与 `Provider`，编入所有构建；`sms.carrier: log` 把一次运行选到它上面，没有其他载体可选时它也是保底。它声明 `Review.PerTemplate` 为真，运行期模板经 `Register` 或 `Offer` 进入时由注册表把每个语言记为 `Pending`，注册表再按语言轮询载体的 `Approval`。
 
-评审装配另挂一个同受构建标签约束的 `review.sms.control` 模块，其 `Init` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上挂一条写路由，正文 `{code, state, reason}` 经日志载体的 `Review` 落一个判定，让评审者能为某个语言给出结果。**这条路由是测试控制，不是产品 API。** 它只在 `review` 构建标签下编译、只由评审装配登记，任何部署或基线二进制都不含它。它由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是评审装配为只监听回环地址的测试进程，而不是它对产品调用方安全。前端对应的判定控件仍由特性门控：特性 `review.sms.control` 不在场时不渲染控件、不发请求。日志载体本身编入所有构建；评审配置用 `sms.carrier: log` 把这次运行选到它上面。
+**`Approval` 只答配置的判定。** 配置项 `sms.log.approvals` 是厂商编号到 `{state, reason}` 的映射，缺省为空，启动期读一次；`state` 只收逐模板审核的状态 `pending`、`approved`、`rejected` 与 `withdrawn`，其余取值是 `ErrInvalidConfig`，启动失败。`Approval(code)` 命中配置时答配置的判定，未配置的编号一律答 `Pending`。载体不持审核状态：`Offer` 只生成并返回编号，`Retire` 不改任何回答，所以配置的判定在两者前后都不变。编号是厂商的逐语言标识，因此一个编号的判定只决定一个语言，其余语言不受影响。改配置的判定要改配置并重启进程。
 
 ## 错误与失败语义
 
@@ -694,6 +694,6 @@ type Spec[C any] struct {
 | 腾讯云载体 `sms.tencent`（`Sender` + `Provider`） | 已实现 | `pkg/sms/tencent/tencent.go` `sender`、`Send`、`Model`；`pkg/sms/tencent/provider.go` `Offer`、`Approval`、`Retire`；`pkg/sms/tencent/classify.go` `classify`、`sentinelForCode`；`pkg/sms/tencent/config.go` `items` |
 | AWS 载体 `sms.aws`（`Sender` + `Provider`） | 已实现 | `pkg/sms/aws/aws.go` `sender`、`Send`、`Model`、`Offer`、`Approval`、`Retire`；`pkg/sms/aws/classify.go` `classify`；`pkg/sms/aws/config.go` `items` |
 | Twilio 载体 `sms.twilio`（`Sender` + `Provider`） | 已实现 | `pkg/sms/twilio/twilio.go` `sender`、`Send`、`Model`；`pkg/sms/twilio/provider.go` `Offer`、`Approval`、`Retire`；`pkg/sms/twilio/classify.go` `classify`；`pkg/sms/twilio/config.go` `items` |
-| 日志载体 `sms.log`（`Sender` + `Provider`） | 已实现 | `pkg/sms/log/log.go` `Module`、`Product`、`Reviewer`、`Record` |
+| 日志载体 `sms.log`（`Sender` + `Provider`、审核判定表 `sms.log.approvals`） | 已实现 | `pkg/sms/log/log.go` `Module`、`moduleConfig`、`Product`、`Approval`、`Record` |
 | 载体选择 `sms.carrier` 与保底 | 已实现 | `pkg/sms/selection.go` `SelectionSchema`、`ReadSelection`、`CarrierNames`、`OffBySelection`、`OffByMissingTemplates` |
 | 根包依赖守卫与 SDK 封边、固定版本 | 已实现 | `pkg/sms/deps_test.go` |

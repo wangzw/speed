@@ -2,7 +2,7 @@
  * A UDP DNS stub for the enterprise journey's domain-ownership proof.
  *
  * The product verifies a claimed email domain by looking up the TXT record at
- * `_speed-authn.<domain>` through the resolver the deployment names. The review
+ * `_speed-authn.<domain>` through the resolver the deployment names. The e2e
  * configuration leaves that lookup on the system resolver, which cannot answer
  * for a test domain. A spec that drives the enterprise journey asks the server
  * fixture for this stub and names its address as `authn.sso.dns-resolver`.
@@ -156,7 +156,7 @@ function encodeResponse(
 
 /**
  * Start a stub that answers TXT queries for `input.recordName` and nothing
- * else, bound to a free loopback port. `address` is the value a review
+ * else, bound to a free loopback port. `address` is the value the e2e
  * configuration names as its DNS resolver.
  */
 export async function startDNSStub(input: DNSStubInput): Promise<DNSStub> {

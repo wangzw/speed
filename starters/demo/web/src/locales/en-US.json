@@ -58,29 +58,7 @@
         "title": "Notifications",
         "description": "Your inbox, and how each kind of notification reaches you."
       }
-    },
-    "reviewNotice": {
-      "title": "Review-only notice control",
-      "description": "This control is available only in the review build. It sends you one review notice through the channels this build supports.",
-      "action": "Send a review notice to me",
-      "sent": "The review notice has been sent.",
-      "failed": "The review notice could not be sent."
     }
-  },
-  "smsReview": {
-    "title": "Review-only: set a vendor verdict",
-    "description": "This control is available only in the review build. It sets the review verdict for one vendor code, which represents one language of one SMS template.",
-    "codeLabel": "Vendor code",
-    "stateLabel": "Verdict",
-    "state": {
-      "pending": "Pending",
-      "approved": "Approved",
-      "rejected": "Rejected",
-      "withdrawn": "Withdrawn"
-    },
-    "submit": "Set verdict",
-    "set": "The verdict for {{code}} is now {{state}}.",
-    "failed": "The verdict could not be set."
   },
   "account": {
     "title": "Account settings",

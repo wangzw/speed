@@ -13,10 +13,6 @@ package main
 // fixture gets the type, the worker and the recipient wiring; another run
 // leaves both absent from its feature set even though the code is present.
 //
-// The fixture's review-only dispatch control — the route the SMS rollout
-// journey clicks — is not product API and is compiled only under the review tag;
-// see notification_control_review.go.
-//
 // The type's default channels are the in-app inbox, email and sms. The sms
 // channel is what the rollout journey drives: the catalog names the runtime
 // template the journey registers, and the template declares "to" among its
@@ -41,9 +37,7 @@ package main
 //
 // The periodic schedule is the member-organization journey's dispatch: the
 // platform's scheduler enqueues one job per tenant per window and the handler
-// turns each job into one notification per addressable active member. The
-// rollout journey's proof is not that window: it is the review-only control
-// route, which a tenant member drives from the console by clicking.
+// turns each job into one notification per addressable active member.
 //
 // The preference routes read the recipient from the request context, under the
 // key preferences.WithRecipient. The notification capability holds no identity,
@@ -215,15 +209,13 @@ var _ jobs.Handler = (*demoNotifier)(nil)
 // The logger is optional, as it is for every module, and the host's default
 // logger carries the fixture's diagnostics when none is delivered.
 //
-// The review-only dispatch control's feature is contributed by
-// reviewControlResources, which answers nothing in a default build. The module
-// itself is compiled into every build; whether it runs is stated in Prepare by
-// the explicit demo.notification.enabled switch, off when absent. An absent
-// switch means the run does not dispatch the fixture, so it stands down with
-// that reason; there is no half-configured state, because the switch is the
-// whole of the fixture's own configuration. A run with no configuration reader
-// at all fails the start instead, because that is a host omission and not a
-// deployment that left the fixture off.
+// The module itself is compiled into every build; whether it runs is stated in
+// Prepare by the explicit demo.notification.enabled switch, off when absent. An
+// absent switch means the run does not dispatch the fixture, so it stands down
+// with that reason; there is no half-configured state, because the switch is
+// the whole of the fixture's own configuration. A run with no configuration
+// reader at all fails the start instead, because that is a host omission and
+// not a deployment that left the fixture off.
 func demoNotificationModule() core.Module {
 	resources := []any{
 		demoNotificationSchema(),
@@ -231,7 +223,6 @@ func demoNotificationModule() core.Module {
 		demoNotificationCatalog,
 		demoNotificationSchedule,
 	}
-	resources = append(resources, reviewControlResources()...)
 	return core.Module{
 		Name: demoNotificationModuleName,
 		Requires: []core.Requirement{
@@ -280,7 +271,7 @@ func demoNotificationModule() core.Module {
 			if err := wireDemoRecipient(reg); err != nil {
 				return err
 			}
-			return mountReviewControl(reg, notifier)
+			return nil
 		},
 	}
 }
@@ -473,10 +464,8 @@ func (n *demoNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.
 
 // localeFor answers the language a notice to id goes out in: the account's
 // stored preference, and the run's configured default when it stores none. It
-// does not read the language of ctx. The worker runs with no request at all and
-// the review control runs under the recipient's own request, and one rule
-// serves both: the notice belongs to the account, not to the request that
-// triggered it. A preference a profile cannot read leaves one warning and does
+// does not read the language of ctx: the notice belongs to the account, not to
+// the request that triggered it. A preference a profile cannot read leaves one
 // not end the search: the remaining profiles are asked, because one seam's
 // failed read says nothing about another's answer. The warning names the
 // notice's type and tenant, never the recipient.

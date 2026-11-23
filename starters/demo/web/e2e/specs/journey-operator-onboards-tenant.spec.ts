@@ -2,14 +2,14 @@
  * J13 -- an operator onboards a tenant from the admin: register it, open its
  * detail page, invite its first member, and see the member land in it.
  *
- * The operator is the seeded platform administrator. The review seed writes its
+ * The operator is the seeded platform administrator. The seed writes its
  * email address as an administrator's assertion, not as a proof of ownership,
  * and every management write this journey makes -- the roster, the
  * authorization surface and the invitation surface -- refuses an account whose
  * email address is unproved. The spec therefore reaches the journey's
  * precondition the way a person does: the standing verification notice, the
- * code from the review process log (the one non-UI read this spec makes), and
- * the verify action.
+ * code from the server's process log (the one non-UI read this spec makes),
+ * and the verify action.
  *
  * OPENING A TENANT BINDS ITS CREATOR AS ITS FIRST TENANT-ADMIN. The roster's
  * registration route provisions the domain's tenant-admin role, its grants and
@@ -75,7 +75,7 @@
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts. The only non-UI read is the operator's email verification
- * code from the review process log (fixtures/log.ts).
+ * code from the server's process log (fixtures/log.ts).
  */
 // @journey journey-operator-onboards-tenant.md
 // @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-platform-admin-050, REQ-platform-admin-051, REQ-platform-admin-055, REQ-platform-admin-118, REQ-platform-admin-119, REQ-platform-admin-120, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-016, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-022, REQ-tenancy-058, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
@@ -105,7 +105,7 @@ import { chooseSelectOption } from '../helpers/select-option'
 // container to render every column this journey reads.
 test.use({ seedInvitee: true, viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -361,9 +361,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
   try {
     await test.step('precondition: the operator signs in and proves the account email', async () => {
       // The journey's precondition is an operator whose email is proved. The
-      // review seed writes the address unproved, so the spec reaches the
+      // seed writes the address unproved, so the spec reaches the
       // precondition the way a person does: the standing notice's verify entry,
-      // the code from the review process log, and the verify action.
+      // the code from the server's process log, and the verify action.
       await accounts.signIn({
         identifier: OPERATOR.username,
         password: OPERATOR.password,

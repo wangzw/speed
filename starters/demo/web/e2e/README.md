@@ -2,7 +2,7 @@
 
 `starters/demo/web/e2e` drives the **built demo binary** through Chromium and
 proves the product's documented journeys on what the browser actually renders:
-the real review assembly, a real sqlite file, real HTTP, real clicks and typing.
+the real e2e assembly, a real sqlite file, real HTTP, real clicks and typing.
 One journey also runs in WebKit (see [Browsers](#browsers)).
 
 It is not a component test and not an API test. A journey passes only when a
@@ -62,15 +62,16 @@ keeps. One project is run on its own with `--project webkit`.
   there: the harness passes the directory's absolute path, and a person
   reproducing the command by hand writes the web-root-relative
   `../server/dist-e2e`, because vite resolves a relative `outDir` against the
-  web package. It then builds three Go targets. The review binary:
-  `go -C starters/demo/server build -tags review,e2e -p=$GATE_JOBS -o
-  <root>/harness/demo-e2e .`; the default binary:
+  web package. It then builds three Go targets. The e2e binary:
   `go -C starters/demo/server build -tags e2e -p=$GATE_JOBS -o
-  <root>/harness/demo-deploy .`; and the SAML signing helper:
+  <root>/harness/demo-e2e .`; the SAML signing helper:
   `go -C starters/demo/server build -p=$GATE_JOBS -o
-  <root>/harness/saml-signer ./e2e/samlsign`. The default binary is the
-  deployment assembly -- every capability compiled in and no review controls;
-  run-time configuration decides which capabilities start. All three go
+  <root>/harness/saml-signer ./e2e/samlsign`; and the factor seeding helper:
+  `go -C starters/demo/server build -p=$GATE_JOBS -o
+  <root>/harness/factorseed ./e2e/factorseed`. The `e2e` tag changes only the
+  embedded front-end bundle; the capability roster is the default one, and
+  run-time configuration decides which capabilities start. The deployment
+  journey runs the same e2e binary over its rendered template. All three go
   under `<root>/harness`, and a manifest records the binaries and the tree they
   came from. The bundle stays in `starters/demo/server/dist-e2e`, outside the
   tree `make dev` builds into, so the run never touches
@@ -80,8 +81,8 @@ keeps. One project is run on its own with `--project webkit`.
   does not swallow a bundler or compiler warning.
 - **One server per spec** (`fixtures/server.ts`). The server fixture creates a
   temporary directory, seeds the database with the binary, then asks the
-  kernel for free loopback ports and copies the review assembly's own
-  `review/sqlite.yaml`, substituting every value that names a shared resource
+  kernel for free loopback ports and copies the e2e assembly's own
+  `server/e2e/config.yaml`, substituting every value that names a shared resource
   (both listener addresses, the sqlite DSN, the token signing key, the
   object-store root and the public origin). A needle that is missing or
   duplicated fails the fixture loudly — a half-substituted template would bind
@@ -124,7 +125,7 @@ keeps. One project is run on its own with `--project webkit`.
   the server fixture start a local OpenID Connect provider: discovery, a key
   set, a token endpoint, a userinfo endpoint and a browser-facing authorization
   page for one fixed user. Every other spec runs without openssl and without
-  the provider's two extra loopback ports. The server fixture points the review
+  the provider's two extra loopback ports. The server fixture points the e2e
   configuration's Google method at the provider through the method's `issuer`,
   `allow-loopback` and `root-ca-file` settings, and the provider's TLS
   certificate chains to a CA it mints with openssl into the server's temporary
@@ -140,12 +141,12 @@ keeps. One project is run on its own with `--project webkit`.
   (`fixtures/identity-provider.ts`, `fixtures/dns-stub.ts`). A spec that drives
   that journey opts its server in with `test.use({ enterpriseSSO: true })`;
   only then does the server fixture start the enterprise provider and the UDP
-  DNS stub. The login method itself is assembled for every review server, not
-  only the opted-in one: `authn.sso.oidc` is part of the review build's module
-  roster, so every review sign-in surface carries the enterprise entry even
+  DNS stub. The login method itself is assembled for every e2e server, not
+  only the opted-in one: `authn.sso.oidc` is part of the default module
+  roster, so every e2e sign-in surface carries the enterprise entry even
   when the configuration names no provider. The opt-in starts the provider and
   DNS fixtures and points the seams at them; it does not add the method. The
-  review configuration's `authn.sso` block is pointed at them:
+  configuration's `authn.sso` block is pointed at them:
   `dns-resolver` at the stub's loopback address, `oidc-ca-file` at the CA the
   provider minted, and `allow-private-egress` on so the restricted egress
   client can reach the provider on loopback. The stub answers TXT queries for
@@ -166,7 +167,7 @@ keeps. One project is run on its own with `--project webkit`.
   (`fixtures/saml-identity-provider.ts`). A spec that drives it opts in with
   `test.use({ enterpriseSSO: true, samlIdentityProvider: true })`; the first
   supplies the tenant, the DNS stub and the domain proof, the second starts the
-  provider. The review configuration turns the SAML method on with
+  provider. The e2e configuration turns the SAML method on with
   `authn.sso.saml.enabled: true` (`authn.sso.saml` is in every build's
   `capabilityModules` and stands itself down without the switch), and an
   operator registers the provider through the admin's
@@ -189,8 +190,8 @@ keeps. One project is run on its own with `--project webkit`.
 
 ## The sanctioned non-UI reads
 
-The review assembly's carriers reach no vendor or relay, so the process log is
-the only place a person running the review reads a code or sees a message leave.
+The log carriers reach no vendor or relay, so the process log is
+the only place a person running the tier reads a code or sees a message leave.
 The tier allows exactly three reads from it:
 
 - **A verification code.** The mail and SMS senders write each message's code to
@@ -199,7 +200,7 @@ The tier allows exactly three reads from it:
   (`sms`/`mail`) and destination address. The field is `verification_code`,
   never `code`: the gateway treats `code` as a sensitive key name and the
   logging layer masks its value.
-- **A review carrier's accepted-message line.** The SMS carrier writes one line
+- **A log carrier's accepted-message line.** The SMS carrier writes one line
   per message it accepts, naming the destination, template and language; the
   template rollout journey reads it. The mail carrier writes one line per
   message it sends, naming the destination and the rendered subject and body;
@@ -224,8 +225,8 @@ the design keeps off the product's interface, and the rollout spec does not clai
 to cover it: an end-to-end spec asserts rendered behaviour, and a fixture may
 read the ledger but may not be the basis of its assertion. The record that a
 locally refused send is failed with a refusal reason is asserted by the
-review-tagged Go case `TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger`
-(`starters/demo/server/review_notification_ledger_test.go`), which queries the
+Go case `TestRefusedSMSTemplateIsRecordedFailedInTheLedger`
+(`starters/demo/server/e2e_notification_ledger_test.go`), which queries the
 table directly.
 
 Everything else is an assertion on rendered behaviour: visible text, accessible
@@ -285,13 +286,13 @@ gates cannot decide for a spec.
   runs those files with `{ allowAssembly: true }` and the honesty gate enforces
   the same split by directory. The allowed log reads are the three named above:
   a spec or helper imports only `waitForVerificationCode`, and asks the server
-  fixture for a review carrier's accepted message or the delivery pipeline's
+  fixture for a log carrier's accepted message or the delivery pipeline's
   external-send record (`waitForCarrierMessage`, `waitForOutboundRecord` and
   their count forms). `fixtures/log.ts` is the only module that parses logfmt
   lines, and every other test-side log read is forbidden. No spec or fixture
   method reads the delivery ledger; the one case that asserts on it is the
-  review-tagged Go case named above.
-- **The backend is real**: the built review binary, a fresh sqlite file, real
+  Go case named above.
+- **The backend is real**: the built e2e binary, a fresh sqlite file, real
   HTTP. Fixtures may assemble the environment (builds, temporary directories,
   random ports, seeding the operator, probes); they may not fake a response.
   The gate cannot prove a fixture is merely assembling, so this is also a
@@ -320,7 +321,7 @@ gates cannot decide for a spec.
 
 ### Registered off-UI API assertions
 
-Three settings refusals have no rendered control to drive. Each is registered
+Two settings refusals have no rendered control to drive. Each is registered
 here, and each is driven through the product's API by the same administrator
 account in its own API session, beside the rendered assertion — never instead
 of it. The rendered assertion still carries the journey; the API answer is the
@@ -328,13 +329,12 @@ sibling evidence for a refusal the page cannot express.
 
 | Refusal | Rendered assertion | API assertion |
 |---|---|---|
-| A protected tenant's settings write | `tenant-admin: the protected organization renders no switch and its write is refused` renders the read-only notice and no switch | `PUT` on a policy answers `403` `urn:speed:settings:protected` |
 | A platform-enforced policy is turned off | `tenant-admin: a platform-enforced policy is read-only and cannot be turned off` renders the policy's switch checked and disabled with the platform-enforced notice | `PUT` on that policy answers `409` `urn:speed:settings:tenant-admission-enforced` |
 | A platform-level setting is addressed from the tenant | the main journey's settings step renders neither the platform keys nor their namespaces | the tenant listing returns only the two tenant keys; `PUT` and `DELETE` on each platform key answer `404`; a namespace read answers `404` or `405` |
 
-None of the three counts toward REQ-tenant-admin-020: that requirement is
-about refusing a `layer` or `tenant` query parameter with `400`, and no API
-assertion here sends either parameter.
+Neither counts toward REQ-tenant-admin-020: that requirement is about refusing
+a `layer` or `tenant` query parameter with `400`, and no API assertion here
+sends either parameter.
 
 ## Adding a journey spec
 
@@ -362,7 +362,7 @@ Every spec declares, in its header comment:
   `UTC` by the Playwright config.
 - Step labels (`test.step`) follow the journey document's own steps, so a
   failing run names the step a person would have been on.
-- **Sign-in locators are scoped to the surface they belong to.** Every review
+- **Sign-in locators are scoped to the surface they belong to.** Every e2e
   sign-in surface carries the enterprise entry beside the form channels, so a
   role query over the whole page can match more than one control with the same
   accessible name — the second-factor step's "Continue" and the enterprise
@@ -403,7 +403,7 @@ worktrees are isolated because each worktree owns its own `dist-e2e`.
 
 | Path | Contents |
 |---|---|
-| `<root>/harness` | The build the run shares: the review binary and the manifest the fixtures read |
+| `<root>/harness` | The build the run shares: the e2e binary and the manifest the fixtures read |
 | `<root>/artifacts` | Playwright's per-test output: failure screenshot and trace (`retain-on-failure`), plus the attached process log |
 | `<root>/report` | The HTML report (`open: 'never'`); open it to read a failed run's attachments |
 
@@ -418,7 +418,7 @@ The run directory is bounded. At the start of every run, global setup removes
 earlier run directories under `/tmp` whose whole name matches
 `speed-e2e-<pid>-<clock>-<nonce>` and whose modification time is older than
 one day (`RETENTION_WINDOW_MS` in `fixtures/retention.ts`). The same sweep
-removes the per-spec directories a failed test keeps -- the review server's
+removes the per-spec directories a failed test keeps -- the e2e server's
 `speed-e2e-server-<six>` and the deploy fixture's `speed-e2e-deploy-<six>` --
 once they age past the window, under the system temp directory the fixtures
 create them in. A name that does not match one of those shapes exactly is never

@@ -409,23 +409,16 @@ func settingsWriteGuardModule() core.Module {
 // built the space, and its tenant administrator governs a business tenant
 // rather than the personal organization.
 //
-// The review build adds one refusal of its own through
-// settingsWriteGuardReviewDenial: the review fixture's read-only business
-// tenant, whose absence from a default build is what keeps the review fixture
-// out of the production policy.
-//
 // The answer reads the identifier alone and never fails. The platform-only
 // namespaces are a separate rule the settings module holds itself, so this seam
-// refuses no other domain. The other management surfaces do not know the review
-// fixture's prefix, so such a tenant still opens organization administration;
-// only its settings writes are refused.
+// refuses no other domain.
 type settingsWriteGuard struct{}
 
 var _ authz.WriteSettings = settingsWriteGuard{}
 
 // Denied implements authz.WriteSettings.
 func (settingsWriteGuard) Denied(_ context.Context, tenantID string) (bool, error) {
-	return tenantpersonal.IsPersonalTenantID(tenantID) || settingsWriteGuardReviewDenial(tenantID), nil
+	return tenantpersonal.IsPersonalTenantID(tenantID), nil
 }
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's

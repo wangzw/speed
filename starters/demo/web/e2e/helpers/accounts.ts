@@ -3,8 +3,8 @@
  *
  * The helpers fill and click the rendered form through accessible labels and
  * roles; they never call the API. The one non-UI read they make is the email
- * verification code, which the review mail carrier writes to the process log:
- * the mail reaches no relay, so a person running the review reads it there.
+ * verification code, which the e2e mail carrier writes to the process log:
+ * the mail reaches no relay, so a person running the e2e suite reads it there.
  *
  * Registration with a password lands on the account page's verification
  * section, which sends the first code by itself. `register` therefore answers
@@ -93,10 +93,13 @@ export interface Accounts {
   unique(prefix: string): PasswordAccount
 }
 
-/** A password the review policy accepts and that matches no identifier. */
+/**
+ * A password the account store's password policy accepts and that matches no
+ * identifier.
+ */
 const PASSWORD = 'e2e-Password-123'
 
-/** The email domain the review mail carrier accepts (it reaches no relay). */
+/** The email domain the e2e mail carrier accepts (it reaches no relay). */
 const EMAIL_DOMAIN = 'e2e.test'
 
 /**

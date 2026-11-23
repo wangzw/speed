@@ -48,7 +48,7 @@ vi.mock('../sign-in-navigation.js', () => ({
   navigateToAuthorizationUrl: vi.fn(),
 }))
 
-const AUTHORIZE_URL = 'https://github.com/login/oauth/authorize?client_id=review'
+const AUTHORIZE_URL = 'https://github.com/login/oauth/authorize?client_id=demo'
 
 const METHODS: AuthnMethodList = {
   methods: [

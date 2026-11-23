@@ -14,7 +14,6 @@ import { useAuthState } from '@speed/auth-core'
 import { adminRoutes } from '@speed/admin-ui'
 import type { AdminRoute, AdminRouteTable } from '@speed/admin-ui'
 import { ADMIN_PREFIX } from './paths.js'
-import { ReviewSmsPage } from './review-sms-page.js'
 
 /**
  * The admin's declarations mapped onto their prefixed URLs. The
@@ -25,9 +24,6 @@ export const adminShellRoutes: AdminRouteTable = adminRoutes.map(
   (route) => ({
     ...route,
     path: route.path === '/' ? ADMIN_PREFIX : `${ADMIN_PREFIX}${route.path}`,
-    // The SMS page is the host's composition of the package page and the
-    // review build's verdict control; every other page is the package's own.
-    ...(route.id === 'sms' ? { view: ReviewSmsPage } : {}),
   }),
 )
 

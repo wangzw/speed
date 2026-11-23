@@ -1,6 +1,6 @@
 /**
- * The deployment-assembly server: the default binary on a temporary volume,
- * seeded and served the way the container entrypoint does it.
+ * The deployment-assembly server: the e2e binary on a temporary volume, seeded
+ * and served the way the container entrypoint does it.
  *
  * This is a fixture-type journey. The container entrypoint itself is not run:
  * the fixture renders the same deployment template onto the volume, runs
@@ -13,7 +13,7 @@
  * and the object store's root all resolve against the working directory, so
  * every first-run artifact lands there and nothing is written into the tree.
  * The operations listener is probed through the same kernel-level HTTP client
- * the review fixture uses; the browser becomes the only client the journey
+ * the server fixture uses; the browser becomes the only client the journey
  * drives by hand.
  */
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
@@ -112,7 +112,7 @@ async function ensureBinary(binary: string): Promise<void> {
     }
   } catch (error) {
     throw new Error(
-      `the harness manifest names the deploy binary ${binary}, but it cannot ` +
+      `the harness manifest names the e2e binary ${binary}, but it cannot ` +
         `be used (${String(error)}). The binary is built into /tmp by the ` +
         `Playwright global setup; a stale manifest is rebuilt by rerunning ` +
         `the tier through \`make e2e\`, or with GATE_JOBS set, \`pnpm -C web ` +
@@ -224,11 +224,14 @@ function looksLikeBindFailure(
  */
 export async function startDeployServer(): Promise<DeployServer> {
   const manifest = await readHarnessManifest()
-  const binary = manifest.deployBinary
+  // The deployment runs the same e2e binary as every other fixture: the tag
+  // changes only the embedded front end, and what a run starts comes from the
+  // rendered configuration.
+  const binary = manifest.binary
   if (typeof binary !== 'string' || binary === '') {
     throw new Error(
-      'the harness manifest names no deploy binary; the Playwright global ' +
-        'setup builds the default binary and records it there',
+      'the harness manifest names no binary; the Playwright global setup ' +
+        'builds the e2e binary and records it there',
     )
   }
   await ensureBinary(binary)

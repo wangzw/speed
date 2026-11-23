@@ -147,7 +147,7 @@ function mfaSection(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
-/** The factor kinds the review assembly serves, each its own group. */
+/** The factor kinds the e2e assembly serves, each its own group. */
 type MfaKind = 'totp' | 'webauthn' | 'sms'
 
 /**
@@ -481,7 +481,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
 
       // No method is set up yet, and the deployment's own groups are offered.
       // The section renders one group per method the deployment serves (the
-      // review assembly serves the authenticator app, the passkey and the text
+      // e2e assembly serves the authenticator app, the passkey and the text
       // message), each named by its heading and carrying one add action on
       // that heading. No group lists a row before anything is enrolled, and
       // with no enabled row each action words itself as a plain add.
