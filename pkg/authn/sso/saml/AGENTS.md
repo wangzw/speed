@@ -12,6 +12,16 @@ The API is the package's godoc. Read the `LoginMethod` comments in
 
 ## Boundaries
 
+- **An explicit switch states whether the run offers the method.** The method has
+  nothing of its own to infer that from: its providers are rows created at run
+  time, so an empty register does not mean the deployment never intended to
+  offer SAML sign-in. `authn.sso.saml.enabled` is off when absent; Prepare then
+  states `StateDisabled` with the reason, so a binary that compiles the method in
+  serves a deployment that does not offer it and mounts no metadata route. On,
+  the service provider's key and certificates are validated, and a missing or
+  illegal one fails the startup. The register's cross-namespace read of
+  `sp-key-file` keeps working: the decoder walks the target struct and ignores
+  the switch beside it.
 - **The supplementary checks are the security part, and every one of them is
   fail-closed.** The library's `RetrieveAssertionInfo` is never called: it uses
   the first assertion only, does not check `InResponseTo` and skips a comparison

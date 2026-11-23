@@ -109,14 +109,18 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Init, each with a stated behaviour for its absence, so none is declared. The
 // logging capability is declared as an optional requirement: the declaration
 // is what orders this module's construction after the logging capability's,
-// which is what lets the logger taken up in Init be the configured one. The key
-// and certificate paths are read from configuration in New, which is why the
-// configuration reader is resolved where it is used.
+// which is what lets the logger taken up in Init be the configured one. The
+// enable switch is read in Prepare and the key and certificate paths in New, so
+// the configuration reader is resolved where each of them is used.
 //
 // The login method and the metadata refresher are delivered without being
 // claimed, which is what lets several methods and refreshers stand side by side.
-// The stance is StateEnabled and never StateAuto: the module is taken in at run
-// level and has no way to stand itself down.
+// Prepare reads this module's own enable switch: its providers are rows created
+// at run time, so an empty register would not mean a deployment never intended
+// to offer SAML sign-in. Off, the method and the metadata refresher stand
+// themselves down; on, the service provider's key and certificates are
+// validated and a missing or illegal one fails the startup there. The stance is
+// never StateAuto.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -136,12 +140,12 @@ func Module() core.Module {
 			operations,
 		},
 
-		// Prepare states the stance alone. The service provider's key comes from
-		// configuration and is read in New: this module is taken in at run level
-		// and has no way to stand itself down, so its configuration is validated
-		// once, when the instance is built.
-		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
-			return core.Enablement{State: core.StateEnabled}, nil
+		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
+			reader, err := readerOf(reg)
+			if err != nil {
+				return core.Enablement{}, err
+			}
+			return prepare(reader)
 		},
 
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
@@ -156,6 +160,28 @@ func Module() core.Module {
 			return p.wire(reg)
 		},
 	}
+}
+
+// prepare decides whether this run includes the enterprise SAML method. The
+// switch is off by default, so a deployment that never named the method stands
+// it down without validating anything else. On, the service provider's key and
+// certificates decide, and their failures are startup failures.
+func prepare(reader config.Reader) (core.Enablement, error) {
+	enabled, err := readEnabled(reader)
+	if err != nil {
+		return core.Enablement{}, err
+	}
+	if !enabled {
+		return core.Enablement{
+			State: core.StateDisabled,
+			Reason: "authn.sso.saml.enabled is off, so this run offers no enterprise SAML sign-in " +
+				"and the method is not delivered",
+		}, nil
+	}
+	if _, err := readConfig(reader); err != nil {
+		return core.Enablement{}, err
+	}
+	return core.Enablement{State: core.StateEnabled}, nil
 }
 
 // productOf narrows an instance to this module's product. An instance of another

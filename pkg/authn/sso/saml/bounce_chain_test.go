@@ -181,6 +181,7 @@ func runChainWith(t *testing.T, edit func(*authn.SSOProvider), use func(c *chain
 				"public-url": chainPublicURL,
 			}},
 			"humanverify": map[string]any{"mode": "off", "phone-mode": "off"},
+			"sso":         map[string]any{"saml": map[string]any{"enabled": true}},
 		},
 		"settings": map[string]any{},
 		"event":    map[string]any{},

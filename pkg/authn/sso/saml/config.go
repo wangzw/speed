@@ -17,11 +17,13 @@ import (
 )
 
 // The configuration items this module declares, relative to its namespace. The
-// service provider's key and certificates belong to the whole deployment, not
-// to one provider; only the private key is secret. The key file is the one item
-// the register reads across namespaces, to refuse a provider whose requests
-// could not be signed.
+// enable switch decides whether this run offers the method. The service
+// provider's key and certificates belong to the whole deployment, not to one
+// provider; only the private key is secret. The key file is the one item the
+// register reads across namespaces, to refuse a provider whose requests could
+// not be signed.
 const (
+	enabledItem        = "enabled"
 	spKeyFileItem      = "sp-key-file"
 	spCertFileItem     = "sp-cert-file"
 	spNextCertFileItem = "sp-next-cert-file"
@@ -29,6 +31,11 @@ const (
 
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
+	// Enabled states whether this run offers the method. The method has nothing
+	// of its own to infer that from: its providers are rows created at run time,
+	// so an empty register is not evidence of a deployment that never intended to
+	// offer enterprise SAML sign-in.
+	Enabled bool `config:"enabled"`
 	// SPKeyFile is the path of the service provider's private key. It is read
 	// only when a provider signs its requests or an IdP encrypts assertions.
 	SPKeyFile string `config:"sp-key-file"`
@@ -98,6 +105,11 @@ func configSchema() config.Schema {
 		Namespace: ConfigNamespace,
 		Mounts:    []config.Mount{{Value: &configDefaults}},
 		Items: map[string]config.Item{
+			enabledItem: {
+				Description: "whether this run offers enterprise SAML sign-in; off, the method and " +
+					"the metadata refresher are not delivered, the metadata route is not mounted, and " +
+					"the sign-in surface offers no SAML entry",
+			},
 			spKeyFileItem: {
 				Sensitive: true,
 				Description: "the path of the service provider's PEM private key, shared by the whole " +
@@ -114,6 +126,15 @@ func configSchema() config.Schema {
 			},
 		},
 	}
+}
+
+// readEnabled decodes this module's enable switch.
+func readEnabled(reader config.Reader) (bool, error) {
+	var cfg moduleConfig
+	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
+		return false, fmt.Errorf("%s%s: reading the enable switch: %w", diagnosticPrefix, ModuleName, err)
+	}
+	return cfg.Enabled, nil
 }
 
 // readConfig decodes this module's section and validates it.

@@ -143,10 +143,14 @@ func registry(t *testing.T, body string) (*core.Registry, *registeredRules) {
 // TestTheSAMLModuleRegistersNoLiteralRedactionRule holds the saml backend to
 // registering nothing, with sp-key-file configured to a real key file: the item
 // is marked sensitive — config keeps it out of its own output — but its value is
-// a path, and the module holds no secret configuration value to register.
+// a path, and the module holds no secret configuration value to register. The
+// enable switch is on, because off the module stands itself down and is never
+// constructed, which would let the case pass without driving the registration
+// it is about.
 func TestTheSAMLModuleRegistersNoLiteralRedactionRule(t *testing.T) {
 	keyPath, certPath := spKeyPair(t)
-	body := fmt.Sprintf(`{"authn":{"sso":{"saml":{"sp-key-file":%q,"sp-cert-file":%q}}}}`, keyPath, certPath)
+	body := fmt.Sprintf(`{"authn":{"sso":{"saml":{"enabled":true,"sp-key-file":%q,"sp-cert-file":%q}}}}`,
+		keyPath, certPath)
 	reg, rules := registry(t, body)
 	reg.Register(saml.Module())
 
@@ -159,6 +163,10 @@ func TestTheSAMLModuleRegistersNoLiteralRedactionRule(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("driving the saml module: %v", err)
+	}
+	if got, ok := reg.Enablement(saml.ModuleName); !ok || got.State != core.StateEnabled {
+		t.Fatalf("the saml module verdict = %+v, present = %t, want StateEnabled: a module that stood "+
+			"down is never constructed, so this case would hold nothing", got, ok)
 	}
 	requireNoRule(t, rules, saml.ModuleName)
 }

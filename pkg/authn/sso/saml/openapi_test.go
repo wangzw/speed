@@ -16,6 +16,11 @@ import (
 // it registered there with what it declared.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	stubs, config := routefixture.Assembly(t, Module())
+	// The routes exist only while the module is on, so the assembly that is
+	// compared route for route turns the switch on.
+	config = routecontract.Config(config, map[string]any{
+		"authn": map[string]any{"sso": map[string]any{"saml": map[string]any{"enabled": true}}},
+	})
 	stubs = append(stubs, routefixture.Seams(
 		(*authn.SSOProviders)(nil),
 		(*authn.Accounts)(nil),

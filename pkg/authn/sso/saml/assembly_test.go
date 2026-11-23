@@ -2,6 +2,10 @@ package saml
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -54,13 +58,46 @@ func configModuleDef() core.Module {
 	}
 }
 
-// fakeReader answers the two namespaces this module reads with their zero
-// values, which is a deployment with no service provider key.
-type fakeReader struct{}
+// fakeReader answers this module's own namespace with the values a case chose.
+// The zero value is a deployment whose switch is off and whose configuration
+// carries no service provider key.
+type fakeReader struct {
+	enabled        bool
+	spKeyFile      string
+	spCertFile     string
+	spNextCertFile string
+	// refuseElsewhere makes every path but this module's own namespace fail. It
+	// cannot tell whether the module read the rest of its own configuration: that
+	// configuration arrives under the same namespace, so only reads aimed at
+	// another namespace are caught here.
+	refuseElsewhere bool
+}
 
-func (fakeReader) Decode(string, any) error { return nil }
+func (r fakeReader) Decode(path string, target any) error {
+	if path != ConfigNamespace {
+		if r.refuseElsewhere {
+			return fmt.Errorf("the module read %s, which it must not do here", path)
+		}
+		return nil
+	}
+	cfg, ok := target.(*moduleConfig)
+	if !ok {
+		return nil
+	}
+	cfg.Enabled = r.enabled
+	cfg.SPKeyFile = r.spKeyFile
+	cfg.SPCertFile = r.spCertFile
+	cfg.SPNextCertFile = r.spNextCertFile
+	return nil
+}
 
 func buildRegistry(t *testing.T, providers *fakeProviders) *core.Registry {
+	t.Helper()
+	return buildRegistryWith(t, providers, fakeReader{enabled: true})
+}
+
+// buildRegistryWith is buildRegistry over a reader a case chose.
+func buildRegistryWith(t *testing.T, providers *fakeProviders, reader config.Reader) *core.Registry {
 	t.Helper()
 	reg := core.New()
 	reg.Register(Module())
@@ -71,7 +108,7 @@ func buildRegistry(t *testing.T, providers *fakeProviders) *core.Registry {
 	reg.Supply(providers, providersModule)
 	reg.Supply(accountsStandIn{}, accountsModule)
 	reg.Supply(mounttest.New(t, mounttest.WithPublicURL(testPublicURL), mounttest.WithBase(testBasePath)), mounterModule)
-	reg.Supply(fakeReader{}, configModule)
+	reg.Supply(reader, configModule)
 	return reg
 }
 
@@ -109,13 +146,104 @@ func TestTheDescriptorRequiresTheCapabilitiesAndDeliversBoth(t *testing.T) {
 	}
 }
 
-func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
-	got, err := Module().Prepare(context.Background(), core.New())
+// TestPrepareStandsDownWhenTheSwitchIsOff holds the unconfigured case: the
+// method has nothing of its own to infer the intent from, so an absent switch
+// means the deployment did not offer SAML sign-in, and the module stands down
+// without reading the rest of its configuration or failing the startup.
+func TestPrepareStandsDownWhenTheSwitchIsOff(t *testing.T) {
+	got, err := prepare(fakeReader{refuseElsewhere: true})
 	if err != nil {
-		t.Fatalf("Prepare: %v", err)
+		t.Fatalf("prepare with the switch off: %v", err)
+	}
+	if got.State != core.StateDisabled {
+		t.Errorf("prepare = %+v, want StateDisabled", got)
+	}
+	if got.Reason == "" {
+		t.Error("the module stood down without a reason")
+	}
+}
+
+// TestPrepareStatesEnabledWhenTheSwitchIsOn holds the configured case: the
+// switch alone admits the module when the rest of its configuration is legal.
+func TestPrepareStatesEnabledWhenTheSwitchIsOn(t *testing.T) {
+	got, err := prepare(fakeReader{enabled: true, refuseElsewhere: true})
+	if err != nil {
+		t.Fatalf("prepare with the switch on and a legal configuration: %v", err)
 	}
 	if got != (core.Enablement{State: core.StateEnabled}) {
-		t.Errorf("Prepare = %+v, want the enabled stance alone", got)
+		t.Errorf("prepare = %+v, want the enabled stance alone", got)
+	}
+}
+
+// TestPrepareRefusesAnIncompleteKeyConfigurationWhenTheSwitchIsOn holds that the
+// rest of the configuration is validated once the switch is on: a key with no
+// certificate fails the startup rather than serving a half-configured provider.
+func TestPrepareRefusesAnIncompleteKeyConfigurationWhenTheSwitchIsOn(t *testing.T) {
+	_, err := prepare(fakeReader{enabled: true, spKeyFile: "/tmp/sp-key.pem"})
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Errorf("prepare with a key and no certificate = %v, want authn.ErrInvalidConfig", err)
+	}
+}
+
+// TestPrepareRefusesAKeyThatIsNotAPEMFileWhenTheSwitchIsOn holds that a key and
+// a certificate are paired and then actually loaded: a key file whose content is
+// not a PEM key fails the startup even though a certificate file is named beside
+// it.
+func TestPrepareRefusesAKeyThatIsNotAPEMFileWhenTheSwitchIsOn(t *testing.T) {
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "sp-key.pem")
+	if err := os.WriteFile(keyFile, []byte("this is not a PEM key\n"), 0o600); err != nil {
+		t.Fatalf("writing the key file: %v", err)
+	}
+	_, err := prepare(fakeReader{
+		enabled:    true,
+		spKeyFile:  keyFile,
+		spCertFile: filepath.Join(dir, "sp-cert.pem"),
+	})
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Errorf("prepare with a key file that is not a PEM key = %v, want authn.ErrInvalidConfig", err)
+	}
+}
+
+// TestPrepareDoesNotValidateTheRestWhenTheSwitchIsOff holds that the switch is
+// decided before anything else in the section is read: a key with no
+// certificate would fail the startup with the switch on, and standing the
+// module down must not fail on it, or a deployment that never wanted the method
+// could not start beside a half-written section.
+func TestPrepareDoesNotValidateTheRestWhenTheSwitchIsOff(t *testing.T) {
+	got, err := prepare(fakeReader{spKeyFile: "/tmp/sp-key.pem"})
+	if err != nil {
+		t.Fatalf("prepare with the switch off and an incomplete key configuration = %v, want no error: "+
+			"the switch is decided before the rest of the section is validated", err)
+	}
+	if got.State != core.StateDisabled {
+		t.Errorf("prepare = %+v, want StateDisabled", got)
+	}
+	if got.Reason == "" {
+		t.Error("the module stood down without a reason")
+	}
+}
+
+// TestTheRegistryStandsTheMethodDownWhenTheSwitchIsOff drives the descriptor's
+// own Prepare through a registry: the verdict it records is the switch's.
+func TestTheRegistryStandsTheMethodDownWhenTheSwitchIsOff(t *testing.T) {
+	reg := buildRegistryWith(t, newFakeProviders(providerRow(nil)), fakeReader{})
+	err := reg.Drive(context.Background(), core.Drive{
+		Depth:        core.StagePrepare,
+		Participants: participants(),
+		Action: func(_ context.Context, reg *core.Registry) error {
+			got, ok := reg.Enablement(ModuleName)
+			if !ok {
+				t.Fatalf("the registry has no verdict for %s", ModuleName)
+			}
+			if got.State != core.StateDisabled || got.Reason == "" {
+				t.Errorf("the module verdict = %+v, want StateDisabled with a reason", got)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("drive with the switch off: %v", err)
 	}
 }
 
