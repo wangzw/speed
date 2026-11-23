@@ -67,8 +67,15 @@
  * round trip at all.
  */
 
-import type { MouseEventHandler, ReactElement, ReactNode } from 'react'
-import { useCallback, useEffect, useId, useState } from 'react'
+import type { MouseEventHandler, ReactElement, ReactNode, Ref } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { Theme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -373,6 +380,10 @@ interface AccountSectionProps {
   readonly description?: string
   /** The action at the header's right, beside the title block. */
   readonly action?: ReactNode
+  /** The section element, for a focus landing when its content goes away. */
+  readonly sectionRef?: Ref<HTMLElement>
+  /** Makes the section a programmatic focus target; -1 keeps it out of Tab order. */
+  readonly sectionTabIndex?: number
   /** The section's own surface. */
   readonly children: ReactNode
 }
@@ -388,12 +399,16 @@ function AccountSection({
   icon,
   description,
   action,
+  sectionRef,
+  sectionTabIndex,
   children,
 }: AccountSectionProps): ReactElement {
   const titleId = useId()
   return (
     <Card
       component="section"
+      ref={sectionRef}
+      tabIndex={sectionTabIndex}
       variant="outlined"
       aria-labelledby={titleId}
       sx={{ p: 3 }}
@@ -476,6 +491,88 @@ function AccountItem({
       )}
     </Box>
   )
+}
+
+/** A phone-removal attempt's row and the confirmation or step-up dialog that
+ * carried it, recorded when the attempt starts. */
+interface PhoneRemoveAttempt {
+  readonly id: string
+  readonly row: HTMLElement | null
+  readonly dialog: HTMLElement | null
+}
+
+/** The dialog the attempt starts in: the confirmation or step-up surface the
+ * activated control sits in, read at the moment the attempt starts. */
+function dialogHoldingFocus(): HTMLElement | null {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement)) {
+    return null
+  }
+  const dialog = active.closest('[role="dialog"]')
+  return dialog instanceof HTMLElement ? dialog : null
+}
+
+/**
+ * Whether a removal took the operator's focus. A write that removes its own
+ * row hands focus to a landing, but only when the removal is what took it:
+ * focus on the document body, on a detached node, inside the removed row, or
+ * inside the confirmation or step-up dialog this attempt recorded all end on
+ * the body once that surface closes. A connected control elsewhere -- another
+ * dialog included -- is a place the operator chose, and the removal leaves it
+ * alone.
+ */
+function focusFellWithRemoval(
+  removedRow: HTMLElement | null,
+  dialog: HTMLElement | null,
+): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  if (removedRow !== null && removedRow.contains(active)) {
+    return true
+  }
+  return dialog !== null && dialog.contains(active)
+}
+
+/**
+ * Hands the removal's focus loss to `section`. A confirmation or step-up
+ * dialog that carried the write can still be closing when the row leaves; its
+ * focus trap pulls a focus placed outside back inside, and the page ends on
+ * the body once the dialog unmounts. The landing therefore waits for this
+ * attempt's own dialog to leave the document, then hands the focus over only
+ * if the removal -- or that dialog -- is what took it.
+ */
+function landInPhoneSection(
+  section: HTMLElement | null,
+  attempt: PhoneRemoveAttempt,
+): void {
+  const land = (): void => {
+    if (!focusFellWithRemoval(attempt.row, attempt.dialog)) {
+      return
+    }
+    section?.focus()
+  }
+  const dialog = attempt.dialog
+  if (dialog === null || !dialog.isConnected) {
+    land()
+    return
+  }
+  const observer = new MutationObserver(() => {
+    if (dialog.isConnected) {
+      return
+    }
+    observer.disconnect()
+    land()
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
+  if (!dialog.isConnected) {
+    observer.disconnect()
+    land()
+  }
 }
 
 /** The account-management page: one pane per route. */
@@ -586,6 +683,15 @@ export function AccountSettingsPage({
     useState<HTMLElement | null>(null)
   const queryClient = useQueryClient()
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
+  // The phone block that holds the number's row, the control whose write can
+  // remove that row, and the confirmation dialog that carries it: a
+  // successful removal unmounts the control, so focus lands in the block. The
+  // row and the dialog captured when the attempt starts are what tell a focus
+  // the removal took from one the operator moved away.
+  const phoneSection = useRef<HTMLElement | null>(null)
+  const phoneRemoveButton = useRef<HTMLButtonElement | null>(null)
+  const phoneConfirmDialog = useRef<HTMLDivElement | null>(null)
+  const phoneRemoveFocus = useRef<PhoneRemoveAttempt | null>(null)
   const toggleSecurityRow = (key: string): void => {
     setOpenSecurityRow((previous) => (previous === key ? null : key))
   }
@@ -629,13 +735,24 @@ export function AccountSettingsPage({
   // Deleting the number is a protected write: a stale session is answered
   // with the step-up, and the won challenge replays this one delete.
   const phoneGate = useStepUpGate<{ readonly id: string }>(({ id }) => {
-    void removePhone(id)
+    // The won challenge's replay starts inside the step-up dialog, before it
+    // closes; that dialog is this attempt's own surface, not a place the
+    // operator moved to.
+    void removePhone(id, dialogHoldingFocus())
   })
-  async function removePhone(id: string): Promise<void> {
+  async function removePhone(
+    id: string,
+    dialog: HTMLElement | null,
+  ): Promise<void> {
     // A new attempt owns the result position, so the previous attempt's
     // failure or the previous add's confirmation does not stand beside this
     // one while it runs.
     phoneFeedback.reset()
+    phoneRemoveFocus.current = {
+      id,
+      row: phoneRemoveButton.current?.closest('tr') ?? null,
+      dialog,
+    }
     try {
       await removeIdentifier.mutateAsync({ id })
       setPhoneRemoveOpen(false)
@@ -643,6 +760,9 @@ export function AccountSettingsPage({
         queryKey: getAuthnProfileGetQueryKey(),
       })
     } catch (error) {
+      // The row survives a refusal, so there is no landing to hand over; the
+      // step-up replay starts a new attempt and records its own.
+      phoneRemoveFocus.current = null
       if (phoneGate.intercept(error, { id })) {
         return
       }
@@ -666,6 +786,25 @@ export function AccountSettingsPage({
     )
     setPhoneFormOpen(false)
   }
+  // A successful removal leaves the read without its number, so the row's
+  // delete control unmounts: focus goes to the block that held the table, in
+  // the commit that removes the row rather than leaving it on the document
+  // body. Focus is handed over only when the removal is what took it.
+  useLayoutEffect(() => {
+    const target = phoneRemoveFocus.current
+    if (target === null) {
+      return
+    }
+    const identifiers = profile.data?.identifiers
+    if (identifiers === undefined) {
+      return
+    }
+    if (identifiers.some((identifier) => identifier.id === target.id)) {
+      return
+    }
+    phoneRemoveFocus.current = null
+    landInPhoneSection(phoneSection.current, target)
+  }, [profile.data])
   return (
     <PageLayout
       title={t(`account.sections.${section}`)}
@@ -781,6 +920,8 @@ export function AccountSettingsPage({
                     title={t('account.rows.label.phone')}
                     icon={<PhoneIcon />}
                     description={t('account.blockDescriptions.phone')}
+                    sectionRef={phoneSection}
+                    sectionTabIndex={-1}
                     action={
                       // Add lives in the block header only while there is no
                       // number to act on; once a number is bound, its remove
@@ -853,9 +994,10 @@ export function AccountSettingsPage({
                             <TableCell align="right">
                               {boundPhone.id == null ? null : (
                                 <ActionButton
+                                  ref={phoneRemoveButton}
                                   size="small"
                                   tone="danger"
-                                  disabled={removeIdentifier.isPending}
+                                  busy={removeIdentifier.isPending}
                                   onClick={() => setPhoneRemoveOpen(true)}
                                 >
                                   {t('account.action.delete')}
@@ -992,6 +1134,7 @@ export function AccountSettingsPage({
         </Stack>
       </SectionSurfaceProvider>
       <ConfirmDialog
+        ref={phoneConfirmDialog}
         open={phoneRemoveOpen}
         title={t('account.phoneRemove.removeTitle')}
         message={t('account.phoneRemove.removeMessage')}
@@ -1001,7 +1144,9 @@ export function AccountSettingsPage({
         onCancel={() => setPhoneRemoveOpen(false)}
         onConfirm={() => {
           if (boundPhone?.id != null) {
-            void removePhone(boundPhone.id)
+            // The confirmation is this attempt's own surface: a focus still
+            // inside it while the row leaves fell with the removal.
+            void removePhone(boundPhone.id, phoneConfirmDialog.current)
           }
         }}
       />
