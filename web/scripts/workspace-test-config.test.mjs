@@ -43,13 +43,25 @@
  * (`const v = vi`) and an alias of an alias, and a direct
  * `import { waitFor } from 'vitest'`.
  *
+ * `vi.useRealTimers` is the other name the guard owns. jsdom 31 serves
+ * requestAnimationFrame and its focus fixups from one lazily created
+ * interval; a focus change made while fake timers are installed arms that
+ * interval as a fake timer, and restoring the real clock with it still
+ * armed strands it, so no frame runs again in that worker. Every test
+ * returns to the real clock through `restoreRealTimers`
+ * (@speed/test-utils/timers), which drains the fake clock first. The same
+ * scan applies -- every member access to the name, through an alias or a
+ * direct import, is red -- and only the two `timers.ts` helpers (the
+ * workspace's and the demo host's) are exempt, by exact path.
+ *
  * The scan covers the test sources and the test-support sources the suites
  * run on: every package's `test-utils/`, `web/test-utils/src/` (the
  * browser-tier setup included), `starters/demo/web/src/test-utils/` and the
  * demo's `src/a11y/` support modules, plus the root leg's tests under
- * `web/eslint-rules/` and `web/scripts/`. Only `web/test-utils/src/wait.ts`
- * is exempt, by its exact path, because it is the helper that supplies the
- * budget.
+ * `web/eslint-rules/` and `web/scripts/`. `web/test-utils/src/wait.ts` is
+ * the only source exempt from the wait rule, by its exact path, because it
+ * is the helper that supplies the budget; the two `timers.ts` helpers are
+ * the only sources exempt from the real-timer rule.
  *
  * Four shapes are outside what a static read of the syntax tree can
  * follow: a key that is not a literal (`vi[name]`, a concatenation, a
@@ -266,6 +278,10 @@ function unwrapExpression(node) {
 /** The two Vitest waits with a fixed one-second default and no global one. */
 const WAIT_NAMES = new Set(['waitFor', 'waitUntil'])
 
+/** The Vitest name that restores the real clock. Tests reach it only
+ * through `restoreRealTimers`, which drains pending jsdom frames first. */
+const REAL_TIMER_NAMES = new Set(['useRealTimers'])
+
 /**
  * Every local name that denotes the Vitest `vi` object: `vi`, an aliased
  * named import (`import { vi as x } from 'vitest'`), a variable holding
@@ -334,33 +350,34 @@ function isNamedReference(node, names) {
 }
 
 /**
- * `vi.waitFor`, `vi.waitUntil`, `vi['waitFor']`, `vi?.['waitUntil']`, and
- * the same accesses on an alias of `vi`, whichever wrappers the base
- * carries (`(vi)`, `vi!`, `vi as typeof vi`).
+ * `vi.waitFor`, `vi.useRealTimers` and the rest of `forbidden`, through
+ * `vi['waitFor']`, `vi?.['useRealTimers']`, and the same accesses on an
+ * alias of `vi`, whichever wrappers the base carries (`(vi)`, `vi!`,
+ * `vi as typeof vi`).
  */
-function isWaitAccess(node, names) {
+function isMemberAccess(node, names, forbidden) {
   if (ts.isPropertyAccessExpression(node)) {
     return isNamedReference(node.expression, names)
-      && WAIT_NAMES.has(node.name.text)
+      && forbidden.has(node.name.text)
   }
   if (ts.isElementAccessExpression(node)) {
     const key = node.argumentExpression
     return isNamedReference(node.expression, names)
       && (ts.isStringLiteral(key)
         || ts.isNoSubstitutionTemplateLiteral(key))
-      && WAIT_NAMES.has(key.text)
+      && forbidden.has(key.text)
   }
   return false
 }
 
-/** Whether an object binding pattern binds one of the two wait names. */
-function bindsWaitName(pattern) {
+/** Whether an object binding pattern binds one of the forbidden names. */
+function bindsName(pattern, forbidden) {
   return (
     ts.isObjectBindingPattern(pattern)
     && pattern.elements.some(
       (element) =>
         ts.isBindingElement(element)
-        && WAIT_NAMES.has(
+        && forbidden.has(
           writtenName(element.propertyName ?? element.name) ?? '',
         ),
     )
@@ -373,10 +390,10 @@ function bindsWaitName(pattern) {
  * A parameter default (`function f({ waitFor } = vi) {}`) is the same
  * binding and is read through the parameter as well.
  */
-function isDestructuredFromVi(node, names) {
+function isDestructuredFromVi(node, names, forbidden) {
   if (
     ts.isVariableDeclaration(node)
-    && bindsWaitName(node.name)
+    && bindsName(node.name, forbidden)
     && node.initializer !== undefined
     && isNamedReference(node.initializer, names)
   ) {
@@ -384,14 +401,14 @@ function isDestructuredFromVi(node, names) {
   }
   return (
     ts.isParameter(node)
-    && bindsWaitName(node.name)
+    && bindsName(node.name, forbidden)
     && node.initializer !== undefined
     && isNamedReference(node.initializer, names)
   )
 }
 
 /** `({ waitFor } = vi)`, renamed or not, through the same wrappers. */
-function isAssignedFromVi(node, names) {
+function isAssignedFromVi(node, names, forbidden) {
   if (
     !ts.isBinaryExpression(node)
     || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken
@@ -405,23 +422,24 @@ function isAssignedFromVi(node, names) {
       (property) =>
         (ts.isShorthandPropertyAssignment(property)
           || ts.isPropertyAssignment(property))
-        && WAIT_NAMES.has(writtenName(property.name) ?? ''),
+        && forbidden.has(writtenName(property.name) ?? ''),
     )
 }
 
 /**
  * A direct `import { waitFor } from 'vitest'`: naming the wait at the
  * import reaches the same fixed default as `vi.waitFor` and bypasses every
- * member-access check above.
+ * member-access check above. The same read covers a direct
+ * `import { useRealTimers } from 'vitest'`.
  */
-function importsWaitDirectly(node) {
+function importsNameDirectly(node, forbidden) {
   return (
     ts.isImportDeclaration(node)
     && ts.isStringLiteral(node.moduleSpecifier)
     && node.moduleSpecifier.text === 'vitest'
     && ts.isNamedImports(node.importClause?.namedBindings)
     && node.importClause.namedBindings.elements.some((element) =>
-      WAIT_NAMES.has((element.propertyName ?? element.name).text))
+      forbidden.has((element.propertyName ?? element.name).text))
   )
 }
 
@@ -644,33 +662,45 @@ function lowCaseTimeouts(source, floor, filePath = 'constructed.tsx') {
 }
 
 /**
- * The uses of `vi.waitFor` or `vi.waitUntil` in a scanned source that
- * bypass the shared budget. Outside `wait.ts` there is no permitted use of
- * either name, so every member access counts, whatever becomes of it: a
+ * The uses of one of `forbidden` on `vi` in a scanned source that bypass
+ * the shared route. Outside the one helper that owns each name there is no
+ * permitted use, so every member access counts, whatever becomes of it: a
  * call, an argument, a property value, an arrow's return or a reference
  * kept for later. Optional chaining and bracket access are the same
- * access, an alias of `vi` names the same object, and a direct
- * `import { waitFor } from 'vitest'` is the same wait. A destructuring
- * that binds either name from `vi` -- as a declaration, an assignment or a
+ * access, an alias of `vi` names the same object, and a direct import of
+ * the name from `vitest` is the same use. A destructuring that binds a
+ * forbidden name from `vi` -- as a declaration, an assignment or a
  * parameter default -- is listed too. The syntax tree tells a use from
  * prose: a comment, string, template literal, regular expression or JSX
- * text that spells a wait out is not one.
+ * text that spells the name out is not one.
  */
-function bareWaitUses(source, filePath = 'constructed.tsx') {
+function bareMemberUses(source, forbidden, filePath = 'constructed.tsx') {
   const sourceFile = parseTestSource(source, filePath)
   const names = viNames(sourceFile)
   const uses = []
   forEachNode(sourceFile, (node) => {
     if (
-      isWaitAccess(node, names)
-      || isDestructuredFromVi(node, names)
-      || isAssignedFromVi(node, names)
-      || importsWaitDirectly(node)
+      isMemberAccess(node, names, forbidden)
+      || isDestructuredFromVi(node, names, forbidden)
+      || isAssignedFromVi(node, names, forbidden)
+      || importsNameDirectly(node, forbidden)
     ) {
       uses.push(node.pos)
     }
   })
   return uses
+}
+
+/** The uses of `vi.waitFor` or `vi.waitUntil` in a scanned source that
+ * bypass the shared budget. */
+function bareWaitUses(source, filePath = 'constructed.tsx') {
+  return bareMemberUses(source, WAIT_NAMES, filePath)
+}
+
+/** The uses of `vi.useRealTimers` in a scanned source that bypass the
+ * draining helper. */
+function bareRealTimerUses(source, filePath = 'constructed.tsx') {
+  return bareMemberUses(source, REAL_TIMER_NAMES, filePath)
 }
 
 /**
@@ -778,6 +808,16 @@ function testSupportDirs() {
  * shared budget. An exact path, so no other file is exempted with it.
  */
 const WAIT_HELPER = join(webRoot, 'test-utils', 'src', 'wait.ts')
+
+/**
+ * The two sources allowed to call `vi.useRealTimers`: the helper that
+ * drains jsdom's fake-clock frames, and the demo host's copy of it. Exact
+ * paths, so no other file is exempted with them.
+ */
+const REAL_TIMER_HELPERS = new Set([
+  join(webRoot, 'test-utils', 'src', 'timers.ts'),
+  join(demoWebRoot, 'src', 'test-utils', 'timers.ts'),
+])
 
 /**
  * The async defaults that sit below the async floor `floors` names. Both
@@ -952,16 +992,26 @@ describe('workspace test configuration', () => {
   ]
 
   /**
-   * Every source the wait rule scans: the case files and the test-support
-   * sources the cases run on. `wait.ts` is the only exemption, by exact
-   * path, because it is where the budget is supplied.
+   * Every source the two name rules scan: the case files and the
+   * test-support sources the cases run on. The wait rule exempts `wait.ts`
+   * by exact path, because it is where the budget is supplied; the
+   * real-timer rule exempts the two `timers.ts` helpers, which own the
+   * direct call.
    */
-  const scopedWaitSources = [
+  const scopedSupportSources = [
     ...new Set([
       ...scopedTestSources,
       ...testSupportDirs().flatMap(scriptSources),
     ]),
-  ].filter((source) => source !== WAIT_HELPER)
+  ]
+
+  const scopedWaitSources = scopedSupportSources.filter(
+    (source) => source !== WAIT_HELPER,
+  )
+
+  const scopedRealTimerSources = scopedSupportSources.filter(
+    (source) => !REAL_TIMER_HELPERS.has(source),
+  )
 
   it('keeps no case budget below the shared one', () => {
     // The unscaled constant: a caller's GATE_TIME_SCALE must not change this
@@ -1006,6 +1056,27 @@ describe('workspace test configuration', () => {
     ).toEqual([])
   })
 
+  it('rejects every direct vi.useRealTimers use outside restoreRealTimers', () => {
+    const offenders = []
+    for (const source of scopedRealTimerSources) {
+      const count = bareRealTimerUses(
+        readFileSync(source, 'utf8'),
+        source,
+      ).length
+      if (count > 0) {
+        offenders.push(`${source}: ${count} direct real-timer use(s)`)
+      }
+    }
+    expect(
+      offenders,
+      'call restoreRealTimers (@speed/test-utils/timers) instead of '
+        + 'vi.useRealTimers: restoring the real clock directly strands the '
+        + "jsdom frame interval a fake-timer focus change armed, so a call, "
+        + 'an alias, an argument, a property value and a returned reference '
+        + 'all count, and only the two timers.ts helpers are exempt',
+    ).toEqual([])
+  })
+
   it('scans the test-support directories and exempts only the wait helper', () => {
     // The scan list is the guard's own blind spot: a helper source the
     // suites run on is where a bare wait hides. Every package's test-utils,
@@ -1031,6 +1102,18 @@ describe('workspace test configuration', () => {
     )
     expect(scopedWaitSources).toContain(join(demoWebRoot, 'src', 'a11y', 'scan.ts'))
     expect(scopedWaitSources).not.toContain(WAIT_HELPER)
+    // The real-timer rule scans the same sources, minus the two helpers
+    // that own the direct call.
+    expect(scopedRealTimerSources).toContain(join(demoWebRoot, 'src', 'a11y', 'scan.ts'))
+    expect(scopedRealTimerSources).toContain(
+      join(webRoot, 'test-utils', 'src', 'timers.test.ts'),
+    )
+    expect(scopedRealTimerSources).toContain(
+      join(demoWebRoot, 'src', 'impersonation.test.tsx'),
+    )
+    for (const helper of REAL_TIMER_HELPERS) {
+      expect(scopedRealTimerSources).not.toContain(helper)
+    }
   })
 
   it('scans the case budgets it is meant to catch', () => {
@@ -1145,6 +1228,71 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses("switch (x) { case ['vi.waitFor']: break }")).toHaveLength(0)
     expect(bareWaitUses("x in ['vi.waitFor']")).toHaveLength(0)
     expect(bareWaitUses("typeof ['vi.waitFor']")).toHaveLength(0)
+  })
+
+  it('scans the direct real-timer uses it is meant to catch', () => {
+    expect(bareRealTimerUses('vi.useRealTimers()')).toHaveLength(1)
+    expect(bareRealTimerUses("vi['useRealTimers']()")).toHaveLength(1)
+    expect(bareRealTimerUses('const { useRealTimers } = vi')).toHaveLength(1)
+    expect(
+      bareRealTimerUses('const { useRealTimers: restore } = vi'),
+    ).toHaveLength(1)
+    expect(bareRealTimerUses('let { useRealTimers } = vi')).toHaveLength(1)
+    expect(bareRealTimerUses('({ useRealTimers } = vi)')).toHaveLength(1)
+    expect(
+      bareRealTimerUses("const { ['useRealTimers']: r } = vi"),
+    ).toHaveLength(1)
+    expect(bareRealTimerUses('const restore = vi.useRealTimers')).toHaveLength(1)
+    expect(
+      bareRealTimerUses("const restore = vi['useRealTimers']"),
+    ).toHaveLength(1)
+    // Every use of the name is a member access, however it is reached:
+    // passed as an argument, kept as a property value, returned from an
+    // arrow, read through optional chaining, or invoked through a method of
+    // its own.
+    expect(bareRealTimerUses('wrap(vi.useRealTimers)')).toHaveLength(1)
+    expect(
+      bareRealTimerUses('const w = { restore: vi.useRealTimers }'),
+    ).toHaveLength(1)
+    expect(bareRealTimerUses('const w = () => vi.useRealTimers')).toHaveLength(1)
+    expect(bareRealTimerUses('vi?.useRealTimers()')).toHaveLength(1)
+    expect(bareRealTimerUses('vi.useRealTimers.call(null)')).toHaveLength(1)
+    expect(bareRealTimerUses("await vi?.['useRealTimers']()")).toHaveLength(1)
+    expect(
+      bareRealTimerUses('function f({ useRealTimers } = vi) {}'),
+    ).toHaveLength(1)
+    // A local alias, an aliased import and a direct import name the same
+    // restore.
+    expect(
+      bareRealTimerUses('const v = vi\nv.useRealTimers()'),
+    ).toHaveLength(1)
+    expect(
+      bareRealTimerUses("import { vi as x } from 'vitest'\nx.useRealTimers()"),
+    ).toHaveLength(1)
+    expect(
+      bareRealTimerUses(
+        "import { useRealTimers } from 'vitest'\nuseRealTimers()",
+      ),
+    ).toHaveLength(1)
+    // Prose and the helper are not uses.
+    expect(
+      bareRealTimerUses("it('calls vi.useRealTimers', () => {})"),
+    ).toHaveLength(0)
+    expect(bareRealTimerUses('// vi.useRealTimers()')).toHaveLength(0)
+    expect(bareRealTimerUses('await restoreRealTimers()')).toHaveLength(0)
+    expect(bareRealTimerUses('const { useFakeTimers } = vi')).toHaveLength(0)
+    expect(bareRealTimerUses('vi.useFakeTimers()')).toHaveLength(0)
+  })
+
+  it('exempts only the two timers helpers from the real-timer rule', () => {
+    for (const helper of REAL_TIMER_HELPERS) {
+      expect(scopedRealTimerSources).not.toContain(helper)
+      // The exemption exists for a helper that really does call the name,
+      // so the rule is not passing by an accidental zero.
+      expect(
+        bareRealTimerUses(readFileSync(helper, 'utf8'), helper).length,
+      ).toBeGreaterThan(0)
+    }
   })
 
   it('scans the wrappers and aliases a wait can hide behind', () => {
