@@ -45,10 +45,10 @@
  * declaration needs a feature this process does not serve, renders no
  * link; `relatedHref` overrides a resolved target. The page opens with
  * ui-kit's PageHeader, so the heading order never skips; its refresh action
- * resets the actions scope and re-reads the tenant, and is natively
- * disabled while the write is in flight. A host may append
- * its own sections to the main column and its own content to the side
- * column, both of which receive the loaded tenant.
+ * resets the actions scope and re-reads the tenant, and is unavailable
+ * (focusable, `aria-disabled`) while the status write is in flight. A
+ * host may append its own sections to the main column and its own content to
+ * the side column, both of which receive the loaded tenant.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -61,6 +61,7 @@ import { usePermission } from '@speed/auth-core'
 import {
   ListSkeleton,
   SectionCard,
+  useActivationGuard,
   useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -74,6 +75,7 @@ import {
   useAdminRouteTable,
 } from './internal/route-table.js'
 import { TENANT_QUERY_PARAM } from './internal/tenant-scope.js'
+import { useSectionHeadingFocus, removedControlHeldFocus } from './internal/section-heading-focus.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import {
   pageRefreshRead,
@@ -209,6 +211,32 @@ export function TenantDetailPage({
   // TenantProfileCard so the two regions never sit in one component.
   const statusFeedback = useWriteFeedback()
   const statusRegionRef = useFailureScroll(statusFeedback.outcome)
+  // The status switch saves on its own, so it stays focusable while its write
+  // is in flight: a natively disabled control would drop the focus the
+  // activation gave it. The guard swallows further activation, and the
+  // controlled value does not move until the write's refetch settles.
+  const onChangeStatus = useActivationGuard(
+    () => {
+      const settled = tenant.data
+      if (settled === undefined) {
+        return
+      }
+      const disabled = settled.status === 'disabled'
+      void statusFeedback.run(async () => {
+        await setStatus.mutateAsync({
+          name: settled.name,
+          status: disabled ? 'active' : 'disabled',
+        })
+        return t(
+          disabled
+            ? 'tenantDetail.actions.enabled'
+            : 'tenantDetail.actions.disabled',
+          { name: settled.name },
+        )
+      })
+    },
+    { busy: statusFeedback.pending },
+  )
   // The lifecycle group reports its landed writes to a page-level scope:
   // a deletion turns this page into a tombstone and withdraws the control
   // group, so its confirmation cannot live inside the group.
@@ -220,6 +248,24 @@ export function TenantDetailPage({
   // A refresh remounts the profile card through this key: its draft and its
   // own feedback are withdrawn together with the re-read.
   const [profileEpoch, setProfileEpoch] = useState(0)
+  // A landed deletion withdraws the whole lifecycle card, taking the delete
+  // control that started the write with it. The summary heading is the
+  // stable landmark the focus hands off to instead.
+  const summaryFocus = useSectionHeadingFocus()
+  const deletionLanded = useRef(false)
+  const tenantStatus = tenant.data?.status
+  useEffect(() => {
+    if (!deletionLanded.current) {
+      return
+    }
+    if (tenantStatus !== 'deleted') {
+      return
+    }
+    deletionLanded.current = false
+    if (removedControlHeldFocus()) {
+      summaryFocus.focusHeading()
+    }
+  }, [tenantStatus, summaryFocus.focusHeading])
 
   // The refresh action re-reads the tenant -- the page's one body read --
   // and resets the status and lifecycle scopes first: a result written
@@ -291,7 +337,11 @@ export function TenantDetailPage({
     const lifecycle = canManageTenant && !isPersonalTenant(settled.kind)
     return (
       <>
-        <SectionCard title={t('tenantDetail.summary')} sx={{ mb: 3 }}>
+        <SectionCard
+          ref={summaryFocus.sectionRef}
+          title={t('tenantDetail.summary')}
+          sx={{ mb: 3 }}
+        >
           <Box component="dl" sx={{ margin: 0 }}>
             <DefinitionRow label={t('tenantDetail.field.name')} value={settled.name} />
             <DefinitionRow
@@ -340,28 +390,16 @@ export function TenantDetailPage({
           >
             <Switch
               checked={!disabled}
-              disabled={statusFeedback.pending}
               slotProps={{
                 input: {
                   'aria-label': disabled
                     ? t('tenantDetail.actions.enable')
                     : t('tenantDetail.actions.disable'),
+                  'aria-busy': statusFeedback.pending ? 'true' : undefined,
+                  'aria-disabled': statusFeedback.pending ? 'true' : undefined,
                 },
               }}
-              onChange={() => {
-                void statusFeedback.run(async () => {
-                  await setStatus.mutateAsync({
-                    name: settled.name,
-                    status: disabled ? 'active' : 'disabled',
-                  })
-                  return t(
-                    disabled
-                      ? 'tenantDetail.actions.enabled'
-                      : 'tenantDetail.actions.disabled',
-                    { name: settled.name },
-                  )
-                })
-              }}
+              onChange={onChangeStatus}
             />
           </Box>
           {/* The actions section's one region, directly under the control
@@ -376,6 +414,9 @@ export function TenantDetailPage({
           <TenantLifecycleCard
             tenant={settled}
             onSuccess={lifecycleFeedback.succeed}
+            onDeleted={() => {
+              deletionLanded.current = true
+            }}
           />
         )}
 
@@ -507,9 +548,11 @@ export function TenantDetailPage({
 function TenantLifecycleCard({
   tenant,
   onSuccess,
+  onDeleted,
 }: {
   readonly tenant: AdminTenant
   readonly onSuccess: (message: string) => void
+  readonly onDeleted: (name: string) => void
 }) {
   const { t } = useAdminUiTranslation()
   return (
@@ -518,7 +561,11 @@ function TenantLifecycleCard({
       description={t('tenantLifecycle.sectionDescription')}
       sx={{ mb: 3 }}
     >
-      <TenantLifecycleActions tenant={tenant} onSuccess={onSuccess} />
+      <TenantLifecycleActions
+        tenant={tenant}
+        onSuccess={onSuccess}
+        onDeleted={onDeleted}
+      />
     </SectionCard>
   )
 }
