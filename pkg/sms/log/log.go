@@ -15,20 +15,25 @@
 // through the real budgets, the challenge row and the verification, so the
 // flow exercises the product's own state machine end to end.
 //
-// It answers a real per-template review: its Model declares Review.PerTemplate,
-// every language it does not know about answers pending, and Review moves one
-// code's verdict. A runtime template therefore starts pending in each language
-// it was registered in and settles language by language. Review is an input the
-// review assembly drives; the carrier itself is present in every build.
+// It answers a real per-template review: its Model declares Review.PerTemplate.
+// A configured verdict answers first; a code the configuration does not name
+// answers pending, and Review moves one code's verdict in memory. A runtime
+// template therefore starts pending in each language it was registered in unless
+// the configuration gives its code a verdict, and settles language by language.
+// Review is an input the review assembly drives; the carrier itself is present
+// in every build.
 package log
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedlog "github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
@@ -38,17 +43,65 @@ import (
 // configuration namespace takes.
 const ModuleName = "sms.log"
 
-// ConfigNamespace is where this module's input items are mounted. It declares
-// no carrier item of its own; it declares the selection item sms.carrier.
+// ConfigNamespace is where this module's input items are mounted: the approvals
+// item and the sms.carrier selection item it declares.
 const ConfigNamespace = ModuleName
 
 // CarrierName is what this product answers Name with and the name sms.carrier
 // uses for it.
 const CarrierName = "log"
 
-// moduleConfig is the empty configuration this carrier accepts: it needs no
-// credential and no endpoint, and every message goes to the process log.
-type moduleConfig struct{}
+// approvalsItem is the configuration item holding the review verdicts an
+// operator pinned for the carrier's vendor template codes.
+const approvalsItem = "approvals"
+
+// approvalConfig is one configured verdict: the review state and, optionally,
+// the reason the vendor gave.
+type approvalConfig struct {
+	State  sms.ApprovalState `config:"state"`
+	Reason string            `config:"reason"`
+}
+
+// moduleConfig is what this carrier accepts from configuration. It needs no
+// credential and no endpoint; the one item pins the verdicts the carrier
+// answers, keyed by the template code Offer returns, so a runtime template can
+// be given a review outcome without the review build's control route.
+type moduleConfig struct {
+	Approvals map[string]approvalConfig `config:"approvals"`
+}
+
+// configDefaults is what the carrier accepts when no source gives the item: an
+// empty verdict map, which leaves every code at the pending answer it had.
+var configDefaults = moduleConfig{Approvals: map[string]approvalConfig{}}
+
+// resolve turns the configured verdicts into what the carrier answers with,
+// refusing a state the per-template review does not define. A refusal names the
+// item and the code, so an operator can find the entry; it wraps
+// sms.ErrInvalidConfig, the sentinel this directory uses for a configuration it
+// cannot run on.
+func (c moduleConfig) resolve() (map[string]sms.Approval, error) {
+	if len(c.Approvals) == 0 {
+		return nil, nil
+	}
+	verdicts := make(map[string]sms.Approval, len(c.Approvals))
+	for _, code := range slices.Sorted(maps.Keys(c.Approvals)) {
+		if code == "" {
+			return nil, fmt.Errorf("%w: %s.%s holds a verdict under an empty template code, and a "+
+				"configured verdict is keyed by the code the carrier answers Offer with",
+				sms.ErrInvalidConfig, ConfigNamespace, approvalsItem)
+		}
+		entry := c.Approvals[code]
+		switch entry.State {
+		case sms.ApprovalPending, sms.ApprovalApproved, sms.ApprovalRejected, sms.ApprovalWithdrawn:
+		default:
+			return nil, fmt.Errorf("%w: %s.%s[%q].state is %q, and a configured verdict is "+
+				"pending, approved, rejected or withdrawn", sms.ErrInvalidConfig, ConfigNamespace,
+				approvalsItem, code, entry.State)
+		}
+		verdicts[code] = sms.Approval{State: entry.State, Reason: entry.Reason}
+	}
+	return verdicts, nil
+}
 
 func init() { core.ProcessRegistry.Register(Module()) }
 
@@ -65,17 +118,36 @@ func Module() core.Module {
 		Fallback:          true,
 		DeclaresSelection: true,
 		ConfigNamespace:   ConfigNamespace,
-		Config:            &moduleConfig{},
-		Stance: func(*moduleConfig) (core.Enablement, error) {
+		Config:            &configDefaults,
+		Items: map[string]config.Item{
+			approvalsItem: {
+				// A container leaf: the map takes its origin set from the
+				// primary config source, and its keys are the module's own
+				// data rather than names this module owns.
+				Origins: config.OriginPrimary,
+				Description: "the review verdicts this carrier answers, keyed by the vendor " +
+					"template code Offer returns; each takes a state of pending, approved, " +
+					"rejected or withdrawn and an optional reason. A code not named here " +
+					"answers pending",
+			},
+		},
+		Stance: func(cfg *moduleConfig) (core.Enablement, error) {
+			if _, err := cfg.resolve(); err != nil {
+				return core.Enablement{}, err
+			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
-		Open: func(ctx context.Context, _ *moduleConfig) (sms.Product, error) {
+		Open: func(ctx context.Context, cfg *moduleConfig) (sms.Product, error) {
+			verdicts, err := cfg.resolve()
+			if err != nil {
+				return nil, err
+			}
 			logger := speedlog.FromContext(ctx)
 			logger.Warn(
 				"sms: the log carrier is running and writes every message, code included, to the process log; "+
 					"configure sms.carrier to send through a vendor",
 				"carrier", CarrierName)
-			return New(logger), nil
+			return newProduct(logger, verdicts), nil
 		},
 	})
 }
@@ -88,17 +160,33 @@ type Reviewer interface {
 }
 
 // Product is the carrier: it answers both seams over the process log and holds
-// the in-memory verdicts the per-template review reports.
+// the verdicts the per-template review reports — the ones the configuration
+// pinned, read-only for the life of the process, and the in-memory ones Offer
+// and Review write.
 type Product struct {
 	mu       sync.Mutex
 	verdicts map[string]sms.Approval
-	logger   *slog.Logger
+	// configured holds the verdicts the configuration pinned, keyed by code.
+	// Nothing writes it after construction, so Approval reads it without the
+	// lock.
+	configured map[string]sms.Approval
+	logger     *slog.Logger
 }
 
-// New builds the carrier with an empty verdict store. A nil logger makes its
-// records go to the process default logger.
+// New builds the carrier with no configured verdicts and an empty in-memory
+// store. A nil logger makes its records go to the process default logger.
 func New(logger *slog.Logger) *Product {
-	return &Product{verdicts: make(map[string]sms.Approval), logger: logger}
+	return newProduct(logger, nil)
+}
+
+// newProduct builds the carrier over the verdicts the configuration pinned. It
+// copies them, so no caller keeps a handle into the store Approval reads.
+func newProduct(logger *slog.Logger, configured map[string]sms.Approval) *Product {
+	return &Product{
+		verdicts:   make(map[string]sms.Approval),
+		configured: maps.Clone(configured),
+		logger:     logger,
+	}
 }
 
 var (
@@ -111,10 +199,10 @@ func (*Product) Name() string { return CarrierName }
 
 // Model declares what this carrier can carry. It writes whatever the registry
 // resolved to the process log, so it accepts both a vendor code and a rendered
-// body. It reviews every template: a code starts pending and Review moves it,
-// which is the state the template registry reads back per language. It names no
-// identity: every message goes to the process log, so there is nothing to
-// choose between.
+// body. It reviews every template: the configuration pins a verdict or the code
+// starts pending and Review moves it, which is the state the template registry
+// reads back per language. It names no identity: every message goes to the
+// process log, so there is nothing to choose between.
 func (*Product) Model() sms.CarrierModel {
 	return sms.CarrierModel{
 		Content: sms.ContentSupport{TemplateCode: true, TextBody: true},
@@ -166,7 +254,8 @@ func Record(r sms.Resolved) (string, []any) {
 
 // Offer answers with a template code derived from the submission's name and
 // records that code as pending: a template just offered to the vendor has not
-// been reviewed yet.
+// been reviewed yet. The record lands in the in-memory store alone; a verdict
+// the configuration pinned for this code answers first.
 func (p *Product) Offer(_ context.Context, sub sms.Submission) (string, error) {
 	code := CarrierName + "-" + strings.ReplaceAll(sub.Name, " ", "-")
 	p.mu.Lock()
@@ -178,11 +267,17 @@ func (p *Product) Offer(_ context.Context, sub sms.Submission) (string, error) {
 	return code, nil
 }
 
-// Approval answers one code's review. A code the carrier has not been told
-// about is pending: the vendor has taken the template and has not answered yet,
-// which is the state a language starts in when a runtime template is
+// Approval answers one code's review. A configured verdict answers first,
+// before anything this process recorded: the configuration is the operator's
+// statement, and Offer and Review do not overwrite it. A code the configuration
+// does not name answers what the in-memory store holds, and a code neither
+// knows about is pending: the vendor has taken the template and has not answered
+// yet, which is the state a language starts in when a runtime template is
 // registered.
 func (p *Product) Approval(_ context.Context, code string) (sms.Approval, error) {
+	if approval, configured := p.configured[code]; configured {
+		return approval, nil
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if approval, held := p.verdicts[code]; held {
@@ -196,7 +291,8 @@ func (p *Product) Approval(_ context.Context, code string) (sms.Approval, error)
 // control over the carrier; the control route that calls it exists only in the
 // review build. The states it accepts are the per-template review states;
 // Unknown and NotRequired describe carriers whose review this process does not
-// track or that have none.
+// track or that have none. It writes the in-memory store alone: a verdict the
+// configuration pinned for this code still answers first.
 func (p *Product) Review(code string, state sms.ApprovalState, reason string) error {
 	if code == "" {
 		return fmt.Errorf("log carrier: a review names no vendor code")
@@ -215,7 +311,8 @@ func (p *Product) Review(code string, state sms.ApprovalState, reason string) er
 	return nil
 }
 
-// Retire forgets one code's verdict, so a code offered again starts pending.
+// Retire forgets one code's in-memory verdict, so a code offered again starts
+// pending. A verdict the configuration pinned for the code is not touched.
 func (p *Product) Retire(_ context.Context, code string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

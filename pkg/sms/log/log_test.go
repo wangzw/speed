@@ -62,8 +62,10 @@ func absentCarrier() core.Module {
 	})
 }
 
-// drive runs an assembly over body and answers the registry it built.
-func drive(t *testing.T, body string, buf *bytes.Buffer, participants ...string) *core.Registry {
+// driveErr runs an assembly over body and answers the registry it built and the
+// error the drive returned, so a case can hold a configuration the carrier
+// refuses at startup.
+func driveErr(t *testing.T, body string, buf *bytes.Buffer, participants ...string) (*core.Registry, error) {
 	t.Helper()
 	modules := []core.Module{smslog.Module(), loggerModule(buf), absentCarrier()}
 	reader := configtest.Reader(t, body, modules...)
@@ -73,13 +75,31 @@ func drive(t *testing.T, body string, buf *bytes.Buffer, participants ...string)
 	for _, module := range modules {
 		reg.Register(module)
 	}
-	if err := reg.Drive(t.Context(), core.Drive{
+	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageInit,
 		Participants: participants,
-	}); err != nil {
+	})
+	return reg, err
+}
+
+// drive runs an assembly over body and answers the registry it built.
+func drive(t *testing.T, body string, buf *bytes.Buffer, participants ...string) *core.Registry {
+	t.Helper()
+	reg, err := driveErr(t, body, buf, participants...)
+	if err != nil {
 		t.Fatalf("the drive failed: %v", err)
 	}
 	return reg
+}
+
+// provider resolves the carrier this assembly mounted.
+func provider(t *testing.T, reg *core.Registry) sms.Provider {
+	t.Helper()
+	mounted, err := core.Resolve[sms.Provider](reg)
+	if err != nil {
+		t.Fatalf("resolving the mounted carrier: %v", err)
+	}
+	return mounted
 }
 
 // TestTheLogCarrierIsTheFallbackAndWarns holds the fallback and the warning: with
@@ -155,5 +175,240 @@ func TestSelectionNoneLeavesNoCarrierAndNoWarning(t *testing.T) {
 	}
 	if out := buf.String(); strings.Contains(out, "process log") {
 		t.Errorf("the startup log %q warns about a log channel that is off", out)
+	}
+}
+
+// TestAConfiguredVerdictAnswersForItsCode holds the item itself: each state the
+// per-template review defines is accepted for its code, and the reason is
+// reported with it.
+func TestAConfiguredVerdictAnswersForItsCode(t *testing.T) {
+	const body = `{"sms":{"log":{"approvals":{
+		"log-signin":{"state":"approved","reason":"the vendor approved it"},
+		"log-notice":{"state":"rejected","reason":"the vendor turned it down"},
+		"log-reset":{"state":"withdrawn"},
+		"log-enroll":{"state":"pending","reason":"the vendor has not answered"}
+	}}}}`
+	reg := drive(t, body, &bytes.Buffer{},
+		smslog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+	mounted := provider(t, reg)
+
+	cases := []struct {
+		code string
+		want sms.Approval
+	}{
+		{"log-signin", sms.Approval{State: sms.ApprovalApproved, Reason: "the vendor approved it"}},
+		{"log-notice", sms.Approval{State: sms.ApprovalRejected, Reason: "the vendor turned it down"}},
+		{"log-reset", sms.Approval{State: sms.ApprovalWithdrawn}},
+		{"log-enroll", sms.Approval{State: sms.ApprovalPending, Reason: "the vendor has not answered"}},
+	}
+	for _, tc := range cases {
+		got, err := mounted.Approval(t.Context(), tc.code)
+		if err != nil {
+			t.Fatalf("Approval(%q): %v", tc.code, err)
+		}
+		if got != tc.want {
+			t.Errorf("Approval(%q) = %+v, want %+v", tc.code, got, tc.want)
+		}
+	}
+}
+
+// TestAConfiguredVerdictOutranksWhatTheProcessRecords holds the precedence:
+// Offer records pending and Review records its own verdict, and neither moves a
+// code the configuration pinned. Retire forgets only the in-memory record and
+// leaves the pinned verdict answering.
+func TestAConfiguredVerdictOutranksWhatTheProcessRecords(t *testing.T) {
+	const body = `{"sms":{"log":{"approvals":{"log-notice":{"state":"approved","reason":"pinned"}}}}}`
+	reg := drive(t, body, &bytes.Buffer{},
+		smslog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+	mounted := provider(t, reg)
+
+	code, err := mounted.Offer(t.Context(), sms.Submission{Name: "notice", Locale: "en-US"})
+	if err != nil {
+		t.Fatalf("Offer: %v", err)
+	}
+	if want := "log-notice"; code != want {
+		t.Fatalf("Offer answered %q, want %q", code, want)
+	}
+	pinned := sms.Approval{State: sms.ApprovalApproved, Reason: "pinned"}
+	got, err := mounted.Approval(t.Context(), code)
+	if err != nil {
+		t.Fatalf("Approval after Offer: %v", err)
+	}
+	if got != pinned {
+		t.Errorf("Approval after Offer = %+v, want the pinned verdict %+v", got, pinned)
+	}
+
+	reviewer, ok := mounted.(smslog.Reviewer)
+	if !ok {
+		t.Fatalf("the mounted carrier is %T, not the log carrier's Reviewer", mounted)
+	}
+	if err = reviewer.Review(code, sms.ApprovalRejected, "the process said no"); err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	got, err = mounted.Approval(t.Context(), code)
+	if err != nil {
+		t.Fatalf("Approval after Review: %v", err)
+	}
+	if got != pinned {
+		t.Errorf("Approval after Review = %+v, want the pinned verdict %+v", got, pinned)
+	}
+
+	if err = mounted.Retire(t.Context(), code); err != nil {
+		t.Fatalf("Retire: %v", err)
+	}
+	got, err = mounted.Approval(t.Context(), code)
+	if err != nil {
+		t.Fatalf("Approval after Retire: %v", err)
+	}
+	if got != pinned {
+		t.Errorf("Approval after Retire = %+v, want the pinned verdict %+v", got, pinned)
+	}
+}
+
+// TestAnUnconfiguredCodeAnswersPending holds the fallback answer: a code the
+// configuration does not name is pending, whether it was never offered or the
+// process recorded it a moment ago.
+func TestAnUnconfiguredCodeAnswersPending(t *testing.T) {
+	const body = `{"sms":{"log":{"approvals":{"log-signin":{"state":"approved"}}}}}`
+	reg := drive(t, body, &bytes.Buffer{},
+		smslog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+	mounted := provider(t, reg)
+
+	want := sms.Approval{State: sms.ApprovalPending}
+	got, err := mounted.Approval(t.Context(), "log-unknown")
+	if err != nil {
+		t.Fatalf("Approval of an unconfigured code: %v", err)
+	}
+	if got != want {
+		t.Errorf("an unconfigured code answers %+v, want %+v", got, want)
+	}
+
+	code, err := mounted.Offer(t.Context(), sms.Submission{Name: "unknown", Locale: "en-US"})
+	if err != nil {
+		t.Fatalf("Offer: %v", err)
+	}
+	got, err = mounted.Approval(t.Context(), code)
+	if err != nil {
+		t.Fatalf("Approval of an offered code: %v", err)
+	}
+	if got != want {
+		t.Errorf("an offered, unconfigured code answers %+v, want %+v", got, want)
+	}
+}
+
+// TestAnIllegalConfiguredStateFailsStartup holds the startup check: a state the
+// per-template review does not define fails the assembly, and the error names
+// the item and the code so the operator can find the entry. An unlisted state,
+// the review-only "not-required", and an empty or missing state all fail: an
+// entry that names no reviewable state must not start the carrier.
+func TestAnIllegalConfiguredStateFailsStartup(t *testing.T) {
+	cases := []struct {
+		name string
+		// entry is the configured verdict under the code log-signin.
+		entry string
+		// state is the value the failure must name, or "" when the entry names
+		// no state at all.
+		state string
+	}{
+		{"an unlisted state", `{"state":"approved-ish"}`, "approved-ish"},
+		{"the review-only state", `{"state":"not-required"}`, "not-required"},
+		{"an explicit empty state", `{"state":""}`, ""},
+		{"no state at all", `{}`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"sms":{"log":{"approvals":{"log-signin":` + tc.entry + `}}}}`
+			_, err := driveErr(t, body, &bytes.Buffer{},
+				smslog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+			if err == nil {
+				t.Fatal("the assembly started with an illegal configured state, want a failure")
+			}
+			if !errors.Is(err, sms.ErrInvalidConfig) {
+				t.Errorf("the failure = %v, want one wrapping sms.ErrInvalidConfig", err)
+			}
+			for _, want := range []string{"sms.log.approvals", "log-signin"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the failure %q does not name %q", err, want)
+				}
+			}
+			want := `state is "` + tc.state + `"`
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the failure %q does not name the state as %q", err, want)
+			}
+		})
+	}
+}
+
+// TestAConfiguredVerdictNeedsACode holds the other check the item makes: a
+// verdict keyed by no code names nothing the carrier could ever answer.
+func TestAConfiguredVerdictNeedsACode(t *testing.T) {
+	_, err := driveErr(t, `{"sms":{"log":{"approvals":{"":{"state":"approved"}}}}}`,
+		&bytes.Buffer{},
+		smslog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+	if err == nil {
+		t.Fatal("the assembly started with a verdict under an empty code, want a failure")
+	}
+	for _, want := range []string{"sms.log.approvals", "empty template code"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure %q does not name %q", err, want)
+		}
+	}
+}
+
+// TestAnEmptyApprovalsMapKeepsTheOldAnswers holds the default: with no verdict
+// configured, a code answers what the in-memory store holds and pending
+// otherwise, exactly as before the item existed.
+func TestAnEmptyApprovalsMapKeepsTheOldAnswers(t *testing.T) {
+	for _, body := range []string{`{}`, `{"sms":{"log":{"approvals":{}}}}`} {
+		reg := drive(t, body, &bytes.Buffer{},
+			smslog.ModuleName, "test.absent", "test.logger", config.ModuleName)
+		mounted := provider(t, reg)
+
+		want := sms.Approval{State: sms.ApprovalPending}
+		got, err := mounted.Approval(t.Context(), "log-anything")
+		if err != nil {
+			t.Fatalf("body %s: Approval: %v", body, err)
+		}
+		if got != want {
+			t.Errorf("body %s: an unknown code answers %+v, want %+v", body, got, want)
+		}
+
+		code, err := mounted.Offer(t.Context(), sms.Submission{Name: "anything", Locale: "en-US"})
+		if err != nil {
+			t.Fatalf("body %s: Offer: %v", body, err)
+		}
+		got, err = mounted.Approval(t.Context(), code)
+		if err != nil {
+			t.Fatalf("body %s: Approval of an offered code: %v", body, err)
+		}
+		if got != want {
+			t.Errorf("body %s: an offered code answers %+v, want %+v", body, got, want)
+		}
+
+		reviewer, ok := mounted.(smslog.Reviewer)
+		if !ok {
+			t.Fatalf("body %s: the mounted carrier is %T, not the log carrier's Reviewer", body, mounted)
+		}
+		if err = reviewer.Review(code, sms.ApprovalApproved, "reviewed by the control"); err != nil {
+			t.Fatalf("body %s: Review: %v", body, err)
+		}
+		got, err = mounted.Approval(t.Context(), code)
+		if err != nil {
+			t.Fatalf("body %s: Approval after Review: %v", body, err)
+		}
+		if want := (sms.Approval{State: sms.ApprovalApproved, Reason: "reviewed by the control"}); got != want {
+			t.Errorf("body %s: Review answers %+v, want %+v", body, got, want)
+		}
+
+		if err = mounted.Retire(t.Context(), code); err != nil {
+			t.Fatalf("body %s: Retire: %v", body, err)
+		}
+		got, err = mounted.Approval(t.Context(), code)
+		if err != nil {
+			t.Fatalf("body %s: Approval after Retire: %v", body, err)
+		}
+		if got != (sms.Approval{State: sms.ApprovalPending}) {
+			t.Errorf("body %s: a retired code answers %+v, want pending", body, got)
+		}
 	}
 }
