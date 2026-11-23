@@ -19,7 +19,7 @@
 # the tenant, and the runtime settings this build cannot start without —
 # authn.sms.allowed-prefixes above all, whose declared default admits no number.
 #
-# The database is ./var/review.db, relative to starters/demo/server. The
+# The database is ./var/e2e.db, relative to starters/demo/server. The
 # review build shares the var/ directory with the baseline (the token signing
 # key is var/token-signing-key.pem) but not its database file, so a review run
 # neither reads nor writes the state a baseline run keeps in var/demo.db.
@@ -82,8 +82,8 @@ authn:
   # identity provider it starts, which completes a real round trip.
   login:
     google:
-      client-id: "review-google-client"
-      client-secret: "review-google-secret"
+      client-id: "e2e-google-client"
+      client-secret: "e2e-google-secret"
       # REVIEW: the method's own defaults, written out so the end-to-end
       # harness can replace them with the provider it starts. A person running
       # this file by hand keeps the public provider and the system roots.
@@ -91,14 +91,14 @@ authn:
       allow-loopback: false
       root-ca-file: ""
     github:
-      client-id: "review-github-client"
-      client-secret: "review-github-secret"
+      client-id: "e2e-github-client"
+      client-secret: "e2e-github-secret"
     wechat-mp:
-      app-id: "review-wechat-mp-app"
-      app-secret: "review-wechat-mp-secret"
+      app-id: "e2e-wechat-mp-app"
+      app-secret: "e2e-wechat-mp-secret"
     wechat-web:
-      app-id: "review-wechat-web-app"
-      app-secret: "review-wechat-web-secret"
+      app-id: "e2e-wechat-web-app"
+      app-secret: "e2e-wechat-web-secret"
   # REVIEW: the enterprise SSO capability's outbound seams. The review build
   # assembles authn.sso.oidc, and a spec that drives the enterprise journey
   # points these three items at the local fixtures the end-to-end harness
@@ -178,20 +178,20 @@ sms:
         kind: verification
         params: ["code", "ttl_minutes"]
         codes:
-          en-US: "review-login"
-          zh-CN: "review-login-zh"
+          en-US: "e2e-login"
+          zh-CN: "e2e-login-zh"
       authn.code.mfa:
         kind: verification
         params: ["code", "ttl_minutes"]
         codes:
-          en-US: "review-mfa"
-          zh-CN: "review-mfa-zh"
+          en-US: "e2e-mfa"
+          zh-CN: "e2e-mfa-zh"
       authn.code.enroll:
         kind: verification
         params: ["code", "ttl_minutes"]
         codes:
-          en-US: "review-enroll"
-          zh-CN: "review-enroll-zh"
+          en-US: "e2e-enroll"
+          zh-CN: "e2e-enroll-zh"
       # REVIEW: the anonymous password reset's SMS channel. Optional in the
       # module's contract; declared here so the review build offers both reset
       # channels and the SMS journey can read its code from the log.
@@ -199,8 +199,8 @@ sms:
         kind: verification
         params: ["code", "ttl_minutes"]
         codes:
-          en-US: "review-reset"
-          zh-CN: "review-reset-zh"
+          en-US: "e2e-reset"
+          zh-CN: "e2e-reset-zh"
   # REVIEW: the SMS template page. The baseline imports sms.admin for its OpenAPI
   # fragment and names it on no command, so a normal deployment serves no page;
   # the review build mounts the management routes on the admin endpoint so the
@@ -384,5 +384,5 @@ jobs:
 
 db:
   sqlite:
-    dsn: "./var/review.db"
+    dsn: "./var/e2e.db"
     encryption-key: "dev-only-change-me-0123456789abcdef"

@@ -15,7 +15,7 @@
 import type { Page } from '@playwright/test'
 
 import { waitForVerificationCode } from '../fixtures/log'
-import type { ReviewServer } from '../fixtures/server'
+import type { E2EServer } from '../fixtures/server'
 import { copy } from './i18n'
 
 /** A password-signup account. */
@@ -123,7 +123,7 @@ export function createAccounts({
   server,
 }: {
   readonly page: Page
-  readonly server: ReviewServer
+  readonly server: E2EServer
 }): Accounts {
   const openSignIn = async (): Promise<void> => {
     await page.goto(`${server.url}/`)

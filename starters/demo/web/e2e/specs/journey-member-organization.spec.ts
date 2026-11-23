@@ -74,7 +74,7 @@
 // @covers REQ-notifications-001, REQ-notifications-003, REQ-notifications-004, REQ-notifications-010, REQ-notifications-028, REQ-notifications-029, REQ-notifications-030, REQ-notifications-051, REQ-tenancy-022, REQ-tenancy-036
 import type { Locator, Page } from '@playwright/test'
 
-import { reviewMember } from '../fixtures/config'
+import { e2eMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import {
   closeAccountMenu,
@@ -93,7 +93,7 @@ test.use({ seedMember: true })
 const TYPE_KEY = 'demo.notice'
 
 /** The seeded tenant's name, as its organization row renders it. */
-const TENANT_NAME = reviewMember.tenant
+const TENANT_NAME = e2eMember.tenant
 
 /** Escape the characters a regular expression reads as syntax. */
 function escapeRegExp(text: string): string {
@@ -265,8 +265,8 @@ test('member-organization: a member receives, reads and configures notifications
 
   await test.step('the member signs in and the tenant area confirms the current organization', async () => {
     await accounts.signIn({
-      identifier: reviewMember.username,
-      password: reviewMember.password,
+      identifier: e2eMember.username,
+      password: e2eMember.password,
     })
     await expect(
       page.getByRole('heading', {

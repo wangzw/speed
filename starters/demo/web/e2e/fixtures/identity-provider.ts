@@ -72,8 +72,8 @@ export const identityProviderUser = {
 
 /** The client the review configuration gives the Google method. */
 export const identityProviderClient = {
-  id: 'review-google-client',
-  secret: 'review-google-secret',
+  id: 'e2e-google-client',
+  secret: 'e2e-google-secret',
 } as const
 
 /** The copy the provider's own authorization page renders. */
@@ -102,8 +102,8 @@ export const enterpriseIdentityProviderRecordName = `_speed-authn.${enterpriseId
 
 /** The enterprise provider's client, which a spec writes into the provider row. */
 export const enterpriseIdentityProviderClient = {
-  id: 'review-enterprise-client',
-  secret: 'review-enterprise-secret',
+  id: 'e2e-enterprise-client',
+  secret: 'e2e-enterprise-secret',
 } as const
 
 /**

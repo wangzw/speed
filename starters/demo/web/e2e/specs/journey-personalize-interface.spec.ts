@@ -73,7 +73,7 @@
 // @covers REQ-account-003, REQ-account-033, REQ-presentation-003, REQ-presentation-004, REQ-presentation-007, REQ-presentation-008, REQ-presentation-009, REQ-presentation-010, REQ-presentation-030, REQ-security-022
 import type { Locator, Page } from '@playwright/test'
 
-import { reviewMember, smsRolloutOperator } from '../fixtures/config'
+import { e2eMember, smsRolloutOperator } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import {
@@ -357,8 +357,8 @@ test('personalize-interface: the chosen language and time zone take effect and s
     // and browser zone are the ones the journey moves away from.
     signInFrom = Date.now() - CLOCK_SKEW_MS
     await accounts.signIn({
-      identifier: reviewMember.username,
-      password: reviewMember.password,
+      identifier: e2eMember.username,
+      password: e2eMember.password,
     })
     signInTo = Date.now() + CLOCK_SKEW_MS
     await expect(
@@ -598,8 +598,8 @@ test('personalize-interface: the color mode applies at once, follows the device 
 
   await test.step('the member signs in and opens the account preferences pane', async () => {
     await accounts.signIn({
-      identifier: reviewMember.username,
-      password: reviewMember.password,
+      identifier: e2eMember.username,
+      password: e2eMember.password,
     })
     await expect(
       page.getByRole('heading', {

@@ -12,7 +12,7 @@
  * `system` tenant and an impersonated session.
  *
  * The administrator signs in as the review fixture's proved-email account
- * (`reviewTenantAdmin`). The seed makes it acme's only tenant administrator,
+ * (`e2eTenantAdmin`). The seed makes it acme's only tenant administrator,
  * which is the journey's precondition for the self-binding refusal: the
  * tenant has exactly one `tenant-admin` binding. The colleague comes through
  * a real invitation accepted in a second context; that acceptance is also
@@ -95,13 +95,13 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import {
-  reviewInvitee,
-  reviewOrdinaryMember,
-  reviewProtectedTenant,
-  reviewSystemTenantAdmin,
-  reviewTenantAdmin,
-  reviewTenantPolicies,
-  reviewUnprovedTenantAdmin,
+  e2eInvitee,
+  e2eOrdinaryMember,
+  e2eProtectedTenant,
+  e2eSystemTenantAdmin,
+  e2eTenantAdmin,
+  e2eTenantPolicies,
+  e2eUnprovedTenantAdmin,
 } from '../fixtures/config'
 import {
   enterpriseIdentityProviderClaims,
@@ -112,7 +112,7 @@ import {
 } from '../fixtures/identity-provider'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
-import type { ReviewServer } from '../fixtures/server'
+import type { E2EServer } from '../fixtures/server'
 import { scaledTimeout } from '../fixtures/time-scale'
 import { createAccounts } from '../helpers/accounts'
 import type { Accounts } from '../helpers/accounts'
@@ -300,10 +300,10 @@ function targetField(page: Page): Locator {
 async function chooseImpersonationTarget(page: Page): Promise<void> {
   const field = targetField(page)
   await field.click()
-  await field.fill(reviewTenantAdmin.username)
+  await field.fill(e2eTenantAdmin.username)
   await page
     .getByRole('option', {
-      name: new RegExp(escapeRegExp(reviewTenantAdmin.displayName)),
+      name: new RegExp(escapeRegExp(e2eTenantAdmin.displayName)),
     })
     .click()
 }
@@ -472,8 +472,8 @@ test.describe('the tenant administrator manages the organization', () => {
     try {
       await test.step('step 1: the tenant administrator signs in and the entry and card appear', async () => {
         await accounts.signIn({
-          identifier: reviewTenantAdmin.username,
-          password: reviewTenantAdmin.password,
+          identifier: e2eTenantAdmin.username,
+          password: e2eTenantAdmin.password,
         })
         await expect(homeHeading(page)).toBeVisible()
 
@@ -539,16 +539,16 @@ test.describe('the tenant administrator manages the organization', () => {
         // REQ-tenant-admin-008 / REQ-tenant-admin-051: the current
         // administrator is in its own list, with the name, account, roles,
         // status, source and join time the record carries.
-        const admin = memberRow(page, reviewTenantAdmin.displayName)
+        const admin = memberRow(page, e2eTenantAdmin.displayName)
         await expect(admin).toHaveCount(1)
         await expect(cell(admin, nameColumn)).toHaveText(
-          reviewTenantAdmin.displayName,
+          e2eTenantAdmin.displayName,
         )
         // The username column shows the member record's login username; the
         // name column beside it is the display name, and the internal account
         // id is not what either shows.
         await expect(cell(admin, usernameColumn)).toHaveText(
-          reviewTenantAdmin.username,
+          e2eTenantAdmin.username,
         )
         await expect(cell(admin, rolesColumn)).toContainText('tenant-admin')
         await expect(cell(admin, statusColumn)).toHaveText(
@@ -561,7 +561,7 @@ test.describe('the tenant administrator manages the organization', () => {
 
         // The template's ordinary member is here too, carrying no role;
         // nothing from another tenant is.
-        const ordinary = memberRow(page, reviewOrdinaryMember.displayName)
+        const ordinary = memberRow(page, e2eOrdinaryMember.displayName)
         await expect(ordinary).toHaveCount(1)
         await expect(cell(ordinary, usernameColumn)).toHaveText(
           ORDINARY_MEMBER_USERNAME,
@@ -590,9 +590,9 @@ test.describe('the tenant administrator manages the organization', () => {
         // rather than reporting an empty organization.
         await memberSearchField(page).fill('Demo Member')
         await expect
-          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count())
+          .poll(async () => memberRow(page, e2eOrdinaryMember.displayName).count())
           .toBe(1)
-        await expect(memberRow(page, reviewTenantAdmin.displayName)).toHaveCount(0)
+        await expect(memberRow(page, e2eTenantAdmin.displayName)).toHaveCount(0)
 
         await memberSearchField(page).fill('no-such-member')
         await expect(
@@ -617,8 +617,8 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           })
           .click()
-        await expect(memberRow(page, reviewTenantAdmin.displayName)).toHaveCount(1)
-        await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(1)
+        await expect(memberRow(page, e2eTenantAdmin.displayName)).toHaveCount(1)
+        await expect(memberRow(page, e2eOrdinaryMember.displayName)).toHaveCount(1)
       })
 
       await test.step('step 5: the role filter narrows the list and a ?role= address opens filtered', async () => {
@@ -630,9 +630,9 @@ test.describe('the tenant administrator manages the organization', () => {
           page.getByRole('option', { name: 'tenant-admin', exact: true }),
         )
         await expect
-          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count())
+          .poll(async () => memberRow(page, e2eTenantAdmin.displayName).count())
           .toBe(1)
-        await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(0)
+        await expect(memberRow(page, e2eOrdinaryMember.displayName)).toHaveCount(0)
         expect(new URL(page.url()).search).toBe(
           `?role=${encodeURIComponent('tenant-admin')}`,
         )
@@ -651,9 +651,9 @@ test.describe('the tenant administrator manages the organization', () => {
           }),
         ).toBeVisible()
         await expect
-          .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count())
+          .poll(async () => memberRow(page, e2eTenantAdmin.displayName).count())
           .toBe(1)
-        await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(0)
+        await expect(memberRow(page, e2eOrdinaryMember.displayName)).toHaveCount(0)
 
         // Clearing the filter removes the parameter and restores both rows.
         // A cleared role filter keeps the Select's empty value, which the
@@ -669,7 +669,7 @@ test.describe('the tenant administrator manages the organization', () => {
           null,
         )
         await expect
-          .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count())
+          .poll(async () => memberRow(page, e2eOrdinaryMember.displayName).count())
           .toBe(1)
         expect(new URL(page.url()).search).toBe('')
       })
@@ -679,7 +679,7 @@ test.describe('the tenant administrator manages the organization', () => {
           .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
             exact: true,
           })
-          .fill(reviewInvitee.identifier)
+          .fill(e2eInvitee.identifier)
         await page
           .getByRole('button', {
             name: copy('adminUi', 'invitations.issue.submit'),
@@ -689,7 +689,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           page.getByText(
             copy('adminUi', 'invitations.issued.confirm', {
-              email: reviewInvitee.identifier,
+              email: e2eInvitee.identifier,
             }),
             { exact: true },
           ),
@@ -698,7 +698,7 @@ test.describe('the tenant administrator manages the organization', () => {
         // REQ-tenant-admin-009 / REQ-tenant-admin-059: the acceptance value is
         // handed out once, with its validity, the bearer risk, the copy
         // control and the delivery result.
-        const panel = invitationLinkPanel(page, reviewInvitee.identifier)
+        const panel = invitationLinkPanel(page, e2eInvitee.identifier)
         await expect(panel).toBeVisible()
         await expect(
           panel.getByRole('button', {
@@ -745,7 +745,7 @@ test.describe('the tenant administrator manages the organization', () => {
         const close = panel.getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
             tenant: TENANT,
-            email: reviewInvitee.identifier,
+            email: e2eInvitee.identifier,
           }),
           exact: true,
         })
@@ -780,7 +780,7 @@ test.describe('the tenant administrator manages the organization', () => {
 
         // REQ-tenant-admin-010 / REQ-tenancy-015: the list carries the pending
         // invitation with its address, status, inviter and expiry.
-        const row = invitationRow(page, reviewInvitee.identifier)
+        const row = invitationRow(page, e2eInvitee.identifier)
         await expect(row).toHaveCount(1)
         await expect(
           row.getByText(copy('adminUi', 'invitations.status.pending'), {
@@ -790,7 +790,7 @@ test.describe('the tenant administrator manages the organization', () => {
         // The inviter column shows the display name; the username is the
         // hover title, not a second visible value.
         await expect(
-          row.getByText(reviewTenantAdmin.displayName, { exact: true }),
+          row.getByText(e2eTenantAdmin.displayName, { exact: true }),
         ).toBeVisible()
         const expiryColumn = await columnIndex(
           invitationsSection(page).getByRole('table'),
@@ -831,7 +831,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           invitee.getByText(
             copy('authUi', 'acceptInvitation.invitedBy', {
-              inviter: reviewTenantAdmin.displayName,
+              inviter: e2eTenantAdmin.displayName,
               tenant: TENANT,
             }),
             { exact: true },
@@ -865,13 +865,13 @@ test.describe('the tenant administrator manages the organization', () => {
             name: copy('authUi', 'passwordSignIn.identifierLabel'),
             exact: true,
           })
-          .fill(reviewInvitee.username)
+          .fill(e2eInvitee.username)
         await invitee
           .getByRole('textbox', {
             name: copy('authUi', 'passwordSignIn.passwordLabel'),
             exact: true,
           })
-          .fill(reviewInvitee.password)
+          .fill(e2eInvitee.password)
         await invitee
           .getByRole('button', {
             name: copy('authUi', 'passwordSignIn.submit'),
@@ -891,7 +891,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           invitee.getByText(
             copy('authUi', 'acceptInvitation.invitedBy', {
-              inviter: reviewTenantAdmin.displayName,
+              inviter: e2eTenantAdmin.displayName,
               tenant: TENANT,
             }),
             { exact: true },
@@ -1014,7 +1014,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await chooseInvitationStatus(page, 'invitations.status.accepted')
         // The invitation reached its accepted terminal state.
         await expect
-          .poll(() => invitationStatus(page, reviewInvitee.identifier))
+          .poll(() => invitationStatus(page, e2eInvitee.identifier))
           .toBe(copy('adminUi', 'invitations.status.accepted'))
 
         // The member table gained the colleague, active, role-less and
@@ -1036,15 +1036,15 @@ test.describe('the tenant administrator manages the organization', () => {
           table,
           copy('adminUi', 'members.column.source'),
         )
-        const joined = memberRow(page, reviewInvitee.displayName)
+        const joined = memberRow(page, e2eInvitee.displayName)
         await expect(joined).toHaveCount(1)
         // The username column shows the record's login username. The member
         // panel's own notices name the account by display name and username,
         // which is where the composed reference comes from.
         await expect(cell(joined, usernameColumn)).toHaveText(
-          reviewInvitee.username,
+          e2eInvitee.username,
         )
-        inviteeAccount = `${reviewInvitee.displayName} (${reviewInvitee.username})`
+        inviteeAccount = `${e2eInvitee.displayName} (${e2eInvitee.username})`
         await expect(cell(joined, sourceColumn)).toHaveText(
           copy('adminUi', 'members.source.invite'),
         )
@@ -1279,7 +1279,7 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
         await expect(
           usage.getByText(
-            `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+            `${e2eTenantAdmin.displayName} (${e2eTenantAdmin.username})`,
             { exact: true },
           ),
         ).toBeVisible()
@@ -1312,7 +1312,7 @@ test.describe('the tenant administrator manages the organization', () => {
             .click()
         }
 
-        const panel = await openMemberPanel(page, reviewInvitee.displayName)
+        const panel = await openMemberPanel(page, e2eInvitee.displayName)
         // REQ-tenant-admin-051: the panel lists the member's current bindings;
         // the joined member holds none yet.
         await expect(
@@ -1333,7 +1333,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           panel.getByText(
             copy('adminUi', 'members.panel.bindSaved', {
-              account: reviewInvitee.displayName,
+              account: e2eInvitee.displayName,
               role: ROLE,
             }),
             { exact: true },
@@ -1370,7 +1370,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           panel.getByText(
             copy('adminUi', 'members.panel.bindRemoved', {
-              account: reviewInvitee.displayName,
+              account: e2eInvitee.displayName,
               role: ROLE,
             }),
             { exact: true },
@@ -1399,7 +1399,7 @@ test.describe('the tenant administrator manages the organization', () => {
             async () =>
               (
                 await cell(
-                  memberRow(page, reviewInvitee.displayName),
+                  memberRow(page, e2eInvitee.displayName),
                   rolesColumn,
                 ).innerText()
               ).trim(),
@@ -1414,7 +1414,7 @@ test.describe('the tenant administrator manages the organization', () => {
           copy('adminUi', 'members.column.status'),
         )
 
-        const panel = await openMemberPanel(page, reviewInvitee.displayName)
+        const panel = await openMemberPanel(page, e2eInvitee.displayName)
         // REQ-tenant-admin-055: suspend asks first and the message says the
         // access is paused while the bindings are kept and resumable.
         await panel
@@ -1431,7 +1431,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           suspendDialog.getByText(
             copy('adminUi', 'members.suspendMessage', {
-              name: reviewInvitee.displayName,
+              name: e2eInvitee.displayName,
             }),
             { exact: true },
           ),
@@ -1471,11 +1471,11 @@ test.describe('the tenant administrator manages the organization', () => {
 
         await closeMemberPanel(page)
         await expect(
-          cell(memberRow(page, reviewInvitee.displayName), statusColumn),
+          cell(memberRow(page, e2eInvitee.displayName), statusColumn),
         ).toHaveText(copy('adminUi', 'members.status.suspended'))
 
         // Resume restores the membership and therefore the role's effect.
-        const resumed = await openMemberPanel(page, reviewInvitee.displayName)
+        const resumed = await openMemberPanel(page, e2eInvitee.displayName)
         await resumed
           .getByRole('button', {
             name: copy('adminUi', 'members.panel.resume'),
@@ -1501,12 +1501,12 @@ test.describe('the tenant administrator manages the organization', () => {
         ).toBeVisible()
         await closeMemberPanel(page)
         await expect(
-          cell(memberRow(page, reviewInvitee.displayName), statusColumn),
+          cell(memberRow(page, e2eInvitee.displayName), statusColumn),
         ).toHaveText(copy('adminUi', 'members.status.active'))
       })
 
       await test.step('step 13: the administrator cannot suspend itself and cannot unbind its own tenant-admin', async () => {
-        const panel = await openMemberPanel(page, reviewTenantAdmin.displayName)
+        const panel = await openMemberPanel(page, e2eTenantAdmin.displayName)
 
         // REQ-tenant-admin-056: the control is disabled before any request,
         // and the panel says why.
@@ -1543,7 +1543,7 @@ test.describe('the tenant administrator manages the organization', () => {
       })
 
       await test.step('step 14: removing the member clears them from the list after the double confirmation', async () => {
-        const panel = await openMemberPanel(page, reviewInvitee.displayName)
+        const panel = await openMemberPanel(page, e2eInvitee.displayName)
         // REQ-tenant-admin-057: the message names the role bindings the
         // removal clears and the reversible alternative.
         await panel
@@ -1560,7 +1560,7 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(
           dialog.getByText(
             copy('adminUi', 'members.removeMessage', {
-              name: reviewInvitee.displayName,
+              name: e2eInvitee.displayName,
             }),
             { exact: true },
           ),
@@ -1586,7 +1586,7 @@ test.describe('the tenant administrator manages the organization', () => {
             { exact: true },
           ),
         ).toBeVisible()
-        await expect(memberRow(page, reviewInvitee.displayName)).toHaveCount(0)
+        await expect(memberRow(page, e2eInvitee.displayName)).toHaveCount(0)
       })
 
       await test.step('step 15: the platform-admin role write is refused and the catalog never offers it', async () => {
@@ -1888,12 +1888,12 @@ test.describe('the tenant administrator manages the organization', () => {
 
         // REQ-tenant-admin-058: each filter narrows the server read.
         await chooseInvitationStatus(page, 'invitations.status.accepted')
-        await expect(invitationRow(page, reviewInvitee.identifier)).toHaveCount(1)
+        await expect(invitationRow(page, e2eInvitee.identifier)).toHaveCount(1)
         await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(0)
 
         await chooseInvitationStatus(page, 'invitations.status.pending')
         await expect(invitationRow(page, RESENT_INVITEE)).toHaveCount(1)
-        await expect(invitationRow(page, reviewInvitee.identifier)).toHaveCount(0)
+        await expect(invitationRow(page, e2eInvitee.identifier)).toHaveCount(0)
 
         // Nothing has been revoked or expired yet, so each of those filters
         // names its own empty result rather than reporting an empty
@@ -2038,7 +2038,7 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           }),
         ).toHaveCount(0)
-        for (const namespace of reviewTenantPolicies.platformOnlyNamespaces) {
+        for (const namespace of e2eTenantPolicies.platformOnlyNamespaces) {
           await expect(page.getByText(namespace, { exact: false })).toHaveCount(0)
         }
 
@@ -2065,12 +2065,12 @@ test.describe('the tenant administrator manages the organization', () => {
         expect(platformSettings.status).toBe(200)
         const platformItems = platformSettings.items.filter(
           (item) =>
-            !(reviewTenantPolicies.keys as readonly string[]).includes(
+            !(e2eTenantPolicies.keys as readonly string[]).includes(
               item.key,
             ),
         )
         const platformKeys = new Set(platformItems.map((item) => item.key))
-        for (const key of reviewTenantPolicies.platformKeys) {
+        for (const key of e2eTenantPolicies.platformKeys) {
           expect(
             platformKeys.has(key),
             `the platform listing is missing ${key}`,
@@ -2079,14 +2079,14 @@ test.describe('the tenant administrator manages the organization', () => {
 
         const probe = await server.probeTenantSettings({
           tenant: TENANT,
-          identifier: reviewTenantAdmin.identifier,
-          password: reviewTenantAdmin.password,
+          identifier: e2eTenantAdmin.identifier,
+          password: e2eTenantAdmin.password,
           items: platformItems,
           namespaces: [...new Set(platformItems.map((item) => item.namespace))],
         })
         expect(probe.read.status).toBe(200)
         expect(probe.read.items.map((item) => item.key).sort()).toEqual(
-          [...reviewTenantPolicies.keys].sort(),
+          [...e2eTenantPolicies.keys].sort(),
         )
         for (const item of platformItems) {
           expect(probe.writes[item.key]?.status, `PUT ${item.key}`).toBe(404)
@@ -2113,7 +2113,7 @@ test.describe('the tenant administrator manages the organization', () => {
       await test.step('step 18: a personal-tenant switch retracts the entry and a direct visit returns home', async () => {
         // A personal organization is named after the account it belongs to, so
         // the switcher row carries the administrator's own display name.
-        const personal = reviewTenantAdmin.displayName
+        const personal = e2eTenantAdmin.displayName
 
         // REQ-tenant-admin-003/006: the switch retracts the entry, the account
         // menu's organization group and the card at once.
@@ -2370,8 +2370,8 @@ test.describe('the organization SSO page', () => {
 
     const signInAdmin = async (): Promise<void> => {
       await accounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(page)).toBeVisible()
     }
@@ -2552,8 +2552,8 @@ test.describe('the system tenant is not manageable', () => {
     // The account holds the system tenant's tenant-admin role and no platform
     // permission.
     await accounts.signIn({
-      identifier: reviewSystemTenantAdmin.identifier,
-      password: reviewSystemTenantAdmin.password,
+      identifier: e2eSystemTenantAdmin.identifier,
+      password: e2eSystemTenantAdmin.password,
     })
     await expect(homeHeading(page)).toBeVisible()
 
@@ -2730,8 +2730,8 @@ test.describe('an unproved email is refused until it is proved', () => {
     const roleName = 'Proof Pending'
 
     await accounts.signIn({
-      identifier: reviewUnprovedTenantAdmin.username,
-      password: reviewUnprovedTenantAdmin.password,
+      identifier: e2eUnprovedTenantAdmin.username,
+      password: e2eUnprovedTenantAdmin.password,
     })
     await expect(homeHeading(page)).toBeVisible()
     // The unproved address does not block admission; the entry still appears.
@@ -2776,7 +2776,7 @@ test.describe('an unproved email is refused until it is proved', () => {
     await test.step('step 2: the administrator proves the address from the standing notice', async () => {
       const banner = verificationBanner(
         page,
-        reviewUnprovedTenantAdmin.identifier,
+        e2eUnprovedTenantAdmin.identifier,
       )
       await expect(banner).toBeVisible()
 
@@ -2800,7 +2800,7 @@ test.describe('an unproved email is refused until it is proved', () => {
       const { code } = await waitForVerificationCode(
         server.log,
         'mail',
-        reviewUnprovedTenantAdmin.identifier,
+        e2eUnprovedTenantAdmin.identifier,
         { after: beforeCode },
       )
       await codeField.fill(code)
@@ -3098,8 +3098,8 @@ test.describe('a protected business tenant is read-only', () => {
     const { page, server, accounts } = demo
 
     await accounts.signIn({
-      identifier: reviewProtectedTenant.username,
-      password: reviewProtectedTenant.password,
+      identifier: e2eProtectedTenant.username,
+      password: e2eProtectedTenant.password,
     })
     await expect(homeHeading(page)).toBeVisible()
 
@@ -3140,9 +3140,9 @@ test.describe('a protected business tenant is read-only', () => {
     // read-only state above is asserted first; this is the write that state
     // promises cannot land.
     const refusal = await server.writeTenantSetting({
-      tenant: reviewProtectedTenant.tenant,
-      identifier: reviewProtectedTenant.identifier,
-      password: reviewProtectedTenant.password,
+      tenant: e2eProtectedTenant.tenant,
+      identifier: e2eProtectedTenant.identifier,
+      password: e2eProtectedTenant.password,
       namespace: 'tenant.admission',
       key: 'require-mfa',
       value: 'true',
@@ -3557,7 +3557,7 @@ async function acceptInvitationAsInvitee(
   account: {
     readonly username: string
     readonly password: string
-  } = reviewInvitee,
+  } = e2eInvitee,
 ): Promise<void> {
   await invitee.goto(link)
   // The landing shows the invitation summary first; signing in is the
@@ -3625,7 +3625,7 @@ async function acceptInvitationAsInvitee(
 async function registerAndAcceptThroughLink(
   invitee: Page,
   link: string,
-  server: ReviewServer,
+  server: E2EServer,
 ): Promise<void> {
   const invitationPath = new URL(link).pathname
   await invitee.goto(link)
@@ -3768,7 +3768,7 @@ async function bindMemberRole(
  */
 async function signInAndVerifyOperator(
   page: Page,
-  server: ReviewServer,
+  server: E2EServer,
   accounts: Accounts,
 ): Promise<void> {
   await accounts.signIn({
@@ -3827,8 +3827,8 @@ test.describe('the organization profile page belongs to its owner', () => {
     const { page, accounts } = demo
 
     await accounts.signIn({
-      identifier: reviewTenantAdmin.username,
-      password: reviewTenantAdmin.password,
+      identifier: e2eTenantAdmin.username,
+      password: e2eTenantAdmin.password,
     })
     await expect(homeHeading(page)).toBeVisible()
 
@@ -3852,10 +3852,10 @@ test.describe('the organization profile page belongs to its owner', () => {
     )
     await expect(owner).toBeVisible()
     await expect(owner).toHaveText(
-      `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+      `${e2eTenantAdmin.displayName} (${e2eTenantAdmin.username})`,
     )
-    expect(profileOwner.owner_display_name).toBe(reviewTenantAdmin.displayName)
-    expect(profileOwner.owner_username).toBe(reviewTenantAdmin.username)
+    expect(profileOwner.owner_display_name).toBe(e2eTenantAdmin.displayName)
+    expect(profileOwner.owner_username).toBe(e2eTenantAdmin.username)
     expect(
       profileOwner.owner_account,
       'the profile names no owner account',
@@ -3961,8 +3961,8 @@ test.describe('the organization profile page belongs to its owner', () => {
 
     try {
       await accounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(page)).toBeVisible()
 
@@ -3974,7 +3974,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       // A second tenant administrator who is not the owner: invite the
       // colleague, accept, then bind the tenant-admin role through the member
       // panel.
-      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -3982,7 +3982,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
       const invitee = await inviteeContext.newPage()
       await acceptInvitationAsInvitee(invitee, link)
-      await bindMemberRole(page, reviewInvitee.displayName, 'tenant-admin')
+      await bindMemberRole(page, e2eInvitee.displayName, 'tenant-admin')
 
       // The binding changes the invitee's tenant permission set, which the
       // session read at sign-in. A fresh sign-in re-reads it; the signed-in
@@ -3990,8 +3990,8 @@ test.describe('the organization profile page belongs to its owner', () => {
       const inviteeAccounts = createAccounts({ page: invitee, server })
       await inviteeAccounts.signOut()
       await inviteeAccounts.signIn({
-        identifier: reviewInvitee.username,
-        password: reviewInvitee.password,
+        identifier: e2eInvitee.username,
+        password: e2eInvitee.password,
       })
       await expect(homeHeading(invitee)).toBeVisible()
 
@@ -4006,7 +4006,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       )
       await expect(owner).toBeVisible()
       await expect(owner).toHaveText(
-        `${reviewTenantAdmin.displayName} (${reviewTenantAdmin.username})`,
+        `${e2eTenantAdmin.displayName} (${e2eTenantAdmin.username})`,
       )
       await expect(ownershipSection(invitee)).toHaveCount(0)
       await expect(transferOwnerButton(invitee)).toHaveCount(0)
@@ -4027,8 +4027,8 @@ test.describe('the organization profile page belongs to its owner', () => {
 
     try {
       await accounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(page)).toBeVisible()
 
@@ -4039,7 +4039,7 @@ test.describe('the organization profile page belongs to its owner', () => {
 
       // The target is an active member of the organization, reached through
       // a real invitation accepted in a second context.
-      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -4049,7 +4049,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       await acceptInvitationAsInvitee(invitee, link)
 
       await openOrganizationPage(page, 'profile')
-      await requestOwnerTransfer(page, reviewInvitee)
+      await requestOwnerTransfer(page, e2eInvitee)
 
       // The target's own notification surface carries the request. Its body
       // renders the request's expiry as a time in the viewer's display zone:
@@ -4105,7 +4105,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         copy('adminUi', 'tenantProfile.field.owner'),
       )
       await expect(owner).toHaveText(
-        `${reviewInvitee.displayName} (${reviewInvitee.username})`,
+        `${e2eInvitee.displayName} (${e2eInvitee.username})`,
       )
       await expect(transferOwnerButton(page)).toHaveCount(0)
       await expect(deleteOrganizationButton(page)).toHaveCount(0)
@@ -4118,7 +4118,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         callerMembers,
         copy('adminUi', 'members.column.roles'),
       )
-      const retained = memberRow(page, reviewTenantAdmin.displayName)
+      const retained = memberRow(page, e2eTenantAdmin.displayName)
       await expect(retained).toHaveCount(1)
       await expect(cell(retained, callerRoles)).toContainText('tenant-admin')
 
@@ -4127,8 +4127,8 @@ test.describe('the organization profile page belongs to its owner', () => {
       const inviteeAccounts = createAccounts({ page: invitee, server })
       await inviteeAccounts.signOut()
       await inviteeAccounts.signIn({
-        identifier: reviewInvitee.username,
-        password: reviewInvitee.password,
+        identifier: e2eInvitee.username,
+        password: e2eInvitee.password,
       })
       await expect(homeHeading(invitee)).toBeVisible()
       await expect(organizationHomeCard(invitee)).toBeVisible()
@@ -4142,7 +4142,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       // read fresh from the account store rather than carried over from the
       // previous owner.
       await expect(promotedOwner).toHaveText(
-        `${reviewInvitee.displayName} (${reviewInvitee.username})`,
+        `${e2eInvitee.displayName} (${e2eInvitee.username})`,
       )
       await expect(transferOwnerButton(invitee)).toBeVisible()
       await expect(deleteOrganizationButton(invitee)).toBeVisible()
@@ -4153,12 +4153,12 @@ test.describe('the organization profile page belongs to its owner', () => {
         members,
         copy('adminUi', 'members.column.roles'),
       )
-      const promoted = memberRow(invitee, reviewInvitee.displayName)
+      const promoted = memberRow(invitee, e2eInvitee.displayName)
       await expect(promoted).toHaveCount(1)
       await expect(cell(promoted, rolesColumn)).toContainText('tenant-admin')
       // The previous owner is still a member of the organization and still
       // carries tenant-admin.
-      const previous = memberRow(invitee, reviewTenantAdmin.displayName)
+      const previous = memberRow(invitee, e2eTenantAdmin.displayName)
       await expect(previous).toHaveCount(1)
       await expect(cell(previous, rolesColumn)).toContainText('tenant-admin')
 
@@ -4201,8 +4201,8 @@ test.describe('the organization profile page belongs to its owner', () => {
 
     try {
       await accounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(page)).toBeVisible()
 
@@ -4213,7 +4213,7 @@ test.describe('the organization profile page belongs to its owner', () => {
 
       // The transfer's target is an active member, reached through a real
       // invitation accepted in a second context.
-      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -4266,13 +4266,13 @@ test.describe('the organization profile page belongs to its owner', () => {
       const other = await otherContext.newPage()
       const otherAccounts = createAccounts({ page: other, server })
       await otherAccounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(other)).toBeVisible()
       await switchOrganization(other, 'acme', OWNED_DISPLAY_NAME)
       await openOrganizationPage(other, 'profile')
-      await requestOwnerTransfer(other, reviewInvitee)
+      await requestOwnerTransfer(other, e2eInvitee)
 
       // The second session stays on the organization's profile: a request
       // does not move the owner. The target then confirms on its own
@@ -4309,8 +4309,8 @@ test.describe('the organization profile page belongs to its owner', () => {
     const { page, accounts } = demo
 
     await accounts.signIn({
-      identifier: reviewTenantAdmin.username,
-      password: reviewTenantAdmin.password,
+      identifier: e2eTenantAdmin.username,
+      password: e2eTenantAdmin.password,
     })
     await expect(homeHeading(page)).toBeVisible()
 
@@ -4430,8 +4430,8 @@ test.describe('the organization profile page belongs to its owner', () => {
 
     try {
       await accounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(page)).toBeVisible()
 
@@ -4441,7 +4441,7 @@ test.describe('the organization profile page belongs to its owner', () => {
       })
 
       // The target is an active member when the dialog lists it.
-      const link = await issueInvitation(page, server, reviewInvitee.identifier)
+      const link = await issueInvitation(page, server, e2eInvitee.identifier)
       inviteeContext = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
@@ -4465,7 +4465,7 @@ test.describe('the organization profile page belongs to its owner', () => {
         }),
         page.getByRole('option', {
           name: new RegExp(
-            `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+            `^${escapeRegExp(e2eInvitee.displayName)} \\(.+\\)$`,
           ),
         }),
       )
@@ -4482,13 +4482,13 @@ test.describe('the organization profile page belongs to its owner', () => {
       const other = await otherContext.newPage()
       const otherAccounts = createAccounts({ page: other, server })
       await otherAccounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(other)).toBeVisible()
       await switchOrganization(other, 'acme', OWNED_DISPLAY_NAME)
       await openOrganizationPage(other, 'invitations')
-      await manageMemberButton(other, reviewInvitee.displayName).click()
+      await manageMemberButton(other, e2eInvitee.displayName).click()
       const panel = memberPanel(other)
       await expect(panel).toBeVisible()
       await panel
@@ -4552,8 +4552,8 @@ test.describe('the organization profile page belongs to its owner', () => {
 
     try {
       await accounts.signIn({
-        identifier: reviewTenantAdmin.username,
-        password: reviewTenantAdmin.password,
+        identifier: e2eTenantAdmin.username,
+        password: e2eTenantAdmin.password,
       })
       await expect(homeHeading(page)).toBeVisible()
 

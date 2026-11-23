@@ -64,7 +64,7 @@ keeps. One project is run on its own with `--project webkit`.
   `../server/dist-e2e`, because vite resolves a relative `outDir` against the
   web package. It then builds three Go targets. The review binary:
   `go -C starters/demo/server build -tags review,e2e -p=$GATE_JOBS -o
-  <root>/harness/demo-review .`; the default binary:
+  <root>/harness/demo-e2e .`; the default binary:
   `go -C starters/demo/server build -tags e2e -p=$GATE_JOBS -o
   <root>/harness/demo-deploy .`; and the SAML signing helper:
   `go -C starters/demo/server build -p=$GATE_JOBS -o

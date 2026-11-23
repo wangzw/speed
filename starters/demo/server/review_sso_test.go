@@ -89,7 +89,7 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
 		root := t.TempDir()
 		body := reviewConfigBody(t, root,
 			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
-			filepath.Join(root, "review.db"))
+			filepath.Join(root, "e2e.db"))
 		if !strings.Contains(body, reviewSSOSeamsBlock) {
 			t.Fatalf("the review configuration holds no enterprise SSO defaults block (%q)", reviewSSOSeamsBlock)
 		}

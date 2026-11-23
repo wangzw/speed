@@ -106,7 +106,7 @@ func TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 		"X-Tenant":      personalTenantName(t, client, base, token),
 	}
 
-	dsn := filepath.Join(filepath.Dir(configPath), "review.db")
+	dsn := filepath.Join(filepath.Dir(configPath), "e2e.db")
 	after := reviewLedgerMark(t, dsn)
 
 	dispatched := send(t, client, http.MethodPost, base+reviewNotificationControlPath, nil, headers)

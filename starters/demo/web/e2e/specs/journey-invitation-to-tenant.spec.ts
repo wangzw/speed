@@ -13,7 +13,7 @@
  * opens the invitation-and-members page, selects the seeded tenant and finds
  * the tenant's existing member.
  *
- * The operator invites an address no account holds (reviewInvitee in
+ * The operator invites an address no account holds (e2eInvitee in
  * fixtures/config.ts). This server is started with the invitation mail
  * unconfigured (`invitationMail: false`): the issue answer then carries the
  * one-time token, and the page's panel hands out the acceptance link. With the
@@ -106,7 +106,7 @@
 // @covers REQ-platform-admin-001, REQ-platform-admin-032, REQ-platform-admin-033, REQ-signin-030, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-017, REQ-tenancy-018, REQ-tenancy-019, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-035, REQ-tenancy-043, REQ-tenancy-057, REQ-tenancy-078
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
-import { reviewInvitee } from '../fixtures/config'
+import { e2eInvitee } from '../fixtures/config'
 import { expect, test, type DemoTarget } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import {
@@ -170,9 +170,9 @@ const EXISTING_MEMBER_USERNAME = 'member'
  * refusal is the address mismatch and not a missing proof.
  */
 const OUTSIDER = {
-  username: 'outsider-review',
+  username: 'outsider-e2e',
   email: 'outsider@demo.test',
-  password: 'outsider-review-secret',
+  password: 'outsider-e2e-secret',
   displayName: 'Invitation Outsider',
 } as const
 
@@ -286,7 +286,7 @@ function invitationRow(page: Page): Locator {
   return invitationSection(page)
     .getByRole('table')
     .locator('tbody tr')
-    .filter({ has: page.getByText(reviewInvitee.identifier, { exact: true }) })
+    .filter({ has: page.getByText(e2eInvitee.identifier, { exact: true }) })
 }
 
 /** The one-time panel that hands out the issued invitation's acceptance link. */
@@ -725,7 +725,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // a chosen lifetime the implementation ignored cannot pass on both the
       // list and the accept screen agreeing with each other.
       issuedAt = Date.now()
-      await issueInvitation(page, reviewInvitee.identifier)
+      await issueInvitation(page, e2eInvitee.identifier)
       issuedAtConfirmed = Date.now()
     })
 
@@ -733,7 +733,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       acceptanceLink = await takeAcceptanceLink(
         page,
         server,
-        reviewInvitee.identifier,
+        e2eInvitee.identifier,
       )
     })
 
@@ -748,7 +748,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
           new URL(response.url()).pathname ===
             `/api/v1/tenants/${TENANT}/invitations`,
       )
-      await submitInvitation(page, reviewInvitee.identifier)
+      await submitInvitation(page, e2eInvitee.identifier)
       const answer = await refused
       expect(answer.status()).toBe(409)
       const problem = (await answer.json()) as { type?: string }
@@ -782,7 +782,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       const pending = invitationRowInStatus(page, 'invitations.status.pending')
       await expect(pending).toHaveCount(1)
       await expect(
-        pending.getByText(reviewInvitee.identifier, { exact: true }),
+        pending.getByText(e2eInvitee.identifier, { exact: true }),
       ).toBeVisible()
       // The inviter cell shows the display name alone; the complete
       // "display name (username)" is its hover title.
@@ -837,10 +837,10 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         inviteeContext,
         acceptanceLink,
         {
-          username: reviewInvitee.username,
-          email: reviewInvitee.identifier,
-          password: reviewInvitee.password,
-          displayName: reviewInvitee.displayName,
+          username: e2eInvitee.username,
+          email: e2eInvitee.identifier,
+          password: e2eInvitee.password,
+          displayName: e2eInvitee.displayName,
         },
         server,
       )
@@ -871,7 +871,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // The public read masks the address on the server, so the full address
       // never reaches the page.
       await expect(
-        invitee.getByText(reviewInvitee.identifier, { exact: true }),
+        invitee.getByText(e2eInvitee.identifier, { exact: true }),
       ).toHaveCount(0)
       // The deadline the test computed from the chosen thirty-day lifetime,
       // in the display zone the browser is pinned to -- not a value the
@@ -1102,15 +1102,15 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       )
       const invited = members
         .locator('tbody tr')
-        .filter({ hasText: reviewInvitee.displayName })
+        .filter({ hasText: e2eInvitee.displayName })
       await expect(invited).toHaveCount(1)
       await expect(invited.locator('td').nth(nameColumn)).toHaveText(
-        reviewInvitee.displayName,
+        e2eInvitee.displayName,
       )
       // The Username column carries the member read's login username, not
       // the composed identity: the header names exactly that value.
       await expect(invited.locator('td').nth(usernameColumn)).toHaveText(
-        reviewInvitee.username,
+        e2eInvitee.username,
       )
       await expect(invited.locator('td').nth(sourceColumn)).toHaveText(
         copy('adminUi', 'members.source.invite'),
@@ -1148,11 +1148,11 @@ test('invitation-to-tenant: an account that proves a different address cannot ac
     })
 
     await test.step('step 1: the operator issues an invitation and the panel hands out the link', async () => {
-      await issueInvitation(page, reviewInvitee.identifier)
+      await issueInvitation(page, e2eInvitee.identifier)
       acceptanceLink = await takeAcceptanceLink(
         page,
         server,
-        reviewInvitee.identifier,
+        e2eInvitee.identifier,
       )
       outsiderContext = await browser.newContext({
         locale: 'en-US',

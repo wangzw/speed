@@ -187,7 +187,7 @@ func reviewConfig(t *testing.T, backendAddress string) string {
 	t.Helper()
 	root := t.TempDir()
 	body := reviewConfigBody(t, root, backendAddress,
-		filepath.Join(root, "review.db"))
+		filepath.Join(root, "e2e.db"))
 	path := filepath.Join(root, "review.yaml")
 	if writeErr := os.WriteFile(path, []byte(body), 0o600); writeErr != nil {
 		t.Fatalf("writing the configuration: %v", writeErr)
@@ -217,7 +217,7 @@ func reviewConfigBody(t *testing.T, root, backendAddress, dsn string) string {
 		// The needles carry the YAML key: the file's header comments name the
 		// same paths, and replacing the first occurrence would leave the
 		// configured locator pointing into the source tree.
-		{`dsn: "./var/review.db"`, fmt.Sprintf("dsn: %q", dsn)},
+		{`dsn: "./var/e2e.db"`, fmt.Sprintf("dsn: %q", dsn)},
 		{`signing-key-file: var/token-signing-key.pem`, fmt.Sprintf("signing-key-file: %q", key)},
 		{`root: "./var/objects"`, fmt.Sprintf("root: %q", filepath.Join(root, "objects"))},
 	} {

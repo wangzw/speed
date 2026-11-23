@@ -14,23 +14,23 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  reviewImpersonationAdmin,
-  reviewOrdinaryMember,
-  reviewProtectedTenant,
-  reviewSystemTenantAdmin,
-  reviewTenantAdmin,
-  reviewTenantPolicies,
-  reviewUnprovedTenantAdmin,
+  e2eImpersonationAdmin,
+  e2eOrdinaryMember,
+  e2eProtectedTenant,
+  e2eSystemTenantAdmin,
+  e2eTenantAdmin,
+  e2eTenantPolicies,
+  e2eUnprovedTenantAdmin,
   writeDeployConfig,
-  writeReviewConfig,
-  type ReviewConfigInput,
+  writeServerConfig,
+  type ServerConfigInput,
 } from './config'
 
 // The fixture paths derive from `import.meta.url`, which the jsdom transform
 // does not turn into a file URL, so this suite names the templates from the
 // package's working directory instead. Vitest runs from the package directory.
 vi.mock('./paths', () => ({
-  REVIEW_CONFIG_TEMPLATE: `${process.cwd()}/../server/review/sqlite.yaml`,
+  E2E_CONFIG_TEMPLATE: `${process.cwd()}/../server/review/sqlite.yaml`,
   DEPLOY_CONFIG_TEMPLATE: `${process.cwd()}/../deploy/fly.yaml.tmpl`,
 }))
 
@@ -41,12 +41,12 @@ afterEach(async () => {
   await Promise.all(kept.map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-type TemplateInput = Omit<ReviewConfigInput, 'dir' | 'backendPort'>
+type TemplateInput = Omit<ServerConfigInput, 'dir' | 'backendPort'>
 
 async function rendered(input: TemplateInput): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'speed-e2e-config-'))
   dirs.push(dir)
-  const config = await writeReviewConfig({
+  const config = await writeServerConfig({
     dir,
     backendPort: 41080,
     ...input,
@@ -110,11 +110,11 @@ describe('the review configuration', () => {
     // journey's server. The target is an ordinary member, not the tenant's
     // administrator, so an account of the fixture's own administers acme.
     expect(body).toContain(
-      `    - name: acme\n      admins:\n        - ${reviewImpersonationAdmin.identifier}\n  members:`,
+      `    - name: acme\n      admins:\n        - ${e2eImpersonationAdmin.identifier}\n  members:`,
     )
-    expect(body).not.toContain(`        - ${reviewOrdinaryMember.identifier}\n`)
+    expect(body).not.toContain(`        - ${e2eOrdinaryMember.identifier}\n`)
     expect(body).toContain(
-      `    - identifier: ${JSON.stringify(reviewImpersonationAdmin.identifier)}`,
+      `    - identifier: ${JSON.stringify(e2eImpersonationAdmin.identifier)}`,
     )
     expect(body).toContain('\n  impersonation: true\n')
   })
@@ -123,41 +123,41 @@ describe('the review configuration', () => {
     const body = await rendered({
       seedTenantAdmin: true,
       seedUnprovedTenantAdmin: true,
-      tenantAdmins: { acme: [reviewTenantAdmin.identifier] },
+      tenantAdmins: { acme: [e2eTenantAdmin.identifier] },
     })
     // Both administrators are seeded, but the override pins acme to one: not
     // the unproved administrator the default list would add, the template's
     // member, or the platform operator.
     expect(body).toContain(
-      `    - name: acme\n      admins:\n        - ${reviewTenantAdmin.identifier}\n  members:`,
+      `    - name: acme\n      admins:\n        - ${e2eTenantAdmin.identifier}\n  members:`,
     )
-    expect(body).not.toContain(`        - ${reviewUnprovedTenantAdmin.identifier}\n`)
-    expect(body).not.toContain(`        - ${reviewOrdinaryMember.identifier}\n`)
+    expect(body).not.toContain(`        - ${e2eUnprovedTenantAdmin.identifier}\n`)
+    expect(body).not.toContain(`        - ${e2eOrdinaryMember.identifier}\n`)
     expect(body).not.toContain('        - operator@demo.test\n')
   })
 
   it('seeds the proved-email administrator as the tenant\'s only administrator', async () => {
     const body = await rendered({ seedTenantAdmin: true })
     expect(body).toContain(
-      `    - name: acme\n      admins:\n        - ${reviewTenantAdmin.identifier}\n  members:`,
+      `    - name: acme\n      admins:\n        - ${e2eTenantAdmin.identifier}\n  members:`,
     )
     // The address is the one the review build proves; the account carries the
     // username it signs in with and no platform-administrator mark.
     expect(body).toContain(
-      `    - identifier: ${JSON.stringify(reviewTenantAdmin.identifier)}\n` +
-        `      username: ${JSON.stringify(reviewTenantAdmin.username)}\n`,
+      `    - identifier: ${JSON.stringify(e2eTenantAdmin.identifier)}\n` +
+        `      username: ${JSON.stringify(e2eTenantAdmin.username)}\n`,
     )
     expect(body).toContain('      proved-email: true')
-    const entry = accountEntry(body, reviewTenantAdmin.identifier)
+    const entry = accountEntry(body, e2eTenantAdmin.identifier)
     expect(entry).not.toContain('platform-admin')
   })
 
   it('seeds the unproved-email administrator without a proof', async () => {
     const body = await rendered({ seedUnprovedTenantAdmin: true })
     expect(body).toContain(
-      `    - name: acme\n      admins:\n        - ${reviewUnprovedTenantAdmin.identifier}\n  members:`,
+      `    - name: acme\n      admins:\n        - ${e2eUnprovedTenantAdmin.identifier}\n  members:`,
     )
-    const entry = accountEntry(body, reviewUnprovedTenantAdmin.identifier)
+    const entry = accountEntry(body, e2eUnprovedTenantAdmin.identifier)
     expect(entry).toContain('username:')
     expect(entry).not.toContain('proved-email')
     expect(entry).not.toContain('platform-admin')
@@ -166,27 +166,27 @@ describe('the review configuration', () => {
   it('seeds a system tenant administrator outside the platform role', async () => {
     const body = await rendered({ seedSystemTenantAdmin: true })
     expect(body).toContain(
-      `\n  system-admins:\n    - ${reviewSystemTenantAdmin.identifier}\n  members:\n`,
+      `\n  system-admins:\n    - ${e2eSystemTenantAdmin.identifier}\n  members:\n`,
     )
-    const entry = accountEntry(body, reviewSystemTenantAdmin.identifier)
+    const entry = accountEntry(body, e2eSystemTenantAdmin.identifier)
     expect(entry).not.toContain('platform-admin')
   })
 
   it('seeds the protected business tenant and its proved administrator on request', async () => {
     const body = await rendered({ seedProtectedTenant: true })
     expect(body).toContain(
-      `    - name: ${reviewProtectedTenant.tenant}\n` +
-        `      admins:\n        - ${reviewProtectedTenant.identifier}\n`,
+      `    - name: ${e2eProtectedTenant.tenant}\n` +
+        `      admins:\n        - ${e2eProtectedTenant.identifier}\n`,
     )
-    const entry = accountEntry(body, reviewProtectedTenant.identifier)
+    const entry = accountEntry(body, e2eProtectedTenant.identifier)
     expect(entry).toContain('proved-email: true')
     expect(entry).not.toContain('platform-admin')
   })
 
   it('keeps the protected tenant out of the default seed', async () => {
     const body = await rendered({})
-    expect(body).not.toContain(reviewProtectedTenant.tenant)
-    expect(body).not.toContain(reviewProtectedTenant.identifier)
+    expect(body).not.toContain(e2eProtectedTenant.tenant)
+    expect(body).not.toContain(e2eProtectedTenant.identifier)
   })
 
   it('holds the admission policy on at the platform layer on request', async () => {
@@ -199,16 +199,16 @@ describe('the review configuration', () => {
   })
 
   it('names the two tenant-facing policies and the platform-only namespaces', () => {
-    expect(reviewTenantPolicies.namespace).toBe('tenant.admission')
-    expect(reviewTenantPolicies.keys).toEqual([
+    expect(e2eTenantPolicies.namespace).toBe('tenant.admission')
+    expect(e2eTenantPolicies.keys).toEqual([
       'tenant.admission.require-mfa',
       'tenant.admission.require-sso',
     ])
-    for (const key of reviewTenantPolicies.keys) {
-      expect(key.startsWith(`${reviewTenantPolicies.namespace}.`)).toBe(true)
+    for (const key of e2eTenantPolicies.keys) {
+      expect(key.startsWith(`${e2eTenantPolicies.namespace}.`)).toBe(true)
     }
-    for (const platformOnly of reviewTenantPolicies.platformOnlyNamespaces) {
-      expect(reviewTenantPolicies.namespace).not.toMatch(
+    for (const platformOnly of e2eTenantPolicies.platformOnlyNamespaces) {
+      expect(e2eTenantPolicies.namespace).not.toMatch(
         new RegExp(`^${platformOnly.replace('.', '\\.')}(\\.|$)`),
       )
     }

@@ -38,7 +38,7 @@
 import type { Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
-import { reviewSocialAccount } from '../fixtures/config'
+import { e2eSocialAccount } from '../fixtures/config'
 import { identityProviderUser } from '../fixtures/identity-provider'
 import {
   expandAccountRows,
@@ -367,8 +367,8 @@ test.describe('the provider address already belongs to an account', () => {
       // The refusal touched neither the account nor its credential: the
       // username and the password the seed wrote still open the same account.
       await demo.accounts.signIn({
-        identifier: reviewSocialAccount.username,
-        password: reviewSocialAccount.password,
+        identifier: e2eSocialAccount.username,
+        password: e2eSocialAccount.password,
       })
       await expect(homeHeading(page)).toBeVisible()
     })

@@ -226,7 +226,7 @@ func withReviewDatabase(t *testing.T, configPath string,
 ) {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q,"encryption-key":%q}},"authn":{"account":{}}}`,
-		filepath.Join(filepath.Dir(configPath), "review.db"), reviewEncryptionKey(t, configPath))
+		filepath.Join(filepath.Dir(configPath), "e2e.db"), reviewEncryptionKey(t, configPath))
 	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), authnaccount.Module())
 	reg := core.New()
 	reg.Register(config.Module())

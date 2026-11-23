@@ -90,7 +90,7 @@ import {
 } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
 import { expectAccountMenuName } from '../helpers/account-menu'
-import type { ReviewServer } from '../fixtures/server'
+import type { E2EServer } from '../fixtures/server'
 import {
   adminEntry,
   backToApp,
@@ -308,7 +308,7 @@ function memberSection(page: Page): Locator {
  */
 async function proveEmail(
   page: Page,
-  server: ReviewServer,
+  server: E2EServer,
   email: string,
 ): Promise<void> {
   const banner = verificationBanner(page, email)

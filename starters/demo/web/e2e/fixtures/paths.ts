@@ -56,8 +56,8 @@ export const HARNESS_DIR = `${ARTIFACT_ROOT}/harness`
 /** The manifest the global setup writes and the server fixture reads. */
 export const MANIFEST_PATH = `${HARNESS_DIR}/manifest.json`
 
-/** The review binary the global setup builds. */
-export const BINARY_NAME = 'demo-review'
+/** The e2e binary the global setup builds. */
+export const BINARY_NAME = 'demo-e2e'
 
 /** The deploy assembly's binary: the default build, with no review controls. */
 export const DEPLOY_BINARY_NAME = 'demo-deploy'
@@ -88,7 +88,7 @@ export const WEB_DIR = fromHere('../../')
 export const WEB_WORKSPACE_DIR = fromHere('../../../../../web/')
 
 /** The review assembly's configuration template, copied and edited per server. */
-export const REVIEW_CONFIG_TEMPLATE = fromHere('../../../server/review/sqlite.yaml')
+export const E2E_CONFIG_TEMPLATE = fromHere('../../../server/review/sqlite.yaml')
 
 /**
  * The deployment's configuration template. The container entrypoint renders it

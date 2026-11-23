@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { totpCode } from '../helpers/totp'
-import { writeReviewConfig, type ReviewConfig } from './config'
+import { writeServerConfig, type ServerConfig } from './config'
 import { startDNSStub, type DNSStub } from './dns-stub'
 import {
   enterpriseIdentityProviderRecordName,
@@ -559,7 +559,7 @@ async function startEnterpriseProvider(
 }
 
 /** A started server. */
-export interface ReviewServer {
+export interface E2EServer {
   /** The review binary that was built. */
   readonly binary: string
   /** The server's temporary directory. */
@@ -571,7 +571,7 @@ export interface ReviewServer {
    * operations probes all answer here.
    */
   readonly backendPort: number
-  readonly config: ReviewConfig
+  readonly config: ServerConfig
   /**
    * The local OpenID Connect provider the social methods are pointed at, when
    * this server's spec opted into it; undefined otherwise.
@@ -713,7 +713,7 @@ export interface ReviewServer {
  * The social option is untouched by this one: a spec may turn on either, both,
  * or neither.
  */
-export async function startReviewServer(
+export async function startE2EServer(
   options: {
     readonly seedMember?: boolean
     readonly seedImpersonation?: boolean
@@ -736,7 +736,7 @@ export async function startReviewServer(
     readonly schedulerTick?: string
     readonly identityQuota?: string
   } = {},
-): Promise<ReviewServer> {
+): Promise<E2EServer> {
   const manifest = await readHarnessManifest()
   await ensureBinary(manifest.binary)
   const dir = await mkdtemp(join(tmpdir(), 'speed-e2e-server-'))
@@ -830,7 +830,7 @@ export async function startReviewServer(
     if (seedBackend === undefined) {
       throw new Error('the harness could not allocate a free port')
     }
-    const seedConfig = await writeReviewConfig({
+    const seedConfig = await writeServerConfig({
       dir,
       backendPort: seedBackend,
       seedMember: options.seedMember,
@@ -860,7 +860,7 @@ export async function startReviewServer(
       'seeding the review database',
     )
 
-    let config: ReviewConfig | undefined
+    let config: ServerConfig | undefined
     let attempt = 0
     for (;;) {
       attempt += 1
@@ -868,7 +868,7 @@ export async function startReviewServer(
       if (backendPort === undefined) {
         throw new Error('the harness could not allocate a free port')
       }
-      config = await writeReviewConfig({
+      config = await writeServerConfig({
         dir,
         backendPort,
         seedMember: options.seedMember,
@@ -961,7 +961,7 @@ export async function startReviewServer(
     if (config === undefined) {
       throw new Error('the review server finished its attempts without a configuration')
     }
-    const reviewConfig = config
+    const serverConfig = config
 
     const hooks: Array<() => Promise<void> | void> = []
     const stop = async (options: { readonly keep?: boolean } = {}): Promise<void> => {
@@ -991,9 +991,9 @@ export async function startReviewServer(
     return {
       binary: manifest.binary,
       dir,
-      url: reviewConfig.origin,
-      backendPort: reviewConfig.backendPort,
-      config: reviewConfig,
+      url: serverConfig.origin,
+      backendPort: serverConfig.backendPort,
+      config: serverConfig,
       identityProvider,
       enterpriseIdentityProvider: enterpriseProvider,
       dnsStub,
@@ -1018,13 +1018,13 @@ export async function startReviewServer(
         input: TenantSettingWriteInput,
       ): Promise<TenantSettingWriteAnswer> {
         const token = await signInThroughApi(
-          reviewConfig.origin,
+          serverConfig.origin,
           input.identifier,
           input.password,
           input.totpSecret,
         )
         const answer = await callApi(
-          `${reviewConfig.origin}/api/v1/tenants/${input.tenant}/settings/` +
+          `${serverConfig.origin}/api/v1/tenants/${input.tenant}/settings/` +
             `${input.namespace}/${input.key}`,
           {
             method: 'PUT',
@@ -1046,12 +1046,12 @@ export async function startReviewServer(
         input: SettingsAccount,
       ): Promise<SettingsReadAnswer> {
         const token = await signInThroughApi(
-          reviewConfig.origin,
+          serverConfig.origin,
           input.identifier,
           input.password,
         )
         const answer = await callApi(
-          `${reviewConfig.origin}/api/v1/system/settings?layer=global`,
+          `${serverConfig.origin}/api/v1/system/settings?layer=global`,
           {
             method: 'GET',
             headers: { Authorization: `Bearer ${token}` },
@@ -1066,7 +1066,7 @@ export async function startReviewServer(
         input: TenantSettingsProbeInput,
       ): Promise<TenantSettingsProbeAnswer> {
         const token = await signInThroughApi(
-          reviewConfig.origin,
+          serverConfig.origin,
           input.identifier,
           input.password,
         )
@@ -1075,7 +1075,7 @@ export async function startReviewServer(
           'X-Tenant': input.tenant,
         }
         const base =
-          `${reviewConfig.origin}/api/v1/tenants/` +
+          `${serverConfig.origin}/api/v1/tenants/` +
           `${encodeURIComponent(input.tenant)}/settings`
         const read = await callApi(base, { method: 'GET', headers })
         const writes: Record<string, TenantSettingWriteAnswer> = {}

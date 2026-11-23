@@ -40,7 +40,7 @@
  * through this file.
  *
  * The administrators a tenant starts with are written from one explicit list
- * (reviewTenants), never by appending to the template's acme entry. A journey
+ * (e2eTenants), never by appending to the template's acme entry. A journey
  * that needs a tenant with exactly one tenant-admin binding names that
  * binding through `tenantAdmins` or one of the tenant-admin opt-ins; the
  * impersonation server names its own administrator because the account it
@@ -53,9 +53,9 @@ import {
   enterpriseIdentityProviderUser,
   identityProviderUser,
 } from './identity-provider'
-import { DEPLOY_CONFIG_TEMPLATE, REVIEW_CONFIG_TEMPLATE } from './paths'
+import { DEPLOY_CONFIG_TEMPLATE, E2E_CONFIG_TEMPLATE } from './paths'
 
-export interface ReviewConfigInput {
+export interface ServerConfigInput {
   /** The server's own temporary directory; the config and state live there. */
   readonly dir: string
   /** The backend listener's port (the browser's origin, the API and the ops probes). */
@@ -227,7 +227,7 @@ export interface ReviewConfigInput {
   readonly tenantAdmins?: Readonly<Record<string, readonly string[]>>
 }
 
-export interface ReviewConfig {
+export interface ServerConfig {
   /** The configuration file's absolute path. */
   readonly path: string
   /** The server's working directory. */
@@ -254,11 +254,11 @@ export interface ReviewConfig {
  * channels include email and sms, the account holds no phone number, and the
  * worker skips a member with neither a proved phone nor an email identifier.
  */
-export const reviewMember = {
+export const e2eMember = {
   tenant: 'acme',
   identifier: 'member@demo.test',
-  username: 'member-review',
-  password: 'member-review-secret',
+  username: 'member-e2e',
+  password: 'member-e2e-secret',
   displayName: 'Demo Member',
 } as const
 
@@ -271,7 +271,7 @@ export const reviewMember = {
  * tenant from outside and its initiator holds no permission there. Every server
  * that does not opt into the tenant-admin or impersonation fixture names this
  * account acme's second administrator, and an administrator is a member of the
- * tenant it administers; see reviewTenants. The account and its credential are
+ * tenant it administers; see e2eTenants. The account and its credential are
  * the template's own.
  */
 export const smsRolloutOperator = {
@@ -292,10 +292,10 @@ export const smsRolloutOperator = {
  * The account holds no membership, so the acceptance is what makes it a member
  * of the invited tenant. Its password is a review fixture, not a credential.
  */
-export const reviewInvitee = {
+export const e2eInvitee = {
   identifier: 'invitee@demo.test',
-  username: 'invitee-review',
-  password: 'invitee-review-secret',
+  username: 'invitee-e2e',
+  password: 'invitee-e2e-secret',
   displayName: 'Invitation Invitee',
 } as const
 
@@ -310,10 +310,10 @@ export const reviewInvitee = {
  * address is refused with the link-required refusal rather than taking the
  * account over. Its password is a review value, not a credential.
  */
-export const reviewSocialAccount = {
+export const e2eSocialAccount = {
   identifier: identityProviderUser.email,
   username: 'social-signin',
-  password: 'social-review-secret',
+  password: 'social-e2e-secret',
   displayName: identityProviderUser.name,
 } as const
 
@@ -340,7 +340,7 @@ export const tenantSSOTenant = 'globex'
 export const tenantSSOAdmin = {
   identifier: enterpriseIdentityProviderUser.email,
   username: 'globex-admin',
-  password: 'tenant-sso-review-secret',
+  password: 'tenant-sso-e2e-secret',
   displayName: 'Globex Administrator',
 } as const
 
@@ -355,11 +355,11 @@ export const tenantSSOAdmin = {
  * tenant the journey switches to and back from. A review value, not a
  * credential.
  */
-export const reviewTenantAdmin = {
+export const e2eTenantAdmin = {
   tenant: 'acme',
   identifier: 'tenant-admin@demo.test',
-  username: 'tenant-admin-review',
-  password: 'tenant-admin-review-secret',
+  username: 'tenant-admin-e2e',
+  password: 'tenant-admin-e2e-secret',
   displayName: 'Tenant Administrator',
 } as const
 
@@ -369,11 +369,11 @@ export const reviewTenantAdmin = {
  * unproved address causes and then proves the address in the account page; the
  * seed never proves it, so the starting state is the one that gate describes.
  */
-export const reviewUnprovedTenantAdmin = {
+export const e2eUnprovedTenantAdmin = {
   tenant: 'acme',
   identifier: 'unproved-admin@demo.test',
-  username: 'unproved-admin-review',
-  password: 'unproved-admin-review-secret',
+  username: 'unproved-admin-e2e',
+  password: 'unproved-admin-e2e-secret',
   displayName: 'Unproved Tenant Administrator',
 } as const
 
@@ -387,10 +387,10 @@ export const reviewUnprovedTenantAdmin = {
  * organization admin surface. It is a username, so it signs in with a login name
  * and needs no mailbox.
  */
-export const reviewSystemTenantAdmin = {
+export const e2eSystemTenantAdmin = {
   tenant: 'system',
-  identifier: 'system-admin-review',
-  password: 'system-admin-review-secret',
+  identifier: 'system-admin-e2e',
+  password: 'system-admin-e2e-secret',
   displayName: 'System Tenant Administrator',
 } as const
 
@@ -409,7 +409,7 @@ export const reviewSystemTenantAdmin = {
  * reach the host seam instead of being stopped as an unproved
  * self-registration's. Its password is a review value, not a credential.
  */
-export const reviewProtectedTenant = {
+export const e2eProtectedTenant = {
   tenant: 'protected-acme',
   identifier: 'protected-admin@demo.test',
   username: 'protected-admin',
@@ -424,7 +424,7 @@ export const reviewProtectedTenant = {
  * fixture addresses every member with one, and an extra destination in acme
  * would change the delivery counts another fixture asserts.
  */
-export const reviewOrdinaryMember = {
+export const e2eOrdinaryMember = {
   tenant: 'acme',
   identifier: 'member',
   password: 'member-dev-secret',
@@ -440,7 +440,7 @@ export const reviewOrdinaryMember = {
  * The account is a username with no mailbox, which keeps the notification
  * fixture's delivery counts where they were.
  */
-export const reviewImpersonationAdmin = {
+export const e2eImpersonationAdmin = {
   tenant: 'acme',
   identifier: 'acme-owner',
   password: 'acme-owner-secret',
@@ -457,7 +457,7 @@ export const reviewImpersonationAdmin = {
  * reachable from the organization surface -- not in the list, not by namespace,
  * not by key.
  */
-export const reviewTenantPolicies = {
+export const e2eTenantPolicies = {
   namespace: 'tenant.admission',
   /** The two tenant read-write items, in the order the declaration lists them. */
   keys: [
@@ -507,24 +507,24 @@ const seedOperatorAccount = `    - identifier: operator@demo.test
 
 /** The member's `seed.accounts` entry, indented for the list it joins. */
 function seedMemberAccount(): string {
-  return `    - identifier: ${quoted(reviewMember.identifier)}
-      username: ${quoted(reviewMember.username)}
-      password: ${quoted(reviewMember.password)}
-      display-name: ${quoted(reviewMember.displayName)}`
+  return `    - identifier: ${quoted(e2eMember.identifier)}
+      username: ${quoted(e2eMember.username)}
+      password: ${quoted(e2eMember.password)}
+      display-name: ${quoted(e2eMember.displayName)}`
 }
 
 /** The member's `seed.members` entry, indented for the key it joins. */
 function seedMemberMembership(): string {
-  return `    - tenant: ${quoted(reviewMember.tenant)}
-      account: ${quoted(reviewMember.identifier)}`
+  return `    - tenant: ${quoted(e2eMember.tenant)}
+      account: ${quoted(e2eMember.identifier)}`
 }
 
 /** The social account's `seed.accounts` entry, indented for the list it joins. */
 function seedSocialAccount(): string {
-  return `    - identifier: ${quoted(reviewSocialAccount.identifier)}
-      username: ${quoted(reviewSocialAccount.username)}
-      password: ${quoted(reviewSocialAccount.password)}
-      display-name: ${quoted(reviewSocialAccount.displayName)}`
+  return `    - identifier: ${quoted(e2eSocialAccount.identifier)}
+      username: ${quoted(e2eSocialAccount.username)}
+      password: ${quoted(e2eSocialAccount.password)}
+      display-name: ${quoted(e2eSocialAccount.displayName)}`
 }
 
 /**
@@ -536,10 +536,10 @@ function seedSocialAccount(): string {
  * drives that branch).
  */
 function seedInviteeAccount(): string {
-  return `    - identifier: ${quoted(reviewInvitee.identifier)}
-      username: ${quoted(reviewInvitee.username)}
-      password: ${quoted(reviewInvitee.password)}
-      display-name: ${quoted(reviewInvitee.displayName)}
+  return `    - identifier: ${quoted(e2eInvitee.identifier)}
+      username: ${quoted(e2eInvitee.username)}
+      password: ${quoted(e2eInvitee.password)}
+      display-name: ${quoted(e2eInvitee.displayName)}
       proved-email: true`
 }
 
@@ -584,7 +584,7 @@ function seedAccountEntry(
 }
 
 /** One seeded tenant and its explicit administrator list. */
-interface ReviewTenantAdmins {
+interface E2ETenantAdmins {
   readonly name: string
   readonly admins: readonly string[]
   /** Settings the seed writes into this tenant's own layer, as YAML lines
@@ -603,8 +603,8 @@ interface ReviewTenantAdmins {
  * as an administrator and adds the platform operator, which is the tenant-domain
  * grant the console's tenant-addressed pages decide on.
  */
-function defaultTenantAdmins(input: ReviewConfigInput): ReviewTenantAdmins[] {
-  const entries: ReviewTenantAdmins[] = [
+function defaultTenantAdmins(input: ServerConfigInput): E2ETenantAdmins[] {
+  const entries: E2ETenantAdmins[] = [
     { name: 'acme', admins: defaultAcmeAdmins(input) },
   ]
   if (input.ssoProvider !== undefined) {
@@ -614,25 +614,25 @@ function defaultTenantAdmins(input: ReviewConfigInput): ReviewTenantAdmins[] {
   }
   if (input.seedProtectedTenant === true) {
     entries.push({
-      name: reviewProtectedTenant.tenant,
-      admins: [reviewProtectedTenant.identifier],
+      name: e2eProtectedTenant.tenant,
+      admins: [e2eProtectedTenant.identifier],
     })
   }
   return entries
 }
 
 /** acme's default administrator list; see defaultTenantAdmins. */
-function defaultAcmeAdmins(input: ReviewConfigInput): string[] {
+function defaultAcmeAdmins(input: ServerConfigInput): string[] {
   const admins: string[] = []
-  if (input.seedTenantAdmin === true) admins.push(reviewTenantAdmin.identifier)
+  if (input.seedTenantAdmin === true) admins.push(e2eTenantAdmin.identifier)
   if (input.seedUnprovedTenantAdmin === true) {
-    admins.push(reviewUnprovedTenantAdmin.identifier)
+    admins.push(e2eUnprovedTenantAdmin.identifier)
   }
   if (admins.length > 0) return admins
   if (input.seedImpersonation === true) {
-    return [reviewImpersonationAdmin.identifier]
+    return [e2eImpersonationAdmin.identifier]
   }
-  return [reviewOrdinaryMember.identifier, smsRolloutOperator.identifier]
+  return [e2eOrdinaryMember.identifier, smsRolloutOperator.identifier]
 }
 
 /**
@@ -641,11 +641,11 @@ function defaultAcmeAdmins(input: ReviewConfigInput): string[] {
  * that only pins acme's administrator does not drop the enterprise journey's
  * second organization by accident.
  */
-function reviewTenants(input: ReviewConfigInput): ReviewTenantAdmins[] {
+function e2eTenants(input: ServerConfigInput): E2ETenantAdmins[] {
   const base = defaultTenantAdmins(input)
   const overrides = input.tenantAdmins
   const named = new Set(base.map((entry) => entry.name))
-  const out: ReviewTenantAdmins[] = base.map((entry) => ({
+  const out: E2ETenantAdmins[] = base.map((entry) => ({
     name: entry.name,
     admins: overrides?.[entry.name] ?? entry.admins,
   }))
@@ -655,10 +655,10 @@ function reviewTenants(input: ReviewConfigInput): ReviewTenantAdmins[] {
     }
   }
   if (input.tenantRequireMFA === true) {
-    const target = out.find((entry) => entry.name === reviewMember.tenant)
+    const target = out.find((entry) => entry.name === e2eMember.tenant)
     if (target === undefined) {
       throw new Error(
-        `the review tenant ${reviewMember.tenant} is not in the seeded tenant list, ` +
+        `the review tenant ${e2eMember.tenant} is not in the seeded tenant list, ` +
           'so the tenant-layer require-mfa switch has no layer to land in',
       )
     }
@@ -675,7 +675,7 @@ function reviewTenants(input: ReviewConfigInput): ReviewTenantAdmins[] {
 }
 
 /** Render the tenants and their administrators as the template's YAML list. */
-function seedTenantEntries(entries: readonly ReviewTenantAdmins[]): string {
+function seedTenantEntries(entries: readonly E2ETenantAdmins[]): string {
   return entries
     .map((entry) => {
       const admins = entry.admins.map((admin) => `        - ${admin}`).join('\n')
@@ -742,19 +742,19 @@ function quoted(value: string): string {
  * the tests need. The template is read on every call so a server never shares
  * a file with another.
  */
-export async function writeReviewConfig(
-  input: ReviewConfigInput,
-): Promise<ReviewConfig> {
-  const template = await readFile(REVIEW_CONFIG_TEMPLATE, 'utf8')
+export async function writeServerConfig(
+  input: ServerConfigInput,
+): Promise<ServerConfig> {
+  const template = await readFile(E2E_CONFIG_TEMPLATE, 'utf8')
   const varDir = join(input.dir, 'var')
   await mkdir(varDir, { recursive: true })
 
   const backendAddress = `127.0.0.1:${input.backendPort}`
   const origin = `http://localhost:${input.backendPort}`
-  const dsn = join(varDir, 'review.db')
+  const dsn = join(varDir, 'e2e.db')
   const signingKey = join(varDir, 'token-signing-key.pem')
   const objectsRoot = join(varDir, 'objects')
-  const path = join(input.dir, 'review.yaml')
+  const path = join(input.dir, 'e2e.yaml')
 
   let body = template
   body = replaceOnce(
@@ -765,7 +765,7 @@ export async function writeReviewConfig(
   )
   body = replaceOnce(
     body,
-    'dsn: "./var/review.db"',
+    'dsn: "./var/e2e.db"',
     `dsn: ${quoted(dsn)}`,
     'sqlite dsn',
   )
@@ -885,7 +885,7 @@ export async function writeReviewConfig(
   body = replaceOnce(
     body,
     '    - name: acme\n      admins:\n        - member\n',
-    seedTenantEntries(reviewTenants(input)),
+    seedTenantEntries(e2eTenants(input)),
     'seed tenants',
   )
   // The WebAuthn relying party is the browser's host. The review template
@@ -917,29 +917,29 @@ export async function writeReviewConfig(
   // notification fixture would address, and the impersonation administrator is
   // an extra account the other two servers using that opt-in must count.
   if (input.seedTenantAdmin === true) {
-    extraAccounts.push(seedAccountEntry(reviewTenantAdmin, { provedEmail: true }))
+    extraAccounts.push(seedAccountEntry(e2eTenantAdmin, { provedEmail: true }))
   }
   if (input.seedUnprovedTenantAdmin === true) {
-    extraAccounts.push(seedAccountEntry(reviewUnprovedTenantAdmin))
+    extraAccounts.push(seedAccountEntry(e2eUnprovedTenantAdmin))
   }
   if (input.seedSystemTenantAdmin === true) {
-    extraAccounts.push(seedAccountEntry(reviewSystemTenantAdmin))
+    extraAccounts.push(seedAccountEntry(e2eSystemTenantAdmin))
   }
   if (input.seedProtectedTenant === true) {
     extraAccounts.push(
       seedAccountEntry(
         {
-          identifier: reviewProtectedTenant.identifier,
-          username: reviewProtectedTenant.username,
-          password: reviewProtectedTenant.password,
-          displayName: reviewProtectedTenant.displayName,
+          identifier: e2eProtectedTenant.identifier,
+          username: e2eProtectedTenant.username,
+          password: e2eProtectedTenant.password,
+          displayName: e2eProtectedTenant.displayName,
         },
         { provedEmail: true },
       ),
     )
   }
   if (input.seedImpersonation === true) {
-    extraAccounts.push(seedAccountEntry(reviewImpersonationAdmin))
+    extraAccounts.push(seedAccountEntry(e2eImpersonationAdmin))
   }
   if (extraAccounts.length > 0) {
     body = replaceOnce(
@@ -958,7 +958,7 @@ export async function writeReviewConfig(
     body = replaceOnce(
       body,
       '\n  members:\n',
-      `\n  system-admins:\n    - ${reviewSystemTenantAdmin.identifier}\n  members:\n`,
+      `\n  system-admins:\n    - ${e2eSystemTenantAdmin.identifier}\n  members:\n`,
       'seed members section',
     )
   }
@@ -1018,7 +1018,7 @@ export async function writeReviewConfig(
   // signs in: every later sign-in must complete one. Only the journey that
   // needs it turns it on; every other server starts from the template's own
   // seed with the factors off. The tenant's administrator list is decided by
-  // reviewTenants, not here: the impersonation server keeps the operator outside
+  // e2eTenants, not here: the impersonation server keeps the operator outside
   // acme and names its own administrator, while every other server names the
   // operator acme's second administrator.
   if (input.seedImpersonation !== true) {
@@ -1136,10 +1136,10 @@ const deployValues = {
   smtpUsername: '',
   smtpPassword: '',
   smtpFrom: 'demo@demo.test',
-  googleClientID: 'review-google-client',
-  googleClientSecret: 'review-google-secret',
-  githubClientID: 'review-github-client',
-  githubClientSecret: 'review-github-secret',
+  googleClientID: 'e2e-google-client',
+  googleClientSecret: 'e2e-google-secret',
+  githubClientID: 'e2e-github-client',
+  githubClientSecret: 'e2e-github-secret',
   // The deploy journey sets both human-verification surfaces off explicitly;
   // the entrypoint defaults the non-phone surface to pow and the phone surface
   // to captcha. The Turnstile values are rendered empty because the entrypoint

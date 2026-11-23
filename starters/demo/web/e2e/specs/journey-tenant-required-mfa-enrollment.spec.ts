@@ -34,7 +34,7 @@
 // @covers REQ-security-008, REQ-security-010, REQ-security-046
 import type { Locator, Page } from '@playwright/test'
 
-import { reviewMember } from '../fixtures/config'
+import { e2eMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { scaledTimeout } from '../fixtures/time-scale'
 import { switchToTenant } from '../helpers/switch-tenant'
@@ -43,10 +43,10 @@ import { homeHeading } from '../helpers/organization-admin'
 import { totpCode } from '../helpers/totp'
 
 /** The seeded member: no second factor, an active member of the tenant. */
-const MEMBER = reviewMember
+const MEMBER = e2eMember
 
 /** The organization whose own layer requires multi-factor. */
-const TENANT = reviewMember.tenant
+const TENANT = e2eMember.tenant
 
 /** The six-digit code's own window; the register's parameters. */
 const STEP_MS = 30_000

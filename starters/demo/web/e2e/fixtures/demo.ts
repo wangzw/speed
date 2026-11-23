@@ -18,10 +18,10 @@ import {
 } from '@playwright/test'
 
 import { createAccounts, type Accounts } from '../helpers/accounts'
-import { startReviewServer, type ReviewServer } from './server'
+import { startE2EServer, type E2EServer } from './server'
 
 export interface DemoTarget {
-  readonly server: ReviewServer
+  readonly server: E2EServer
   readonly page: Page
   readonly accounts: Accounts
 }
@@ -32,7 +32,7 @@ function unexpected(testInfo: TestInfo): boolean {
 
 async function attachFailure(
   testInfo: TestInfo,
-  server: ReviewServer,
+  server: E2EServer,
 ): Promise<void> {
   await testInfo.attach('server.log', {
     body: server.log.text,
@@ -51,7 +51,7 @@ async function attachFailure(
 }
 
 export const test = base.extend<{
-  server: ReviewServer
+  server: E2EServer
   demo: DemoTarget
   /**
    * Seed the member-organization journey's account and membership. A spec sets
@@ -233,7 +233,7 @@ export const test = base.extend<{
     use,
     testInfo,
   ) => {
-    const server = await startReviewServer({
+    const server = await startE2EServer({
       seedMember,
       seedImpersonation,
       seedInvitee,

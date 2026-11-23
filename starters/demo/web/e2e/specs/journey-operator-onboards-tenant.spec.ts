@@ -81,10 +81,10 @@
 // @covers REQ-platform-admin-001, REQ-platform-admin-006, REQ-platform-admin-010, REQ-platform-admin-011, REQ-platform-admin-032, REQ-platform-admin-033, REQ-platform-admin-050, REQ-platform-admin-051, REQ-platform-admin-055, REQ-platform-admin-118, REQ-platform-admin-119, REQ-platform-admin-120, REQ-tenancy-001, REQ-tenancy-002, REQ-tenancy-005, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-016, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-022, REQ-tenancy-058, REQ-tenancy-061, REQ-tenancy-062, REQ-tenancy-064
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
-import { reviewInvitee, reviewOrdinaryMember } from '../fixtures/config'
+import { e2eInvitee, e2eOrdinaryMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
-import type { ReviewServer } from '../fixtures/server'
+import type { E2EServer } from '../fixtures/server'
 import { scaledTimeout } from '../fixtures/time-scale'
 import {
   adminEntry,
@@ -331,7 +331,7 @@ function invitationRow(page: Page): Locator {
   return invitationSection(page)
     .getByRole('table')
     .locator('tbody tr')
-    .filter({ hasText: reviewInvitee.identifier })
+    .filter({ hasText: e2eInvitee.identifier })
 }
 
 /** The one-time panel that hands out the issued invitation's acceptance link. */
@@ -895,7 +895,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .getByLabel(copy('adminUi', 'invitations.issue.emailLabel'), {
           exact: true,
         })
-        .fill(reviewInvitee.identifier)
+        .fill(e2eInvitee.identifier)
       // REQ-platform-admin-032: the expiry is a fixed lifetime choice, not a
       // free-form time.
       await chooseSelectOption(
@@ -922,7 +922,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(
         page.getByText(
           copy('adminUi', 'invitations.issued.confirm', {
-            email: reviewInvitee.identifier,
+            email: e2eInvitee.identifier,
           }),
           { exact: true },
         ),
@@ -947,7 +947,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       const row = invitationRow(page)
       await expect(row).toBeVisible()
       await expect(
-        row.getByText(reviewInvitee.identifier, { exact: true }),
+        row.getByText(e2eInvitee.identifier, { exact: true }),
       ).toBeVisible()
       await expect(
         row.getByText(copy('adminUi', 'invitations.status.pending'), {
@@ -1013,7 +1013,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 
       // REQ-tenancy-011's one-time handover: the panel carries the acceptance
       // link and a copy control, and neither survives the panel's close.
-      const panel = invitationLinkPanel(page, reviewInvitee.identifier)
+      const panel = invitationLinkPanel(page, e2eInvitee.identifier)
       await expect(panel).toBeVisible()
       // The message carries the delivery outcome beside the hand-out line, so
       // it is matched as a substring of the panel's text rather than as an
@@ -1021,7 +1021,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(
         panel.getByText(
           copy('adminUi', 'invitations.issued.link', {
-            email: reviewInvitee.identifier,
+            email: e2eInvitee.identifier,
           }),
         ),
       ).toBeVisible()
@@ -1043,7 +1043,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
             tenant: TENANT_NAME,
-            email: reviewInvitee.identifier,
+            email: e2eInvitee.identifier,
           }),
           exact: true,
         })
@@ -1066,7 +1066,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await invitationSection(page)
         .getByRole('button', {
           name: copy('adminUi', 'invitations.actionsAria', {
-            email: reviewInvitee.identifier,
+            email: e2eInvitee.identifier,
           }),
           exact: true,
         })
@@ -1086,7 +1086,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         })
         .click()
 
-      const resentPanel = invitationLinkPanel(page, reviewInvitee.identifier)
+      const resentPanel = invitationLinkPanel(page, e2eInvitee.identifier)
       await expect(resentPanel).toBeVisible()
       const resentValue = resentPanel.getByText(
         new RegExp(`^${escapeRegExp(server.url)}/invitations/\\S+$`),
@@ -1114,7 +1114,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .getByRole('button', {
           name: copy('adminUi', 'invitations.issued.closeAria', {
             tenant: TENANT_NAME,
-            email: reviewInvitee.identifier,
+            email: e2eInvitee.identifier,
           }),
           exact: true,
         })
@@ -1252,13 +1252,13 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           name: copy('authUi', 'passwordSignIn.identifierLabel'),
           exact: true,
         })
-        .fill(reviewInvitee.username)
+        .fill(e2eInvitee.username)
       await invitee
         .getByRole('textbox', {
           name: copy('authUi', 'passwordSignIn.passwordLabel'),
           exact: true,
         })
-        .fill(reviewInvitee.password)
+        .fill(e2eInvitee.password)
       await invitee
         .getByRole('button', {
           name: copy('authUi', 'passwordSignIn.submit'),
@@ -1378,7 +1378,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toHaveCount(0)
       await expect(
         others.getByRole('menuitem', {
-          name: reviewInvitee.displayName,
+          name: e2eInvitee.displayName,
           exact: true,
         }),
       ).toBeVisible()
@@ -1483,7 +1483,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(members.locator('tbody tr')).toHaveCount(2)
       const invited = members
         .locator('tbody tr')
-        .filter({ hasText: reviewInvitee.displayName })
+        .filter({ hasText: e2eInvitee.displayName })
       await expect(invited).toHaveCount(1)
       await expect(
         invited.getByText(copy('adminUi', 'members.source.invite'), {
@@ -1534,7 +1534,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 /** The operator's password sign-in and its proved-email precondition. */
 async function signInAndVerifyOperator(
   page: Page,
-  server: ReviewServer,
+  server: E2EServer,
   accounts: Accounts,
 ): Promise<void> {
   await accounts.signIn({
@@ -1721,14 +1721,14 @@ test.describe('the platform lifecycle controls', () => {
     await expect(
       page.getByRole('option', {
         name: new RegExp(
-          `^${escapeRegExp(reviewOrdinaryMember.displayName)} \\(.+\\)$`,
+          `^${escapeRegExp(e2eOrdinaryMember.displayName)} \\(.+\\)$`,
         ),
       }),
     ).toBeVisible()
     await page
       .getByRole('option', {
         name: new RegExp(
-          `^${escapeRegExp(reviewOrdinaryMember.displayName)} \\(.+\\)$`,
+          `^${escapeRegExp(e2eOrdinaryMember.displayName)} \\(.+\\)$`,
         ),
       })
       .click()
@@ -1811,18 +1811,18 @@ test.describe('the platform lifecycle controls', () => {
       exact: true,
     })
     await expect(accountField).toBeVisible()
-    await accountField.fill(reviewInvitee.displayName)
+    await accountField.fill(e2eInvitee.displayName)
     await expect(
       page.getByRole('option', {
         name: new RegExp(
-          `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+          `^${escapeRegExp(e2eInvitee.displayName)} \\(.+\\)$`,
         ),
       }),
     ).toBeVisible()
     await page
       .getByRole('option', {
         name: new RegExp(
-          `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
+          `^${escapeRegExp(e2eInvitee.displayName)} \\(.+\\)$`,
         ),
       })
       .click()

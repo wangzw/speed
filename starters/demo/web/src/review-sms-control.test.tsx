@@ -26,7 +26,7 @@ import {
 } from './test-utils/session.js'
 import { principal } from './test-utils/session-harness.js'
 
-const CODE = 'review-notice-en'
+const CODE = 'demo-notice-en'
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/admin/sms')
