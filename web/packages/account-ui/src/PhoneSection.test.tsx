@@ -24,7 +24,9 @@
  * closes without a hand-over; the section's own confirmation still renders
  * for a standalone mount; the way
  * back to a different number
- * returns to the number step;
+ * returns to the number step, and the send control that comes back with
+ * it is not shown with a send's progress state while the profile re-read
+ * is still open;
  * the send carries no fresh authentication, so a step-up refusal of it
  * renders its code text in that region rather than opening a dialog, while a
  * refused verify opens the dialog, settles nothing in the slot before the
@@ -427,7 +429,7 @@ describe('PhoneSection', () => {
       screen.queryByRole('button', { name: zhCN.phone.send }),
     ).toBeNull()
     const close = screen.getByRole('button', { name: zhCN.phone.close })
-    expect(close).toBeEnabled()
+    expect(close).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(close)
     expect(onCancelSpy).toHaveBeenCalledTimes(1)
     expect(onAdded).not.toHaveBeenCalled()
@@ -577,14 +579,356 @@ describe('PhoneSection', () => {
     )
   })
 
-  it('disables sending until a number is entered', async () => {
+  it('holds the send control unavailable with its reason until a number is entered, and sends nothing', async () => {
     const respond: RealResponder = () => {
       throw new Error('no request expected')
     }
-    mount(respond)
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
 
     const send = await screen.findByRole('button', { name: zhCN.phone.send })
-    expect(send).toBeDisabled()
+    const phone = screen.getByLabelText(zhCN.phone.phone.label, {
+      selector: 'input',
+    })
+    // An unmet precondition leaves the control focusable and says why: it
+    // is unavailable, not natively disabled.
+    expect(send).toHaveAttribute('aria-disabled', 'true')
+    expect(send).not.toHaveAttribute('disabled')
+    expect(send).not.toHaveAttribute('aria-busy')
+    expect(send).toHaveAccessibleDescription(zhCN.phone.sendUnavailable)
+    send.focus()
+    expect(send).toHaveFocus()
+
+    // Click, Enter, Space and a direct form submit all leave without a
+    // request while the number is empty.
+    await user.click(send)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    fireEvent.submit(send.closest('form') as HTMLFormElement)
+    expect(rig.calls.filter((call) => call.path === PHONE_PATH)).toHaveLength(0)
+
+    // A number releases the control and clears its reason.
+    await user.type(phone, US_NATIONAL)
+    expect(send).not.toHaveAttribute('aria-disabled', 'true')
+    expect(send).not.toHaveAccessibleDescription()
+  })
+
+  it('holds the verify control unavailable with its reason until a code is entered', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    const code = await screen.findByLabelText(zhCN.phone.code.label)
+    const verify = screen.getByRole('button', { name: zhCN.phone.verify })
+
+    expect(verify).toHaveAttribute('aria-disabled', 'true')
+    expect(verify).not.toHaveAttribute('disabled')
+    expect(verify).not.toHaveAttribute('aria-busy')
+    expect(verify).toHaveAccessibleDescription(zhCN.phone.verifyUnavailable)
+    await user.click(verify)
+    fireEvent.submit(verify.closest('form') as HTMLFormElement)
+    expect(rig.calls.filter((call) => call.path === VERIFY_PATH)).toHaveLength(0)
+
+    await user.type(code, '123456')
+    expect(verify).not.toHaveAttribute('aria-disabled', 'true')
+    expect(verify).not.toHaveAccessibleDescription()
+  })
+
+  it('keeps the send control busy and the close sibling unavailable while the send is in flight', async () => {
+    let finish: (() => void) | undefined
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return new Promise<Response>((resolve) => {
+          finish = () =>
+            resolve(jsonResponse(200, { expires_in: 300, resend_after: 60 }))
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onCancel = vi.fn()
+    renderWithProviders(
+      <PhoneSection
+        session={rig.session}
+        // The host already read the gate, so the send leaves at once and
+        // its control is the one held in flight (a section that must read
+        // the gate first replaces the control with the block for a tick).
+        humanGate={{
+          phone: { required: false, provider: 'off' },
+          other: { required: false, provider: 'off' },
+        }}
+        onCancel={onCancel}
+        onAdded={() => undefined}
+      />,
+    )
+    const user = userEvent.setup()
+
+    const phone = await screen.findByLabelText(zhCN.phone.phone.label, {
+      selector: 'input',
+    })
+    await user.type(phone, US_NATIONAL)
+    const send = screen.getByRole('button', { name: zhCN.phone.send })
+    const close = screen.getByRole('button', { name: zhCN.phone.close })
+
+    await user.click(send)
+    await waitFor(() => expect(send).toHaveAttribute('aria-busy', 'true'))
+    // The control that started the write keeps focus and reports busy.
+    expect(send).toHaveFocus()
+    expect(send).toHaveAttribute('aria-disabled', 'true')
+    // Its sibling in the same form is held without a reason: the scope's
+    // write in flight is what makes it unavailable.
+    expect(close).toHaveAttribute('aria-disabled', 'true')
+    expect(close).not.toHaveAttribute('aria-busy')
+    expect(close).not.toHaveAccessibleDescription()
+    await user.click(close)
+    close.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(onCancel).not.toHaveBeenCalled()
+
+    // The number input stays focusable and unchangeable while the write
+    // carries it.
+    expect(phone).toHaveAttribute('readonly')
+    expect(phone).not.toHaveAttribute('disabled')
+    const before = (phone as HTMLInputElement).value
+    phone.focus()
+    expect(phone).toHaveFocus()
+    await user.keyboard('9')
+    expect((phone as HTMLInputElement).value).toBe(before)
+
+    await act(async () => {
+      finish?.()
+    })
+    await screen.findByLabelText(zhCN.phone.code.label)
+    expect(rig.calls.filter((call) => call.path === PHONE_PATH)).toHaveLength(1)
+  })
+
+  it('keeps the verify control busy with its cancel sibling unavailable while the verify is in flight', async () => {
+    let finish: (() => void) | undefined
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Promise<Response>((resolve) => {
+          finish = () => resolve(new Response(null, { status: 204 }))
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    const code = await screen.findByLabelText(zhCN.phone.code.label)
+    await user.type(code, '123456')
+    const verify = screen.getByRole('button', { name: zhCN.phone.verify })
+    const cancel = screen.getByRole('button', { name: zhCN.phone.cancel })
+
+    await user.click(verify)
+    await waitFor(() => expect(verify).toHaveAttribute('aria-busy', 'true'))
+    expect(verify).toHaveFocus()
+    expect(cancel).toHaveAttribute('aria-disabled', 'true')
+    expect(cancel).not.toHaveAttribute('aria-busy')
+    expect(cancel).not.toHaveAccessibleDescription()
+    await user.click(cancel)
+    expect(screen.getByLabelText(zhCN.phone.code.label)).toBeTruthy()
+    expect(code).toHaveAttribute('readonly')
+    expect(code).not.toHaveAttribute('disabled')
+
+    await act(async () => {
+      finish?.()
+    })
+    await waitFor(() =>
+      expect(screen.queryByLabelText(zhCN.phone.code.label)).toBeNull(),
+    )
+    expect(screen.getByRole('button', { name: zhCN.phone.send })).toBeTruthy()
+    expect(rig.calls.filter((call) => call.path === VERIFY_PATH)).toHaveLength(1)
+  })
+
+  it('keeps the returning send control out of the progress state while the profile refresh is in flight', async () => {
+    // A landed verify clears the code step, and the number-entry form comes
+    // back while the section's own profile re-read is still open. That read
+    // is not a send: the send control is held by the scope's write in
+    // flight and its empty number, never shown with the send's progress
+    // state.
+    let releaseHeldRead: (() => void) | undefined
+    const heldRead = new Promise<void>((resolve) => {
+      releaseHeldRead = resolve
+    })
+    let profileReads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        profileReads += 1
+        return profileReads === 1
+          ? jsonResponse(200, profileBody())
+          : heldRead.then(() => jsonResponse(200, profileBody()))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <>
+        <PhoneSection session={rig.session} />
+        <ProfileQueryObserver />
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(profileReads).toBe(1))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    // The verify landed, the code step is gone, and the re-read is open.
+    await waitFor(() => expect(profileReads).toBe(2))
+    const send = await screen.findByRole('button', { name: zhCN.phone.send })
+    expect(send).toHaveAttribute('aria-disabled', 'true')
+    expect(send).not.toHaveAttribute('aria-busy')
+    await user.click(send)
+    expect(rig.calls.filter((call) => call.path === PHONE_PATH)).toHaveLength(1)
+
+    await act(async () => {
+      releaseHeldRead?.()
+    })
+  })
+
+  it('hands focus to the control group when a successful verify removes its control', async () => {
+    let finish: (() => void) | undefined
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Promise<Response>((resolve) => {
+          finish = () => resolve(new Response(null, { status: 204 }))
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    // The host owns the form's visibility, so a landed verify keeps its
+    // confirmation and does not fall back to the number step: the verify
+    // control itself leaves the document.
+    renderWithProviders(
+      <PhoneSection
+        session={rig.session}
+        onCancel={() => undefined}
+        onAdded={() => undefined}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    const verify = screen.getByRole('button', { name: zhCN.phone.verify })
+    await user.click(verify)
+    await waitFor(() =>
+      expect(
+        rig.calls.filter((call) => call.path === VERIFY_PATH),
+      ).toHaveLength(1),
+    )
+
+    await act(async () => {
+      finish?.()
+    })
+
+    // The successful verify removes the code step's controls. Focus must
+    // not be left on the document body.
+    await waitFor(() => expect(verify).not.toBeInTheDocument())
+    expect(document.activeElement).not.toBe(document.body)
+    const group = screen.getByRole('form', { name: zhCN.phone.title })
+    await waitFor(() => expect(group).toHaveFocus())
+  })
+
+  it('leaves a focus the operator moved during the verify alone', async () => {
+    let finish: (() => void) | undefined
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return new Promise<Response>((resolve) => {
+          finish = () => resolve(new Response(null, { status: 204 }))
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <>
+        <PhoneSection
+          session={rig.session}
+          onCancel={() => undefined}
+          onAdded={() => undefined}
+        />
+        <button type="button">Elsewhere</button>
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+    const verify = screen.getByRole('button', { name: zhCN.phone.verify })
+    await waitFor(() => expect(verify).toHaveAttribute('aria-busy', 'true'))
+
+    // The operator moved focus away while the write was in flight: the
+    // landing must not take that place back.
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    elsewhere.focus()
+    expect(elsewhere).toHaveFocus()
+
+    await act(async () => {
+      finish?.()
+    })
+    await waitFor(() => expect(verify).not.toBeInTheDocument())
+    expect(elsewhere).toHaveFocus()
   })
 
   it('refuses a too-short number locally, naming the calling code, and sends nothing', async () => {
@@ -1057,7 +1401,7 @@ describe('PhoneSection', () => {
       // the viewer asked for.
       expect(fake.widgets).toHaveLength(0)
       const send = screen.getByRole('button', { name: zhCN.phone.send })
-      expect(send).toBeEnabled()
+      expect(send).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(send)
 
       // The send waits on a proof: the block renders and the control that

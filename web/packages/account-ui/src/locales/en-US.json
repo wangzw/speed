@@ -400,11 +400,13 @@
       "helper": "Choose your country/region, then enter your local number."
     },
     "send": "Send code",
+    "sendUnavailable": "Enter a phone number first.",
     "sent": "A verification code was sent to {{phone}}.",
     "code": {
       "label": "Verification code"
     },
     "verify": "Verify",
+    "verifyUnavailable": "Enter the verification code first.",
     "added": "Phone number {{phone}} has been added.",
     "cancel": "Use a different number",
     "close": "Cancel"
