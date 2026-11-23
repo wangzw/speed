@@ -33,7 +33,7 @@
  * The page opens with ui-kit's PageHeader: the page title as the level-one
  * heading, a breadcrumb trail from the console to this page, and the
  * register link plus a refresh action that re-reads the roster. The refresh
- * action is disabled while any row's status slot has a write in flight. It
+ * action is unavailable while any row's status slot has a write in flight. It
  * bumps a refresh generation the rows watch, so every row clears its own
  * scope and inline marker without being remounted. The async section's
  * placeholders render at the next level down, so the heading order never
@@ -51,6 +51,7 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   primaryColumnMaxWidthSx,
+  useActivationGuard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -69,6 +70,7 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { TenantLifecycleActions } from './internal/tenant-lifecycle.js'
+import { removedControlHeldFocus } from './internal/section-heading-focus.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
@@ -115,6 +117,11 @@ function disabledByLabel(
  * Every control here repeats across the rows, so the toggle carries the row's
  * own name in its accessible name -- a screen-reader user hears "disable
  * tenant acme", never a bare "disable" indistinguishable from the row above.
+ *
+ * The toggle saves on change, so it stays focusable while its write is in
+ * flight: a natively disabled control would drop the focus the activation
+ * gave it. It reports `aria-busy` and `aria-disabled` and swallows further
+ * activation.
  */
 function TenantRowActions({
   tenant,
@@ -152,7 +159,7 @@ function TenantRowActions({
     setFailed(false)
   }, [refreshGeneration, feedback.reset])
 
-  // The page's refresh action disables while any scope in the page is
+  // The page's refresh action is unavailable while any scope in the page is
   // writing, but this row's scope lives here; the row reports its slot up
   // and withdraws it when it unmounts.
   useEffect(() => {
@@ -162,24 +169,27 @@ function TenantRowActions({
 
   const disabled = tenant.status === 'disabled'
 
-  const toggleStatus = () => {
-    setFailed(false)
-    void feedback.run(async () => {
-      try {
-        await setStatus.mutateAsync({
-          name: tenant.name,
-          status: disabled ? 'active' : 'disabled',
-        })
-        return t(
-          disabled ? 'tenants.enabledToast' : 'tenants.disabledToast',
-          { name: tenant.name },
-        )
-      } catch (error) {
-        setFailed(true)
-        throw error
-      }
-    })
-  }
+  const toggleStatus = useActivationGuard(
+    () => {
+      setFailed(false)
+      void feedback.run(async () => {
+        try {
+          await setStatus.mutateAsync({
+            name: tenant.name,
+            status: disabled ? 'active' : 'disabled',
+          })
+          return t(
+            disabled ? 'tenants.enabledToast' : 'tenants.disabledToast',
+            { name: tenant.name },
+          )
+        } catch (error) {
+          setFailed(true)
+          throw error
+        }
+      })
+    },
+    { busy: feedback.pending },
+  )
 
   return (
     <Box
@@ -193,7 +203,6 @@ function TenantRowActions({
     >
       <Switch
         checked={!disabled}
-        disabled={feedback.pending}
         slotProps={{
           input: {
             'aria-label': disabled
@@ -201,6 +210,8 @@ function TenantRowActions({
               : t('tenants.disableAria', { name: tenant.name }),
             'aria-invalid': failed,
             'aria-describedby': failed ? statusErrorId : undefined,
+            'aria-busy': feedback.pending ? 'true' : undefined,
+            'aria-disabled': feedback.pending ? 'true' : undefined,
           },
         }}
         onChange={toggleStatus}
@@ -273,6 +284,30 @@ export function TenantRosterPage({
   // landed writes to a page-level scope -- a delete removes the row that
   // carried the control -- so that scope is reset with the re-read too.
   const lifecycleFeedback = useWriteFeedback()
+  // The roster's list container: the focus target when a deletion leaves no
+  // adjacent row to take the departed control's place.
+  const rosterListRef = useRef<HTMLDivElement | null>(null)
+  // The tenant a landed deletion took out, with the index its delete control
+  // held, so the adjacent row's delete control can take the focus.
+  const deletionFocus = useRef<{
+    readonly name: string
+    readonly index: number
+  } | null>(null)
+  const recordDeletion = useCallback((name: string) => {
+    const list = rosterListRef.current
+    if (list === null) {
+      return
+    }
+    const controls = Array.from(
+      list.querySelectorAll<HTMLElement>('[data-tenant-delete]'),
+    )
+    const index = controls.findIndex(
+      (control) => control.dataset.tenantDelete === name,
+    )
+    if (index >= 0) {
+      deletionFocus.current = { name, index }
+    }
+  }, [])
   const [refreshGeneration, setRefreshGeneration] = useState(0)
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenants', tenants)],
@@ -376,6 +411,7 @@ export function TenantRosterPage({
             <TenantLifecycleActions
               tenant={tenant}
               onSuccess={lifecycleFeedback.succeed}
+              onDeleted={recordDeletion}
             />
           </Box>
         ),
@@ -383,6 +419,45 @@ export function TenantRosterPage({
   ]
 
   const rows = tenants.data
+  // A landed deletion takes the row's lifecycle group out of the document,
+  // and with it the delete control that started the write. The same control
+  // on the next row takes the focus, else the previous row's, else the list
+  // container: it never falls back to the document body.
+  useEffect(() => {
+    const removed = deletionFocus.current
+    if (removed === null) {
+      return
+    }
+    // A failed re-read never confirms the row left. Drop the record so a
+    // later read (a refresh, the retry) cannot move focus on its own.
+    if (tenants.error !== null) {
+      deletionFocus.current = null
+      return
+    }
+    if (rows === undefined) {
+      return
+    }
+    const list = rosterListRef.current
+    if (list === null) {
+      return
+    }
+    const controls = Array.from(
+      list.querySelectorAll<HTMLElement>('[data-tenant-delete]'),
+    )
+    if (controls.some((control) => control.dataset.tenantDelete === removed.name)) {
+      return
+    }
+    deletionFocus.current = null
+    if (!removedControlHeldFocus()) {
+      return
+    }
+    const target = controls[removed.index] ?? controls[removed.index - 1]
+    if (target !== undefined) {
+      target.focus()
+      return
+    }
+    list.focus()
+  }, [rows, tenants.error])
   // A load with no data yet -- the first fetch in flight, or one parked
   // by react-query's default networkMode 'online' while offline -- keeps
   // the loading branch: isPending alone tracks "no answer yet".
@@ -429,41 +504,48 @@ export function TenantRosterPage({
       <WriteFeedbackRegion outcome={lifecycleFeedback.outcome} />
 
       <SectionCard flushContent>
-        <AdminAsyncSection
-          pending={pending}
-          payload={rows}
-          error={tenants.error}
-          refreshing={tenants.isFetching}
-          empty={rows !== undefined && rows.length === 0}
-          headingLevel="h2"
-          loading={
-            <ListSkeleton
-              label={t('tenants.loading')}
-              rows={[
-                <Skeleton key="a" variant="text" width="60%" />,
-                <Skeleton key="b" variant="text" width="42%" />,
-              ]}
-            />
-          }
-          errorState={{
-            title: t('tenants.error.title'),
-            description: t('tenants.error.description'),
-            retryLabel: t('tenants.retry'),
-            onRetry: () => void tenants.refetch(),
-          }}
-          emptyState={{
-            title: t('tenants.empty.title'),
-            description: t('tenants.empty.description'),
-          }}
+        <Box
+          ref={rosterListRef}
+          role="group"
+          aria-label={t('tenants.title')}
+          tabIndex={-1}
         >
-          {(settled) => (
-            <DataTable
-              rows={settled}
-              columns={columns}
-              rowKey={(tenant) => tenant.name}
-            />
-          )}
-        </AdminAsyncSection>
+          <AdminAsyncSection
+            pending={pending}
+            payload={rows}
+            error={tenants.error}
+            refreshing={tenants.isFetching}
+            empty={rows !== undefined && rows.length === 0}
+            headingLevel="h2"
+            loading={
+              <ListSkeleton
+                label={t('tenants.loading')}
+                rows={[
+                  <Skeleton key="a" variant="text" width="60%" />,
+                  <Skeleton key="b" variant="text" width="42%" />,
+                ]}
+              />
+            }
+            errorState={{
+              title: t('tenants.error.title'),
+              description: t('tenants.error.description'),
+              retryLabel: t('tenants.retry'),
+              onRetry: () => void tenants.refetch(),
+            }}
+            emptyState={{
+              title: t('tenants.empty.title'),
+              description: t('tenants.empty.description'),
+            }}
+          >
+            {(settled) => (
+              <DataTable
+                rows={settled}
+                columns={columns}
+                rowKey={(tenant) => tenant.name}
+              />
+            )}
+          </AdminAsyncSection>
+        </Box>
       </SectionCard>
     </Box>
   )

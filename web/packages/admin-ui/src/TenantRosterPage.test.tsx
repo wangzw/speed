@@ -207,6 +207,55 @@ describe('TenantRosterPage', () => {
     expect(calls).toEqual(['acme:disabled'])
   })
 
+  it('keeps focus on the row status switch through an in-flight write and refuses a second activation', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const writes: string[] = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () =>
+          Promise.resolve([
+            tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
+          ]),
+        setTenantStatus: (input) => {
+          writes.push(`${input.name}:${input.status}`)
+          return pending.promise
+        },
+      }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Acme')
+
+    const toggle = screen.getByRole('switch', {
+      name: text(zhCN.tenants.disableAria, { name: 'acme' }),
+    })
+    await user.click(toggle)
+
+    expect(writes).toEqual(['acme:disabled'])
+    // The switch keeps the focus that activated it: the write in flight never
+    // makes it natively disabled.
+    expect(document.activeElement).toBe(toggle)
+    expect(toggle).toHaveAttribute('aria-busy', 'true')
+    expect(toggle).toHaveAttribute('aria-disabled', 'true')
+    // The controlled value does not move until the write's refetch settles.
+    expect(toggle).toBeChecked()
+
+    // Click, Enter and Space are all swallowed while the write runs: none of
+    // them writes a second time, and the value and focus stay where they were.
+    await user.click(toggle)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(writes).toEqual(['acme:disabled'])
+    expect(toggle).toBeChecked()
+    expect(document.activeElement).toBe(toggle)
+
+    await act(async () => {
+      pending.resolve()
+    })
+    await waitForCondition(() => expect(toggle).not.toHaveAttribute('aria-busy'))
+    expect(document.activeElement).toBe(toggle)
+  })
+
   it('names each row control with its own tenant', async () => {
     const tenants: AdminTenant[] = [
       tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
