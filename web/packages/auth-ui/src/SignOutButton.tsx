@@ -2,7 +2,8 @@
  * SignOutButton: the sign-out action over the session's logout operation.
  *
  * A click drives session.logout(); while the request is in flight the
- * button is disabled and shows the signOut.busy label; a failed logout
+ * button keeps focus, carries aria-disabled and aria-busy, refuses a
+ * second activation and shows the signOut.busy label; a failed logout
  * renders the answer's code text in one InlineError and leaves the button
  * ready for another click. Logout is deliberately quiet and terminal
  * either way: auth-core clears the local session and flips the snapshot to
@@ -32,7 +33,7 @@ import { useState } from 'react'
 import Button from '@mui/material/Button'
 import type { AuthSession } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
-import { errorCodeOf } from '@speed/ui-kit'
+import { errorCodeOf, useActivationGuard } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 
 export interface SignOutButtonProps {
@@ -52,8 +53,8 @@ export function SignOutButton({ session }: SignOutButtonProps) {
       await session.logout()
       // Success is the host's to observe: the snapshot flipped anonymous
       // and the host unmounts this button; if it does not, the finally
-      // below re-enables it for the next click (logout is idempotent
-      // server-side -- a second call answers 204 too).
+      // below clears the busy state for the next click (logout is
+      // idempotent server-side -- a second call answers 204 too).
     } catch (error) {
       // A refused logout still cleared the local session (auth-core
       // clears unconditionally and rejects); the banner carries the
@@ -64,6 +65,16 @@ export function SignOutButton({ session }: SignOutButtonProps) {
     }
   }
 
+  // The button stays focusable while the logout runs, so the write is
+  // refused by the guard rather than by a native disabled attribute
+  // (which would drop focus from the control that started it).
+  const activate = useActivationGuard(
+    (): void => {
+      void handleClick()
+    },
+    { busy: pending },
+  )
+
   return (
     <>
       {/* Inherit the ambient text color: hosts mount this control inside
@@ -73,8 +84,9 @@ export function SignOutButton({ session }: SignOutButtonProps) {
       <Button
         type="button"
         color="inherit"
-        disabled={pending}
-        onClick={() => void handleClick()}
+        aria-disabled={pending ? true : undefined}
+        aria-busy={pending ? true : undefined}
+        onClick={activate}
       >
         {t(pending ? 'signOut.busy' : 'signOut.label')}
       </Button>

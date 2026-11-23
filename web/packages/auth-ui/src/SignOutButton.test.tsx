@@ -2,7 +2,8 @@
  * SignOutButton behaviour: a click drives one real logout round-trip
  * through the bindRequestFn harness (asserted on method, path and
  * bodyless request) and clears the session token; while the logout is in
- * flight the button is disabled and shows the busy label. A rejected
+ * flight the button shows the busy label, stays focusable, carries
+ * aria-disabled and aria-busy, and swallows a second activation. A rejected
  * logout renders the answer's code text in one alert and changes nothing
  * locally -- the store keeps its token and the button stays ready to
  * retry, and a retry after a transport failure clears the alert and
@@ -117,11 +118,13 @@ describe('SignOutButton', () => {
     // Success is the host's to observe; the button itself returns to
     // its idle label, ready for the next (idempotent) click.
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: LABEL_ZH })).toBeEnabled(),
+      expect(
+        screen.getByRole('button', { name: LABEL_ZH }),
+      ).not.toHaveAttribute('aria-disabled', 'true'),
     )
   })
 
-  it('disable the button with the busy label while the logout is in flight', async () => {
+  it('keep focus on the button and refuse a second activation while the logout is in flight', async () => {
     let resolveLogout: (value: unknown) => void = () => {}
     const harness = makeScriptedHarness({
       [LOGOUT]: () =>
@@ -134,14 +137,53 @@ describe('SignOutButton', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     const busy = await screen.findByRole('button', { name: BUSY_ZH })
-    expect(busy).toBeDisabled()
+    // The clicked control started the write and must stay the focused
+    // element: a native disabled attribute drops focus to the body.
+    expect(document.activeElement).toBe(busy)
+    expect(busy).toHaveAttribute('aria-disabled', 'true')
+    expect(busy).toHaveAttribute('aria-busy', 'true')
+    expect(harness.calls).toHaveLength(4)
+    // A second activation is swallowed rather than starting another write.
+    await user.click(busy)
     expect(harness.calls).toHaveLength(4)
     await act(async () => {
       resolveLogout(undefined)
     })
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: LABEL_ZH })).toBeEnabled(),
+      expect(
+        screen.getByRole('button', { name: LABEL_ZH }),
+      ).not.toHaveAttribute('aria-disabled', 'true'),
     )
+  })
+
+  it('keep focus on the button when a refused logout lands', async () => {
+    let rejectLogout: (error: unknown) => void = () => {}
+    const harness = makeScriptedHarness({
+      [LOGOUT]: () =>
+        new Promise((_resolve, reject) => {
+          rejectLogout = reject
+        }),
+    })
+    await signIn(harness)
+    renderWithProviders(<SignOutButton session={harness.session} />)
+    const user = userEvent.setup()
+    const idle = screen.getByRole('button', { name: LABEL_ZH })
+    await user.click(idle)
+    // Wait for the in-flight frame, then refuse it: the landing must not
+    // be where the focus the in-flight state dropped is lost for good.
+    await screen.findByRole('button', { name: BUSY_ZH })
+    await act(async () => {
+      rejectLogout(apiError(503, 'authn.unavailable'))
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.unavailable,
+      ),
+    )
+    // The refusal lands on the button that started it: focus stays there
+    // and the control is usable again for a retry.
+    expect(document.activeElement).toBe(idle)
+    expect(idle).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('render a refused logout in one alert: the local session still ends', async () => {
@@ -166,7 +208,9 @@ describe('SignOutButton', () => {
     )
     expect(harness.store.get()).toBeNull()
     expect(harness.calls).toHaveLength(4)
-    expect(screen.getByRole('button', { name: LABEL_ZH })).toBeEnabled()
+    expect(
+      screen.getByRole('button', { name: LABEL_ZH }),
+    ).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('clear the alert and drive another (idempotent) logout on a second click', async () => {
