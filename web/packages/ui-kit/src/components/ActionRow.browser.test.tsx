@@ -14,8 +14,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { useState } from 'react'
 import { screen, waitFor } from '@testing-library/react'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { defaultTokens } from '@speed/tokens'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { ActionButton, ActionRow } from './ActionRow.js'
@@ -184,5 +185,44 @@ describe('ActionRow in Chromium', () => {
 
     // The row contains its controls instead of overflowing horizontally.
     expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + TOLERANCE)
+  })
+
+  it('keeps its width and focus when the focused action becomes busy', async () => {
+    await page.viewport(900, 700)
+
+    function BusyOnActivate() {
+      const [busy, setBusy] = useState(false)
+      return (
+        <ActionButton busy={busy} onClick={() => setBusy(true)}>
+          Save status
+        </ActionButton>
+      )
+    }
+
+    renderWithProviders(<BusyOnActivate />, { language: 'en-US' })
+
+    const save = await screen.findByRole('button', { name: 'Save status' })
+    await waitFor(() => {
+      expect(save.getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+    await document.fonts.ready
+    const before = save.getBoundingClientRect()
+
+    await userEvent.click(save)
+    await waitFor(() => {
+      expect(save).toHaveAttribute('aria-busy', 'true')
+    })
+    // The progress indicator is absolutely positioned; one frame gives the
+    // browser a chance to lay out the busy face before it is measured.
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve())
+    })
+    await document.fonts.ready
+    const after = save.getBoundingClientRect()
+
+    // The label stays in the layout (transparent), so the button does not
+    // jump wider or narrower while its action is in flight.
+    expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(TOLERANCE)
+    expect(save).toHaveFocus()
   })
 })

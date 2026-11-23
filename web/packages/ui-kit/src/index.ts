@@ -79,6 +79,7 @@ export {
   ActionButton,
   ActionRow,
   type ActionButtonProps,
+  type ActionButtonUnavailableExplanation,
   type ActionEmphasis,
   type ActionRowProps,
   type ActionRowSize,

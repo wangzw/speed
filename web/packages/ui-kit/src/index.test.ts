@@ -117,6 +117,7 @@ function createEntryProgram(): {
 const PUBLIC_EXPORTS = [
   'ActionButton',
   'ActionButtonProps',
+  'ActionButtonUnavailableExplanation',
   'ActionEmphasis',
   'ActionRow',
   'ActionRowProps',

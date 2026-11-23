@@ -7,7 +7,8 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { useState } from 'react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { defaultTokens } from '@speed/tokens'
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -165,5 +166,258 @@ describe('ActionButton', () => {
 
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+})
+
+describe('ActionButton busy and unavailable states', () => {
+  it('keeps a busy button focusable, marks it aria-busy and shows a progress indicator', () => {
+    renderWithProviders(<ActionButton busy>Save status</ActionButton>)
+
+    const save = screen.getByRole('button', { name: 'Save status' })
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAttribute('aria-busy', 'true')
+    expect(save).toBeEnabled()
+    save.focus()
+    expect(save).toHaveFocus()
+    expect(save).toHaveAccessibleName('Save status')
+    expect(within(save).getByRole('progressbar')).toBeInTheDocument()
+  })
+
+  it('keeps an unavailable button focusable and carries no busy state', () => {
+    renderWithProviders(<ActionButton unavailable>Save status</ActionButton>)
+
+    const save = screen.getByRole('button', { name: 'Save status' })
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).not.toHaveAttribute('aria-busy')
+    expect(save).toBeEnabled()
+    save.focus()
+    expect(save).toHaveFocus()
+    expect(within(save).queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('keeps focus when the focused button becomes busy', async () => {
+    function BusyOnActivate() {
+      const [busy, setBusy] = useState(false)
+      return (
+        <ActionButton busy={busy} onClick={() => setBusy(true)}>
+          Save
+        </ActionButton>
+      )
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<BusyOnActivate />)
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    await user.click(save)
+
+    expect(save).toHaveAttribute('aria-busy', 'true')
+    expect(save).toHaveFocus()
+    expect(within(save).getByRole('progressbar')).toBeInTheDocument()
+  })
+
+  it('keeps focus when the focused button becomes unavailable', async () => {
+    function UnavailableOnActivate() {
+      const [unavailable, setUnavailable] = useState(false)
+      return (
+        <ActionButton
+          unavailable={unavailable}
+          onClick={() => setUnavailable(true)}
+        >
+          Save
+        </ActionButton>
+      )
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<UnavailableOnActivate />)
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    await user.click(save)
+
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toBeEnabled()
+    expect(save).toHaveFocus()
+  })
+
+  it('keeps the same button element, and its focus, through every availability state', () => {
+    type Availability = 'reason' | 'available' | 'busy' | 'noReason'
+    let change: (state: Availability) => void = () => {}
+    function Harness() {
+      const [state, setState] = useState<Availability>('reason')
+      change = setState
+      return (
+        <ActionButton
+          unavailable={state === 'reason' || state === 'noReason'}
+          unavailableReason={state === 'reason' ? 'Pick a status' : undefined}
+          busy={state === 'busy'}
+        >
+          Save
+        </ActionButton>
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    save.focus()
+    expect(save).toHaveFocus()
+
+    // The reason's presence must not decide the button's place in the
+    // tree: switching availability states reconciles this element, it
+    // never replaces it, so the focused button keeps focus.
+    const states: readonly Availability[] = [
+      'available',
+      'busy',
+      'reason',
+      'noReason',
+      'reason',
+      'available',
+    ]
+    for (const state of states) {
+      act(() => change(state))
+      expect(document.activeElement).toBe(save)
+      expect(save).toBeInTheDocument()
+    }
+  })
+
+  it('swallows click, Enter and Space activation while unavailable', async () => {
+    const onClick = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <ActionButton unavailable onClick={onClick}>
+        Save
+      </ActionButton>,
+    )
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    await user.click(save)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+
+    expect(onClick).not.toHaveBeenCalled()
+  })
+
+  it('leaves an unavailable click visible to the ancestor that holds it', async () => {
+    const onAncestorClick = vi.fn()
+    const onClick = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <div onClick={onAncestorClick}>
+        <ActionButton unavailable onClick={onClick}>
+          Save
+        </ActionButton>
+      </div>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    // Swallowing the activation must not swallow the event: a host that
+    // listens on an ancestor still sees the click.
+    expect(onClick).not.toHaveBeenCalled()
+    expect(onAncestorClick).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks both a click and an input Enter from submitting the form while unavailable', async () => {
+    const onSubmit = vi.fn((event: { preventDefault: () => void }) => {
+      event.preventDefault()
+    })
+    const user = userEvent.setup()
+    renderWithProviders(
+      <form onSubmit={onSubmit}>
+        <input aria-label="Name" />
+        <ActionButton type="submit" unavailable>
+          Save
+        </ActionButton>
+      </form>,
+    )
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    await user.click(save)
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('Name'), 'Ada{Enter}')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('associates an unavailable reason once, after the caller description, without changing the name', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <>
+        <span id="hint">A status must be chosen</span>
+        <ActionButton
+          unavailable
+          unavailableReason="Pick a status"
+          aria-describedby="hint"
+        >
+          Save
+        </ActionButton>
+      </>,
+    )
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    const reason = screen.getByText('Pick a status')
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAttribute('aria-describedby', `hint ${reason.id}`)
+    expect(save).toHaveAccessibleDescription(
+      'A status must be chosen Pick a status',
+    )
+    expect(save).toHaveAccessibleName('Save')
+
+    await user.hover(save)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Pick a status')
+    expect(save).toHaveAccessibleName('Save')
+    expect(save).toHaveAccessibleDescription(
+      'A status must be chosen Pick a status',
+    )
+  })
+
+  it('points at existing explanatory text without rendering or tooltipping its own copy', () => {
+    renderWithProviders(
+      <>
+        <span id="why">Only an administrator may change this</span>
+        <ActionButton unavailable unavailableDescribedBy="why">
+          Save
+        </ActionButton>
+      </>,
+    )
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toHaveAttribute('aria-describedby', 'why')
+    expect(save).toHaveAccessibleDescription(
+      'Only an administrator may change this',
+    )
+    expect(save).not.toHaveAttribute('title')
+  })
+
+  it('does not render an unavailable reason while busy', () => {
+    renderWithProviders(
+      <ActionButton busy unavailable unavailableReason="Pick a status">
+        Save
+      </ActionButton>,
+    )
+
+    const save = screen.getByRole('button', { name: 'Save' })
+    expect(save).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByText('Pick a status')).not.toBeInTheDocument()
+    expect(save).not.toHaveAttribute('aria-describedby')
+    expect(save).not.toHaveAttribute('title')
+  })
+
+  it('labels the progress indicator from the button id, preferring a caller id', () => {
+    const first = renderWithProviders(
+      <ActionButton busy id="save-status">
+        Save status
+      </ActionButton>,
+    )
+    const namedSave = screen.getByRole('button', { name: 'Save status' })
+    expect(namedSave).toHaveAttribute('id', 'save-status')
+    expect(
+      within(namedSave).getByRole('progressbar'),
+    ).toHaveAttribute('aria-labelledby', 'save-status')
+    first.unmount()
+
+    renderWithProviders(<ActionButton busy>Save status</ActionButton>)
+    const save = screen.getByRole('button', { name: 'Save status' })
+    const progress = within(save).getByRole('progressbar')
+    expect(save.id).not.toBe('')
+    expect(progress).toHaveAttribute('aria-labelledby', save.id)
   })
 })
