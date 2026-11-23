@@ -1610,6 +1610,9 @@
     "disabledToast": "Sending of template \"{{name}}\" disabled",
     "registered": "Template \"{{name}}\" registered",
     "offered": "Template \"{{name}}\" offered for review",
+    "missingFields": "Still needed: {{fields}}.",
+    "listSeparator": ", ",
+    "tableLabel": "SMS templates",
     "register": {
       "title": "Register a template",
       "nameLabel": "Name",

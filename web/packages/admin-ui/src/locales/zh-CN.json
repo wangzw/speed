@@ -1610,6 +1610,9 @@
     "disabledToast": "模板「{{name}}」已停用发送",
     "registered": "模板「{{name}}」已登记",
     "offered": "模板「{{name}}」已提交审核",
+    "missingFields": "还需要填写：{{fields}}。",
+    "listSeparator": "、",
+    "tableLabel": "短信模板表",
     "register": {
       "title": "登记模板",
       "nameLabel": "名称",

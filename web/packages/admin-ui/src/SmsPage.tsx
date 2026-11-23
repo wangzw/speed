@@ -30,21 +30,32 @@
  * three scopes and the table's row marker first, because a refresh changes
  * the context those results were written under. The page opens with
  * ui-kit's PageHeader.
+ *
+ * The template switch saves on change. While a table write is in flight the
+ * switch and the row's remove action stay focusable, report the unavailable
+ * state, and ignore activation. The row whose own removal is in flight is
+ * the one remove action that reports the busy state; every other control in
+ * the scope, and every remove action while a toggle runs, reports the
+ * unavailable state alone. A landed removal takes its row out of the
+ * document on the re-read that follows; focus moves to the same remove
+ * action in the next row, else the previous row, else the table's own
+ * container.
  */
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   DataTable,
   ListSkeleton,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   pageRefreshRead,
+  useActivationGuard,
   usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -61,7 +72,7 @@ import {
   WriteFeedbackRegion,
 } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
-import type { AdminSmsTemplate } from './operations.js'
+import type { AdminSmsTemplate, AdminSmsTemplatePage } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
 
 /** The template sources the registry names. */
@@ -98,6 +109,98 @@ function parseCodes(text: string): Record<string, string> {
   return codes
 }
 
+/** Which of a row's two writes the table scope's failure names. */
+type SmsRowFailedAction = 'enabled' | 'remove'
+
+type SmsRowActionsProps = {
+  readonly template: AdminSmsTemplate
+  /** The write the table scope's failure names, or null for another row. */
+  readonly failedAction: SmsRowFailedAction | null
+  readonly failureText: string | null
+  /** This row's own removal is in flight. */
+  readonly removalBusy: boolean
+  /** A write in the table scope is in flight (this row's or another's). */
+  readonly writePending: boolean
+  readonly onToggle: (template: AdminSmsTemplate) => void
+  readonly onRemove: (template: AdminSmsTemplate) => void
+  readonly registerRemoveButton: (
+    name: string,
+    node: HTMLButtonElement | null,
+  ) => void
+}
+
+/**
+ * One row's save-on-change switch and remove action. It is a component of
+ * its own because the switch's change handler goes through a hook, which
+ * cannot be called from the column's cell callback.
+ */
+function SmsRowActions({
+  template,
+  failedAction,
+  failureText,
+  removalBusy,
+  writePending,
+  onToggle,
+  onRemove,
+  registerRemoveButton,
+}: SmsRowActionsProps) {
+  const { t } = useAdminUiTranslation()
+  const errorId = `sms-error-${encodeURIComponent(template.name)}`
+  const toggleFailed = failedAction === 'enabled'
+  const removeFailed = failedAction === 'remove'
+  // Saving on change: while the scope's write is in flight the switch stays
+  // focusable and reports the unavailable state on its input, and the
+  // change is swallowed instead of reaching the handler.
+  const guardedToggle = useActivationGuard(() => onToggle(template), {
+    busy: writePending,
+  })
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', columnGap: 1 }}>
+        <Switch
+          checked={template.enabled}
+          slotProps={{
+            input: {
+              'aria-label': t(
+                template.enabled ? 'sms.disableAria' : 'sms.enableAria',
+                { name: template.name },
+              ),
+              'aria-invalid': toggleFailed,
+              'aria-describedby': toggleFailed ? errorId : undefined,
+              'aria-disabled': writePending ? 'true' : undefined,
+            },
+          }}
+          onChange={guardedToggle}
+        />
+        <ActionButton
+          type="button"
+          size="small"
+          tone="danger"
+          aria-label={t('sms.removeAria', { name: template.name })}
+          aria-invalid={removeFailed}
+          aria-describedby={removeFailed ? errorId : undefined}
+          busy={removalBusy}
+          unavailable={writePending && !removalBusy}
+          ref={(node) => registerRemoveButton(template.name, node)}
+          onClick={() => onRemove(template)}
+        >
+          {t('sms.remove')}
+        </ActionButton>
+      </Box>
+      {failureText !== null && failedAction !== null && (
+        <Typography
+          id={errorId}
+          variant="caption"
+          color="error"
+          sx={{ display: 'block', mt: 0.5 }}
+        >
+          {failureText}
+        </Typography>
+      )}
+    </Box>
+  )
+}
+
 export function SmsPage() {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
@@ -123,6 +226,35 @@ export function SmsPage() {
     readonly name: string
     readonly action: 'enabled' | 'remove'
   } | null>(null)
+  // Which row owns the table scope's in-flight write, and which of its two
+  // writes it is. The scope's `pending` says a write runs; this says whose,
+  // so only that row's remove action reports the busy state and every other
+  // control reports the shared scope as unavailable.
+  const [pendingRow, setPendingRow] = useState<{
+    readonly name: string
+    readonly action: SmsRowFailedAction
+  } | null>(null)
+  // Where a landed removal sends focus. The row leaves the document on the
+  // re-read the write invalidates, so the target is recorded against the
+  // list the write ran over and resolved once that list is replaced.
+  const landingAfterRemoval = useRef<{
+    readonly name: string
+    readonly data: AdminSmsTemplatePage | undefined
+  } | null>(null)
+  const previousNames = useRef<readonly string[]>([])
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>())
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const registerRemoveButton = (
+    name: string,
+    node: HTMLButtonElement | null,
+  ): void => {
+    if (node === null) {
+      removeButtons.current.delete(name)
+    } else {
+      removeButtons.current.set(name, node)
+    }
+  }
+
   // The refresh action re-reads the page's one body read. A refresh changes
   // the context every result on the page was written under, so it drops the
   // three section scopes and the table's row marker before re-reading.
@@ -180,6 +312,7 @@ export function SmsPage() {
   const toggleEnabled = (template: AdminSmsTemplate) => {
     const enabled = !template.enabled
     setFailedTemplate(null)
+    setPendingRow({ name: template.name, action: 'enabled' })
     void tableFeedback.run(async () => {
       try {
         await setEnabled.mutateAsync({ name: template.name, enabled })
@@ -189,6 +322,8 @@ export function SmsPage() {
       } catch (error) {
         setFailedTemplate({ name: template.name, action: 'enabled' })
         throw error
+      } finally {
+        setPendingRow(null)
       }
     })
   }
@@ -200,13 +335,20 @@ export function SmsPage() {
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedTemplate(null)
+        setPendingRow({ name: template.name, action: 'remove' })
         void tableFeedback.run(async () => {
           try {
             await removeTemplate.mutateAsync({ name: template.name })
+            landingAfterRemoval.current = {
+              name: template.name,
+              data: templates.data,
+            }
             return t('sms.removed', { name: template.name })
           } catch (error) {
             setFailedTemplate({ name: template.name, action: 'remove' })
             throw error
+          } finally {
+            setPendingRow(null)
           }
         })
       },
@@ -226,16 +368,26 @@ export function SmsPage() {
   const [offerParams, setOfferParams] = useState('')
   const [offerRemark, setOfferRemark] = useState('')
 
-  // A create submit stays disabled until every required field carries text,
-  // judged after trimming: a registration needs its template name, and a
-  // submission needs the template name, the content, the kind and the
-  // language. The parameters and the reviewer's note may be empty.
-  const registerReady = name.trim() !== ''
-  const offerReady =
-    offerName.trim() !== '' &&
-    offerContent.trim() !== '' &&
-    offerKind.trim() !== '' &&
-    offerLocale.trim() !== ''
+  // A create submit stays unavailable until every required field carries
+  // text, judged after trimming: a registration needs its template name,
+  // and a submission needs the template name, the content, the kind and the
+  // language. The parameters and the reviewer's note may be empty. Each
+  // missing field is checked on its own so the reason can name it.
+  const missingFieldsReason = (labels: readonly string[]): string | undefined =>
+    labels.length === 0
+      ? undefined
+      : t('sms.missingFields', {
+          fields: labels.join(t('sms.listSeparator')),
+        })
+  const registerMissing = name.trim() === '' ? [t('sms.register.nameLabel')] : []
+  const registerReady = registerMissing.length === 0
+  const offerMissing = [
+    ...(offerName.trim() === '' ? [t('sms.offer.nameLabel')] : []),
+    ...(offerContent.trim() === '' ? [t('sms.offer.contentLabel')] : []),
+    ...(offerKind.trim() === '' ? [t('sms.offer.kindLabel')] : []),
+    ...(offerLocale.trim() === '' ? [t('sms.offer.localeLabel')] : []),
+  ]
+  const offerReady = offerMissing.length === 0
 
   // A closed-set source or review state renders its own label; a value the
   // set does not name is shown as the record carries it.
@@ -296,65 +448,62 @@ export function SmsPage() {
       align: 'right',
       header: t('sms.column.actions'),
       cellWrap: 'nowrap',
-      cell: (template) => {
-        const errorId = `sms-error-${encodeURIComponent(template.name)}`
-        const toggleFailed =
-          failedTemplate?.name === template.name &&
-          failedTemplate.action === 'enabled'
-        const removeFailed =
-          failedTemplate?.name === template.name &&
-          failedTemplate.action === 'remove'
-        return (
-          <Box>
-            <Box sx={{ display: 'flex', columnGap: 1 }}>
-              <Switch
-                checked={template.enabled}
-                disabled={tableFeedback.pending}
-                slotProps={{
-                  input: {
-                    'aria-label': t(
-                      template.enabled ? 'sms.disableAria' : 'sms.enableAria',
-                      { name: template.name },
-                    ),
-                    'aria-invalid': toggleFailed,
-                    'aria-describedby': toggleFailed ? errorId : undefined,
-                  },
-                }}
-                onChange={() => toggleEnabled(template)}
-              />
-              <Button
-                type="button"
-                size="small"
-                variant="outlined"
-                color="error"
-                aria-label={t('sms.removeAria', { name: template.name })}
-                aria-invalid={removeFailed}
-                aria-describedby={removeFailed ? errorId : undefined}
-                disabled={tableFeedback.pending}
-                loading={tableFeedback.pending}
-                onClick={() => requestRemove(template)}
-              >
-                {t('sms.remove')}
-              </Button>
-            </Box>
-            {tableFailureText !== null &&
-              failedTemplate?.name === template.name && (
-                <Typography
-                  id={errorId}
-                  variant="caption"
-                  color="error"
-                  sx={{ display: 'block', mt: 0.5 }}
-                >
-                  {tableFailureText}
-                </Typography>
-              )}
-          </Box>
-        )
-      },
+      cell: (template) => (
+        <SmsRowActions
+          template={template}
+          failedAction={
+            failedTemplate?.name === template.name
+              ? failedTemplate.action
+              : null
+          }
+          failureText={tableFailureText}
+          removalBusy={
+            pendingRow?.name === template.name &&
+            pendingRow.action === 'remove'
+          }
+          writePending={tableFeedback.pending}
+          onToggle={toggleEnabled}
+          onRemove={requestRemove}
+          registerRemoveButton={registerRemoveButton}
+        />
+      ),
     },
   ]
 
   const rows = templates.data?.templates
+
+  // A landed removal moves focus off the row it takes away: the same
+  // control in the next row, else the previous row, else the table's own
+  // container. The list is compared by identity, so the landing waits for
+  // the re-read that actually drops the row. Focus is only placed when the
+  // removal left it on the document body; a reader who has chosen another
+  // resting place keeps it.
+  useLayoutEffect(() => {
+    const names = rows?.map((template) => template.name) ?? []
+    const landing = landingAfterRemoval.current
+    if (landing !== null && templates.data !== landing.data) {
+      landingAfterRemoval.current = null
+      const active = document.activeElement
+      if (
+        (active === null || active === document.body) &&
+        !names.includes(landing.name)
+      ) {
+        const index = previousNames.current.indexOf(landing.name)
+        const targetName = names[index] ?? names[index - 1]
+        const target =
+          targetName === undefined
+            ? undefined
+            : removeButtons.current.get(targetName)
+        if (target !== undefined) {
+          target.focus()
+        } else {
+          tableContainerRef.current?.focus()
+        }
+      }
+    }
+    previousNames.current = names
+  }, [rows, templates.data])
+
   const pending = templates.isPending && rows === undefined
 
   return (
@@ -414,15 +563,16 @@ export function SmsPage() {
             label={t('sms.register.codesLabel')}
             placeholder={t('sms.register.codesPlaceholder')}
           />
-          <Button
+          <ActionButton
             type="button"
-            variant="contained"
-            disabled={registerFeedback.pending || !registerReady}
-            loading={registerFeedback.pending}
+            emphasis="primary"
+            busy={registerFeedback.pending}
+            unavailable={!registerReady}
+            unavailableReason={missingFieldsReason(registerMissing)}
             onClick={register}
           >
             {t('sms.register.submit')}
-          </Button>
+          </ActionButton>
         </Box>
         <Box ref={registerRegionRef}>
           <WriteFeedbackRegion outcome={registerFeedback.outcome} />
@@ -476,15 +626,16 @@ export function SmsPage() {
             label={t('sms.offer.contentLabel')}
             sx={{ minWidth: 220 }}
           />
-          <Button
+          <ActionButton
             type="button"
-            variant="contained"
-            disabled={offerFeedback.pending || !offerReady}
-            loading={offerFeedback.pending}
+            emphasis="primary"
+            busy={offerFeedback.pending}
+            unavailable={!offerReady}
+            unavailableReason={missingFieldsReason(offerMissing)}
             onClick={offer}
           >
             {t('sms.offer.submit')}
-          </Button>
+          </ActionButton>
         </Box>
         <Box ref={offerRegionRef}>
           <WriteFeedbackRegion outcome={offerFeedback.outcome} />
@@ -492,41 +643,48 @@ export function SmsPage() {
       </SectionCard>
 
       <SectionCard flushContent>
-        <AdminAsyncSection
-          pending={pending}
-          payload={rows}
-          error={templates.error}
-          refreshing={templates.isFetching}
-          empty={rows !== undefined && rows.length === 0}
-          headingLevel="h2"
-          loading={
-            <ListSkeleton
-              label={t('sms.loading')}
-              rows={[
-                <Skeleton key="a" variant="text" width="56%" />,
-                <Skeleton key="b" variant="text" width="42%" />,
-              ]}
-            />
-          }
-          errorState={{
-            title: t('sms.error.title'),
-            description: t('sms.error.description'),
-            retryLabel: t('sms.retry'),
-            onRetry: () => void templates.refetch(),
-          }}
-          emptyState={{
-            title: t('sms.empty.title'),
-            description: t('sms.empty.description'),
-          }}
+        <Box
+          ref={tableContainerRef}
+          tabIndex={-1}
+          role="group"
+          aria-label={t('sms.tableLabel')}
         >
-          {(settled) => (
-            <DataTable
-              rows={settled}
-              columns={columns}
-              rowKey={(template) => template.name}
-            />
-          )}
-        </AdminAsyncSection>
+          <AdminAsyncSection
+            pending={pending}
+            payload={rows}
+            error={templates.error}
+            refreshing={templates.isFetching}
+            empty={rows !== undefined && rows.length === 0}
+            headingLevel="h2"
+            loading={
+              <ListSkeleton
+                label={t('sms.loading')}
+                rows={[
+                  <Skeleton key="a" variant="text" width="56%" />,
+                  <Skeleton key="b" variant="text" width="42%" />,
+                ]}
+              />
+            }
+            errorState={{
+              title: t('sms.error.title'),
+              description: t('sms.error.description'),
+              retryLabel: t('sms.retry'),
+              onRetry: () => void templates.refetch(),
+            }}
+            emptyState={{
+              title: t('sms.empty.title'),
+              description: t('sms.empty.description'),
+            }}
+          >
+            {(settled) => (
+              <DataTable
+                rows={settled}
+                columns={columns}
+                rowKey={(template) => template.name}
+              />
+            )}
+          </AdminAsyncSection>
+        </Box>
         <Box ref={tableRegionRef}>
           <WriteFeedbackRegion outcome={tableFeedback.outcome} />
         </Box>

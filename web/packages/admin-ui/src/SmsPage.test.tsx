@@ -11,7 +11,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { createClient } from '@speed/api-client'
@@ -247,7 +247,7 @@ describe('SmsPage', () => {
     }
   })
 
-  it('keeps each create submit disabled until its required fields carry text', async () => {
+  it('keeps each create submit unavailable until its required fields carry text', async () => {
     const user = userEvent.setup()
     const operations = withTemplates()
     renderWithProviders(<SmsPage />, { operations })
@@ -261,41 +261,266 @@ describe('SmsPage', () => {
     const offerSubmit = within(offer).getByRole('button', {
       name: zhCN.sms.offer.submit,
     })
-    expect(registerSubmit).toBeDisabled()
-    expect(offerSubmit).toBeDisabled()
+    expect(registerSubmit).toHaveAttribute('aria-disabled', 'true')
+    expect(offerSubmit).toHaveAttribute('aria-disabled', 'true')
 
     // Whitespace alone is not a name.
     await user.type(
       within(register).getByLabelText(zhCN.sms.register.nameLabel),
       '   ',
     )
-    expect(registerSubmit).toBeDisabled()
+    expect(registerSubmit).toHaveAttribute('aria-disabled', 'true')
     await user.type(
       within(register).getByLabelText(zhCN.sms.register.nameLabel),
       'welcome',
     )
-    expect(registerSubmit).toBeEnabled()
+    expect(registerSubmit).not.toHaveAttribute('aria-disabled', 'true')
 
     // An offer names a template, its content, its kind and its language.
     await user.type(within(offer).getByLabelText(zhCN.sms.offer.nameLabel), 'welcome')
-    expect(offerSubmit).toBeDisabled()
+    expect(offerSubmit).toHaveAttribute('aria-disabled', 'true')
     await user.type(within(offer).getByLabelText(zhCN.sms.offer.contentLabel), '   ')
-    expect(offerSubmit).toBeDisabled()
+    expect(offerSubmit).toHaveAttribute('aria-disabled', 'true')
     await user.type(
       within(offer).getByLabelText(zhCN.sms.offer.contentLabel),
       'your code is ${code}',
     )
-    expect(offerSubmit).toBeDisabled()
+    expect(offerSubmit).toHaveAttribute('aria-disabled', 'true')
     await user.type(
       within(offer).getByLabelText(zhCN.sms.offer.kindLabel),
       'verification',
     )
-    expect(offerSubmit).toBeDisabled()
+    expect(offerSubmit).toHaveAttribute('aria-disabled', 'true')
     await user.type(
       within(offer).getByLabelText(zhCN.sms.offer.localeLabel),
       'zh-CN',
     )
-    expect(offerSubmit).toBeEnabled()
+    expect(offerSubmit).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keeps the template toggle focused while its write is in flight and ignores a second activation', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const writes: boolean[] = []
+    const operations = withTemplates({
+      setSmsTemplateEnabled: (input) => {
+        writes.push(input.enabled)
+        return pending.promise
+      },
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    const toggle = await screen.findByRole('switch', {
+      name: text(zhCN.sms.disableAria, { name: 'login-code' }),
+    })
+
+    await user.click(toggle)
+
+    // The save-on-change switch stays focused while its write is in
+    // flight, carries the unavailable state on its input, and keeps the
+    // controlled value until the write settles.
+    expect(toggle).toHaveFocus()
+    expect(toggle).toHaveAttribute('aria-disabled', 'true')
+    expect(toggle).toBeChecked()
+
+    // A second activation from the keyboard is swallowed: no second write.
+    await user.keyboard(' ')
+    expect(writes).toEqual([false])
+
+    pending.resolve()
+    await waitForCondition(() =>
+      expect(toggle).not.toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(toggle).toHaveFocus()
+  })
+
+  it('marks only the row whose removal runs busy and holds its siblings back', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const removed: string[] = []
+    const operations = withTemplates({
+      listSmsTemplates: () =>
+        Promise.resolve(
+          page([
+            template({ name: 'alpha' }),
+            template({ name: 'bravo' }),
+            template({ name: 'charlie' }),
+          ]),
+        ),
+      removeSmsTemplate: (name) => {
+        removed.push(name)
+        return pending.promise
+      },
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('bravo')
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.sms.removeAria, { name: 'bravo' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+    await waitForCondition(() => expect(removed).toEqual(['bravo']))
+
+    // Only the activated row's remove action reports the write; its siblings
+    // report the shared scope without borrowing that row's progress or a
+    // reason of their own.
+    const active = screen.getByRole('button', {
+      name: text(zhCN.sms.removeAria, { name: 'bravo' }),
+    })
+    expect(active).toHaveAttribute('aria-busy', 'true')
+    expect(active).toHaveAttribute('aria-disabled', 'true')
+    const sibling = screen.getByRole('button', {
+      name: text(zhCN.sms.removeAria, { name: 'alpha' }),
+    })
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy', 'true')
+    expect(sibling).not.toHaveAccessibleDescription()
+
+    await user.click(sibling)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(removed).toEqual(['bravo'])
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('holds every row’s remove control back while a toggle is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const writes: boolean[] = []
+    const operations = withTemplates({
+      listSmsTemplates: () =>
+        Promise.resolve(
+          page([template({ name: 'alpha' }), template({ name: 'bravo' })]),
+        ),
+      setSmsTemplateEnabled: (input) => {
+        writes.push(input.enabled)
+        return pending.promise
+      },
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    const toggle = await screen.findByRole('switch', {
+      name: text(zhCN.sms.disableAria, { name: 'alpha' }),
+    })
+    await user.click(toggle)
+    await waitForCondition(() => expect(writes).toEqual([false]))
+
+    // The toggle owns the attempt; every remove action in the table reports
+    // the shared scope without claiming progress.
+    for (const name of ['alpha', 'bravo']) {
+      const remove = screen.getByRole('button', {
+        name: text(zhCN.sms.removeAria, { name }),
+      })
+      expect(remove).toHaveAttribute('aria-disabled', 'true')
+      expect(remove).not.toHaveAttribute('aria-busy', 'true')
+      expect(remove).not.toHaveAccessibleDescription()
+    }
+
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.sms.removeAria, { name: 'bravo' }),
+      }),
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('keeps an unavailable create submit focusable and explains the missing fields', async () => {
+    const user = userEvent.setup()
+    const registered: string[] = []
+    const offered: string[] = []
+    const operations = withTemplates({
+      registerSmsTemplate: (input) => {
+        registered.push(input.name)
+        return Promise.resolve()
+      },
+      offerSmsTemplate: (input) => {
+        offered.push(input.name)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+    const register = section(zhCN.sms.register.title)
+    const offer = section(zhCN.sms.offer.title)
+    const registerSubmit = within(register).getByRole('button', {
+      name: zhCN.sms.register.submit,
+    })
+    const offerSubmit = within(offer).getByRole('button', {
+      name: zhCN.sms.offer.submit,
+    })
+
+    // The missing field is named in the accessible description.
+    expect(registerSubmit).toHaveAttribute('aria-disabled', 'true')
+    expect(registerSubmit).toHaveAccessibleDescription(
+      text(zhCN.sms.missingFields, { fields: zhCN.sms.register.nameLabel }),
+    )
+
+    registerSubmit.focus()
+    expect(registerSubmit).toHaveFocus()
+    await user.click(registerSubmit)
+    expect(registerSubmit).toHaveFocus()
+    expect(registered).toEqual([])
+
+    // Each required offer field is checked, not just the form as a whole.
+    expect(offerSubmit).toHaveAccessibleDescription(
+      text(zhCN.sms.missingFields, {
+        fields: [
+          zhCN.sms.offer.nameLabel,
+          zhCN.sms.offer.contentLabel,
+          zhCN.sms.offer.kindLabel,
+          zhCN.sms.offer.localeLabel,
+        ].join(zhCN.sms.listSeparator),
+      }),
+    )
+  })
+
+  it('keeps the offer submit focused through an in-flight write and ignores Enter', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const offered: string[] = []
+    const operations = withTemplates({
+      offerSmsTemplate: (input) => {
+        offered.push(input.name)
+        return pending.promise
+      },
+    })
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+    const offer = section(zhCN.sms.offer.title)
+    for (const [label, value] of [
+      [zhCN.sms.offer.nameLabel, 'welcome'],
+      [zhCN.sms.offer.contentLabel, 'your code is {code}'],
+      [zhCN.sms.offer.kindLabel, 'verification'],
+      [zhCN.sms.offer.localeLabel, 'zh-CN'],
+    ] as const) {
+      await user.type(within(offer).getByLabelText(label), value)
+    }
+    const submit = within(offer).getByRole('button', {
+      name: zhCN.sms.offer.submit,
+    })
+    await user.click(submit)
+
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    await user.keyboard('{Enter}')
+    expect(offered).toEqual(['welcome'])
+
+    pending.resolve()
+    await waitForCondition(() =>
+      expect(submit).not.toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(submit).toHaveFocus()
   })
 
   it('returns both create forms to their initial state after a landed write', async () => {
@@ -461,8 +686,8 @@ describe('SmsPage', () => {
     expect(screen.getByRole('button', { name: zhCN.sms.retry })).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.register.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.offer.title)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toBeDisabled()
-    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('renders the generic failure placeholder and keeps both write forms when the entry document answers the read', async () => {
@@ -513,8 +738,8 @@ describe('SmsPage', () => {
     expect(screen.getByText(zhCN.sms.offer.title)).toBeInTheDocument()
     // Both forms are still there; their submits start disabled because
     // neither has a required field filled yet.
-    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toBeDisabled()
-    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
