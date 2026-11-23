@@ -101,6 +101,7 @@
     "loading": "Loading sessions",
     "current": "Current session",
     "deviceUnknown": "Unknown device",
+    "revokeRowLabel": "Sign out",
     "revokeAriaWithDevice": "Sign out this session: {{device}}",
     "revokedOne": "Signed out this session: {{device}}.",
     "signedIn": "Signed in {{time}}",
@@ -354,6 +355,7 @@
       "label": "Display name"
     },
     "save": "Save",
+    "saveUnavailable": "The display name hasn't changed.",
     "saved": "Display name saved.",
     "error": {
       "title": "Could not load your profile",

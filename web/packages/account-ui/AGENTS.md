@@ -121,11 +121,11 @@ session, and `SessionsSection`, which drives no flow, takes only its optional
   distinguishes a free address from one another account holds while sending
   (the answer is the same shape and no "already registered" copy exists); the
   taken-address text belongs to the verify step alone. A resend control
-  addresses the target the section displays, is disabled for the server's
-  `resend_after` (or a 429's Retry-After) and states why, and its countdown
-  timer stops at expiry; the sent notice is announced once through a
-  `role="status"` region that is mounted empty and filled on landing, and
-  focus moves to the code field. It takes the session for its
+  addresses the target the section displays, is unavailable for the server's
+  `resend_after` (or a 429's Retry-After), stays focusable and states why,
+  and its countdown timer stops at expiry; the sent notice is announced once
+  through a `role="status"` region that is mounted empty and filled on
+  landing, and focus moves to the code field. It takes the session for its
   human-verification block (its writes drive no step-up dialog), the optional
   `initialChangeOpen`, which starts it in the
   change-address form so a host can land a "change address" action there, and

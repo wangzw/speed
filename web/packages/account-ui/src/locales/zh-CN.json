@@ -101,6 +101,7 @@
     "loading": "正在加载会话",
     "current": "当前会话",
     "deviceUnknown": "未知设备",
+    "revokeRowLabel": "退出",
     "revokeAriaWithDevice": "退出此会话：{{device}}",
     "revokedOne": "已退出会话：{{device}}。",
     "signedIn": "登录于 {{time}}",
@@ -354,6 +355,7 @@
       "label": "显示名"
     },
     "save": "保存",
+    "saveUnavailable": "显示名没有改动。",
     "saved": "显示名已保存。",
     "error": {
       "title": "无法加载个人资料",
