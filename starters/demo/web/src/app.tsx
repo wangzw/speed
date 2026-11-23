@@ -95,6 +95,11 @@ import type { RouteContext, RoutePresence } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { contactVerificationPending } from './contact-verification.js'
 import {
+  findPageHeading,
+  focusFellWithPageSwap,
+  focusPageEntry,
+} from './focus-landing.js'
+import {
   tenantAdminTenantsList,
   useAuthnProfileGet,
 } from './app-api/index.js'
@@ -1279,6 +1284,12 @@ function TenantFrame({
  * an anonymous viewer -- a fresh visitor, or one whose authenticated session
  * turned anonymous mid-use (the same snapshot flip) -- meets the host's
  * sign-in surface instead of an admin whose requests can never answer.
+ *
+ * The opposite flip is a whole-page swap in place, at the same URL: the
+ * sign-in surface unmounts and the admin takes its place. The gate hands the
+ * new page the focus the vanished surface held, the same duty ProductShell
+ * performs for its branches, and lands on the page's own heading rather than
+ * the shell's wrapper so the reader arrives at the content.
  */
 function SessionGate({
   children,
@@ -1286,14 +1297,83 @@ function SessionGate({
   readonly children: ReactNode
 }): ReactElement {
   const snapshot = useAuthState()
-  if (snapshot.state !== 'authenticated') {
+  const authenticated = snapshot.state === 'authenticated'
+  // The rendered area's container, and the state of the previous render: the
+  // flip out of the sign-in surface is the only transition this gate lands
+  // focus for (the first render's focus belongs to the page load).
+  const gate = useRef<HTMLDivElement | null>(null)
+  const previousAuthenticated = useRef(authenticated)
+
+  useLayoutEffect(() => {
+    const previous = previousAuthenticated.current
+    previousAuthenticated.current = authenticated
+    if (previous || !authenticated) {
+      return
+    }
+    // Only when the flip took the focus: the sign-in surface unmounted with
+    // the control the operator activated, or focus fell to the body. A place
+    // the operator moved to keeps it.
+    if (!focusFellWithPageSwap(null)) {
+      return
+    }
+    const container = gate.current
+    if (container === null) {
+      return
+    }
+    // A completed sign-in clears the permission domains, so the admin area is
+    // still waiting when the flip commits: the gate holds no page entry yet.
+    // Land on the wrapper for now, and hand the focus on once the page's main
+    // landmark and heading arrive.
+    const landing = focusPageEntry(container)
+    if (findPageHeading(container) !== null) {
+      return
+    }
+    const handOff = (): boolean => {
+      const main = container.querySelector<HTMLElement>(
+        'main, [role="main"]',
+      )
+      if (main === null) {
+        return false
+      }
+      const heading = findPageHeading(main)
+      if (heading === null) {
+        return false
+      }
+      // Only when the flip's landing still holds the focus: a place the
+      // operator moved to keeps it.
+      const active = document.activeElement
+      if (active !== landing && active !== container && active !== document.body) {
+        return true
+      }
+      focusPageEntry(heading)
+      return true
+    }
+    if (handOff()) {
+      return
+    }
+    // The area settles through its own child state, which does not re-render
+    // this gate: the DOM is what says the page has arrived.
+    const observer = new MutationObserver(() => {
+      if (handOff()) {
+        observer.disconnect()
+      }
+    })
+    observer.observe(container, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [authenticated])
+
+  if (!authenticated) {
     // The admin URL is the viewer's destination: a registration completed
     // here stays on it instead of being taken to the tenant home or the
     // account page (the register mode's landing belongs to the app's own
     // sign-in page).
     return <SignInView keepLanding />
   }
-  return <>{children}</>
+  return (
+    <Box ref={gate} tabIndex={-1}>
+      {children}
+    </Box>
+  )
 }
 
 /**

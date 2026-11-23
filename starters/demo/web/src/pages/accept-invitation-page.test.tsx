@@ -16,7 +16,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
@@ -227,6 +227,56 @@ beforeEach(() => {
   setCurrentTenant(null)
   setTenantNames(new Map())
 })
+
+/** Opens the landing's sign-in action and completes the SMS challenge the
+ * harness scripts, leaving the session's completion answer to the caller. */
+async function signInWithSms(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  await user.click(
+    await screen.findByRole('button', { name: authEn.acceptInvitation.signIn }),
+  )
+  await user.type(
+    await screen.findByLabelText(authEn.smsSignIn.phoneLabel),
+    '+14155550123',
+  )
+  await user.click(
+    screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
+  )
+  await user.type(
+    await screen.findByLabelText(authEn.smsSignIn.codeLabel),
+    '123456',
+  )
+  const form = screen
+    .getByLabelText(authEn.smsSignIn.codeLabel)
+    .closest('form') as HTMLFormElement
+  await user.click(
+    within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
+  )
+}
+
+/** Holds the invitation read the landing issues after the in-place sign-in
+ * closes. Reads answer at once until `hold` is called; from then on they wait
+ * for `release`, so a case can observe the landing while its heading is still
+ * absent. */
+function heldInvitationRead(): {
+  readonly handler: () => Promise<unknown>
+  readonly hold: () => void
+  readonly release: () => void
+} {
+  let holding = false
+  let release = (): void => undefined
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return {
+    handler: () => (holding ? held.then(() => VIEW) : Promise.resolve(VIEW)),
+    hold: () => {
+      holding = true
+    },
+    release: () => release(),
+  }
+}
 
 describe('the invitation landing', () => {
   it('shows the invitation to an anonymous viewer, not a generic sign-in page', async () => {
@@ -915,5 +965,372 @@ describe('the invitation landing', () => {
         name: authEn.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('moves focus to the landing when the in-place sign-in closes', async () => {
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'org.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+
+    await signInWithSms(user)
+
+    // The in-place surface closes with the control it held, and the landing
+    // it re-renders onto takes the focus instead of leaving it on the body.
+    await waitFor(() => expect(window.location.pathname).toBe(PATH))
+    // The landing's own entry is its heading, not the landmark that stands
+    // in while the signed-in read is still pending.
+    const heading = await screen.findByRole('heading', {
+      level: 1,
+      name: authEn.acceptInvitation.title,
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+  })
+
+  it('lands on the main landmark first and moves to the heading when the read answers', async () => {
+    const held = heldInvitationRead()
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'org.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: held.handler,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+    await screen.findByRole('heading', {
+      level: 1,
+      name: authEn.acceptInvitation.title,
+    })
+    // Only the read the close issues is held: the anonymous landing's own
+    // read has already answered.
+    held.hold()
+
+    await signInWithSms(user)
+
+    // The heading does not exist until the read answers, so the landing takes
+    // the focus on its landmark first.
+    const main = screen.getByRole('main')
+    await waitFor(() => expect(main).toHaveFocus())
+    expect(
+      screen.queryByRole('heading', {
+        level: 1,
+        name: authEn.acceptInvitation.title,
+      }),
+    ).toBeNull()
+
+    await act(async () => {
+      held.release()
+    })
+    const heading = await screen.findByRole('heading', {
+      level: 1,
+      name: authEn.acceptInvitation.title,
+    })
+    // The heading is the landing's own entry: the focus the landmark stood in
+    // for moves on to it once it arrives, without the operator moving it.
+    await waitFor(() => expect(heading).toHaveFocus())
+  })
+
+  it('keeps waiting for a visible heading when a hidden one appears first', async () => {
+    const held = heldInvitationRead()
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'org.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: held.handler,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+    await screen.findByRole('heading', {
+      level: 1,
+      name: authEn.acceptInvitation.title,
+    })
+    // Only the read the close issues is held: the anonymous landing's own
+    // read has already answered.
+    held.hold()
+
+    await signInWithSms(user)
+
+    const main = screen.getByRole('main')
+    await waitFor(() => expect(main).toHaveFocus())
+
+    // A heading the landing cannot show does not complete the hand-off: the
+    // page entry is the visible heading the read supplies afterwards.
+    await act(async () => {
+      const hidden = document.createElement('h1')
+      hidden.setAttribute('hidden', '')
+      hidden.textContent = 'Hidden heading'
+      main.prepend(hidden)
+    })
+    expect(document.activeElement).toBe(main)
+
+    await act(async () => {
+      held.release()
+    })
+    const heading = await screen.findByRole('heading', {
+      level: 1,
+      name: authEn.acceptInvitation.title,
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+  })
+
+  it('lands on the invitation heading when the way back closes the sign-in', async () => {
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'org.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.signIn,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: demoEnUS.signIn.back }),
+    )
+
+    // The way back closes the same in-place surface; the landing it returns
+    // to is the invitation heading, not the document body.
+    const heading = await screen.findByRole('heading', {
+      level: 1,
+      name: authEn.acceptInvitation.title,
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+  })
+
+  it('leaves focus where the operator moved it while the way back re-reads', async () => {
+    const held = heldInvitationRead()
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'org.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: held.handler,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+    await screen.findByRole('heading', {
+      level: 1,
+      name: authEn.acceptInvitation.title,
+    })
+    // Only the read the way back issues is held: the anonymous landing's own
+    // read has already answered.
+    held.hold()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.signIn,
+      }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: demoEnUS.signIn.back }),
+    )
+    const main = screen.getByRole('main')
+    await waitFor(() => expect(main).toHaveFocus())
+
+    // The operator moves on before the re-read supplies the heading; that
+    // place belongs to the operator, not to the heading's arrival.
+    const elsewhere = document.createElement('button')
+    document.body.appendChild(elsewhere)
+    try {
+      elsewhere.focus()
+      expect(elsewhere).toHaveFocus()
+
+      await act(async () => {
+        held.release()
+      })
+      const heading = await screen.findByRole('heading', {
+        level: 1,
+        name: authEn.acceptInvitation.title,
+      })
+      expect(elsewhere).toHaveFocus()
+      expect(heading).not.toHaveFocus()
+    } finally {
+      elsewhere.remove()
+      held.release()
+    }
+  })
+
+  it('leaves focus where the operator moved it while the in-place sign-in closes', async () => {
+    let completionStarted = false
+    let releaseCompletion: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      releaseCompletion = resolve
+    })
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'org.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: async (call) => {
+        if ((call.options?.body as { step?: string }).step === 'complete') {
+          completionStarted = true
+          await held
+          return authenticatedCompletion()
+        }
+        return completeFlow(2)
+      },
+      [PROFILE_GET]: () => principal(),
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+      [`GET /api/v1/auth/invitations/${TOKEN}/eligibility`]: () => PROVED,
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+
+    // A connected control the operator moves to while the flow completes: the
+    // swap must leave it alone.
+    const elsewhere = document.createElement('button')
+    document.body.appendChild(elsewhere)
+    try {
+      await signInWithSms(user)
+      await waitFor(() => expect(completionStarted).toBe(true))
+      elsewhere.focus()
+      expect(elsewhere).toHaveFocus()
+
+      await act(async () => {
+        releaseCompletion?.()
+      })
+      await screen.findByRole('heading', {
+        level: 1,
+        name: authEn.acceptInvitation.title,
+      })
+      expect(window.location.pathname).toBe(PATH)
+      expect(elsewhere).toHaveFocus()
+      expect(screen.getByRole('main')).not.toHaveFocus()
+    } finally {
+      elsewhere.remove()
+      releaseCompletion?.()
+    }
   })
 })

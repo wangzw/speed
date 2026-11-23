@@ -1,17 +1,23 @@
 /**
- * The admin entry's surface in a real browser.
+ * The admin entry's surface in a real browser, and the session gate that
+ * stands in front of the admin area.
  *
  * The entry is an account-menu item: the bar carries no control of its own,
  * and the platform's own organization is where the entry is offered. The
  * browser tier owns the case beside the demo's other geometry cases because
  * the assertion is about what the rendered menu offers -- a real menu item,
  * a real link -- rather than about class names alone.
+ *
+ * The session-gate cases drive the same real browser because their subject is
+ * where focus lands when the in-place sign-in surface is replaced by the
+ * admin: a focus assertion the jsdom tier can only approximate.
  */
 
-import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
+import { ADMIN_UI_NAMESPACE, adminUiResources } from '@speed/admin-ui'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import {
   NOTIFICATION_UI_NAMESPACE,
@@ -26,6 +32,18 @@ import {
   authenticatedSnapshot,
   createTestSession,
 } from './test-utils/session.js'
+
+/** The admin bundle's shipped text, read as the release the app renders. */
+const tAdmin = createSpeedI18n({
+  supportedLanguages: ['en-US'],
+  defaultLanguage: 'en-US',
+  storage: null,
+  urlParameterName: null,
+  navigatorLanguages: [],
+  namespaces: [
+    { namespace: ADMIN_UI_NAMESPACE, resources: adminUiResources },
+  ],
+}).getFixedT('en-US', ADMIN_UI_NAMESPACE)
 
 describe('the admin entry surface', () => {
   it('is a menu item in the platform organization, and a real link', async () => {
@@ -123,5 +141,79 @@ describe('the admin entry surface', () => {
     // The digit stays out of the control's own text: a visible character
     // inside the button would have to appear in the accessible name.
     expect(trigger).not.toHaveTextContent('1')
+  })
+})
+
+describe('the admin session gate across a sign-in', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/')
+  })
+
+  it("lands focus on the admin page's heading once the gate flips", async () => {
+    // An anonymous visitor at an admin URL meets the sign-in surface. The
+    // session then turns authenticated in place -- the same whole-page flip a
+    // completed sign-in commits -- and the URL does not move.
+    window.history.replaceState({}, '', '/admin/tenants')
+    bindRequestFn(createBackend('data'))
+    const session = createTestSession()
+    renderDemoApp({ session })
+
+    await screen.findByRole('heading', {
+      level: 1,
+      name: demoEnUS.signIn.heading,
+    })
+    // A completed sign-in clears the permission domains, so the flip lands on
+    // the area's waiting view rather than the page. The gate must hold the
+    // hand-off and complete it when the set attaches; landing on its own
+    // unnamed wrapper and stopping there loses the reader.
+    act(() => {
+      session.set(authenticatedSnapshot())
+    })
+    expect(document.activeElement).not.toBe(document.body)
+    act(() => {
+      session.set(authenticatedSnapshot({ system: ['tenant.read'] }))
+    })
+
+    const heading = await screen.findByRole('heading', {
+      level: 1,
+      name: tAdmin('tenants.title'),
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+    // The landing target is the new page's own entry, inside its main
+    // landmark, not the document body.
+    expect(heading.closest('main')).not.toBeNull()
+  })
+
+  it('leaves focus where the operator moved it when the gate flips', async () => {
+    window.history.replaceState({}, '', '/admin/tenants')
+    bindRequestFn(createBackend('data'))
+    const session = createTestSession()
+    renderDemoApp({ session })
+    await screen.findByRole('heading', {
+      level: 1,
+      name: demoEnUS.signIn.heading,
+    })
+
+    // A connected control the operator moved to before the flip: the gate
+    // must leave it alone.
+    const elsewhere = document.createElement('button')
+    elsewhere.textContent = 'elsewhere'
+    document.body.appendChild(elsewhere)
+    try {
+      elsewhere.focus()
+      expect(elsewhere).toHaveFocus()
+
+      act(() => {
+        session.set(authenticatedSnapshot({ system: ['tenant.read'] }))
+      })
+      const heading = await screen.findByRole('heading', {
+        level: 1,
+        name: tAdmin('tenants.title'),
+      })
+      expect(elsewhere).toHaveFocus()
+      expect(heading).not.toHaveFocus()
+    } finally {
+      elsewhere.remove()
+    }
   })
 })
