@@ -98,6 +98,19 @@ function resendNote(before: string, after: string) {
     content.startsWith(before) && content.endsWith(after)
 }
 
+/** One answer held open, so a case can assert the control's in-flight state
+ * before the write settles. */
+function deferredResponse(): {
+  readonly response: Promise<Response>
+  readonly release: (response: Response) => void
+} {
+  let release: (response: Response) => void = () => {}
+  const response = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  return { response, release }
+}
+
 describe('ContactVerificationSection', () => {
   it('renders the pending state with its target address and passes axe', async () => {
     const respond: RealResponder = (call: RealCall) => {
@@ -190,6 +203,52 @@ describe('ContactVerificationSection', () => {
     )
     expect(posts).toHaveLength(1)
     expect(posts[0]?.body).toEqual({ kind: 'email', value: 'new@x.test' })
+  })
+
+  it('guards the add form’s own submit event while its send is in flight', async () => {
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', ''))
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        return held.response
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const field = await screen.findByLabelText(zhCN.verification.addLabel)
+    await user.type(field, 'new@x.test')
+    const form = field.closest('form') as HTMLFormElement
+    // The form's own submit event stands in for the implicit submission an
+    // Enter press makes; the guard, not a disabled control, is what keeps a
+    // second request from leaving while the first is in flight.
+    fireEvent.submit(form)
+    await waitFor(() =>
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === ADD_PATH,
+        ),
+      ).toHaveLength(1),
+    )
+    fireEvent.submit(form)
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(1)
+
+    await act(async () => {
+      held.release(
+        jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        }),
+      )
+    })
   })
 
   it('renders the completion state for a verified account', async () => {
@@ -570,7 +629,10 @@ describe('ContactVerificationSection', () => {
     const resend = await screen.findByRole('button', {
       name: zhCN.verification.resend,
     })
-    await waitFor(() => expect(resend).toBeEnabled())
+    await waitFor(() => {
+      expect(resend).toBeEnabled()
+      expect(resend).not.toHaveAttribute('aria-disabled', 'true')
+    })
     await user.type(
       screen.getByLabelText(zhCN.verification.codeLabel),
       '123456',
@@ -793,19 +855,18 @@ describe('ContactVerificationSection', () => {
       zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
     )
     // The Retry-After a 429 carried starts the same countdown a send answer
-    // does.
+    // does. The control stays focusable and reports itself unavailable.
+    const send = screen.getByRole('button', { name: zhCN.verification.send })
+    expect(send).toHaveAttribute('aria-disabled', 'true')
+    // The banner is the one *visible* wait indicator: the section's own
+    // note is not rendered beside it. The control names the same wait
+    // through its hidden reason, which is not a second on-screen note.
     expect(
-      screen.getByRole('button', { name: zhCN.verification.send }),
-    ).toBeDisabled()
-    // The banner is the one wait indicator: no second note counts down
-    // beside it, and the control points at no note.
-    const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
-    expect(
-      screen.queryByText(resendNote(before ?? '', after ?? '')),
+      document.getElementById('contact-verification-resend-note'),
     ).toBeNull()
-    expect(
-      screen.getByRole('button', { name: zhCN.verification.send }),
-    ).not.toHaveAttribute('aria-describedby')
+    expect(send).toHaveAccessibleDescription(
+      zhCN.verification.resendIn.replace('{{seconds}}', '30'),
+    )
   })
 
   it('states the automatic step-up refusal instead of opening the dialog, then retries the send on the visitor click', async () => {
@@ -845,6 +906,7 @@ describe('ContactVerificationSection', () => {
       name: zhCN.verification.send,
     })
     expect(manual).toBeEnabled()
+    expect(manual).not.toHaveAttribute('aria-disabled', 'true')
     // The explanation is an info alert beside the manual action; it must
     // not introduce an accessibility violation of its own.
     await expectNoAxeViolations()
@@ -1010,7 +1072,7 @@ describe('ContactVerificationSection', () => {
     const resend = await screen.findByRole('button', {
       name: zhCN.verification.resend,
     })
-    expect(resend).toBeDisabled()
+    expect(resend).toHaveAttribute('aria-disabled', 'true')
     // A successful send leaves no banner, so the note is the wait's only
     // visible explanation, and the control points at it.
     const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
@@ -1058,7 +1120,7 @@ describe('ContactVerificationSection', () => {
       })
       expect(
         screen.getByRole('button', { name: zhCN.verification.resend }),
-      ).toBeDisabled()
+      ).toHaveAttribute('aria-disabled', 'true')
       // The successful send states its hold in the section's own note.
       const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
       expect(
@@ -1183,7 +1245,7 @@ describe('ContactVerificationSection', () => {
     // The Retry-After starts the same countdown the send answer does.
     expect(
       screen.getByRole('button', { name: zhCN.verification.send }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('renders an unavailable send as its code text', async () => {
@@ -1459,15 +1521,18 @@ describe('ContactVerificationSection', () => {
       // control stays usable while no proof is outstanding.
       expect(fake.widgets).toHaveLength(0)
       expect(send).toBeEnabled()
+      expect(send).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(send)
 
       // The send waits on the proof: the block renders and the control that
-      // asked gives way.
+      // asked reports that its own attempt is in flight.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
-      expect(
-        screen.getByRole('button', { name: zhCN.verification.send }),
-      ).toBeDisabled()
+      const waiting = screen.getByRole('button', {
+        name: zhCN.verification.send,
+      })
+      expect(waiting).toHaveAttribute('aria-disabled', 'true')
+      expect(waiting).toHaveAttribute('aria-busy', 'true')
       expect(
         rig.calls.filter(
           (call) => call.method === 'POST' && call.path === ADD_PATH,
@@ -1567,6 +1632,10 @@ describe('ContactVerificationSection', () => {
         rig.calls.filter(
           (call) => call.method === 'POST' && call.path === ADD_PATH,
         )
+      const verifies = () =>
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+        )
 
       // The first send carries its proof and lands.
       await user.click(
@@ -1578,32 +1647,33 @@ describe('ContactVerificationSection', () => {
       })
       await waitFor(() => expect(sends()).toHaveLength(1))
 
-      // A resend waits on a fresh proof: the block is the only thing to act
-      // on, and the verify control is held with it.
+      // A resend waits on a fresh proof, but that wait is only the control
+      // that asked for it: the code already in hand may still be verified.
       const codeField = screen.getByLabelText(zhCN.verification.codeLabel)
       await user.type(codeField, '123456')
       const resend = await screen.findByRole('button', {
         name: zhCN.verification.resend,
       })
-      await waitFor(() => expect(resend).toBeEnabled())
+      await waitFor(() => {
+        expect(resend).toBeEnabled()
+        expect(resend).not.toHaveAttribute('aria-disabled', 'true')
+      })
       await user.click(resend)
       await waitFor(() => expect(fake.widgets).toHaveLength(2))
-      expect(
-        screen.getByRole('button', { name: zhCN.verification.verify }),
-      ).toBeDisabled()
+      const verifyControl = screen.getByRole('button', {
+        name: zhCN.verification.verify,
+      })
+      expect(verifyControl).toBeEnabled()
+      expect(verifyControl).not.toHaveAttribute('aria-disabled', 'true')
+      expect(verifyControl).not.toHaveAttribute('aria-busy')
 
-      // A verification can still begin while the wait is outstanding: a
+      // The verification can still begin while the wait is outstanding: a
       // step-up replay of a code the visitor already tried reaches verify
-      // directly. It calls the wait off, so the late proof never sends and
-      // the code just proved is not invalidated by a second one.
+      // directly through the form's own submit event. It calls the wait off,
+      // so the late proof never sends and the code just proved is not
+      // invalidated by a second one.
       fireEvent.submit(codeField.closest('form') as HTMLFormElement)
-      await waitFor(() =>
-        expect(
-          rig.calls.filter(
-            (call) => call.method === 'POST' && call.path === VERIFY_PATH,
-          ),
-        ).toHaveLength(1),
-      )
+      await waitFor(() => expect(verifies()).toHaveLength(1))
       act(() => {
         fake.token('token-2')
       })
@@ -1613,6 +1683,84 @@ describe('ContactVerificationSection', () => {
         }),
       ).toBeTruthy()
       expect(sends()).toHaveLength(1)
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('changes the address while a send waits on its proof', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+        }
+        if (call.method === 'POST' && call.path === ADD_PATH) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond, {
+        humanGate: {
+          phone: { required: false, provider: 'off' },
+          other: { required: true, provider: 'turnstile', site_key: 'site-1' },
+        },
+      })
+      const user = userEvent.setup()
+      const sends = () =>
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === ADD_PATH,
+        )
+
+      // The first send carries its proof and lands.
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.verification.send }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(sends()).toHaveLength(1))
+
+      // A resend waits on a fresh proof. Only the resend control waits: the
+      // change-address action stays usable and calls the wait off.
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.verification.resend }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      const change = screen.getByRole('button', {
+        name: zhCN.verification.change,
+      })
+      expect(change).toBeEnabled()
+      expect(change).not.toHaveAttribute('aria-disabled', 'true')
+      await user.click(change)
+
+      // Choosing another address calls the abandoned wait off: the block
+      // that held the proof leaves the document.
+      const changeField = await screen.findByLabelText(
+        zhCN.verification.changeLabel,
+      )
+      expect(fake.widgets[1]?.container.isConnected).toBe(false)
+      await user.type(changeField, 'new@x.test')
+      // The change form's own submit event is not held by the abandoned
+      // wait: the new address's send leaves the block once its proof
+      // arrives.
+      fireEvent.submit(changeField.closest('form') as HTMLFormElement)
+      await waitFor(() => expect(fake.widgets).toHaveLength(3))
+      expect(sends()).toHaveLength(1)
+      act(() => {
+        fake.token('token-3')
+      })
+      await waitFor(() => expect(sends()).toHaveLength(2))
+      expect(sends()[1]?.body).toEqual({
+        kind: 'email',
+        value: 'new@x.test',
+        human_proof: 'token-3',
+      })
     } finally {
       fake.restore()
     }
@@ -1652,5 +1800,262 @@ describe('ContactVerificationSection', () => {
     const readsBeforeRetry = reads
     await user.click(screen.getByRole('button', { name: zhCN.verification.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
+
+  it('lands focus on the verified section when the verify step leaves the page', async () => {
+    let verified = false
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileVerification(verified ? 'verified' : 'pending', 'ada@x.test'),
+        )
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return held.response
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+        ),
+      ).toBe(true),
+    )
+
+    // The landed verification replaces the code step: the control that
+    // started it leaves the document, so focus moves to the section that
+    // stays, never to the document body.
+    verified = true
+    await act(async () => {
+      held.release(jsonResponse(200, { state: 'verified' }))
+    })
+    const landing = await screen.findByRole('group', {
+      name: zhCN.verification.verifiedTitle,
+    })
+    await waitFor(() => expect(landing).toHaveFocus())
+  })
+
+  it('lands on the verified section when focus was left on a detached node', async () => {
+    let verified = false
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileVerification(verified ? 'verified' : 'pending', 'ada@x.test'),
+        )
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return held.response
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+        ),
+      ).toBe(true),
+    )
+
+    // The browser can leave the active element on a node the landing
+    // detached instead of dropping it to the body. The guard must treat
+    // that dead node as focus the removal took, not as a place the
+    // operator chose.
+    const detached = document.createElement('button')
+    Object.defineProperty(document, 'activeElement', {
+      configurable: true,
+      get: () => detached,
+    })
+    try {
+      verified = true
+      await act(async () => {
+        held.release(jsonResponse(200, { state: 'verified' }))
+      })
+    } finally {
+      delete (document as { activeElement?: Element }).activeElement
+    }
+    const landing = await screen.findByRole('group', {
+      name: zhCN.verification.verifiedTitle,
+    })
+    await waitFor(() => expect(landing).toHaveFocus())
+  })
+
+  it('holds the sibling controls unavailable without a reason while the verify write is in flight', async () => {
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return held.response
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 0,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+        ),
+      ).toBe(true),
+    )
+
+    // The scope is busy with the verification, so every other initiating
+    // control in the step is held without a reason: no aria-busy, no
+    // description, and activation reaches no request.
+    const send = screen.getByRole('button', { name: zhCN.verification.send })
+    const change = screen.getByRole('button', {
+      name: zhCN.verification.change,
+    })
+    for (const control of [send, change]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy')
+      expect(control).not.toHaveAccessibleDescription()
+    }
+
+    await user.click(send)
+    await user.click(change)
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(0)
+    // The change form did not open from a held control.
+    expect(
+      screen.queryByLabelText(zhCN.verification.changeLabel),
+    ).toBeNull()
+
+    // Keyboard activation is swallowed the same way.
+    change.focus()
+    await user.keyboard('{Enter}')
+    expect(
+      screen.queryByLabelText(zhCN.verification.changeLabel),
+    ).toBeNull()
+
+    await act(async () => {
+      held.release(jsonResponse(200, { state: 'pending' }))
+    })
+  })
+
+  it('keeps the verify action reachable with the empty-code reason on it', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const verify = await screen.findByRole('button', {
+      name: zhCN.verification.verify,
+    })
+    // The precondition is unmet, but the control stays focusable and says
+    // why it cannot run.
+    expect(verify).toHaveAttribute('aria-disabled', 'true')
+    expect(verify).toHaveAccessibleDescription(zhCN.verification.codeEmpty)
+    verify.focus()
+    expect(verify).toHaveFocus()
+
+    await user.click(verify)
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('leaves focus where the operator moved it while the verify write lands', async () => {
+    let verified = false
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileVerification(verified ? 'verified' : 'pending', 'ada@x.test'),
+        )
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return held.response
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <>
+        <ContactVerificationSection session={rig.session} />
+        <button type="button">elsewhere</button>
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+        ),
+      ).toBe(true),
+    )
+
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' })
+    elsewhere.focus()
+
+    verified = true
+    await act(async () => {
+      held.release(jsonResponse(200, { state: 'verified' }))
+    })
+    await screen.findByRole('group', {
+      name: zhCN.verification.verifiedTitle,
+    })
+    // A resting place the operator chose during the write is left alone.
+    expect(elsewhere).toHaveFocus()
   })
 })

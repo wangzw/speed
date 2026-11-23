@@ -90,7 +90,13 @@
  * holds a proof; a refused automatic send stays a manual action.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Skeleton from '@mui/material/Skeleton'
@@ -111,8 +117,10 @@ import {
   FORM_MAX_WIDTH,
   HumanVerification,
   SectionCard,
+  useActivationGuard,
   useWriteFeedback,
   visuallyHiddenSx,
+  type ActionButtonUnavailableExplanation,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { useProfileQuery } from './internal/queries.js'
@@ -124,6 +132,38 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 /** The resend note's id, referenced by the resend control while it counts
  * down. */
 const RESEND_NOTE_ID = 'contact-verification-resend-note'
+
+/** The control that started the write now in flight. The scope's `pending`
+ * says a write runs; this says whose, so only that control reports busy and
+ * every other initiating control in the step reports the shared scope as
+ * unavailable. */
+type ContactWriteAction = 'add' | 'change' | 'resend' | 'verify'
+
+/** One asked-for send: which control asked, and whether it is the landing's
+ * automatic attempt (which no control started). */
+interface ContactSendRequest {
+  readonly action: ContactWriteAction | null
+  readonly automatic?: boolean
+}
+
+/**
+ * Whether focus was lost when the initiating control's container left the
+ * document. A write that removes its own control hands focus to a neighbour,
+ * but only if the operator had not moved focus elsewhere while the write was
+ * in flight: the browser drops focus to the body (or leaves it on a detached
+ * node) in that case, while a connected control outside the container means
+ * the operator chose that place.
+ */
+function focusFellWith(removed: HTMLElement | null): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  return removed !== null && removed.contains(active)
+}
 
 export interface ContactVerificationSectionProps {
   /** The session the human-verification proof is obtained for. */
@@ -168,6 +208,10 @@ export function ContactVerificationSection({
     readonly address: string
     readonly automatic: boolean
   } | null>(null)
+  // Which initiating control owns the write in flight (or the send waiting
+  // on its proof), so only it reports busy. Null while idle, and for the
+  // landing's automatic send, which no control started.
+  const [activeWrite, setActiveWrite] = useState<ContactWriteAction | null>(null)
   // The deployment's human-verification gate and this section's proof. The
   // send (a resend included) presents it; the code's verification sends
   // nothing, so it does not.
@@ -234,6 +278,13 @@ export function ContactVerificationSection({
   const autoSent = useRef(false)
   const autoSendSuppressed = useRef(initialChangeOpen)
   const codeRef = useRef<HTMLInputElement>(null)
+  // Where focus lands when a landed verification removes the code step that
+  // held the verify control, whether the settling write owns that move, and
+  // the code step that write removes, captured before it unmounts.
+  const verifiedLanding = useRef<HTMLDivElement>(null)
+  const verifyLandingPending = useRef(false)
+  const codeStep = useRef<HTMLElement>(null)
+  const removedOnLanding = useRef<HTMLElement | null>(null)
   // The verify step's step-up gate: a proof that makes the address the
   // account's default contact or its only address is refused until the
   // session proves a fresh authentication, and a won challenge replays the
@@ -242,12 +293,25 @@ export function ContactVerificationSection({
     void verify(nextCode)
   })
 
-  // Disabled through the whole attempt, including the refetches that follow
-  // the mutation, so no control changes context under a pending scope.
-  const busy =
+  // A write in flight in the shared scope, including the refetches that
+  // follow the mutation.
+  const writeInFlight =
     addIdentifier.isPending ||
     verifyIdentifier.isPending ||
     feedback.pending
+  // A send waiting on its human-verification proof is the same attempt, but
+  // it is not a write in flight: only the control that asked waits, and the
+  // code already in hand may still be verified (which calls the wait off).
+  const sendWaiting = pending !== null
+  // The control that asked owns the busy state of both the proof wait and the
+  // write it leads to.
+  const attemptInFlight = writeInFlight || sendWaiting
+  // Once the attempt settles no control owns an in-flight action any more.
+  useEffect(() => {
+    if (!attemptInFlight) {
+      setActiveWrite(null)
+    }
+  }, [attemptInFlight])
   const verification = data?.verification
   const state = verification?.state ?? ''
   const targetEmail = verification?.email ?? ''
@@ -286,16 +350,97 @@ export function ContactVerificationSection({
   }, [sentTo])
 
   useEffect(() => {
-    if (!focusCodeWhenSettled.current || busy) {
+    if (!focusCodeWhenSettled.current || writeInFlight) {
       return
     }
     focusCodeWhenSettled.current = false
     codeRef.current?.focus()
-  }, [busy, sentTo])
+  }, [writeInFlight, sentTo])
+
+  // A landed verification replaces the code step, taking the focused verify
+  // control with it: focus lands on the section that stays instead of the
+  // document body or a node the landing detached. A resting place the
+  // operator chose during the write is left alone, so the move happens only
+  // when the removal took focus (see `focusFellWith`).
+  useLayoutEffect(() => {
+    if (state !== 'verified' || !verifyLandingPending.current) {
+      return
+    }
+    verifyLandingPending.current = false
+    const removed = removedOnLanding.current
+    removedOnLanding.current = null
+    if (!focusFellWith(removed)) {
+      return
+    }
+    verifiedLanding.current?.focus()
+  }, [state])
 
   const remainingSeconds = Math.max(
     0,
     Math.ceil((resendUntil - now) / 1000),
+  )
+  const emailEntryEmpty = emailEntry.trim() === ''
+  const codeEmpty = code.trim() === ''
+  // A precondition that is unmet explains itself on the control; a control
+  // held by another write in the same scope carries no reason.
+  const emailExplanation: ActionButtonUnavailableExplanation = emailEntryEmpty
+    ? { unavailableReason: t('verification.emailEmpty') }
+    : {}
+  const codeExplanation: ActionButtonUnavailableExplanation = codeEmpty
+    ? { unavailableReason: t('verification.codeEmpty') }
+    : {}
+  // A successful send's hold states its wait in the section's own note, and
+  // the control points at that note. A hold a throttled failure started has
+  // the failure's banner instead, so the control carries the wait itself.
+  const resendExplanation: ActionButtonUnavailableExplanation =
+    remainingSeconds > 0
+      ? resendFromSuccess
+        ? { unavailableDescribedBy: RESEND_NOTE_ID }
+        : {
+            unavailableReason: t('verification.resendIn', {
+              seconds: remainingSeconds,
+            }),
+          }
+      : {}
+  // The three step forms are guarded rather than prevented by disabled
+  // controls: each state matches its own submit control, so an Enter press
+  // during another control's write reaches no request.
+  const addSubmit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (emailEntry.trim() !== '') {
+        askToSend(emailEntry, { action: 'add' })
+      }
+    },
+    {
+      busy: attemptInFlight && activeWrite === 'add',
+      unavailable: (writeInFlight && activeWrite !== 'add') || emailEntryEmpty,
+    },
+  )
+  const changeSubmit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (emailEntry.trim() !== '') {
+        askToSend(emailEntry, { action: 'change' })
+      }
+    },
+    {
+      busy: attemptInFlight && activeWrite === 'change',
+      unavailable:
+        (writeInFlight && activeWrite !== 'change') || emailEntryEmpty,
+    },
+  )
+  const verifySubmit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (code.trim() !== '') {
+        void verify(code)
+      }
+    },
+    {
+      busy: writeInFlight && activeWrite === 'verify',
+      unavailable: (writeInFlight && activeWrite !== 'verify') || codeEmpty,
+    },
   )
 
   /** Refetch what a landed write changes: the profile's verification state
@@ -395,13 +540,19 @@ export function ContactVerificationSection({
    * sends when it arrives. The automatic landing send takes this path too,
    * so a disabled hook cannot let it leave without a proof.
    */
-  function askToSend(address: string, automatic = false): void {
+  function askToSend(
+    address: string,
+    { action, automatic = false }: ContactSendRequest,
+  ): void {
     if (pending !== null) {
       // A send is already waiting on its proof; asking again changes nothing.
       return
     }
     // The attempt begins here, whichever path it takes: the previous
-    // answer must not stand beside the verification the new one renders.
+    // answer must not stand beside the verification the new one renders,
+    // and the control that asked owns the busy state of both the proof
+    // wait and the write it leads to.
+    setActiveWrite(action)
     setVerifyFailureText(null)
     setCodeInvalid(false)
     setAutoStepUp(false)
@@ -443,7 +594,11 @@ export function ContactVerificationSection({
     // one being proved, and the wait it left behind must not block later
     // sends.
     setPending(null)
+    setActiveWrite('verify')
     setCodeInvalid(false)
+    // Only the verify that actually lands moves focus off the step it
+    // replaces; a refused attempt leaves focus where the operator has it.
+    verifyLandingPending.current = false
     // A verification is a new attempt in the shared result position, so the
     // automatic send's step-up explanation does not stand beside its answer.
     setAutoStepUp(false)
@@ -455,6 +610,8 @@ export function ContactVerificationSection({
         // verified. A proof that changes how the account signs in may be
         // refused for a step-up, which arms the gate with the same code.
         await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        verifyLandingPending.current = true
+        removedOnLanding.current = codeStep.current
         setCode('')
         setSentTo(null)
         setResendUntil(0)
@@ -507,7 +664,7 @@ export function ContactVerificationSection({
       return
     }
     autoSent.current = true
-    askToSendRef.current(targetEmail, true)
+    askToSendRef.current(targetEmail, { action: null, automatic: true })
   }, [autoSend, entryOpen, state, targetEmail])
 
   // A settled answer with no body is the error variant, never "nothing to
@@ -545,7 +702,7 @@ export function ContactVerificationSection({
       onRefreshCaptcha={human.refreshCaptcha}
       onRequestAudio={human.requestAudio}
       audioRetryAfterSeconds={human.audioRetryAfterSeconds}
-      disabled={busy}
+      disabled={writeInFlight}
     />
   )
 
@@ -553,16 +710,26 @@ export function ContactVerificationSection({
   // branches belong to the async section below, so a failed refresh over
   // already rendered content keeps that content under its stale notice.
   const verifiedCard = (
-    <SectionCard title={t('verification.verifiedTitle')}>
-      <Alert severity="success" role="status">
-        {targetEmail === ''
-          ? t('verification.verifiedDescriptionNoEmail')
-          : t('verification.verifiedDescription', {
-              email: targetEmail,
-              interpolation: { escapeValue: false },
-            })}
-      </Alert>
-    </SectionCard>
+    // A landed verification takes the code step -- and the focused verify
+    // control -- off the page: this group is the named landing that stays,
+    // programmatically focusable without entering the tab order.
+    <Box
+      ref={verifiedLanding}
+      tabIndex={-1}
+      role="group"
+      aria-label={t('verification.verifiedTitle')}
+    >
+      <SectionCard title={t('verification.verifiedTitle')}>
+        <Alert severity="success" role="status">
+          {targetEmail === ''
+            ? t('verification.verifiedDescriptionNoEmail')
+            : t('verification.verifiedDescription', {
+                email: targetEmail,
+                interpolation: { escapeValue: false },
+              })}
+        </Alert>
+      </SectionCard>
+    </Box>
   )
 
   // The send and verify control group's one result region. The add form and
@@ -586,12 +753,7 @@ export function ContactVerificationSection({
       <Box
         component="form"
         noValidate
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (emailEntry.trim() !== '') {
-            askToSend(emailEntry)
-          }
-        }}
+        onSubmit={addSubmit}
         sx={{
           display: 'flex',
           flexDirection: 'column',
@@ -606,7 +768,7 @@ export function ContactVerificationSection({
           autoComplete="email"
           label={t('verification.addLabel')}
           value={emailEntry}
-          disabled={busy}
+          slotProps={{ htmlInput: { readOnly: writeInFlight } }}
           onChange={(event) => {
             // Editing the address abandons a send waiting on its proof.
             setPending(null)
@@ -620,8 +782,9 @@ export function ContactVerificationSection({
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={busy || pending !== null || emailEntry.trim() === ''}
-            loading={addIdentifier.isPending}
+            busy={attemptInFlight && activeWrite === 'add'}
+            unavailable={(writeInFlight && activeWrite !== 'add') || emailEntryEmpty}
+            {...emailExplanation}
           >
             {t('verification.addSubmit')}
           </ActionButton>
@@ -636,18 +799,14 @@ export function ContactVerificationSection({
   const verificationForm = (
     <>
       <SectionCard
+        ref={codeStep}
         title={t('verification.title')}
         description={t('verification.description')}
       >
         <Box
           component="form"
           noValidate
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (code.trim() !== '') {
-              void verify(code)
-            }
-          }}
+          onSubmit={verifySubmit}
           sx={{
             display: 'flex',
             flexDirection: 'column',
@@ -689,9 +848,13 @@ export function ContactVerificationSection({
             helperText={t('verification.codeHelper')}
             value={code}
             error={codeInvalid}
-            slotProps={{ htmlInput: { 'aria-invalid': codeInvalid } }}
+            slotProps={{
+              htmlInput: {
+                'aria-invalid': codeInvalid,
+                readOnly: writeInFlight,
+              },
+            }}
             inputRef={codeRef}
-            disabled={busy}
             onChange={(event) => {
               setCode(event.target.value)
               if (codeInvalid) {
@@ -709,14 +872,13 @@ export function ContactVerificationSection({
           <ActionRow sx={{ width: '100%' }}>
             <ActionButton
               type="button"
-              disabled={busy || pending !== null || remainingSeconds > 0}
-              loading={addIdentifier.isPending}
-              aria-describedby={
-                remainingSeconds > 0 && resendFromSuccess
-                  ? RESEND_NOTE_ID
-                  : undefined
+              busy={attemptInFlight && activeWrite === 'resend'}
+              unavailable={
+                (writeInFlight && activeWrite !== 'resend') ||
+                remainingSeconds > 0
               }
-              onClick={() => askToSend(sentNotice)}
+              {...resendExplanation}
+              onClick={() => askToSend(sentNotice, { action: 'resend' })}
             >
               {sentTo === null
                 ? t('verification.send')
@@ -724,7 +886,7 @@ export function ContactVerificationSection({
             </ActionButton>
             <ActionButton
               type="button"
-              disabled={busy}
+              unavailable={writeInFlight}
               onClick={() => {
                 // Closing the change entry abandons a send waiting on its
                 // proof, so no code goes to the address it replaced.
@@ -740,8 +902,11 @@ export function ContactVerificationSection({
             <ActionButton
               type="submit"
               emphasis="primary"
-              disabled={busy || pending !== null || code.trim() === ''}
-              loading={verifyIdentifier.isPending}
+              busy={writeInFlight && activeWrite === 'verify'}
+              unavailable={
+                (writeInFlight && activeWrite !== 'verify') || codeEmpty
+              }
+              {...codeExplanation}
             >
               {t('verification.verify')}
             </ActionButton>
@@ -771,12 +936,7 @@ export function ContactVerificationSection({
           <Box
             component="form"
             noValidate
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (emailEntry.trim() !== '') {
-                askToSend(emailEntry)
-              }
-            }}
+            onSubmit={changeSubmit}
             sx={{ mt: 2, maxWidth: FORM_MAX_WIDTH }}
           >
             {/* The change-address face is the add face's shape: the field
@@ -798,7 +958,7 @@ export function ContactVerificationSection({
                 autoComplete="email"
                 label={t('verification.changeLabel')}
                 value={emailEntry}
-                disabled={busy}
+                slotProps={{ htmlInput: { readOnly: writeInFlight } }}
                 onChange={(event) => {
                   // Editing the address abandons a send waiting on its proof.
                   setPending(null)
@@ -809,9 +969,12 @@ export function ContactVerificationSection({
                 <ActionButton
                   type="submit"
                   emphasis="primary"
-                  disabled={
-                    busy || pending !== null || emailEntry.trim() === ''
+                  busy={attemptInFlight && activeWrite === 'change'}
+                  unavailable={
+                    (writeInFlight && activeWrite !== 'change') ||
+                    emailEntryEmpty
                   }
+                  {...emailExplanation}
                 >
                   {t('verification.changeSubmit')}
                 </ActionButton>
