@@ -118,12 +118,18 @@ describe('page baseline', () => {
     const { theme } = createAppTheme({
       typography: { textGlow: '0 0 2px #4ADE80' },
     })
+    // The touch floor is static on the slot and the unavailable appearance
+    // is a callback; the merge composes both into one callback.
     const buttonRoot = theme.components?.MuiButton?.styleOverrides?.root as
-      | Record<string, unknown>
+      | ((props: { theme: Theme }) => unknown[])
       | undefined
-    expect(buttonRoot?.[POINTER_COARSE_QUERY]).toMatchObject({
-      minWidth: TOUCH_TARGET_MIN_PX,
-      minHeight: TOUCH_TARGET_MIN_PX,
+    expect(typeof buttonRoot).toBe('function')
+    const contributions = buttonRoot?.({ theme }) ?? []
+    expect(contributions[0]).toMatchObject({
+      [POINTER_COARSE_QUERY]: {
+        minWidth: TOUCH_TARGET_MIN_PX,
+        minHeight: TOUCH_TARGET_MIN_PX,
+      },
     })
     // The focus ring composes with the static touch floor into one
     // callback on the shared slot.

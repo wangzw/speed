@@ -46,9 +46,10 @@
  *   theme.
  * - components: the clickable-target floor, the surface mapping, the
  *   focus ring, the control boundary, the divider rule, the reduced-motion
- *   gate and the page baseline, merged by component slot (see
- *   touch-floor.ts, surface.ts, focus-ring.ts, control-borders.ts,
- *   divider.ts, reduced-motion.ts and baseline.ts). Every base control
+ *   gate, the unavailable appearance and the page baseline, merged by
+ *   component slot (see touch-floor.ts, surface.ts, focus-ring.ts,
+ *   control-borders.ts, divider.ts, reduced-motion.ts, unavailable.ts and
+ *   baseline.ts). Every base control
  *   carries a `minWidth`/`minHeight` of 44 nested under
  *   `@media (pointer: coarse)`, so the floor reaches every consuming
  *   package with no per-surface gating; a fine pointer emits none of it.
@@ -125,6 +126,7 @@ import { dividerComponents } from './divider.js'
 import { focusRingComponents } from './focus-ring.js'
 import { reducedMotionComponents } from './reduced-motion.js'
 import { touchFloorComponents } from './touch-floor.js'
+import { unavailableComponents } from './unavailable.js'
 import { letterCaseComponents } from './letter-case.js'
 import {
   mergeThemeComponents,
@@ -460,6 +462,7 @@ function tokensToThemeOptions(
       controlBorderComponents,
       dividerComponents,
       reducedMotionComponents,
+      unavailableComponents,
       baselineComponents(tokens, mode),
     ),
   }

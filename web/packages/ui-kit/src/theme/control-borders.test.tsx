@@ -47,7 +47,12 @@ function normalizedColor(value: string): string {
   return color
 }
 
-/** `theme`'s outlined-button override, read through its callback. */
+/** `theme`'s outlined-button override, read through its callback.
+ *
+ * The slot composes every source that fills it, so the callback returns
+ * an array of contributions; the boundary's own contribution is the one
+ * declaring `borderColor`.
+ */
 function outlinedOverride(theme: Theme): { borderColor?: unknown } {
   const styleOverrides = theme.components?.MuiButton?.styleOverrides
   const outlined = styleOverrides?.outlined
@@ -57,8 +62,16 @@ function outlinedOverride(theme: Theme): { borderColor?: unknown } {
   const resolve = outlined as unknown as (props: {
     theme: Theme
     ownerState: Record<string, unknown>
-  }) => { borderColor?: unknown }
-  return resolve({ theme, ownerState: {} })
+  }) => { borderColor?: unknown } | ReadonlyArray<{ borderColor?: unknown }>
+  const resolved = resolve({ theme, ownerState: {} })
+  const contributions = Array.isArray(resolved) ? resolved : [resolved]
+  const boundary = contributions.find(
+    (contribution) => contribution.borderColor !== undefined,
+  )
+  if (boundary === undefined) {
+    throw new Error('MuiButton.styleOverrides.outlined lost its border color')
+  }
+  return boundary
 }
 
 /**
