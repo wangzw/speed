@@ -20,6 +20,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import IconButton from '@mui/material/IconButton'
+import ListItemButton from '@mui/material/ListItemButton'
 import Switch from '@mui/material/Switch'
 import { lighten } from '@mui/material/styles'
 import type { Theme } from '@mui/material/styles'
@@ -202,6 +203,52 @@ describe('theme unavailable appearance', () => {
     }
   })
 
+  it('paints the disabled face on an unavailable ListItemButton', () => {
+    const { theme } = createAppTheme()
+    renderTheme(
+      theme,
+      <>
+        <ListItemButton aria-disabled="true">unavailable item</ListItemButton>
+        <ListItemButton selected aria-disabled="true">
+          unavailable selected item
+        </ListItemButton>
+      </>,
+    )
+    const rules = unavailableRules()
+    const { action } = theme.palette
+    const item = screen.getByRole('button', { name: 'unavailable item' })
+
+    // The resting face matches a disabled control, and the pointer keeps the
+    // item but loses its hover fill.
+    const itemRules = rulesMatching(item, rules)
+    expect(
+      itemRules.some((rule) => declares(rule, 'color', action.disabled)),
+    ).toBe(true)
+    expect(itemRules.some((rule) => declares(rule, 'cursor', 'default'))).toBe(
+      true,
+    )
+    expect(
+      rulesForClass(item, rules).some(
+        (rule) =>
+          rule.selector.includes(':hover') &&
+          declares(rule, 'background-color', 'transparent'),
+      ),
+    ).toBe(true)
+
+    // A selected item keeps neither the selected fill nor its hover fill.
+    const selected = screen.getByRole('button', {
+      name: 'unavailable selected item',
+    })
+    const selectedRules = rulesForClass(selected, rules)
+    expect(
+      selectedRules.some(
+        (rule) =>
+          rule.selector.includes('.Mui-selected') &&
+          declares(rule, 'background-color', 'transparent'),
+      ),
+    ).toBe(true)
+  })
+
   it('paints the disabled tones on a switch and checkbox whose input carries the attribute', () => {
     const { theme } = createAppTheme()
     renderTheme(
@@ -352,6 +399,7 @@ describe('theme unavailable appearance', () => {
     for (const component of [
       'MuiButton',
       'MuiIconButton',
+      'MuiListItemButton',
       'MuiCheckbox',
       'MuiSwitch',
     ] as const) {

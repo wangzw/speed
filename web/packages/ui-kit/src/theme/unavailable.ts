@@ -11,10 +11,10 @@
  * would look exactly like an enabled one. The overrides below give it the
  * same face, keyed on the attribute the control really carries:
  *
- * - `MuiButton` and `MuiIconButton` carry the attribute on their root
- *   element; `MuiSwitch` and `MuiCheckbox` carry it on the inner `input`,
- *   so those two are selected through `:has()` (and, for the switch thumb,
- *   the input's following-sibling relation).
+ * - `MuiButton`, `MuiIconButton` and `MuiListItemButton` carry the attribute
+ *   on their root element; `MuiSwitch` and `MuiCheckbox` carry it on the
+ *   inner `input`, so those two are selected through `:has()` (and, for the
+ *   switch thumb, the input's following-sibling relation).
  * - Every declaration mirrors MUI 9.5.0's own disabled rules read from the
  *   installed package: the disabled foreground and background from
  *   `palette.action`, the outlined boundary, a flat contained fill with no
@@ -34,6 +34,7 @@
  */
 
 import { switchClasses } from '@mui/material/Switch'
+import { listItemButtonClasses } from '@mui/material/ListItemButton'
 import { darken, lighten } from '@mui/material/styles'
 import type { CSSObject, Theme, ThemeOptions } from '@mui/material/styles'
 
@@ -120,6 +121,29 @@ function iconButtonStyle({ theme }: { theme: Theme }): CSSObject {
 }
 
 /**
+ * The disabled face of a ListItemButton: the disabled foreground and no
+ * hover fill. The attribute sits on the root element. A selected item would
+ * otherwise keep MUI's selected and hover fills, which read as operable.
+ */
+function listItemButtonStyle({ theme }: { theme: Theme }): CSSObject {
+  return {
+    [`&${UNAVAILABLE}`]: {
+      cursor: 'default',
+      color: theme.palette.action.disabled,
+      '&:hover': { backgroundColor: 'transparent' },
+      '&:active': { backgroundColor: 'transparent' },
+      [`&.${listItemButtonClasses.selected}`]: {
+        color: theme.palette.action.disabled,
+        backgroundColor: 'transparent',
+      },
+      [`&.${listItemButtonClasses.selected}:hover`]: {
+        backgroundColor: 'transparent',
+      },
+    },
+  }
+}
+
+/**
  * The disabled face of a Checkbox. The attribute sits on the inner
  * `input`, while the face is the root's `color` (the icon paints in
  * `currentColor`), so the root is reached with `:has()`. The input is
@@ -185,6 +209,7 @@ export const unavailableComponents: ThemeOptions['components'] = {
     },
   },
   MuiIconButton: { styleOverrides: { root: iconButtonStyle } },
+  MuiListItemButton: { styleOverrides: { root: listItemButtonStyle } },
   MuiCheckbox: { styleOverrides: { root: checkboxStyle } },
   MuiSwitch: { styleOverrides: { root: switchStyle } },
 }
