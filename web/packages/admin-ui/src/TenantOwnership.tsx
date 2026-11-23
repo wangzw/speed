@@ -14,8 +14,14 @@
  * the owner. The card renders the pending request (target, request time,
  * deadline) and lets the current owner cancel it. Only one request can be
  * pending at a time and it expires after a fixed window, so the transfer
- * control is held while one is pending; the delete control stays available,
- * because deletion settles the request in the same transaction.
+ * control is unavailable while one is pending; the delete control stays
+ * available, because deletion settles the request in the same transaction.
+ *
+ * The write controls stay focusable throughout: one whose write is in flight
+ * is busy, and one whose precondition is unmet or whose context another write
+ * in this scope is changing is unavailable. A control that is also a button
+ * may hold focus at the moment either state arrives, so neither takes the
+ * native disable that would move focus to the document body.
  *
  * The transfer dialog searches the organization's active members (the server
  * grants the target tenant-admin when it confirms) and asks for the
@@ -46,15 +52,15 @@
  * the message in the card, with the controls withdrawn.
  */
 
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useAuthState } from '@speed/auth-core'
 import {
+  ActionButton,
   ConfirmDialog,
   httpStatusOf,
   SectionCard,
@@ -64,6 +70,7 @@ import {
 } from '@speed/ui-kit'
 import { identityLabel } from './internal/account-identity.js'
 import { PermissionsIcon } from './internal/icons.js'
+import { useSectionHeadingFocus, removedControlHeldFocus } from './internal/section-heading-focus.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { useOrganizationAdminOperations } from './organization-operations.js'
 import type {
@@ -165,6 +172,7 @@ export function TenantOwnership({
   const cancel = operations.useTenantOwnerCancel()
   const remove = operations.useTenantOwnerDelete()
   const feedback = useWriteFeedback()
+  const pendingDescriptionId = useId()
   const [transferOpen, setTransferOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -198,6 +206,42 @@ export function TenantOwnership({
   // request the server would refuse.
   const pendingRead = operations.useTenantOwnerPending(tenant, controlsAllowed)
   const pending: AdminTenantTransfer | null = pendingRead.data ?? null
+  // A settled cancel or delete withdraws the control that started it; the
+  // card's own heading is the stable landmark focus hands off to, and it
+  // only takes the focus when the removal left that focus on the body.
+  const ownershipFocus = useSectionHeadingFocus()
+  const cancelLanded = useRef(false)
+  const deleteLanded = useRef(false)
+  useEffect(() => {
+    if (!cancelLanded.current) {
+      return
+    }
+    if (pending !== null) {
+      return
+    }
+    cancelLanded.current = false
+    if (removedControlHeldFocus()) {
+      ownershipFocus.focusHeading()
+    }
+  }, [pending, ownershipFocus.focusHeading])
+  useEffect(() => {
+    if (!deleteLanded.current) {
+      return
+    }
+    if (controlsAllowed) {
+      return
+    }
+    // The card that carries the handed-back confirmation mounts only when
+    // the attempt settles with its message; until then there is no heading
+    // to take the focus.
+    if (feedback.outcome === null) {
+      return
+    }
+    deleteLanded.current = false
+    if (removedControlHeldFocus()) {
+      ownershipFocus.focusHeading()
+    }
+  }, [controlsAllowed, feedback.outcome, ownershipFocus.focusHeading])
 
   const resolve = (code: string): string => {
     switch (code) {
@@ -228,6 +272,7 @@ export function TenantOwnership({
   if (!controlsAllowed) {
     return feedback.outcome === null ? null : (
       <SectionCard
+        ref={ownershipFocus.sectionRef}
         title={t('tenantProfile.ownership.title')}
         icon={<PermissionsIcon size={24} />}
         description={t('tenantProfile.ownership.description')}
@@ -302,6 +347,7 @@ export function TenantOwnership({
     void feedback.run(async () => {
       try {
         await cancel.mutateAsync({ tenant, request: pending.id })
+        cancelLanded.current = true
       } catch (error) {
         // A conflict on cancel means the request was settled by someone the
         // caller cannot see -- confirmed, declined, expired or already
@@ -323,6 +369,7 @@ export function TenantOwnership({
     void feedback.run(async () => {
       try {
         await remove.mutateAsync({ tenant })
+        deleteLanded.current = true
       } catch (error) {
         throw ownershipFailure(ownershipFailureCode(error))
       }
@@ -340,6 +387,7 @@ export function TenantOwnership({
 
   return (
     <SectionCard
+      ref={ownershipFocus.sectionRef}
       title={t('tenantProfile.ownership.title')}
       icon={<PermissionsIcon size={24} />}
       description={t('tenantProfile.ownership.description')}
@@ -354,23 +402,28 @@ export function TenantOwnership({
           rowGap: 1,
         }}
       >
-        <Button
+        <ActionButton
           type="button"
-          variant="outlined"
+          busy={request.isPending}
+          unavailable={
+            pending !== null || (feedback.pending && !request.isPending)
+          }
+          unavailableDescribedBy={
+            pending !== null ? pendingDescriptionId : undefined
+          }
           onClick={openTransfer}
-          disabled={feedback.pending || pending !== null}
         >
           {t('tenantProfile.ownership.transfer.button')}
-        </Button>
-        <Button
+        </ActionButton>
+        <ActionButton
           type="button"
-          variant="outlined"
-          color="error"
+          tone="danger"
+          busy={remove.isPending}
+          unavailable={feedback.pending && !remove.isPending}
           onClick={openDelete}
-          disabled={feedback.pending}
         >
           {t('tenantProfile.ownership.delete.button')}
-        </Button>
+        </ActionButton>
       </Box>
       {pending !== null ? (
         <Box
@@ -387,7 +440,12 @@ export function TenantOwnership({
           <Typography variant="subtitle1" component="h3">
             {t('tenantProfile.ownership.pending.title')}
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          <Typography
+            id={pendingDescriptionId}
+            variant="body2"
+            color="text.secondary"
+            sx={{ mt: 0.5 }}
+          >
             {t('tenantProfile.ownership.pending.description')}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 3, rowGap: 0.5, mt: 1 }}>
@@ -407,19 +465,19 @@ export function TenantOwnership({
               })}
             </Typography>
           </Box>
-          <Button
+          <ActionButton
             type="button"
-            variant="outlined"
             size="small"
             sx={{ mt: 1.5 }}
-            disabled={feedback.pending}
+            busy={cancel.isPending}
+            unavailable={feedback.pending && !cancel.isPending}
             onClick={() => {
               feedback.reset()
               setCancelOpen(true)
             }}
           >
             {t('tenantProfile.ownership.pending.cancel')}
-          </Button>
+          </ActionButton>
         </Box>
       ) : null}
       {feedbackRegion}
@@ -553,6 +611,9 @@ function TransferOwnershipDialog({
       cancelLabel={t('common.cancel')}
       confirmLoading={busy}
       confirmDisabled={selected === undefined}
+      confirmDisabledReason={t(
+        'tenantProfile.ownership.transfer.targetRequired',
+      )}
       onCancel={onCancel}
       onConfirm={() => {
         if (selected !== undefined) {
@@ -570,7 +631,10 @@ function TransferOwnershipDialog({
           // The previous selection may not survive the narrowed list.
           setTarget('')
         }}
-        disabled={busy}
+        // A typed field holding focus keeps it while the request runs, so the
+        // dialog's write locks it by turning it read-only rather than by
+        // taking it out of the Tab sequence.
+        slotProps={{ input: { readOnly: busy } }}
         helperText={t('tenantProfile.ownership.transfer.searchHint', {
           limit: MEMBER_SEARCH_LIMIT,
         })}
@@ -584,7 +648,12 @@ function TransferOwnershipDialog({
         label={t('tenantProfile.ownership.transfer.targetLabel')}
         value={target}
         onChange={(event) => setTarget(event.target.value)}
-        disabled={loading || busy}
+        // The member read is a selection-shaped context control whose focus
+        // sits on the search field or the confirming button when it starts,
+        // so it keeps the native disable; the dialog's own write instead
+        // turns it read-only, keeping a select that held focus focusable.
+        disabled={loading}
+        slotProps={{ input: { readOnly: busy } }}
         helperText={helperText}
         sx={{ mt: 2 }}
       >
@@ -633,6 +702,9 @@ function DeleteOrganizationDialog({
       cancelLabel={t('common.cancel')}
       confirmLoading={busy}
       confirmDisabled={typed !== name}
+      confirmDisabledReason={t(
+        'tenantProfile.ownership.delete.nameMismatch',
+      )}
       onCancel={onCancel}
       onConfirm={onConfirm}
     >

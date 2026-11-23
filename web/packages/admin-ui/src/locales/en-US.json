@@ -488,6 +488,7 @@
         "noMembers": "This organization has no other active member.",
         "noMatches": "No active member matches this search.",
         "confirmLabel": "Send request",
+        "targetRequired": "Choose the new owner first.",
         "requested": "A transfer request was sent to {{account}}. Ownership changes when they confirm."
       },
       "pending": {
@@ -509,6 +510,7 @@
         "nameLabel": "Type the organization name to confirm",
         "nameHint": "Type {{name}}.",
         "confirmLabel": "Confirm deletion",
+        "nameMismatch": "The typed name does not match the organization's name.",
         "saved": "The organization {{name}} was deleted."
       },
       "error": {

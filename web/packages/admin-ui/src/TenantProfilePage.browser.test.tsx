@@ -10,18 +10,22 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { useTheme } from '@mui/material/styles'
 import { page } from 'vitest/browser'
 import { attachSession } from '@speed/auth-core'
+import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { TenantProfilePage } from './TenantProfilePage.js'
 import { OrganizationAdminOperationsProvider } from './organization-operations.js'
+import type { AdminTenantTransfer } from './organization-operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   createAdminOperations,
   makeAdminBackend,
   profileFixture,
+  type AdminBackend,
 } from '../test-utils/operations.js'
 import {
   ANONYMOUS_SNAPSHOT,
@@ -34,13 +38,23 @@ const FLOOR_WIDTHS = [600, 900, 1200] as const
 const VIEWPORT_HEIGHT = 900
 const TENANT = 'acme'
 
+/** The ui-kit label the confirm button shows once its two-step guard arms. */
+const CONFIRM_AGAIN_LABEL = (
+  uiKitResources['en-US'] as unknown as {
+    readonly confirmDialog: { readonly confirmAgainLabel: string }
+  }
+).confirmDialog.confirmAgainLabel
+
 function renderPage({
   defaultMode,
   owner = false,
+  backend = {},
 }: {
   readonly defaultMode?: 'light' | 'dark' | 'system'
   /** Attach the session whose account is the fixture's owner. */
   readonly owner?: boolean
+  /** Backend answers the case replaces. */
+  readonly backend?: Partial<AdminBackend>
 } = {}): void {
   attachSession(
     createStepUpSession(
@@ -67,6 +81,7 @@ function renderPage({
             website: 'https://acme.example',
           }),
         ),
+      ...backend,
     }),
   )
   renderWithProviders(
@@ -224,4 +239,110 @@ describe('TenantProfilePage ownership controls in Chromium', () => {
       expectInsideBox(section)
     })
   }
+})
+
+describe('TenantProfilePage ownership focus in Chromium', () => {
+  it('lands focus on the ownership heading when a cancelled request withdraws its panel', async () => {
+    await page.viewport(1200, VIEWPORT_HEIGHT)
+    let pending: AdminTenantTransfer | null = {
+      id: 'transfer-1',
+      target_display_name: 'Bob Stone',
+      target_username: 'bob',
+      requested_at: '2026-10-20T08:30:00Z',
+      expires_at: '2026-10-27T08:30:00Z',
+      status: 'pending',
+    }
+    renderPage({
+      owner: true,
+      backend: {
+        getPendingOrganizationOwner: () => Promise.resolve(pending),
+        cancelOrganizationOwner: () => {
+          pending = null
+          return Promise.resolve()
+        },
+      },
+    })
+    await ready()
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: enUS.tenantProfile.ownership.pending.cancel,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: enUS.tenantProfile.ownership.pending.cancelTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: enUS.tenantProfile.ownership.pending.cancelConfirm,
+      }),
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(enUS.tenantProfile.ownership.pending.title),
+      ).toBeNull(),
+    )
+    // The confirmation is still exiting while the page behind it stays
+    // aria-hidden; wait for it to leave before reading the card.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const heading = await screen.findByRole('heading', {
+      name: enUS.tenantProfile.ownership.title,
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(document.activeElement).toBe(heading)
+  })
+
+  it('lands focus on the ownership heading when a deletion withdraws the controls', async () => {
+    await page.viewport(1200, VIEWPORT_HEIGHT)
+    renderPage({
+      owner: true,
+      backend: { deleteOrganization: () => Promise.resolve() },
+    })
+    await ready()
+    const user = userEvent.setup()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: enUS.tenantProfile.ownership.delete.button,
+      }),
+    )
+    const title = enUS.tenantProfile.ownership.delete.title.replace(
+      '{{name}}',
+      'Acme Incorporated',
+    )
+    const dialog = await screen.findByRole('dialog', { name: title })
+    await user.type(
+      within(dialog).getByLabelText(
+        enUS.tenantProfile.ownership.delete.nameLabel,
+      ),
+      'acme-inc',
+    )
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: enUS.tenantProfile.ownership.delete.confirmLabel,
+      }),
+    )
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+
+    const message = enUS.tenantProfile.ownership.delete.saved.replace(
+      '{{name}}',
+      'Acme Incorporated',
+    )
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const heading = await screen.findByRole('heading', {
+      name: enUS.tenantProfile.ownership.title,
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(document.activeElement).toBe(heading)
+  })
 })
