@@ -214,6 +214,53 @@ afterEach(() => {
   attachSession(createStepUpSession(ANONYMOUS_SNAPSHOT))
 })
 
+/** A promise the case settles by hand, so one request can be held in
+ * flight across frames. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+  readonly reject: (reason: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
+/** One animation frame: the component's updated state has reached the DOM
+ * and the browser has had its chance to react to it. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
+/** What currently holds focus, for a failure message: tag, role and the
+ * label or text a reader can map back to a control. */
+function describeActiveElement(): string {
+  const active = document.activeElement
+  if (active === null) {
+    return 'null'
+  }
+  const parts = [active.tagName.toLowerCase()]
+  const role = active.getAttribute('role')
+  const label = active.getAttribute('aria-label')
+  const text = (active.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+  if (role !== null) {
+    parts.push(`role="${role}"`)
+  }
+  if (label !== null) {
+    parts.push(`aria-label="${label}"`)
+  }
+  if (text !== '') {
+    parts.push(`text="${text}"`)
+  }
+  return parts.join(' ')
+}
+
 /** Expands the collapsed permission catalog so its grouped reference tables
  * are laid out. A hidden subtree still mounts its MUI table containers, and
  * those have no width to measure; the geometry cases open the catalog first
@@ -359,6 +406,63 @@ describe('OrganizationRolesPage permission catalog in Chromium', () => {
     expect(
       within(region).getByLabelText(enUS.permissions.catalog.search.label),
     ).not.toBeVisible()
+  })
+})
+
+describe('OrganizationRolesPage write focus in Chromium', () => {
+  it('keeps focus on the description save button while the save is in flight', async () => {
+    await page.viewport(1200, 900)
+    const written = deferred<void>()
+    const scripted = makeAdminBackend({
+      listTenantRoles: () => Promise.resolve([ROLE_AUDITOR, ROLE_BUILTIN]),
+      listTenantPermissions: () => Promise.resolve(CATALOG),
+      listTenantGrants: (_tenant, roleName) => Promise.resolve(route(roleName)),
+      listTenantRoleBindings: () => Promise.resolve(HOLDERS),
+      writeTenantRole: () => written.promise,
+    })
+    renderPage(scripted)
+    await screen.findByText(ROLE_AUDITOR.role)
+
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: enUS.permissions.roles.actionsAria.replace(
+          '{{role}}',
+          ROLE_AUDITOR.role,
+        ),
+      }),
+    )
+    await user.click(
+      await screen.findByRole('menuitem', {
+        name: enUS.permissions.roles.editDescription,
+      }),
+    )
+    const panel = await screen.findByRole('dialog')
+    const field = within(panel).getByLabelText(
+      enUS.permissions.roles.description.descriptionLabel,
+    )
+    await user.clear(field)
+    await user.type(field, 'Reviews every audit finding.')
+    const save = within(panel).getByRole('button', {
+      name: enUS.permissions.roles.description.save,
+    })
+    await user.click(save)
+
+    // The save button shows its progress indicator and at least one frame
+    // passes, so the browser has had its chance to move a focused control
+    // whose availability changed.
+    await waitFor(() =>
+      expect(within(save).getByRole('progressbar')).toBeInTheDocument(),
+    )
+    await nextFrame()
+    expect(
+      save,
+      `focus while the save is in flight; document.activeElement is ${describeActiveElement()}`,
+    ).toHaveFocus()
+    expect(save).toHaveAttribute('aria-busy', 'true')
+
+    written.resolve()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 })
 

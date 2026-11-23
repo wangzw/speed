@@ -65,6 +65,11 @@ import { RoleGrantsSection } from './internal/roles/RoleGrantsSection.js'
 import { RoleTable } from './internal/roles/RoleTable.js'
 import { RoleUsageSection } from './internal/roles/RoleUsageSection.js'
 import { PermissionCatalogReference } from './internal/roles/PermissionCatalogReference.js'
+import {
+  focusAfterRowRemoval,
+  useRowRemovalFocus,
+} from './internal/focus-after-removal.js'
+import { useSectionHeadingFocus } from './internal/section-heading-focus.js'
 
 /** The holder page size the usage read asks for. */
 const USAGE_PAGE_SIZE = 50
@@ -85,6 +90,17 @@ interface UsagePageFrame {
   readonly cursors: readonly string[]
   readonly page: number
 }
+
+/** The role-scope control a write belongs to. */
+type PendingRoleWrite =
+  | { readonly kind: 'create' }
+  | { readonly kind: 'description' }
+  | { readonly kind: 'remove'; readonly role: string }
+
+/** The grants-scope control a write belongs to. */
+type PendingGrantWrite =
+  | { readonly kind: 'grant' }
+  | { readonly kind: 'revoke'; readonly key: string }
 
 function firstUsagePage(tenant: string, role: string): UsagePageFrame {
   return { tenant, role, cursors: [''], page: 0 }
@@ -140,7 +156,22 @@ export function OrganizationRolesPage({
   const grantsFeedback = useWriteFeedback()
   const roleRegionRef = useFailureScroll(roleFeedback.outcome)
   const grantsRegionRef = useFailureScroll(grantsFeedback.outcome)
+  const grantsSectionFocus = useSectionHeadingFocus()
   const confirm = usePendingConfirm()
+  // The control each scope's in-flight write belongs to: only that control
+  // reports busy, while its siblings in the same scope are unavailable.
+  const [pendingRoleWrite, setPendingRoleWrite] =
+    useState<PendingRoleWrite | null>(null)
+  const [pendingGrantWrite, setPendingGrantWrite] =
+    useState<PendingGrantWrite | null>(null)
+  // The grant row a landed revoke removed, with the position it held.
+  const grantRemoval = useRef<{
+    readonly value: string
+    readonly index: number
+  } | null>(null)
+  // Whether the revoke control held focus when its row left; only then does
+  // the landing move it.
+  const grantFocus = useRowRemovalFocus()
 
   // The caller's session permission sets fail closed: no session, a
   // pending read or an absent set reads as no permission. The server is
@@ -186,6 +217,43 @@ export function OrganizationRolesPage({
     resolveErrorText,
   )
   const roleRows = roles.data
+
+  // A landed revoke removes its row; the same control on the next grant
+  // takes focus, else the previous row's, else the grants heading. A failed
+  // re-read drops the record so a later read cannot move focus on its own.
+  useEffect(() => {
+    const removed = grantRemoval.current
+    if (removed === null) {
+      return
+    }
+    if (grants.error !== null) {
+      grantRemoval.current = null
+      return
+    }
+    if (grants.data === undefined) {
+      return
+    }
+    if (
+      grants.data.some(
+        (entry) => `${entry.resource}:${entry.action}` === removed.value,
+      )
+    ) {
+      return
+    }
+    grantRemoval.current = null
+    focusAfterRowRemoval(
+      'data-grant-revoke',
+      removed.value,
+      removed.index,
+      grantFocus.takeHeldFocus(removed.value),
+      grantsSectionFocus.focusHeading,
+    )
+  }, [
+    grants.data,
+    grants.error,
+    grantsSectionFocus.focusHeading,
+    grantFocus.takeHeldFocus,
+  ])
   // Creating the first role of a tenant has no row to read `can_manage`
   // from, so the session's tenant set covers that one case; every other
   // decision follows the server's per-row answer.
@@ -232,15 +300,18 @@ export function OrganizationRolesPage({
 
   const createRole = async (draft: RoleCreateDraft): Promise<boolean> => {
     let landed = false
-    await roleFeedback.run(async () => {
-      await writeRole.mutateAsync({
-        tenant,
-        role: draft.role,
-        description: draft.description,
+    setPendingRoleWrite({ kind: 'create' })
+    await roleFeedback
+      .run(async () => {
+        await writeRole.mutateAsync({
+          tenant,
+          role: draft.role,
+          description: draft.description,
+        })
+        landed = true
+        return t('permissions.roles.saved', { role: draft.role })
       })
-      landed = true
-      return t('permissions.roles.saved', { role: draft.role })
-    })
+      .finally(() => setPendingRoleWrite(null))
     return landed
   }
 
@@ -250,20 +321,23 @@ export function OrganizationRolesPage({
       return
     }
     setDescriptionFailed(null)
-    void roleFeedback.run(async () => {
-      try {
-        await writeRole.mutateAsync({
-          tenant,
-          role: role.role,
-          description,
-        })
-        setEditingRole(undefined)
-        return t('permissions.roles.description.saved', { role: role.role })
-      } catch (error) {
-        setDescriptionFailed(resolveErrorText(errorCodeOf(error)))
-        throw error
-      }
-    })
+    setPendingRoleWrite({ kind: 'description' })
+    void roleFeedback
+      .run(async () => {
+        try {
+          await writeRole.mutateAsync({
+            tenant,
+            role: role.role,
+            description,
+          })
+          setEditingRole(undefined)
+          return t('permissions.roles.description.saved', { role: role.role })
+        } catch (error) {
+          setDescriptionFailed(resolveErrorText(errorCodeOf(error)))
+          throw error
+        }
+      })
+      .finally(() => setPendingRoleWrite(null))
   }
 
   const requestRemove = (role: AdminTenantRole) => {
@@ -276,21 +350,24 @@ export function OrganizationRolesPage({
       doubleConfirm: true,
       run: () => {
         setFailedRole(null)
-        void roleFeedback.run(async () => {
-          try {
-            await removeRole.mutateAsync({ tenant, role: role.role })
-            if (selectedRoleRef.current === role.role) {
-              setSelectedRole('')
-              grantsFeedback.reset()
-              setFailedGrant(null)
-              setUsageFrame(firstUsagePage(tenant, ''))
+        setPendingRoleWrite({ kind: 'remove', role: role.role })
+        void roleFeedback
+          .run(async () => {
+            try {
+              await removeRole.mutateAsync({ tenant, role: role.role })
+              if (selectedRoleRef.current === role.role) {
+                setSelectedRole('')
+                grantsFeedback.reset()
+                setFailedGrant(null)
+                setUsageFrame(firstUsagePage(tenant, ''))
+              }
+              return t('permissions.roles.removed', { role: role.role })
+            } catch (error) {
+              setFailedRole(role.role)
+              throw error
             }
-            return t('permissions.roles.removed', { role: role.role })
-          } catch (error) {
-            setFailedRole(role.role)
-            throw error
-          }
-        })
+          })
+          .finally(() => setPendingRoleWrite(null))
       },
     })
   }
@@ -298,17 +375,20 @@ export function OrganizationRolesPage({
   const grant = (entry: AdminTenantPermission) => {
     const run = () => {
       setFailedGrant(null)
-      void grantsFeedback.run(async () => {
-        await grantPermission.mutateAsync({
-          tenant,
-          role: selectedRole,
-          permission: entry.permission,
+      setPendingGrantWrite({ kind: 'grant' })
+      void grantsFeedback
+        .run(async () => {
+          await grantPermission.mutateAsync({
+            tenant,
+            role: selectedRole,
+            permission: entry.permission,
+          })
+          return t('permissions.grants.granted', {
+            permission: entry.permission,
+            role: selectedRole,
+          })
         })
-        return t('permissions.grants.granted', {
-          permission: entry.permission,
-          role: selectedRole,
-        })
-      })
+        .finally(() => setPendingGrantWrite(null))
     }
     if (entry.dangerous) {
       confirm.ask({
@@ -332,22 +412,32 @@ export function OrganizationRolesPage({
     }
     const key = `${grant.resource}:${grant.action}`
     setFailedGrant(null)
-    void grantsFeedback.run(async () => {
-      try {
-        await revokePermission.mutateAsync({
-          tenant,
-          role: selectedRole,
-          permission: grant.permission,
-        })
-        return t('permissions.grants.revoked', {
-          permission: grant.permission,
-          role: selectedRole,
-        })
-      } catch (error) {
-        setFailedGrant(key)
-        throw error
-      }
-    })
+    grantRemoval.current = {
+      value: key,
+      index: grants.data?.findIndex(
+        (entry) => `${entry.resource}:${entry.action}` === key,
+      ) ?? -1,
+    }
+    setPendingGrantWrite({ kind: 'revoke', key })
+    void grantsFeedback
+      .run(async () => {
+        try {
+          await revokePermission.mutateAsync({
+            tenant,
+            role: selectedRole,
+            permission: grant.permission,
+          })
+          return t('permissions.grants.revoked', {
+            permission: grant.permission,
+            role: selectedRole,
+          })
+        } catch (error) {
+          grantRemoval.current = null
+          setFailedGrant(key)
+          throw error
+        }
+      })
+      .finally(() => setPendingGrantWrite(null))
   }
 
   const moveUsagePage = (delta: number, cursor?: string) => {
@@ -398,7 +488,10 @@ export function OrganizationRolesPage({
         {canManage && (
           <RoleCreateForm
             roles={roleRows ?? []}
-            busy={roleFeedback.pending}
+            busy={pendingRoleWrite?.kind === 'create'}
+            scopePending={
+              pendingRoleWrite !== null && pendingRoleWrite.kind !== 'create'
+            }
             onCreate={createRole}
           />
         )}
@@ -449,6 +542,7 @@ export function OrganizationRolesPage({
       </SectionCard>
 
       <SectionCard
+        ref={grantsSectionFocus.sectionRef}
         title={t('permissions.grants.title')}
         icon={<PermissionsIcon size={24} />}
         contentAligned={false}
@@ -460,10 +554,12 @@ export function OrganizationRolesPage({
           selectedRole={selectedRole}
           lockNote={roleLockNote}
           busy={grantsFeedback.pending}
+          pendingWrite={pendingGrantWrite}
           failureText={grantsFailureText}
           failedGrant={failedGrant}
           outcome={grantsFeedback.outcome}
           regionRef={grantsRegionRef}
+          revokeControlRef={grantFocus.controlRef}
           onGrant={grant}
           onRevoke={revoke}
         />
@@ -497,7 +593,7 @@ export function OrganizationRolesPage({
       <RoleDescriptionPanel
         open={editingRole !== undefined}
         role={editingRole}
-        saving={roleFeedback.pending}
+        saving={pendingRoleWrite?.kind === 'description'}
         failureText={descriptionFailed}
         onSave={saveDescription}
         onClose={() => setEditingRole(undefined)}
