@@ -73,6 +73,7 @@
     "totpDigits": "Digits",
     "totpPeriod": "Period (seconds)",
     "codeLabel": "6-digit code",
+    "totpCodeRequired": "Enter the code first.",
     "usernameLabel": "Username",
     "usernameHelper": "3 to 64 characters: letters, digits, dot, dash or underscore. The first character must be a letter or a digit.",
     "signupTitle": "Choose a username",
@@ -176,6 +177,7 @@
   },
   "socialCallback": {
     "pending": "Completing sign-in…",
+    "incompleteTitle": "Sign-in not completed",
     "retry": "Retry"
   },
   "signOut": {

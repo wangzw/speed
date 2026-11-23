@@ -73,6 +73,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
+import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { AnnouncementRegion, errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
@@ -300,9 +301,13 @@ export function SocialCallbackHandler({
   // A step the route parks after readFlow is its first appearance -- the
   // viewer was not working in a control it replaced -- so it moves no
   // focus. A later step, parked by answering the one before it, took the
-  // answered step's place and does.
+  // answered step's place and does. An answer that leaves no step behind --
+  // the terminal notice or the failure page replaces the answered step --
+  // hands the focus the unmounted control held to that page's heading.
+  const errorHeadingRef = useRef<HTMLHeadingElement>(null)
   const surfaceRef = useStepFocus(stepKey(driver.step), {
     focusFirstStep: false,
+    emptyTarget: errorHeadingRef,
   })
   // A signup step's refusals are the step's own: they render under the
   // field they name (the username's three, or a password policy on the
@@ -338,7 +343,27 @@ export function SocialCallbackHandler({
     return (
       <>
         {framed(
-          <Box ref={surfaceRef} sx={{ display: 'contents' }}>
+          <Box
+            ref={surfaceRef}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              gap: 1.5,
+              width: '100%',
+            }}
+          >
+            {/* The heading is the landing when the answered step's control
+                went with the step: focusable without entering the tab
+                order, named by its text. */}
+            <Typography
+              ref={errorHeadingRef}
+              component="h2"
+              variant="h6"
+              tabIndex={-1}
+            >
+              {t('socialCallback.incompleteTitle')}
+            </Typography>
             <FlowExpired onRestart={onSignIn} />
           </Box>,
         )}
@@ -359,6 +384,16 @@ export function SocialCallbackHandler({
               width: '100%',
             }}
           >
+            {/* The same heading landing: a lost flow without the host's exit
+                replaces the answered step with this failure page. */}
+            <Typography
+              ref={errorHeadingRef}
+              component="h2"
+              variant="h6"
+              tabIndex={-1}
+            >
+              {t('socialCallback.incompleteTitle')}
+            </Typography>
             <ChannelFeedbackRegion feedback={feedback} />
             <RetryAction label={t('socialCallback.retry')} onClick={retry} />
           </Box>,

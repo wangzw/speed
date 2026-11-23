@@ -1243,3 +1243,160 @@ describe('SocialCallbackHandler social account-opening face', () => {
     expect(absent.closest('section[aria-label="host card"]')).toBeNull()
   })
 })
+
+describe('SocialCallbackHandler error-page focus', () => {
+  /** The code challenge a social login parks at after its read. */
+  function codeChallenge() {
+    return openFlow({
+      seq: 1,
+      state: 'first',
+      next: {
+        kind: 'challenge',
+        fields: [{ name: 'code', kind: 'code', secret: true }],
+      },
+    })
+  }
+
+  /** Answer the parked step with a code the server refuses. */
+  async function answerRefusedStep(): Promise<HTMLElement> {
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '123456')
+    const submit = screen.getByRole('button', { name: zhCN.signInFlow.submit })
+    await user.click(submit)
+    return submit
+  }
+
+  /** A refused answer whose outcome the test releases by hand, so focus can
+   * be moved away while the answer is still in flight. */
+  function heldRefusal() {
+    let refuse!: (error: unknown) => void
+    const gate = new Promise<never>((_resolve, reject) => {
+      refuse = reject
+    })
+    return { gate, refuse }
+  }
+
+  it('land on the expired notice heading when a refused answer replaces the step', async () => {
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => codeChallenge(),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
+    const onSignIn = vi.fn()
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignIn={onSignIn} />,
+    )
+
+    await answerRefusedStep()
+
+    // The answered step's submit left with the step. The focus it held must
+    // not fall to the document body: the terminal notice's heading is the
+    // landing, a programmatic target rather than a tab stop.
+    await screen.findByText(zhCN.signInFlow.flowExpired)
+    await waitFor(() => expect(document.body).not.toHaveFocus())
+    const heading = screen.getByRole('heading', {
+      name: zhCN.socialCallback.incompleteTitle,
+    })
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    expect(heading).toHaveFocus()
+  })
+
+  it('leave the focus the viewer moved when the step gives way to the expired notice', async () => {
+    const { gate, refuse } = heldRefusal()
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => codeChallenge(),
+      [LOGIN_ANSWER]: () => gate,
+    })
+    const onSignIn = vi.fn()
+    renderWithProviders(
+      <>
+        <SocialCallbackHandler session={harness.session} onSignIn={onSignIn} />
+        <button type="button">Elsewhere</button>
+      </>,
+    )
+
+    const submit = await answerRefusedStep()
+    await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
+
+    // The viewer leaves the in-flight submit for something else while the
+    // answer is held.
+    const user = userEvent.setup()
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    await user.click(elsewhere)
+    expect(elsewhere).toHaveFocus()
+
+    await act(async () => {
+      refuse(apiError(401, 'authn.flow_invalid'))
+      await Promise.resolve()
+    })
+
+    const heading = await screen.findByRole('heading', {
+      name: zhCN.socialCallback.incompleteTitle,
+    })
+    // The viewer had already moved focus, so the landing leaves it alone.
+    expect(elsewhere).toHaveFocus()
+    expect(heading).not.toHaveFocus()
+  })
+
+  it('land on the failure page heading when a refused answer replaces the step', async () => {
+    // Without a host exit a lost flow cannot become the terminal notice, so
+    // the failure banner with its re-read takes the step's place. That page
+    // carries the same heading landing.
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => codeChallenge(),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.flow_invalid')
+      },
+    })
+    renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+
+    await answerRefusedStep()
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.flow_invalid,
+      ),
+    )
+    await waitFor(() => expect(document.body).not.toHaveFocus())
+    const heading = screen.getByRole('heading', {
+      name: zhCN.socialCallback.incompleteTitle,
+    })
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    expect(heading).toHaveFocus()
+  })
+
+  it('leave the focus the viewer moved when the step gives way to the failure page', async () => {
+    const { gate, refuse } = heldRefusal()
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => codeChallenge(),
+      [LOGIN_ANSWER]: () => gate,
+    })
+    renderWithProviders(
+      <>
+        <SocialCallbackHandler session={harness.session} />
+        <button type="button">Elsewhere</button>
+      </>,
+    )
+
+    const submit = await answerRefusedStep()
+    await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
+
+    const user = userEvent.setup()
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    await user.click(elsewhere)
+    expect(elsewhere).toHaveFocus()
+
+    await act(async () => {
+      refuse(apiError(401, 'authn.flow_invalid'))
+      await Promise.resolve()
+    })
+
+    const heading = await screen.findByRole('heading', {
+      name: zhCN.socialCallback.incompleteTitle,
+    })
+    expect(elsewhere).toHaveFocus()
+    expect(heading).not.toHaveFocus()
+  })
+})

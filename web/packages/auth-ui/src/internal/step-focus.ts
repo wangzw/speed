@@ -10,6 +10,12 @@
  * step's first control instead (design-web-auth-ui.md's "步骤切换后焦点落在
  * 新步骤的首个控件").
  *
+ * It takes only the focus the replaced step owned. A control removed from
+ * the document leaves focus on the body -- that is also where a viewer who
+ * never focused anything keeps it -- so those two states are the switch's
+ * to use. Focus anywhere else is where the viewer moved it, and pulling it
+ * away would undo their choice, so the switch leaves it alone.
+ *
  * Two appearances are not switches and move nothing:
  *
  *  - the first surface a component renders replaced nothing, so a viewer
@@ -68,13 +74,36 @@ export interface StepFocusOptions {
    * arrives after readFlow and plays the first-render role.
    */
   readonly focusFirstStep?: boolean
+  /**
+   * The element that takes focus when a rendered step gives way to no step
+   * -- a terminal notice or a failure page. Omitted, a `null` key takes no
+   * focus, as before. The ownership rule is the same: only focus the
+   * unmounted step held (which the browser drops on the body) is moved,
+   * never focus the viewer placed elsewhere. A surface that was never a
+   * step replaced nothing, so it moves no focus either.
+   */
+  readonly emptyTarget?: RefObject<HTMLElement | null>
+}
+
+/** Whether focus holds nowhere it was deliberately placed: the body, where
+ * removing the focused control leaves it; the document element; or a node
+ * no longer in the document. */
+function focusWasDropped(): boolean {
+  const active = document.activeElement
+  return (
+    active === null ||
+    active === document.body ||
+    active === document.documentElement ||
+    !(active instanceof HTMLElement) ||
+    !active.isConnected
+  )
 }
 
 /**
  * A ref for the container of the currently rendered surface. When the
  * step key changes to another step, the container's first control takes
- * focus after the commit that rendered it. A `null` key (no step) focuses
- * nothing.
+ * focus after the commit that rendered it. When a step gives way to no
+ * step, `emptyTarget` takes the focus the unmounted control held.
  */
 export function useStepFocus(
   key: string | null,
@@ -85,12 +114,23 @@ export function useStepFocus(
   // Whether a step was ever rendered before this one: the first one is
   // not a switch, whatever the component rendered while it was absent.
   const sawStep = useRef(key !== null)
-  const { focusFirstStep = true } = options
+  const { focusFirstStep = true, emptyTarget } = options
 
   useEffect(() => {
     const changed = previousKey.current !== key
     previousKey.current = key
-    if (!changed || key === null) {
+    if (!changed) {
+      return
+    }
+    if (key === null) {
+      // A step gave way to a surface with no step. The heading that surface
+      // carries is the landing for the focus the unmounted control held.
+      // Only a transition from a step counts: a surface that was never a
+      // step replaced nothing, and focus the viewer moved elsewhere (a
+      // connected node other than the body) is left where it is.
+      if (sawStep.current && focusWasDropped()) {
+        emptyTarget?.current?.focus()
+      }
       return
     }
     const firstStep = !sawStep.current
@@ -99,10 +139,24 @@ export function useStepFocus(
       return
     }
     const container = containerRef.current
-    if (container !== null) {
+    if (container === null) {
+      return
+    }
+    const active = document.activeElement
+    // The replaced step's focused control is gone, so the browser has put
+    // focus back on the body; a viewer who never focused anything has it
+    // there too. Focus on the body, or still inside the surface the step
+    // replaced, is the switch's to use. Focus on any other element is where
+    // the viewer moved it, and taking it would undo their choice.
+    const focusWasWithTheStep =
+      active === null ||
+      active === document.body ||
+      active === document.documentElement ||
+      container.contains(active)
+    if (focusWasWithTheStep) {
       firstControl(container)?.focus()
     }
-  }, [key, focusFirstStep])
+  }, [key, focusFirstStep, emptyTarget])
 
   return containerRef
 }
