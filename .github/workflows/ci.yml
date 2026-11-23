@@ -7,14 +7,16 @@
 # tool version. The toolchain comes from .mise.toml through the local setup
 # action.
 #
-# The gate is split across jobs so its slow legs overlap. Each job runs its
-# part through `make`, and the legs the jobs run together are exactly the
+# The gate is split across jobs so its slow legs overlap. Each check leg runs
+# through `make`, and the legs the jobs run together are exactly the
 # segments `make check` runs: tools/check_ci_jobs.py holds the two sets equal,
 # read from this file and the Makefile, so a segment added to `check` without
 # a job here fails `make repo-check`. A leg narrowed with `MODULES=` is split
 # further, and that gate holds the union of the narrowed rosters to the
-# modules go.work lists. The frontend's three phases run in one job because
-# the test phase reads the dependency install the static phase performs.
+# modules go.work lists. The frontend's three phases run in two jobs: static
+# and build share one, because the build phase reads the dependency install
+# the static phase performs, and test runs in a job of its own that installs
+# what it needs.
 #
 # GATE_JOBS is the CPU width each job's tools take, set to the hosted
 # runner's four cores; no tool detects the host's count. GOFLAGS=-count=1
@@ -28,7 +30,9 @@
 # cache is keyed by its configuration and the same sources and carries no
 # commit suffix: a hit means the entry already matches those inputs and the
 # run saves nothing, so it is populated by the first run after a change rather
-# than refreshed every run. The pnpm store is keyed by the frontend lockfile.
+# than refreshed every run. The pnpm store is keyed by the frontend lockfile
+# and saved by the static-build job only; the test job restores it, so the two
+# never race to reserve one key.
 #
 # Concurrency. The group is keyed by the event name and then by the pull request
 # number, or by the ref when there is none, so a run started by one event does
@@ -253,7 +257,10 @@ jobs:
       - name: Run the demo server race detector
         run: make test-race MODULES=./starters/demo/server
 
-  web:
+  # Two jobs run the frontend gate. The static phase installs the dependencies
+  # and the build phase reads that same install, so the two stay together; the
+  # static-build job also saves the pnpm store.
+  web-static-build:
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
@@ -269,7 +276,7 @@ jobs:
         id: pnpm-store
         run: echo "path=$(pnpm store path)" >> "${GITHUB_OUTPUT}"
 
-      - name: Restore the pnpm store
+      - name: Restore and save the pnpm store
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -277,7 +284,44 @@ jobs:
           restore-keys: |
             pnpm-${{ runner.os }}-
 
-      # One job runs all three phases: the test phase reads the dependency
-      # install the static phase performs.
-      - name: Run the frontend checks
-        run: make web-check-static web-check-test web-check-build
+      - name: Run the frontend static checks and build
+        run: make web-check-static web-check-build
+
+  web-test:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+
+      - name: Resolve the pnpm store directory
+        id: pnpm-store
+        run: echo "path=$(pnpm store path)" >> "${GITHUB_OUTPUT}"
+
+      # This job restores the store and never saves it: the static-build job
+      # writes the one entry, so two jobs do not race to reserve the same key.
+      - name: Restore the pnpm store
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      # The test job installs what it needs: jobs run on separate runners, so
+      # it cannot read the static job's install. It calls pnpm directly rather
+      # than a make target, because `make -j check` runs the test and build
+      # segments at once and an install target shared by both would install
+      # into one web/node_modules from two recipes. The Makefile keeps the
+      # install in the static phase, which both segments order themselves
+      # after.
+      - name: Install the frontend dependencies
+        run: pnpm -C web install --frozen-lockfile
+
+      - name: Run the frontend tests
+        run: make web-check-test
