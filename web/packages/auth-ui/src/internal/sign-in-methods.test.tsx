@@ -11,7 +11,11 @@
 import { describe, expect, it } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { DescriptorSignInForm, EnterpriseSignIn } from './sign-in-methods.js'
+import {
+  DescriptorSignInForm,
+  EnterpriseSignIn,
+  PasskeySignIn,
+} from './sign-in-methods.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import {
   CAPTCHA_CHALLENGE,
@@ -62,6 +66,35 @@ async function findNotice(text: string): Promise<HTMLElement> {
 function waitSentence(seconds: number): string {
   const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
   return `${before}${seconds}${after}`
+}
+
+/** The start requests the harness received. */
+function starts(harness: ReturnType<typeof makeHarness>) {
+  return harness.calls.filter((call) => call.path === '/api/v1/auth/flows')
+}
+
+/** A gate that requires no proof on either surface. */
+const NO_GATE: AuthnHumanGate = {
+  phone: { required: false, provider: 'off' },
+  other: { required: false, provider: 'off' },
+}
+
+/** A request the test settles by hand, so the in-flight window can be
+ * inspected before it lands. */
+function heldRequest<T>(): {
+  readonly promise: Promise<T>
+  readonly refuse: (error: unknown) => void
+} {
+  let refuse: ((error: unknown) => void) | null = null
+  const promise = new Promise<T>((_, reject) => {
+    refuse = reject
+  })
+  return {
+    promise,
+    refuse: (error) => {
+      refuse?.(error)
+    },
+  }
 }
 
 describe('EnterpriseSignIn throttled answers', () => {
@@ -140,6 +173,117 @@ describe('EnterpriseSignIn discovery notices', () => {
       screen.getByRole('button', { name: zhCN.enterprise.editEmail }),
     )
     await waitFor(() => expect(notice.textContent).toBe(''))
+  })
+})
+
+/** A reply the test settles by hand, so a window can be inspected before it
+ * lands. */
+function heldReply<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let settle: ((value: T) => void) | null = null
+  const promise = new Promise<T>((resolve) => {
+    settle = resolve
+  })
+  return {
+    promise,
+    resolve: (value) => {
+      settle?.(value)
+    },
+  }
+}
+
+describe('EnterpriseSignIn focus when the email step is replaced', () => {
+  it('lands on the first provider button when the discovery lists providers', async () => {
+    const harness = harnessFor([
+      { id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' },
+      { id: 'idp-2', name: 'Acme Azure', protocol: 'oidc' },
+    ])
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />)
+    await discoverEmail()
+    const first = await screen.findByRole('button', { name: 'Acme Okta' })
+    // The focused continue button unmounted with the form; the new surface's
+    // first control takes the focus it left behind instead of the body.
+    await waitFor(() => expect(first).toHaveFocus())
+  })
+
+  it('lands on the way back to the email field when nothing matched', async () => {
+    const harness = harnessFor([])
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />)
+    await discoverEmail()
+    const edit = await screen.findByRole('button', {
+      name: zhCN.enterprise.editEmail,
+    })
+    await waitFor(() => expect(edit).toHaveFocus())
+  })
+
+  it('lands on the email field when the viewer returns to the form', async () => {
+    const harness = harnessFor([])
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />)
+    await discoverEmail()
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.enterprise.editEmail }),
+    )
+    const email = await screen.findByLabelText(zhCN.enterprise.emailLabel)
+    await waitFor(() => expect(email).toHaveFocus())
+  })
+
+  it('leaves focus where the viewer moved it when the discovery lands', async () => {
+    const held = heldReply<ReturnType<typeof ssoProviders>>()
+    const harness = makeHarness({ [SSO_DISCOVER]: () => held.promise })
+    renderWithProviders(
+      <>
+        <button type="button">elsewhere</button>
+        <EnterpriseSignIn session={harness.session} />
+      </>,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.enterprise.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.enterprise.continue }),
+    )
+    await waitFor(() =>
+      expect(
+        harness.calls.filter(
+          (call) => call.path === '/api/v1/auth/sso/discover',
+        ),
+      ).toHaveLength(1),
+    )
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' })
+    elsewhere.focus()
+    await act(async () => {
+      held.resolve(
+        ssoProviders([{ id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' }]),
+      )
+    })
+    const first = await screen.findByRole('button', { name: 'Acme Okta' })
+    expect(elsewhere).toHaveFocus()
+    expect(first).not.toHaveFocus()
+  })
+
+  it('leaves focus where the viewer moved it when returning to the form', async () => {
+    const harness = harnessFor([])
+    renderWithProviders(
+      <>
+        <button type="button">elsewhere</button>
+        <EnterpriseSignIn session={harness.session} />
+      </>,
+    )
+    await discoverEmail()
+    const edit = await screen.findByRole('button', {
+      name: zhCN.enterprise.editEmail,
+    })
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' })
+    elsewhere.focus()
+    // An activation that does not move focus (a programmatic click, or a
+    // pointer click in a browser that leaves buttons unfocused): the
+    // operator's focus stays where it is, the returning form does not take it.
+    fireEvent.click(edit)
+    const email = await screen.findByLabelText(zhCN.enterprise.emailLabel)
+    expect(elsewhere).toHaveFocus()
+    expect(email).not.toHaveFocus()
   })
 })
 
@@ -280,11 +424,14 @@ describe('DescriptorSignInForm human-verification surface', () => {
         fake.token('token-1')
       })
       // The proof arrived and the deferred start left; its request is still
-      // in flight, so the submit that came back must stay disabled.
+      // in flight, so the submit that came back must stay busy.
       const submit = await screen.findByRole('button', {
         name: zhCN.signInFlow.submit,
       })
-      await waitFor(() => expect(submit).toBeDisabled())
+      await waitFor(() =>
+        expect(submit).toHaveAttribute('aria-disabled', 'true'),
+      )
+      expect(submit).toHaveAttribute('aria-busy', 'true')
       // A stray activation cannot begin a second flow while the first
       // start is in flight.
       fireEvent.click(submit)
@@ -297,5 +444,143 @@ describe('DescriptorSignInForm human-verification surface', () => {
     } finally {
       fake.restore()
     }
+  })
+})
+
+describe('sign-in entries keep the initiating control through a write', () => {
+  it('keeps focus on the descriptor submit through a refused start', async () => {
+    const held = heldRequest<AuthnFlowState>()
+    const harness = makeHarness({ [LOGIN_START]: () => held.promise })
+    renderWithProviders(
+      <DescriptorSignInForm
+        session={harness.session}
+        method="email-code"
+        fields={[{ name: 'email', kind: 'text', required: true }]}
+        humanGate={NO_GATE}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.register.emailLabel), MAIL)
+    const submit = screen.getByRole('button', {
+      name: zhCN.signInFlow.submit,
+    })
+    await user.click(submit)
+    await waitFor(() => expect(starts(harness)).toHaveLength(1))
+    // The write is in flight: the control that started it keeps focus and
+    // reports both states instead of becoming natively disabled.
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    await act(async () => {
+      held.refuse(apiError(400, 'authn.login_failed'))
+    })
+    await screen.findByRole('alert')
+    // The refusal lands under the same control.
+    expect(submit).toHaveFocus()
+    expect(submit).not.toHaveAttribute('aria-disabled')
+    expect(submit).not.toHaveAttribute('aria-busy')
+  })
+
+  it('keeps focus on the enterprise submit through a refused discovery', async () => {
+    const held = heldRequest<{ providers: never[] }>()
+    const harness = makeHarness({ [SSO_DISCOVER]: () => held.promise })
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.enterprise.emailLabel), MAIL)
+    const submit = screen.getByRole('button', {
+      name: zhCN.enterprise.continue,
+    })
+    await user.click(submit)
+    await waitFor(() =>
+      expect(
+        harness.calls.filter((call) => call.path === '/api/v1/auth/sso/discover'),
+      ).toHaveLength(1),
+    )
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    await act(async () => {
+      held.refuse(apiError(429, 'authn.throttled', 3000))
+    })
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(waitSentence(3))
+    expect(submit).toHaveFocus()
+    expect(submit).not.toHaveAttribute('aria-disabled')
+    expect(submit).not.toHaveAttribute('aria-busy')
+  })
+
+  it('keeps focus on the clicked provider and reports its siblings unavailable', async () => {
+    const held = heldRequest<AuthnFlowState>()
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () =>
+        ssoProviders([
+          { id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' },
+          { id: 'idp-2', name: 'Acme Azure', protocol: 'oidc' },
+        ]),
+      [LOGIN_START]: () => held.promise,
+    })
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />)
+    await discoverEmail()
+    const user = userEvent.setup()
+    const clicked = await screen.findByRole('button', { name: 'Acme Okta' })
+    const sibling = screen.getByRole('button', { name: 'Acme Azure' })
+    const edit = screen.getByRole('button', {
+      name: zhCN.enterprise.editEmail,
+    })
+    await user.click(clicked)
+    await waitFor(() => expect(starts(harness)).toHaveLength(1))
+    // Only the initiating provider is busy; the rest of the list, and the
+    // control that would leave the list, are unavailable without a reason.
+    expect(clicked).toHaveFocus()
+    expect(clicked).toHaveAttribute('aria-disabled', 'true')
+    expect(clicked).toHaveAttribute('aria-busy', 'true')
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy')
+    expect(sibling).not.toHaveAccessibleDescription()
+    expect(edit).toHaveAttribute('aria-disabled', 'true')
+    expect(edit).not.toHaveAttribute('aria-busy')
+    expect(edit).not.toHaveAccessibleDescription()
+    // Neither a pointer nor a keyboard activation starts a second flow.
+    await user.click(sibling)
+    sibling.focus()
+    await user.keyboard('{Enter}')
+    expect(starts(harness)).toHaveLength(1)
+    // The viewer moves back to the provider that started the write; the
+    // refusal lands under it and leaves the focus where it was.
+    clicked.focus()
+    await act(async () => {
+      held.refuse(apiError(400, 'authn.login_failed'))
+    })
+    await screen.findByRole('alert')
+    expect(clicked).toHaveFocus()
+    expect(clicked).not.toHaveAttribute('aria-disabled')
+    expect(clicked).not.toHaveAttribute('aria-busy')
+    expect(sibling).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('keeps focus on the passkey entry through a refused start', async () => {
+    const held = heldRequest<AuthnFlowState>()
+    const harness = makeHarness({ [LOGIN_START]: () => held.promise })
+    renderWithProviders(
+      <PasskeySignIn
+        session={harness.session}
+        method={{ name: 'passkey', kind: 'webauthn', label: 'Passkey' }}
+      />,
+    )
+    const user = userEvent.setup()
+    const entry = screen.getByRole('button', { name: 'Passkey' })
+    await user.click(entry)
+    await waitFor(() => expect(starts(harness)).toHaveLength(1))
+    expect(entry).toHaveFocus()
+    expect(entry).toHaveAttribute('aria-disabled', 'true')
+    expect(entry).toHaveAttribute('aria-busy', 'true')
+    await act(async () => {
+      held.refuse(apiError(401, 'authn.login_failed'))
+    })
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.signInFlow.passkeyRefused)
+    expect(entry).toHaveFocus()
+    expect(entry).not.toHaveAttribute('aria-disabled')
+    expect(entry).not.toHaveAttribute('aria-busy')
   })
 })

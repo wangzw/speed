@@ -16,11 +16,13 @@ import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   LOGIN_START,
+  SSO_DISCOVER,
   makeHarness,
   openFlow,
+  ssoProviders,
 } from '@speed/test-utils/session-harness'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
-import { DescriptorSignInForm } from './sign-in-methods.js'
+import { DescriptorSignInForm, EnterpriseSignIn } from './sign-in-methods.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 
@@ -44,6 +46,34 @@ async function fillFirstStep(): Promise<ReturnType<typeof userEvent.setup>> {
   )
   return user
 }
+
+describe('EnterpriseSignIn focus after a discovery in Chromium', () => {
+  it('lands on the first provider button when the discovery lists providers', async () => {
+    const harness = makeHarness({
+      [SSO_DISCOVER]: () =>
+        ssoProviders([
+          { id: 'idp-1', name: 'Acme Okta', protocol: 'oidc' },
+          { id: 'idp-2', name: 'Acme Azure', protocol: 'oidc' },
+        ]),
+    })
+    renderWithProviders(<EnterpriseSignIn session={harness.session} />, {
+      language: 'en-US',
+    })
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(enUS.enterprise.emailLabel),
+      'nobody@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: enUS.enterprise.continue }),
+    )
+    const first = await screen.findByRole('button', { name: 'Acme Okta' })
+    // The continue button the viewer activated was removed with the form;
+    // real Chromium drops focus to the body, and the list's first provider
+    // takes it from there.
+    await waitFor(() => expect(first).toHaveFocus())
+  })
+})
 
 describe('DescriptorSignInForm first-step human verification in Chromium', () => {
   it('holds a start under a gate that requires a proof and sends it once the proof arrives', async () => {
@@ -110,7 +140,8 @@ describe('DescriptorSignInForm first-step human verification in Chromium', () =>
       const submit = screen.getByRole('button', {
         name: enUS.signInFlow.submit,
       })
-      expect(submit).toBeEnabled()
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true')
+      expect(submit).not.toHaveAttribute('aria-busy')
       await user.click(submit)
       await waitFor(() => expect(starts(harness)).toHaveLength(1))
       expect(starts(harness)[0]?.options?.body).not.toHaveProperty(
