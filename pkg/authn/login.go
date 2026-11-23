@@ -157,6 +157,20 @@ type LoginMethod interface {
 	Answer(ctx context.Context, f FlowState, in StepInput) (Step, error)
 }
 
+// LoginMethodSwitch reports the login methods the run-time switch has turned off.
+//
+// It is the read side of the disabled-methods setting, delivered by the login
+// engine so that a discovery path outside it leaves out a method the operator
+// turned off, the way the methods listing already does. The password method is
+// never among the names: no deployment turns it off. A failed read is an error
+// rather than the empty list, because the empty list turns nothing off and would
+// let the method answer.
+type LoginMethodSwitch interface {
+	// DisabledMethods returns the names turned off now, password never among them.
+	// A failed read is an error, never the empty list.
+	DisabledMethods() ([]string, error)
+}
+
 // MethodAbandoner is the optional part of a method -- a first-factor method or
 // the multi-factor module -- that keeps state of its own for a flow and
 // releases it when the flow is abandoned. The engine finds it with a type

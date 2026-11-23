@@ -4,8 +4,10 @@ The login engine of the authentication capability, registered as `authn.login`.
 It holds a login: one record in the key-value store advanced one
 compare-and-swap per step, the account resolution that turns a `Proof` into an
 account, the second-factor orchestration, and the terminal actions that make a
-session or issue a token. It delivers no capability — it is a process and a set
-of routes — and takes every first-factor method with `core.ResolveAll`.
+session or issue a token. It delivers one capability, `authn.LoginMethodSwitch`,
+which reports the methods the run-time `disabled-methods` setting has turned off;
+apart from that it is a process and a set of routes, and takes every first-factor
+method with `core.ResolveAll`.
 
 The descriptor declares the conditional features `authn.phone` and
 `authn.identifiers.email`. `Mount` posts each in the judgement that mounts the
@@ -105,6 +107,13 @@ does.
   read lets no attempt through. A private key in the flow record is treated as a
   credential: the `state` and PKCE verifier in `method_state` are secrets the
   record holds.
+- **The delivered switch is the engine's own read of `disabled-methods`.**
+  `authn.LoginMethodSwitch.DisabledMethods` delegates to the settings reader the
+  engine uses, so a discovery path outside this package excludes the same names
+  the methods listing hides, with the password method filtered out of every read.
+  The setting is platform-level, read from `settings.Global()`. A failed read is
+  an error, never the empty list: the consumer refuses rather than listing a
+  method the operator turned off.
 - **No token, cookie value, password, secret or identifier value reaches a log
   line, an error text, an event or a metric attribute.** The flow token is stored
   as its SHA-256 and compared in constant time; `method_state` is opaque to the

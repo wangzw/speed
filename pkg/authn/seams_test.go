@@ -199,6 +199,9 @@ var seamSignatures = map[string][]string{
 	"MethodAbandoner": {
 		"Abandon(ctx context.Context, f FlowState) error",
 	},
+	"LoginMethodSwitch": {
+		"DisabledMethods() ([]string, error)",
+	},
 	"Decider": {
 		"Decide(ctx context.Context, d Decision) (allow bool, err error)",
 	},

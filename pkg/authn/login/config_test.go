@@ -3,6 +3,7 @@ package login
 import (
 	"bytes"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -235,6 +236,39 @@ func TestTheDisabledMethodsReadIgnoresPasswordAndReportsItOnce(t *testing.T) {
 		slog.New(slog.NewTextHandler(&quiet, nil)))
 	if got, err := only.disabledMethods(); err != nil || len(got) != 0 {
 		t.Errorf("reading a value naming only password = %v, %v; want the empty list", got, err)
+	}
+}
+
+// TestTheDeliveredSwitchMatchesTheSettingsRead holds that the switch the module
+// delivers answers exactly what the settings reader answers: a raw value naming
+// the password method still turns off its other names and never password, and a
+// read that fails is an error rather than the empty list.
+func TestTheDeliveredSwitchMatchesTheSettingsRead(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	reader := newReader(&fakeStore{values: map[string]string{disabledMethodsPath: `["sms","password"]`}}, logger)
+
+	got, err := (&product{settings: reader}).DisabledMethods()
+	want, wantErr := reader.disabledMethods()
+	if (err != nil) != (wantErr != nil) {
+		t.Fatalf("the delivered switch answered %v, the reader %v", err, wantErr)
+	}
+	if err != nil {
+		t.Fatalf("the delivered switch failed: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("the delivered switch = %v, the reader = %v", got, want)
+	}
+	if len(got) != 1 || got[0] != "sms" {
+		t.Errorf("the delivered switch = %v, want only sms: password is never turned off", got)
+	}
+
+	// A store that cannot answer is an error, not the empty list.
+	failing := &product{settings: newReader(&fakeStore{values: map[string]string{}}, logger)}
+	if got, err := failing.DisabledMethods(); err == nil {
+		t.Errorf("a failed read answered %v, nil; want an error", got)
+	} else if got != nil {
+		t.Errorf("a failed read answered %v with %v, want no names", got, err)
 	}
 }
 
