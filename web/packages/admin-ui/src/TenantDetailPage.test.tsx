@@ -435,6 +435,55 @@ describe('TenantDetailPage', () => {
     ).not.toHaveAttribute('aria-disabled', 'true')
   })
 
+  it('keeps focus on the status switch through an in-flight write and refuses a second activation', async () => {
+    const user = userEvent.setup()
+    const writes: string[] = []
+    let settle: () => void = () => undefined
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getTenant: () =>
+          Promise.resolve(tenantFixture({ name: 'acme', status: 'active' })),
+        setTenantStatus: (input) => {
+          writes.push(`${input.name}:${input.status}`)
+          return new Promise<void>((resolve) => {
+            settle = resolve
+          })
+        },
+      }),
+    )
+    renderWithProviders(<TenantDetailPage name="acme" />, { operations })
+    await screen.findByText(zhCN.tenants.status.active)
+
+    const toggle = screen.getByRole('switch', {
+      name: zhCN.tenantDetail.actions.disable,
+    })
+    await user.click(toggle)
+
+    expect(writes).toEqual(['acme:disabled'])
+    // The switch keeps the focus that activated it: the write in flight never
+    // makes it natively disabled.
+    expect(document.activeElement).toBe(toggle)
+    expect(toggle).toHaveAttribute('aria-busy', 'true')
+    expect(toggle).toHaveAttribute('aria-disabled', 'true')
+    // The controlled value does not move until the write's refetch settles.
+    expect(toggle).toBeChecked()
+
+    // Click, Enter and Space are all swallowed while the write runs: none of
+    // them writes a second time, and the value and focus stay where they were.
+    await user.click(toggle)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(writes).toEqual(['acme:disabled'])
+    expect(toggle).toBeChecked()
+    expect(document.activeElement).toBe(toggle)
+
+    await act(async () => {
+      settle()
+    })
+    await waitForCondition(() => expect(toggle).not.toHaveAttribute('aria-busy'))
+    expect(document.activeElement).toBe(toggle)
+  })
+
   it('links back to the roster when given the roster path', async () => {
     const operations = createAdminOperations(makeAdminBackend())
     renderWithProviders(
