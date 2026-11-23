@@ -100,7 +100,10 @@ The API is the package's godoc. Read the `SSOProviders` comments in
   (`handleDiscover`, `TestTheDiscoveryOfAnUnknownDomainIsTheSameEmptyShape`). It
   is registered public. A domain that cannot be reduced is a 400 `bad-request`;
   a body the capability's decoder refuses is a 400 `bad-request` and a body of
-  another media type a 415 `unsupported-media-type`, both before any lookup.
+  another media type a 415 `unsupported-media-type`, both before any lookup. The
+  answer leaves out a provider whose protocol is not delivered in
+  this run; `Discover` itself does not filter, because the domain ownership
+  decision uses it too.
 - **The change event is a hint, never the authority.** `Put` and `Delete` publish
   `authn.idp.changed` after the commit, and a domain verification, withdrawal or
   removal publishes its own change; a publication that fails is a `Warn` and never

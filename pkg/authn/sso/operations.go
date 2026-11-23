@@ -58,9 +58,10 @@ var discoverOperation = speedhttp.NewOperation[discoverRequest, discoverResponse
 		"answer does not reveal whether an account exists. The domain is lowercased and trimmed, then "+
 		"must be printable ASCII: an address with no '@', or a domain that is empty, over 253 bytes, "+
 		"non-ASCII, has a label that is empty or over 63 bytes, or is not made of labels of letters, "+
-		"digits and inner hyphens, is refused. Only providers that have verified the domain and are "+
-		"enabled are named, in ascending id order; an empty list is answered when none match, in the "+
-		"same shape and timing as a match. The body must be application/json and may carry no field "+
+		"digits and inner hyphens, is refused. Only providers that have verified the domain, are "+
+		"enabled, and whose protocol is enabled in this run are named, in ascending id order; an "+
+		"empty list is answered when none match, in the same shape and timing as a match. The body "+
+		"must be application/json and may carry no field "+
 		"other than email. The response is sent with Cache-Control: no-store.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",

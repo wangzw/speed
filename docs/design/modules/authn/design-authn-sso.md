@@ -173,6 +173,7 @@ type SSOMetadataRefresher interface {
 | `audit.Audit` | 取用，缺席合法 | 协议模块记尽力档的 `authn.sso.reject` | 只写日志与指标 |
 | `observability.MeterProvider` | 取用，缺席合法 | `authn.sso.assertions` | 静默跳过 |
 | `log.Logger` | 取用，缺席合法 | 脱敏规则在 `New` 里先于任何 logger 绑定登记；日志；出站调用的记录经 `log.Transport` 走操作上下文里的 logger | 脱敏规则不登记；出站记录照常写，落在 `Default()` 的引导链上 |
+| `LoginMethod` | `authn.sso` 在 `Init` 阶段经 `ResolveAll` 取用全部，缺席合法 | 以每个登录方法的名称作本运行交付的协议集，发现应答只列出集合内协议的提供方 | 发现应答恒为空列表 |
 
 非模块的依赖（封闭集合）：
 
@@ -182,7 +183,7 @@ type SSOMetadataRefresher interface {
 
 依赖方向满足架构不变量：
 
-- `Requires` 只写排他功能与 `db.Database`；`LoginMethod`、`SSOMetadataRefresher` 并立，由使用方 `ResolveAll` 取用（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。`authn.login` 与 `authn.admin` 是本功能的使用方，本功能不依赖它们。
+- `Requires` 只写排他功能与 `db.Database`；`LoginMethod`、`SSOMetadataRefresher` 并立，由使用方 `ResolveAll` 取用（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。`authn.login` 与 `authn.admin` 是本功能的使用方，本功能不依赖它们；`authn.sso` 自己的域发现也经 `ResolveAll` 取用 `LoginMethod`，这是本功能领域内的使用。
 - `authn.sso.saml` 与 `authn.sso.oidc` 依赖 `SSOProviders`，反向不成立；`authn.sso` 不 import 任何协议库。
 - 本模块不用 kv：断言标识去重与域所有权丢失会放宽校验，进 db；流程记录归登录引擎（[ADR-authn-state-placement](../../../adr/adr-authn-state-placement.md)）。
 - 不 import `pkg/tenant`。回调处理器不依赖租户解析：校验后端在租户解析之前运行、看不到租户，是平台的既有约束，提供方标识放进回调路径绕开了它，所以 [ADR-tenant-ordering](../../../adr/adr-tenant-ordering.md) 的失效条件不被触发。
@@ -443,7 +444,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 **复验。** 已验证的域不做周期性复验：域名易主后旧认领继续有效，直到管理者移除或重验失败。`ReverifyDomains` 是重验的入口，对该提供方全部已验证的域重查 TXT；解析成功而没有匹配记录的域撤回验证，解析本身失败（超时、服务端错误）的域状态不变，调用以错误返回。它默认不自动运行，由宿主按需调度，或经管理面的 `reverify-domains` 路由触发，避免 `authn` 在后台无界地发 DNS 请求。
 
-**发现。** `POST B/sso/discover {email}`（Open）取邮箱的域，在 `authn_idp_domains` 里只查已验证、且所属提供方已启用的行；邮箱的本地部分不被查询，所以不泄露账户存在性。应答恒为 `{"providers":[{id, name, protocol}]}`，无匹配时为空数组，匹配与否的应答结构与耗时一致。发现只返回“有哪些入口”，不决定登录。
+**发现。** `POST B/sso/discover {email}`（Open）取邮箱的域，在 `authn_idp_domains` 里只查已验证、且所属提供方已启用的行。应答再排除协议的登录方式在本次运行没有交付的提供方；交付了哪些协议，模块在 Init 阶段经 `ResolveAll[LoginMethod]` 得知。`Discover` 接口本身不按协议过滤，因为域归属判定也用它。邮箱的本地部分不被查询，所以不泄露账户存在性。应答恒为 `{"providers":[{id, name, protocol}]}`，无匹配时为空数组，匹配与否的应答结构与耗时一致。发现只返回“有哪些入口”，不决定登录。
 
 ### SAML：SP 元数据与发起
 
