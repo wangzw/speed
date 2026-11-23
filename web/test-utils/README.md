@@ -104,6 +104,18 @@ through `node_modules` rather than the map.
   consuming package projects the observed request into its own recorded
   call shape. Also the shared `jsonResponse` / `errorResponse` /
   `signInWithPassword` answer helpers.
+- `timers.ts` — `restoreRealTimers()`, the one way a test hands the
+  clock back to real timers. jsdom 31 serves `requestAnimationFrame` and
+  its focus fixups from one lazily created interval; a focus change made
+  while fake timers are installed arms it as a fake timer, and a direct
+  `vi.useRealTimers()` strands it, so no frame runs again in that
+  worker. The helper advances the fake clock through two rendering
+  frames first, which lets the pending fixup run and the interval go
+  idle, and restores the real clock in a `finally`. With no fake timers
+  installed it only calls `vi.useRealTimers()`. The workspace guard
+  rejects every direct `vi.useRealTimers` in the test sources and
+  test-support sources it scans and exempts only this file and the demo
+  host's copy.
 
 ## Testing
 
@@ -120,5 +132,9 @@ does not hand a jsdom scan a keyboard it cannot press); and
 dialog passes with no report, an untrapped one's focus escape fails the
 scan in either Tab direction, a background left readable fails the
 page-context exemption, and a menu's unexercised trap is reported with
-the reason. Run them with `pnpm test` from this directory; the browser
-case runs under `make web-browser`.
+the reason. `src/timers.test.ts` reproduces the stranded-frame failure:
+it takes the jsdom environment for its own file, makes a focus change
+under fake timers, restores the real clock through `restoreRealTimers()`
+and requires a frame requested after that to run. Run them with
+`pnpm test` from this directory; the browser case runs under
+`make web-browser`.
