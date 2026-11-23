@@ -211,8 +211,11 @@ func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 	if m.Name != login.ModuleName || login.ModuleName != "authn.login" {
 		t.Errorf("module name = %q, want authn.login", m.Name)
 	}
-	if len(m.Provides) != 0 {
-		t.Errorf("Provides = %+v, want none: the engine delivers no capability", m.Provides)
+	if len(m.Provides) != 1 {
+		t.Fatalf("Provides = %+v, want the login-method switch alone", m.Provides)
+	}
+	if p := m.Provides[0]; p.Token != core.Token((*authn.LoginMethodSwitch)(nil)) || !p.Exclusive {
+		t.Errorf("Provides[0] = %+v, want authn.LoginMethodSwitch, exclusive: the engine owns the switch", p)
 	}
 	required := map[core.Token]bool{}
 	optional := map[core.Token]bool{}

@@ -95,13 +95,15 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// It delivers nothing: the engine is a process and a set of routes, and every
-// capability it uses comes from another module. The route mounter, the
-// key-value store, the account reads and writes, the self-registration and its
-// verification read, the password capability, the member reads, the failure
-// back-off, the session store and the multi-factor module are required, and each
-// is delivered exclusively by another module, so a command that names this one
-// fails before anything is built unless it names them too. The human-verification
+// It delivers the login-method switch, which reports the methods the run-time
+// disabled-methods setting has turned off, and nothing else: the engine is a
+// process and a set of routes, and every capability it uses comes from another
+// module. The route mounter, the key-value store, the account reads and writes,
+// the self-registration and its verification read, the password capability, the
+// member reads, the failure back-off, the session store and the multi-factor
+// module are required, and each is delivered exclusively by another module, so a
+// command that names this one fails before anything is built unless it names them
+// too. The human-verification
 // gate is required: the humanverify module delivers one in every mode, off
 // included, so the requirement forces no mechanism, while an engine without one
 // would send ungated whenever the configuration names a mode. The settings store
@@ -130,6 +132,9 @@ func Module() core.Module {
 			{Token: (*authn.HumanVerifier)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
+		},
+		Provides: []core.Provision{
+			{Token: (*authn.LoginMethodSwitch)(nil), Exclusive: true},
 		},
 		Resources: []any{
 			settingsSchema(),
@@ -359,6 +364,17 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 		return zero, fmt.Errorf("%s%s: taking up %s: %w", diagnosticPrefix, ModuleName, what, err)
 	}
 }
+
+// DisabledMethods reports the login methods the run-time switch has turned off,
+// as the settings reader reads it. It delegates to the one read the engine uses,
+// so the switch and the methods listing answer the same names, the password
+// method filtered out and a failed read an error rather than the empty list.
+func (p *product) DisabledMethods() ([]string, error) {
+	return p.settings.disabledMethods()
+}
+
+// The engine delivers the switch its descriptor declares.
+var _ authn.LoginMethodSwitch = (*product)(nil)
 
 // takeBoard takes up the feature board when this process publishes one. It is
 // not a requirement: a process that serves no frontend has no board, and the
