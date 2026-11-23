@@ -209,11 +209,18 @@
  * the single-use one was spent.
  */
 
-import type { ReactElement } from 'react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { Fragment } from 'react'
+import type { FormEvent, ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
@@ -251,7 +258,9 @@ import {
   ListSkeleton,
   parseEmailAddress,
   SectionCard,
+  useActivationGuard,
   useWriteFeedback,
+  visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
@@ -317,27 +326,51 @@ export interface IdentifiersSectionProps {
   readonly openAddSignal?: number
 }
 
+type RowActionKey = 'verify' | 'defaultContact' | 'remove'
+
 interface ContactActionsProps {
   readonly canVerify: boolean
   /** Set while this row's verification flow is already open, so its action
    * cannot start the same flow again. */
-  readonly verifyDisabled?: boolean
+  readonly verifyOpen?: boolean
+  /** Why the verify action cannot start now, when its own flow is open. */
+  readonly verifyOpenReason?: string
   readonly canDefault?: boolean
   readonly isDefault?: boolean
   readonly canRemove?: boolean
-  readonly disabled: boolean
+  /**
+   * The action of this row whose own write is in flight. Only that action
+   * reports busy; the row's other actions and its siblings are unavailable
+   * while the scope's write runs.
+   */
+  readonly busyAction?: RowActionKey
+  /** A write in this scope is in flight, so the actions cannot run now. */
+  readonly scopeUnavailable?: boolean
   readonly onVerify: () => void
   readonly onSetDefault?: () => void
   readonly onRemove: () => void
+  /** Each action's own control, so a landed write can find the neighbour
+   * that replaces a control leaving the document. */
+  readonly onVerifyRef?: (node: HTMLButtonElement | null) => void
+  readonly onDefaultRef?: (node: HTMLButtonElement | null) => void
+  readonly onRemoveRef?: (node: HTMLButtonElement | null) => void
 }
 
 /** One action of a row, with the state its own control carries. */
 interface RowAction {
-  readonly key: string
+  readonly key: RowActionKey
   readonly label: string
-  readonly disabled: boolean
+  /** This action's own write is in flight. */
+  readonly busy: boolean
+  /** The action cannot run now: its own precondition is unmet, or a write in
+   * the scope is in flight. */
+  readonly unavailable: boolean
+  /** Given only when the action's own precondition, not the scope's write,
+   * stops it. */
+  readonly unavailableReason?: string
   readonly tone?: 'danger'
   readonly onClick: () => void
+  readonly refCallback?: (node: HTMLButtonElement | null) => void
 }
 
 /** One contact row's actions in their fixed order: verify it, make it the
@@ -349,14 +382,19 @@ interface RowAction {
  * nothing. */
 function ContactActions({
   canVerify,
-  verifyDisabled = false,
+  verifyOpen = false,
+  verifyOpenReason,
   canDefault = false,
   isDefault = false,
   canRemove = true,
-  disabled,
+  busyAction,
+  scopeUnavailable = false,
   onVerify,
   onSetDefault,
   onRemove,
+  onVerifyRef,
+  onDefaultRef,
+  onRemoveRef,
 }: ContactActionsProps): ReactElement | null {
   const { t } = useAccountUiTranslation()
   const actions: RowAction[] = []
@@ -364,62 +402,173 @@ function ContactActions({
     actions.push({
       key: 'verify',
       label: t('identifiers.verify'),
-      disabled: disabled || verifyDisabled,
+      busy: false,
+      unavailable: scopeUnavailable || verifyOpen,
+      ...(verifyOpen && verifyOpenReason !== undefined
+        ? { unavailableReason: verifyOpenReason }
+        : {}),
       onClick: onVerify,
+      ...(onVerifyRef === undefined ? {} : { refCallback: onVerifyRef }),
     })
   }
   if (canDefault && onSetDefault !== undefined && !isDefault) {
     // The row already carries the "Default contact" chip when it is the
     // default, so the action would repeat that position without offering
-    // anything: it is absent rather than rendered disabled.
+    // anything: it is absent rather than rendered unavailable.
     actions.push({
       key: 'defaultContact',
       label: t('identifiers.axes.defaultContact'),
-      disabled,
+      busy: busyAction === 'defaultContact',
+      unavailable: scopeUnavailable && busyAction !== 'defaultContact',
       onClick: onSetDefault,
+      ...(onDefaultRef === undefined ? {} : { refCallback: onDefaultRef }),
     })
   }
   if (canRemove) {
     actions.push({
       key: 'remove',
       label: t('identifiers.remove'),
-      disabled,
+      busy: busyAction === 'remove',
+      unavailable: scopeUnavailable && busyAction !== 'remove',
       tone: 'danger',
       onClick: onRemove,
+      ...(onRemoveRef === undefined ? {} : { refCallback: onRemoveRef }),
     })
   }
   if (actions.length === 0) {
     return null
   }
+  const button = (action: RowAction) => (
+    <ActionButton
+      ref={action.refCallback}
+      size="small"
+      tone={action.tone}
+      busy={action.busy}
+      unavailable={action.unavailable}
+      unavailableReason={action.unavailableReason}
+      onClick={action.onClick}
+    >
+      {action.label}
+    </ActionButton>
+  )
   if (actions.length === 1) {
     const action = actions[0]
     if (action === undefined) {
       return null
     }
-    return (
-      <ActionButton
-        size="small"
-        tone={action.tone}
-        disabled={action.disabled}
-        onClick={action.onClick}
-      >
-        {action.label}
-      </ActionButton>
-    )
+    return button(action)
   }
   return (
     <ActionRow size="small">
       {actions.map((action) => (
-        <ActionButton
-          key={action.key}
-          tone={action.tone}
-          disabled={action.disabled}
-          onClick={action.onClick}
-        >
-          {action.label}
-        </ActionButton>
+        <Fragment key={action.key}>{button(action)}</Fragment>
       ))}
     </ActionRow>
+  )
+}
+
+interface SignInSwitchProps {
+  readonly checked: boolean
+  readonly label: string
+  /** Existing page text that explains an unmet precondition. */
+  readonly describedBy?: string
+  /** This switch's own write is in flight. */
+  readonly busy: boolean
+  /** The switch cannot run now (its own precondition, or a scope write). */
+  readonly unavailable: boolean
+  readonly onChange: () => void
+}
+
+/**
+ * One sign-in switch. It saves on change: while its own write is in flight,
+ * or while another write in the scope runs, the change is swallowed and the
+ * input reports `aria-disabled` instead of turning natively disabled, so a
+ * keyboard user keeps their place.
+ */
+function SignInSwitch({
+  checked,
+  label,
+  describedBy,
+  busy,
+  unavailable,
+  onChange,
+}: SignInSwitchProps): ReactElement {
+  const guardedChange = useActivationGuard(onChange, { busy, unavailable })
+  return (
+    <Switch
+      checked={checked}
+      slotProps={{
+        input: {
+          'aria-label': label,
+          'aria-describedby': describedBy,
+          'aria-disabled': busy || unavailable ? 'true' : undefined,
+        },
+      }}
+      onChange={guardedChange}
+    />
+  )
+}
+
+interface DefaultContactChoiceProps {
+  readonly checked: boolean
+  readonly label: string
+  readonly ariaLabel: string
+  /** The radio cannot run now: its own write is in flight, a scope write is
+   * in flight, or the row carries no identifier id. */
+  readonly unavailable: boolean
+  /** Translated reason for an unmet precondition; omitted for a scope
+   * write, whose unavailability has no reason to give. */
+  readonly unavailableReason?: string
+  readonly onChange: () => void
+}
+
+/**
+ * The default-contact radio on one email row. It saves on change, so the
+ * input reports `aria-disabled` and the change is guarded instead of the
+ * input turning natively disabled; an unmet precondition is explained by a
+ * visually hidden sentence the input points at.
+ */
+function DefaultContactChoice({
+  checked,
+  label,
+  ariaLabel,
+  unavailable,
+  unavailableReason,
+  onChange,
+}: DefaultContactChoiceProps): ReactElement {
+  const reasonId = useId()
+  const describedBy =
+    unavailable && unavailableReason !== undefined ? reasonId : undefined
+  const guardedChange = useActivationGuard(onChange, {
+    busy: false,
+    unavailable,
+  })
+  return (
+    <>
+      <FormControlLabel
+        control={
+          <Radio
+            size="small"
+            checked={checked}
+            slotProps={{
+              input: {
+                name: 'authn-default-contact',
+                'aria-label': ariaLabel,
+                'aria-disabled': unavailable ? 'true' : undefined,
+                'aria-describedby': describedBy,
+              },
+            }}
+            onChange={guardedChange}
+          />
+        }
+        label={label}
+      />
+      {describedBy === undefined ? null : (
+        <Box component="span" id={reasonId} sx={visuallyHiddenSx}>
+          {unavailableReason}
+        </Box>
+      )}
+    </>
   )
 }
 
@@ -459,6 +608,26 @@ type SignInSelectionChange = {
 /** The two lists the identifiers are grouped into. A username is always a
  * sign-in way; every registered email address or phone number is a contact. */
 type IdentifierGroup = 'signIn' | 'contact'
+
+/** The update write in flight, and which control started it, so only that
+ * control reports busy and its siblings report unavailable. */
+type PendingUpdate =
+  | {
+      readonly kind: 'flags'
+      readonly id: string
+      readonly via: 'emailSwitch' | 'phoneSwitch'
+    }
+  | { readonly kind: 'select' }
+  | { readonly kind: 'default'; readonly id: string }
+
+/** Where focus belongs when a write takes its initiating control out of the
+ * document: the recorded order names the neighbour, the control is what
+ * tells a focus the write took from a focus the operator moved away. */
+interface LandingRecord {
+  readonly id: string
+  readonly order: readonly string[]
+  readonly control: HTMLElement | null
+}
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
  * exactly it: a removal, the username add, the sign-in switch of a row, the
@@ -563,6 +732,25 @@ function resumableAction(value: unknown): SectionAction | null {
     default:
       return null
   }
+}
+
+/**
+ * Whether focus was lost when the initiating control's container left the
+ * document. A write that removes its own control hands focus to a neighbour,
+ * but only if the operator had not moved focus elsewhere while the write was
+ * in flight: the browser drops focus to the body (or leaves it on a detached
+ * node) in that case, while a connected control outside the container means
+ * the operator chose that place.
+ */
+function focusFellWith(removed: HTMLElement | null): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  return removed !== null && removed.contains(active)
 }
 
 /** The pending-state placeholder, read aloud as one loading announcement. */
@@ -681,6 +869,67 @@ export function IdentifiersSection({
   // failure, and the two are mutually exclusive.
   const [failureText, setFailureText] = useState<string | null>(null)
 
+  // The row whose removal is its own write in flight, and the update write's
+  // initiating control (the sign-in switch, the picker, or a default-contact
+  // choice). Only the initiating control reports busy; every sibling reports
+  // unavailable without a reason while the scope's write runs.
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null)
+  const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null)
+  const removeAttempt = useRef(0)
+  const updateAttempt = useRef(0)
+  /** Marks this attempt as the one in flight, and returns the release that
+   * clears it only when no later attempt has taken over. */
+  function beginRemove(id: string): () => void {
+    const token = removeAttempt.current + 1
+    removeAttempt.current = token
+    setPendingRemoveId(id)
+    return () => {
+      if (removeAttempt.current === token) {
+        setPendingRemoveId(null)
+      }
+    }
+  }
+  function beginUpdate(value: PendingUpdate): () => void {
+    const token = updateAttempt.current + 1
+    updateAttempt.current = token
+    setPendingUpdate(value)
+    return () => {
+      if (updateAttempt.current === token) {
+        setPendingUpdate(null)
+      }
+    }
+  }
+
+  // The rendered row actions, by identifier id or row key, so a landed write
+  // can hand focus to the neighbour that replaces a control leaving the
+  // document. The add region is the group container a write with no
+  // neighbour falls back to.
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>())
+  const defaultButtons = useRef(new Map<string, HTMLButtonElement>())
+  const verifyButtons = useRef(new Map<string, HTMLButtonElement>())
+  const addEntry = useRef<HTMLButtonElement | null>(null)
+  const addRegion = useRef<HTMLDivElement | null>(null)
+
+  // The writes that take their initiating control out of the document. Each
+  // record is made before the write and consumed by the layout effect that
+  // runs once the control leaves.
+  const removalLanding = useRef<LandingRecord | null>(null)
+  const defaultLanding = useRef<LandingRecord | null>(null)
+  const verifyLanding = useRef<LandingRecord | null>(null)
+  const addLanding = useRef<LandingRecord | null>(null)
+  const addForm = useRef<HTMLFormElement | null>(null)
+  const rowVerifyForm = useRef<HTMLFormElement | null>(null)
+  // Set on the success that closes a form, so the layout effect can tell
+  // that close from the operator's own cancel.
+  const addLanded = useRef(false)
+  // Whether the add face was open on the previous commit, so the opening
+  // commit -- not every render while it stays open -- moves focus in.
+  const addWasOpen = useRef(false)
+  const verifyLanded = useRef(false)
+  // The code step's own field: focus returns to the value field when the
+  // operator goes back to it.
+  const sentToBefore = useRef<string | null>(null)
+
   // The add face's own state. addOpen shows the form; addKind picks the
   // kind; addValue holds the entry; sentTo is the address a code went to,
   // or null while the value is being entered; code is the answer.
@@ -688,6 +937,10 @@ export function IdentifiersSection({
   // server's bad-request answer to one, or an address another account
   // already holds), rendered under that field rather than in the banner.
   const [addOpen, setAddOpen] = useState(false)
+  // Whether the re-read that follows a landed add has settled. The form
+  // closes as soon as the write lands; the landing waits for this, because
+  // the entry that reopens the form is decided by the re-read's answer.
+  const [addReadSettled, setAddReadSettled] = useState(true)
   const [addKind, setAddKind] = useState<AddKind>(
     emailAvailable ? 'email' : 'username',
   )
@@ -724,8 +977,9 @@ export function IdentifiersSection({
   // The add face's value input, focused when the server refuses the value.
   const valueInput = useRef<HTMLInputElement>(null)
   // A refusal asks for focus once the attempt has settled: the value field
-  // is disabled while a write is in flight, so focusing it from the
-  // refusal itself would be dropped.
+  // is read-only while a write is in flight, and the refusal also re-reads
+  // the profile, so moving focus from the refusal itself would race the
+  // refetch.
   const focusValuePending = useRef(false)
   useEffect(() => {
     if (sentTo !== null) {
@@ -733,12 +987,16 @@ export function IdentifiersSection({
     }
   }, [sentTo])
 
-  // Disabled through the whole attempt, including the refetches that follow
+  // In flight through the whole attempt, including the refetches that follow
   // the mutation, so no control changes context under a pending scope.
   const addBusy =
     addIdentifier.isPending || verifyIdentifier.isPending || feedback.pending
   const writeBusy =
     removeIdentifier.isPending || updateIdentifier.isPending || feedback.pending
+  // A send waiting on its human-verification proof is not a write in flight:
+  // only the send or resend control that asked waits, and the ways out of the
+  // wait -- cancel, back, a switch, the code already in hand -- stay usable.
+  const scopeBlocked = writeBusy || addBusy
   useEffect(() => {
     if (addBusy || !focusValuePending.current) {
       return
@@ -774,9 +1032,17 @@ export function IdentifiersSection({
       case 'add':
         void add(action.kind, action.value)
         return
-      case 'flags':
-        void setFlags(action.id, action.value, action.change)
+      case 'flags': {
+        // The replay has no click of its own: the row the action names says
+        // which switch started it, so that switch reports busy while the
+        // replayed write runs.
+        const via =
+          (rows ?? []).find((row) => row.id === action.id)?.kind === 'phone'
+            ? 'phoneSwitch'
+            : 'emailSwitch'
+        void setFlags(action.id, action.value, action.change, via)
         return
+      }
       case 'defaultContact':
         void setDefaultContact(action.id, action.value)
         return
@@ -908,6 +1174,206 @@ export function IdentifiersSection({
   // claimed for an answer that genuinely listed none.
   const showHeader = pending || (rows !== undefined && rows.length > 0)
 
+  /** The identifier ids the current view renders as contact rows, in their
+   * rendered order: the contact axis's email table, or the merged view's
+   * contact list. */
+  function visibleIds(all: readonly AuthnProfileIdentifier[]): string[] {
+    const visible =
+      axis === 'contact'
+        ? all.filter((row) => (row.kind ?? '') === 'email')
+        : all.filter(isContact)
+    return visible
+      .filter((row) => row.id != null)
+      .map((row) => row.id as string)
+  }
+
+  /** The row keys the current view's verification actions carry. */
+  function visibleVerifyKeys(
+    all: readonly AuthnProfileIdentifier[],
+  ): string[] {
+    const visible =
+      axis === 'contact'
+        ? all.filter((row) => (row.kind ?? '') === 'email')
+        : all.filter(isContact)
+    return visible.map((row, index) => `contact:${row.id ?? index}`)
+  }
+
+  // A landed removal takes its row out of the document. Focus goes to the
+  // next row's remove control, else the previous one, else the section's
+  // container -- in the commit that removes the row, and only when the
+  // removal is what took focus; an operator who moved elsewhere keeps it.
+  useLayoutEffect(() => {
+    const target = removalLanding.current
+    if (target === null) {
+      return
+    }
+    const remaining = new Set(visibleIds(rows ?? []))
+    if (remaining.has(target.id)) {
+      return
+    }
+    removalLanding.current = null
+    if (!focusFellWith(target.control)) {
+      return
+    }
+    const index = target.order.indexOf(target.id)
+    const candidates =
+      index === -1
+        ? [...target.order]
+        : [
+            ...target.order.slice(index + 1),
+            ...target.order.slice(0, index).reverse(),
+          ]
+    for (const id of candidates) {
+      if (!remaining.has(id)) {
+        continue
+      }
+      const button = removeButtons.current.get(id)
+      if (button !== undefined) {
+        button.focus()
+        return
+      }
+    }
+    addRegion.current?.focus()
+  }, [rows])
+
+  // A landed default-contact action stops existing on its row, which stays.
+  // Focus goes to the same action on a neighbour, else the section's
+  // container, under the same focus test as a removal.
+  useLayoutEffect(() => {
+    const target = defaultLanding.current
+    if (target === null) {
+      return
+    }
+    const settled = (rows ?? []).find((row) => row.id === target.id)
+    if (settled === undefined) {
+      defaultLanding.current = null
+      return
+    }
+    if (settled.default_contact !== true) {
+      return
+    }
+    defaultLanding.current = null
+    if (!focusFellWith(target.control)) {
+      return
+    }
+    const index = target.order.indexOf(target.id)
+    const candidates =
+      index === -1
+        ? [...target.order]
+        : [
+            ...target.order.slice(index + 1),
+            ...target.order.slice(0, index).reverse(),
+          ]
+    for (const id of candidates) {
+      const button = defaultButtons.current.get(id)
+      if (button !== undefined && button.isConnected) {
+        button.focus()
+        return
+      }
+    }
+    addRegion.current?.focus()
+  }, [rows])
+
+  // A landed row verification closes its form and, once the profile
+  // refreshes, drops the row's verify action. Focus goes to the next row's
+  // verify action, else the previous one, else the section's container.
+  useLayoutEffect(() => {
+    if (!verifyLanded.current || rowVerify !== null) {
+      return
+    }
+    verifyLanded.current = false
+    const target = verifyLanding.current
+    verifyLanding.current = null
+    if (target === null) {
+      return
+    }
+    if (!focusFellWith(target.control)) {
+      return
+    }
+    const index = target.order.indexOf(target.id)
+    const candidates =
+      index === -1
+        ? [...target.order]
+        : [
+            ...target.order.slice(index + 1),
+            ...target.order.slice(0, index).reverse(),
+          ]
+    for (const key of candidates) {
+      if (key === target.id) {
+        continue
+      }
+      const button = verifyButtons.current.get(key)
+      if (button !== undefined && button.isConnected) {
+        button.focus()
+        return
+      }
+    }
+    addRegion.current?.focus()
+  }, [rowVerify])
+
+  // A landed write that closes the add face takes its form out of the
+  // document: focus returns to the entry that reopens it. The form closes
+  // before the re-read, so the landing waits for the re-read to settle: the
+  // entry it decides from is the one the refreshed profile leaves behind.
+  useLayoutEffect(() => {
+    if (!addLanded.current || addOpen || !addReadSettled) {
+      return
+    }
+    addLanded.current = false
+    const target = addLanding.current
+    addLanding.current = null
+    if (target === null) {
+      return
+    }
+    if (!focusFellWith(target.control)) {
+      return
+    }
+    const entry = addEntry.current
+    if (entry !== null && entry.isConnected) {
+      entry.focus()
+      return
+    }
+    addRegion.current?.focus()
+  }, [addOpen, addReadSettled])
+
+  // Opening the add face removes its entry, which is where the operator's
+  // focus was: hand it to the form's first field. A face the host opened
+  // through its signal leaves the operator's focus where it was, unless the
+  // browser already dropped it to the body.
+  useLayoutEffect(() => {
+    if (!addOpen) {
+      addWasOpen.current = false
+      return
+    }
+    if (addWasOpen.current) {
+      return
+    }
+    addWasOpen.current = true
+    if (!focusFellWith(addEntry.current)) {
+      return
+    }
+    const first = addForm.current?.querySelector<HTMLElement>(
+      '[role="combobox"], input:not([type="hidden"]), textarea',
+    )
+    first?.focus()
+  }, [addOpen])
+
+  // The code step's own controls leave when the operator goes back to the
+  // value step: focus returns to the value field unless the operator moved
+  // it elsewhere.
+  useLayoutEffect(() => {
+    const previous = sentToBefore.current
+    sentToBefore.current = sentTo
+    if (previous === null || sentTo !== null) {
+      return
+    }
+    const active = document.activeElement
+    if (active !== null && active !== document.body) {
+      return
+    }
+    valueInput.current?.focus()
+  }, [sentTo])
+
   /** Refetch the profile alone. Registering or proving a contact address, the
    * default-contact choice and a removal change only what the profile
    * reports: none of them replaces this session's credential or revokes the
@@ -941,6 +1407,11 @@ export function IdentifiersSection({
    * one code flow runs at a time on this section. */
   function openAdd(): void {
     closeRowVerify()
+    // A landing still waiting on the previous write's re-read belongs to a
+    // form the operator has left; the reopened face is a fresh attempt.
+    addLanded.current = false
+    addLanding.current = null
+    setAddReadSettled(true)
     setFieldErrorKey(null)
     setAddOpen(true)
   }
@@ -958,16 +1429,29 @@ export function IdentifiersSection({
     clearFailure()
   }
 
-  async function remove(id: string): Promise<void> {
+  function remove(id: string): Promise<void> {
     // Captured before the write: the refetched profile drops the row, so the
     // confirmation's name must be read from the list this attempt acted on.
     const identifierValue = rows?.find((row) => row.id === id)?.value ?? ''
+    // The row's own control leaves with the row when the removal lands, so
+    // the landing record is made before it unmounts.
+    const control = removeButtons.current.get(id) ?? null
+    if (control !== null) {
+      removalLanding.current = {
+        id,
+        order: visibleIds(rows ?? []),
+        control,
+      }
+    }
+    const done = beginRemove(id)
     return feedback.run(async () => {
       setFailureText(null)
       try {
         await removeIdentifier.mutateAsync({ id })
       } catch (error) {
-        setRemoveTarget(null)
+        // The row stays: there is no neighbour to land on, and a step-up
+        // replay makes its own record.
+        removalLanding.current = null
         const failure = errorCodeOf(error)
         const reason = stepUpReasonOf(failure)
         if (reason !== null) {
@@ -981,14 +1465,13 @@ export function IdentifiersSection({
         await invalidateProfile()
         throw error
       }
-      setRemoveTarget(null)
       await invalidateProfile()
       // Translated when the attempt settles; it names the identifier removed.
       return t('identifiers.removed', {
         value: identifierValue,
         interpolation: { escapeValue: false },
       })
-    })
+    }).finally(done)
   }
 
   /** Write a row's sign-in axis. Putting a proved value into sign-in rotates
@@ -1000,7 +1483,9 @@ export function IdentifiersSection({
     id: string,
     value: string,
     change: AxisChange,
+    via: 'emailSwitch' | 'phoneSwitch',
   ): Promise<void> {
+    const done = beginUpdate({ kind: 'flags', id, via })
     return feedback.run(async () => {
       setFailureText(null)
       const write = () =>
@@ -1028,7 +1513,7 @@ export function IdentifiersSection({
         value,
         interpolation: { escapeValue: false },
       })
-    })
+    }).finally(done)
   }
 
   /** Set which proved email address is a sign-in way. The whole selection is
@@ -1043,6 +1528,7 @@ export function IdentifiersSection({
     changes: readonly SignInSelectionChange[],
   ): Promise<void> {
     const chosen = changes.find((change) => change.signIn)
+    const done = beginUpdate({ kind: 'select' })
     return feedback.run(async () => {
       setFailureText(null)
       const write = async (): Promise<void> => {
@@ -1082,7 +1568,7 @@ export function IdentifiersSection({
         value: chosen?.value ?? changes[0]?.value ?? '',
         interpolation: { escapeValue: false },
       })
-    })
+    }).finally(done)
   }
 
   /** Make one proved email address the account's default contact. The server
@@ -1090,11 +1576,26 @@ export function IdentifiersSection({
    * rotation. The write needs a fresh authentication like every change of
    * what proves the account. */
   function setDefaultContact(id: string, value: string): Promise<void> {
+    // The landed choice takes this row's action out of the document, so the
+    // record is made before the write -- including the replay after a won
+    // step-up challenge, which re-enters here rather than through a click.
+    const control = defaultButtons.current.get(id) ?? null
+    if (control !== null) {
+      defaultLanding.current = {
+        id,
+        order: visibleIds(rows ?? []),
+        control,
+      }
+    }
+    const done = beginUpdate({ kind: 'default', id })
     return feedback.run(async () => {
       setFailureText(null)
       try {
         await updateIdentifier.mutateAsync({ id, data: { default_contact: true } })
       } catch (error) {
+        // The row keeps its action on a refusal; a step-up replay makes its
+        // own landing record.
+        defaultLanding.current = null
         const reason = stepUpReasonOf(errorCodeOf(error))
         if (reason !== null) {
           gate.arm({ step: 'defaultContact', id, value }, reason)
@@ -1108,7 +1609,7 @@ export function IdentifiersSection({
         value,
         interpolation: { escapeValue: false },
       })
-    })
+    }).finally(done)
   }
 
   function add(kind: AddKind, value: string): Promise<void> {
@@ -1117,6 +1618,11 @@ export function IdentifiersSection({
       return Promise.resolve()
     }
     setFieldErrorKey(null)
+    if (addOpen) {
+      // A landed write closes the form, taking the control that sent it out
+      // of the document; the record names the form for the focus test.
+      addLanding.current = { id: '', order: [], control: addForm.current }
+    }
     return feedback.run(async () => {
       setFailureText(null)
       const presented = kind === 'email' && needsProof ? human.proof : null
@@ -1132,8 +1638,21 @@ export function IdentifiersSection({
           setCode('')
           return null
         }
+        addLanded.current = true
+        // The write landed: close the form now. A failed re-read must not
+        // leave the same add available for a second submit, and the landing
+        // can only be decided from the elements the read leaves behind, so
+        // it waits for the read to settle. Its rejection is contained for
+        // the same reason: the write already committed.
+        setAddReadSettled(false)
         closeAdd()
-        await (kind === 'username' ? invalidateAfterWrite() : invalidateProfile())
+        try {
+          await (kind === 'username' ? invalidateAfterWrite() : invalidateProfile())
+        } catch {
+          // The stale list stays on screen under its own notice.
+        } finally {
+          setAddReadSettled(true)
+        }
         // The confirmation names the changed kind (the sign-in identifier).
         return t('identifiers.add.added')
       }
@@ -1230,6 +1749,9 @@ export function IdentifiersSection({
   }
 
   function verify(nextCode: string): Promise<void> {
+    if (addOpen) {
+      addLanding.current = { id: '', order: [], control: addForm.current }
+    }
     return feedback.run(async () => {
       setFailureText(null)
       try {
@@ -1239,8 +1761,11 @@ export function IdentifiersSection({
         // contact or the account's only address -- can still answer a step-up
         // refusal, which arms the gate with the same code.
         await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
-        closeAdd()
+        addLanded.current = true
+        // The re-read lands first, so the form's landing sees the entry the
+        // new profile leaves behind.
         await invalidateProfile()
+        closeAdd()
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === 'authn.email_taken') {
@@ -1395,11 +1920,19 @@ export function IdentifiersSection({
   // known and the proof it wants is in hand: the viewer's one request is
   // not turned into a click followed by a second one. A gate still being
   // read keeps the send waiting; a gate that wants nothing sends at once.
+  // The scope's own write in flight keeps it waiting too: the send joins
+  // the same feedback scope, so it must not start beside another attempt
+  // (a row's switch, a removal, a verification). Waiting on the proof is
+  // not a write, so the controls that leave the wait -- cancel, a switch,
+  // the code in hand -- stay usable while it is held here.
   useEffect(() => {
     if (pendingSend === null || human.pending || gateDocument === null) {
       return
     }
     if (needsProof && human.proof === null) {
+      return
+    }
+    if (writeBusy) {
       return
     }
     const send = pendingSend
@@ -1409,7 +1942,14 @@ export function IdentifiersSection({
       return
     }
     void rowSendRef.current(send.address)
-  }, [pendingSend, human.pending, gateDocument, needsProof, human.proof])
+  }, [
+    pendingSend,
+    human.pending,
+    gateDocument,
+    needsProof,
+    human.proof,
+    writeBusy,
+  ])
 
   /** Submit the row flow's code. The write proves the address the send just
    * named, so the refetched row loses its unverified chip. */
@@ -1421,6 +1961,16 @@ export function IdentifiersSection({
     setPendingSend(null)
     const address = rowSentTo ?? rowVerify?.value ?? ''
     setRowCodeInvalid(false)
+    // The landed verification closes the row's form; the record names the
+    // form and the rows whose verify actions can take focus after it.
+    const openKey = rowVerify?.key
+    if (openKey !== undefined) {
+      verifyLanding.current = {
+        id: openKey,
+        order: visibleVerifyKeys(rows ?? []),
+        control: rowVerifyForm.current,
+      }
+    }
     return feedback.run(async () => {
       setFailureText(null)
       try {
@@ -1430,6 +1980,7 @@ export function IdentifiersSection({
         // address, hence the automatic login way -- can still answer a step-up
         // refusal, which arms the gate with the same code.
         await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        verifyLanded.current = true
         setRowVerify(null)
         setRowSentTo(null)
         setRowCode('')
@@ -1466,6 +2017,73 @@ export function IdentifiersSection({
       })
     })
   }
+
+  /** The add face's submit: send or add on the value step, verify on the
+   * code step. */
+  function submitAdd(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault()
+    if (sentTo !== null) {
+      void verify(code)
+      return
+    }
+    if (axis === 'contact' || formKind === 'email') {
+      const address = parseEmailAddress(addValue)
+      if (address === null) {
+        // The client guard owns this attempt's result; a settled result from
+        // the previous attempt must not stand beside the field error.
+        clearFailure()
+        setFieldErrorKey('identifiers.add.invalidEmail')
+        return
+      }
+      askAddEmail(address)
+      return
+    }
+    const username = addValue.trim()
+    if (username !== '') {
+      void add('username', username)
+    }
+  }
+
+  /** The row verification form's submit: ask for a code, or verify the one
+   * in hand. */
+  function submitRowVerify(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault()
+    if (rowSentTo === null) {
+      askRowSend(rowVerify?.value ?? '')
+      return
+    }
+    if (rowCode.trim() !== '') {
+      void rowVerifyCode(rowCode)
+    }
+  }
+
+  // Both forms are guarded: an implicit submission the submit button does
+  // not carry (Enter in a field, a programmatic submit) is swallowed while
+  // the write is in flight and while a required value is missing.
+  const guardedAddSubmit = useActivationGuard(submitAdd, {
+    busy: addBusy || pendingSend !== null,
+    unavailable:
+      writeBusy ||
+      (sentTo === null ? addValue.trim() === '' : code.trim() === ''),
+  })
+  const guardedRowVerifySubmit = useActivationGuard(submitRowVerify, {
+    busy: addBusy,
+    unavailable:
+      writeBusy || (rowSentTo !== null && rowCode.trim() === ''),
+  })
+
+  // Which action of the add face is in flight, and the reason a value step's
+  // send cannot run. The two mutations are shared with the row flow, so the
+  // open face is what tells this form's write apart.
+  const addSendInFlight =
+    (pendingSend !== null && pendingSend.step === 'add') ||
+    (addIdentifier.isPending && addOpen)
+  const addVerifyInFlight = verifyIdentifier.isPending && addOpen
+  const addValueMissing = addValue.trim() === ''
+  const addValueMissingReason =
+    axis === 'contact' || formKind === 'email'
+      ? t('identifiers.add.emailEmpty')
+      : t('identifiers.add.usernameEmpty')
 
   const valueLabel =
     formKind === 'email'
@@ -1633,22 +2251,24 @@ export function IdentifiersSection({
             </Typography>
           ) : null}
           {kind === 'username' ? null : kind === 'email' ? (
-            <Switch
+            <SignInSwitch
               checked={emailSignInRow !== null}
-              disabled={
-                writeBusy ||
-                addBusy ||
+              label={
+                emailSignInRow === null
+                  ? t('identifiers.action.enable')
+                  : t('identifiers.action.disable')
+              }
+              describedBy={
+                emailSignInRow === null ? `${headingId}-off` : undefined
+              }
+              busy={
+                pendingUpdate?.kind === 'flags' &&
+                pendingUpdate.via === 'emailSwitch'
+              }
+              unavailable={
+                scopeBlocked ||
                 (emailSignInRow === null && provenEmails.length === 0)
               }
-              slotProps={{
-                input: {
-                  'aria-label': emailSignInRow === null
-                    ? t('identifiers.action.enable')
-                    : t('identifiers.action.disable'),
-                  'aria-describedby':
-                    emailSignInRow === null ? `${headingId}-off` : undefined,
-                },
-              }}
               onChange={() => {
                 if (emailSignInRow !== null) {
                   setLastDisabledSignInEmail({
@@ -1659,6 +2279,7 @@ export function IdentifiersSection({
                     emailSignInRow.id,
                     emailSignInRow.value ?? '',
                     { signIn: false },
+                    'emailSwitch',
                   )
                   return
                 }
@@ -1683,24 +2304,29 @@ export function IdentifiersSection({
                 setLastDisabledSignInEmail(null)
                 void setFlags(target.id, target.value ?? '', {
                   signIn: true,
-                })
+                }, 'emailSwitch')
               }}
             />
           ) : signInRow?.id != null ? (
-            <Switch
+            <SignInSwitch
               checked={signInRow.sign_in === true}
-              disabled={writeBusy || addBusy}
-              slotProps={{
-                input: {
-                  'aria-label': signInRow.sign_in === true
-                    ? t('identifiers.action.disable')
-                    : t('identifiers.action.enable'),
-                },
-              }}
+              label={
+                signInRow.sign_in === true
+                  ? t('identifiers.action.disable')
+                  : t('identifiers.action.enable')
+              }
+              busy={
+                pendingUpdate?.kind === 'flags' &&
+                pendingUpdate.via === 'phoneSwitch'
+              }
+              unavailable={scopeBlocked}
               onChange={() =>
-                void setFlags(signInRow.id as string, signInRow.value ?? '', {
-                  signIn: signInRow.sign_in !== true,
-                })
+                void setFlags(
+                  signInRow.id as string,
+                  signInRow.value ?? '',
+                  { signIn: signInRow.sign_in !== true },
+                  'phoneSwitch',
+                )
               }
             />
           ) : null}
@@ -1710,7 +2336,10 @@ export function IdentifiersSection({
             <Select
               size="small"
               value={emailSignInRow.value ?? ''}
-              disabled={writeBusy || addBusy}
+              // A picker that saves on change stays focusable but
+              // unchangeable while a write is in flight: MUI reports it as
+              // aria-readonly on the combobox and ignores activation.
+              readOnly={scopeBlocked}
               slotProps={{
                 input: {
                   'aria-label': t('identifiers.kind.email'),
@@ -1820,26 +2449,37 @@ export function IdentifiersSection({
    * and one action row whose controls keep one order -- cancel on the left,
    * the resend in the middle once a code is out, and the primary send or
    * verify closing the row on the right. After a send the resend stays
-   * disabled for the server's interval. A hold a successful send started
+   * unavailable for the server's interval. A hold a successful send started
    * states the wait in the row's own note; a hold a throttled failure
    * started gets no note, because the failure's banner names that wait and
    * counts it down.
    */
   function renderRowVerifyForm(address: string) {
+    // Which action of this form is in flight. The row send and the code's
+    // verification share the two mutations with the add face, so the open
+    // row flow is what tells this form's write apart.
+    const rowSendInFlight =
+      (pendingSend !== null && pendingSend.step === 'row') ||
+      (addIdentifier.isPending && rowVerify !== null)
+    const rowVerifyInFlight = verifyIdentifier.isPending && rowVerify !== null
+    const resendCountingDown = rowRemainingSeconds > 0
+    const resendUnavailable =
+      !rowSendInFlight && (scopeBlocked || resendCountingDown)
+    // A successful send's note states the wait; a throttled failure's banner
+    // counts it down but has no id to point at, so the control names the
+    // waiting state itself. The two explanations are exclusive.
+    const resendExplanation =
+      resendCountingDown && rowResendFromSuccess
+        ? { unavailableDescribedBy: ROW_RESEND_NOTE_ID }
+        : resendUnavailable && !scopeBlocked && resendCountingDown
+          ? { unavailableReason: t('identifiers.resendWaiting') }
+          : {}
     return (
       <Box
         component="form"
+        ref={rowVerifyForm}
         noValidate
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (rowSentTo === null) {
-            askRowSend(address)
-            return
-          }
-          if (rowCode.trim() !== '') {
-            void rowVerifyCode(rowCode)
-          }
-        }}
+        onSubmit={guardedRowVerifySubmit}
         sx={{ mt: 1.5, maxWidth: FORM_MAX_WIDTH }}
       >
         <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
@@ -1850,7 +2490,6 @@ export function IdentifiersSection({
             value={address}
             helperText={t('identifiers.add.value.helperEmail')}
             slotProps={{ htmlInput: { readOnly: true } }}
-            disabled={addBusy}
           />
           {/* The email face's block appears only while a send it asked for
               waits on its proof. */}
@@ -1869,8 +2508,12 @@ export function IdentifiersSection({
               helperText={
                 rowCodeInvalid ? t('identifiers.verifyCodeInvalid') : undefined
               }
-              slotProps={{ htmlInput: { 'aria-invalid': rowCodeInvalid } }}
-              disabled={addBusy}
+              slotProps={{
+                htmlInput: {
+                  'aria-invalid': rowCodeInvalid,
+                  readOnly: addBusy,
+                },
+              }}
               onChange={(event) => {
                 setRowCode(event.target.value)
                 if (rowCodeInvalid) {
@@ -1882,7 +2525,7 @@ export function IdentifiersSection({
           <ActionRow size="small" sx={{ width: '100%' }}>
             <ActionButton
               type="button"
-              disabled={addBusy}
+              unavailable={scopeBlocked}
               onClick={closeRowVerify}
             >
               {t('identifiers.add.cancel')}
@@ -1890,15 +2533,9 @@ export function IdentifiersSection({
             {rowSentTo === null ? null : (
               <ActionButton
                 type="button"
-                disabled={
-                  addBusy || pendingSend !== null || rowRemainingSeconds > 0
-                }
-                loading={addIdentifier.isPending}
-                aria-describedby={
-                  rowRemainingSeconds > 0 && rowResendFromSuccess
-                    ? ROW_RESEND_NOTE_ID
-                    : undefined
-                }
+                busy={rowSendInFlight}
+                unavailable={resendUnavailable}
+                {...resendExplanation}
                 onClick={() => askRowSend(address)}
               >
                 {t('verification.resend')}
@@ -1908,8 +2545,8 @@ export function IdentifiersSection({
               <ActionButton
                 type="submit"
                 emphasis="primary"
-                disabled={addBusy || pendingSend !== null}
-                loading={addIdentifier.isPending}
+                busy={rowSendInFlight}
+                unavailable={!rowSendInFlight && scopeBlocked}
               >
                 {t('identifiers.add.submitEmail')}
               </ActionButton>
@@ -1917,10 +2554,18 @@ export function IdentifiersSection({
               <ActionButton
                 type="submit"
                 emphasis="primary"
-                disabled={
-                  addBusy || pendingSend !== null || rowCode.trim() === ''
+                busy={rowVerifyInFlight}
+                unavailable={
+                  !rowVerifyInFlight &&
+                  (scopeBlocked || rowCode.trim() === '')
                 }
-                loading={verifyIdentifier.isPending}
+                unavailableReason={
+                  !rowVerifyInFlight &&
+                  !scopeBlocked &&
+                  rowCode.trim() === ''
+                    ? t('identifiers.add.codeEmpty')
+                    : undefined
+                }
               >
                 {t('identifiers.add.verify')}
               </ActionButton>
@@ -1994,7 +2639,12 @@ export function IdentifiersSection({
       axes.signIn
     const canRemoveRow = id !== null && !lastLoginName
     const showActionsMenu = canVerifyRow || canRemoveRow
-    const disabled = writeBusy || addBusy || id === null
+    const scopeUnavailable = scopeBlocked
+    // The action of this row whose own write is in flight (only a removal is
+    // offered on a merged-view row besides verification, which starts a
+    // form rather than a write).
+    const busyAction: RowActionKey | undefined =
+      id !== null && pendingRemoveId === id ? 'remove' : undefined
     return (
       <Box
         component="li"
@@ -2041,13 +2691,32 @@ export function IdentifiersSection({
             {showActionsMenu ? (
               <ContactActions
                 canVerify={canVerifyRow}
-                verifyDisabled={addBusy || rowFlowOpen}
+                verifyOpen={rowFlowOpen}
+                verifyOpenReason={t('identifiers.verifyInProgress')}
                 canRemove={canRemoveRow}
-                disabled={writeBusy}
+                busyAction={busyAction}
+                scopeUnavailable={scopeUnavailable}
                 onVerify={() => openRowVerify(rowKey, value)}
+                onVerifyRef={(node) => {
+                  if (node === null) {
+                    verifyButtons.current.delete(rowKey)
+                  } else {
+                    verifyButtons.current.set(rowKey, node)
+                  }
+                }}
                 onRemove={() => {
                   if (id !== null) {
                     setRemoveTarget(id)
+                  }
+                }}
+                onRemoveRef={(node) => {
+                  if (id === null) {
+                    return
+                  }
+                  if (node === null) {
+                    removeButtons.current.delete(id)
+                  } else {
+                    removeButtons.current.set(id, node)
                   }
                 }}
               />
@@ -2055,29 +2724,24 @@ export function IdentifiersSection({
           </Box>
         </Box>
         {kind === 'email' && verified ? (
-          <FormControlLabel
-            control={
-              <Radio
-                size="small"
-                checked={axes.defaultContact}
-                disabled={disabled}
-                slotProps={{
-                  input: {
-                    name: 'authn-default-contact',
-                    'aria-label': t('identifiers.axes.defaultAria', {
-                      value,
-                      interpolation: { escapeValue: false },
-                    }),
-                  },
-                }}
-                onChange={() => {
-                  if (id !== null && !axes.defaultContact) {
-                    void setDefaultContact(id, value)
-                  }
-                }}
-              />
-            }
+          <DefaultContactChoice
+            checked={axes.defaultContact}
             label={t('identifiers.axes.defaultContact')}
+            ariaLabel={t('identifiers.axes.defaultAria', {
+              value,
+              interpolation: { escapeValue: false },
+            })}
+            unavailable={scopeUnavailable || id === null}
+            unavailableReason={
+              id === null
+                ? t('identifiers.axes.defaultUnavailable')
+                : undefined
+            }
+            onChange={() => {
+              if (id !== null && !axes.defaultContact) {
+                void setDefaultContact(id, value)
+              }
+            }}
           />
         ) : null}
         {rowFlowOpen ? renderRowVerifyForm(value) : null}
@@ -2171,17 +2835,47 @@ export function IdentifiersSection({
                                 }
                                 canDefault={kind === 'email' && verified}
                                 isDefault={axes.defaultContact}
-                                disabled={writeBusy || addBusy}
+                                busyAction={
+                                  pendingRemoveId === id
+                                    ? 'remove'
+                                    : pendingUpdate?.kind === 'default' &&
+                                        pendingUpdate.id === id
+                                      ? 'defaultContact'
+                                      : undefined
+                                }
+                                scopeUnavailable={scopeBlocked}
                                 onVerify={() =>
                                   openRowVerify(
                                     `contact:${id}`,
                                     row.value ?? '',
                                   )
                                 }
+                                onVerifyRef={(node) => {
+                                  const key = `contact:${id}`
+                                  if (node === null) {
+                                    verifyButtons.current.delete(key)
+                                  } else {
+                                    verifyButtons.current.set(key, node)
+                                  }
+                                }}
                                 onSetDefault={() =>
                                   void setDefaultContact(id, row.value ?? '')
                                 }
+                                onDefaultRef={(node) => {
+                                  if (node === null) {
+                                    defaultButtons.current.delete(id)
+                                  } else {
+                                    defaultButtons.current.set(id, node)
+                                  }
+                                }}
                                 onRemove={() => setRemoveTarget(id)}
+                                onRemoveRef={(node) => {
+                                  if (node === null) {
+                                    removeButtons.current.delete(id)
+                                  } else {
+                                    removeButtons.current.set(id, node)
+                                  }
+                                }}
                               />
                             ) : null}
                           </TableCell>
@@ -2287,17 +2981,23 @@ export function IdentifiersSection({
       </AccountAsyncSection>
         )}
 
-      <Box sx={{ mt: 2 }}>
+      <Box
+        ref={addRegion}
+        tabIndex={-1}
+        role="group"
+        aria-label={t('identifiers.title')}
+        sx={{ mt: 2 }}
+      >
         {axis === 'signIn' || addKinds.length === 0 ? null : !addOpen ? (
           showAddButton ? (
-          <Button
-            variant="outlined"
+          <ActionButton
+            ref={addEntry}
             size="small"
-            disabled={writeBusy || addBusy}
+            unavailable={scopeBlocked}
             onClick={openAdd}
           >
             {t('identifiers.add.open')}
-          </Button>
+          </ActionButton>
           ) : null
         ) : (
           <>
@@ -2308,31 +3008,9 @@ export function IdentifiersSection({
             </Typography>
             <Box
               component="form"
+              ref={addForm}
               noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                if (sentTo !== null) {
-                  void verify(code)
-                  return
-                }
-                if (axis === 'contact' || formKind === 'email') {
-                  const address = parseEmailAddress(addValue)
-                  if (address === null) {
-                    // The client guard owns this attempt's result; a settled
-                    // result from the previous attempt must not stand beside
-                    // the field error.
-                    clearFailure()
-                    setFieldErrorKey('identifiers.add.invalidEmail')
-                    return
-                  }
-                  askAddEmail(address)
-                  return
-                }
-                const username = addValue.trim()
-                if (username !== '') {
-                  void add('username', username)
-                }
-              }}
+              onSubmit={guardedAddSubmit}
               sx={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -2350,6 +3028,10 @@ export function IdentifiersSection({
                       fullWidth
                       label={t('identifiers.add.kind.label')}
                       value={formKind}
+                      // A selector that only changes the form's context: it
+                      // never starts this write, so it is never focused when
+                      // one begins. It stays natively disabled, and is
+                      // outside the lint rule's element set.
                       disabled={addBusy}
                       onChange={(event) => {
                         // Changing the kind abandons a send waiting on its
@@ -2387,7 +3069,7 @@ export function IdentifiersSection({
                         : t(fieldErrorKey)
                     }
                     value={addValue}
-                    disabled={addBusy}
+                    slotProps={{ htmlInput: { readOnly: addBusy } }}
                     onChange={(event) => {
                       // Editing the value abandons a send waiting on its
                       // proof.
@@ -2406,7 +3088,7 @@ export function IdentifiersSection({
                   <ActionRow sx={{ width: '100%' }}>
                     <ActionButton
                       type="button"
-                      disabled={addBusy}
+                      unavailable={scopeBlocked}
                       onClick={closeAdd}
                     >
                       {t('identifiers.add.cancel')}
@@ -2414,10 +3096,14 @@ export function IdentifiersSection({
                     <ActionButton
                       type="submit"
                       emphasis="primary"
-                      disabled={
-                        addBusy ||
-                        pendingSend !== null ||
-                        addValue.trim() === ''
+                      busy={addSendInFlight}
+                      unavailable={
+                        !addSendInFlight && (scopeBlocked || addValueMissing)
+                      }
+                      unavailableReason={
+                        !addSendInFlight && !scopeBlocked && addValueMissing
+                          ? addValueMissingReason
+                          : undefined
                       }
                     >
                       {axis === 'contact' || formKind === 'email'
@@ -2445,13 +3131,13 @@ export function IdentifiersSection({
                     label={t('identifiers.add.code.label')}
                     value={code}
                     inputRef={addCodeRef}
-                    disabled={addBusy}
+                    slotProps={{ htmlInput: { readOnly: addBusy } }}
                     onChange={(event) => setCode(event.target.value)}
                   />
                   <ActionRow sx={{ width: '100%' }}>
                     <ActionButton
                       type="button"
-                      disabled={addBusy}
+                      unavailable={scopeBlocked}
                       onClick={() => {
                         setSentTo(null)
                         setCode('')
@@ -2464,7 +3150,18 @@ export function IdentifiersSection({
                     <ActionButton
                       type="submit"
                       emphasis="primary"
-                      disabled={addBusy || code.trim() === ''}
+                      busy={addVerifyInFlight}
+                      unavailable={
+                        !addVerifyInFlight &&
+                        (scopeBlocked || code.trim() === '')
+                      }
+                      unavailableReason={
+                        !addVerifyInFlight &&
+                        !scopeBlocked &&
+                        code.trim() === ''
+                          ? t('identifiers.add.codeEmpty')
+                          : undefined
+                      }
                     >
                       {t('identifiers.add.verify')}
                     </ActionButton>
@@ -2496,11 +3193,17 @@ export function IdentifiersSection({
         message={t('identifiers.confirmMessage')}
         variant="danger"
         confirmLabel={t('identifiers.confirmLabel')}
-        confirmLoading={removeIdentifier.isPending}
         onCancel={() => setRemoveTarget(null)}
         onConfirm={() => {
-          if (removeTarget !== null) {
-            void remove(removeTarget)
+          // The confirmation's job ends at the confirming click: it closes
+          // before the write, so the row's own control (the write's
+          // initiator) holds focus while the removal runs and the section's
+          // result region reports the outcome without a modal standing over
+          // the list.
+          const id = removeTarget
+          setRemoveTarget(null)
+          if (id !== null) {
+            void remove(id)
           }
         }}
       />
