@@ -13,8 +13,14 @@
  * login), a settled auto-login shows the signed-in line, a parked step
  * replaces the fields, a superseded answer stays quiet, a throwing start
  * gate opens nothing, a stated Retry-After counts down while it holds the
- * submit and leaves the banner after it elapses, the submit is busy for the
- * flight, and the tree passes axe.
+ * submit and leaves the banner after it elapses, the submit stays focused
+ * and busy for the flight rather than being natively disabled, a stated
+ * wait holds the submit unavailable with the wait as its accessible
+ * description, the form refuses a second submission at either layer, the
+ * retry action replaces the submit in place, the fields fall back to
+ * read-only once the auto-login is refused, an open account closes the
+ * form's submit path, the retry reports its own login's flight and
+ * refuses a second activation, and the tree passes axe.
  * Text expectations read the bundle values, never inline language.
  */
 
@@ -83,15 +89,28 @@ function registration(): unknown {
   }
 }
 
-async function fillAndSubmit(
-  values: {
-    username?: string
-    displayName?: string
-    email?: string
-    password?: string
-    confirmPassword?: string
-  } = {},
-): Promise<void> {
+interface RegisterValues {
+  readonly username?: string
+  readonly displayName?: string
+  readonly email?: string
+  readonly password?: string
+  readonly confirmPassword?: string
+}
+
+/** The registration requests the form has sent. */
+function registerCalls(harness: ReturnType<typeof makeHarness>) {
+  return harness.calls.filter((call) => call.path === '/api/v1/auth/register')
+}
+
+/** The login-flow starts the form has sent. */
+function loginStartCalls(harness: ReturnType<typeof makeHarness>) {
+  return harness.calls.filter(
+    (call) => `${call.method} ${call.path}` === LOGIN_START,
+  )
+}
+
+/** Type the registration values, leaving focus in the last field typed. */
+async function fillFields(values: RegisterValues = {}): Promise<void> {
   const user = userEvent.setup()
   await user.type(
     screen.getByLabelText(LABELS.username),
@@ -112,9 +131,13 @@ async function fillAndSubmit(
     screen.getByLabelText(LABELS.confirmPassword),
     values.confirmPassword ?? values.password ?? PASSWORD,
   )
-  await user.click(
-    screen.getByRole('button', { name: zhCN.register.submit }),
-  )
+}
+
+async function fillAndSubmit(values: RegisterValues = {}): Promise<void> {
+  await fillFields(values)
+  await userEvent
+    .setup()
+    .click(screen.getByRole('button', { name: zhCN.register.submit }))
 }
 
 describe('PasswordRegisterForm', () => {
@@ -342,7 +365,7 @@ describe('PasswordRegisterForm', () => {
       expect(harness.calls).toHaveLength(1)
       expect(
         screen.getByRole('button', { name: zhCN.register.submit }),
-      ).toBeEnabled()
+      ).not.toHaveAttribute('aria-disabled', 'true')
     },
   )
 
@@ -382,7 +405,10 @@ describe('PasswordRegisterForm', () => {
     expect(harness.calls).toHaveLength(1)
   })
 
-  it('disable the submit while the registration is in flight', async () => {
+  it('keep the submit focused and busy while the registration is in flight', async () => {
+    // The submit started the write, so it reports the flight and stays
+    // natively enabled: a native `disabled` would drop the focus it holds
+    // to the document body the moment the request is sent.
     let resolveRegister: (value: unknown) => void = () => {}
     const harness = makeHarness({
       [REGISTER]: () =>
@@ -396,7 +422,15 @@ describe('PasswordRegisterForm', () => {
     renderWithProviders(<PasswordRegisterForm session={harness.session} />)
     await fillAndSubmit()
     const submit = screen.getByRole('button', { name: zhCN.register.submit })
-    await waitFor(() => expect(submit).toBeDisabled())
+    // The request leaving the page is the signal both the focusable and
+    // the natively disabled implementation produce; the assertions below
+    // then name what the control must report, so a regression fails on the
+    // attribute instead of waiting for it.
+    await waitFor(() => expect(registerCalls(harness)).toHaveLength(1))
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toBeDisabled()
+    expect(submit).toHaveFocus()
     resolveRegister(registration())
     // The auto-login settles, so the registration surface gives way to
     // the signed-in line rather than re-enabling its submit.
@@ -405,6 +439,225 @@ describe('PasswordRegisterForm', () => {
         zhCN.register.signedIn,
       ),
     )
+  })
+
+  it('refuse a second submission while the registration is in flight', async () => {
+    // Enter in a field and the form's own submit event both reach the
+    // registration; an in-flight attempt must be refused at the form layer
+    // even when the submit key is not the thing the viewer activated.
+    let resolveRegister: (value: unknown) => void = () => {}
+    const harness = makeHarness({
+      [REGISTER]: () =>
+        new Promise((resolve) => {
+          resolveRegister = resolve
+        }),
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit()
+    const submit = screen.getByRole('button', { name: zhCN.register.submit })
+    await waitFor(() => expect(registerCalls(harness)).toHaveLength(1))
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    const form = submit.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/register'),
+    ).toHaveLength(1)
+    await act(async () => {
+      resolveRegister(registration())
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.register.signedIn,
+      ),
+    )
+  })
+
+  it('hold the submit unavailable for a stated wait, with the wait as its description', async () => {
+    // A 429 that names a wait is a precondition: the key cannot run, stays
+    // focusable, is announced as unavailable, and the countdown sentence
+    // already on the page explains why without being duplicated.
+    const harness = makeHarness({
+      [REGISTER]: () => {
+        throw new ApiError({
+          status: 429,
+          code: 'authn.throttled',
+          retryAfterMs: 3000,
+          attempts: 1,
+        })
+      },
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit()
+    const submit = screen.getByRole('button', { name: zhCN.register.submit })
+    // The refusal's banner is the signal both implementations render; the
+    // control's state is then asserted directly, so a regression fails on
+    // the attribute rather than on a wait that never settles.
+    await screen.findByRole('alert')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toBeDisabled()
+    expect(submit).not.toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAccessibleDescription(waitSentence(3))
+    // Neither the key nor the form sends anything while the wait holds.
+    await userEvent.setup().click(submit)
+    fireEvent.submit(submit.closest('form') as HTMLFormElement)
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/register'),
+    ).toHaveLength(1)
+  })
+
+  it('switch the submit to the retry action in place, keeping the element and focus', async () => {
+    // The two actions are the same slot: React reconciles the retry onto
+    // the element the viewer activated, so neither the node nor the focus
+    // it holds is lost when the auto-login is refused.
+    const harness = makeHarness({
+      [REGISTER]: () => registration(),
+      [LOGIN_START]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillFields()
+    const submit = screen.getByRole('button', { name: zhCN.register.submit })
+    await userEvent.setup().click(submit)
+    const retry = await screen.findByRole('button', {
+      name: zhCN.register.retrySignIn,
+    })
+    expect(retry).toBe(submit)
+    expect(retry).toHaveFocus()
+    expect(retry).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keep the retry action busy and refuse a second activation while its login is in flight', async () => {
+    // The retry runs the same password login the auto-login did. It
+    // reports that flight and swallows a second activation, so a viewer
+    // who clicks it again cannot start another flow.
+    let releaseRetry: (value: unknown) => void = () => {}
+    const retryGate = new Promise((resolve) => {
+      releaseRetry = resolve
+    })
+    let starts = 0
+    const harness = makeHarness({
+      [REGISTER]: () => registration(),
+      [LOGIN_START]: () => {
+        starts += 1
+        if (starts === 1) {
+          throw apiError(401, 'authn.login_failed')
+        }
+        return retryGate
+      },
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit()
+    const retry = await screen.findByRole('button', {
+      name: zhCN.register.retrySignIn,
+    })
+    await userEvent.setup().click(retry)
+    // The retry's request leaving the page is the signal both
+    // implementations produce; the state assertions then name what the
+    // control must report, so a regression fails on the attribute instead
+    // of waiting for it.
+    await waitFor(() => expect(loginStartCalls(harness)).toHaveLength(2))
+    expect(retry).toHaveAttribute('aria-busy', 'true')
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).not.toBeDisabled()
+    expect(retry).toHaveFocus()
+    // A second activation on the busy control starts nothing.
+    await userEvent.setup().click(retry)
+    expect(loginStartCalls(harness)).toHaveLength(2)
+
+    await act(async () => {
+      releaseRetry(completeFlow(1))
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.register.signedIn,
+      ),
+    )
+  })
+
+  it('keep the registration fields focusable and read-only once the auto-login is refused', async () => {
+    // The account exists, so the fields cannot edit it into a second one.
+    // Read-only locks the values without taking focus from the field a
+    // viewer submitted from.
+    const harness = makeHarness({
+      [REGISTER]: () => registration(),
+      [LOGIN_START]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit()
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.register.signInRequired,
+      ),
+    )
+    for (const label of Object.values(LABELS)) {
+      const field = screen.getByLabelText(label)
+      expect(field).toHaveAttribute('readonly')
+      expect(field).not.toBeDisabled()
+    }
+    const confirmPassword = screen.getByLabelText(LABELS.confirmPassword)
+    confirmPassword.focus()
+    expect(confirmPassword).toHaveFocus()
+  })
+
+  it('refuse a form submission once the auto-login was refused', async () => {
+    // The account exists, so the submit key is gone; the form element is
+    // still in the page, and an Enter press or a synthetic submit reaches
+    // onSubmit through it. That path must be closed too, or the form opens
+    // a second account on the same values.
+    const harness = makeHarness({
+      [REGISTER]: () => registration(),
+      [LOGIN_START]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit()
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.register.signInRequired,
+      ),
+    )
+    const form = screen.getByLabelText(LABELS.username).closest('form')
+    expect(form).not.toBeNull()
+    await act(async () => {
+      fireEvent.submit(form as HTMLFormElement)
+    })
+    expect(registerCalls(harness)).toHaveLength(1)
+  })
+
+  it('refuse a form submission once the session is signed in', async () => {
+    // A settled auto-login removes the fields and the submit key. The
+    // form element stays, and a synthetic submit would otherwise call the
+    // registration with no fields at all -- opening a second account on
+    // an already authenticated surface.
+    const harness = makeHarness({
+      [REGISTER]: () => registration(),
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit()
+    const status = screen.getByRole('status')
+    await waitFor(() =>
+      expect(status).toHaveTextContent(zhCN.register.signedIn),
+    )
+    const form = status.closest('form')
+    expect(form).not.toBeNull()
+    await act(async () => {
+      fireEvent.submit(form as HTMLFormElement)
+    })
+    expect(registerCalls(harness)).toHaveLength(1)
   })
 
   it('keep the opened account when the auto-login is refused, and retry only the login', async () => {
@@ -542,7 +795,8 @@ describe('PasswordRegisterForm', () => {
     )
     await fillAndSubmit()
     const submit = screen.getByRole('button', { name: zhCN.register.submit })
-    await waitFor(() => expect(submit).toBeDisabled())
+    await waitFor(() => expect(registerCalls(harness)).toHaveLength(1))
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
     // The winning sign-in commits while the first answer is in flight.
     await act(async () => {
       await harness.session.answerFlow({ seq: 1, step: 'complete', input: {} })
@@ -582,7 +836,7 @@ describe('PasswordRegisterForm', () => {
     expect(harness.calls).toHaveLength(0)
     expect(
       screen.getByRole('button', { name: zhCN.register.submit }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByLabelText(LABELS.username)).toHaveValue(USERNAME)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -621,7 +875,8 @@ describe('PasswordRegisterForm', () => {
       const submit = screen.getByRole('button', {
         name: zhCN.register.submit,
       })
-      expect(submit).toBeDisabled()
+      expect(submit).toHaveAttribute('aria-disabled', 'true')
+      expect(submit).not.toBeDisabled()
 
       const alert = screen.getByRole('alert')
       // The banner names the wait the answer stated; the sentence assistive
@@ -635,15 +890,18 @@ describe('PasswordRegisterForm', () => {
       })
       expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
       expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
-      expect(submit).toBeDisabled()
+      expect(submit).toHaveAttribute('aria-disabled', 'true')
+      // The wait sentence on the page is the key's description, so the
+      // reason is announced with the control instead of duplicated.
+      expect(submit).toHaveAccessibleDescription(waitSentence(3))
 
       // One millisecond before the stated boundary the control is still
-      // disabled, so an implementation that waits less than the header
+      // unavailable, so an implementation that waits less than the header
       // says cannot pass.
       act(() => {
         vi.advanceTimersByTime(1999)
       })
-      expect(submit).toBeDisabled()
+      expect(submit).toHaveAttribute('aria-disabled', 'true')
 
       // At the boundary the key re-enables and the painted sentence drops
       // the number -- with no stale "0 seconds" -- while the banner itself
@@ -651,7 +909,8 @@ describe('PasswordRegisterForm', () => {
       act(() => {
         vi.advanceTimersByTime(1)
       })
-      expect(submit).toBeEnabled()
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true')
+      expect(submit).toHaveAccessibleDescription('')
       expect(visibleSentence(alert)).toHaveTextContent(
         zhCN.errors.authn.throttled,
       )
