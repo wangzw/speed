@@ -11,8 +11,8 @@
  * server's declared one: both policies apply from each member's next
  * sign-in, so a change never breaks the session that made it.
  *
- * A policy the platform holds on is read-only and drawn as an enabled,
- * disabled switch: the platform value OR the tenant value decides the
+ * A policy the platform holds on is read-only and drawn as an enabled but
+ * unavailable switch: the platform value OR the tenant value decides the
  * effective one, so a tenant can never be looser than the platform floor.
  * Turning a policy off follows the declaration's danger: "critical" asks
  * through the danger dialog's two-step confirmation, a declaration that
@@ -36,20 +36,22 @@
  * the page builds no client and writes no query key.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import Skeleton from '@mui/material/Skeleton'
 import Switch from '@mui/material/Switch'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   ListSkeleton,
   SectionCard,
   errorCodeOf,
   pageRefreshRead,
+  useActivationGuard,
   usePageRefresh,
 } from '@speed/ui-kit'
 import { AdminAsyncSection } from './internal/async-section.js'
@@ -200,6 +202,8 @@ function SettingSwitchRow({
   onToggle,
 }: SettingSwitchRowProps) {
   const { t } = useAdminUiTranslation()
+  const platformLockedId = useId()
+  const blockedReasonId = useId()
   const title = itemTitle({ setting, t })
   const status = setting.locked_by_platform
     ? t('organization.security.status.platformEnforced')
@@ -212,6 +216,26 @@ function SettingSwitchRow({
       ? 'success'
       : 'default'
   const effect = itemEffect({ setting, t })
+  // The switch saves on its own, so it stays focusable while its write is in
+  // flight or while a precondition holds it off: a natively disabled control
+  // would drop the focus the activation gave it. The guard swallows the
+  // change instead, and the controlled value does not move.
+  const unavailable = setting.locked_by_platform || blocked === true
+  const onChange = useActivationGuard(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      onToggle(event.target.checked)
+    },
+    { busy: saving, unavailable },
+  )
+  // The reason for the precondition is the text already rendered beside the
+  // switch: the platform's hold, or the row's own blocked explanation.
+  const describedBy =
+    [
+      setting.locked_by_platform ? platformLockedId : undefined,
+      blockedReason !== undefined ? blockedReasonId : undefined,
+    ]
+      .filter((value): value is string => value !== undefined)
+      .join(' ') || undefined
 
   return (
     <Box
@@ -263,6 +287,7 @@ function SettingSwitchRow({
         </Typography>
         {setting.locked_by_platform && (
           <Typography
+            id={platformLockedId}
             variant="body2"
             color="warning.main"
             sx={{ mt: 1 }}
@@ -271,7 +296,12 @@ function SettingSwitchRow({
           </Typography>
         )}
         {blockedReason !== undefined && (
-          <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+          <Typography
+            id={blockedReasonId}
+            variant="body2"
+            color="warning.main"
+            sx={{ mt: 1 }}
+          >
             {blockedReason}
           </Typography>
         )}
@@ -288,18 +318,16 @@ function SettingSwitchRow({
         {readOnly ? null : (
           <Switch
             checked={checked}
-            disabled={
-              saving ||
-              setting.locked_by_platform ||
-              blocked === true
-            }
             slotProps={{
               input: {
                 'aria-label': t('organization.security.switchAria', { title }),
                 'aria-busy': saving ? 'true' : undefined,
+                'aria-disabled':
+                  saving || unavailable ? 'true' : undefined,
+                'aria-describedby': describedBy,
               },
             }}
-            onChange={(event) => onToggle(event.target.checked)}
+            onChange={onChange}
           />
         )}
         {feedback?.kind === 'saved' && (
@@ -567,14 +595,14 @@ export function OrganizationSecurityPage({
             {t(`organization.security.readOnly.${readOnlyReason}.description`)}
           </Typography>
           {readOnlyReason === 'unavailable' && (
-            <Button
+            <ActionButton
               size="small"
               sx={{ mt: 1 }}
-              disabled={refresh.busy}
+              busy={refresh.busy}
               onClick={refresh.refresh}
             >
               {t('organization.security.retry')}
-            </Button>
+            </ActionButton>
           )}
         </Alert>
       )}
@@ -639,7 +667,7 @@ export function OrganizationSecurityPage({
                           ? t(
                               'organization.security.sso.providersUnreadable',
                             )
-                          : undefined
+                          : t('organization.security.sso.providersPending')
                 return (
                   <Box key={setting.key}>
                     {index > 0 && <Divider />}
