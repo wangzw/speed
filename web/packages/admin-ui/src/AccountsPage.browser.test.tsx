@@ -12,8 +12,9 @@ import { screen, waitFor, within } from '@testing-library/react'
 import type { AuthSession } from '@speed/auth-core'
 import Box from '@mui/material/Box'
 import { page, userEvent } from 'vitest/browser'
+import { uiKitResources } from '@speed/ui-kit'
 import { AccountsPage } from './AccountsPage.js'
-import type { AdminAccount } from './operations.js'
+import type { AdminAccount, AdminAccountSecretCreated } from './operations.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import {
   accountUsername,
@@ -30,6 +31,13 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
+
+/** The side panel's built-in close control label in the suite's language. */
+const PANEL_CLOSE_LABEL = (
+  uiKitResources['en-US'] as unknown as {
+    readonly sidePanel: { readonly closeLabel: string }
+  }
+).sidePanel.closeLabel
 
 const ACCOUNTS = [
   accountFixture({
@@ -331,6 +339,122 @@ describe('AccountsPage focus traps in Chromium', () => {
     })
   })
 
+  it('keeps focus on the create-secret control while the request is in flight', async () => {
+    const written = deferred<AdminAccountSecretCreated>()
+    const panel = await openDetail({
+      getAccount: () => Promise.resolve(TARGET_ACCOUNT),
+      createSecret: () => written.promise,
+    })
+    await userEvent.type(
+      within(panel).getByLabelText(enUS.accounts.createSecret.labelLabel),
+      'ci',
+    )
+    const submit = within(panel).getByRole('button', {
+      name: enUS.accounts.createSecret.submit,
+    })
+    await userEvent.click(submit)
+    await waitFor(() => {
+      expect(within(submit).getByRole('progressbar')).toBeInTheDocument()
+    })
+    await nextFrame()
+
+    expect(
+      submit,
+      `focus while the write is in flight; document.activeElement is ${describeActiveElement()}`,
+    ).toHaveFocus()
+
+    written.resolve({
+      id: 'secret-9',
+      label: 'ci',
+      secret: 'one-time',
+      expires_at: null,
+    })
+    await waitFor(() => {
+      expect(within(submit).queryByRole('progressbar')).not.toBeInTheDocument()
+    })
+  })
+
+  it('keeps focus on the create-secret control when a landed secret clears its label', async () => {
+    const panel = await openDetail({
+      getAccount: () => Promise.resolve(TARGET_ACCOUNT),
+      createSecret: () =>
+        Promise.resolve({
+          id: 'secret-9',
+          label: 'ci',
+          secret: 'one-time',
+          expires_at: null,
+        }),
+    })
+    const label = within(panel).getByLabelText(
+      enUS.accounts.createSecret.labelLabel,
+    )
+    await userEvent.type(label, 'ci')
+    const submit = within(panel).getByRole('button', {
+      name: enUS.accounts.createSecret.submit,
+    })
+    await userEvent.click(submit)
+
+    await waitFor(() => expect(label).toHaveValue(''))
+    await waitFor(() =>
+      expect(submit).toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(submit).toHaveAccessibleDescription(
+      enUS.accounts.createSecret.unavailable,
+    )
+    await waitFor(() => {
+      expect(
+        submit,
+        `focus after the write settled; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+  })
+
+  it('returns focus to a detail row control after its confirmation closes while the write runs', async () => {
+    const revoked = deferred<void>()
+    const panel = await openDetail({
+      getAccount: () => Promise.resolve(TARGET_ACCOUNT),
+      listAccountSessions: () =>
+        Promise.resolve([
+          {
+            id: 'sess-1',
+            kind: 'refresh',
+            assurance: 1,
+            auth_time: '2026-10-15T12:00:00Z',
+            created_at: '2026-10-15T12:00:00Z',
+            last_seen_at: '2026-10-15T12:00:00Z',
+            expires_at: '2026-10-16T12:00:00Z',
+            revoked: false,
+            current: false,
+          },
+        ]),
+      revokeSession: () => revoked.promise,
+    })
+    const revoke = await within(panel).findByRole('button', {
+      name: enUS.accounts.sessions.revokeAria.replace('{{id}}', 'sess-1'),
+    })
+    await userEvent.click(revoke)
+    const confirm = await screen.findByRole('dialog', {
+      name: enUS.accounts.sessions.revokeTitle,
+    })
+    await userEvent.click(
+      within(confirm).getByRole('button', { name: enUS.common.confirm }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: enUS.accounts.sessions.revokeTitle }),
+      ).not.toBeInTheDocument(),
+    )
+    await waitFor(() => expect(revoke).toHaveAttribute('aria-busy', 'true'))
+    await waitFor(() => {
+      expect(
+        revoke,
+        `focus after the confirmation closed; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+
+    revoked.resolve()
+  })
+
   it('keeps the detail panel focus trap holding over a hidden page', async () => {
     // The unit suite's open-panel scan cannot press Tab, so aria-hidden-focus
     // is indeterminate there; the helper's browser pass exercises the trap
@@ -348,16 +472,27 @@ describe('AccountsPage focus traps in Chromium', () => {
       within(panel).getByLabelText(enUS.accounts.createSecret.labelLabel),
       'ci',
     )
-    await userEvent.click(
-      within(panel).getByRole('button', {
-        name: enUS.accounts.createSecret.submit,
-      }),
-    )
+    const submit = within(panel).getByRole('button', {
+      name: enUS.accounts.createSecret.submit,
+    })
+    await userEvent.click(submit)
     await within(panel).findByText(
       enUS.accounts.createSecret.handedOver
         .replace('{{label}}', 'label')
         .replace('{{secret}}', 'one-time'),
     )
+    // The control stays focused and becomes unavailable when the secret
+    // lands, which opens its reason tooltip; that popper is portaled to the
+    // body, outside the modal's aria-hidden chain, and the shared background
+    // check reads it as page content. Leave the control and settle on the
+    // panel's own close control (still inside the trap) before scanning.
+    await userEvent.unhover(submit)
+    within(panel)
+      .getByRole('button', { name: PANEL_CLOSE_LABEL })
+      .focus()
+    await waitFor(() => {
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    })
     await expectNoAxeViolations({
       decidedInBrowser: 'accountsOneTimeSecret',
     })

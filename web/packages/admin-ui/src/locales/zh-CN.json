@@ -847,6 +847,7 @@
   },
   "accounts": {
     "title": "账户",
+    "listRegion": "账户列表",
     "identifierLabel": "登录标识",
     "identifierKindLabel": "标识类型",
     "displayNamePrefixLabel": "显示名前缀",
@@ -929,7 +930,8 @@
       "label": "MFA 要求",
       "required": "必须",
       "notRequired": "不要求",
-      "submit": "保存要求"
+      "submit": "保存要求",
+      "unchanged": "MFA 要求未改动。"
     },
     "create": {
       "title": "新建账户",
@@ -954,6 +956,7 @@
         "importUnverified": "导入，未验证"
       },
       "submit": "新建",
+      "submitUnavailable": "填写显示名；用户账户还需填写用户名。",
       "usernameTaken": "该用户名已被占用，请换一个。",
       "usernameReserved": "该用户名是系统保留的名称，请换一个。",
       "usernameInvalid": "该用户名不符合规则，请按提示修改。",
@@ -974,22 +977,26 @@
         "true": "受保护",
         "false": "不受保护"
       },
-      "submit": "保存改动"
+      "submit": "保存改动",
+      "unchanged": "没有可保存的改动。"
     },
     "password": {
       "label": "临时密码",
-      "submit": "重置密码"
+      "submit": "重置密码",
+      "unavailable": "填写临时密码。"
     },
     "addIdentifier": {
       "kindLabel": "新增标识类型",
       "valueLabel": "取值",
-      "submit": "新增标识"
+      "submit": "新增标识",
+      "unavailable": "填写要新增的标识。"
     },
     "createSecret": {
       "labelLabel": "标签",
       "expiresLabel": "过期时间",
       "expiresHelper": "写上日期和时间，并带上时区偏移，例如 2027-01-31T09:00:00+08:00 表示北京时间上午 9 点；以 Z 结尾表示 UTC，例如 2027-01-31T01:00:00Z；留空表示不过期",
       "submit": "新建密钥",
+      "unavailable": "填写密钥的标签。",
       "handedOver": "服务密钥「{{label}}」（仅显示这一次）：",
       "copy": "复制服务密钥",
       "close": "关闭",
@@ -1067,6 +1074,7 @@
       "active": "有效",
       "neverExpires": "永不到期",
       "revoke": "撤销",
+      "revokeUnavailable": "该服务密钥已撤销。",
       "revokeAria": "撤销密钥 {{label}}",
       "revokeTitle": "撤销服务密钥",
       "revokeMessage": "撤销服务密钥「{{label}}」。"
@@ -1092,6 +1100,7 @@
       "revoked": "已撤销",
       "active": "有效",
       "revoke": "撤销",
+      "revokeUnavailable": "该会话已撤销。",
       "revokeAria": "撤销会话 {{id}}",
       "revokeTitle": "撤销会话",
       "revokeMessage": "撤销会话「{{id}}」。",
@@ -1101,6 +1110,7 @@
     "removeIdentifier": {
       "label": "移除登录标识",
       "submit": "移除",
+      "unavailable": "填写要移除的登录标识。",
       "confirmTitle": "移除登录标识",
       "confirmMessage": "从该账户移除登录标识「{{identifier}}」。用户名不可移除。"
     }

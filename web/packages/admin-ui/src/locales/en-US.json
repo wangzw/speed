@@ -847,6 +847,7 @@
   },
   "accounts": {
     "title": "Accounts",
+    "listRegion": "Accounts list",
     "identifierLabel": "Login identifier",
     "identifierKindLabel": "Identifier kind",
     "displayNamePrefixLabel": "Display name prefix",
@@ -929,7 +930,8 @@
       "label": "MFA requirement",
       "required": "Required",
       "notRequired": "Not required",
-      "submit": "Save requirement"
+      "submit": "Save requirement",
+      "unchanged": "The MFA requirement is unchanged."
     },
     "create": {
       "title": "Create an account",
@@ -954,6 +956,7 @@
         "importUnverified": "Imported, unverified"
       },
       "submit": "Create",
+      "submitUnavailable": "Enter a display name and, for a user account, a username.",
       "usernameTaken": "That username is already taken. Choose another.",
       "usernameReserved": "That username is reserved by the system. Choose another.",
       "usernameInvalid": "That username doesn't meet the rules shown here.",
@@ -974,22 +977,26 @@
         "true": "Protected",
         "false": "Not protected"
       },
-      "submit": "Save changes"
+      "submit": "Save changes",
+      "unchanged": "There are no changes to save."
     },
     "password": {
       "label": "Temporary password",
-      "submit": "Reset password"
+      "submit": "Reset password",
+      "unavailable": "Enter a temporary password."
     },
     "addIdentifier": {
       "kindLabel": "New identifier kind",
       "valueLabel": "Value",
-      "submit": "Add identifier"
+      "submit": "Add identifier",
+      "unavailable": "Enter the identifier to add."
     },
     "createSecret": {
       "labelLabel": "Label",
       "expiresLabel": "Expires",
       "expiresHelper": "Enter a date and time with a time zone offset, for example 2027-01-31T09:00:00+08:00 for 9:00 a.m. Beijing time; a value ending in Z means UTC, for example 2027-01-31T01:00:00Z; leave empty for no expiry",
       "submit": "Create secret",
+      "unavailable": "Enter a label for the secret.",
       "handedOver": "Service secret \"{{label}}\" (shown once):",
       "copy": "Copy service secret",
       "close": "Close",
@@ -1067,6 +1074,7 @@
       "active": "Active",
       "neverExpires": "Never expires",
       "revoke": "Revoke",
+      "revokeUnavailable": "This service secret is already revoked.",
       "revokeAria": "Revoke secret {{label}}",
       "revokeTitle": "Revoke service secret",
       "revokeMessage": "Revoke the service secret \"{{label}}\"."
@@ -1092,6 +1100,7 @@
       "revoked": "Revoked",
       "active": "Active",
       "revoke": "Revoke",
+      "revokeUnavailable": "This session is already revoked.",
       "revokeAria": "Revoke session {{id}}",
       "revokeTitle": "Revoke session",
       "revokeMessage": "Revoke the session \"{{id}}\".",
@@ -1101,6 +1110,7 @@
     "removeIdentifier": {
       "label": "Remove login identifier",
       "submit": "Remove",
+      "unavailable": "Enter the login identifier to remove.",
       "confirmTitle": "Remove login identifier",
       "confirmMessage": "Remove the login identifier \"{{identifier}}\" from this account. A username cannot be removed."
     }

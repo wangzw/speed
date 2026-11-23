@@ -227,6 +227,32 @@ async function deleteThroughConfirm(
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 }
 
+/**
+ * Confirms one named row's two-step delete through the dialog, then waits for
+ * the dialog to leave the tree so the page's own region is reachable.
+ */
+async function deleteRowThroughConfirm(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+): Promise<void> {
+  await user.click(
+    screen.getByRole('button', {
+      name: fill(zhCN.accounts.deleteAria, { name }),
+    }),
+  )
+  const dialog = await screen.findByRole('dialog')
+  await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
+  await act(async () => {
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+    )
+  })
+  await user.click(
+    within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+}
+
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
@@ -1028,7 +1054,9 @@ describe('AccountsPage', () => {
     // stays empty, so no failure banner stands beside the step-up dialog.
     // The control leaves its busy state when the attempt settles, which is
     // also the moment a wrongly settled failure would render.
-    await waitFor(() => expect(save).toBeEnabled())
+    await waitFor(() =>
+      expect(save).not.toHaveAttribute('aria-disabled', 'true'),
+    )
     // Let the rejected attempt's promise chain settle before judging: the
     // dialog opens inside the failure handler, ahead of the attempt's own
     // settlement.
@@ -1086,6 +1114,22 @@ describe('AccountsPage', () => {
         label: 'label',
         secret: 'one-time',
       }),
+    )
+    // The create-secret control stays focused and becomes unavailable when
+    // the secret lands, which opens its reason tooltip; the tooltip's popper
+    // is portaled to the body, outside the modal's aria-hidden chain, and the
+    // shared background check reads it as page content. Leave the control and
+    // settle on the panel's own close control (still inside the trap) before
+    // scanning.
+    const submit = within(panel).getByRole('button', {
+      name: zhCN.accounts.createSecret.submit,
+    })
+    await user.unhover(submit)
+    within(panel)
+      .getByRole('button', { name: PANEL_CLOSE_LABEL })
+      .focus()
+    await waitFor(() =>
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument(),
     )
     await expectNoAxeViolations({
       decidedInBrowser: 'accountsOneTimeSecret',
@@ -2103,6 +2147,213 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('keeps focus on the row delete control while the delete is in flight', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const operations = withAccounts({
+      deleteAccount: () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+    const remove = screen.getByRole('button', { name: DELETE_ACCOUNT_NAME })
+
+    await deleteRowThroughConfirm(user, 'Ada Lovelace')
+    // The write is in flight: the control keeps focus and reports busy
+    // instead of turning natively disabled and dropping focus to the body.
+    await waitFor(() => expect(remove).toHaveFocus())
+    await waitFor(() => expect(remove).toHaveAttribute('aria-busy', 'true'))
+
+    await act(async () => {
+      finish?.()
+    })
+  })
+
+  /** A list read over the fixture rows minus the ones already deleted. */
+  function listWithoutDeleted(
+    rows: readonly AdminAccount[],
+    deleted: readonly string[],
+  ): () => Promise<{ accounts: AdminAccount[]; next_cursor: string }> {
+    return () =>
+      Promise.resolve({
+        accounts: rows.filter((row) => !deleted.includes(row.id)),
+        next_cursor: '',
+      })
+  }
+
+  it("moves focus to the next row's delete control when a middle row leaves", async () => {
+    const user = userEvent.setup()
+    const deleted: string[] = []
+    const rows = [
+      accountFixture({ id: 'acc-a', display_name: 'Ada Lovelace' }),
+      accountFixture({ id: 'acc-b', display_name: 'Grace Hopper' }),
+      accountFixture({ id: 'acc-c', display_name: 'Cara Diaz' }),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: listWithoutDeleted(rows, deleted),
+        deleteAccount: (input) => {
+          deleted.push(input.id)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Grace Hopper')
+    const nextRemove = screen.getByRole('button', {
+      name: fill(zhCN.accounts.deleteAria, { name: 'Cara Diaz' }),
+    })
+
+    await deleteRowThroughConfirm(user, 'Grace Hopper')
+    await waitFor(() => expect(nextRemove).toHaveFocus())
+  })
+
+  it("moves focus to the previous row's delete control when the last row leaves", async () => {
+    const user = userEvent.setup()
+    const deleted: string[] = []
+    const rows = [
+      accountFixture({ id: 'acc-a', display_name: 'Ada Lovelace' }),
+      accountFixture({ id: 'acc-b', display_name: 'Grace Hopper' }),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: listWithoutDeleted(rows, deleted),
+        deleteAccount: (input) => {
+          deleted.push(input.id)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Grace Hopper')
+    const previousRemove = screen.getByRole('button', {
+      name: fill(zhCN.accounts.deleteAria, { name: 'Ada Lovelace' }),
+    })
+
+    await deleteRowThroughConfirm(user, 'Grace Hopper')
+    await waitFor(() => expect(previousRemove).toHaveFocus())
+  })
+
+  it('moves focus to the list container when the only row leaves', async () => {
+    const user = userEvent.setup()
+    const deleted: string[] = []
+    const rows = [
+      accountFixture({ id: 'acc-a', display_name: 'Ada Lovelace' }),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: listWithoutDeleted(rows, deleted),
+        deleteAccount: (input) => {
+          deleted.push(input.id)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+
+    await deleteRowThroughConfirm(user, 'Ada Lovelace')
+    const container = screen.getByRole('group', {
+      name: zhCN.accounts.listRegion,
+    })
+    await waitFor(() => expect(container).toHaveFocus())
+  })
+
+  it('describes each unmet precondition on its write control', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { operations: withAccounts() })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    const submit = (name: string): HTMLElement =>
+      within(panel).getByRole('button', { name })
+
+    expect(submit(zhCN.accounts.mfa.submit)).toHaveAccessibleDescription(
+      zhCN.accounts.mfa.unchanged,
+    )
+    expect(submit(zhCN.accounts.patch.submit)).toHaveAccessibleDescription(
+      zhCN.accounts.patch.unchanged,
+    )
+    expect(submit(zhCN.accounts.password.submit)).toHaveAccessibleDescription(
+      zhCN.accounts.password.unavailable,
+    )
+    expect(
+      submit(zhCN.accounts.addIdentifier.submit),
+    ).toHaveAccessibleDescription(zhCN.accounts.addIdentifier.unavailable)
+    expect(
+      submit(zhCN.accounts.createSecret.submit),
+    ).toHaveAccessibleDescription(zhCN.accounts.createSecret.unavailable)
+    expect(
+      submit(zhCN.accounts.removeIdentifier.submit),
+    ).toHaveAccessibleDescription(zhCN.accounts.removeIdentifier.unavailable)
+  })
+
+  it('points the patch control at the field error instead of repeating it', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { operations: withAccounts() })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
+    const attributes = within(panel).getByLabelText(
+      zhCN.accounts.patch.attributesLabel,
+    )
+    await user.clear(attributes)
+    await user.type(attributes, 'not json')
+    expect(
+      within(panel).getByRole('button', { name: zhCN.accounts.patch.submit }),
+    ).toHaveAccessibleDescription(zhCN.accounts.patch.attributesHelper)
+  })
+
+  it('refuses activation of an unavailable control by click, Enter and Space', async () => {
+    const user = userEvent.setup()
+    const calls: AdminResetPasswordInput[] = []
+    const operations = withAccounts({
+      resetPassword: (input) => {
+        calls.push(input)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const submit = screen.getByRole('button', {
+      name: zhCN.accounts.password.submit,
+    })
+    submit.focus()
+    // The control stays focusable while unavailable; every activation below
+    // reaches it and is swallowed.
+    expect(submit).toHaveFocus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await user.click(submit)
+    expect(calls).toEqual([])
+  })
+
+  it('sends no create request from an unavailable submit by click or Enter', async () => {
+    const user = userEvent.setup()
+    const created: AdminCreateAccountInput[] = []
+    const operations = withAccounts({
+      createAccount: (input) => {
+        created.push(input)
+        return Promise.resolve(accountFixture())
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    const submit = within(panel).getByRole('button', {
+      name: zhCN.accounts.create.submit,
+    })
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.accounts.create.submitUnavailable,
+    )
+    await user.click(submit)
+    within(panel)
+      .getByLabelText(zhCN.accounts.create.displayNameLabel)
+      .focus()
+    await user.keyboard('{Enter}')
+    expect(created).toEqual([])
+  })
+
   it('renders a username-immutable refusal as its own text, not the generic conflict', async () => {
     const user = userEvent.setup()
     const operations = withAccounts({
@@ -3100,7 +3351,7 @@ describe('AccountsPage', () => {
     })
   })
 
-  it('keeps the create submit disabled until a display name and a username are given', async () => {
+  it('keeps the create submit unavailable until a display name and a username are given', async () => {
     const user = userEvent.setup()
     const created: AdminCreateAccountInput[] = []
     const operations = withAccounts({
@@ -3115,35 +3366,37 @@ describe('AccountsPage', () => {
     const form = panel.querySelector('form') as HTMLFormElement
 
     // An empty form names nothing an account can be opened with: the submit
-    // is disabled, and a submit of the form itself sends no request either
-    // -- the disabled button is not the only guard.
-    expect(submit).toBeDisabled()
+    // is unavailable, and a submit of the form itself sends no request either
+    // -- the control is not the only guard.
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // A display name alone is not an account either.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
-    expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // A user account is opened with a username: an email address beside the
     // display name does not stand in for it.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.emailLabel), 'grace@x.test')
-    expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // Nor is the username alone an account without a display name.
     await user.clear(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel))
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
-    expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.submit(form)
     expect(created).toEqual([])
 
     // Both together make the account creatable.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
-    await waitForCondition(() => expect(submit).toBeEnabled())
+    await waitForCondition(() =>
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true'),
+    )
     await user.click(submit)
     await waitForCondition(() => expect(created).toHaveLength(1))
   })
@@ -3167,7 +3420,9 @@ describe('AccountsPage', () => {
     await user.click(within(panel).getByLabelText(zhCN.accounts.create.kindLabel))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.create.kind.service }))
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Nightly')
-    await waitForCondition(() => expect(submit).toBeEnabled())
+    await waitForCondition(() =>
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true'),
+    )
     await user.click(submit)
     await waitForCondition(() => {
       expect(created).toEqual([{ kind: 'service', display_name: 'Nightly' }])
@@ -3350,9 +3605,9 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     // The control is seeded from the account (not required), so the save is
-    // disabled until the requirement changes.
+    // unavailable until the requirement changes.
     const save = await screen.findByRole('button', { name: zhCN.accounts.mfa.submit })
-    expect(save).toBeDisabled()
+    expect(save).toHaveAttribute('aria-disabled', 'true')
     await user.click(screen.getByLabelText(zhCN.accounts.mfa.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.mfa.required }))
     await user.click(save)
@@ -3373,10 +3628,12 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     // The display-name field is seeded from the account, and the save is
-    // disabled until it changes.
+    // unavailable until it changes.
     const name = await screen.findByLabelText(zhCN.accounts.patch.displayNameLabel)
     expect(name).toHaveValue('Operator')
-    expect(screen.getByRole('button', { name: zhCN.accounts.patch.submit })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: zhCN.accounts.patch.submit }),
+    ).toHaveAttribute('aria-disabled', 'true')
     await user.clear(name)
     await user.type(name, 'Ada II')
     await user.click(screen.getByRole('button', { name: zhCN.accounts.patch.submit }))
