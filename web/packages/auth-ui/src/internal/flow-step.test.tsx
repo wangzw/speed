@@ -19,7 +19,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnField, AuthnHumanGate, AuthnStep } from '@speed/auth-core'
 import { createAppTheme } from '@speed/ui-kit'
@@ -101,6 +101,122 @@ describe('FlowStepFields challenge fields', () => {
 
     expect(screen.getByLabelText('employee_id')).toBeInTheDocument()
     expect(screen.queryByText(zhCN.signInFlow.usernameHelper)).toBeNull()
+  })
+})
+
+describe('FlowStepFields challenge submit', () => {
+  it('keeps the submit focusable and busy while the answer is in flight, swallowing click and form submits', async () => {
+    const onAnswer = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <FlowStepFields
+        step={challengeStep([
+          { name: 'username', kind: 'text', required: true },
+        ])}
+        busy
+        onAnswer={onAnswer}
+        onUnsupported={vi.fn()}
+      />,
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.signInFlow.submit,
+    })
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toBeDisabled()
+
+    const username = screen.getByLabelText(zhCN.signInFlow.usernameLabel)
+    await user.type(username, 'ada')
+    await user.click(submit)
+    expect(onAnswer).not.toHaveBeenCalled()
+
+    // An implicit submission from the field is the same activation.
+    await user.type(username, '{Enter}')
+    expect(onAnswer).not.toHaveBeenCalled()
+
+    // The form's own submit is judged by the same guard: whatever reaches
+    // the form while the answer is in flight sends nothing. The submit path
+    // runs through react-hook-form, so flush it before asserting -- a
+    // synchronous assertion here would pass even with the guard removed.
+    await act(async () => {
+      fireEvent.submit(submit.closest('form') as HTMLFormElement)
+    })
+    expect(onAnswer).not.toHaveBeenCalled()
+  })
+
+  it('sends the answer once the submit is idle again', async () => {
+    const onAnswer = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <FlowStepFields
+        step={challengeStep([
+          { name: 'username', kind: 'text', required: true },
+        ])}
+        busy={false}
+        onAnswer={onAnswer}
+        onUnsupported={vi.fn()}
+      />,
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+    )
+    expect(onAnswer).toHaveBeenCalledWith({ username: 'ada' })
+  })
+})
+
+describe('FlowStepFields account-opening submit', () => {
+  const fields: AuthnField[] = [
+    { name: 'username', kind: 'text', required: true },
+    { name: 'password', kind: 'password', secret: true, required: true },
+  ]
+
+  it('keeps the submit focusable and busy while the answer is in flight, swallowing the form submit', async () => {
+    const onAnswer = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <FlowStepFields
+        step={{
+          seq: 2,
+          state: 'signup',
+          next: { kind: 'challenge', fields },
+        }}
+        busy
+        onAnswer={onAnswer}
+        onUnsupported={vi.fn()}
+      />,
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.signInFlow.signupAccountSubmit,
+    })
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toBeDisabled()
+
+    await user.type(
+      screen.getByLabelText(zhCN.signInFlow.usernameLabel),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      'correct-horse',
+    )
+    const confirmation = screen.getByLabelText(
+      zhCN.register.confirmPasswordLabel,
+    )
+    await user.type(confirmation, 'correct-horse')
+    await user.type(confirmation, '{Enter}')
+    expect(onAnswer).not.toHaveBeenCalled()
+
+    // Flush the form's asynchronous submit path before asserting, so a
+    // removed guard would reach the answer and fail this case.
+    await act(async () => {
+      fireEvent.submit(submit.closest('form') as HTMLFormElement)
+    })
+    expect(onAnswer).not.toHaveBeenCalled()
   })
 })
 
@@ -1063,6 +1179,94 @@ describe('FlowStepFields passkey arrival', () => {
   })
 })
 
+describe('FlowStepFields passkey controls', () => {
+  const REGISTER_OPTIONS = {
+    challenge: 'Y2hhbGxlbmdl',
+    user: { id: 'AQID', name: 'ada' },
+  }
+
+  it('holds the cancel control unavailable, without a reason, while the answer is in flight', async () => {
+    const create = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get: vi.fn(), create })
+    let setBusy: ((busy: boolean) => void) | null = null
+    try {
+      function Harness() {
+        const [busy, updateBusy] = useState(false)
+        setBusy = updateBusy
+        return (
+          <FlowStepFields
+            step={step({ kind: 'webauthn', options: REGISTER_OPTIONS })}
+            busy={busy}
+            onAnswer={vi.fn()}
+            onUnsupported={vi.fn()}
+            onClientFailure={vi.fn()}
+          />
+        )
+      }
+      const user = userEvent.setup()
+      renderWithProviders(<Harness />)
+
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      const cancel = await screen.findByRole('button', {
+        name: zhCN.signInFlow.passkeyCancel,
+      })
+      // The waiting state keeps cancel available: it is the only way out
+      // when the browser never settles the ceremony.
+      expect(cancel).not.toBeDisabled()
+      expect(cancel).not.toHaveAttribute('aria-disabled')
+
+      act(() => setBusy?.(true))
+      expect(cancel).toHaveAttribute('aria-disabled', 'true')
+      expect(cancel).not.toHaveAttribute('aria-busy')
+      // An in-flight answer elsewhere in the step, not this control's own
+      // action: it carries no reason.
+      expect(cancel).not.toHaveAttribute('aria-describedby')
+      expect(cancel).not.toBeDisabled()
+
+      // Activation is swallowed while the answer is in flight: the
+      // ceremony stays waiting, so cancel is still the step's control.
+      await user.click(cancel)
+      expect(cancel).toBeInTheDocument()
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyWaiting),
+      ).toBeInTheDocument()
+    } finally {
+      restore()
+    }
+  })
+
+  it('keeps the start control focusable and busy while the answer is in flight, starting no ceremony', async () => {
+    const create = vi.fn()
+    const restore = installCredentials({ get: vi.fn(), create })
+    try {
+      const user = userEvent.setup()
+      renderWithProviders(
+        <FlowStepFields
+          step={step({ kind: 'webauthn', options: REGISTER_OPTIONS })}
+          busy
+          onAnswer={vi.fn()}
+          onUnsupported={vi.fn()}
+        />,
+      )
+      const start = screen.getByRole('button', {
+        name: zhCN.signInFlow.submit,
+      })
+      expect(start).toHaveAttribute('aria-busy', 'true')
+      expect(start).toHaveAttribute('aria-disabled', 'true')
+      expect(start).not.toBeDisabled()
+
+      start.focus()
+      expect(start).toHaveFocus()
+      await user.click(start)
+      expect(create).not.toHaveBeenCalled()
+    } finally {
+      restore()
+    }
+  })
+})
+
 const TOTP_URI =
   'otpauth://totp/Example%20Co:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Co'
 const TOTP_SECRET_DISPLAY = 'JBSW Y3DP EHPK 3PXP'
@@ -1178,6 +1382,55 @@ describe('FlowStepFields TOTP enrolment', () => {
     )
 
     expect(onAnswer).toHaveBeenCalledWith({ code: '123456' })
+  })
+
+  it('keeps the confirm control focusable, explains an empty code and sends nothing', async () => {
+    const onAnswer = vi.fn()
+    const user = userEvent.setup()
+    renderTotp(onAnswer)
+
+    const confirm = screen.getByRole('button', {
+      name: zhCN.signInFlow.submit,
+    })
+    // The empty code is a precondition, not a write in flight: the control
+    // stays in the tab order and says why it cannot run.
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).not.toBeDisabled()
+    expect(confirm).toHaveAccessibleDescription(
+      zhCN.signInFlow.totpCodeRequired,
+    )
+
+    confirm.focus()
+    expect(confirm).toHaveFocus()
+    await user.click(confirm)
+    expect(onAnswer).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText(zhCN.signInFlow.codeLabel), '123456')
+    expect(confirm).not.toHaveAttribute('aria-disabled', 'true')
+    await user.click(confirm)
+    expect(onAnswer).toHaveBeenCalledWith({ code: '123456' })
+  })
+
+  it('marks the confirm control busy, not natively disabled, while the answer is in flight', () => {
+    renderWithProviders(
+      <FlowStepFields
+        step={step({ kind: 'webauthn', options: { otpauth_uri: TOTP_URI } })}
+        busy
+        onAnswer={vi.fn()}
+        onUnsupported={vi.fn()}
+      />,
+    )
+
+    const confirm = screen.getByRole('button', {
+      name: zhCN.signInFlow.submit,
+    })
+    expect(confirm).toHaveAttribute('aria-busy', 'true')
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).not.toBeDisabled()
+    // The empty-code reason gives way to the write it started.
+    expect(confirm).not.toHaveAccessibleDescription(
+      zhCN.signInFlow.totpCodeRequired,
+    )
   })
 
   it('passes axe with the manual-entry disclosure open', async () => {
@@ -1382,7 +1635,10 @@ describe('HumanGatedFlowStep held answer', () => {
       // The SMS factor is a send, so the answer waits for the proof and the
       // whole step is busy meanwhile.
       await user.click(smsChoice)
-      await waitFor(() => expect(smsChoice).toBeDisabled())
+      await waitFor(() =>
+        expect(smsChoice).toHaveAttribute('aria-disabled', 'true'),
+      )
+      expect(smsChoice).toHaveAttribute('aria-busy', 'true')
       expect(fake.widgets).toHaveLength(1)
       expect(onAnswer).not.toHaveBeenCalled()
 
@@ -1390,7 +1646,9 @@ describe('HumanGatedFlowStep held answer', () => {
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       )
-      await waitFor(() => expect(smsChoice).toBeEnabled())
+      await waitFor(() =>
+        expect(smsChoice).not.toHaveAttribute('aria-disabled', 'true'),
+      )
       expect(
         screen.queryByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       ).toBeNull()
@@ -1411,6 +1669,65 @@ describe('HumanGatedFlowStep held answer', () => {
       )
       expect(onAnswer).toHaveBeenCalledTimes(1)
       await expectNoAxeViolations()
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('marks only the chosen factor busy and holds its sibling without a reason', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const onAnswer = vi.fn()
+      const harness = makeHarness({})
+      renderWithProviders(
+        <>
+          <h1>Two-factor sign-in</h1>
+          <HumanGatedFlowStep
+            session={harness.session}
+            humanGate={PHONE_TURNSTILE}
+            step={{
+              seq: 2,
+              state: 'second',
+              next: {
+                kind: 'factor',
+                factors: [
+                  { id: 'mfa-1', kind: 'sms' },
+                  { id: 'mfa-2', kind: 'totp' },
+                ],
+              },
+            }}
+            busy={false}
+            onAnswer={onAnswer}
+            onUnsupported={vi.fn()}
+          />
+        </>,
+      )
+      const user = userEvent.setup()
+      const sms = screen.getByRole('button', {
+        name: zhCN.signInFlow.factorKind.sms,
+      })
+      const totp = screen.getByRole('button', {
+        name: zhCN.signInFlow.factorKind.totp,
+      })
+
+      // The chosen factor is the one that started the send.
+      await user.click(sms)
+      await waitFor(() => expect(sms).toHaveAttribute('aria-busy', 'true'))
+      expect(sms).toHaveAttribute('aria-disabled', 'true')
+      expect(sms).not.toBeDisabled()
+
+      // Its sibling is unavailable without a reason: the write in flight is
+      // not its own action.
+      expect(totp).toHaveAttribute('aria-disabled', 'true')
+      expect(totp).not.toHaveAttribute('aria-busy')
+      expect(totp).not.toHaveAttribute('aria-describedby')
+      expect(totp).not.toBeDisabled()
+
+      // Neither a click nor the keyboard starts a second choice.
+      await user.click(totp)
+      totp.focus()
+      await user.keyboard('{Enter}')
+      expect(onAnswer).not.toHaveBeenCalled()
     } finally {
       fake.restore()
     }

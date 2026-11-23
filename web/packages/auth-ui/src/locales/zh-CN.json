@@ -73,6 +73,7 @@
     "totpDigits": "位数",
     "totpPeriod": "周期（秒）",
     "codeLabel": "6 位验证码",
+    "totpCodeRequired": "请先输入验证码。",
     "usernameLabel": "用户名",
     "usernameHelper": "3 到 64 个字符：字母、数字、点、连字符或下划线。首字符必须是字母或数字。",
     "signupTitle": "选择一个用户名",
@@ -176,6 +177,7 @@
   },
   "socialCallback": {
     "pending": "正在完成登录…",
+    "incompleteTitle": "登录未完成",
     "retry": "重试"
   },
   "signOut": {

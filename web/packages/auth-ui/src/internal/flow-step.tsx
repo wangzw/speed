@@ -85,16 +85,15 @@
  * does not hold yet, the step's answer controls are held: a send answered
  * without the proof would be refused by the server and would spend the
  * viewer's click on what the block above already says. The renderer
- * cannot tell per option which answers send, so the whole form is busy;
+ * cannot tell per option which answers send, so the step's controls are held;
  * an answer that would send is still refused in code if it reaches the
  * callback anyway. A cancel control beside the proof block drops the held
  * answer, so a mechanism that cannot produce a proof leaves the viewer a
- * way back instead of a permanently busy form; the step returns to its
+ * way back instead of permanently held controls; the step returns to its
  * normal state and can be answered again.
  */
 
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
-import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -113,6 +112,7 @@ import {
   FormLayout,
   HumanVerification as HumanVerificationBlock,
   TotpEnrollmentPanel,
+  useActivationGuard,
 } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldHelp, fieldLabel, methodLabel } from './labels.js'
@@ -253,7 +253,8 @@ export function signupFieldRefusal(
 export interface FlowStepFieldsProps {
   /** The open step to render. */
   readonly step: OpenFlowState
-  /** A request is in flight; the step's own action disables. */
+  /** A request is in flight; the step's controls report it and refuse
+   * further activation without leaving the tab order. */
   readonly busy: boolean
   /** Report the answered fields upward (the driver sends them). */
   readonly onAnswer: (input: Record<string, string>) => void
@@ -288,7 +289,8 @@ export interface FlowStepFieldsProps {
 export interface HumanGatedFlowStepProps {
   /** The open step to render. */
   readonly step: OpenFlowState
-  /** A request is in flight; the step's own action disables. */
+  /** A request is in flight; the step's controls report it and refuse
+   * further activation without leaving the tab order. */
   readonly busy: boolean
   /** The session whose human-verification gate and proof the step uses. */
   readonly session: AuthSession
@@ -327,7 +329,7 @@ export interface HumanGatedFlowStepProps {
  * is not in hand is held by itself, not by disabling the other options.
  * The block appears for that held answer, and the answer leaves by itself
  * once the gate settles and the proof is in hand. While it is held the
- * step's controls are busy, so a second choice cannot race the first; the
+ * step's controls are held, so a second choice cannot race the first; the
  * cancel control beside the block drops the held answer and returns the
  * step to its normal, answerable state, which is the only way out when the
  * mechanism cannot produce a proof at all.
@@ -718,7 +720,9 @@ function TotpFields({
         <ActionButton
           type="button"
           emphasis="primary"
-          disabled={busy || value.trim() === ''}
+          busy={busy}
+          unavailable={value.trim() === ''}
+          unavailableReason={t('signInFlow.totpCodeRequired')}
           onClick={() => onAnswer({ code: value.trim() })}
         >
           {submit}
@@ -740,8 +744,8 @@ function TotpFields({
  * The ceremony can sit pending for as long as the browser waits on the
  * device (a page with no authenticator at all keeps it pending until it is
  * dismissed), so the step shows an explicit waiting state: the waiting
- * message and a cancel control instead of leaving a disabled button as the
- * only signal. The waiting notice is the shared announcement region: it
+ * message and a cancel control instead of a start button that only reports
+ * busy. The waiting notice is the shared announcement region: it
  * mounts empty and fills a frame later, so a screen reader announces it;
  * focus moves to the cancel control, since the control that had it
  * unmounted. Cancel is
@@ -920,7 +924,7 @@ function PasskeyFields({
             <ActionButton
               ref={cancelRef}
               type="button"
-              disabled={busy}
+              unavailable={busy}
               onClick={cancel}
             >
               {t('signInFlow.passkeyCancel')}
@@ -932,7 +936,7 @@ function PasskeyFields({
           <ActionButton
             type="button"
             emphasis="primary"
-            disabled={busy}
+            busy={busy}
             onClick={() => void run()}
           >
             {errorKey === null ? submit : t('signInFlow.passkeyRetry')}
@@ -1050,12 +1054,15 @@ function ChallengeFields({
     }
     onAnswer(answer)
   }
+  // The button and the form are guarded alike: an implicit submission from
+  // a field must not reach the answer either.
+  const guardedSubmit = useActivationGuard(onSubmit, { busy })
   return (
     <FormLayout
       form={form}
-      onSubmit={onSubmit}
+      onSubmit={guardedSubmit}
       actions={
-        <ActionButton type="submit" emphasis="primary" disabled={busy}>
+        <ActionButton type="submit" emphasis="primary" busy={busy}>
           {submit}
         </ActionButton>
       }
@@ -1227,6 +1234,9 @@ function SignupAccountFields({
     }
     onAnswer(answer)
   }
+  // The button and the form are guarded alike: an implicit submission from
+  // a field must not reach the answer either.
+  const guardedSubmit = useActivationGuard(onSubmit, { busy })
   // The face opens a new account, so its username and password carry the
   // new-account hints rather than the sign-in pair.
   const autoCompleteOf = (field: AuthnField): string => {
@@ -1279,9 +1289,9 @@ function SignupAccountFields({
       />
       <FormLayout
         form={form}
-        onSubmit={onSubmit}
+        onSubmit={guardedSubmit}
         actions={
-          <ActionButton type="submit" emphasis="primary" disabled={busy}>
+          <ActionButton type="submit" emphasis="primary" busy={busy}>
             {submit}
           </ActionButton>
         }
@@ -1474,8 +1484,11 @@ interface ChoicesProps {
   readonly onChoose: (key: string) => void
 }
 
-/** A titled stack of buttons, one per choice. */
+/** A titled stack of buttons, one per choice. The choice whose activation
+ * started the pending answer reports busy; its siblings are held as
+ * unavailable, because the write in flight is not their own action. */
 function Choices({ labelId, title, busy, choices, onChoose }: ChoicesProps) {
+  const [chosen, setChosen] = useState<string | null>(null)
   return (
     <Box
       sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}
@@ -1484,15 +1497,18 @@ function Choices({ labelId, title, busy, choices, onChoose }: ChoicesProps) {
         {title}
       </Alert>
       {choices.map((choice) => (
-        <Button
+        <ActionButton
           key={choice.key}
-          variant="outlined"
           fullWidth
-          disabled={busy}
-          onClick={() => onChoose(choice.key)}
+          busy={busy && chosen === choice.key}
+          unavailable={busy && chosen !== choice.key}
+          onClick={() => {
+            setChosen(choice.key)
+            onChoose(choice.key)
+          }}
         >
           {choice.label}
-        </Button>
+        </ActionButton>
       ))}
     </Box>
   )
