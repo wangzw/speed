@@ -34,12 +34,12 @@ const (
 	totpSeed       = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 )
 
-// realConfigPath answers the end-to-end configuration the demo's review build
-// runs on, from this package's directory. It is absolute so that a case can
+// realConfigPath answers the end-to-end configuration the demo runs on, from
+// this package's directory. It is absolute so that a case can
 // change the working directory afterwards without losing it.
 func realConfigPath(t *testing.T) string {
 	t.Helper()
-	path, err := filepath.Abs(filepath.Join("..", "..", "review", "sqlite.yaml"))
+	path, err := filepath.Abs(filepath.Join("..", "config.yaml"))
 	if err != nil {
 		t.Fatalf("resolving the end-to-end configuration: %v", err)
 	}

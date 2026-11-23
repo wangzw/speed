@@ -1,17 +1,17 @@
 /**
- * The review process's standard output, and the three things the tests read out
+ * The server's standard output, and the three things the tests read out
  * of it: a verification code, the line that records a message accepted by the
- * review SMS carrier, and the line the delivery pipeline writes for an external
+ * e2e SMS carrier, and the line the delivery pipeline writes for an external
  * send.
  *
- * The review assembly writes its logfmt records to standard output (pkg/log's
+ * The binary writes its logfmt records to standard output (pkg/log's
  * bootstrap chain). These are the test-side reads the honesty rules allow: the
  * carriers reach no vendor or relay, so the process log is the only place a
- * person running the review would see a code or a notice leave. Nothing else in
- * this directory may interpret log lines; the server fixture hands its captured
- * lines to `ProcessLog`, and the callers ask this module for a code by kind and
- * destination address, a carrier message by destination, template and language,
- * or an outbound record by channel, type and outcome.
+ * person running the e2e suite would see a code or a notice leave. Nothing
+ * else in this directory may interpret log lines; the server fixture hands
+ * its captured lines to `ProcessLog`, and the callers ask this module for a
+ * code by kind and destination address, a carrier message by destination,
+ * template and language, or an outbound record by channel, type and outcome.
  *
  * A verification code is read from the `verification_code` field, never from
  * `code`: the gateway registers `code` as a sensitive key name and the logging
@@ -23,7 +23,7 @@
  * quotes and newlines, and the code is written after them.
  */
 
-/** The two carriers the review assembly writes code records for. */
+/** The two carriers that write code records to the log. */
 export type VerificationKind = 'sms' | 'mail'
 
 /** A verification code read from the process log. */
@@ -53,7 +53,7 @@ const SMS_CARRIER_MESSAGES: ReadonlySet<string> = new Set([
 ])
 
 /**
- * The `msg` the review mail carrier writes for every message it sends. The line
+ * The `msg` the e2e mail carrier writes for every message it sends. The line
  * carries the rendered subject and bodies, not a template key or a language:
  * the request's language is what the rendered subject shows, so a caller that
  * needs to select one template in one language passes that language's subject
@@ -490,7 +490,7 @@ function outboundRecordOnLine(
  * it was resolved in. The mail line carries the destination and the rendered
  * subject and body, so the caller names the template and the language together
  * through the subject that language renders. Either line is the only evidence
- * a browser tier can read that the message left: the review carriers reach no
+ * a browser tier can read that the message left: the e2e carriers reach no
  * vendor or relay.
  */
 export async function waitForCarrierMessage(
@@ -506,7 +506,7 @@ export async function waitForCarrierMessage(
       timeoutMs: options.timeoutMs ?? 30_000,
       after: options.after ?? 0,
       what:
-        'the review carrier line' +
+        'the log carrier line' +
         (options.template === undefined ? '' : ` for ${options.template}`) +
         (options.subject === undefined ? '' : ` headed ${options.subject}`),
     },

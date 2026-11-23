@@ -20,8 +20,6 @@
 // an external account or a service outside the deployment stack — a social or
 // enterprise identity provider, the SMS family, mail over SMTP — is present at
 // compile time and simply stands itself down when its configuration is absent.
-// The review build adds only test controls and the loopback guard, never a
-// product capability.
 //
 // Importing a module's package is what puts it in the available set: each
 // registers itself in init, so the import is the whole of the wiring. The
@@ -563,11 +561,6 @@ func addStack(root *config.Command, s stack) {
 	// capability that is absent from this run is reported by the startup
 	// diagnostics, not by a different binary. See capabilities.go.
 	serve.Include(capabilityModules...)
-	// The review build's test controls and loopback guard. The list is empty in
-	// a default build, so this line names nothing there; see review.go and
-	// review_off.go. The configuration the review build reads is the copy under
-	// server/review, never one of testdata/.
-	serve.Include(reviewModules...)
 	serve.Include(s.kv, s.event, log.ModuleName, otel.ModuleName, s.exporter)
 	serve.Do(core.StageServe, untilCancelled(serveCommand))
 

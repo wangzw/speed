@@ -1,5 +1,3 @@
-//go:build !review
-
 package main
 
 import (
@@ -8,15 +6,12 @@ import (
 	"testing"
 )
 
-// mayLeaveRouteCountUnchanged is the baseline build's exemption table: the
-// routing modules whose removal cannot lower an endpoint's route count over the
-// baseline template, each with the reason. A module that mounts its routes only
-// when a switch is on mounts none here, so dropping it changes no route count
-// and the removal check cannot tell a real module from a name that registered
-// nothing. The check stays fail-closed otherwise: every other vacuous removal
-// fails. The review build has its own table in
-// differential_exemptions_review_test.go, because its configuration sets these
-// switches differently.
+// mayLeaveRouteCountUnchanged is the exemption table: the routing modules whose
+// removal cannot lower an endpoint's route count over the baseline template,
+// each with the reason. A module that mounts its routes only when a switch is on
+// mounts none here, so dropping it changes no route count and the removal check
+// cannot tell a real module from a name that registered nothing. The check stays
+// fail-closed otherwise: every other vacuous removal fails.
 //
 // org.personal is not exempt from the route-count table, but its removal is not
 // measurable there: the account module requires the provisioning seam it

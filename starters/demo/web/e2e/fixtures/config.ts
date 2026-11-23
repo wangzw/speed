@@ -1,19 +1,19 @@
 /**
- * The review assembly's configuration, one copy per started server.
+ * The e2e assembly's configuration, one copy per started server.
  *
- * The template under starters/demo/server/review is the assembly's own; this
- * module copies it into the server's temporary directory and replaces every
- * value that names a shared resource -- the listener address, the database,
- * the token signing key, the object store's root, and the origin the browser
- * and WebAuthn trust. One listener carries the API, the frontend and the
- * operations probes, so the browser origin is also where the fixture answers
- * its ops probes. A needle that is not in the template (or is there the
- * wrong number of times) fails the fixture: a run over a half-substituted
- * template would bind the published port or write into the source tree, and
- * that must be a loud harness error, never a silent fallback.
+ * The template under starters/demo/server is the assembly's own; this module
+ * copies it into the server's temporary directory and replaces every value that
+ * names a shared resource -- the listener address, the database, the token
+ * signing key, the object store's root, and the origin the browser and WebAuthn
+ * trust. One listener carries the API, the frontend and the operations probes,
+ * so the browser origin is also where the fixture answers its ops probes. A
+ * needle that is not in the template (or is there the wrong number of times)
+ * fails the fixture: a run over a half-substituted template would bind the
+ * published port or write into the source tree, and that must be a loud harness
+ * error, never a silent fallback.
  *
  * The remaining values are deliberately kept: the seeded operator, the open
- * signup settings, the SMS prefixes and the review carriers are what make the
+ * signup settings, the SMS prefixes and the log carriers are what make the
  * journeys possible. The template's social credentials are fake; when the
  * server fixture starts the local identity provider it passes `socialProvider`
  * and the Google block gains the issuer, the loopback switch and the CA file
@@ -68,9 +68,12 @@ export interface ServerConfigInput {
    */
   readonly seedMember?: boolean
   /**
-   * Seed the impersonation journey's two second factors on the operator. Off by
-   * default: those factors make every later sign-in of that operator complete a
-   * second factor, so only the journey that needs them turns it on.
+   * Give the operator the impersonation journey's two factors and shape acme so
+   * the operator stays outside it. Off by default: the factors make every later
+   * sign-in of that operator complete a second factor, so only the journeys
+   * that need them turn it on. The factors are written by the factorseed
+   * command after the seed has created the account; the phone they bind is
+   * proved by the spec through the product's own verification flow.
    */
   readonly seedImpersonation?: boolean
   /**
@@ -82,7 +85,7 @@ export interface ServerConfigInput {
    */
   readonly seedInvitee?: boolean
   /**
-   * Send invitation notices through the review mail carrier. On by default,
+   * Send invitation notices through the e2e mail carrier. On by default,
    * because that is the template's deployment shape. Off clears the notice's
    * acceptance origin, so the module answers the issue as `not_configured`
    * and the issue answer carries the one-time token: the process log masks an
@@ -139,15 +142,6 @@ export interface ServerConfigInput {
    */
   readonly mfaRequired?: boolean
   /**
-   * Replace the scheduler's tick with this duration. Off by default: the
-   * template's two-second tick feeds the member-organization journey's worker. A
-   * journey whose dispatch is a control click and whose only intended sends are
-   * its own turns the periodic trigger off with `0s`, which the scheduler
-   * treats as no trigger at all; the job queue that carries the click's
-   * dispatch polls independently.
-   */
-  readonly schedulerTick?: string
-  /**
    * Raise `ratelimit.limit` to this positive integer in the seed settings. Off
    * by default: the template keeps the declared hundred, and only a journey
    * whose own steps make more than that from one identity inside one counting
@@ -173,7 +167,8 @@ export interface ServerConfigInput {
    * make it acme's only tenant administrator. Off by default: the account owns
    * a mailbox the notification fixture would address, and only the journey that
    * drives the organization admin surface needs it. The account is added through
-   * the binary's own seed, with the review build proving its address.
+   * the binary's own seed, and the fixture proves its address through the
+   * product's own email-code flow once the server is up.
    */
   readonly seedTenantAdmin?: boolean
   /**
@@ -190,16 +185,6 @@ export interface ServerConfigInput {
    * organization admin surface needs it.
    */
   readonly seedSystemTenantAdmin?: boolean
-  /**
-   * Seed the review build's protected business tenant and its proved-email
-   * administrator. Off by default: only the journey that drives the settings
-   * surface's read-only state needs it, and every other server starts from
-   * the template's own seed. The tenant's identifier carries the review
-   * build's `protected-` prefix, which is the prefix the settings write seam
-   * refuses; every other management seam still admits the tenant, so its
-   * organization administration opens and only the settings page is read-only.
-   */
-  readonly seedProtectedTenant?: boolean
   /**
    * Hold the admission policy `tenant.admission.require-mfa` on at the
    * platform layer, so every tenant on this server reads it as enforced. Off
@@ -244,15 +229,16 @@ export interface ServerConfig {
 /**
  * The member the member-organization journey signs in as.
  *
- * The review template's seed holds the platform operator alone, and a platform
+ * The e2e template's seed holds the platform operator alone, and a platform
  * administrator's role binding is not a membership: the seeded tenant has no
  * member for the notification worker to address. When the member-organization
  * spec asks for it (`seedMember`), this account and its membership are added
  * to the configuration the harness writes, so the binary's own `seed` command
  * creates both -- the fixture never writes a row into a running database. The
- * account is seeded by an email address on purpose: the review type's default
- * channels include email and sms, the account holds no phone number, and the
- * worker skips a member with neither a proved phone nor an email identifier.
+ * account is seeded by an email address on purpose: the notification type's
+ * default channels include email and sms, the account holds no phone number,
+ * and the worker skips a member with neither a proved phone nor an email
+ * identifier.
  */
 export const e2eMember = {
   tenant: 'acme',
@@ -263,7 +249,7 @@ export const e2eMember = {
 } as const
 
 /**
- * The platform operator the review template seeds, and the tenant the
+ * The platform operator the e2e template seeds, and the tenant the
  * SMS-template rollout journey drives it in.
  *
  * The template's operator is a platform administrator and deliberately not a
@@ -290,7 +276,7 @@ export const smsRolloutOperator = {
  * holds it, and the acceptance is the write that proves the address (the seed
  * writes it as an administrator's assertion, which is not proof of ownership).
  * The account holds no membership, so the acceptance is what makes it a member
- * of the invited tenant. Its password is a review fixture, not a credential.
+ * of the invited tenant. Its password is a fixture value, not a credential.
  */
 export const e2eInvitee = {
   identifier: 'invitee@demo.test',
@@ -308,7 +294,7 @@ export const e2eInvitee = {
  * That is exactly the precondition the branch needs: the address exists on an
  * account, automatic linking is off, so a social login with the same verified
  * address is refused with the link-required refusal rather than taking the
- * account over. Its password is a review value, not a credential.
+ * account over. Its password is a fixture value, not a credential.
  */
 export const e2eSocialAccount = {
   identifier: identityProviderUser.email,
@@ -349,11 +335,11 @@ export const tenantSSOAdmin = {
  *
  * It is acme's only tenant administrator and holds no platform permission, so
  * it reaches the organization admin surface with the governed set alone. Its
- * address is proved by the review seed, because an unproved address is refused
- * every organization admin write; the username is its login name. The account
- * also owns the personal tenant every account gets at creation, which is the
- * tenant the journey switches to and back from. A review value, not a
- * credential.
+ * address is proved by the fixture through the product's own email-code flow
+ * once the server is up, because an unproved address is refused every
+ * organization admin write; the username is its login name. The account also
+ * owns the personal tenant every account gets at creation, which is the tenant
+ * the journey switches to and back from. A fixture value, not a credential.
  */
 export const e2eTenantAdmin = {
   tenant: 'acme',
@@ -395,29 +381,6 @@ export const e2eSystemTenantAdmin = {
 } as const
 
 /**
- * The review build's protected business tenant and its administrator.
- *
- * The review build refuses every settings write to a tenant whose identifier
- * carries the `protected-` prefix, while every other management seam admits
- * it: organization administration opens, and its security page reports itself
- * read-only with no switch. The tenant and its administrator are a fixture the
- * end-to-end harness adds through this configuration, never through the
- * shared review/sqlite.yaml -- the other review journeys are built on that
- * seed's exact tenant list.
- *
- * The administrator is a proved-email account, which is what lets its write
- * reach the host seam instead of being stopped as an unproved
- * self-registration's. Its password is a review value, not a credential.
- */
-export const e2eProtectedTenant = {
-  tenant: 'protected-acme',
-  identifier: 'protected-admin@demo.test',
-  username: 'protected-admin',
-  password: 'protected-admin-secret',
-  displayName: 'Protected Tenant Administrator',
-} as const
-
-/**
  * The impersonation journey's target: an ordinary member of acme that holds no
  * role binding, so it covers no organization admin page. It is the template's own
  * `member` account, seeded without a mailbox on purpose: the notification
@@ -445,6 +408,26 @@ export const e2eImpersonationAdmin = {
   identifier: 'acme-owner',
   password: 'acme-owner-secret',
   displayName: 'Acme Owner',
+} as const
+
+/**
+ * The factors the impersonation operator starts with, written by the
+ * factorseed command after the seed has created the account.
+ *
+ * The authenticator factor is activated two hours before now, well past
+ * authn.mfa.sensitive-min-age (one hour in this configuration), so the
+ * impersonation gate reads it as seasoned without an hour of waiting. The seed
+ * is fixed on purpose: a person walking the journey imports it into an
+ * authenticator app (issuer Speed Demo, account the operator id, SHA-1, six
+ * digits, thirty-second period), and the specs compute codes from it. The SMS
+ * factor is activated now and binds the phone the spec proves through the
+ * product's own verification flow. Both are fixture values, not credentials.
+ */
+export const e2eImpersonationFactors = {
+  account: 'operator',
+  totpSeed: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+  totpAge: '2h',
+  smsAge: '0s',
 } as const
 
 /**
@@ -528,19 +511,19 @@ function seedSocialAccount(): string {
 }
 
 /**
- * The invitee's `seed.accounts` entry, indented for the list it joins. The
- * address is the account's identifier and is marked proved: accepting an
- * invitation requires a signed-in account that holds the invited address as a
- * proved email, and these journeys use the invitation as the way a colleague
+ * The invitee's `seed.accounts` entry, indented for the list it joins. Accepting
+ * an invitation requires a signed-in account that holds the invited address as
+ * a proved email, and these journeys use the invitation as the way a colleague
  * joins, not as a branch of the proof flow (journey-invitation-to-tenant
- * drives that branch).
+ * drives that branch). The seed writes the address as an administrator's
+ * assertion; the server fixture proves it through the product's own email-code
+ * flow before the spec starts, so the acceptance finds the proof it requires.
  */
 function seedInviteeAccount(): string {
   return `    - identifier: ${quoted(e2eInvitee.identifier)}
       username: ${quoted(e2eInvitee.username)}
       password: ${quoted(e2eInvitee.password)}
-      display-name: ${quoted(e2eInvitee.displayName)}
-      proved-email: true`
+      display-name: ${quoted(e2eInvitee.displayName)}`
 }
 
 /**
@@ -558,10 +541,11 @@ function seedTenantSSOAdminAccount(): string {
 
 /**
  * One `seed.accounts` entry rendered for the list it joins. The username is
- * written beside an email identifier, which the seed requires; `proved-email`
- * asks the review build to prove the address, and `platform-admin` marks the
- * account for the platform role. Both flags are emitted only when set, so an
- * ordinary entry keeps the template's shape.
+ * written beside an email identifier, which the seed requires; `platform-admin`
+ * marks the account for the platform role. The flag is emitted only when set,
+ * so an ordinary entry keeps the template's shape. The seed no longer proves an
+ * address: the server fixture drives the product's email-code flow for the
+ * accounts a journey needs proved.
  */
 function seedAccountEntry(
   account: {
@@ -570,7 +554,7 @@ function seedAccountEntry(
     readonly password: string
     readonly displayName: string
   },
-  options: { readonly provedEmail?: boolean; readonly platformAdmin?: boolean } = {},
+  options: { readonly platformAdmin?: boolean } = {},
 ): string {
   const lines = [`    - identifier: ${quoted(account.identifier)}`]
   if (account.username !== undefined) {
@@ -578,7 +562,6 @@ function seedAccountEntry(
   }
   lines.push(`      password: ${quoted(account.password)}`)
   lines.push(`      display-name: ${quoted(account.displayName)}`)
-  if (options.provedEmail === true) lines.push('      proved-email: true')
   if (options.platformAdmin === true) lines.push('      platform-admin: true')
   return lines.join('\n')
 }
@@ -611,12 +594,6 @@ function defaultTenantAdmins(input: ServerConfigInput): E2ETenantAdmins[] {
     const globexAdmins: string[] = [smsRolloutOperator.identifier]
     if (input.tenantSSO === true) globexAdmins.push(tenantSSOAdmin.identifier)
     entries.push({ name: 'globex', admins: globexAdmins })
-  }
-  if (input.seedProtectedTenant === true) {
-    entries.push({
-      name: e2eProtectedTenant.tenant,
-      admins: [e2eProtectedTenant.identifier],
-    })
   }
   return entries
 }
@@ -658,7 +635,7 @@ function e2eTenants(input: ServerConfigInput): E2ETenantAdmins[] {
     const target = out.find((entry) => entry.name === e2eMember.tenant)
     if (target === undefined) {
       throw new Error(
-        `the review tenant ${e2eMember.tenant} is not in the seeded tenant list, ` +
+        `the e2e tenant ${e2eMember.tenant} is not in the seeded tenant list, ` +
           'so the tenant-layer require-mfa switch has no layer to land in',
       )
     }
@@ -808,7 +785,7 @@ export async function writeServerConfig(
   }
   // The social journey drives a real round trip through a provider the harness
   // starts on loopback. The Google block's client items are the template's
-  // fake review credentials, and its endpoint items are the method's public
+  // fake e2e credentials, and its endpoint items are the method's public
   // defaults; the three below are what point the method at the local provider.
   // The loopback switch is the seam's own, and the CA file is the one the
   // provider minted, so the restricted egress client verifies the provider's
@@ -888,12 +865,12 @@ export async function writeServerConfig(
     seedTenantEntries(e2eTenants(input)),
     'seed tenants',
   )
-  // The WebAuthn relying party is the browser's host. The review template
-  // pins it to localhost; a run that changed it would fail every ceremony with
-  // an origin mismatch, so its absence is a template drift.
+  // The WebAuthn relying party is the browser's host. The e2e template pins it
+  // to localhost; a run that changed it would fail every ceremony with an
+  // origin mismatch, so its absence is a template drift.
   if (!/^\s*rp-id:\s*localhost\s*$/m.test(body)) {
     throw new Error(
-      'the review configuration template no longer pins authn.mfa.webauthn.rp-id to localhost; ' +
+      'the e2e configuration template no longer pins authn.mfa.webauthn.rp-id to localhost; ' +
         'the harness opens the browser at http://localhost:<port>',
     )
   }
@@ -917,26 +894,13 @@ export async function writeServerConfig(
   // notification fixture would address, and the impersonation administrator is
   // an extra account the other two servers using that opt-in must count.
   if (input.seedTenantAdmin === true) {
-    extraAccounts.push(seedAccountEntry(e2eTenantAdmin, { provedEmail: true }))
+    extraAccounts.push(seedAccountEntry(e2eTenantAdmin))
   }
   if (input.seedUnprovedTenantAdmin === true) {
     extraAccounts.push(seedAccountEntry(e2eUnprovedTenantAdmin))
   }
   if (input.seedSystemTenantAdmin === true) {
     extraAccounts.push(seedAccountEntry(e2eSystemTenantAdmin))
-  }
-  if (input.seedProtectedTenant === true) {
-    extraAccounts.push(
-      seedAccountEntry(
-        {
-          identifier: e2eProtectedTenant.identifier,
-          username: e2eProtectedTenant.username,
-          password: e2eProtectedTenant.password,
-          displayName: e2eProtectedTenant.displayName,
-        },
-        { provedEmail: true },
-      ),
-    )
   }
   if (input.seedImpersonation === true) {
     extraAccounts.push(seedAccountEntry(e2eImpersonationAdmin))
@@ -970,7 +934,7 @@ export async function writeServerConfig(
   if (input.seedMember === true) memberships.push(seedMemberMembership())
   if (memberships.length > 0) {
     const entries = memberships.join('\n')
-    // The review template may already carry a members list (the impersonation
+    // The e2e template may already carry a members list (the impersonation
     // fixture seeds its target there). YAML rejects a mapping with the same key
     // twice, so the entries join that existing list rather than opening a
     // second key: they are inserted at the end of the list, which is the line
@@ -990,44 +954,13 @@ export async function writeServerConfig(
       const nextKeyAt = rest.search(/^ {2}[a-z-]+:/m)
       if (nextKeyAt === -1) {
         throw new Error(
-          'the review configuration template ends inside its members list; ' +
+          'the e2e configuration template ends inside its members list; ' +
             'the harness cannot tell where that list stops',
         )
       }
       const insertAt = membersAt + membersNeedle.length + nextKeyAt
       body = `${body.slice(0, insertAt)}${entries}\n${body.slice(insertAt)}`
     }
-  }
-
-  // A journey whose dispatch is its own click turns the periodic scheduler off:
-  // the template's tick feeds the member-organization worker, and a worker that
-  // addressed the same tenant would send the rollout journey's notice on its own
-  // windows. A tick at or below zero starts no trigger at all; the job queue
-  // that carries the click's dispatch polls on its own interval.
-
-  if (input.schedulerTick !== undefined) {
-    body = replaceOnce(
-      body,
-      'tick: 2s',
-      `tick: ${quoted(input.schedulerTick)}`,
-      'scheduler tick',
-    )
-  }
-
-  // The impersonation fixture's second factors change how the seeded operator
-  // signs in: every later sign-in must complete one. Only the journey that
-  // needs it turns it on; every other server starts from the template's own
-  // seed with the factors off. The tenant's administrator list is decided by
-  // e2eTenants, not here: the impersonation server keeps the operator outside
-  // acme and names its own administrator, while every other server names the
-  // operator acme's second administrator.
-  if (input.seedImpersonation !== true) {
-    body = replaceOnce(
-      body,
-      '\n  impersonation: true\n',
-      '\n  impersonation: false\n',
-      'seed impersonation switch',
-    )
   }
 
   // A journey that has to observe a self-service freshness window passing
@@ -1103,7 +1036,7 @@ export async function writeServerConfig(
  *
  * The deploy template seeds this account from the rendered operator secrets.
  * The fixture renders the same values so the browser can sign in as the
- * account the seed wrote; they are review values, not credentials that reach
+ * account the seed wrote; they are fixture values, not credentials that reach
  * a provider. The entry names an address and a username: the seed writes the
  * address as an administrator's assertion it does not prove, and the username
  * as the login name. The browser signs in with the username, because the
@@ -1120,7 +1053,7 @@ export const deployOperator = {
 /**
  * The values the deploy fixture renders into the deployment template. The
  * template's placeholders are filled by the container entrypoint from Fly
- * secrets; the fixture fills them with review values. The SMTP relay, the OAuth
+ * secrets; the fixture fills them with its own values. The SMTP relay, the OAuth
  * applications and the encryption key are fake and reach nothing: this journey
  * sends no mail and completes no social round trip.
  */

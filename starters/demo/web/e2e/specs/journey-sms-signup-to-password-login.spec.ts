@@ -1,24 +1,24 @@
 /**
  * The SMS first sign-in journey: an unregistered phone number signs in with a
- * code from the review log. A first login asks for the account it is about to
- * open -- a username, an optional display name, and a password with its
- * confirmation -- before it creates anything, so the account exists with that
- * username, password, display name and verified phone and lands in a personal
- * organization. The account holds two ways to sign in from the start: the phone
- * and the username with the password chosen at the step. Signing out and
- * signing back in with the username and password reaches the same personal
- * organization.
+ * code from the server's process log. A first login asks for the account it is
+ * about to open -- a username, an optional display name, and a password with
+ * its confirmation -- before it creates anything, so the account exists with
+ * that username, password, display name and verified phone and lands in a
+ * personal organization. The account holds two ways to sign in from the
+ * start: the phone and the username with the password chosen at the step.
+ * Signing out and signing back in with the username and password reaches the
+ * same personal organization.
  *
  * Everything is driven through the rendered product with mouse and keyboard:
  * channel tabs, the country/number control, headings, labels, buttons, the
  * account entry and the standing cards. The single non-UI read is the SMS
- * verification code from the review process log (fixtures/log.ts): the review
+ * verification code from the server's process log (fixtures/log.ts): the e2e
  * carrier reaches no vendor, so the process log is where a person running the
- * review reads it.
+ * e2e suite reads it.
  *
  * The username step also offers an optional display name, so the spec runs
  * both branches. This walkthrough types one, and the account entry names the
- * new account by it. A second test starts from a fresh review server and
+ * new account by it. A second test starts from a fresh e2e server and
  * leaves the field empty, and the account entry names that account after its
  * username.
  *
@@ -65,7 +65,10 @@ const PHONE_E164 = '+8613800138000'
 /** The display name the main walkthrough types at the username step. */
 const SIGNUP_DISPLAY_NAME = 'Phone Signup Person'
 
-/** A password the review policy accepts and that matches no identifier. */
+/**
+ * A password the account store's password policy accepts and that matches no
+ * identifier.
+ */
 const SIGNUP_PASSWORD = 'e2e-Password-123'
 
 /** The SMS channel's tab. */
@@ -363,7 +366,7 @@ test('sms-signup: a phone-code first sign-in with no display name takes the user
   demo,
 }) => {
   const { page, server, accounts } = demo
-  // Each test gets a review server of its own, so the walkthrough's phone
+  // Each test gets an e2e server of its own, so the walkthrough's phone
   // number is unregistered here too.
   const username = accounts.unique('smsunnamed').username
 

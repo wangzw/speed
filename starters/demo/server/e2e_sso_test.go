@@ -1,10 +1,8 @@
-//go:build review
-
 package main
 
-// The review build's enterprise SSO assembly: the OIDC login method, the two
-// outbound seams the end-to-end harness points at its local fixtures, and the
-// deployment default the review configuration keeps when nothing points them.
+// The enterprise SSO assembly: the OIDC login method, the two outbound seams
+// the end-to-end harness points at its local fixtures, and the deployment
+// default the e2e configuration keeps when nothing points them.
 
 import (
 	"crypto/ecdsa"
@@ -25,11 +23,11 @@ import (
 	"time"
 )
 
-// reviewSSOSeamsBlock is the review configuration's enterprise SSO block with
+// e2eSSOSeamsBlock is the e2e configuration's enterprise SSO block with
 // the deployment defaults: the loopback relaxation off and both outbound seams
 // empty. The end-to-end harness replaces this block whole when a spec asks for
 // the local fixtures, so the block is one needle in both places.
-const reviewSSOSeamsBlock = `    allow-private-egress: false
+const e2eSSOSeamsBlock = `    allow-private-egress: false
     dns-resolver: ""
     oidc-ca-file: ""`
 
@@ -76,29 +74,29 @@ func testCAFile(t *testing.T) string {
 	return path
 }
 
-// TestReviewRunStartsWithTheEnterpriseSSOSeams runs the review binary over the
-// review configuration with the enterprise SSO block pointed at a resolver
+// TestE2ERunStartsWithTheEnterpriseSSOSeams runs the binary over the
+// e2e configuration with the enterprise SSO block pointed at a resolver
 // address, a CA file and the loopback relaxation the local fixtures need. The
 // run reaches its ready record, the login discovery lists the enterprise method
 // the assembly now carries, and the startup diagnostics report the relaxation on
 // the SSO module's own item — the evidence that the module read this section.
-func TestReviewRunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
+func TestE2ERunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
 	t.Parallel()
-	binary := reviewBinary(t)
+	binary := e2eBinary(t)
 	serve, ports := startServing(t, func(ports []int) *process {
 		root := t.TempDir()
-		body := reviewConfigBody(t, root,
+		body := e2eConfigBody(t, root,
 			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
 			filepath.Join(root, "e2e.db"))
-		if !strings.Contains(body, reviewSSOSeamsBlock) {
-			t.Fatalf("the review configuration holds no enterprise SSO defaults block (%q)", reviewSSOSeamsBlock)
+		if !strings.Contains(body, e2eSSOSeamsBlock) {
+			t.Fatalf("the e2e configuration holds no enterprise SSO defaults block (%q)", e2eSSOSeamsBlock)
 		}
-		body = strings.Replace(body, reviewSSOSeamsBlock, fmt.Sprintf(
+		body = strings.Replace(body, e2eSSOSeamsBlock, fmt.Sprintf(
 			"    allow-private-egress: true\n    dns-resolver: %q\n    oidc-ca-file: %q",
 			testResolverAddress(t), testCAFile(t)), 1)
 		config := writeConfigFile(t, body)
-		seedReview(t, binary, config)
-		return startReview(t, binary, config)
+		seedE2E(t, binary, config)
+		return startE2E(t, binary, config)
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
@@ -131,30 +129,30 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
 	}
 }
 
-// TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset holds the deployment
-// default: the review configuration leaves both seams empty and the loopback
+// TestE2ERunStartsWithTheEnterpriseSSOSeamsUnset holds the deployment
+// default: the e2e configuration leaves both seams empty and the loopback
 // relaxation off, and a run over it still reaches its ready record. The values
 // are read as the binary's own configuration layer resolves them, then the
 // binary is started over the same file.
-func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
+func TestE2ERunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 	t.Parallel()
 	var sso struct {
 		AllowPrivateEgress bool   `config:"allow-private-egress"`
 		DNSResolver        string `config:"dns-resolver"`
 		OIDCCAFile         string `config:"oidc-ca-file"`
 	}
-	readEffective(t, "review/sqlite.yaml", "file:review/sqlite.yaml", "authn.sso", &sso)
+	readEffective(t, "e2e/config.yaml", "file:e2e/config.yaml", "authn.sso", &sso)
 	if sso.AllowPrivateEgress || sso.DNSResolver != "" || sso.OIDCCAFile != "" {
-		t.Fatalf("the review configuration states the enterprise SSO seams: %+v; a deployment keeps "+
+		t.Fatalf("the e2e configuration states the enterprise SSO seams: %+v; a deployment keeps "+
 			"the relaxation off and both seams empty", sso)
 	}
 
-	binary := reviewBinary(t)
+	binary := e2eBinary(t)
 	serve, _ := startServing(t, func(ports []int) *process {
-		config := "file://" + reviewConfig(t,
+		config := "file://" + e2eConfig(t,
 			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-		seedReview(t, binary, config)
-		return startReview(t, binary, config)
+		seedE2E(t, binary, config)
+		return startE2E(t, binary, config)
 	})
 
 	if strings.Contains(serve.output(), "authn.sso.allow-private-egress") {
@@ -163,19 +161,19 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 	}
 }
 
-// TestReviewRunServesTheSAMLLoginMethod runs the review binary over the review
+// TestE2ERunServesTheSAMLLoginMethod runs the binary over the e2e
 // configuration and reads the login discovery: the enterprise SAML method is
 // listed beside the enterprise OIDC one. authn.sso.saml is in every build's
 // capability ceiling and stands itself down unless its switch is on, so the
-// method's presence is what shows the review configuration reached the assembly.
-func TestReviewRunServesTheSAMLLoginMethod(t *testing.T) {
+// method's presence is what shows the e2e configuration reached the assembly.
+func TestE2ERunServesTheSAMLLoginMethod(t *testing.T) {
 	t.Parallel()
-	binary := reviewBinary(t)
+	binary := e2eBinary(t)
 	_, ports := startServing(t, func(ports []int) *process {
-		config := "file://" + reviewConfig(t,
+		config := "file://" + e2eConfig(t,
 			fmt.Sprintf("127.0.0.1:%d", ports[backendListener]))
-		seedReview(t, binary, config)
-		return startReview(t, binary, config)
+		seedE2E(t, binary, config)
+		return startE2E(t, binary, config)
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])

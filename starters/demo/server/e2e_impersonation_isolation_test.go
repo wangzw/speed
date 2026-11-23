@@ -1,13 +1,10 @@
-//go:build !review
-
 package main
 
-// The default-build side of the impersonation fixture. The SMS second factor is
+// The impersonation fixture's compile-time side. The SMS second factor is
 // compiled into the capability ceiling every build carries (see
 // capabilities.go); whether a run enables it is a configuration decision. The
-// impersonation fixture's one-minute freshness window stays in the review
-// configuration alone, and the declared default a baseline run reads is
-// unchanged.
+// impersonation freshness window is configuration, and the declared default a
+// baseline run reads is unchanged.
 
 import (
 	"reflect"
@@ -26,19 +23,19 @@ const smsFactorModuleName = "authn.mfa.sms"
 // baselineMaxAuthAge is the declared default of authn.impersonation.max-auth-age.
 const baselineMaxAuthAge = 5 * time.Minute
 
-// TestDefaultBuildCompilesTheSMSFactor holds the ceiling: a binary built
-// without the review tag registers the SMS second factor, so a deployment can
-// enable the step-up branch from configuration. Before the capability roster
-// became unconditional the module was imported only behind //go:build review.
+// TestDefaultBuildCompilesTheSMSFactor holds the ceiling: the binary registers
+// the SMS second factor, so a deployment can enable the step-up branch from
+// configuration. Before the capability roster became unconditional the module
+// was imported only behind a build tag.
 func TestDefaultBuildCompilesTheSMSFactor(t *testing.T) {
 	t.Parallel()
 	if _, ok := core.ProcessRegistry.Lookup(smsFactorModuleName); !ok {
-		t.Fatalf("the default build registers no module %q; the SMS second factor is part of the "+
+		t.Fatalf("the binary registers no module %q; the SMS second factor is part of the "+
 			"capability ceiling every build carries", smsFactorModuleName)
 	}
 }
 
-// TestDefaultBuildKeepsTheImpersonationDefaults holds the other half: the review
+// TestDefaultBuildKeepsTheImpersonationDefaults holds the other half: the e2e
 // configuration lowers authn.impersonation.max-auth-age to one minute, but the
 // declared default the baseline reads stays at five minutes. The value is read
 // from the settings schema the impersonation module declares, so a change to the
@@ -67,10 +64,10 @@ func TestDefaultBuildKeepsTheImpersonationDefaults(t *testing.T) {
 			}
 			if got != baselineMaxAuthAge {
 				t.Errorf("the declared authn.impersonation.max-auth-age default = %v, want %v; "+
-					"the one-minute value belongs to the review configuration alone", got, baselineMaxAuthAge)
+					"the one-minute value belongs to the e2e configuration alone", got, baselineMaxAuthAge)
 			}
 			return
 		}
 	}
-	t.Fatalf("the default build declares no authn.impersonation settings schema")
+	t.Fatalf("the binary declares no authn.impersonation settings schema")
 }

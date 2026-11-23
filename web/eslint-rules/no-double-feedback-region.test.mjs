@@ -54,8 +54,7 @@ function runRule(valid, invalid) {
 const SOCIAL_BINDINGS_FILE =
   'packages/account-ui/src/SocialBindingsSection.tsx'
 const ACCOUNTS_PAGE_FILE = 'packages/admin-ui/src/AccountsPage.tsx'
-const HOST_CONTROL_FILE =
-  'starters/demo/web/src/review-notice-control.tsx'
+const HOST_PAGE_FILE = 'starters/demo/web/src/pages/home-page.tsx'
 
 describe('no-double-feedback-region rule', () => {
   it('accepts one region per component', () => {
@@ -212,15 +211,15 @@ describe('no-double-feedback-region rule', () => {
       [],
       [
         {
-          filename: HOST_CONTROL_FILE,
+          filename: HOST_PAGE_FILE,
           code:
-            'function ReviewNoticeControl() { return <><WriteFeedbackRegion outcome={a.outcome} /><WriteFeedbackRegion outcome={b.outcome} /></> }',
+            'function PageBody() { return <><WriteFeedbackRegion outcome={a.outcome} /><WriteFeedbackRegion outcome={b.outcome} /></> }',
           errors: [
             {
               messageId: 'doubleRegion',
               data: {
-                file: HOST_CONTROL_FILE,
-                component: 'ReviewNoticeControl',
+                file: HOST_PAGE_FILE,
+                component: 'PageBody',
                 count: 2,
               },
             },

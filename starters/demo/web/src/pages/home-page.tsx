@@ -28,7 +28,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CardActionArea from '@mui/material/CardActionArea'
 import Typography from '@mui/material/Typography'
-import { featurePresence, useAuthState, useFeature, useFeatureState } from '@speed/auth-core'
+import { featurePresence, useAuthState, useFeatureState } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import {
   presentDeclarations,
@@ -44,7 +44,6 @@ import { useCurrentTenant } from '../chrome.js'
 import { useOrganizationAdminAdmission } from '../organization-admin.js'
 import { ACCOUNT_PATH, NOTIFICATIONS_PATH, ORGANIZATIONS_NEW_PATH } from '../paths.js'
 import { useAppNotice } from '../app-notice.js'
-import { ReviewNoticeControl } from '../review-notice-control.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /**
@@ -106,11 +105,6 @@ export function HomePage(): ReactElement {
       confirmation.current?.focus()
     }
   }, [notice.visible])
-  // The review build's notice control is offered only while the process
-  // declares its review-only feature. A baseline deployment never does, so the
-  // control is absent there; the gate fails closed while the feature document
-  // is unsettled.
-  const reviewNoticeServed = useFeature('demo.notification.control')
   return (
     <PageLayout title={t('home.heading')} description={t('home.intro')}>
       {notice.visible ? (
@@ -148,7 +142,6 @@ export function HomePage(): ReactElement {
           ))}
         </Box>
       </SectionCard>
-      {reviewNoticeServed ? <ReviewNoticeControl /> : null}
     </PageLayout>
   )
 }

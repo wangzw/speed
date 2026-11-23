@@ -13,12 +13,10 @@
  * src/runtime.ts has. Regeneration covers src/app-api/index.ts only,
  * never this file.
  *
- * The app owns two operations of its own today: the host's self-service
- * organization creation (`POST /api/v1/orgs`), generated from the contract,
- * and the review build's notice control (src/app-api/review-notice.ts), which
- * is hand-written because the review-only route is not in the baseline
- * contract. The generated half needs no mutator the platform package does not
- * export.
+ * The app's own operations are generated from the contract (the host's
+ * self-service organization creation, `POST /api/v1/orgs`), and they need no
+ * mutator the platform package does not export; the app keeps no hand-written
+ * operation of its own.
  */
 
 export {

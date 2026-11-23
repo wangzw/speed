@@ -3,12 +3,12 @@
  * invited address through the email code, accepts, and the operator sees the
  * member and the accepted invitation.
  *
- * The operator is the seeded platform administrator. The review seed writes
+ * The operator is the seeded platform administrator. The seed writes
  * its email address as an administrator's assertion, not as a proof of
  * ownership, and the invitation capability refuses a management write an
  * account with an unproved email makes. The spec therefore reaches the
  * journey's precondition the way a person does: the standing verification
- * notice, the code from the review process log (one of the two non-UI reads
+ * notice, the code from the server's process log (one of the two non-UI reads
  * this spec makes), and the verify action. The operator then enters the admin,
  * opens the invitation-and-members page, selects the seeded tenant and finds
  * the tenant's existing member.
@@ -18,11 +18,11 @@
  * unconfigured (`invitationMail: false`): the issue answer then carries the
  * one-time token, and the page's panel hands out the acceptance link. With the
  * notice sent the answer withholds the token -- the recipient holds the link
- * already -- and the review log masks every `spd_inv_` token, so a test that
- * must open the link itself cannot read it from the notice. The panel's copy
- * control and explicit close are asserted, and the link is gone from the page
- * after the close. Issuing to the same address again is refused as
- * `invitation-pending`: the address already holds an unexpired pending
+ * already -- and the server's process log masks every `spd_inv_` token, so a
+ * test that must open the link itself cannot read it from the notice. The
+ * panel's copy control and explicit close are asserted, and the link is gone
+ * from the page after the close. Issuing to the same address again is refused
+ * as `invitation-pending`: the address already holds an unexpired pending
  * invitation, so no second row or link appears and the operator keeps the one
  * already handed out. A resend instead acts on the existing row through
  * `/invitations/{id}/resend`, replacing the token without adding a row; this
@@ -97,7 +97,7 @@
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts. The operator's email verification code comes from the
- * review process log (fixtures/log.ts). The page's own member and invitation
+ * server's process log (fixtures/log.ts). The page's own member and invitation
  * reads are also observed: their account identifiers must never appear on the
  * rendered page, so the test learns the values from the responses the page
  * itself received and asserts neither section carries one.
@@ -132,19 +132,19 @@ import { switchToTenant } from '../helpers/switch-tenant'
 // wide enough for the container to render every column this journey reads.
 // This journey registers the recipient, so no invitee account is seeded. The
 // server sends no invitation notice, which is what leaves the one-time token
-// in the issue answer: the review log masks an `spd_inv_` token, and a sent
-// notice withholds it from the answer, so the link the recipient must open is
-// readable only from the panel of an unsent notice.
+// in the issue answer: the server's process log masks an `spd_inv_`
+// token, and a sent notice withholds it from the answer, so the link the
+// recipient must open is readable only from the panel of an unsent notice.
 test.use({
   seedInvitee: false,
   invitationMail: false,
   viewport: { width: 1920, height: 1080 },
 })
 
-/** The review server one test runs against. */
+/** The e2e server one test runs against. */
 type DemoServer = DemoTarget['server']
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -161,7 +161,7 @@ const MASKED_INVITEE = 'i***@demo.test'
 /** The member the tenant already holds before the journey starts. */
 const EXISTING_MEMBER = 'Demo Member'
 
-/** The existing member's login username, as the review seed writes it. */
+/** The existing member's login username, as the seed writes it. */
 const EXISTING_MEMBER_USERNAME = 'member'
 
 /**
@@ -299,7 +299,7 @@ function invitationLinkPanel(page: Page, email: string): Locator {
 /**
  * Sign the seeded operator in and prove the account's email, the journey's
  * precondition: the invitation capability refuses a management write an
- * account with an unproved email makes. The code comes from the review
+ * account with an unproved email makes. The code comes from the server's
  * process log, the standing notice's own verify entry asks for it.
  */
 async function proveOperatorEmail(demo: DemoTarget): Promise<void> {
@@ -660,9 +660,9 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
   try {
     await test.step('precondition: the operator signs in and proves the account email', async () => {
       // The journey's precondition is an operator whose email is proved. The
-      // review seed writes the address unproved, so the spec reaches the
+      // seed writes the address unproved, so the spec reaches the
       // precondition the way a person does: the standing notice's verify entry,
-      // the code from the review process log, and the verify action.
+      // the code from the server's process log, and the verify action.
       await proveOperatorEmail(demo)
     })
 

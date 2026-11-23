@@ -250,7 +250,7 @@ type InvitationRevoker interface {
 - **载体错误按原分类透传。** `mail.ErrThrottled`、`mail.ErrRejected`、`mail.ErrUncertain` 原样返回，由邀请模块决定怎么记；本模块不加自己的分类，也不重试。
 - **消息不带去重标识。** 每次签发或重发都画一个新令牌，重发改写同一条邀请的令牌，旧令牌随即失效；一个稳定的 `DedupeID` 会压掉一条合法的通知，而载体本身对每次调用只投递一次。
 
-装配上，`starters/demo/server/capabilities.go` 把本模块编入每次构建并交给 `serve` 点名；审查与本地配置给它一个接受来源并选 `mail.carrier: log`。日志载体只写进程日志、不把消息交给收件人，`authn.invitemail` 因此把邀请的投递结果报为 `not_configured`：每次签发或重发都由管理面的一次性面板交出接受链接，通知不写进进程日志；验证码等其余邮件仍按日志载体自己的行为处理（[design-starters](../design-starters.md)）。
+装配上，`starters/demo/server/capabilities.go` 把本模块编入每次构建并交给 `serve` 点名；端到端与本地配置给它一个接受来源并选 `mail.carrier: log`。日志载体只写进程日志、不把消息交给收件人，`authn.invitemail` 因此把邀请的投递结果报为 `not_configured`：每次签发或重发都由管理面的一次性面板交出接受链接，通知不写进进程日志；验证码等其余邮件仍按日志载体自己的行为处理（[design-starters](../design-starters.md)）。
 
 ### 路由
 

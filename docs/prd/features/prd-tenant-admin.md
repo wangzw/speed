@@ -176,7 +176,7 @@
 
 - **验收**：页面只出现这两项，各自带标题、说明、状态、生效范围与关闭影响；不出现键值表、命名空间导航、搜索或批量保存；平台级设置的名称、值、来源与存在性都不出现；受保护租户只渲染只读说明，不渲染开关。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步：两项策略的呈现与平台级名称不出现）、`tenant-admin: a platform-enforced policy is read-only and cannot be turned off` 与 `tenant-admin: the protected organization renders no switch and its write is refused`；设置步的零可见 API 断言见 REQ-tenant-admin-019。
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步：两项策略的呈现与平台级名称不出现）与 `tenant-admin: a platform-enforced policy is read-only and cannot be turned off`；设置步的零可见 API 断言见 REQ-tenant-admin-019。受保护租户一条没有端到端测试：只读呈现由 `web/packages/admin-ui/src/OrganizationSecurityPage.test.tsx` 的 `renders a protected tenant read-only with no switches` 覆盖；写入被拒由授权层的拒绝覆盖，`starters/demo/server/personal_settings_test.go` 的 `TestThePersonalTenantSettingsWriteIsRefused` 在个人租户上断言该层返回 403，请求到不了宿主的设置写入守卫，守卫本身由 `starters/demo/server/tenancy_test.go` 的 `TestTheSettingsWriteGuardRefusesAPersonalDomainWrite` 与 `pkg/settings/tenantadmin` 的 `TestAWriteSettingsRefusalIsProtected` 覆盖。
 
 ### REQ-tenant-admin-017
 
@@ -544,7 +544,7 @@
 
 - **验收**：两项策略是租户面可见设置的全集；平台为真时该项只读为开且标出平台强制；两项的任一组合下有效值都等于两层值的或；任一平台级设置键在租户面不可见、不可写、不可删。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步）、`tenant-admin: a platform-enforced policy is read-only and cannot be turned off` 与 `tenant-admin: the protected organization renders no switch and its write is refused`。
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-admin.spec.ts` 的 `tenant-admin: the administrator invites, governs and switches the organization`（设置步）与 `tenant-admin: a platform-enforced policy is read-only and cannot be turned off`。
 
 ### REQ-tenant-admin-063
 

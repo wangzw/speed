@@ -24,27 +24,6 @@ LINT_COMPOSITE_ACTIONS := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_
 # and silently come up empty on the other.
 MODULES := $(shell go work edit -json go.work | sed -n 's/^[[:space:]]*"DiskPath": "\(.*\)".*/\1/p')
 
-# The build tags whose cases the commit gate executes rather than merely
-# compiles. A tag listed here needs, among the legs `check` reaches, a test leg
-# that passes the tag and names its cases with -run: the tagged cases are what
-# the leg is for, and a leg without the pattern would re-run the unit cases as
-# well. tools/check_test_tiers.py holds this roster to the tree.
-#
-# `review` is the only tag left with a build variant: it adds the demo
-# program's test controls and loopback guard to the default build. The
-# capability roster no longer has a tag — every capability is compiled into the
-# default build and enabled at run time from configuration — so there is no
-# deploy leg to run.
-GATED_TEST_TAGS := review
-
-# The modules whose tree carries a file compiled under a gated tag. A module
-# with none has no case for the tagged leg to select, and running the leg there
-# would build every test binary for nothing. The match is on the constraint
-# text; a path found here is the directory holding the tagged file, and the
-# leg runs from there, so a tagged case in a subpackage still runs with its
-# own package.
-REVIEW_MODULES := $(shell paths='$(strip $(MODULES))'; if [ -n "$$paths" ]; then grep -rlE --include='*.go' '^//go:build .*review' $$paths 2>/dev/null | sed -E 's|/[^/]+$$||' | sort -u; fi)
-
 # The packages that carry an OpenAPI generation test. A package without one
 # declares no API document, and running the generator's pattern there would
 # build every test binary for nothing.
@@ -181,11 +160,11 @@ mark = @echo "== $(1) $$(date '+%H:%M:%S')"
 segment-output = 2>&1 | awk '{ printf "[$(1)] %s\n", $$0; fflush() }'
 
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
-        vet-integration vet-review vet-web-bundle test-review fmt lint tidy tidy-check actionlint repo-check tools-test check python-version \
+        vet-integration vet-web-bundle fmt lint tidy tidy-check actionlint repo-check tools-test check python-version \
         modules-present web-check web-check-static web-check-test web-check-build web-a11y web-browser e2e e2e-install dev fly \
         check-announce check-lint check-tidy-check check-repo-check check-tools-test check-vet-web-bundle \
-        check-web-check-static check-web-check-build check-build check-vet-integration check-vet-review \
-        check-test check-web-check-test check-test-review check-test-race
+        check-web-check-static check-web-check-build check-build check-vet-integration \
+        check-test check-web-check-test check-test-race
 
 # A target name may carry a digit (web-a11y, e2e), so the name pattern admits
 # one; the old [a-z-] pattern silently dropped every such entry point from the
@@ -276,14 +255,6 @@ test-integration-race: modules-present deps-up ## Test every module's integratio
 vet-integration: modules-present ## Compile every module's integration cases, running nothing
 	@failed=; $(call each,$(MODULES),vet integration,GOMAXPROCS=$(GATE_JOBS) go -C $$it vet -p=$(GATE_JOBS) -tags=integration ./...); $(each-end)
 
-# The review build is the default build plus the demo program's test controls and
-# loopback guard: its files carry the `review` tag and no leg above compiles
-# them. Compiling it here keeps the controls from rotting into not building, and
-# gives the tag the leg the test-tier gate requires of every tag written in the
-# tree.
-vet-review: modules-present ## Compile the review build, running nothing
-	@failed=; $(call each,$(MODULES),vet review,GOMAXPROCS=$(GATE_JOBS) go -C $$it vet -p=$(GATE_JOBS) -tags=review ./...); $(each-end)
-
 # The end-to-end tier's binaries embed a web bundle of their own rather than
 # the dev tree's dist: the `e2e` tag switches the embedded directory to
 # dist-e2e. Its files carry that tag and no leg above compiles them, and a tag
@@ -294,18 +265,6 @@ vet-review: modules-present ## Compile the review build, running nothing
 # than over every module in the workspace.
 vet-web-bundle: ## Compile the e2e-tagged build that embeds dist-e2e, running nothing
 	@GOMAXPROCS=$(GATE_JOBS) go -C starters/demo/server vet -p=$(GATE_JOBS) -tags=e2e ./...
-
-# The cases compiled only under the review tag are executed here: vet-review
-# above only builds them, so deleting or breaking the review guard would leave
-# every leg green. `-run` selects the TestReview prefix, which is why the leg
-# does not run the module's unit cases a second time; a review-tagged case whose
-# name falls outside the prefix is held to it by tools/check_test_tiers.py.
-test-review: modules-present ## Test the cases compiled only under the review tag
-	@if [ -z "$(strip $(REVIEW_MODULES))" ]; then \
-	  echo "no module carries a review-tagged Go file: the review cases are gone, which is not a pass." >&2; \
-	  exit 1; \
-	fi
-	@failed=; $(call each,$(REVIEW_MODULES),test review,GOMAXPROCS=$(GATE_JOBS) go -C $$it test -p=$(GATE_JOBS) -parallel=$(GATE_JOBS) -tags=review -run '^TestReview' -timeout 10m ./...); $(each-end)
 
 # `golangci-lint run` takes a process-wide lock by default, so two checkouts
 # running the gate at once make one of them die with "parallel golangci-lint
@@ -498,13 +457,12 @@ e2e: ## Run the end-to-end journey specs against the built demo binary
 # and starts it with no --config (starters/demo/server/.air.toml), so a local
 # run reads the defaults compiled into the binary plus whatever `mise exec`
 # loads from .env, the file .env.example documents; a variable set there
-# overrides the compiled-in default for this run. The review tag belongs to the
-# end-to-end tier, not this loop, so its test controls and loopback guard are
-# absent here. Ctrl-C stops air with the rest of the foreground group; the
-# recipe then stops the vite job too, so one interrupt ends both. The compiled
-# defaults put the backend and its ops probes on 127.0.0.1:8081 and the dev
-# server on 8080; a second checkout sets DEMO_HTTP__LISTENERS, DEMO_WEB_PORT and
-# DEMO_WEB_BACKEND_PROXY in its own .env (the pairs .env.example shows).
+# overrides the compiled-in default for this run. Ctrl-C stops air with the
+# rest of the foreground group; the recipe then stops the vite job too, so one
+# interrupt ends both. The compiled defaults put the backend and its ops probes
+# on 127.0.0.1:8081 and the dev server on 8080; a second checkout sets
+# DEMO_HTTP__LISTENERS, DEMO_WEB_PORT and DEMO_WEB_BACKEND_PROXY in its own .env
+# (the pairs .env.example shows).
 dev: ## Run the demo locally: vite dev server plus the default build under air
 	@if ! command -v mise >/dev/null 2>&1; then \
 	  echo "dev: mise is not on PATH. It supplies .env and the pinned toolchain; install it and run 'mise install'." >&2; \
@@ -551,7 +509,7 @@ fly: ## Build and release the demo program to Fly.io
 # run and reject most changes, so a red one is reported minutes in rather than
 # after every test has run. vet-web-bundle compiles the e2e-tagged build and
 # consumes nothing, so it keeps its place before the frontend work. The build,
-# then the compile-only vet legs, then the tests, the review cases and the
+# then the compile-only vet legs, then the tests and the
 # race detector, and the frontend build last. A segment prints the time it
 # starts, and every line of its output carries the segment's name, so a log of
 # a concurrent run still shows where the time went and which segment said what.
@@ -566,8 +524,8 @@ fly: ## Build and release the demo program to Fly.io
 check: ## Run everything a commit is gated on (no external service needed)
 check: check-lint check-tidy-check check-repo-check check-tools-test \
        check-vet-web-bundle check-web-check-static \
-       check-build check-vet-integration check-vet-review check-test \
-       check-web-check-test check-test-review check-test-race \
+       check-build check-vet-integration check-test \
+       check-web-check-test check-test-race \
        check-web-check-build
 
 check-announce:
@@ -597,7 +555,7 @@ check-web-check-static: check-announce
 	$(call mark,web-check-static)
 	@set -o pipefail; $(MAKE) --no-print-directory web-check-static $(call segment-output,web-check-static)
 
-check-web-check-build: check-announce | check-web-check-static check-build check-vet-integration check-vet-review check-test check-test-review check-test-race
+check-web-check-build: check-announce | check-web-check-static check-build check-vet-integration check-test check-test-race
 	$(call mark,web-check-build)
 	@set -o pipefail; $(MAKE) --no-print-directory web-check-build $(call segment-output,web-check-build)
 
@@ -609,10 +567,6 @@ check-vet-integration: check-announce
 	$(call mark,vet-integration)
 	@set -o pipefail; $(MAKE) --no-print-directory vet-integration $(call segment-output,vet-integration)
 
-check-vet-review: check-announce
-	$(call mark,vet-review)
-	@set -o pipefail; $(MAKE) --no-print-directory vet-review $(call segment-output,vet-review)
-
 check-test: check-announce
 	$(call mark,test)
 	@set -o pipefail; $(MAKE) --no-print-directory test $(call segment-output,test)
@@ -620,10 +574,6 @@ check-test: check-announce
 check-web-check-test: check-announce | check-web-check-static
 	$(call mark,web-check-test)
 	@set -o pipefail; $(MAKE) --no-print-directory web-check-test $(call segment-output,web-check-test)
-
-check-test-review: check-announce
-	$(call mark,test-review)
-	@set -o pipefail; $(MAKE) --no-print-directory test-review $(call segment-output,test-review)
 
 check-test-race: check-announce
 	$(call mark,test-race)

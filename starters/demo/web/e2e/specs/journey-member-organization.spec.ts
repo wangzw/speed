@@ -2,7 +2,7 @@
  * J8 -- a member of an organization works the notification surface end to end.
  *
  * The member signs in as an ordinary active member of the seeded tenant. A
- * system action -- the review build's notification worker, dispatching one
+ * system action -- the notification fixture's worker, dispatching one
  * notice per tenant per ten-second window -- addresses the notice to the
  * member, the avatar's unread badge reports it without a page reload, and the
  * notification surface lists it unread. The member marks it read, then marks
@@ -18,7 +18,7 @@
  * the account and the row that binds it to the tenant; no test writes a row
  * into the running database, and no test calls the API.
  *
- * The one thing the browser cannot show is the mailbox: the review mail
+ * The one thing the browser cannot show is the mailbox: the e2e mail
  * carrier reaches no relay, and the process log is not a journey's read (this
  * journey reads only the verification code). The note "without an email" is
  * therefore asserted as far as the product renders it -- the matrix's effective channel
@@ -43,7 +43,7 @@
  * push-to-the-connection property.
  *
  * REQ-notifications-030 is claimed for the fixed column order this assembly
- * shows, and not for the whole requirement: the review type declares its
+ * shows, and not for the whole requirement: the notification type declares its
  * optional channels in-app, email then sms, which is also the platform's order,
  * so a matrix that followed the host's declaration order would render the same
  * sequence. The reversed-declaration case is not driven here.
@@ -64,7 +64,7 @@
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts -- the interface strings from notification-ui, and the
- * notice's title and body from the review assembly's own notification catalog,
+ * notice's title and body from the notification fixture's own catalog,
  * whose keys are literal dotted strings. The notice is read in en-US because the
  * worker renders it in the recipient's language: this journey's seeded member
  * stores no language preference, so the dispatch resolves to the platform
@@ -88,8 +88,9 @@ import { expectClippedAnnouncement } from '../helpers/tenant-switch'
 // account and the membership the template does not seed.
 test.use({ seedMember: true })
 
-/** The notification type the review build declares. Its key is the matrix
- * row's label: the demo composes the matrix without a type-label override. */
+/** The notification type the notification fixture declares. Its key is the
+ * matrix row's label: the demo composes the matrix without a type-label
+ * override. */
 const TYPE_KEY = 'demo.notice'
 
 /** The seeded tenant's name, as its organization row renders it. */
@@ -147,8 +148,8 @@ async function switchToTenant(page: Page): Promise<void> {
 const NOTICE_LOCALE: CopyLocale = 'en-US'
 
 /**
- * The notice's rendered title and body, from the review catalog in the language
- * the dispatch resolved for this member.
+ * The notice's rendered title and body, from the demo notice catalog in the
+ * language the dispatch resolved for this member.
  */
 const NOTICE_TITLE = copyKey(
   'demoNotice',
@@ -207,14 +208,14 @@ function matrix(page: Page): Locator {
   })
 }
 
-/** The matrix row of the review type. */
+/** The matrix row of the notification type. */
 function preferenceRow(page: Page): Locator {
   return matrix(page)
     .getByRole('row')
     .filter({ hasText: TYPE_KEY })
 }
 
-/** One channel checkbox in the review type's row. */
+/** One channel checkbox in the notification type's row. */
 function channelToggle(
   page: Page,
   channel: 'in_app' | 'email' | 'sms',
@@ -445,7 +446,7 @@ test('member-organization: a member receives, reads and configures notifications
     await expect(table.getByRole('row').filter({ hasText: TYPE_KEY }))
       .toHaveCount(1)
 
-    // The review assembly serves both optional channels, so the matrix carries
+    // The e2e assembly serves both optional channels, so the matrix carries
     // the type column and the platform's fixed channel order: in-app, email,
     // sms. Reading the whole ordered set from the bundle proves the set and its
     // order without depending on a column index. The claim is narrow: this

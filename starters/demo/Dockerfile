@@ -60,12 +60,11 @@ WORKDIR /src/starters/demo/server
 # runtime image with no libc of its own to carry. go.work.sum is not committed
 # -- it is a workspace-mode artifact -- and the Go toolchain writes it during
 # this build.
-# The image is the default build. Every capability -- the social login methods,
-# the SMS family, the mail carriers and the verification code sender -- is
-# compiled in; which ones start is decided at run time from the configuration
-# this image's entrypoint renders. The relay's values come from Fly secrets,
-# never baked into this layer. The review-only test controls and loopback guard
-# are not part of this build.
+# The image carries the one binary. Every capability -- the social login
+# methods, the SMS family, the mail carriers and the verification code sender
+# -- is compiled in; which ones start is decided at run time from the
+# configuration this image's entrypoint renders. The relay's values come from
+# Fly secrets, never baked into this layer. Nothing test-only is compiled in.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/demo .
 
 FROM alpine:3.24

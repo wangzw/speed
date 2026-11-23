@@ -6,7 +6,7 @@
  * owner proved through the product's own self-service verification. The local
  * provider serves one fixed Google user, so the account is opened here with
  * that provider user's address: registration writes the account and the
- * verification code from the review mail carrier proves the address, which is
+ * verification code from the e2e mail carrier proves the address, which is
  * the precondition the link purpose is gated on. The whole account is the
  * product's own writes, never a row the fixture inserts.
  *
@@ -34,7 +34,7 @@
  * The provider is the fixture's real OpenID Connect server
  * (fixtures/identity-provider.ts): the browser navigates to its authorization
  * page and clicks its control, so no route is intercepted and no response is
- * faked. The server-to-server half is TLS against the private CA the review
+ * faked. The server-to-server half is TLS against the private CA the e2e
  * configuration names. The callback page's pending notice is not asserted:
  * against the local provider the completion and return to the account page can
  * happen before a locator observes the intermediate document, and the settled
@@ -85,7 +85,7 @@ import {
 
 /**
  * The existing account: a username and a password, with the provider's own
- * address proved as a contact. Registration writes both, and the review mail
+ * address proved as a contact. Registration writes both, and the e2e mail
  * carrier's code proves the address, so the link purpose is not refused for a
  * contact that is unproved.
  */
@@ -97,7 +97,7 @@ const linkerAccount = {
 
 /**
  * The account of the second path: a password account opened with the address
- * the provider serves and proved through the review mail carrier, so the link
+ * the provider serves and proved through the e2e mail carrier, so the link
  * purpose is not refused for an unproved contact. It holds no factor when the
  * test starts; the passkey it enrols is the first one, registered after the
  * session that enrols it authenticated.
@@ -183,7 +183,7 @@ function mfaSection(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
-/** The factor kinds the review assembly serves, each its own group. */
+/** The factor kinds the e2e assembly serves, each its own group. */
 type MfaKind = 'totp' | 'webauthn' | 'sms'
 
 /**
@@ -274,7 +274,7 @@ test('social-account-linking: a password account links Google, then signs in wit
 
   await test.step('an existing password account proves the provider address', async () => {
     // The registration signs the new account in; the verification code from
-    // the review mail carrier proves the address, so the account is the
+    // the e2e mail carrier proves the address, so the account is the
     // password holder with a proved email the journey starts from.
     await demo.accounts.registerAndVerify(linkerAccount)
     await demo.accounts.signOut()

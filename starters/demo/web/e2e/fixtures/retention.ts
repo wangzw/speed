@@ -8,7 +8,7 @@
  * `onExit`, after every reporter's `onEnd`, so the HTML report is complete when
  * the directory goes.
  *
- * The per-spec directories a failed test keeps -- the review server's
+ * The per-spec directories a failed test keeps -- the e2e server's
  * temporary directory and the deploy fixture's volume -- accumulate without
  * bound in the same way, so they are swept by the same age rule. They live
  * under the system temp directory, which is not `/tmp` on every platform, and
@@ -53,7 +53,7 @@ export const PER_SPEC_ROOT = tmpdir()
  */
 const RUN_DIRECTORY_NAME = /^speed-e2e-\d+-[0-9a-z]+-[0-9a-f]{8}$/
 
-/** The shape of a per-spec review server directory: `speed-e2e-server-<six>`. */
+/** The shape of a per-spec e2e server directory: `speed-e2e-server-<six>`. */
 const SERVER_DIRECTORY_NAME = /^speed-e2e-server-[A-Za-z0-9]{6}$/
 
 /** The shape of a deploy fixture's kept volume: `speed-e2e-deploy-<six>`. */
@@ -206,7 +206,7 @@ export async function removeExpiredRunDirectories(
 }
 
 /**
- * Remove the per-spec directories a failed test keeps -- the review server's
+ * Remove the per-spec directories a failed test keeps -- the e2e server's
  * temporary directory and the deploy fixture's volume -- once their
  * modification time is older than the retention window. They live under the
  * system temp directory, which is not `/tmp` on every platform, and each is

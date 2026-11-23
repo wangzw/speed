@@ -40,28 +40,13 @@ and each fails silently when the two drift apart:
     skip for a reason of its own, as one does when a sibling case has
     already reported the failure it would report again.
 
-  * A tag the commit gate only compiles is a layer that rots into not
-    running. `vet-review` builds the review-tagged files and executes
-    none, so deleting or breaking the code they cover leaves `make check`
-    green. The Makefile lists the tags whose cases the commit gate must
-    execute in GATED_TEST_TAGS; this gate holds every test file carrying
-    such a tag to a test leg the `check` target reaches, which passes the
-    tag and selects each of the file's cases with `-run`. A leg that
-    passes the tag without `-run`, or whose pattern also selects an
-    untagged case in the package, runs the unit layer a second time; a
-    case outside every pattern runs nowhere. All three are findings. Tags
-    absent from that roster -- the scheduled integration layer, whose leg
-    deliberately runs the untagged cases too -- answer to their own legs
-    and are left alone.
-
-Exit codes: 0 = the tags and the legs agree, no library skips a case, and
-every gated tag's cases are selected; 1 = at least one finding, each
-reported with file, line and what it is; 2 = infrastructure error -- the
-root is not a directory, the Makefile is missing or passes no tag, a
-workflow names a runner whose platform this gate does not know, a
-constraint does not parse, or a check found no subject at all (no tagged file, no library, or a gated tag
-no test file carries). A gate that checked nothing has not passed. Paths
-in the report are relative to --root.
+Exit codes: 0 = the tags and the legs agree and no library skips a case;
+1 = at least one finding, each reported with file, line and what it is;
+2 = infrastructure error -- the root is not a directory, the Makefile is
+missing or passes no tag, a workflow names a runner whose platform this gate
+does not know, a constraint does not parse, or a check found no subject at
+all (no tagged file, or no library). A gate that checked nothing has not
+passed. Paths in the report are relative to --root.
 """
 
 from __future__ import annotations
@@ -147,11 +132,6 @@ TESTING_IMPORT_RE = re.compile(r'^\s*(?:import\s+)?(?:\w+\s+)?"testing"\s*$', re
 TAGS_FLAG_RE = re.compile(r"-tags=(\S+)")
 RACE_FLAG_RE = re.compile(r"(?:^|\s)-race\b")
 
-# The Makefile variable whose value names the tags the commit gate must
-# execute. It is read from the file for the same reason the tags are: the
-# roster has one home.
-GATED_TAGS_RE = re.compile(r"^GATED_TEST_TAGS\s*:?=\s*(.*)$", re.MULTILINE)
-
 # A target line, and the recipe under it. `:=`, `?=` and `+=` are variable
 # assignments and not targets, so the colon is only a target separator when
 # no assignment operator follows it.
@@ -166,30 +146,6 @@ MAKE_CALL_RE = re.compile(r"\$\(MAKE\)(?:\s+--?[A-Za-z0-9-]+)*\s+([A-Za-z0-9_.-]
 # order-only separator is not one; the separator is dropped before the split,
 # and a reference is skipped because this parser does not expand variables.
 PREREQUISITE_RE = re.compile(r"[A-Za-z0-9_.-]+")
-
-# A recipe that runs test binaries: `go test`, or `go -C <dir> test`. A vet
-# leg compiles without running and is not one of them.
-GO_TEST_RE = re.compile(r"\bgo\s+(?:-C\s+\S+\s+)?test\b")
-
-# The `-run` flag in either spelling. The last one wins, as it does for the
-# toolchain.
-RUN_FLAG_RE = re.compile(r"(?:^|\s)-run(?:=|\s+)(\S+)")
-
-# A Go test or fuzz target: a declaration `go test -run` filters on. The
-# signature is read as well as the name, because a function shaped like a
-# test without the testing parameter is a helper the toolchain does not run,
-# and TestMain takes *testing.M and is never filtered. Benchmarks are left
-# out: a run that passes no `-bench` executes none of them.
-TEST_FUNC_RE = re.compile(
-    r"^func\s+((?:Test|Fuzz)(?:[A-Z0-9_][A-Za-z0-9_]*)?)\s*\(\s*(?:\w+\s+)?\*testing\.(?:T|F)\s*\)",
-    re.MULTILINE,
-)
-
-# An example function, which `go test -run` filters on too and which takes no
-# parameter.
-EXAMPLE_FUNC_RE = re.compile(
-    r"^func\s+(Example(?:[A-Z0-9_][A-Za-z0-9_]*)?)\s*\(\s*\)", re.MULTILINE
-)
 
 
 def _infra(message: str) -> None:
@@ -276,42 +232,6 @@ def legs_of_makefile(root: str) -> set[str]:
     return legs_in(makefile_text(root))
 
 
-def tags_of_recipe(text: str) -> set[str]:
-    """Return the build tags one leg's recipe passes with `-tags=`."""
-    tags: set[str] = set()
-    for match in TAGS_FLAG_RE.finditer(text):
-        for tag in match.group(1).strip("'\"").split(","):
-            tag = tag.strip("'\"")
-            if tag:
-                tags.add(tag)
-    return tags
-
-
-def run_pattern_of(text: str) -> str | None:
-    """Return the last `-run` pattern in a recipe, or None if it has none.
-
-    The quotes a shell or a Makefile wraps a pattern in are not part of
-    what the toolchain reads, so they are stripped here.
-    """
-    pattern = None
-    for match in RUN_FLAG_RE.finditer(text):
-        pattern = match.group(1)
-    return None if pattern is None else pattern.strip("'\"")
-
-
-def gated_tags_of(text: str) -> list[str]:
-    """Return the tags GATED_TEST_TAGS names, or an empty list if it is absent.
-
-    A tree that gates no tag skips the third check; a tree that names one
-    holds its files and its `check` target to each other.
-    """
-    match = GATED_TAGS_RE.search(text)
-    if not match:
-        return []
-    value = match.group(1).split("#", 1)[0]
-    return [tag for tag in value.strip().strip("'\"").split() if tag]
-
-
 def targets_of(text: str) -> dict[str, str]:
     """Return each Makefile target's recipe text, keyed by target name.
 
@@ -363,40 +283,6 @@ def prerequisites_of(text: str) -> dict[str, list[str]]:
             continue
         current = None
     return prerequisites
-
-
-def reachable_from(
-    targets: dict[str, str],
-    start: str,
-    prerequisites: dict[str, list[str]] | None = None,
-) -> set[str]:
-    """Return every target the `start` target reaches.
-
-    The walk follows both ways a target names another: a sub-make call in its
-    recipe, and a prerequisite. `check` declares its segments as
-    prerequisites, each of which calls its leg through `$(MAKE)`; a target
-    neither reaches is not part of the commit gate.
-    """
-    prerequisites = prerequisites or {}
-    seen: set[str] = set()
-    stack = [start]
-    while stack:
-        name = stack.pop()
-        if name in seen or name not in targets:
-            continue
-        seen.add(name)
-        stack.extend(MAKE_CALL_RE.findall(targets[name]))
-        stack.extend(prerequisites.get(name, ()))
-    return seen
-
-
-def constraint_of(path: str) -> str:
-    """Return the build constraint expression of a file, or the empty string."""
-    for line in head_of(path):
-        for prefix in CONSTRAINT_PREFIXES:
-            if line.startswith(prefix):
-                return line[len(prefix):].strip()
-    return ""
 
 
 def platforms_of_workflows(root: str) -> set[tuple[str, str]]:
@@ -594,29 +480,6 @@ def compiled_by_some_run(
     return False
 
 
-def test_names_of(path: str) -> list[str]:
-    """Return the test, fuzz and example names a file declares."""
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        text = fh.read()
-    return TEST_FUNC_RE.findall(text) + EXAMPLE_FUNC_RE.findall(text)
-
-
-def selects(pattern: str, name: str) -> bool:
-    """Report whether a `-run` pattern selects a case name.
-
-    The pattern is a regular expression matched against the name, and a
-    slash separates the name from a subtest pattern, which is not this
-    gate's subject. The match is a search, not an anchor, as in the
-    toolchain; an expression Python cannot read is an infrastructure
-    error rather than a finding, since this gate then judged nothing.
-    """
-    top = pattern.split("/", 1)[0]
-    try:
-        return re.search(top, name) is not None
-    except re.error as exc:
-        _infra(f"error: the -run pattern {pattern!r} is not a regular expression this gate can read: {exc}")
-
-
 def imports_testing(path: str) -> bool:
     """Report whether a file imports the testing package."""
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -657,14 +520,6 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     platforms = platforms_of_workflows(root)
-    gated = gated_tags_of(text)
-    # The tagged cases a gated tag selects, by tag: a test file's constraint
-    # says which build compiles it. A negated constraint excludes the file from
-    # the tagged build instead of selecting it, so it is not collected here.
-    gated_files: dict[str, list[tuple[str, list[str]]]] = {tag: [] for tag in gated}
-    # The untagged cases, by package: a tagged leg whose -run pattern also
-    # selects one of these runs the unit layer a second time.
-    untagged: dict[str, set[str]] = {}
 
     tagged, stranding, skips, libraries = 0, 0, 0, 0
     for path in sorted(walk_go_files(root)):
@@ -694,15 +549,6 @@ def main(argv: list[str] | None = None) -> int:
                 f"constraint and file name, so this file is compiled by no run; the "
                 f"workflows run on {ran_on}"
             )
-        if path.endswith("_test.go"):
-            constraint = constraint_of(path)
-            selected = [] if "!" in constraint else sorted(tier_tags.intersection(gated))
-            if gated and (selected or not tier_tags):
-                names = test_names_of(path)
-                for tag in selected:
-                    gated_files[tag].append((relative, names))
-                if not tier_tags:
-                    untagged.setdefault(os.path.dirname(relative), set()).update(names)
         if path.endswith("_test.go") or not imports_testing(path):
             continue
         libraries += 1
@@ -725,77 +571,10 @@ def main(argv: list[str] | None = None) -> int:
             "second check has no subject"
         )
 
-    # The commit gate's gated tags: a test leg the check target reaches passes
-    # the tag and selects every case a file under that tag declares. The leg is
-    # read from the recipe rather than restated here, so a renamed target or a
-    # changed pattern arrives with the case it covers.
-    targets = targets_of(text)
-    reached = reachable_from(targets, "check", prerequisites_of(text))
-    gated_legs: dict[str, list[tuple[str, str | None]]] = {tag: [] for tag in gated}
-    for name in sorted(reached):
-        recipe = targets[name]
-        if not GO_TEST_RE.search(recipe):
-            continue
-        for tag in sorted(tags_of_recipe(recipe).intersection(gated)):
-            gated_legs[tag].append((name, run_pattern_of(recipe)))
-
-    gating = 0
-    for tag in gated:
-        if not gated_files[tag]:
-            _infra(
-                f"error: {os.path.join(root, 'Makefile')} gates the tag {tag} but no test "
-                "file carries it, so the commit gate executes no case from that layer -- a "
-                "check with no subject has not passed"
-            )
-        legs_for_tag = gated_legs[tag]
-        if not legs_for_tag:
-            gating += 1
-            print(
-                f"Makefile: the tag {tag} is listed in GATED_TEST_TAGS, but no test leg the "
-                "check target reaches passes it; the cases it selects are executed by no run "
-                "in the commit gate"
-            )
-            continue
-        for name, pattern in legs_for_tag:
-            if pattern is None:
-                gating += 1
-                print(
-                    f"Makefile: {name} passes -tags={tag} without -run, so it runs the "
-                    "untagged cases as well; a -run pattern is what keeps the leg to the "
-                    "tagged cases"
-                )
-        patterned = [(name, pattern) for name, pattern in legs_for_tag if pattern]
-        if not patterned:
-            # The missing -run finding above already reports this tag.
-            continue
-        repeated: set[tuple[str, str, str]] = set()
-        for relative, names in gated_files[tag]:
-            directory = os.path.dirname(relative)
-            for case in names:
-                if not any(selects(pattern, case) for _, pattern in patterned):
-                    gating += 1
-                    print(
-                        f"{relative}: {case} is compiled under the tag {tag}, but no -run "
-                        "pattern of a test leg the check target reaches selects it; the leg "
-                        "executes no case from this file"
-                    )
-            for name, pattern in patterned:
-                for case in sorted(untagged.get(directory, ())):
-                    if (name, pattern, directory) in repeated:
-                        continue
-                    if selects(pattern, case):
-                        repeated.add((name, pattern, directory))
-                        gating += 1
-                        print(
-                            f"Makefile: {name}'s -run pattern {pattern!r} also selects the "
-                            f"untagged case {case} in {directory}/, so the tagged leg runs "
-                            "it a second time"
-                        )
-
-    if stranding or skips or gating:
+    if stranding or skips:
         print(
             f"test-tiers: {stranding} file(s) compiled by no run, {skips} skip call(s) in "
-            f"{libraries} librar(y|ies) read, {gating} commit-gate finding(s)",
+            f"{libraries} librar(y|ies) read",
             file=sys.stderr,
         )
         return 1

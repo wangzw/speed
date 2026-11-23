@@ -147,7 +147,7 @@ jobs:
       - name: Run the static checks
         env:
           GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint
-        run: make lint tidy-check repo-check tools-test vet-web-bundle vet-integration vet-review
+        run: make lint tidy-check repo-check tools-test vet-web-bundle vet-integration
 
   go-test:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
@@ -180,8 +180,8 @@ jobs:
             go-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-
             go-${{ runner.os }}-
 
-      - name: Run the Go build, unit tests and review cases
-        run: make build test test-review
+      - name: Run the Go build and unit tests
+        run: make build test
 
       # One job writes the Go caches. Four jobs saving one key at once make
       # every save but the first fail on the reservation, so the rest restore

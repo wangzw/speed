@@ -40,18 +40,18 @@ import (
 // under test.
 //
 // A variant process is this test binary re-executed with DEMO_SERVE_WITHOUT
-// naming modules to drop from the serve roster — baselineServe and, under the
-// review tag, reviewModules. TestMain sees the variable, skips the build and
-// the test run, prints the final inclusion list to standard error, and runs the
-// program. Product code carries no switch.
+// naming modules to drop from the serve roster — baselineServe and
+// capabilityModules. TestMain sees the variable, skips the build and the test
+// run, prints the final inclusion list to standard error, and runs the program.
+// Product code carries no switch.
 
 const serveWithoutEnv = "DEMO_SERVE_WITHOUT"
 
 // serveWithout drops the named modules from the serve roster — the baseline
-// list and the review build's additions — and reports the final list. It runs
-// before the command tree is built, so the serve command assembles what the
-// lists name and nothing else. A review module leaves with the baseline module
-// whose capability it requires; the variant would not start otherwise.
+// list and the capability ceiling — and reports the final list. It runs before
+// the command tree is built, so the serve command assembles what the lists name
+// and nothing else. A module leaves with the baseline module whose capability it
+// requires; the variant would not start otherwise.
 func serveWithout(list string) {
 	drop := map[string]bool{}
 	for _, name := range strings.Split(list, ",") {
@@ -70,16 +70,14 @@ func serveWithout(list string) {
 	}
 	baselineServe = without(baselineServe)
 	capabilityModules = without(capabilityModules)
-	reviewModules = without(reviewModules)
-	kept := slices.Concat(baselineServe, capabilityModules, reviewModules)
+	kept := slices.Concat(baselineServe, capabilityModules)
 	fmt.Fprintln(os.Stderr, "serve-without: "+strings.Join(kept, ","))
 }
 
 // serveRoster is every module a serve run names in this build: the platform
-// core, the capability ceiling, and the review-only controls (empty in a
-// default build).
+// core and the capability ceiling.
 func serveRoster() []string {
-	return slices.Concat(baselineServe, capabilityModules, reviewModules)
+	return slices.Concat(baselineServe, capabilityModules)
 }
 
 // expectedOwners is the prefix-to-endpoint table the case judges against. It is
@@ -427,9 +425,9 @@ type assembledModule struct {
 }
 
 // assembledDescriptors reads the modules the reference run assembles — the
-// platform core, the capability ceiling and, under the review tag, the review
-// controls — with their dependency declarations and the endpoints their
-// fragments describe. Every list is a seed of the variants, and all of them are
+// platform core and the capability ceiling — with their dependency declarations
+// and the endpoints their fragments describe. Every list is a seed of the
+// variants, and all of them are
 // in the dependency graph so that a variant dropping a module also leaves out
 // every module that requires it. A listed name that no module registers is a
 // failure: the lists and the registry would otherwise drift apart silently.
@@ -620,7 +618,7 @@ func routeCountOutcome(removed, endpoint string, before, after int) (exemption s
 // matrix silently. assembledDescriptors and classifyModules are the functions
 // the differential case itself uses, so the groups held here are the ones it
 // runs. Every module a build assembles is a seed of its own, so the start
-// property is held for the review build's additions as well.
+// property is held for every capability the binary carries.
 func TestEveryRoutingVariantMustStart(t *testing.T) {
 	t.Parallel()
 	modules := assembledDescriptors(t)
@@ -663,10 +661,9 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 			t.Errorf("mayLeaveRouteCountUnchanged names %q, which this case does not classify as routing", name)
 		}
 	}
-	// Every capability and review-control module a build assembles is a seed of
-	// a variant of its own, so the start property is held for it too. A default
-	// build's review list is empty, but its capability ceiling is not.
-	for _, name := range slices.Concat(capabilityModules, reviewModules) {
+	// Every capability module a build assembles is a seed of a variant of its
+	// own, so the start property is held for it too.
+	for _, name := range capabilityModules {
 		if classes[name] == classShaping {
 			continue
 		}
@@ -678,14 +675,12 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 }
 
 // buildGroups writes the variants: one seed per baseline routing module, one
-// per module the review build adds, and the groups that leave one endpoint with
-// no routes at all. Each variant is seeded by exactly one module; the modules
-// that non-optionally require what it provides go with it, and nothing else
-// does. The capability modules and the review controls are seeds of their own
-// so the start property is held for every module the build assembles, not only
-// for the platform core's routing ones. A default build's review list is empty,
-// but its capability ceiling is not: those seeds hold the capability modules to
-// the same property.
+// per capability module, and the groups that leave one endpoint with no routes
+// at all. Each variant is seeded by exactly one module; the modules that
+// non-optionally require what it provides go with it, and nothing else does. The
+// capability modules are seeds of their own so the start property is held for
+// every module the build assembles, not only for the platform core's routing
+// ones.
 func buildGroups(modules map[string]*assembledModule, classes map[string]moduleClass) []variantGroup {
 	names := make([]string, 0, len(baselineServe))
 	for _, name := range baselineServe {
@@ -719,12 +714,11 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 		}
 	}
 
-	// The capability modules and review controls are seeds of their own. A
-	// shaping module is left in place for the same reason the core's shaping
-	// modules are: its absence changes every answer for a reason unrelated to
-	// the assembly.
+	// The capability modules are seeds of their own. A shaping module is left in
+	// place for the same reason the core's shaping modules are: its absence
+	// changes every answer for a reason unrelated to the assembly.
 	var extras []string
-	for _, name := range slices.Concat(capabilityModules, reviewModules) {
+	for _, name := range capabilityModules {
 		if modules[name] != nil && !slices.Contains(names, name) && classes[name] != classShaping {
 			extras = append(extras, name)
 		}
@@ -749,8 +743,8 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 	}
 
 	// The endpoint-wide variants name every routing module assembled for that
-	// endpoint, the capability modules and review controls included, so the
-	// group still removes the endpoint's whole routing surface.
+	// endpoint, the capability modules included, so the group still removes the
+	// endpoint's whole routing surface.
 	endpointSeeds := slices.Concat(names, extras)
 	for _, endpoint := range []string{"admin", "api"} {
 		seed := map[string]bool{}
@@ -905,10 +899,14 @@ func (p *variantProcess) stop(limit time.Duration) {
 
 // topology is one deployment shape: the merged one keeps web on the backend
 // listener beside the API, and the split one gives it a listener of its own.
+// body names the configuration the run reads; nil is the baseline differential
+// template, and a case that measures a configuration with capabilities turned
+// on names that configuration's own body.
 type topology struct {
 	name  string
 	ports int
 	split bool
+	body  func(*testing.T, []int, string) string
 }
 
 // splitEndpoints is the split topology's endpoint table. It is written whole
@@ -942,16 +940,24 @@ const splitEndpoints = `  endpoints:
 // endpoint onto a listener of its own.
 func (topo topology) render(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
-	body := differentialConfigBody(t, ports[:listenerCount], dsn)
-	// The address shield is left off in this case's configuration. It counts
-	// requests per client address in this process's memory, and the baseline
-	// sends more requests before the matrix than a variant does (the expectation
-	// and comparator warm-ups), so the two runs would compare a 429 against a
-	// 401 for reasons that are about earlier traffic rather than about the
-	// assembled modules. This case's property is endpoint selection; the
-	// shipping default, which does shield the account endpoint, is held by
-	// TestServeAnswersTheProbes.
-	body += "ratelimit:\n  address-endpoints: []\n"
+	var body string
+	if topo.body != nil {
+		// A caller-supplied configuration carries its own shield. The case
+		// that supplies one reads route counts and sends no probe matrix, so
+		// the shield has nothing to count.
+		body = topo.body(t, ports[:listenerCount], dsn)
+	} else {
+		body = differentialConfigBody(t, ports[:listenerCount], dsn)
+		// The address shield is left off in this case's configuration. It counts
+		// requests per client address in this process's memory, and the baseline
+		// sends more requests before the matrix than a variant does (the expectation
+		// and comparator warm-ups), so the two runs would compare a 429 against a
+		// 401 for reasons that are about earlier traffic rather than about the
+		// assembled modules. This case's property is endpoint selection; the
+		// shipping default, which does shield the account endpoint, is held by
+		// TestServeAnswersTheProbes.
+		body += "ratelimit:\n  address-endpoints: []\n"
+	}
 	if !topo.split {
 		return body
 	}
@@ -1604,34 +1610,6 @@ func removalRouteCounts(t *testing.T, topo topology, groups []variantGroup) (map
 		after[group.id] = chains
 	}
 	return before, after
-}
-
-// assertRouteCountsLowered holds a removal that no exemption may excuse: every
-// endpoint the removed modules describe loses routes. It is the review build's
-// proof that the baseline template's exemption would be false there.
-func assertRouteCountsLowered(t *testing.T, group variantGroup, before, after map[string]chainLine) {
-	t.Helper()
-	measured := false
-	for _, removed := range group.modules {
-		for _, endpoint := range endpointOfModule(t, removed) {
-			measured = true
-			was, known := before[endpoint]
-			now, seen := after[endpoint]
-			if !known || !seen {
-				t.Errorf("the run wrote no chain for endpoint %q, so the removal of %q cannot be measured",
-					endpoint, removed)
-				continue
-			}
-			if now.routes >= was.routes {
-				t.Errorf("dropping %v left endpoint %q with %d route(s), not fewer than the baseline's %d: "+
-					"the removal is not vacuous, so an exemption here would be false",
-					group.modules, endpoint, now.routes, was.routes)
-			}
-		}
-	}
-	if !measured {
-		t.Errorf("the variant %q describes no endpoint, so its removal cannot be measured", group.id)
-	}
 }
 
 // opsSurface answers the routes the operations fragment declares, as patterns.

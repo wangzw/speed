@@ -1,5 +1,5 @@
 /**
- * The per-test review server: one temporary directory, one sqlite file, one
+ * The per-test e2e server: one temporary directory, one sqlite file, one
  * process, real HTTP.
  *
  * Every spec starts its own server so a journey never inherits state from the
@@ -23,8 +23,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { totpCode } from '../helpers/totp'
-import { writeServerConfig, type ServerConfig } from './config'
+import {
+  e2eImpersonationFactors,
+  e2eInvitee,
+  e2eTenantAdmin,
+  writeServerConfig,
+  type ServerConfig,
+} from './config'
 import { startDNSStub, type DNSStub } from './dns-stub'
+import { readSeededFactors } from './factor-seed'
 import {
   enterpriseIdentityProviderRecordName,
   startEnterpriseIdentityProvider,
@@ -39,6 +46,7 @@ import {
   waitForCarrierMessage,
   waitForOutboundRecord,
   waitForReady,
+  waitForVerificationCode,
   type CarrierMessage,
   type OutboundRecord,
 } from './log'
@@ -80,8 +88,8 @@ const MAX_BIND_ATTEMPTS = 3
 
 interface HarnessManifest {
   readonly binary: string
-  /** The default binary the deploy fixture starts. */
-  readonly deployBinary: string
+  /** The helper that writes the impersonation operator's aged factors. */
+  readonly factorSeed: string
   /** The helper that signs the SAML identity provider's responses. */
   readonly samlSigner: string
   readonly repoRoot: string
@@ -98,7 +106,7 @@ export async function readHarnessManifest(): Promise<HarnessManifest> {
   } catch (error) {
     throw new Error(
       `the harness manifest ${MANIFEST_PATH} could not be read; the Playwright ` +
-        `global setup builds the front end and the review binary and writes it. ` +
+        `global setup builds the front end and the e2e binary and writes it. ` +
         `Run the tier through \`make e2e\`, or set GATE_JOBS and run \`pnpm -C web ` +
         `--filter demo-web exec playwright test --config e2e/playwright.config.ts\`: ` +
         `${String(error)}`,
@@ -124,13 +132,17 @@ function childEnv(): NodeJS.ProcessEnv {
   return env
 }
 
-/** Run one one-shot command of the binary to completion. */
+/**
+ * Run one one-shot command of the binary to completion. A successful run
+ * answers both streams, because a command's one JSON line is part of its
+ * result: the caller that reads it must not take the exit status alone.
+ */
 function runCommand(
   binary: string,
   args: readonly string[],
   cwd: string,
   what: string,
-): Promise<void> {
+): Promise<{ readonly stdout: string; readonly stderr: string }> {
   return new Promise((resolve, reject) => {
     execFile(
       binary,
@@ -143,7 +155,7 @@ function runCommand(
       },
       (error, stdout, stderr) => {
         if (error === null) {
-          resolve()
+          resolve({ stdout, stderr })
           return
         }
         reject(
@@ -189,7 +201,7 @@ async function ensureBinary(binary: string): Promise<void> {
     }
   } catch (error) {
     throw new Error(
-      `the harness manifest names the review binary ${binary}, but it cannot ` +
+      `the harness manifest names the e2e binary ${binary}, but it cannot ` +
         `be used (${String(error)}). The binary is built into /tmp by the ` +
         `Playwright global setup; a stale manifest is rebuilt by rerunning ` +
         `the tier through \`make e2e\`, or with GATE_JOBS set, \`pnpm -C web ` +
@@ -302,7 +314,7 @@ function parseFlowReply(body: string): FlowReply {
   }
 }
 
-/** The authenticator's step, matching the review register's fixed thirty seconds. */
+/** The authenticator's step, matching the fixed thirty-second period. */
 const TOTP_STEP_MS = 30_000
 
 /**
@@ -312,7 +324,7 @@ const TOTP_STEP_MS = 30_000
  *
  * An account holding a second factor parks the flow on that factor. When the
  * caller names the authenticator seed, the flow selects the authenticator
- * factor, answers its challenge with the code the review seed produces, and
+ * factor, answers its challenge with the code the seeded seed produces, and
  * completes with the elevated session; a flow that asks for a factor the caller
  * did not name fails loudly rather than completing at the wrong level.
  *
@@ -406,6 +418,62 @@ async function signInThroughApi(
     throw new Error(`the API sign-in of ${identifier} answered no access token`)
   }
   return parsed.accessToken
+}
+
+/**
+ * Prove a seeded account's email address through the product's own identifier
+ * verification flow: sign in, ask the mail carrier for a code, read the code
+ * from its log line, and submit it. The seed writes a seeded address as the
+ * administrator's assertion, so the fixture restores the proved state an
+ * invitation acceptance and an organization write require, without writing a
+ * row around the product.
+ *
+ * The account's email address is its identifier, which the seed already
+ * carries; the add call asks for a code to that address, and the verify call
+ * writes the proof. The session signs in with the password alone: these
+ * accounts hold no second factor.
+ */
+async function proveEmailThroughProduct(
+  origin: string,
+  account: {
+    readonly username: string
+    readonly password: string
+    readonly identifier: string
+  },
+  log: ProcessLog,
+): Promise<void> {
+  const token = await signInThroughApi(origin, account.username, account.password)
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token}`,
+  }
+  const after = log.mark()
+  const asked = await callApi(`${origin}/api/v1/auth/identifiers`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ kind: 'email', value: account.identifier }),
+  })
+  if (asked.status !== 200) {
+    throw new Error(
+      `asking for a code to prove ${account.identifier} answered ${asked.status}:\n${asked.body}`,
+    )
+  }
+  const { code } = await waitForVerificationCode(
+    log,
+    'mail',
+    account.identifier,
+    { after },
+  )
+  const verified = await callApi(`${origin}/api/v1/auth/identifiers/verify`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ code }),
+  })
+  if (verified.status !== 200) {
+    throw new Error(
+      `proving ${account.identifier} answered ${verified.status}:\n${verified.body}`,
+    )
+  }
 }
 
 /** The input of one settings write the fixture makes through the product. */
@@ -560,7 +628,7 @@ async function startEnterpriseProvider(
 
 /** A started server. */
 export interface E2EServer {
-  /** The review binary that was built. */
+  /** The e2e binary that was built. */
   readonly binary: string
   /** The server's temporary directory. */
   readonly dir: string
@@ -600,7 +668,7 @@ export interface E2EServer {
   /** Everything the child wrote to standard error, joined. */
   readonly stderr: string
   /**
-   * Wait for a review carrier line recording one message. The SMS line names
+   * Wait for a log carrier line recording one message. The SMS line names
    * its destination, template and language; the mail line names its
    * destination and renders the subject and body, so its template and language
    * are selected together by the subject the caller passes.
@@ -664,7 +732,7 @@ export interface E2EServer {
 }
 
 /**
- * Start one review server: a fresh temporary directory, a fresh sqlite file
+ * Start one e2e server: a fresh temporary directory, a fresh sqlite file
  * seeded by the binary itself, a free port, and the ops probes answered before
  * the fixture returns.
  *
@@ -678,18 +746,22 @@ export interface E2EServer {
  * ::1 port are both retried with a fresh port, bounded by MAX_BIND_ATTEMPTS.
  *
  * `seedMember`, `seedImpersonation`, `seedInvitee`, `invitationMail`,
- * `seedSocialAccount`, `seedTenantAdmin`, `seedUnprovedTenantAdmin`, `seedSystemTenantAdmin`,
- * `seedProtectedTenant`, `platformRequireMFA`, `tenantAdmins` and
+ * `seedSocialAccount`, `seedTenantAdmin`, `seedUnprovedTenantAdmin`,
+ * `seedSystemTenantAdmin`, `platformRequireMFA`, `tenantAdmins` and
  * `recentWindow` are passed through to the configuration the binary seeds; a
  * spec that needs none leaves them off, so the template's own seed stays the
  * baseline. The tenant-admin opt-ins seed through the binary's own seed
  * command: the proved administrator, the unproved one that the write gate
- * refuses, a system tenant administrator outside the platform role, and the
- * review build's protected business tenant with its proved administrator.
+ * refuses, and a system tenant administrator outside the platform role.
  * `tenantAdmins` overrides the administrator list of a seeded tenant, so a
  * journey can pin a tenant to exactly one tenant-admin binding.
  * `platformRequireMFA` writes the admission policy into the global layer, the
- * platform floor every tenant reads as enforced.
+ * platform floor every tenant reads as enforced. `seedTenantAdmin` and
+ * `seedInvitee` then prove the seeded address through the product's own
+ * email-code flow, which the acceptance and the organization write require.
+ * `seedImpersonation` writes the operator's aged TOTP and SMS factors through
+ * the factorseed command after the seed, and shapes acme so the operator stays
+ * outside it.
  *
  * A spec that drives a social method turns on `socialIdentityProvider`. Only
  * then does the fixture start the local OpenID Connect provider, which mints
@@ -727,13 +799,11 @@ export async function startE2EServer(
     readonly seedTenantAdmin?: boolean
     readonly seedUnprovedTenantAdmin?: boolean
     readonly seedSystemTenantAdmin?: boolean
-    readonly seedProtectedTenant?: boolean
     readonly platformRequireMFA?: boolean
     readonly tenantRequireMFA?: boolean
     readonly tenantAdmins?: Readonly<Record<string, readonly string[]>>
     readonly recentWindow?: string
     readonly mfaRequired?: boolean
-    readonly schedulerTick?: string
     readonly identityQuota?: string
   } = {},
 ): Promise<E2EServer> {
@@ -842,7 +912,6 @@ export async function startE2EServer(
       seedTenantAdmin: options.seedTenantAdmin,
       seedUnprovedTenantAdmin: options.seedUnprovedTenantAdmin,
       seedSystemTenantAdmin: options.seedSystemTenantAdmin,
-      seedProtectedTenant: options.seedProtectedTenant,
       platformRequireMFA: options.platformRequireMFA,
       tenantRequireMFA: options.tenantRequireMFA,
       tenantAdmins: options.tenantAdmins,
@@ -850,15 +919,43 @@ export async function startE2EServer(
       ssoProvider,
       recentWindow: options.recentWindow,
       mfaRequired: options.mfaRequired,
-      schedulerTick: options.schedulerTick,
       identityQuota: options.identityQuota,
     })
     await runCommand(
       manifest.binary,
       ['--config', `file:${seedConfig.path}`, 'sqlite', 'seed'],
       dir,
-      'seeding the review database',
+      'seeding the e2e database',
     )
+    // The impersonation operator's factors are written after the seed has
+    // created the account and before serve starts: the TOTP one is aged past
+    // the factor-age requirement, which an enrollment cannot reach, and the
+    // SMS one is active now. The command reads the same configuration the
+    // service runs on, so the database and the field-encryption key are the
+    // service's own.
+    if (options.seedImpersonation === true) {
+      const what = 'writing the impersonation operator factors'
+      const seeded = await runCommand(
+        manifest.factorSeed,
+        [
+          '--config',
+          `file:${seedConfig.path}`,
+          '--account',
+          e2eImpersonationFactors.account,
+          '--totp-secret',
+          e2eImpersonationFactors.totpSeed,
+          '--totp-age',
+          e2eImpersonationFactors.totpAge,
+          '--sms-age',
+          e2eImpersonationFactors.smsAge,
+        ],
+        dir,
+        what,
+      )
+      // The fixture asks for both factors; a zero exit without both identifiers
+      // is a half-seeded operator, not a success.
+      readSeededFactors(seeded.stdout, seeded.stderr, what)
+    }
 
     let config: ServerConfig | undefined
     let attempt = 0
@@ -880,7 +977,6 @@ export async function startE2EServer(
         seedTenantAdmin: options.seedTenantAdmin,
         seedUnprovedTenantAdmin: options.seedUnprovedTenantAdmin,
         seedSystemTenantAdmin: options.seedSystemTenantAdmin,
-        seedProtectedTenant: options.seedProtectedTenant,
         platformRequireMFA: options.platformRequireMFA,
         tenantRequireMFA: options.tenantRequireMFA,
         tenantAdmins: options.tenantAdmins,
@@ -888,7 +984,6 @@ export async function startE2EServer(
         ssoProvider,
         recentWindow: options.recentWindow,
         mfaRequired: options.mfaRequired,
-        schedulerTick: options.schedulerTick,
         identityQuota: options.identityQuota,
       })
       const configLocator = `file:${config.path}`
@@ -909,7 +1004,7 @@ export async function startE2EServer(
       const stderr = spawned.stderr
       if (stdout === null || stderr === null) {
         await terminate()
-        throw new Error('the review server started without piped output')
+        throw new Error('the e2e server started without piped output')
       }
       createInterface({ input: stdout }).on('line', (line) => log.append(line))
       createInterface({ input: stderr }).on('line', (line) =>
@@ -941,14 +1036,14 @@ export async function startE2EServer(
         }
         if (spawnError !== undefined) {
           throw new Error(
-            `the review server could not be started: ${String(spawnError)}` +
+            `the e2e server could not be started: ${String(spawnError)}` +
               `\n--- process log (last lines) ---\n${log.tail()}` +
               `\n--- standard error ---\n${stderrLines.join('\n')}`,
           )
         }
         if (exited) {
           throw new Error(
-            `the review server exited before it was ready ` +
+            `the e2e server exited before it was ready ` +
               `(code ${String(spawned.exitCode)}, signal ${String(spawned.signalCode)})` +
               `\n--- process log (last lines) ---\n${log.tail()}` +
               `\n--- standard error ---\n${stderrLines.join('\n')}`,
@@ -959,9 +1054,23 @@ export async function startE2EServer(
     }
 
     if (config === undefined) {
-      throw new Error('the review server finished its attempts without a configuration')
+      throw new Error('the e2e server finished its attempts without a configuration')
     }
     const serverConfig = config
+
+    // The seed writes a seeded address as an administrator's assertion, not a
+    // proof. The accounts whose journeys require a proved address get it
+    // through the product's own email-code flow once the server answers: an
+    // invitation acceptance and an organization write both refuse an unproved
+    // sender, and the fixture restores that state without a row written around
+    // the product. The unproved administrator the tenant-admin journey drives
+    // on purpose is not proved here.
+    if (options.seedTenantAdmin === true) {
+      await proveEmailThroughProduct(serverConfig.origin, e2eTenantAdmin, log)
+    }
+    if (options.seedInvitee === true) {
+      await proveEmailThroughProduct(serverConfig.origin, e2eInvitee, log)
+    }
 
     const hooks: Array<() => Promise<void> | void> = []
     const stop = async (options: { readonly keep?: boolean } = {}): Promise<void> => {

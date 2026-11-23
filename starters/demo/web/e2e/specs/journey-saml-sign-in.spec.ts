@@ -40,7 +40,7 @@
  *
  * Two things are not UI, and only these:
  *
- *   - The operator's own email address is proved through the review mail
+ *   - The operator's own email address is proved through the e2e mail
  *     carrier's verification code, read from the process log (the sanctioned
  *     verification-code read), because the admin's human writes are gated on it.
  *   - The DNS publication is the fixture action the enterprise journey already

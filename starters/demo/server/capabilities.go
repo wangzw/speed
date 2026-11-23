@@ -16,11 +16,9 @@ package main
 // capability that is absent from a run is a run-time fact reported by the
 // startup diagnostics, not a different binary.
 //
-// The two things that stay out of this file are the review-only test controls
-// and the loopback guard. They are not product capabilities and must not exist
-// in a deployment or baseline binary; they live behind the review tag in
-// review.go, review_sms_control.go and notification_control_review.go. See
-// docs/adr/adr-starters-skeleton.md, "The review build's control routes".
+// The capabilities that are not product capabilities — the test controls — are
+// not compiled at all. Every module named here is available to a deployment or
+// baseline binary and decides in Prepare whether its configuration lets it run.
 //
 // Several carriers of one capability may be compiled in at once: the SMTP mail
 // carrier and the log mail carrier, for instance. They are exclusive at run
@@ -55,9 +53,8 @@ import (
 // SMS family with its template management page and second factor, the mail
 // carriers and the email verification code sender — together with the log
 // carriers the local walkthrough uses and the notification fixture. It is the
-// same list in the default build, the Fly image and the review build; the
-// difference between those runs is configuration and the review-only controls,
-// never this roster.
+// same list in the default build, the Fly image and the check-only builds; the
+// difference between those runs is configuration, never this roster.
 //
 // A module here is considered by a run, not necessarily started by it. Each
 // module states in Prepare whether its configuration lets it run; a module whose
@@ -113,7 +110,5 @@ var capabilityModules = []string{
 
 	// The notification fixture: one notification type, the worker that
 	// dispatches it to a tenant's members, and the preference-recipient wiring.
-	// The fixture's review-only dispatch control is compiled separately under
-	// the review tag; see notification_control_review.go.
 	demoNotificationModuleName,
 }

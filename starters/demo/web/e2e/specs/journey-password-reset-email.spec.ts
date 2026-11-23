@@ -1,14 +1,14 @@
 /**
  * The email password-reset journey: a person who forgot their password proves
- * their account's address with a code from the review mail carrier, writes a
+ * their account's address with a code from the e2e mail carrier, writes a
  * new password without ever holding a session, and signs in with it.
  *
  * Everything is driven through the rendered product with mouse and keyboard:
  * the sign-in surface's forgot-password entry, the reset page's email channel,
  * its identifier, code, new-password and confirmation fields, and the account
  * menu's sign-out. The single non-UI read is the verification code from the
- * review process log (fixtures/log.ts): the review carrier reaches no relay, so
- * the process log is where a person running the review reads it.
+ * server's process log (fixtures/log.ts): the e2e carrier reaches no relay, so
+ * the process log is where a person running the e2e suite reads it.
  *
  * The account's own address is proved through the registration's verification
  * step, which sends a code to that address. The reset reuses the inbox resend

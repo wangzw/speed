@@ -137,7 +137,7 @@ export interface SamlIdentityProvider {
 }
 
 export interface SamlIdentityProviderInput {
-  /** The review server's temporary directory; the key material lives under it. */
+  /** The e2e server's temporary directory; the key material lives under it. */
   readonly dir: string
   /** The built signing helper, from the harness manifest. */
   readonly signer: string

@@ -260,21 +260,6 @@ dashboard or an audit query written against it.
   `to-false` direction, `recent-window` in `increase` and `sensitive-min-age` in
   `decrease` (`relax.go`, `TestARelaxingChangeWritesAWarnAndAnAuditRow`).
 
-## Review-only fixture seams
-
-`review_seed.go` compiles only under the `review` tag and exists for the demo
-starter's review assembly, which seeds an operator's second factors so the
-impersonation journey is walkable. It adds no product behaviour:
-
-- `ReviewSeedActiveFactor` writes one active factor row through the register's
-  own `insertPending` and `activate` statements. `Enroll` activates at the
-  clock's now; the fixture chooses a backdated instant instead, so the sender of
-  an impersonation can hold a seasoned factor without an hour of waiting. It is
-  a review-only fixture, named as one. `ReviewRemoveFactor`, `ReviewFactors` and
-  `ReviewSeasoned` run the register's own remove, list and seasoned statements.
-- Nothing here writes a kind's own data. A TOTP seed is written by
-  `totp.ReviewSeedFactor` through that module's encrypted seed register.
-
 ## Test-support package
 
 `mfatest/` writes and reads the register for a test, without a build tag: an

@@ -2,7 +2,7 @@
  * J6 -- a signed-in account holder personalizes the interface's language and
  * time zone, and the choices survive a reload.
  *
- * The account is the review assembly's seeded member: an ordinary active
+ * The account is the e2e seed's member: an ordinary active
  * member with no platform permission, whose profile holds no language and no
  * time zone yet. The browser context is pinned to en-US and UTC by the
  * Playwright config, so the starting interface is English and the starting
@@ -37,7 +37,7 @@
  * zero-padding can drift on an upgrade without changing the instant. The "last
  * active" line shares the same formatter, but the section renders it only when
  * it differs from the sign-in time; the session's last-seen is its creation
- * instant until the first coalesced touch (the review configuration leaves the
+ * instant until the first coalesced touch (the e2e configuration leaves the
  * default one-minute interval), so this journey observes the sign-in line
  * alone.
  *
@@ -726,7 +726,7 @@ test('personalize-interface: the chosen time zone drives times on every surface'
 
     // The seed writes the operator's address unproved, and the console admits
     // only a proved account: the journey proves it the way a person does,
-    // through the standing notice and the code the review carrier received.
+    // through the standing notice and the code the e2e carrier received.
     const banner = verificationBanner(page, smsRolloutOperator.identifier)
     await expect(banner).toBeVisible()
     const beforeCode = server.log.mark()

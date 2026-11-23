@@ -12,9 +12,9 @@ domain: `server/modules/` is the empty slot a product's own modules land in.
 Because it seeds no business data, several surfaces open empty in the browser:
 the object store, the admin dashboard beyond the tenant counts it reads from
 the platform's own roster, the notification inbox (the baseline runs no
-notification type and dispatches nothing; the review build turns the fixture's
-switch on, see "The review build's notification fixture" below), and the
-preference matrix. An empty
+notification type and dispatches nothing; the end-to-end assembly turns the
+fixture's switch on, see "The end-to-end assembly's notification fixture" below),
+and the preference matrix. An empty
 surface is the baseline doing what it says it does, not a capability left
 unfinished — the data is the product's and its users' to produce.
 
@@ -38,7 +38,7 @@ product adds it once it holds the dependency:
 | `authn.sso.oidc`, `authn.sso.saml` | an enterprise provider's client credentials and metadata |
 | `sms.*`, `authn.login.sms`, `authn.mfa.sms`, `authn.sms` | an SMS vendor's account |
 | `mail.smtp` | an SMTP account |
-| `authn.emailcode` | a mail carrier to send through; the review build pairs it with `mail.log` |
+| `authn.emailcode` | a mail carrier to send through; the end-to-end assembly pairs it with `mail.log` |
 | `objectstore.s3` | an S3 account and bucket |
 
 The test of a doubtful module is the module's own contract: if its required
@@ -112,10 +112,10 @@ configuration answer three different questions:
 
 So every platform module that declares an HTTP fragment is imported. `sms.admin`
 is in `capabilityModules` and named by `serve`; it runs only when its
-configuration enables the SMS family, which the review configuration does and
+configuration enables the SMS family, which the end-to-end configuration does and
 the baseline does not. `authn.sso.saml` is in `capabilityModules` too and named
 by `serve` in every build; it runs only when `authn.sso.saml.enabled` is true,
-which the review configuration sets and the baseline leaves off. Both fragments
+which the end-to-end configuration sets and the baseline leaves off. Both fragments
 still describe the platform's API surface.
 Leaving one unimported would drop its operations from the merged document with
 no error — the document would simply be smaller than the platform contract. The
@@ -124,32 +124,36 @@ keeps the blank import for `sms.admin` beside a comment saying why; the
 declarations of a module reached either way are collected by the stack node's
 `IncludeAllDeclarations`, and no baseline `Include` names it.
 
-### The review build
+### The end-to-end assembly
 
-`go build -tags review` compiles the default build plus the review-only test
-controls and the loopback guard (`server/review.go`, `review_sms_control.go`
-and `notification_control_review.go`). Every capability the program can run —
-the four social methods, the enterprise OIDC method (`authn.sso.oidc`), the
-enterprise SAML method (`authn.sso.saml`), the SMS family with the `sms.log` log
-carrier and the `sms.admin` template page, name-and-password registration with
-`authn.emailcode` over the `mail.log` log carrier, and the SMS second factor
-(`authn.mfa.sms`) — is compiled into every build and considered by `serve`
-(`capabilities.go`); whether one starts is its own configuration decision.
-`server/review_off.go` is the untagged counterpart and names nothing, so a
-default binary carries neither the controls nor the guard.
+The end-to-end assembly is the configuration the end-to-end tier runs the
+skeleton with, not another build. Its global setup (`web/e2e/global-setup.ts`)
+builds one server binary tagged `e2e`; the tag swaps only the embedded frontend
+bundle from `dist/` to a `dist-e2e/` the setup builds first, and leaves the
+capability roster and the naming lists alone. The same binary runs over two
+templates: the end-to-end configuration template `server/e2e/config.yaml` holds
+the configuration this section describes, and the deploy fixture renders the Fly
+deployment's configuration from `deploy/fly.yaml.tmpl`. Every capability the
+program can run — the four social methods, the enterprise OIDC method
+(`authn.sso.oidc`), the enterprise SAML method (`authn.sso.saml`), the SMS
+family with the `sms.log` log carrier and the `sms.admin` template page,
+name-and-password registration with `authn.emailcode` over the `mail.log` log
+carrier, and the SMS second factor (`authn.mfa.sms`) — is compiled into every
+build and considered by `serve` (`capabilities.go`); whether one starts is its
+own configuration decision.
 
-**The review build runs the enterprise SAML method.** `authn.sso.saml` is in
-`capabilityModules` and named by every build's `serve`; the review configuration
-turns its switch on with `authn.sso.saml.enabled: true`, which a baseline or
-deployment leaves off. A SAML provider is data in the `authn.sso` register, so
-the review build lists a `saml` enterprise method and the end-to-end tier can
-drive an SP-initiated sign-in against its local identity provider
+**The end-to-end assembly runs the enterprise SAML method.** `authn.sso.saml` is
+in `capabilityModules` and named by every build's `serve`; the end-to-end
+configuration turns its switch on with `authn.sso.saml.enabled: true`, which a
+baseline or deployment leaves off. A SAML provider is data in the `authn.sso`
+register, so the assembly lists a `saml` enterprise method and the end-to-end
+tier can drive an SP-initiated sign-in against its local identity provider
 (`web/e2e/fixtures/saml-identity-provider.ts`). That provider's responses are
 signed by `server/e2e/samlsign`, a command the end-to-end global setup builds
 into its own run directory; nothing in the program imports it. It signs with
 goxmldsig, the library the method validates with, and carries its own test
-(`TestTheSignedResponseValidatesAgainstTheCertificate`). The review-tagged case
-`TestReviewRunServesTheSAMLLoginMethod` holds that the configuration reaches the
+(`TestTheSignedResponseValidatesAgainstTheCertificate`).
+`TestE2ERunServesTheSAMLLoginMethod` holds that the configuration reaches the
 assembly.
 
 `mail.log` is a carrier built through `mail.NewModule`, the same factory
@@ -160,8 +164,9 @@ the code for the walkthrough with `verification_code`; the value is not logged
 under `code`, because that name is a registered sensitive key of the process and
 the logging layer would mask it.
 
-**The review build runs the anonymous password reset on both channels.** Its
-configuration sets the `authn.login.password-reset` setting to `open`, and
+**The end-to-end assembly runs the anonymous password reset on both channels.**
+The end-to-end configuration sets the `authn.login.password-reset` setting to
+`open`, and
 `sms.registry.templates` declares the optional `authn.code.reset` template
 beside the three required ones — declaring it is what makes the SMS module
 publish the reset purpose and the carrier able to carry it. `authn.emailcode`
@@ -177,22 +182,24 @@ suppressed: the surface still shows its sent notice, and its resend control —
 which states the remaining interval — is what releases the message. The two
 journeys read that control rather than sleeping.
 
-`server/review/sqlite.yaml` is the configuration the build reads. It keeps
+`server/e2e/config.yaml` is the configuration the assembly reads. It keeps
 `authn.account.signup` and `authn.account.password-signup` open, widens the four
 `authn.login.email-*` budgets and lowers the resend interval to its floor so a
 person can walk the flow, points the database, key and object root under
-`var/`, names the endpoints `sms.admin` mounts on, and lowers
-`sms.registry.poll-interval` so a verdict the review control moves is reflected
-on the next list read. Baseline `serve` names the same capability roster but its
-configuration leaves the carriers unconfigured and registration closed, so those
-capabilities stand themselves down and the baseline login page advertises no
-registration entry.
+`var/`, names the endpoints `sms.admin` mounts on, states the log SMS carrier's
+per-template verdicts in `sms.log.approvals` (en-US approved, zh-CN pending),
+opens the notification fixture with `demo.notification.enabled: true`, and
+lowers `sms.registry.poll-interval` to 200ms so the registry reads those
+verdicts on the next list read. Baseline `serve` names the same capability
+roster but its configuration leaves the carriers unconfigured and registration
+closed, so those capabilities stand themselves down and the baseline login page
+advertises no registration entry.
 
 The same file carries the `authn.sso` block the enterprise OIDC method reads.
 It states the deployment defaults — `allow-private-egress: false` and both
 outbound seams empty — so the TXT lookup of a domain-ownership proof takes the
-system resolver and the method's egress trusts the system roots. A review that
-drives the enterprise journey points the three at local fixtures the end-to-end
+system resolver and the method's egress trusts the system roots. A walkthrough
+that drives the enterprise journey points the three at local fixtures the end-to-end
 harness starts: the resolver address of a UDP stub that answers the test
 domain's TXT name, the CA file that signed the local provider's certificate, and
 the loopback relaxation its egress client needs. Those are fixtures, not
@@ -200,14 +207,7 @@ deployment values; a deployment leaves the block as it stands. The two items
 that are not seams are `authn.sso.oidc.enabled: true` and
 `authn.sso.saml.enabled: true`, which turn the methods on: each is compiled into
 every build and stands itself down when its switch is absent, so a baseline or a
-deployment offers no enterprise entry and the review assembly offers both.
-
-`server/review_sms_control.go` is the review-only control over the review
-carrier's per-template review. It mounts
-`POST /api/v1/system/sms/review/verdicts`, moves one vendor code's verdict, and
-declares the static feature `review.sms.control`. The admin's SMS page renders
-the host's verdict control only while the feature is served, so a baseline
-deployment carries neither the route nor the control.
+deployment offers no enterprise entry and the end-to-end assembly offers both.
 
 The walkthrough is: register a username, email and password; sign in with the
 password through the ordinary flow; add the email under the account's own
@@ -218,32 +218,11 @@ which names the tenant the account's transaction wrote. Registration
 itself sends no mail, and `sms.log` verifies a phone the same way without
 lifting the registration limit.
 
-The build also carries a guard (`reviewGuardModule`) that refuses to start when
-any configured listener is not loopback: the review build seeds the published
-administrator credential and opens registration. The guard limits the listening
-address only; a code written to the process log can still leave the machine
-through log collection or export.
-
-**The review build refuses settings writes to a `protected-` tenant.** The
-host seam behind every settings write (`settingsWriteGuard`) denies a tenant
-whose identifier carries the `protected-` prefix, and no other management seam
-does: the tenant is registered and administered like any business tenant, so
-organization administration opens, while its security page reports itself
-read-only and renders no switch. This is a review-only fixture, compiled under
-the `review` tag in `server/review.go`; `server/review_off.go` answers the same
-seam with false, so a default or deployment binary refuses only the personal
-domain and knows no `protected-` prefix. The end-to-end harness seeds the
-tenant and its proved-email administrator through its own configuration
-overlay (`seedProtectedTenant` in `web/e2e/fixtures/config.ts`), never through
-`server/review/sqlite.yaml`: the shared seed's tenant list is what the other
-review journeys are built on. The program-level case is
-`server/review_settings_guard_test.go`.
-
-#### The review build's notification fixture
+#### The end-to-end assembly's notification fixture
 
 `server/notification_fixture.go` is compiled into every build and named in
 `capabilityModules`, and gives the member-notification and SMS-template journeys
-a running counterpart. It adds four things the baseline deliberately lacks.
+a running counterpart. It supplies what the baseline deliberately lacks.
 Whether a run dispatches it is the fixture's own `Prepare` decision, stated by
 the explicit switch `demo.notification.enabled`: there is no state to infer it
 from, because the type is present in every build and the tenancy roster is data.
@@ -265,8 +244,8 @@ configuration.
   compile-time ceiling even in a run that stands the fixture down. Disabling the
   fixture leaves the type in the taxonomy and removes the worker, the schedule
   and the recipient wiring from the feature set.
-  `server/review_notification_isolation_test.go` holds that boundary in the
-  default build, and the review-tagged cases hold the other direction.
+  `server/e2e_notification_isolation_test.go` holds that boundary in the
+  default build.
 
 - **A recipient-aware dispatch.** The fixture resolves each recipient's proved
   phone and email address. A proved phone is the single destination and the sms
@@ -288,81 +267,63 @@ configuration.
   real one — `notification.Dispatcher` validates it against the collected
   taxonomy, the job queue carries it, and the delivery pipeline writes the
   in-app row and renders the external channel through `mail.log` or the
-  review SMS carrier. `server/review/sqlite.yaml` lowers
+  log SMS carrier. `server/e2e/config.yaml` lowers
   `jobs.scheduler.tick` to two seconds, so a tenant created during a walkthrough
   starts receiving notices promptly; the dispatch window itself is the fixture's
   own constant. The worker's window is the member-notification journey's
   dispatch, not the SMS-template rollout journey's proof.
 
-- **The review-only tenant control.** The module mounts
-  `POST /api/v1/notifications/review/notice` on the `api` endpoint and declares
-  the static feature `demo.notification.control`. A signed-in member of the
-  tenant clicks the tenant home page's control, and the handler dispatches one
-  notice to the caller through the same recipient-aware path. The route and the
-  feature are compiled only under the review tag, so neither exists in a default
-  binary; the home page renders the control only while the feature document
-  carries the name. The control is the SMS-template rollout journey's business
-  action.
-
 - **The preference recipient wiring.** The preference routes read the recipient
   from the request context (`preferences.WithRecipient`); the capability holds
   no identity, so the host names it. The baseline does not, which is why its
-  matrix is empty and a preference write is refused. The review module registers
-  a layer on the `api` endpoint in the recording stage — inside the
+  matrix is empty and a preference write is refused. The fixture registers a
+  layer on the `api` endpoint in the recording stage — inside the
   authentication gateway, so the identity is already on the context, and outside
   the authorization guard — that copies the authenticated caller's effective
   account (the impersonated one while impersonating) onto the context. A request
   with no identity is left untouched, so an anonymous caller is still refused
   before the preference handler runs.
 
-`TestReviewNotificationJourneyIsReachable` is the worked check: a registered
+`TestE2ENotificationJourneyIsReachable` is the worked check: a registered
 member gets a tenant, the worker writes the type into the inbox and the email
 renders from the catalog, the member turns the email channel off and the write
 succeeds, an anonymous caller is still refused, and the following windows send
 no email.
 
-#### The review build's impersonation fixture
+#### The end-to-end assembly's impersonation fixture
 
 The impersonation journey needs a state a hand walkthrough can only reach by
-waiting an hour: an operator that is not a member of the target tenant, holds two
-two-step methods with at least one seasoned non-SMS method, and can raise a stale
-session with a kind it did not prove at sign-in. The review build seeds that
-state on `seed`, in the review build only, so the journey is walkable from a
-fresh database. This is an explicit review-only exception; a baseline binary
-reads none of it.
+waiting past `authn.mfa.sensitive-min-age`: an operator that is not a member of
+the target tenant, holds two two-step methods with at least one seasoned non-SMS
+method, and can raise a stale session with a kind it did not prove at sign-in.
+`server/e2e/factorseed` writes the seasoned factor for the named account; the
+rest of the state is the assembly's own configuration and the product's own
+flows, and a baseline binary reads none of it.
 
-- **The two factors, written through the product's seams.** The TOTP factor is
-  registered through the multi-factor register and its seed is written through
-  the TOTP module's own encrypted seed register (`serializer:encrypted`), so the
-  database module seals it exactly as a browser enrollment would. The SMS factor
-  goes through the register too; that factor keeps no data of its own, and it
-  binds the account's proven phone. The seeding helpers are behind
-  `//go:build review` in the owning packages
-  (`pkg/authn/mfa/review_seed.go`, `pkg/authn/mfa/totp/review_seed.go`), and
-  `server/review_seed.go` is the review build's hook into the `seed` command.
-  Nothing here writes a sealed column by hand.
+- **The factors, written outside the program.** `factorseed` writes an aged TOTP
+  factor and, when asked, an SMS factor for the operator through the product's
+  own registers. The TOTP seed is sealed by the database module through the TOTP
+  module's encrypted seed register (`serializer:encrypted`), exactly as a browser
+  enrollment would; the SMS factor keeps no data of its own. `factorseed` sets
+  the TOTP row's `activated_at` — and
+  `created_at` — two hours in the past, far enough past
+  `authn.mfa.sensitive-min-age` (one hour here) that the impersonation gate reads
+  the factor as seasoned; everything else about the rows is the register's own
+  insert. The command is built by the end-to-end global setup into its own run
+  directory and is not imported by the program; `seed` writes no factor.
 
-- **The backdated fields.** `authn_factors.activated_at` — and the row's
-  `created_at` — of the TOTP factor are set two hours in the past, far enough
-  past `authn.mfa.sensitive-min-age` (one hour here) that the impersonation gate
-  reads the factor as seasoned. The fixture chooses that instant: `Enroll`
-  activates at the clock's now, so the fixture hands the register's own
-  activation statement a backdated instant through
-  `pkg/authn/mfa/review_seed.go`. Everything else about the row is the
-  register's own `insertPending`; the SMS factor is activated at the current
-  time.
-
-- **The proven contacts.** The operator is seeded with an email address, and the
-  fixture proves it (`email-code`) and adds and proves a phone number
-  (`sms-code`) through the account module's `AddIdentifier`, the same write a
-  completed code flow performs. Both codes have a live path in this build
-  (`mail.log`, `sms.log`), so the fixture starts the journey from the state
-  the flows reach rather than from a verification detour.
+- **The proven contacts.** The operator's email and phone are proved through the
+  product's own verification flows: the walkthrough reads the codes from the
+  `mail.log` and `sms.log` logs and submits them, adding the phone under the
+  account's own identifiers through the account module. Both codes have a live
+  path in this assembly. `factorseed` runs before `serve` and needs neither
+  contact: the SMS factor keeps no destination of its own, and the step-up
+  sends to whichever phone the account has proved when the challenge runs.
 
 - **The assembly's additions.** `authn.mfa.sms` is in `capabilityModules` and
-  named by `serve`; the review configuration gives it a live carrier, so a
+  named by `serve`; the end-to-end configuration gives it a live carrier, so a
   session signed in with TOTP has a disjoint kind to step up with, and
-  `server/review/sqlite.yaml` lowers `authn.impersonation.max-auth-age` to its
+  `server/e2e/config.yaml` lowers `authn.impersonation.max-auth-age` to its
   one-minute floor (the declared default is five minutes; the domain is one
   minute to thirty) and seeds the target member of `acme` through
   `seed.members`. The target is the username `member` with no email address, so
@@ -374,30 +335,27 @@ reads none of it.
   does not read the sender's permissions in the target tenant, so the journey is
   still reachable.
 
-The walkthrough: `seed`, then `serve`, then sign in as `operator` (the username
-the seed writes; the proved address is not selected as a login way) with
-`operator-dev-secret` and the current code of the fixture's TOTP seed
+After `seed`, run `factorseed` against the same configuration with the TOTP seed
 (`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`, issuer `Speed Demo`, SHA-1, six digits, a
 thirty-second period; import it into an authenticator, or run the
-standard-library one-liner under "Exercising a write path"). The seed is a
-fixture and not a credential, and it is written through the TOTP module's
-encrypted register. Wait out the one-minute freshness window, open the admin's
-impersonation page, pick the `acme` tenant and the `member` target, and submit.
-The start is refused for freshness and opens the step-up; complete it with the
-SMS code from the `log sms:` log line, and the start is replayed. The step-up
-offers SMS because the session already proved TOTP; that is the branch this
-fixture exists to make reachable.
+standard-library one-liner under "Exercising a write path"), a two-hour age, and
+an SMS age. The seed is a fixture and not a credential. Then run `serve` and
+sign in as `operator` (the username the seed writes; the proved address is not
+selected as a login way) with `operator-dev-secret`. Prove the operator's email
+and add and prove a phone from the `log mail:` and `log sms:` lines; the SMS
+factor already exists and sends to that proved phone. Sign out and sign in again
+with the password and the current TOTP code, wait out the one-minute freshness
+window, open the admin's impersonation
+page, pick the `acme` tenant and the `member` target, and submit. The start is
+refused for freshness and opens the step-up; complete it with the SMS code from
+the `log sms:` log line, and the start is replayed. The step-up offers SMS
+because the session already proved TOTP; that is the branch this fixture exists
+to make reachable.
 
-`TestReviewImpersonationTOTPFactorIsSeasonedAndSignsIn` is the guard on the
-fixture being real: it seeds, reads the factor and its seed back through the
-register and the encrypted serializer, asserts the register reports the factor
-as seasoned, computes a code from the stored secret, and completes a
-password-and-TOTP login with it. A renamed column, a changed status or a broken
-serializer fails it. `TestReviewImpersonationStepUpOffersSMS` starts a step-up
-after that sign-in and requires the SMS factor (and not TOTP) on the list.
-`review_impersonation_isolation_test.go` holds the default build's half: the
-SMS second factor is in the capability ceiling every build compiles in, while
-`authn.impersonation.max-auth-age` still declares five minutes.
+`e2e_impersonation_isolation_test.go` holds the ceiling and the declared
+default: the SMS second factor is in the capability ceiling every run compiles
+in, while `authn.impersonation.max-auth-age` still declares five minutes when no
+configuration narrows it.
 
 ### The token signing key
 
@@ -419,10 +377,10 @@ deployment that listens off the machine must not write it or serve it. Where the
 account list came from is `config.EffectiveLayer` over `seed.accounts`, so the
 check reads the layer and never the credential; when that query cannot answer
 about the reader, it compares the effective account list with the compiled one.
-The listener question is the classification the review build's own guard uses
-(`server/listener_address.go`), shared outside either build tag. The refusal
+The listener question is the classification in `server/listener_address.go`.
+The refusal
 names the seed, the listener and the two ways out: override the seed, or listen
-on a loopback address. `server/testdata/` and the review configuration are
+on a loopback address. `server/testdata/` and the end-to-end configuration are
 override documents with loopback listeners, and the Fly template replaces
 `seed.accounts` and `seed.tenants`, so every shipped configuration carries on.
 
@@ -452,19 +410,19 @@ value they were written with:
   username, which needs no proof; the baseline `testdata/` files name one,
   because an email address the host writes is an administrator's assertion
   rather than the holder's proof, and the baseline ships no mail channel. A
-  stack that can deliver a code (the review build, the Fly image) may name an
+  stack that can deliver a code (the end-to-end assembly, the Fly image) may name an
   email address instead, and such an entry names a `username` beside it: every
   account is created with a username, and the username is the name the password
   login accepts. The address is written unproved, so it is neither a login way
   nor a default contact until its holder proves it and selects it on the
   account page.
 
-  **The review build proves its operator's address during the seed; the Fly
-  image's operator starts unverified.** The review build's configuration
-  (`server/review/sqlite.yaml`) names an email address for the operator, and the
-  review seed proves it as part of the impersonation fixture (see "The review
-  build's impersonation fixture"), so management writes answer from the first
-  sign-in. The Fly image's rendered configuration (`deploy/fly.yaml.tmpl` fills
+  **The end-to-end assembly proves its operator's address through the product's
+  own flow; the Fly image's operator starts unverified.** The end-to-end
+  configuration (`server/e2e/config.yaml`) names an email address for the
+  operator, and the walkthrough proves it from the `mail.log` code (see "The
+  end-to-end assembly's impersonation fixture"), so management writes answer from
+  the first sign-in. The Fly image's rendered configuration (`deploy/fly.yaml.tmpl` fills
   `seed.accounts` from `DEMO_OPERATOR_EMAIL`) asserts an address rather than
   proving it: the account reads `verification.state = pending` and every
   management human write answers 403 `contact-required` until its holder proves
@@ -478,8 +436,8 @@ value they were written with:
   that can receive mail, since no other path proves it, and set
   `DEMO_OPERATOR_USERNAME` to the name the operator signs in with. Proving the
   address does not make it a login way: the operator signs in with its username
-  in both builds, and the review build's proved address is likewise not a login
-  way until its holder selects it.
+  in every assembly, and the end-to-end assembly's proved address is likewise
+  not a login way until its holder selects it.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
 - **The lowered factor age** (`seed.settings`:
@@ -499,7 +457,7 @@ value they were written with:
 | `server/defaults.go` | The platform defaults document, written in Go and encoded to JSON, layered below every configuration file |
 | `server/defaults_seed.go` | The seed section of that document |
 | `server/seed_guard.go` | The startup guard that refuses the compiled demonstration seed on a non-loopback listener |
-| `server/listener_address.go` | The loopback classification both startup guards use |
+| `server/listener_address.go` | The loopback classification the seed guard uses |
 | `server/signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
 | `server/modules/` | The slot for this product's business modules |
 | `server/testdata/` | One override document per deployment stack: the deltas from `server/defaults.go` |
@@ -599,15 +557,16 @@ business tenant is builtin; the personal tenant's tenant-admin is not, because
 the host adds its grants with the seeding surface and revokes the ones outside
 the allowlist with the manager.
 
-`seed` writes no second factor in a baseline build, and none in a review build either unless the deployment sets `seed.impersonation`: that switch seeds the impersonation journey's two judged methods on the platform administrator, one aged past `authn.mfa.sensitive-min-age`, and it changes how that administrator signs in afterwards. The public `pkg/authn`
+`seed` writes no second factor. The public `pkg/authn`
 surface hands a host a registration step it does not let that host read, so a
-baseline seed cannot finish an enrollment; the admin's step-up gate therefore
-refuses every write until an operator adds a factor in account settings and
-signs in again, completing that factor at login, and `seed` says so on its way
-out. The alternative — writing the factor's sealed row directly — would bind
-this skeleton to the factor module's internals. The review build is the
-exception, and writes its factors through the modules' own registers instead
-(see "The review build's impersonation fixture"): the note is absent there.
+seed cannot finish an enrollment; the admin's step-up gate therefore refuses
+every write until an operator adds a factor in account settings and signs in
+again, completing that factor at login, and `seed` says so on its way out. The
+alternative — writing the factor's sealed row directly — would bind this
+skeleton to the factor module's internals. The end-to-end assembly writes a
+factor from outside the program instead (`server/e2e/factorseed`, see "The
+end-to-end assembly's impersonation fixture"), through the modules' own
+registers.
 
 ### Exercising a write path
 
@@ -760,7 +719,7 @@ budgets keep the platform defaults rather than the demo seeding its own: a sourc
 address may open ten accounts a minute (`authn.account.signup-ip-limit`) and
 send sixty verification messages a minute (`authn.login.ip-limit`). The mail
 budgets are the declared defaults too: a walk-through may need to wait out the
-per-address window. The baseline testdata and the review build name their own
+per-address window. The baseline testdata and the end-to-end assembly name their own
 capabilities in their own configuration, so their runs keep their own feature
 sets.
 
@@ -966,7 +925,7 @@ The table is the product's fixed namespace map, not a description of the
 current run: a capability dropped from `baselineServe`, or removed from the
 imports altogether, keeps its namespace claimed. `sms.admin` is the example —
 the binary imports it for the contract, the baseline runs it in no command (the
-review build's `serve` runs it), so `admin` claims `/api/v1/system/sms` even
+end-to-end assembly's `serve` runs it), so `admin` claims `/api/v1/system/sms` even
 though the baseline answers no route there. A path under a claim reaches
 that endpoint's chain even when no route matches: with no credentials the
 gateway refuses it 401, and an admitted caller gets the endpoint's own 404. A
@@ -995,7 +954,7 @@ no `DEMO_CONFIG` starts on this document alone. What belongs in it is what every
 deployment of this binary shares; a credential, an address, an origin, a path on
 disk or a seed is a deployment value and lives in the configuration file.
 
-The configurations under `server/testdata/` (and `server/review/sqlite.yaml`)
+The configurations under `server/testdata/` (and `server/e2e/config.yaml`)
 are therefore override documents: each carries the deltas from `defaults.go`,
 the values their deployment chooses, and the backend section at the bottom — not
 a second copy of the whole platform table. A copy of this skeleton changes the
@@ -1118,7 +1077,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   authentication gateway fails to start rather than expose the document, and an
   anonymous request receives the gateway's own 401. The document names what this
   process serves, so `sms.admin` — imported for the contract and run by no
-  baseline command (the review build's `serve` runs it) — is absent from the
+  baseline command (the end-to-end assembly's `serve` runs it) — is absent from the
   baseline's document.
 - The notification surface (`notification.inbox`, `notification.stream`,
   `notification.preferences`) mounts on `api`. The capability declares no
@@ -1133,8 +1092,9 @@ names the fixed part of that wiring, and no configuration file repeats it:
   routes read a recipient the host names on the request context
   (`preferences.WithRecipient`); the baseline declares no notification type and
   names no recipient, so the matrix is empty and that step does not arise. The
-  review build is the worked example of both: it declares a type and names the
-  caller as the recipient (see "The review build's notification fixture").
+  end-to-end assembly is the worked example of both: it declares a type and
+  names the caller as the recipient (see "The end-to-end assembly's notification
+  fixture").
 - **The personal tenant is a platform module the host assembles**
   (`pkg/tenant/personal`, module name `org.personal`, named in
   `baselineServe` and in the `seed` command). It implements
@@ -1338,10 +1298,10 @@ setting's domain minimum of 1h for local demonstration, and production keeps
 the declared default. A factor enrolled minutes ago still cannot start an
 impersonation — it has to mature for an hour under the samples — so a baseline
 copy cannot demonstrate a started impersonation on the day it is seeded, and a
-step-up does not shorten that wait. The review build is the one exception: its
-impersonation fixture seeds the operator's factors and backdates the TOTP one
-past the minimum, so the journey is walkable from a fresh review database (see
-"The review build's impersonation fixture").
+step-up does not shorten that wait. The end-to-end assembly is the one
+exception: `server/e2e/factorseed` writes the operator's TOTP factor and
+backdates it past the minimum, so the journey is walkable from a fresh
+end-to-end database (see "The end-to-end assembly's impersonation fixture").
 
 ## The stacks
 

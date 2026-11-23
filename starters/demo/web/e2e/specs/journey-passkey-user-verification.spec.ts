@@ -103,7 +103,7 @@ function mfaSection(page: Page): Locator {
   return section(page, copy('demo', 'account.rows.label.mfa'))
 }
 
-/** The factor kinds the review assembly serves, each its own group. */
+/** The factor kinds the e2e assembly serves, each its own group. */
 type MfaKind = 'totp' | 'webauthn' | 'sms'
 
 /**

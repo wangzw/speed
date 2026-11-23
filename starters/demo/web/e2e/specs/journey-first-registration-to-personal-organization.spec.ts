@@ -1,6 +1,6 @@
 /**
  * J1 -- a new visitor registers with a username, an email address and a
- * password, proves the address from the code the review mail carrier writes to
+ * password, proves the address from the code the e2e mail carrier writes to
  * the process log, and reaches the tenant area with a personal organization as the
  * current organization. The journey's occupancy branches then close the test:
  * the same username and the same email are each refused on the registration
@@ -16,9 +16,10 @@
  * organization profile page, which also exercises the self-service creation
  * entry and the switch to the new organization; the organization profile
  * form itself is a separate change, so this step asserts the creation, the
- * switch and the landing address. The single non-UI read is the verification code
- * from the review process log (fixtures/log.ts): the review mail carrier reaches
- * no relay, so the process log is where a person running the review reads it.
+ * switch and the landing address. The single non-UI read is the verification
+ * code from the server's process log (fixtures/log.ts): the e2e mail carrier
+ * reaches no relay, so the process log is where a person running the e2e
+ * suite reads it.
  *
  * Expected copy is read from the shipped en-US locale bundles through
  * helpers/i18n.ts, so a sentence that changes in the product changes here with
@@ -277,8 +278,8 @@ test('first-registration: a new visitor reaches a personal organization, and occ
   await test.step('a verified account creates a business organization and lands in it', async () => {
     // The account now holds only its personal organization, so the account
     // menu's organization row is context rather than an expansion; the home
-    // card is the entry. The creation writes through org.create (the review
-    // server serves it), switches the current organization, re-reads the
+    // card is the entry. The creation writes through org.create (the server
+    // serves it), switches the current organization, re-reads the
     // caller's tenants and lands on the organization profile page. That page
     // itself is a separate change; this step proves the creation, the
     // switch and the landing address, not the profile form.

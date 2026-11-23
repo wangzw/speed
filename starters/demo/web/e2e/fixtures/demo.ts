@@ -1,7 +1,7 @@
 /**
  * The Playwright test the journeys are written against.
  *
- * Each test gets one review server of its own and one browser page. The server
+ * Each test gets one e2e server of its own and one browser page. The server
  * fixture is set up before the page (the demo fixture names it first), and its
  * first shutdown hook closes the browser context: the notification stream keeps
  * a connection open, and a context still holding it would keep serve from
@@ -60,9 +60,10 @@ export const test = base.extend<{
    */
   seedMember: boolean
   /**
-   * Seed the impersonation journey's second factors on the operator. A spec sets
-   * `test.use({ seedImpersonation: true })` when it impersonates; every other
-   * spec keeps the operator signing in with one factor.
+   * Give the operator the impersonation journey's two factors and shape acme so
+   * the operator stays outside it. A spec sets `test.use({ seedImpersonation:
+   * true })` when it impersonates; every other spec keeps the operator signing
+   * in with one factor.
    */
   seedImpersonation: boolean
   /**
@@ -73,7 +74,7 @@ export const test = base.extend<{
    */
   seedInvitee: boolean
   /**
-   * Send invitation notices through the review mail carrier. A journey that
+   * Send invitation notices through the e2e mail carrier. A journey that
    * has to open the acceptance link itself turns it off, so the issue answer
    * carries the token (`not_configured`): the process log masks an `spd_inv_`
    * token, and a sent notice withholds the token from the answer. Every other
@@ -138,11 +139,6 @@ export const test = base.extend<{
    */
   seedSystemTenantAdmin: boolean
   /**
-   * Seed the review build's protected business tenant and its proved
-   * administrator, so a spec can prove the settings surface's read-only state.
-   */
-  seedProtectedTenant: boolean
-  /**
    * Write the admission policy `tenant.admission.require-mfa` into the global
    * layer, so a spec observes the platform-enforced, read-only switch.
    */
@@ -173,12 +169,6 @@ export const test = base.extend<{
    */
   mfaRequired: boolean
   /**
-   * Replace the scheduler tick for this spec's server. A journey whose only
-   * sends are its own control clicks turns the periodic trigger off with `0s`;
-   * every other spec keeps the template's two-second tick.
-   */
-  schedulerTick: string | undefined
-  /**
    * Raise `ratelimit.limit` for this spec's server. A journey whose steps make
    * more than the declared hundred requests from one identity inside one
    * counting window sets a higher positive integer; every other spec keeps the
@@ -199,13 +189,11 @@ export const test = base.extend<{
   seedTenantAdmin: [false, { option: true }],
   seedUnprovedTenantAdmin: [false, { option: true }],
   seedSystemTenantAdmin: [false, { option: true }],
-  seedProtectedTenant: [false, { option: true }],
   platformRequireMFA: [false, { option: true }],
   tenantRequireMFA: [false, { option: true }],
   tenantAdmins: [undefined, { option: true }],
   recentWindow: [undefined, { option: true }],
   mfaRequired: [false, { option: true }],
-  schedulerTick: [undefined, { option: true }],
   identityQuota: [undefined, { option: true }],
   server: async (
     {
@@ -221,13 +209,11 @@ export const test = base.extend<{
       seedTenantAdmin,
       seedUnprovedTenantAdmin,
       seedSystemTenantAdmin,
-      seedProtectedTenant,
       platformRequireMFA,
       tenantRequireMFA,
       tenantAdmins,
       recentWindow,
       mfaRequired,
-      schedulerTick,
       identityQuota,
     },
     use,
@@ -246,13 +232,11 @@ export const test = base.extend<{
       seedTenantAdmin,
       seedUnprovedTenantAdmin,
       seedSystemTenantAdmin,
-      seedProtectedTenant,
       platformRequireMFA,
       tenantRequireMFA,
       tenantAdmins,
       recentWindow,
       mfaRequired,
-      schedulerTick,
       identityQuota,
     })
     try {

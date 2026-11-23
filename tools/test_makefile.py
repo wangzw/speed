@@ -190,7 +190,7 @@ MAKE_ENVIRONMENT = (
 
 # The segments `check` runs, in the order a plain `make check` runs them: the
 # fast, commonly failing checks first, then the Go build and compile-only vet
-# legs, then the tests, the review cases and the race detector, with the
+# legs, then the tests and the race detector, with the
 # frontend build last. The tuple is written out rather than derived, so a
 # segment deleted from `check` fails this case instead of shrinking the gate
 # silently. `web-check` itself is not here: it splits into the three phase
@@ -204,10 +204,8 @@ CHECK_SEGMENTS = (
     "web-check-static",
     "build",
     "vet-integration",
-    "vet-review",
     "test",
     "web-check-test",
-    "test-review",
     "test-race",
     "web-check-build",
 )
@@ -220,9 +218,7 @@ CHECK_SEGMENTS = (
 EMBEDS_FRONTEND_BUILD = (
     "build",
     "vet-integration",
-    "vet-review",
     "test",
-    "test-review",
     "test-race",
 )
 
@@ -304,12 +300,6 @@ class LoopingLegTests(unittest.TestCase):
         for name in ("red", "green"):
             (self.scratch / name).mkdir()
             (self.scratch / name / f"check_{name}.py").write_text(GATE, encoding="utf-8")
-            # The review leg runs only in modules that carry a review-tagged Go
-            # file; the scratch roster carries one so the leg has a subject and
-            # its GATE_JOBS mapping can be observed.
-            (self.scratch / name / "tagged.go").write_text(
-                "//go:build review\n\npackage scratch\n", encoding="utf-8"
-            )
         # Repository roots for the actionlint leg. Each carries workflow files
         # of both extensions, a file GitHub does not run as a workflow, and a
         # nested workflow file GitHub does not read either.
@@ -729,7 +719,7 @@ class LoopingLegTests(unittest.TestCase):
         # each is a cap, and this tree's parallel suite is in one package of
         # a small module while its many-package module has few parallel
         # cases.)
-        for leg in ("test", "test-race", "test-integration", "test-integration-race", "test-review"):
+        for leg in ("test", "test-race", "test-integration", "test-integration-race"):
             for gate_jobs, width in ((None, "4"), ("7", "7")):
                 with self.subTest(leg=leg, gate_jobs=gate_jobs):
                     calls = self.leg_calls(leg, gate_jobs)
@@ -771,7 +761,7 @@ class LoopingLegTests(unittest.TestCase):
     def test_every_go_vet_leg_takes_its_width_from_gate_jobs(self) -> None:
         # go vet runs no cases, so it takes -p and GOMAXPROCS but not
         # -parallel, which it rejects.
-        for leg in ("vet-integration", "vet-review", "vet-web-bundle"):
+        for leg in ("vet-integration", "vet-web-bundle"):
             for gate_jobs, width in ((None, "4"), ("7", "7")):
                 with self.subTest(leg=leg, gate_jobs=gate_jobs):
                     calls = self.leg_calls(leg, gate_jobs)
@@ -857,7 +847,6 @@ class LoopingLegTests(unittest.TestCase):
         # segment as a pass while the leg's own cases stayed green.
         for wrapper, segment in (
             ("check-lint", "lint"),
-            ("check-vet-review", "vet-review"),
             ("check-tidy-check", "tidy-check"),
         ):
             with self.subTest(wrapper=wrapper):

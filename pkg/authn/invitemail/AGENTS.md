@@ -101,7 +101,7 @@ what the seam does.
 ## Demo assembly
 
 `starters/demo/server/capabilities.go` compiles this module into every build and
-names it for `serve`. The review configuration sets
+names it for `serve`. The end-to-end configuration sets
 `authn.invitemail.accept-base-url` to `http://localhost:8080` and selects
 `mail.carrier: log`. Because the log carrier is not a delivery channel for an
 invitation, every issue in that assembly reports `not_configured` and the

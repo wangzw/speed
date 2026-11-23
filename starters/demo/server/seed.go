@@ -115,13 +115,6 @@ type seedInput struct {
 	// operator through the settings surface — is left as it stands, so a
 	// later run never overrides a runtime change.
 	Settings []seedSetting `config:"settings"`
-	// Impersonation asks the review build to seed the impersonation journey's
-	// second factors: two judged methods on the platform administrator, one of
-	// them aged past authn.mfa.sensitive-min-age. It is opt-in per deployment
-	// because those factors change how that administrator signs in — every later
-	// sign-in has to complete a second factor. A default build accepts the key
-	// and writes nothing, because it seeds no factor at all.
-	Impersonation bool `config:"impersonation"`
 	// Members are the memberships an account starts with. Each names a tenant
 	// under Tenants and an account under Accounts; the row is written through
 	// the membership seam, so the account has to exist and the tenant is
@@ -221,14 +214,6 @@ type seedAccount struct {
 	// every permission the process declares. Without it the account signs in and
 	// reaches nothing that asks for a permission.
 	PlatformAdmin bool `config:"platform-admin"`
-	// ProvedEmail asks the review build to prove the account's email address
-	// after it is created, through the account module's own AddIdentifier with
-	// the same email-code way a completed verification flow writes. The address
-	// itself is stated by Identifier, which must then be an email address. A
-	// baseline build accepts the field and writes the address as the
-	// administrator's assertion it already writes every seeded address as: the
-	// proving path is a review fixture, not a deployment capability.
-	ProvedEmail bool `config:"proved-email"`
 }
 
 // check refuses an account the seed cannot write as the credential it is meant
@@ -754,14 +739,6 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		return err
 	}
 
-	// The review build seeds the impersonation fixture's second factors here,
-	// through the product's own register and encryption seams. A default build
-	// compiles the no-op beside this call and writes no factor; see
-	// review_seed.go and review_off.go.
-	if err := reviewSeedExtras(ctx, reg, in); err != nil {
-		return err
-	}
-
 	// Then the roles and their grants, one role row per domain it exists in. The
 	// platform domain carries the platform-administrator role, and the
 	// tenant-admin role of every non-personal tenant in the roster follows — not
@@ -851,15 +828,12 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		return err
 	}
 
-	// No second factor is seeded in a default build. The public authn surface
-	// hands back a registration step it does not let a host read, so a seed
-	// cannot finish an enrollment; write-path testing needs a factor added in
-	// account settings first, and the console's step-up gate refuses every write
-	// until then. The review build is the exception, and says so.
-	if !reviewSeedsFactors(in) {
-		fmt.Print("note: no second factor is seeded; add one in account settings " +
-			"before testing a write path (see AGENTS.md, \"Exercising a write path\")\n")
-	}
+	// No second factor is seeded. The public authn surface hands back a
+	// registration step it does not let a host read, so a seed cannot finish an
+	// enrollment; write-path testing needs a factor added in account settings
+	// first, and the console's step-up gate refuses every write until then.
+	fmt.Print("note: no second factor is seeded; add one in account settings " +
+		"before testing a write path (see AGENTS.md, \"Exercising a write path\")\n")
 	return nil
 }
 

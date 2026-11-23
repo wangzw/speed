@@ -2,7 +2,7 @@
  * The participant's step at the external identity provider.
  *
  * A social sign-in leaves the product for the provider's authorization page.
- * The provider is the review harness's own OpenID Connect server
+ * The provider is the e2e harness's own OpenID Connect server
  * (fixtures/identity-provider.ts), but its page is a real document in the
  * browser and the participant approves it the way they would approve any
  * provider: by reading whose account it names and pressing the control. This

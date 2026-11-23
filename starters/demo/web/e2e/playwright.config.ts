@@ -2,7 +2,7 @@
  * Playwright configuration for the demo starter's end-to-end tier.
  *
  * The tier drives the built demo binary -- a real sqlite file, real HTTP, the
- * review assembly's seeded operator -- through Chromium, and one journey also
+ * e2e assembly's seeded operator -- through Chromium, and one journey also
  * through WebKit, with nothing but mouse and keyboard input. Its honesty rules
  * live in the specs' README and are enforced twice: by the eslint rule
  * `speed/no-e2e-bypass` over this directory and by `tools/check_e2e_honesty.py`

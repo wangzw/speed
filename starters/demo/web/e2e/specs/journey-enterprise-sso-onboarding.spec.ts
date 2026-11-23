@@ -41,7 +41,7 @@
  *
  * Two things are non-UI, and only these:
  *
- *   - The operator's own email address is proved through the review mail
+ *   - The operator's own email address is proved through the e2e mail
  *     carrier's verification code, which fixtures/log.ts reads from the process
  *     log (the sanctioned verification-code read). The journey's precondition is
  *     an operator whose address is proved, and the admin's human writes are

@@ -6,9 +6,9 @@
  *
  * THE SEEDED OPERATOR HAS FACTORS, SO THE STEP-UP BRANCH IS NOT DRIVEN. The
  * status write is one of the privileged writes that ask for a fresh local
- * multi-factor proof (REQ-platform-admin-114). The review seed's opt-in
- * impersonation factors give the operator an authenticator and an SMS factor
- * and prove the operator's address in the same seed. The operator signs in
+ * multi-factor proof (REQ-platform-admin-114). The seedImpersonation option
+ * makes the fixture run factorseed after the seed, which gives the operator an
+ * authenticator and an SMS factor. The operator signs in
  * with the password and the authenticator code, so the session already holds
  * a fresh local multi-factor proof and the save lands directly. The journey's
  * step-up paragraph -- the dialog and its one replay -- is therefore not
@@ -37,7 +37,7 @@
  * server and the status write invalidates it, so the disabled row leaves the
  * enabled-filtered page. The spec re-submits the same prefix with the disabled
  * status to observe the row, and returns the filter to enabled after the
- * restore. Paging is not driven: the review seed holds its accounts on one
+ * restore. Paging is not driven: the seed holds its accounts on one
  * page. The filter's "applies only on submit" clause is observed before the
  * first submission, where the list still shows every account.
  *
@@ -69,10 +69,14 @@ import {
   organizationRow,
 } from '../helpers/account-menu'
 import {
+  expandAccountRows,
   openAccountSection,
   selectAccountSection,
 } from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
+import { e2eImpersonationFactors } from '../fixtures/config'
+import { waitForVerificationCode } from '../fixtures/log'
+import type { E2EServer } from '../fixtures/server'
 import { copy, copyPattern } from '../helpers/i18n'
 import { chooseSelectOption } from '../helpers/select-option'
 import { switchToTenant } from '../helpers/switch-tenant'
@@ -83,7 +87,7 @@ import { totpCode } from '../helpers/totp'
 // status column and the row controls.
 test.use({ seedImpersonation: true, viewport: { width: 1920, height: 1080 } })
 
-/** The seeded platform administrator the review assembly writes. */
+/** The seeded platform administrator the e2e seed writes. */
 const OPERATOR = {
   identifier: 'operator@demo.test',
   username: 'operator',
@@ -101,11 +105,11 @@ const MEMBER = {
 const TENANT = 'acme'
 
 /**
- * The operator's authenticator seed, fixed by the review fixture in
- * starters/demo/server/review_seed.go. A review fixture, not a credential: it
- * is the value a person imports into an authenticator app.
+ * The operator's authenticator seed, written by the factorseed command. It is
+ * a fixture value, not a credential: it is the value a person imports into an
+ * authenticator app.
  */
-const TOTP_SEED = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
+const TOTP_SEED = e2eImpersonationFactors.totpSeed
 
 /** A password that matches no account, used for the comparison attempt. */
 const WRONG_PASSWORD = 'not-the-member-password'
@@ -293,6 +297,54 @@ function signInButton(page: Page): Locator {
   })
 }
 
+/**
+ * Prove the operator's email through the account page's own code flow. The
+ * privileged writes that follow refuse an account whose address is unproved;
+ * the seed writes the address as an administrator's assertion, so the journey
+ * reaches the proof the way a person does.
+ */
+async function proveOperatorEmail(
+  page: Page,
+  server: E2EServer,
+): Promise<void> {
+  await selectAccountSection(page, 'profile')
+  await expandAccountRows(page)
+  const email = page.getByRole('region', {
+    name: copy('demo', 'account.rows.label.email'),
+    exact: true,
+  })
+  const before = server.log.mark()
+  await email
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.send'),
+      exact: true,
+    })
+    .click()
+  const { code } = await waitForVerificationCode(
+    server.log,
+    'mail',
+    OPERATOR.identifier,
+    { after: before },
+  )
+  await email
+    .getByRole('textbox', {
+      name: copy('accountUi', 'verification.codeLabel'),
+      exact: true,
+    })
+    .fill(code)
+  await email
+    .getByRole('button', {
+      name: copy('accountUi', 'verification.verify'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    email.getByText(copy('accountUi', 'identifiers.verified'), {
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
 test('account-offboarding: an operator disables a member and the member returns after the restore', async ({
   demo,
   browser,
@@ -344,6 +396,10 @@ test('account-offboarding: an operator disables a member and the member returns 
           exact: true,
         }),
       ).toBeVisible()
+
+      // The privileged status write refuses an unproved address, so the
+      // operator proves the account email through the product's own code flow.
+      await proveOperatorEmail(page, server)
 
       // The member's two devices are two browser contexts with no shared
       // cookie jar. Their language, zone and viewport repeat the tier's pins.

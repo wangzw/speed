@@ -55,6 +55,37 @@ func seedGuardRegistry(t *testing.T, reader config.Reader) *core.Registry {
 	return reg
 }
 
+// TestLoopbackAddressDecidesTheHost holds the address classification the seed
+// guard rests on. An empty host is every interface, a name that merely ends or
+// starts with "localhost" is not the loopback name, and a bare address with no
+// port does not parse as a listener; the IPv4 and IPv6 loopback forms pass, and
+// the conventional name is matched without regard to case.
+func TestLoopbackAddressDecidesTheHost(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		address string
+		want    bool
+	}{
+		{"an empty host", ":8080", false},
+		{"the unspecified IPv6 host", "[::]:8080", false},
+		{"a name that ends in localhost", "localhost.evil.test:8080", false},
+		{"a name that starts with localhost", "localhostx:8080", false},
+		{"an address without a port", "127.0.0.1", false},
+		{"the IPv6 loopback", "[::1]:8080", true},
+		{"an upper-case loopback name", "LOCALHOST:8080", true},
+		{"the IPv4 loopback", "127.0.0.1:8080", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := loopbackAddress(tc.address); got != tc.want {
+				t.Errorf("loopbackAddress(%q) = %t, want %t", tc.address, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestSeedGuardDecidesTheDeploymentShapes holds the four combinations to their
 // verdicts: loopback with the compiled seed passes, an external listener with a
 // seed from either the configuration file or the environment passes, and an

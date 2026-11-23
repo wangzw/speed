@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -23,8 +22,8 @@ import (
 //
 // The expected set is derived from the assembly, not copied: the declarations
 // come from the process registry (declaredVocabulary), and a name is expected
-// when its declaring module is named by the serve roster — the platform core,
-// the capability ceiling and the review controls. A static feature is therefore
+// when its declaring module is named by the serve roster — the platform core and
+// the capability ceiling. A static feature is therefore
 // always expected; a conditional one is expected only if the assembly posts it,
 // which the test cannot observe directly -- so it asserts the two properties
 // that make a wrong answer impossible instead: every conditional name in the
@@ -236,61 +235,26 @@ func declaredVocabulary() ([]vocabularyEntry, error) {
 	return entries, nil
 }
 
-// holdBaselineVocabulary holds one baseline artifact — the file gen wrote, or
-// the committed one — to this binary's declarations. The artifact describes the
-// baseline build, so under the review tag the only names this binary declares
-// beyond it must be exactly reviewFeatureNames; the entries the two share are
-// compared whole. In a default build the list is empty, so both comparisons are
-// the exact ones they always were: the artifact is neither more nor less than
-// the baseline build's vocabulary.
+// holdBaselineVocabulary holds one artifact — the file gen wrote, or the
+// committed one — to this binary's declarations. The artifact describes the
+// baseline build, so it is exactly this binary's vocabulary: neither more nor
+// less.
 func holdBaselineVocabulary(t *testing.T, artifact []vocabularyEntry) {
 	t.Helper()
 	declared, err := declaredVocabulary()
 	if err != nil {
 		t.Fatalf("reading this binary's declarations: %v", err)
 	}
-	reviewOnly := make(map[string]bool, len(reviewFeatureNames))
-	for _, name := range reviewFeatureNames {
-		if reviewOnly[name] {
-			t.Errorf("reviewFeatureNames names %q more than once", name)
-		}
-		reviewOnly[name] = true
-	}
-	inArtifact := make(map[string]bool, len(artifact))
-	for _, entry := range artifact {
-		inArtifact[entry.Name] = true
-	}
-	var added []string
-	baseline := make([]vocabularyEntry, 0, len(declared))
-	for _, entry := range declared {
-		if !inArtifact[entry.Name] {
-			added = append(added, entry.Name)
-		}
-		if reviewOnly[entry.Name] {
-			continue
-		}
-		baseline = append(baseline, entry)
-	}
-	wantAdded := slices.Clone(reviewFeatureNames)
-	slices.Sort(added)
-	slices.Sort(wantAdded)
-	if !slices.Equal(added, wantAdded) {
-		t.Errorf("this binary declares %v beyond the baseline artifact, want exactly reviewFeatureNames %v: "+
-			"a review control's feature must be named in reviewFeatureNames beside reviewModules, "+
-			"and every name there must be one the build declares", added, wantAdded)
-	}
-	if !reflect.DeepEqual(baseline, artifact) {
-		t.Errorf("the baseline vocabulary is out of step with this binary's baseline declarations:\n"+
-			"artifact: %+v\ndeclared: %+v", artifact, baseline)
+	if !reflect.DeepEqual(declared, artifact) {
+		t.Errorf("the vocabulary is out of step with this binary's declarations:\n"+
+			"artifact: %+v\ndeclared: %+v", artifact, declared)
 	}
 }
 
 // TestGenWritesTheFeatureVocabulary runs gen with --features and reads what it
 // wrote: the same declarations the baseline build carries, sorted by name. The
 // committed artifact is a copy of this output, so a case that only compared the
-// two would not say the flag works; this one runs the command. Under the review
-// tag the binary declares the review-only features as well;
-// holdBaselineVocabulary holds that difference to its own list.
+// two would not say the flag works; this one runs the command.
 func TestGenWritesTheFeatureVocabulary(t *testing.T) {
 	t.Parallel()
 	config := writeConfig(t, freePorts(t, listenerCount))

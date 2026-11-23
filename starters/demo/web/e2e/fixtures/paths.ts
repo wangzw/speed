@@ -8,7 +8,7 @@
  * environment, so the config process, the global setup and every fixture
  * worker agree on it even though they are separate processes. The front-end
  * build is the exception: it writes `starters/demo/server/dist-e2e` inside the
- * checkout and both binaries embed that directory, so at most one run may
+ * checkout and the binary embeds that directory, so at most one run may
  * execute in one checkout at a time. Two checkouts are isolated because each
  * owns its own `dist-e2e`.
  *
@@ -59,8 +59,8 @@ export const MANIFEST_PATH = `${HARNESS_DIR}/manifest.json`
 /** The e2e binary the global setup builds. */
 export const BINARY_NAME = 'demo-e2e'
 
-/** The deploy assembly's binary: the default build, with no review controls. */
-export const DEPLOY_BINARY_NAME = 'demo-deploy'
+/** The factor seeding helper: it writes an operator's aged factors. */
+export const FACTOR_SEED_NAME = 'factorseed'
 
 /** The helper that signs the SAML identity provider's responses. */
 export const SAML_SIGNER_NAME = 'saml-signer'
@@ -87,8 +87,8 @@ export const WEB_DIR = fromHere('../../')
 /** The pnpm workspace root the demo starter's front-end package is a member of. */
 export const WEB_WORKSPACE_DIR = fromHere('../../../../../web/')
 
-/** The review assembly's configuration template, copied and edited per server. */
-export const E2E_CONFIG_TEMPLATE = fromHere('../../../server/review/sqlite.yaml')
+/** The e2e assembly's configuration template, copied and edited per server. */
+export const E2E_CONFIG_TEMPLATE = fromHere('../../../server/e2e/config.yaml')
 
 /**
  * The deployment's configuration template. The container entrypoint renders it

@@ -54,7 +54,7 @@ function runRule(valid, invalid) {
 }
 
 const PACKAGE_FILE = 'packages/admin-ui/src/AccountsPage.tsx'
-const HOST_FILE = 'starters/demo/web/src/review-notice-control.tsx'
+const HOST_FILE = 'starters/demo/web/src/pages/home-page.tsx'
 const TENANCY_FILE = 'packages/tenancy-ui/src/TenantSwitcher.tsx'
 const HUMAN_VERIFICATION_FILE =
   'packages/ui-kit/src/components/HumanVerification.tsx'

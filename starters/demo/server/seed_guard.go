@@ -19,9 +19,9 @@ package main
 //     cannot answer -- a Reader another provider delivered, or a binary that
 //     declares no such item -- the guard falls back to comparing the effective
 //     account list with the compiled one.
-//   - Whether the deployment listens off loopback. It decodes http.listeners,
-//     the same addresses the review build's own guard refuses, and uses the same
-//     classification (loopbackAddress in listener_address.go).
+//   - Whether the deployment listens off loopback. It decodes http.listeners
+//     and uses the same address classification as everything else in this host
+//     (loopbackAddress in listener_address.go).
 //
 // The guard is a module, not a branch inside the commands, so its check runs in
 // Prepare: after the configuration is loaded and before any module is

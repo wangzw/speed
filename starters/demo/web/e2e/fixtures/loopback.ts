@@ -1,7 +1,7 @@
 /**
  * Port allocation and readiness probing for the fixtures' loopback servers.
  *
- * The review and deploy fixtures each start a real binary on ports the kernel
+ * The e2e and deploy fixtures each start a real binary on ports the kernel
  * hands out. A port that is free on 127.0.0.1 can still be held on ::1, and a
  * browser resolving `localhost` prefers ::1, so a port the fixture picked can
  * be unreachable in the browser while 127.0.0.1 answers. Both fixtures
