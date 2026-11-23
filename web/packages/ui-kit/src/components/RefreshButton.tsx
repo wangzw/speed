@@ -20,12 +20,13 @@
  *
  * While the read itself is in flight the control stays focusable and
  * reports `aria-busy`, with the spinner in place of an icon. None of these
- * states renders the control natively disabled: a disabled button drops
- * keyboard focus to the document body, and an operator who pressed Enter
- * would lose their place until the read settles, and the read would not
- * put it back. Every such state keeps the control focusable, carries
- * `aria-disabled` where appropriate, and swallows activation through a
- * guard, so a second activation issues no second request and queues none.
+ * states renders the control natively disabled: a natively disabled button
+ * stops holding focus, browsers differ in when and how they move it, and
+ * an operator who pressed Enter would lose their place until the read
+ * settles, with the read putting it nowhere. Every such state keeps the
+ * control focusable, carries `aria-disabled` where appropriate, and
+ * swallows activation through a guard, so a second activation issues no
+ * second request and queues none.
  *
  * Because the control is never natively disabled, the tooltip attaches to
  * the button directly instead of a wrapper span. An enabled control

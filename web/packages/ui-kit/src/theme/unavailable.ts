@@ -3,7 +3,9 @@
  *
  * A control that must stay focusable while it cannot run carries
  * `aria-disabled="true"` instead of MUI's native `disabled` prop, because
- * native disabling drops a focused control's focus to the document body.
+ * a natively disabled control stops being focusable: per the HTML spec it
+ * no longer holds focus, and browsers differ in when and how they move
+ * focus off it (inside a modal's focus trap it lands on the trap surface).
  * MUI paints its disabled face from the `.Mui-disabled` state class, which
  * such a control never gets, so without this layer an unavailable control
  * would look exactly like an enabled one. The overrides below give it the

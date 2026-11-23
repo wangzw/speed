@@ -4,7 +4,8 @@
  *
  * jsdom implements no focus correction for a focused element that becomes
  * natively disabled, so the old `disabled` control kept focus there; only
- * the browser tier can show the browser dropping it to the document body.
+ * the browser tier can show the browser moving focus off the control it
+ * stops reporting as focusable.
  */
 
 import { describe, expect, it } from 'vitest'

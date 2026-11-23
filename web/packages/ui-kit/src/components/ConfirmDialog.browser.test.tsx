@@ -5,8 +5,9 @@
  * jsdom implements neither the focus correction a browser runs when a
  * focused element becomes natively disabled nor the dialog focus trap's
  * response to it, so these cases live in the browser tier. Under the old
- * native `disabled` the browser moves focus off the button -- to the
- * document body, then, inside a modal, to the dialog's own container.
+ * native `disabled` the button stops holding focus; browsers differ in
+ * when and how they move it, and inside the modal's focus trap it lands
+ * on the dialog's own container.
  */
 
 import { describe, expect, it } from 'vitest'

@@ -4,8 +4,8 @@
  *
  * jsdom implements no focus correction for a focused element that becomes
  * natively disabled, so the old `disabled` close button kept focus there;
- * only the browser tier can show the browser dropping it to the document
- * body and the panel's focus trap then pulling it back to the paper.
+ * only the browser tier can show the browser moving focus off the control,
+ * with the panel's focus trap then landing it on the paper.
  */
 
 import { describe, expect, it } from 'vitest'

@@ -41,11 +41,11 @@
  * runtime consumers.
  *
  * `ActionButton` never renders a natively disabled control. A native
- * `disabled` attribute makes the element unfocusable, and the focus
- * correction a browser applies when the focused element becomes disabled
- * moves focus to the document body; a keyboard user who started the
- * action loses their place and cannot get it back. The two states that
- * replace native disabling keep the button in the tab order:
+ * `disabled` attribute makes the element unfocusable; the HTML spec
+ * requires an element that loses focusability to stop holding focus, and
+ * browser engines move it at different moments. A keyboard user who
+ * started the action can lose their place. The two states that replace
+ * native disabling keep the button in the tab order:
  *
  *  - `busy` means this button's own action is in flight. It carries
  *    `aria-busy`, shows a progress indicator in place of its text (the
@@ -166,9 +166,9 @@ export type ActionButtonProps = Omit<
     /** The action cannot run now: its precondition is unmet, or a write is in flight in a scope whose context this button changes. Focusable, aria-disabled, activation swallowed. */
     readonly unavailable?: boolean
     /**
-     * @deprecated Natively disables the button, which drops a focused
-     * button's focus to the document body. Use `busy` or `unavailable`.
-     * Removed once every call site has migrated.
+     * @deprecated Natively disables the button, which makes it unfocusable
+     * and can move a focused button's focus away. Use `busy` or
+     * `unavailable`. Removed once every call site has migrated.
      */
     readonly disabled?: boolean
     /**

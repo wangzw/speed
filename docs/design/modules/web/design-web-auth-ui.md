@@ -12,7 +12,7 @@ auth-ui 是登录组件族，位于 ui-kit 与 auth-core 之上，由[宿主](..
 
 - `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式（[REF-webauthn](../../../references.md)）。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的“口令注册”渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用。发现文档的 `password_reset.enabled` 为真且宿主给了 `onForgotPassword` 时，提交键左侧紧邻处、与提交键同一行渲染一个“忘记口令”文本按钮；注册模式不渲染，入口点击只报告给宿主，由宿主导航。首次登录会开户时，屏幕的渠道表单与回调路由上的 `SocialCallbackHandler` 都经共享步进渲染器渲染开户一步；账户在建号前取得所需内容：社交首登取用户名与口令，短信首登取用户名、可选的显示名与口令，企业即时开通只取用户名。经社交或企业提供方新开立的账户只取提供方的显示名，提供方声明的地址不写为登录方式、联系方式或资料（REQ-signup-048、REQ-signup-044）。
 - `PasswordSignInForm` 起一条 `method: 'password'` 的登录流程，按字段提交与后续步答复。标识字段接受用户名，或账户持有并已选作登录方式的邮箱；已登记并已证明但未被选中的邮箱不能完成口令登录，提供方声明的地址从不作口令登录名，口令登录与提供方登录不混用（REQ-signin-006、REQ-signin-038）。既有邮箱标识继续按写入时的方式用作口令登录名（REQ-signin-037）。`SMSSignInForm` 起 `method: 'sms'` 的流程，两步（手机号步与验证码步）收在同一个表单里；描述符为其他 `form` 方法给出首步字段时，由通用描述符表单驱动。三个可单独挂载的入口都接受同一个 `beforeStart` 门。两个登录渠道的表单在任一字段开始编辑时清除上一次尝试的提示，即整个尝试的失败横幅、该步自带的文案与该字段的错误文案，都不与被改动后的输入并排。渠道的错误位是 flex 流里的一行：空着的反馈区不占行，失败横幅才以一行出现。
-- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求；服务端答 409 `authn.email_taken` 时，邮箱字段渲染 `register.emailTaken` 并把焦点移到该字段：注册在事务里预留地址，被拒的是这一个值，不是整次尝试。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入“已登录”态，收起“账户已创建，请登录”与重试动作；宿主不导航时界面也不停留在“已登录却仍提示请登录”。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用，横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。用户名的拒绝按问题码落在用户名字段：409 `authn.username_taken` 渲染 `register.usernameTaken`、400 `authn.username_reserved` 渲染 `register.usernameReserved`、400 `authn.username_invalid` 渲染 `register.usernameInvalid`，焦点移到该字段，已填的值留在字段里；其余 400（口令策略、邮箱格式等）不当作用户名错误，按各自的字段或通用文案呈现。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
+- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求；服务端答 409 `authn.email_taken` 时，邮箱字段渲染 `register.emailTaken` 并把焦点移到该字段：注册在事务里预留地址，被拒的是这一个值，不是整次尝试。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入“已登录”态，收起“账户已创建，请登录”与重试动作；宿主不导航时界面也不停留在“已登录却仍提示请登录”。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待呈不可用（仍可聚焦），横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。用户名的拒绝按问题码落在用户名字段：409 `authn.username_taken` 渲染 `register.usernameTaken`、400 `authn.username_reserved` 渲染 `register.usernameReserved`、400 `authn.username_invalid` 渲染 `register.usernameInvalid`，焦点移到该字段，已填的值留在字段里；其余 400（口令策略、邮箱格式等）不当作用户名错误，按各自的字段或通用文案呈现。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
 - `SocialSignInSection` 渲染一组 redirect 方法，每个方法起一条登录流程；开始响应的 `redirect` 步交出授权地址，由宿主导航。
 - `SocialCallbackHandler` 在宿主的回调路由上读回那条流程（`session.readFlow`），据其状态续接。
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
@@ -187,7 +187,7 @@ interface SignOutMenuItemProps {
 interface ImpersonationBannerProps {
   readonly impersonation: ImpersonationBannerState | null // null 即当前没有冒充
   readonly onEnd: () => void                               // 发起宿主的那一次结束尝试
-  readonly pending?: boolean                               // 该尝试在途：结束控件禁用并标忙
+  readonly pending?: boolean                               // 该尝试在途：结束控件呈不可用并标忙，保持可聚焦
   readonly failureCode?: string | null                     // 该尝试的失败码，渲染在横幅内
   readonly successMessage?: string | null                  // 该尝试的成功文案，落在常驻 live region
   readonly dismissed?: boolean                             // 为真时不渲染横幅本体，常驻 live region 不受影响；缺省 false
@@ -394,11 +394,11 @@ sequenceDiagram
 
 1. **本地校验。** 用户名与邮箱按服务端的规范化规则给格式提示；邮箱的规则是去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节，不合格时在邮箱字段渲染 `register.invalidEmail` 并且不发请求。口令只做非空、两次一致与部署给出的最小长度提示，不复刻服务端的策略数值；确认口令不进入请求。字段不合格时焦点移到首个不合格字段，错误文字经 `aria-describedby` 指向，字段标 `aria-invalid`。
 2. **起手门。** “口令注册”渠道与其他渠道一样在起手前询问 `beforeStart`，上下文是 `{method: 'password', mode: 'register'}`；答案不为真时不发请求、不渲染错误。
-3. **建号。** 调 `session.register`，请求带用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填（REQ-signup-004），它是注册后写下的未证明预留，在验证前不是登录名。提交在途时控件禁用并标忙，不发第二次。
+3. **建号。** 调 `session.register`，请求带用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填（REQ-signup-004），它是注册后写下的未证明预留，在验证前不是登录名。提交在途时控件呈不可用（仍可聚焦）并标忙，不发第二次。
 4. **自动登录。** 注册成功后以同一凭据起一条 `method: 'password'` 的口令登录流程，走通则报一次 `onSignedIn({mode: 'register', channel: 'password'})`。注册本身不报这个回调，也不改变会话快照。
 5. **自动登录被拒。** 账户已建成，不重发注册请求：给出 `onSignInRequired` 时把用户名交给宿主，屏幕切回登录模式并以 `defaultUsername` 预填；未给出时就地说明“账户已创建，请登录”，重试只重跑口令登录。
 
-注册结果的可及性：成功的注册由先挂空、下一 tick 再填文本的 `role="status"` 区域播报一次，失败横幅为 `role="alert"`。注册模式下经短信渠道开户时的验证码重发控件在服务端给出的重发间隔内禁用并说明原因；账户页的验证节遵循同一倒计时规则（[account-ui](design-web-account-ui.md)）。
+注册结果的可及性：成功的注册由先挂空、下一 tick 再填文本的 `role="status"` 区域播报一次，失败横幅为 `role="alert"`。注册模式下经短信渠道开户时的验证码重发控件在服务端给出的重发间隔内呈不可用（仍可聚焦）并说明原因；账户页的验证节遵循同一倒计时规则（[account-ui](design-web-account-ui.md)）。
 
 首登开户的开户一步不是注册：它由登录流程在解析出这次登录会新开账户之后索取，答复经 `session.answerFlow` 发出，不调用 `session.register`（[auth-core](design-web-auth-core.md)）。
 
@@ -448,10 +448,10 @@ sequenceDiagram
 1. **宿主始终挂载它，`impersonation` 为 `null` 时只留一个空的 live region。** 没有冒充时不渲染横幅，不占高度；区域先挂空、冒充出现时再填入文本，刚结束冒充的成功文案也留在这个仍挂载的区域里，不随横幅卸载。播报状态下这个区域视觉隐藏，且不得成为可聚焦的滚动区域：键盘用户在横幅槽里的第一次 Tab 落在“结束冒充”上，不落在看不见的节点上。组件首次挂载时 `impersonation` 已非空（开始冒充后租户框架新挂载，或冒充中整页重载）同样先挂空区域、下一 tick 再填入文本，所以这两种情形都播报一次；冒充中重载时的这次播报是对仍处于冒充的提醒，不抑制。结束若发生在别的入口、使横幅所展示的冒充消失，组件自己在这个区域里落“冒充已结束”；宿主那次结束尝试自己的成功文案同样落在这里。
 2. **`impersonation` 非空且 `dismissed` 不为真时渲染横幅。** 横幅是带可及名的 `region` 地标，文字说明正在以 `subject` 的身份操作，给出了 `tenant` 与 `expiresAt` 就一并陈述，`tenant` 按原样陈述，它可能是租户标识而不是可读名，并说明冒充期间管理功能不可用。观看者就是发起者，横幅不陈述发起者。组件不倒计时，也不在到期时自行动作；到期后的重读由宿主负责。版式压低占用的高度：这几句事实作为同一段文字行内流动，不按句分行；结束与隐藏控件及文字同排并靠右，仅在 `xs` 以下另起一行；纵向内边距与正文字号取最小的一档。主体与租户标识各取限宽（主体约 16 个字符宽，租户标识约 24 个字符宽），超出时单行省略，完整值作为 `title`，使值的长短不把控件挤出栏外，也使文字的行数有上界。高度目标按值的长短分两档：主体与租户标识都不被省略时，视口 1280px 的文字单行，高度 40 到 48px，800px 至多两行；值被限宽省略时，1280px 至多两行，800px 至多三行。固定的几句事实不为凑单行而删减：到期时刻与管理功能不可用是操作者在冒充期间要知道的内容，目标服从内容。
 3. **“结束冒充”不依赖 `tenant` 与 `expiresAt`。** 这两项是宿主读状态得来的，读不到时缺省，结束控件照常渲染、照常可用。
-4. **结束是宿主持有的一次写入尝试，所有入口共用它。** 宿主以 ui-kit 的 `useWriteFeedback` 持有这次尝试，横幅的结束控件与账户菜单里的“结束冒充”项都只调同一个 `onEnd`；`pending`、`failureCode`、`successMessage` 由该尝试派生，经提供者交给两处。在途时两处同时禁用并标忙，不发第二次；兑现即成功，成功文案“冒充已结束”落在组件自己的常驻区域，与横幅是否被隐藏无关；抛出即失败，失败码文本只落在横幅内，控件保持可重试，横幅此刻被隐藏时提供者在 `failureCode` 由空变为有值的那一刻复位隐藏状态，使它出现。“当前已无冒充可结束”（服务端的裸 404）由宿主的尝试当成兑现，组件不认识 HTTP 状态。
+4. **结束是宿主持有的一次写入尝试，所有入口共用它。** 宿主以 ui-kit 的 `useWriteFeedback` 持有这次尝试，横幅的结束控件与账户菜单里的“结束冒充”项都只调同一个 `onEnd`；`pending`、`failureCode`、`successMessage` 由该尝试派生，经提供者交给两处。在途时两处同时呈不可用并标忙，横幅的结束控件保持可聚焦，不发第二次；兑现即成功，成功文案“冒充已结束”落在组件自己的常驻区域，与横幅是否被隐藏无关；抛出即失败，失败码文本只落在横幅内，控件保持可重试，横幅此刻被隐藏时提供者在 `failureCode` 由空变为有值的那一刻复位隐藏状态，使它出现。“当前已无冒充可结束”（服务端的裸 404）由宿主的尝试当成兑现，组件不认识 HTTP 状态。
 5. **横幅可隐藏，隐藏的是横幅本体；隐藏状态由 `ImpersonationNoticeProvider` 持有。** 给了 `onDismiss` 才渲染“隐藏”控件（图标按钮，可及名“隐藏冒充提示”）。点击调 `dismiss`，横幅本体卸载，**焦点移到应用栏里的 `ImpersonationIndicator`**，不留在已卸载的控件上。常驻的 live region 与身份指示不受影响，开始与结束的播报照常。隐藏状态是提供者的内存状态，不落任何存储，整页重载复位。下列时刻复位为显示：`grantId` 在两个已读到的值之间变化（同一账户被再次冒充也算）；`identityKey` 变化；冒充结束（`impersonation` 变为 `null`）；结束尝试失败。读到 `grantId` 之前做出的隐藏、随后 `grantId` 读到，不复位；同一授予内状态读的重读、标签页重新可见的重读与路由切换也不复位；到期临近不自动再显示。
 6. **身份指示在冒充期间始终渲染。** `ImpersonationIndicator` 在 `impersonation` 非空时渲染为一个按钮，可见文字“冒充中”，可及名取这段可见文字，颜色与图标不单独承载含义；`null` 时不渲染。它是披露控件：`aria-expanded` 为横幅是否显示，`aria-controls` 指向横幅，激活调 `onToggle`，焦点留在指示上。它的提示文字随状态在“隐藏冒充提示”与“显示冒充提示”之间切换。触屏上的可点击目标不小于 44×44（[布局](design-web-layout.md)）。
-7. **账户菜单在冒充期间多一项“结束冒充”。** `ImpersonationEndMenuItem` 在提供者之内且 `impersonation` 非空时渲染，文字是“结束冒充”，在途时是“正在结束冒充……”并禁用；激活调共用的 `end`，再调 `onActivate`（宿主用它关闭菜单）；提供者之外或没有冒充时不渲染。
+7. **账户菜单在冒充期间多一项“结束冒充”。** `ImpersonationEndMenuItem` 在提供者之内且 `impersonation` 非空时渲染，文字是“结束冒充”，在途时是“正在结束冒充……”并呈不可用（仍可聚焦）；激活调共用的 `end`，再调 `onActivate`（宿主用它关闭菜单）；提供者之外或没有冒充时不渲染。
 
 ### 失败横幅与步骤的推进
 
@@ -479,7 +479,7 @@ sequenceDiagram
 | 注册被拒为 409 `username-taken` | 文本落在用户名字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；不渲染整次尝试横幅 |
 | 注册被拒为 409 `email-taken` | 文本落在邮箱字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；注册在事务里预留地址，被拒的是邮箱这一个值，不渲染整次尝试横幅 |
 | 注册被拒为 403 `signup-closed` 或 503 `unavailable` | 一条 `role="alert"` 横幅渲染应答的错误码文本，表单保持可重试 |
-| 注册被拒为 429 `throttled` | 一条横幅渲染该码文本；提交控件按 `Retry-After` 禁用至该时刻并说明原因 |
+| 注册被拒为 429 `throttled` | 一条横幅渲染该码文本；提交控件按 `Retry-After` 呈不可用（仍可聚焦）至该时刻并说明原因 |
 | 注册被拒为 400 `bad-request`（格式或口令策略） | 一条 `role="alert"` 横幅渲染应答的错误码文本；不在客户端复述策略数值 |
 | 首登开户一步被拒为 409 `username-taken` | 文本落在用户名字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；步骤原地保留，换一个用户名重试；不渲染整次尝试横幅 |
 | 首登开户一步被拒为 400 `username-reserved`、`username-invalid` | 同样落在用户名字段，文案取各自词条；步骤原地保留，可重试 |
@@ -550,8 +550,8 @@ sequenceDiagram
 | 各渠道表单停留步骤的人机验证块与 `human_proof`（短信第二因素、声明手机号的挑战） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `HumanGatedFlowStep`；`web/packages/auth-ui/src/internal/flow.ts` `answerSends`、`stepMaySend`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver` |
 | 通行密钥仪式由 `@speed/auth-core/webauthn` 驱动；TOTP 登记 URI 由 `@speed/auth-core/otpauth` 解析并经 ui-kit 的 `TotpEnrollmentPanel` 渲染 | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx`；`web/packages/auth-core/src/webauthn.ts`；`web/packages/auth-core/src/otpauth.ts`；`web/packages/ui-kit/src/components/TotpEnrollmentPanel.tsx` |
 | 错误码文本经 i18n 共享解析器（含 `client.http.<status>` 一类） | 已实现 | `web/packages/auth-ui/src/internal/error-text.ts` |
-| 冒充横幅 `ImpersonationBanner` | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |
-| 横幅的隐藏控件、顶部栏的 `ImpersonationIndicator`、与账户菜单项共用结束尝试 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState`；`web/packages/auth-ui/src/ImpersonationNotice.tsx` `ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`useImpersonationNotice` |
+| 冒充横幅 `ImpersonationBanner` | 部分实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |
+| 横幅的隐藏控件、顶部栏的 `ImpersonationIndicator`、与账户菜单项共用结束尝试 | 部分实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState`；`web/packages/auth-ui/src/ImpersonationNotice.tsx` `ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`useImpersonationNotice` |
 | 读提供者的横幅与身份指示 | 已实现 | `web/packages/auth-ui/src/ImpersonationNotice.tsx` `ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`ImpersonationNoticeBannerProps` |
 | 登录屏的 `onSignedIn` 带模式与渠道上下文 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`、`SignInContext` |
 | 横幅文字行内流动，主体与租户标识限宽省略，行数按值的长短有上界 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerState` |

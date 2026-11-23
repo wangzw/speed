@@ -226,9 +226,8 @@ export function TotpEnrollmentPanel({
           slotProps={{
             htmlInput: {
               // A write in flight locks the value without taking focus
-              // away: a natively disabled field drops a focused input's
-              // focus to the body, while a read-only one stays reachable
-              // and selectable.
+              // away: a natively disabled field stops holding focus, while a
+              // read-only one stays reachable and selectable.
               readOnly: busy,
               inputMode: 'numeric',
               autoComplete: 'one-time-code',

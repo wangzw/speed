@@ -428,7 +428,7 @@ graph TD
 | 组织上下文 | `OrganizationAdminProviderProps` | 当前租户、组织操作束、会话、特性判定、路由表、面包屑、邀请链接构造器、受保护角色、租户更新回调（`onTenantUpdated`）与离任回调（`onOrganizationLeft`）；只安装上下文，不渲染 DOM |
 | 组织操作束 | `OrganizationAdminOperations` | 租户作用域的读钩子与写 mutation：邀请与成员、SSO、设置、角色、权限、授予与绑定，组织资料的读写（`useTenantProfile`、`useTenantProfileWrite`），以及所有者转移请求、待处理读取、取消与组织删除（`useTenantOwnerPending`、`useTenantOwnerRequest`、`useTenantOwnerCancel`、`useTenantOwnerDelete`），全部落在 `/api/v1/tenants/{tenant}/...`；读键以租户标识为最外层段 |
 | 组织操作束的发布 | `OrganizationAdminOperationsProvider` | `OrganizationAdminProvider` 挂载它把操作束交给页面；页面经 `useOrganizationAdminOperations` 取用，没有挂载时取出厂绑定 |
-| 游标翻页 | `CursorPager` | 成员表与邀请表共用的上一页／下一页控件；页码从 1 起显示，单页时不渲染，写入或下一页读在途时两个方向都禁用 |
+| 游标翻页 | `CursorPager` | 成员表与邀请表共用的上一页／下一页控件；页码从 1 起显示，单页时不渲染；写入在途时两个方向都呈不可用，下一页读在途时被激活的方向带 `aria-busy`、另一方向呈不可用，两个方向都保持可聚焦（见 ui-kit“写入的反馈”） |
 | 邀请观察态 | `invitationStatusOf` | 由存量状态与期限推出 `pending／expired／accepted／revoked`；期限解析不出时保留 `pending` |
 | 邀请投递结果 | `email_delivery` | 签发应答里的 `sent／failed／not_configured`，与一次性链接并列渲染；失败不改变邀请已成立 |
 | 面包屑 | `PageHeaderBreadcrumb` | 组织管理面的面包屑上下文值；页头优先渲染它，缺席时回退到页面自己的平台面包屑 |
@@ -473,15 +473,15 @@ graph TD
 
 **成员分区。** 工具栏（搜索框、角色筛选、清除）在 `AdminAsyncSection` 之外，所以加载、空与失败都不会吞掉改变这次读的控件。搜索按 300ms 防抖后才作为服务端 `query` 发出，输入一变即回到第一页；角色筛选作为服务端 `role` 参数发出，并与 `query` 同时生效。角色选项取自该租户的角色读；读失败时保留当前选择、给出可重试的说明，不把空列表当作“该租户没有角色”。筛选值写进页面 URL 的 `role` 查询参数（按值 percent-encode），刷新后仍是同一个筛选；URL 里的值不在当前角色列表里时仍作为一项可清除的选项显示，不静默丢掉一个地址带来的筛选。
 
-表格列：显示名（主辨识列，不设优先级）、用户名（`high`）、角色（`high`，小芯片，空值是“无角色”的占位文本）、状态（`high`，文本芯片）、来源（`low`）、加入时间（`high`）、管理（始终显示，`pinLastColumn`）。角色、状态与加入时间取 `high`：它们是操作者开这张表要看的事实，从 `sm` 容器档（600px）起保留，包括 1024px 桌面视口扣掉 280px 侧栏后的内容区。加入时间在该档内按空格换行，不把表格撑出横向滚动；两张表的单元格横向内边距同时从 ui-kit 缺省收窄到主题间距的一档，使这组列在 600px 容器下限内放得下。显示名、用户名与角色列都设内容宽度上限（角色取长文本上限；显示名与用户名取主辨识上限）：成员表在 `md` 以下把这一共享上限收紧到 96px，`md` 起沿用共享的 200px。上限作用于任意长度的值：显示名与用户名都在上限内单行截断，角色芯片在上限内换行。显示名与用户名是逐行辨识成员的标识，折行会把一个词拆开，故这两列不折行；单行截断使上限同时成为该列的最小宽度，两列取共享的 160px 时与其余 `high` 列合计超出 `sm` 档下限。状态列不设内容宽度上限，其芯片宽度随文案增长，“已停用”比“启用”宽，故核算按最宽的标签取；收紧到 96px 后，最宽的可达状态是把显示名与用户名都取满上限、状态为“已停用”的行，该行在 600px 档内需要 576.8px，距该档下限留出 23.2px。超长值不把表格撑破，也不以横向滚动规避；复制控件只出现在用户名与邮箱两列，显示名的完整值经单元格的悬停标题取得，角色列只读。成员按游标分页，页大小 100，`next_cursor` 由服务端给出；翻页控件在两页以上才渲染，写入在途或下一页在途时两个方向都禁用。
+表格列：显示名（主辨识列，不设优先级）、用户名（`high`）、角色（`high`，小芯片，空值是“无角色”的占位文本）、状态（`high`，文本芯片）、来源（`low`）、加入时间（`high`）、管理（始终显示，`pinLastColumn`）。角色、状态与加入时间取 `high`：它们是操作者开这张表要看的事实，从 `sm` 容器档（600px）起保留，包括 1024px 桌面视口扣掉 280px 侧栏后的内容区。加入时间在该档内按空格换行，不把表格撑出横向滚动；两张表的单元格横向内边距同时从 ui-kit 缺省收窄到主题间距的一档，使这组列在 600px 容器下限内放得下。显示名、用户名与角色列都设内容宽度上限（角色取长文本上限；显示名与用户名取主辨识上限）：成员表在 `md` 以下把这一共享上限收紧到 96px，`md` 起沿用共享的 200px。上限作用于任意长度的值：显示名与用户名都在上限内单行截断，角色芯片在上限内换行。显示名与用户名是逐行辨识成员的标识，折行会把一个词拆开，故这两列不折行；单行截断使上限同时成为该列的最小宽度，两列取共享的 160px 时与其余 `high` 列合计超出 `sm` 档下限。状态列不设内容宽度上限，其芯片宽度随文案增长，“已停用”比“启用”宽，故核算按最宽的标签取；收紧到 96px 后，最宽的可达状态是把显示名与用户名都取满上限、状态为“已停用”的行，该行在 600px 档内需要 576.8px，距该档下限留出 23.2px。超长值不把表格撑破，也不以横向滚动规避；复制控件只出现在用户名与邮箱两列，显示名的完整值经单元格的悬停标题取得，角色列只读。成员按游标分页，页大小 100，`next_cursor` 由服务端给出；翻页控件在两页以上才渲染，写入在途或下一页在途时两个方向都呈不可用（仍可聚焦）。
 
-每行的“管理”打开一个侧边面板（`SidePanel`）。面板有成员概况（用户名、状态、加入时间）、角色绑定、停用／恢复与移除四部分；面板标题与概况都不渲染账户标识。角色部分按调用方在本租户的权限分三档：没有 `authz.tenant.role.read` 时不读绑定、也不渲染任何角色控件，只说明没有查看权限；有读没有 `authz.tenant.role.manage` 时绑定只读，绑定与解绑控件都不渲染；有管理权限时完整控件出现。绑定前的防提权检查读目标角色的授予，逐条把授予的 `permission` 与调用方自己的租户权限集比较；任一条为空码（本进程翻译不回权限）或调用方未持有即阻止绑定，并说明原因。授予读失败或仍在途时绑定保持禁用并可重试；解绑不受这条预检约束。角色下拉只列出该成员尚未持有的角色；全部角色都已持有时，下拉禁用并说明“没有可绑定的角色”。解绑经一次确认，文案写明角色权限立即失效、不能解绑当前账户自己的 tenant-admin 绑定，以及会移除本组织最后一名 tenant-admin 的解绑由服务端拒绝。当前账户自己的受保护角色（宿主经 `protectedRoles` 给出的名字，demo 中是 tenant-admin）的绑定在发起前即禁用，并按当前账户与该绑定说明原因；面板不自行断言最后一名管理员，只有服务端能计数。服务端仍按角色授予子集与调用方实际持有的权限判定，前端预检只是少发一次必然被拒的写。
+每行的“管理”打开一个侧边面板（`SidePanel`）。面板有成员概况（用户名、状态、加入时间）、角色绑定、停用／恢复与移除四部分；面板标题与概况都不渲染账户标识。角色部分按调用方在本租户的权限分三档：没有 `authz.tenant.role.read` 时不读绑定、也不渲染任何角色控件，只说明没有查看权限；有读没有 `authz.tenant.role.manage` 时绑定只读，绑定与解绑控件都不渲染；有管理权限时完整控件出现。绑定前的防提权检查读目标角色的授予，逐条把授予的 `permission` 与调用方自己的租户权限集比较；任一条为空码（本进程翻译不回权限）或调用方未持有即阻止绑定，并说明原因。授予读失败或仍在途时绑定呈不可用（可聚焦，以 `aria-describedby` 关联原因）并可重试；解绑不受这条预检约束。角色下拉只列出该成员尚未持有的角色；全部角色都已持有时，下拉禁用并说明“没有可绑定的角色”。解绑经一次确认，文案写明角色权限立即失效、不能解绑当前账户自己的 tenant-admin 绑定，以及会移除本组织最后一名 tenant-admin 的解绑由服务端拒绝。当前账户自己的受保护角色（宿主经 `protectedRoles` 给出的名字，demo 中是 tenant-admin）的绑定在发起前即呈不可用（仍可聚焦），并按当前账户与该绑定说明原因；面板不自行断言最后一名管理员，只有服务端能计数。服务端仍按角色授予子集与调用方实际持有的权限判定，前端预检只是少发一次必然被拒的写。
 
-停用与恢复都经确认；停用自己的成员关系在确认之前就禁用并说明原因，服务端另以 409 `cannot-suspend-self` 兜底。停用保留角色绑定，恢复后原样生效。移除使用 `doubleConfirm`：移除会清掉该成员在本租户的全部角色绑定，不可恢复；确认文案写明这一点，并提示只想暂停访问时应改用停用。面板内全部写入共用一个反馈作用域，失败同时标记对应的控件或绑定行；移除成功不写在面板里，页面在面板 `onExited` 之后把成功文案写进成员列表的作用域：面板退出前背后的列表对辅助技术不可见。
+停用与恢复都经确认；停用自己的成员关系在确认之前就呈不可用（仍可聚焦）并说明原因，服务端另以 409 `cannot-suspend-self` 兜底。停用保留角色绑定，恢复后原样生效。移除使用 `doubleConfirm`：移除会清掉该成员在本租户的全部角色绑定，不可恢复；确认文案写明这一点，并提示只想暂停访问时应改用停用。面板内全部写入共用一个反馈作用域，失败同时标记对应的控件或绑定行；移除成功不写在面板里，页面在面板 `onExited` 之后把成功文案写进成员列表的作用域：面板退出前背后的列表对辅助技术不可见。
 
 搜索空态、筛选空态与无成员空态各自成文：搜索空态带查询词，筛选空态带角色名，并都提示清除条件。工具栏在三种状态下都仍在。
 
-**邀请分区。** 签发表单是邮箱输入、有效期选择（1 天、7 天、30 天，缺省 7 天）与角色选择，控件底部对齐、允许换行，窄屏纵向堆叠；提交按钮在邮箱去掉首尾空白后为空时禁用。签发成功后的应答同时带令牌、链接构造器的输入与 `email_delivery`。角色下拉的选项来自该租户的角色列表，只在调用方持有 `authz.tenant.role.manage` 时渲染；选中角色后沿用成员面板的越权预检：读取该角色的授予，逐条把服务端给出的 `permission` 与调用方自己的租户权限集比较，任一授予为空码或调用方未持有即阻止发出并说明原因，授予读在途或失败时同样不发出。
+**邀请分区。** 签发表单是邮箱输入、有效期选择（1 天、7 天、30 天，缺省 7 天）与角色选择，控件底部对齐、允许换行，窄屏纵向堆叠；提交按钮在邮箱去掉首尾空白后为空时呈不可用（仍可聚焦）并说明原因。签发成功后的应答同时带令牌、链接构造器的输入与 `email_delivery`。角色下拉的选项来自该租户的角色列表，只在调用方持有 `authz.tenant.role.manage` 时渲染；选中角色后沿用成员面板的越权预检：读取该角色的授予，逐条把服务端给出的 `permission` 与调用方自己的租户权限集比较，任一授予为空码或调用方未持有即阻止发出并说明原因，授予读在途或失败时同样不发出。
 
 一次性链接面板（`OneTimeValuePanel`）是页面状态，不在任何反馈作用域的槽里：作用域 `reset`、后续失败或上下文变化都不清掉它。面板显示接受链接（宿主给了 `invitationLink` 时）或裸令牌、有效期至某个按查看者显示时区渲染的时刻、“任何获得链接的人都能加入本组织”的提示，以及邮件投递三态：`sent` 说已发送，`failed` 说邮件未发出但邀请已成立、请复制链接另行转交，`not_configured` 说本部署未配置邀请邮件。投递失败以错误色渲染，仍不改变邀请已成立的事实。关闭面板只在面板真的持有链接或令牌时经一个独立 `ConfirmDialog` 确认丢弃；`sent` 的面板没有可丢的值，关闭直接清空。
 
@@ -497,9 +497,9 @@ graph TD
 
 组织管理面的 `/roles` 是组织管理面自己的页面（`OrganizationRolesPage`），不是共享权限页的租户模式。页面由上到下分四区：角色区、授权区、使用情况与底部的权限目录参考区；四个分区各是一张 `SectionCard`，间距 `mb: 3`。页头标题与菜单同用 `organization.nav.roles`（“角色与权限”）。
 
-**角色区。** 创建表单只有在调用者可以管理角色时渲染：角色名加描述；角色名去掉首尾空白后为空，或与列表中已有角色同名时提交禁用，同名时提示改用编辑描述。角色表列为角色（主辨识列）、描述（`medium`，可换行）、权限数（`medium`）、成员数（`medium`，`null` 显示占位）、内建标记（`low`）、操作（始终显示，`pinLastColumn`）。内建角色、宿主 `protectedRoles` 里的角色与 `can_manage=false` 的行都只读：操作列保留“查看授权”，不渲染描述改写与删除，旁边是一句说明原因。描述改写用侧边面板：只读角色名、多行描述（500 字符上限与计数）、保存与取消；保存走同一个角色写入。删除经二次确认，文案说明级联撤销授权与绑定且不可恢复。
+**角色区。** 创建表单只有在调用者可以管理角色时渲染：角色名加描述；角色名去掉首尾空白后为空，或与列表中已有角色同名时提交呈不可用（仍可聚焦），同名时提示改用编辑描述。角色表列为角色（主辨识列）、描述（`medium`，可换行）、权限数（`medium`）、成员数（`medium`，`null` 显示占位）、内建标记（`low`）、操作（始终显示，`pinLastColumn`）。内建角色、宿主 `protectedRoles` 里的角色与 `can_manage=false` 的行都只读：操作列保留“查看授权”，不渲染描述改写与删除，旁边是一句说明原因。描述改写用侧边面板：只读角色名、多行描述（500 字符上限与计数）、保存与取消；保存走同一个角色写入。删除经二次确认，文案说明级联撤销授权与绑定且不可恢复。
 
-**授权区。** 选中角色后列出它持有的权限。每行以目录里的可读名称为主文本、权限码为次要等宽小字；目录标为高危的权限带可见“高风险”徽标。授予选择器只列 `grantable=true` 的项并按目录分组；授予高危权限前经二次确认。撤销以服务端给出的 `permission` 为输入；`permission` 为空的历史授予保留 `resource/action` 的拼写，撤销控件禁用，行内说明该授权无法映射到当前权限目录。内建、受保护或 `can_manage=false` 的角色只列出授权与只读说明，不渲染授予与撤销。
+**授权区。** 选中角色后列出它持有的权限。每行以目录里的可读名称为主文本、权限码为次要等宽小字；目录标为高危的权限带可见“高风险”徽标。授予选择器只列 `grantable=true` 的项并按目录分组；授予高危权限前经二次确认。撤销以服务端给出的 `permission` 为输入；`permission` 为空的历史授予保留 `resource/action` 的拼写，撤销控件呈不可用（仍可聚焦），行内说明该授权无法映射到当前权限目录。内建、受保护或 `can_manage=false` 的角色只列出授权与只读说明，不渲染授予与撤销。
 
 **使用情况。** 摘要显示角色的 active 成员数；`member_count` 为 `null` 时显示成员状态不可用，不拿绑定数冒充。表列为显示名（空则账户）、账户、状态（启用／停用／不可用）与授予时间，按服务端账户游标分页，页大小 50。它是只读的：页面不渲染绑定、解绑或按账户查询的控件。调用者同时持有 `authn.membership.manage` 时，摘要旁提供“在成员页查看”入口，链接到成员与邀请页并带 URL 编码的角色名参数；只持 `authz.tenant.role.read` 的调用者看不到入口，只读列表仍渲染。
 
@@ -529,7 +529,7 @@ graph TD
 
 ### 按租户寻址的请求
 
-按租户寻址的读以租户选择器的取值为查询键的一段，故切租户即换键、旧租户的数据自行失效。取值为空时该读声明为禁用（不发出请求）；页面渲染一段说明，提示先选择租户。读被禁用的作用域里，页的刷新动作同样禁用，条件与理由见“页的刷新动作”。
+按租户寻址的读以租户选择器的取值为查询键的一段，故切租户即换键、旧租户的数据自行失效。取值为空时该读声明为禁用（不发出请求）；页面渲染一段说明，提示先选择租户。读被禁用的作用域里，页的刷新动作同样呈不可用（仍可聚焦），条件与理由见“页的刷新动作”。
 
 ### 读的失败情形：权限拒绝与其它失败
 
@@ -543,9 +543,9 @@ graph TD
 
 **刷新重读该页描述页面主体的每一个读。** 机制是 [ui-kit](design-web-ui-kit.md) 的 `usePageRefresh`：页面以 `pageRefreshRead` 把每个体读的句柄与去重键配成一条，机制按结构读句柄，只依赖 React，从不发请求。判据：页面上不在模态面板内、描述页面主体的读，只要此刻启用，都由刷新动作重读；解析到同一查询键的读只重读一次。行内的账户身份解析、账户选择器的检索读与租户选择器的名册读不描述页面主体，不在其内；模态面板内的读在面板关闭后重新打开时重读。刷新动作只重读此刻启用的读：重读不看读的启用条件，重读一个被禁用的读会发出缺实参的请求，所以因所选角色为空而被禁用的授权读、因没有已应用的查询账户而被禁用的账户绑定读、因特性缺席而不发出的审计读都被跳过。审计查询页重读当前筛选下当前游标指向的那一页，不回到首页。示例：仪表盘的名册读、健康度读与最近活动读；平台权限页的角色读、权限目录读、绑定列表读，以及仅在已选角色时存在的授权读、仅在已应用查询账户时存在的账户绑定查询；设置页所选命名空间的设置读与命名空间导航所用的全量设置读，选中全部命名空间时这两个读同键、只重读一次；平台邀请与成员页的邀请读与成员读；冒充页的状态读，以及记录区渲染且租户已选时的记录读。这个列表是示例；判据是上述不在模态面板内、描述页面主体的读。
 
-**忙态只看读，禁用只看写入与寻址取值。** 本页被刷新重读的读有任一在进行中时，刷新动作带 `aria-busy` 与自带的忙态指示，保持原生可聚焦，再次激活不发第二次请求；它不置原生 `disabled`，因为聚焦的控件被禁用会使焦点落回文档，键盘用户按下 Enter 后要从页首重新 Tab。本页任一反馈作用域有写入在途时，刷新动作原生禁用而不标忙：刷新之后不会有先前上下文发起的尝试落定（[ui-kit](design-web-ui-kit.md) 的“写入的反馈”）。页面的寻址取值为空、页面因此只剩选择提示而没有可重读的读时（会话页未选账户，平台管理面的权限页与邀请页未选租户），刷新动作原生禁用，并带 `aria-describedby` 指向页面上的选择提示，使禁用的原因可被感知；页面只有这一份可见文本，启用后该关联撤除，写入在途的禁用不带它。这个页面清单是示例；判据是页面此刻没有可重读的读。冒充页不在其内：状态读不按租户寻址，租户未选时仍在屏，刷新动作照常可用、只重读状态读，记录读不发出。
+**忙态只看读，不可用只看写入与寻址取值。** 本页被刷新重读的读有任一在进行中时，刷新动作带 `aria-busy` 与自带的忙态指示，保持原生可聚焦，再次激活不发第二次请求；它不置原生 `disabled`，因为原生禁用使控件变为不可聚焦、按 HTML 规范它不再持有焦点，键盘用户按下 Enter 后可能要从页首重新 Tab。本页任一反馈作用域有写入在途时，刷新动作呈不可用而不标忙（可聚焦、`aria-disabled`）：刷新之后不会有先前上下文发起的尝试落定（[ui-kit](design-web-ui-kit.md) 的“写入的反馈”）。页面的寻址取值为空、页面因此只剩选择提示而没有可重读的读时（会话页未选账户，平台管理面的权限页与邀请页未选租户），刷新动作呈不可用，并带 `aria-describedby` 指向页面上的选择提示，使不可用的原因可被感知；页面只有这一份可见文本，启用后该关联撤除，写入在途的不可用不带它。这个页面清单是示例；判据是页面此刻没有可重读的读。冒充页不在其内：状态读不按租户寻址，租户未选时仍在屏，刷新动作照常可用、只重读状态读，记录读不发出。
 
-**刷新是上下文变化，先 `reset` 本页描述页面主体的每个反馈作用域与页面标记，再发出重读。** 重读之后，旧的写入结果会被读成描述另一个上下文，例如一条“已移除”的确认停在重读后的表格旁（[ui-kit](design-web-ui-kit.md) 的“写入的反馈”）。同页的各作用域一并 `reset`，因为刷新重读的是整页。`reset` 清的是槽；与槽里那次结果同生命周期的页面状态，即指出失败落在哪一行、哪个控件的行标记（设置页的 `failedKey`，权限页、邀请页、SSO 页与短信页各自的 `failed*`，租户名册行的 `failedAction`），随槽一并清除：槽空了而标记仍在，控件会残留 `aria-invalid` 与指向已不渲染的说明的 `aria-describedby`。凡 `reset` 作用域的上下文变化（租户或选择器改变、刷新动作）共用同一个函数清槽与标记。一次性值的展示面板不属于槽，不受影响；模态面板内的作用域不在其内，面板打开期间刷新动作不可操作。租户名册每行的重命名与启停各是一个落在行组件里的作用域：页面持有一个每次刷新自增的刷新世代值，经属性交给各行，行在世代变化时 `reset` 自己的作用域并清行标记；行把写入在途态上报给页面，刷新动作的写入在途禁用取页面自己的作用域与全部行在途态之并；刷新不重挂载行，行内尚未提交的重命名草稿保留。设置页的刷新只 `reset` 作用域与标记并重读，不动未保存的草稿，也不回到第一页。自动重读不 `reset`；失效重读尤其不能，它重读的正是刚落定的那次写入的结果。
+**刷新是上下文变化，先 `reset` 本页描述页面主体的每个反馈作用域与页面标记，再发出重读。** 重读之后，旧的写入结果会被读成描述另一个上下文，例如一条“已移除”的确认停在重读后的表格旁（[ui-kit](design-web-ui-kit.md) 的“写入的反馈”）。同页的各作用域一并 `reset`，因为刷新重读的是整页。`reset` 清的是槽；与槽里那次结果同生命周期的页面状态，即指出失败落在哪一行、哪个控件的行标记（设置页的 `failedKey`，权限页、邀请页、SSO 页与短信页各自的 `failed*`，租户名册行的 `failedAction`），随槽一并清除：槽空了而标记仍在，控件会残留 `aria-invalid` 与指向已不渲染的说明的 `aria-describedby`。凡 `reset` 作用域的上下文变化（租户或选择器改变、刷新动作）共用同一个函数清槽与标记。一次性值的展示面板不属于槽，不受影响；模态面板内的作用域不在其内，面板打开期间刷新动作不可操作。租户名册每行的重命名与启停各是一个落在行组件里的作用域：页面持有一个每次刷新自增的刷新世代值，经属性交给各行，行在世代变化时 `reset` 自己的作用域并清行标记；行把写入在途态上报给页面，刷新动作按写入在途呈不可用，判定取页面自己的作用域与全部行在途态之并；刷新不重挂载行，行内尚未提交的重命名草稿保留。设置页的刷新只 `reset` 作用域与标记并重读，不动未保存的草稿，也不回到第一页。自动重读不 `reset`；失效重读尤其不能，它重读的正是刚落定的那次写入的结果。
 
 **平台权限页刷新后所选角色已不存在时清空选择并提示。** 刷新动作重读的角色列表成功落定、且读回的列表不再含所选角色时，选择被清空，授权区回到未选角色的状态（授权作用域随所选角色，按“上下文变化时作用域 `reset`”处理），并在页内一个随页面挂载的视觉隐藏 `role="status"` 区域里播报一条说明：所选角色已不存在，选择已清除。角色列表读失败时保持选择，由陈旧提示承担。这条提示在操作者下一次选择角色或切换租户时清除。本页自己移除所选角色时，写入自身清空选择并落成功确认，不触发这条提示。文案在 zh-CN 与 en-US 语言包里各一键。
 
@@ -561,13 +561,13 @@ graph TD
 
 **各列表页的列优先级与宽度上限**服从 [layout](design-web-layout.md) 的数据表规则。标识符列（会话的 `id`）只显示前 8 个字符、设 `low`，完整值经 `cellFullValue` 给出（悬停标题与复制控件）；账户不再有标识列，账户页以显示名为主辨识列、用户名作次行；主辨识列不设优先级，取主辨识列的宽度上限；状态列设 `high`。逐页：账户页以显示名为主辨识列、用户名为次行，状态 `high`，类型与 MFA `low`；会话页以创建时间为主辨识列，状态 `high`，保障等级 `medium`，种类、最近使用、到期与标识 `low`，`lg` 档放不下时按种类、到期的次序移出列；平台邀请与成员页以邮箱为主辨识列，状态 `high`，角色 `medium`，邀请人 `high`，有效期与发出时间 `high`，与组织管理面的邀请表同一档；成员表以显示名为主辨识列；平台模式的账户列沿用账户身份单元，组织模式的账户列显示成员记录里的用户名（`member.username`），不显示账户标识；状态 `high`，来源 `medium`，SSO 豁免 `low`；显示名列与账户列都不随宽度隐藏；组织管理面的成员与邀请页按“组织管理面的成员与邀请页”一节的列定义：成员的角色、状态与加入时间，以及邀请的状态、邀请人、有效期至与发出时间都是 `high`，不得降为 `medium` 或 `low`；邀请的角色列是 `medium`；SSO 页以名称为主辨识列，协议与启用 `medium`，版本 `low`，行操作的可见文案取短形式（刷新元数据、重新验证、删除），完整含义与提供方名称由可及名给出；元数据刷新的可见文字取“刷新元数据”，不取单字“刷新”；三个操作与主辨识列仍须在 `sm` 档同屏，行内文字加长后须在浏览器层实测该档不换行、不撑破容器，放不下时调整列宽或操作形态，不退回单字“刷新”；审计表的优先级不变（见上），动作为主辨识列，取主辨识列的内容宽度上限，对象与操作者为长文本列，各取 160px（文本与复制控件合计），完整值已由 `cellFullValue` 给出。会话页的“当前会话”标记显示在主辨识列（创建时间）里，不放在会随优先级隐藏的标识列里，使撤销自己当前会话的提示在任一档都可见。账户详情面板里的表（服务密钥、会话、因素）按面板内容自身的容器宽度适用同一规则。
 
-**成员与邀请表按游标分页。** 成员读与邀请读都接受 `limit` 与 `after`，应答带 `next_cursor`，最后一页为空串；页面据此渲染上一页／下一页。游标栈按租户分段，切换租户后的首帧即从空游标开始，刷新保留当前页。翻页控件在两页以上才渲染，写入在途或下一页在途时两个方向都禁用；`keepPreviousData` 让上一页留在屏上，但它的 `next_cursor` 仍指向同一页，因此控件要等这次读落定才允许再次前进。组织模式的邀请行自带邀请人的显示名与用户名，邀请人列不依赖成员读，也不随翻页改变。
+**成员与邀请表按游标分页。** 成员读与邀请读都接受 `limit` 与 `after`，应答带 `next_cursor`，最后一页为空串；页面据此渲染上一页／下一页。游标栈按租户分段，切换租户后的首帧即从空游标开始，刷新保留当前页。翻页控件在两页以上才渲染，写入在途或下一页在途时两个方向都呈不可用（仍可聚焦）；`keepPreviousData` 让上一页留在屏上，但它的 `next_cursor` 仍指向同一页，因此控件要等这次读落定才允许再次前进。组织模式的邀请行自带邀请人的显示名与用户名，邀请人列不依赖成员读，也不随翻页改变。
 
 **账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、平台管理面的成员页的成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、平台管理面权限页绑定表及其账户查询结果的账户列。平台管理面的邀请页不经这个单元：邀请人由邀请视图自带的显示名与用户名渲染，成员身份由成员读渲染。审计的“对象”以 `account:` 开头时，取后半段经同一单元解析成“显示名（用户名）”；`detail.account`、`on_behalf_of` 与冒充结束/撤销的 `detail.by` 同样解析。其余对象与明细键按原值渲染：对象也可能是租户名称、角色名、会话或邀请标识，页面不按形式猜测。特性 `authn.admin` 在场时，它经 `GET /api/v1/system/auth/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见“特性在场的接收”。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染中性的“账户不可用”并标注身份未解析，不渲染账户标识，也不把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，账户视图携带用户名时并在其后插入用户名；否则用中性文案，不用记录标识。会点名账户的成功文案按同一套四种形式命名：解析到显示名时用显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时只以该标识点名；两者皆无（解析未完成、被拒、回答 404 或特性缺席）时改用不点名的中性句式，任何路径都不插入记录标识。文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，不阻塞确认；成员移除、成员写入、SSO 豁免的切换、账户的各项写入、权限绑定与解绑、冒充的发起、结束与终止这类点名账户或成员的文案都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。组织管理面的身份解析不经这个单元：邀请人取邀请行自带的 `invited_by_name` 与 `invited_by_username`，成员管理区的绑定账户与解绑控件由成员读携带的 `display_name` 与 `username` 解析，只有该读无法解析的账户显示中性的“账户不可用”并标注身份未解析；成员表的姓名列取记录的 `display_name`，第二列直接渲染成员记录里的 `username`，不解析、也不渲染账户标识。角色页的使用情况行不由页面解析账户：显示名与活动状态由服务端经宿主的身份接口给出，页面照渲染。会点名账户的确认对话框插入解析到的显示名，账户视图携带登录标识时并在其后插入首个登录标识；解析不到显示名但携带登录标识时，只以该标识点名；解析未完成、被拒、回答 404 或特性缺席时不插入记录标识，改用不点名的中性句式（账户视图携带登录标识，见 [design-authn-admin](../authn/design-authn-admin.md)；记录标识是操作者无法与名册对应的机器标识）。
 
 ### 审计记录的导出
 
-审计查询页的工具栏在筛选之外带一个导出控件。它把**已应用**的筛选（`since`、`until`、`action`、`outcome` 与 `actor`，即当前列表读正在用的那一份）交给导出的操作，不带游标与页大小：导出的范围是筛选匹配的全部记录，不是当前页。输入框里的草稿与已应用的筛选不同时，控件禁用并在旁边提示先应用，使可见的筛选与导出实际送出的始终是同一份状态；一次应用、重置或导出尝试清除上一次尝试留下的导出错误文案，被拒后不残留旧的失败横幅。
+审计查询页的工具栏在筛选之外带一个导出控件。它把**已应用**的筛选（`since`、`until`、`action`、`outcome` 与 `actor`，即当前列表读正在用的那一份）交给导出的操作，不带游标与页大小：导出的范围是筛选匹配的全部记录，不是当前页。输入框里的草稿与已应用的筛选不同时，控件呈不可用（仍可聚焦）并在旁边提示先应用，使可见的筛选与导出实际送出的始终是同一份状态；一次应用、重置或导出尝试清除上一次尝试留下的导出错误文案，被拒后不残留旧的失败横幅。
 
 导出是契约里的二进制操作。200 的正文声明为 `application/x-ndjson`（[REF-ndjson](../../../references.md)），生成的调用因此带 `responseType: 'blob'`（[api-sdk](design-web-api-sdk.md) 的二进制路径），传输把正文读成 `Blob`。导出是操作束里的一个发起函数（不是查询钩子，挂成钩子会在渲染时发出一次导出），页面在点击时调用它一次。拿到 `Blob` 后页面经一个对象 URL 与带 `download` 的链接把它存成文件，文件名按发起导出的时刻给出（`audit-records-<UTC 时刻>.ndjson`），不读应答头；直接打开导出路由的调用方看到的文件名来自服务端的 `Content-Disposition`（[audit.admin](../audit/design-audit-admin.md)）。
 
@@ -577,7 +577,7 @@ graph TD
 
 ### 账户查询的筛选
 
-账户页把工具栏的筛选作为读的查询参数，在提交时应用（一次键入不触发请求）：登录标识前缀与它的类型成对送出（模块的索引按两者寻址，前缀缺类型即被拒），显示名前缀、状态与账户类型各自单独送出，未选的筛选不出现在请求里。显示名前缀是存储值的字节前缀、大小写敏感，页面的搜索框按用户所写原样送出。列表读按游标分页（应答带出下一页游标），页面只渲染读到的一页。账户详情与创建表单都在侧边面板内打开，见“账户页的详情与创建面板”。创建表单对用户账户要求一个显示名与一个用户名（REQ-platform-admin-013、REQ-account-060）：用户名是登录名，邮箱与手机是除此之外可填写的标识；缺显示名或用户名时“新建”保持禁用，提交路径也不发出请求：管理面建户在账户存在之前取得合法用户名，界面上不产出必然被服务端拒绝的请求；用户名的规范化与保留字校验由服务端判定，页面把三种用户名拒绝（占用、保留、格式）渲染在用户名字段上（`aria-invalid`、焦点移到该字段），其余 400 走写入失败的文案。服务账户以服务密钥登录，不受这条要求，只需显示名。
+账户页把工具栏的筛选作为读的查询参数，在提交时应用（一次键入不触发请求）：登录标识前缀与它的类型成对送出（模块的索引按两者寻址，前缀缺类型即被拒），显示名前缀、状态与账户类型各自单独送出，未选的筛选不出现在请求里。显示名前缀是存储值的字节前缀、大小写敏感，页面的搜索框按用户所写原样送出。列表读按游标分页（应答带出下一页游标），页面只渲染读到的一页。账户详情与创建表单都在侧边面板内打开，见“账户页的详情与创建面板”。创建表单对用户账户要求一个显示名与一个用户名（REQ-platform-admin-013、REQ-account-060）：用户名是登录名，邮箱与手机是除此之外可填写的标识；缺显示名或用户名时“新建”保持不可用（仍可聚焦）并说明原因，提交路径也不发出请求：管理面建户在账户存在之前取得合法用户名，界面上不产出必然被服务端拒绝的请求；用户名的规范化与保留字校验由服务端判定，页面把三种用户名拒绝（占用、保留、格式）渲染在用户名字段上（`aria-invalid`、焦点移到该字段），其余 400 走写入失败的文案。服务账户以服务密钥登录，不受这条要求，只需显示名。
 
 ### 账户选择器
 
@@ -585,7 +585,7 @@ graph TD
 
 ### 授权表与权限目录同一套写法
 
-平台权限页与组织角色页的授权表都以服务端给出的可读名称为主文本、权限码为次要等宽小字，与同一页的权限目录同一套写法：同一页的两块内容因此可以直接对照，两个命名空间各自声明同名资源时也不会被读成同一行。授权行的权限码是服务端按 `(resource, action)` 对反查出来的，与撤销请求用的是同一个码；目录没有命名该对时，行退化为一对 `resource/action` 的拼写，且撤销控件禁用，因为撤销路由只按码命名权限，页面在行内说明原因。
+平台权限页与组织角色页的授权表都以服务端给出的可读名称为主文本、权限码为次要等宽小字，与同一页的权限目录同一套写法：同一页的两块内容因此可以直接对照，两个命名空间各自声明同名资源时也不会被读成同一行。授权行的权限码是服务端按 `(resource, action)` 对反查出来的，与撤销请求用的是同一个码；目录没有命名该对时，行退化为一对 `resource/action` 的拼写，且撤销控件呈不可用（仍可聚焦），因为撤销路由只按码命名权限，页面在行内说明原因。
 
 **权限目录与授予选择器显示服务端给出的名称与元数据。** 目录读的每一行带 `permission`、`description`、`group`、`dangerous` 与 `grantable`。`description` 是服务端按请求语言把说明键渲染成的文本，不从宿主资源里另做解析；目录读的查询键带着当前界面语言，语言切换后目录重取。页面以可读名称为主、权限码为次；可读名称为空时以权限码为主。分组取服务端给出的 `group`，落在授权、成员、身份、设置、组织资料与“其它”之间；高危权限带可见文本徽标；`grantable=false` 的项仍列出并标出“你无权授予”，授予选择器只列 `grantable=true` 的项。说明不改变授权表的一致口径：两块内容都以同一份目录的名字与码呈现。
 
@@ -650,7 +650,7 @@ graph TD
 
 **会发送验证码的答复先取其证明。** 部署要求人机验证时，选中短信第二因素或按短信方式复证第一因素（提交手机号）的答复会发送验证码；这条答复在证明到手之前被扣住（`StepUpState.pending`），对话框在这期间于步骤上方渲染 ui-kit 的 `HumanVerification` 块并让该步自己的动作让位，证明到手后答复自行带 `human_proof` 发出。门槛、当前步骤所属的面与证明由 `useStepUp` 经 `StepUpState.human` 与 `StepUpState.humanScope` 提供，短信发送取手机号面，证明出示后消耗，答复不发验证码时不取证明。
 
-**加强认证对话框的失败情形。** 回答的错误码按本包白名单解析，白名单含加强认证回答路径会收到的认证码（`authn.login_failed`、`authn.flow_invalid`、`authn.throttled`、`authn.unavailable`、`authn.human_verification_required`）与限流层答 429 时的问题码 `ratelimit.throttled`，验证码输错渲染该码的文本而不是通用兜底。429 带 `Retry-After` 时，失败横幅（`role="alert"`）只渲染该码无秒数的静态句，播报一次；剩余秒数渲染在横幅之外的一条非 live 行（`aria-live="off"`），随 `retryAfterSeconds` 每秒更新，读屏不会整句重念。对话框在该时长内禁用这一步的提交（取消仍可用），倒计时到点后恢复可提交，非 live 行随之消失，横幅仍是该码的静态句。起手失败（既不是 401 加强认证强度不足，也不是会话仍成立时的 400）与回答被 `authn.flow_invalid` 拒绝（流程已过期、已被消费、已无可答复）同样处理：对话框不渲染描述正文（`stepUp.description`）与步骤表单，渲染该码的失败横幅、重新起手的动作与取消；重新起手是对话框本地的，由它重新驱动 `useStepUp`，不改 auth-core。通行密钥仪式的失败与服务端的失败横幅互斥，同一时刻只渲染一条（[ui-kit](design-web-ui-kit.md) 的“写入的反馈”）。加强认证对话框自带区域，失败横幅在模态之内。
+**加强认证对话框的失败情形。** 回答的错误码按本包白名单解析，白名单含加强认证回答路径会收到的认证码（`authn.login_failed`、`authn.flow_invalid`、`authn.throttled`、`authn.unavailable`、`authn.human_verification_required`）与限流层答 429 时的问题码 `ratelimit.throttled`，验证码输错渲染该码的文本而不是通用兜底。429 带 `Retry-After` 时，失败横幅（`role="alert"`）只渲染该码无秒数的静态句，播报一次；剩余秒数渲染在横幅之外的一条非 live 行（`aria-live="off"`），随 `retryAfterSeconds` 每秒更新，读屏不会整句重念。对话框在该时长内让这一步的提交呈不可用（仍可聚焦）（取消仍可用），倒计时到点后恢复可提交，非 live 行随之消失，横幅仍是该码的静态句。起手失败（既不是 401 加强认证强度不足，也不是会话仍成立时的 400）与回答被 `authn.flow_invalid` 拒绝（流程已过期、已被消费、已无可答复）同样处理：对话框不渲染描述正文（`stepUp.description`）与步骤表单，渲染该码的失败横幅、重新起手的动作与取消；重新起手是对话框本地的，由它重新驱动 `useStepUp`，不改 auth-core。通行密钥仪式的失败与服务端的失败横幅互斥，同一时刻只渲染一条（[ui-kit](design-web-ui-kit.md) 的“写入的反馈”）。加强认证对话框自带区域，失败横幅在模态之内。
 
 **通行密钥仪式步的等待、取消与重试。** 断言仪式步到达即进入等待态，没有第二次点击：选择通行密钥因素的那次点击就是全部交互，界面直接显示等待文案与一个取消控件。登记仪式步（选项带 `user`）仍需一次点击开始，因为创建仪式在部分浏览器要求用户激活。到达按步号与挑战共同辨认：服务端在下一步重发同一挑战时仪式重新开始，普通重渲染不重开。仪式可能在浏览器上停留很久（没有可用认证器时一直等到用户放弃），等待通知因此挂成空的 `role="status"` 区域（`stepUp.passkeyWaiting`）、下一提交再填文本，焦点移到取消控件（`stepUp.passkeyCancel`，等待态取代了继续/入口控件）。取消不等仪式落定，立即渲染取消文案（`stepUp.passkeyCancelled`）并给出重试（`stepUp.passkeyRetry`），只尽力经 `AbortController` 让浏览器放弃仪式（凭据 API 不保证响应中止）；被放弃仪式的迟到应答按尝试序号丢弃，步在仪式途中卸载时同样放弃仪式。浏览器不支持 WebAuthn、用户放弃提示、设备已登记本账户的通行密钥与其余失败各渲染自己的文案：浏览器不支持 WebAuthn 取 `stepUp.passkeyUnsupported`，用户放弃提示取 `stepUp.passkeyCancelled`，设备已登记取 `stepUp.passkeyAlreadyRegistered`，其余失败按仪式取 `stepUp.passkeyFailedRegister` 或 `stepUp.passkeyFailedSignIn`，登记失败不视为登录失败。这一步与 auth-ui、account-ui 的两个副本保持同步：三处行为一致，一次改动同时落到三处。
 
@@ -662,7 +662,7 @@ graph TD
 
 **作用域按控件组划分，页面不聚合。** 控件组的判据见 ui-kit。权限页的角色、授权、绑定、账户绑定查询各是一组，账户绑定查询表的解绑动作用它自己的作用域，区域在查询表之下，不用绑定组的作用域；其余页面同样按带标题的节划分。页面不聚合多个 mutation 的错误，也不各持错误选取函数。表格行内的动作按行是否带自己的草稿输入区分：单击型的行动作（撤销、移除）共用该表的作用域，区域在表之下，成功文案点名被操作的行；带各自草稿输入的行（租户名册的重命名与启停）每行一个作用域，区域在该行内。写入自身的效果会卸载它所在节的控件时（冒充的发起使发起表单卸载），区域放在写入之后仍存活的最近祖先里：冒充的发起与结束的区域在“当前冒充”状态节内，不在发起表单内。面板打开期间的落点见“账户页的详情与创建面板”。
 
-**上下文变化时作用域 `reset`，写入在途时改变上下文的控件禁用。** 一个作用域在它的写入所带的某个请求实参改变时 `reset`。租户是按租户寻址的页面上每次写入的实参，租户改变时该页全部作用域 `reset`，租户选择器在该页任一作用域 `pending` 时禁用。其余选择器按各自牵动的作用域：SSO 页的创建与编辑表单随编辑目标所选的提供方，域名节的认领、验证与移除随域名节所选的提供方，它们互不牵动；权限页的授权作用域随所选角色，绑定作用域随绑定账户，账户绑定查询的作用域随查询账户（应用另一个账户即 `reset`）；设置页的命名空间选择牵动设置表的作用域。这些选择器在它们牵动的作用域 `pending` 时禁用。页的刷新动作同样是上下文变化，见“页的刷新动作”。
+**上下文变化时作用域 `reset`，写入在途时改变上下文的控件不可操作。** 一个作用域在它的写入所带的某个请求实参改变时 `reset`。租户是按租户寻址的页面上每次写入的实参，租户改变时该页全部作用域 `reset`，租户选择器在该页任一作用域 `pending` 时禁用。其余选择器按各自牵动的作用域：SSO 页的创建与编辑表单随编辑目标所选的提供方，域名节的认领、验证与移除随域名节所选的提供方，它们互不牵动；权限页的授权作用域随所选角色，绑定作用域随绑定账户，账户绑定查询的作用域随查询账户（应用另一个账户即 `reset`）；设置页的命名空间选择牵动设置表的作用域。这些选择器在它们牵动的作用域 `pending` 时禁用。页的刷新动作同样是上下文变化，见“页的刷新动作”。
 
 **成功确认覆盖本包每个由操作者发起、落定且无一失败的动作**，包括只带表单清空或列表重读这类隐含变化的动作，例如账户创建与服务密钥创建、冒充的发起、结束与终止、邀请的撤销、成员的移除与写入、SSO 豁免的切换、SSO 提供方与域名的各写入、短信模板的各写入、租户详情的重命名与启停。这个列表是示例；判据是动作整体成功。冒充的发起同样落成功文案；宿主给了 `onImpersonationChange` 时页面随即被带离，持续的提示由租户框架里的冒充横幅承担。
 
@@ -672,9 +672,9 @@ graph TD
 
 **批量保存是一次尝试。** 设置页的保存以一次 `run` 结算：逐项以 `mutateAsync` 发出并以 `Promise.allSettled` 等待，保存控件在整批落定之前保持忙态，忙态取自作用域的 `pending`，不取 mutation 观察者的 `isPending`。全部成功才落“设置已保存”；有失败时以提交顺序中第一个失败项的码落失败，失败项的草稿、行标记与待保存计数保留，成功项的草稿清掉，表格翻到第一个失败项所在的页，并把反馈区域滚入视野（用户偏好减少动效时不做平滑滚动）。部分落地的批量只报失败。
 
-**创建成功后表单复位，必填为空时提交禁用。** 创建类动作落地后表单回到初始值：SSO 提供方创建成功后回到创建模式并清空全部输入，包括只写的客户端密钥；角色创建清空名称与描述。提交按钮在必填字段去掉首尾空白后为空时禁用，角色名与短信模板名同账户创建、授权、绑定一致。
+**创建成功后表单复位，必填为空时提交呈不可用（仍可聚焦）。** 创建类动作落地后表单回到初始值：SSO 提供方创建成功后回到创建模式并清空全部输入，包括只写的客户端密钥；角色创建清空名称与描述。提交按钮在必填字段去掉首尾空白后为空时呈不可用（仍可聚焦）并说明原因，角色名与短信模板名同账户创建、授权、绑定一致。
 
-**确认对话框在确认点击时关闭。** 破坏性动作的确认一律经 `usePendingConfirm`：写入在确认点击时发出，对话框在同一次点击里关闭、不等写入落定，失败在写入落定后落在区域里；权限页的角色删除同此，不以 `confirmLoading` 把对话框保持到落定。发起控件在写入进行中禁用并标忙，定义见 ui-kit。
+**确认对话框在确认点击时关闭。** 破坏性动作的确认一律经 `usePendingConfirm`：写入在确认点击时发出，对话框在同一次点击里关闭、不等写入落定，失败在写入落定后落在区域里；权限页的角色删除同此，不以 `confirmLoading` 把对话框保持到落定。发起控件在写入进行中保持可聚焦、呈不可用并标忙，对话框关闭后焦点回到它，定义见 ui-kit。
 
 **写入失败的文案。** 写入失败经本包白名单渲染：裸 HTTP 403 渲染权限不足文案；未被加强认证拦截的裸 401（会话已不再成立，或该写入不经加强认证门控）渲染会话已结束文案；经加强认证门控的写入先由 `intercept` 判定，会话仍成立的 401 打开加强认证对话框，不进入文案层。403 与该类 401 都不并入裸 HTTP 状态通用的 `errors.client.http` 叶子（`client.http.<status>` 经它渲染带状态码的“请稍后重试”文本）。冒充发起与管理员重置因素、重置口令被 403 `authn.factor_not_seasoned` 拒绝时，写入失败渲染一条说明：需要一个已启用满规定时长的非短信因素（认证器应用或通行密钥），刚登记的因素要等；应答不带时长，文案不写具体数字。加强认证对话框不拦截它，加强认证解不了这一条。本包只在冒充发起路径收到 403 `authn.impersonation_restricted`：服务端对发起者、目标、参数三组的违反不区分是哪一条（[design-authn-impersonation](../authn/design-authn-impersonation.md)），文案因此不指向单一原因，也不写“冒充期间”，而是逐类陈述对目标与当前会话的要求：目标是该租户中已启用、未受保护的成员账户，当前会话没有进行中的冒充。这条码不拆出“目标不是成员”之类的子码：拆出任何一类，应答就多告诉发起者一条关于目标账户的事实，取舍见 [ADR-authn-impersonation](../../../adr/adr-authn-impersonation.md)。写入被 403 `urn:speed:authn:contact-required`（客户端码 `authn.contact_required`）拒绝不是权限不足：发起者持有邮箱而没有一条已证明的邮箱，管理面的人工写操作按未验证账户拦下（REQ-platform-admin-017，见 [design-authn-admin](../authn/design-authn-admin.md)）。这条码的文案说明先到账户页的邮箱验证节证明邮箱，宿主的持续验证横幅提供前往该节的入口；加强认证对话框不拦截它，加强认证解不了这一条。判据与账户来源无关，管理员预置的账户在证明自己的邮箱之前同样会撞上它。租户准入层因租户要求企业 SSO 而拒绝一次写（401 `authn.sso_required`）时，邀请与成员页与 SSO 页在写入反馈区渲染已解析的文案并给出“重新登录”出口：出口结束会话，宿主的会话门收敛到登录页，运营者在那里经该租户的提供方重新登录。页面不打开加强认证对话框、不列出因素，因为没有本地因素能解这条拒绝；没有会话时不给该出口，因为没有可结束的会话。
 
@@ -682,7 +682,7 @@ graph TD
 
 **读的失败情形。**
 
-- 已有数据时的刷新失败：页面在最近一次刷新失败、数据在屏且读不在进行中时，经 `AdminAsyncSection` 以专门的陈旧文案（zh-CN 与 en-US 各一键，说明所示内容可能已过期）给出 ui-kit 的 `staleState`，重试发出后撤回它；页的刷新动作与各节的刷新控件在读进行中带 `aria-busy`、保持可聚焦而不置原生 `disabled`，重复激活不发出第二次读、也不排队（见“页的刷新动作”）；页面任一写入在途时该控件原生禁用，且不携带“先选择作用域”的说明。失败是权限拒绝（403）时，权限拒绝占位优先：替换缓存内容，不给 `staleState`、不给重试，`AdminAsyncSection` 的 403 判定不要求 `payload` 缺席。
+- 已有数据时的刷新失败：页面在最近一次刷新失败、数据在屏且读不在进行中时，经 `AdminAsyncSection` 以专门的陈旧文案（zh-CN 与 en-US 各一键，说明所示内容可能已过期）给出 ui-kit 的 `staleState`，重试发出后撤回它；页的刷新动作与各节的刷新控件在读进行中带 `aria-busy`、保持可聚焦而不置原生 `disabled`，重复激活不发出第二次读、也不排队（见“页的刷新动作”）；页面任一写入在途时该控件呈不可用，且不携带“先选择作用域”的说明。失败是权限拒绝（403）时，权限拒绝占位优先：替换缓存内容，不给 `staleState`、不给重试，`AdminAsyncSection` 的 403 判定不要求 `payload` 缺席。
 - 邀请与成员页的邀请列表读被租户准入层以 401 `authn.sso_required` 拒绝时，页面渲染已解析的文案并给出“重新登录”出口，取代可重试的占位；本地会话下重试只会得到同一个拒绝。
 - 按 id 读的详情页：404 渲染措辞为“记录不存在或暂不可用”的占位，仍带重试：服务端的“无此记录”是无类型的裸 404，与缺席副本的 404 在客户端无法区分，措辞因此不断言记录已被删除；刷新答 404 时同样以这个占位替换内容。403 渲染无权限占位且不给重试，其余失败渲染可重试占位。
 - 租户选择器读平台名册：加载中以辅助文字标明并禁用；403 时辅助文字渲染权限不足、不给重试；其余失败时辅助文字渲染失败并给重试；名册为空时辅助文字说明没有已登记租户；URL 播种的租户在加载、失败与空态下都保持显示。判定 403 与本包其余的读同一个 `isForbidden`。
@@ -698,7 +698,7 @@ graph TD
 | 权限不足 | 403，由服务端写出；页面渲染权限拒绝文案且不给重试（重试只会再被拒一次）；路由级守卫由宿主组合 |
 | 组织管理面的写被 403 `authz.protected` 拒绝（受保护的域，或调用方删除自己的租户管理员绑定） | 渲染受保护文案 `errors.authz.protected`，不渲染为权限不足；文案不区分原因：受保护的域与调用方删除自己的租户管理员绑定这两类拒绝共用同一条文案，界面不指明是哪一种 |
 | 组织管理面的设置写被 403 `settings.protected` 拒绝（宿主拒绝该租户的设置写） | 渲染受保护文案 `errors.settings.protected`，不渲染为权限不足；该拒绝说明租户的设置写受宿主保护，不是调用方少一个权限 |
-| 成员写要停用调用者自己的成员关系 | 页面在确认前就禁用停用控件并说明原因；服务端兜底的 409 `cannot-suspend-self` 渲染 `errors.authn.cannot_suspend_self`，成员状态不变 |
+| 成员写要停用调用者自己的成员关系 | 页面在确认前就让停用控件呈不可用（仍可聚焦）并说明原因；服务端兜底的 409 `cannot-suspend-self` 渲染 `errors.authn.cannot_suspend_self`，成员状态不变 |
 | 移除成员被 409 `authn.conflict` 拒绝（会让租户不再有租户管理员） | 面板渲染“本组织至少保留一名管理员”的文案（`members.lastAdminConflict`），不渲染成权限不足；成员与绑定不变 |
 | 签发邀请的邮件投递为 `failed` 或 `not_configured` | 不是写入失败：一次性面板仍显示链接与令牌，投递三态说明邮件未发出或未配置，邀请已成立 |
 | 撤销或重发邀请答 409 `authn.invitation_terminal`（邀请已离开待接受） | 写入未生效；页面重读邀请列表，用服务端判定的状态替换这条陈旧的行；撤销时若该行因此离开当前筛选，重读后焦点移到邀请区标题 |
@@ -740,7 +740,7 @@ graph TD
 | 写入在途时操作租户选择器或其它改变上下文的选择器 | 选择器在它牵动的作用域 `pending` 时禁用 |
 | 组织角色页的角色成员数不可用（装配没有身份接口） | 角色表的成员数单元显示空值占位（破折号）；使用情况摘要显示“成员状态不可用”，不以绑定数或零代替；使用情况的显示名为空、状态显示不可用 |
 | 组织角色页的使用情况读失败 | 使用情况区渲染可重试的失败占位；角色与授权仍可按各自的读渲染 |
-| 授权行的服务端权限码为空（本进程翻译不回权限） | 行显示 `resource/action` 的拼写，撤销控件禁用，行内说明该授权无法映射到当前权限目录 |
+| 授权行的服务端权限码为空（本进程翻译不回权限） | 行显示 `resource/action` 的拼写，撤销控件呈不可用（仍可聚焦），行内说明该授权无法映射到当前权限目录 |
 | 角色描述超过 500 个字符 | 服务端答 400；描述面板保留输入并渲染该失败，列表中的原描述不变 |
 | 授予高危权限时取消二次确认 | 不发写入，角色授权不变 |
 
@@ -782,13 +782,13 @@ graph TD
 | 账户创建的侧边面板（页头打开、未保存守卫、成功文案在 `onExited` 后写入） | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountCreatePanel`、`AccountCreateForm`、`createPanelExited` |
 | 加强认证对话框先读本人因素，没有启用的因素时给出提示而不发起流程 | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`activeFactorCount` |
 | 加强认证对话框会发送验证码的答复先取其证明（`StepUpState.pending`） | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
-| 加强认证对话框对 429 等待期的提交禁用与倒计时 | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/admin-ui/src/internal/inline-error.tsx` `InlineError`；`web/packages/i18n/src/error-text.ts` `waitCountdownText`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
+| 加强认证对话框对 429 等待期的提交呈不可用（仍可聚焦）与倒计时 | 已实现 | `web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/admin-ui/src/internal/inline-error.tsx` `InlineError`；`web/packages/i18n/src/error-text.ts` `waitCountdownText`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShellProps.accountHref`；`web/packages/admin-ui/src/internal/account-href.tsx` `AdminAccountHrefProvider`、`useAdminAccountHref`；`web/packages/admin-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
 | 各页的反馈作用域与成功确认 | 已实现 | `web/packages/admin-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`、`failureTextOf`、`useFailureScroll`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm` |
 | 一次性值的展示面板（邀请链接、SSO 认领令牌含记录名与完整记录值、服务密钥） | 已实现 | `web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel`、`OneTimeValuePanelDetail`；`web/packages/admin-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/admin-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
 | 平台邀请页的邀请生命周期列表（默认待接受、状态筛选、游标分页、重发与撤销、终态时刻、状态标签、角色门控与固定有效期选项） | 已实现 | `web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/internal/invitation-status.ts` `InvitationStatus`、`statusLabel`、`statusTone`、`terminalNote`；`web/packages/admin-ui/src/internal/status-tag.tsx` `StatusTag`；`web/packages/admin-ui/src/operations.tsx` `useResendInvitation`；测试 `InvitationsPage.test.tsx` |
 | 设置页的批量保存按一次尝试 | 已实现 | `web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage` |
-| 创建成功后表单复位与必填为空时提交禁用 | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountCreateForm`；`web/packages/admin-ui/src/PermissionsPage.tsx` `saveRole`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/admin-ui/src/SmsPage.tsx` `register`、`offer`、`registerReady`、`offerReady`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage` |
+| 创建成功后表单复位与必填为空时提交呈不可用（仍可聚焦） | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountCreateForm`；`web/packages/admin-ui/src/PermissionsPage.tsx` `saveRole`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/admin-ui/src/SmsPage.tsx` `register`、`offer`、`registerReady`、`offerReady`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage` |
 | 确认对话框在确认点击时关闭（含平台权限页与组织角色页的角色删除，以及高危权限的授予） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/OrganizationRolesPage.tsx` `OrganizationRolesPage`；`web/packages/admin-ui/src/internal/confirm.tsx` `usePendingConfirm` |
 | 冒充状态读与结束后的呈现 | 已实现 | `web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`isNotImpersonating` |
 | 读的陈旧提示、刷新忙态与详情页 404 占位 | 已实现 | `web/packages/admin-ui/src/internal/async-section.tsx` `AdminAsyncSection`、`refreshing`、`notFoundState`、`isNotFound`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/admin-ui/src/AuditDetailPage.tsx` `AuditDetailPage`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage` |
@@ -802,7 +802,7 @@ graph TD
 | `authn.username_immutable` 的失败文案（错误文案说明用户名不可移除） | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` `errors.authn.username_immutable`；`web/packages/admin-ui/src/AccountsPage.test.tsx`（用户名不可删除的拒绝渲染为自身文案） |
 | `authn.email_taken` 的失败文案 | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `urn:speed:authn:contact-required` 的失败文案（客户端码 `authn.contact_required`，未验证账户的管理写，指向账户页的验证节） | 已实现 | `web/packages/admin-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/admin-ui/src/locales/{zh-CN,en-US}.json` `errors.authn.contact_required` |
-| 写入在途时改变上下文的控件禁用 | 已实现 | `web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |
+| 写入在途时改变上下文的控件不可操作 | 已实现 | `web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/admin-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage` |
 | 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
 | 账户身份单元区分已删除或非账户行动者与无权限 | 已实现 | `web/packages/admin-ui/src/internal/account-identity.tsx` `AccountIdentity`、`useAccountIdentity` |
 | 权限页账户绑定查询的加载、失败与空占位 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`bindingColumns` |
@@ -833,9 +833,9 @@ graph TD
 | `AdminShell` 的 `hasFeature` 与包内特性判定上下文 | 已实现 | `web/packages/admin-ui/src/AdminShell.tsx` `AdminShell`；`web/packages/admin-ui/src/internal/features.tsx` `AdminFeatureProvider`、`useAdminHasFeature` |
 | 页内控件按特性在场渲染（仪表盘、审计页操作者解析、账户详情、SSO 元数据刷新、成员 SSO 豁免） | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/admin-ui/src/internal/account-identity.tsx` `useAccountIdentity`；`web/packages/admin-ui/src/AccountsPage.tsx` `AccountsPage`、`AccountDetailWrites`；`web/packages/admin-ui/src/SsoPage.tsx` `SsoPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `ssoExemption` |
 | 刷新动作的放置（选择器寻址的页在选择器行内，其余带刷新动作的平台管理面页面在页头）、读忙态带 `aria-busy` 而不置原生 `disabled` 且再次激活不发第二次请求 | 已实现 | `web/packages/ui-kit/src/components/RefreshButton.tsx` `RefreshButton`；`web/packages/admin-ui/src/internal/selector-row.tsx` `SelectorRow`；`web/packages/admin-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/admin-ui/src/internal/account-selector.tsx` `AccountSelector` |
-| 页面寻址取值为空时刷新动作原生禁用并以 `aria-describedby` 指向选择提示（会话页、权限页、邀请页）；冒充页在租户为空时刷新动作保持可用 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
+| 页面寻址取值为空时刷新动作呈不可用（可聚焦、`aria-disabled`）并以 `aria-describedby` 指向选择提示（会话页、权限页、邀请页）；冒充页在租户为空时刷新动作保持可用 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage` |
 | 刷新动作重读该页描述页面主体且此刻启用的每一个读，同键的读只重读一次（平台权限页、设置页、仪表盘） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`、`pageRefreshRead` |
-| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时原生禁用（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
+| 刷新动作先 `reset` 本页描述页面主体的反馈作用域与页面标记，作用域写入在途时呈不可用（可聚焦、`aria-disabled`）（含租户名册行作用域的刷新世代） | 已实现 | `web/packages/ui-kit/src/use-page-refresh.ts` `usePageRefresh`；`web/packages/admin-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
 | 会话页与租户详情页的写入反馈迁入反馈作用域，租户详情的重命名与启停落成功确认 | 已实现 | `web/packages/admin-ui/src/SessionsPage.tsx` `SessionsPage`；`web/packages/admin-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
 | 平台权限页刷新后所选角色已不存在时清空选择并提示 | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`（`roleGone`） |
 | 仪表盘健康度窗口起点随刷新动作、标签页重新可见与重新联网前移，旧数值保持到新值落定 | 已实现 | `web/packages/admin-ui/src/DashboardPage.tsx` `DashboardPage` |
@@ -855,8 +855,8 @@ graph TD
 | 组织角色页的成员页入口（仅在持有 `authn.membership.manage` 时渲染） | 已实现 | `web/packages/admin-ui/src/OrganizationRolesPage.tsx` `OrganizationRolesPage`（`memberHref`、`INVITATIONS_ROUTE_ID`）；`web/packages/admin-ui/src/internal/roles/RoleUsageSection.tsx` `RoleUsageSection` |
 | 平台权限页只服务平台管理面（角色描述、服务端权限码、保留绑定与账户查询） | 已实现 | `web/packages/admin-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel` |
 | 组织管理面的入口派生 | 已实现 | `starters/demo/web/src/organization-admin.ts` `useOrganizationAdminAdmission`、`useOrganizationAdminPermission` |
-| 组织管理面的成员与邀请页（单路由、成员在前、成员搜索防抖、角色筛选写入 URL、两表游标分页、邀请默认筛选待接受、服务端 state、终态时间与无终态操作、邀请角色下拉与越权预检、按邀请 id 重发、只有持有链接的面板关闭才确认） | 已实现 | `web/packages/admin-ui/src/OrganizationMembersPage.tsx` `OrganizationMembersPage`；`web/packages/admin-ui/src/internal/use-debounced-value.ts` `useDebouncedValue`；`web/packages/admin-ui/src/internal/cursor-pager.tsx` `CursorPager`；`web/packages/admin-ui/src/internal/status-tag.tsx` `StatusTag`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationInvitationsPage` |
-| 成员管理面板（三档角色权限、绑定前防提权、停用／恢复、移除 doubleConfirm、面板内统一反馈） | 已实现 | `web/packages/admin-ui/src/internal/member-panel.tsx` `MemberPanel`、`roleTierOf`；`web/packages/admin-ui/src/organization-operations.tsx` `useTenantAccountBindings`、`useTenantRoles`、`useTenantGrants`、`useTenantBindRole`、`useTenantUnbindRole`、`useWriteMember`、`useRemoveMember` |
+| 组织管理面的成员与邀请页（单路由、成员在前、成员搜索防抖、角色筛选写入 URL、两表游标分页、邀请默认筛选待接受、服务端 state、终态时间与无终态操作、邀请角色下拉与越权预检、按邀请 id 重发、只有持有链接的面板关闭才确认） | 部分实现 | `web/packages/admin-ui/src/OrganizationMembersPage.tsx` `OrganizationMembersPage`；`web/packages/admin-ui/src/internal/use-debounced-value.ts` `useDebouncedValue`；`web/packages/admin-ui/src/internal/cursor-pager.tsx` `CursorPager`；`web/packages/admin-ui/src/internal/status-tag.tsx` `StatusTag`；`web/packages/admin-ui/src/organization-pages.tsx` `OrganizationInvitationsPage` |
+| 成员管理面板（三档角色权限、绑定前防提权、停用／恢复、移除 doubleConfirm、面板内统一反馈） | 部分实现 | `web/packages/admin-ui/src/internal/member-panel.tsx` `MemberPanel`、`roleTierOf`；`web/packages/admin-ui/src/organization-operations.tsx` `useTenantAccountBindings`、`useTenantRoles`、`useTenantGrants`、`useTenantBindRole`、`useTenantUnbindRole`、`useWriteMember`、`useRemoveMember` |
 | 邀请状态与状态筛选（两页都读服务端 `state`，不按本机时钟派生；筛选值原样交给服务端） | 已实现 | `web/packages/admin-ui/src/internal/invitation-status.ts` `InvitationStatus`、`InvitationStatusFilter`、`INVITATION_STATUS_FILTERS`、`statusLabel`、`statusTone`、`terminalNote`、`remainingText`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/admin-ui/src/OrganizationMembersPage.tsx` `OrganizationMembersPage` |
 | 共享状态标签（成员表与邀请表同一组件，终态可带时间脚注；待接受 `info`、已接受 `success`、已过期与已撤销 `default`） | 已实现 | `web/packages/admin-ui/src/internal/status-tag.tsx` `StatusTag`、`StatusTone`；`web/packages/admin-ui/src/OrganizationMembersPage.tsx` `OrganizationMembersPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationsPage` |
 | 邀请邮件投递三态与一次性链接关闭确认（只有持有链接的面板关闭才确认；两个邀请页面） | 已实现 | `web/packages/admin-ui/src/OrganizationMembersPage.tsx` `OrganizationMembersPage`；`web/packages/admin-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/admin-ui/src/locales/zh-CN.json`、`en-US.json` `invitations.issued.delivery.*` |

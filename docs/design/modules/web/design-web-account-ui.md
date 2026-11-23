@@ -249,7 +249,7 @@ sequenceDiagram
 账户持有邮箱而没有一条已证明的邮箱时，档案视为 `pending`，不论这条邮箱由自助注册、管理员预置、导入还是首登开户写下；验证是登录后的账户动作，不建立会话（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。
 
 1. **读状态。** `ContactVerificationSection` 读 `GET /api/v1/auth/me` 的 `verification`。`none` 不渲染；`verified` 渲染完成态；`pending` 且 `email` 非空时渲染目标邮箱、发送与重发、验证码字段与更换邮箱；`pending` 且 `email` 为空时渲染“添加邮箱”表单，提交 `POST /api/v1/auth/identifiers`（`{kind: 'email', value}`）。`pending` 的目标地址可能是未证明预留，也可能是一条未证明的邮箱标识（管理员或导入写下）；本节一视同仁，验证即证明该地址。**服务端契约下 `pending` 必有目标地址**（未验证的定义就是持有邮箱），所以“`pending` 而无目标”的添加邮箱分支在现行契约下不可达，组件保留它作为防御性兜底。删除最后一个已证明邮箱后，账户若还持有另一条未证明邮箱，本节照常显示那一条；一条也不剩时档案视为 `none`，本节不再渲染，账户也不受限制。
-2. **发送与重发。** 发送调 `POST /api/v1/auth/identifiers`（`{kind: 'email', value: <目标邮箱>}`），验证调 `POST /api/v1/auth/identifiers/verify`（只带验证码）。重发是同一个发送动作，发往与展示同源的地址（本次挂载内已发送的地址，否则档案里的未证明预留），不会出现界面显示新地址而重发发往旧地址。发送落地后“验证码已发送”的目的地文字在验证码一步内持续显示，通知用先挂空、再填文本的 `role="status"` 播报一次，焦点落在验证码字段。重发控件在发送应答的 `resend_after` 给出的间隔内禁用并说明原因；被 429 拒绝时按 `Retry-After` 起算。间隔到点后倒计时计时器自行清除，不在页面上留下常驻计时器。
+2. **发送与重发。** 发送调 `POST /api/v1/auth/identifiers`（`{kind: 'email', value: <目标邮箱>}`），验证调 `POST /api/v1/auth/identifiers/verify`（只带验证码）。重发是同一个发送动作，发往与展示同源的地址（本次挂载内已发送的地址，否则档案里的未证明预留），不会出现界面显示新地址而重发发往旧地址。发送落地后“验证码已发送”的目的地文字在验证码一步内持续显示，通知用先挂空、再填文本的 `role="status"` 播报一次，焦点落在验证码字段。重发控件在发送应答的 `resend_after` 给出的间隔内呈不可用（仍可聚焦）并说明原因；被 429 拒绝时按 `Retry-After` 起算。间隔到点后倒计时计时器自行清除，不在页面上留下常驻计时器。
 3. **首次进入自动发送。** 宿主在账户页的 `?verify=1` 落地传 `autoSend`；`pending`、目标邮箱非空且更换表单未展开时，本次挂载在档案读到后自动发送一次，挂载内的重渲染与写后重读都不再发送（一次挂载一次）。落地即展开更换表单（`initialChangeOpen`）的挂载整次都不发送，关闭表单后也不补发：来访者要更换地址，旧地址的验证码不是他们要的。自动发送不打开加强认证对话框：被拒绝时保留手动“发送验证码”按钮并渲染该拒绝码的文本（`verification.autoStepUp`），用户点击后是一次普通发送；429 仍进入重发倒计时；其它失败走失败横幅。普通访问不传 `autoSend`，其验证节只在用户点击时发送。
 4. **更换邮箱。** 以同一发送动作带新地址，服务端向新地址发码，同一会话的旧验证码记录随新记录写入而失效；验证通过后新地址写成标识与已持有预留。注册时写下的旧地址未证明预留不随这次更换删除，仍占用旧地址直到账户被删除。更换只在 `pending` 上提供；`verified` 后改邮箱走标识节的添加入口。宿主可经 `initialChangeOpen` 让本节落地即展开更换表单（提示里的“更换邮箱”就是这样到达的），缺省落地在验证码一步（提示里的“去验证”）。
 5. **手机是安全因素。** 手机验证走 `POST /api/v1/auth/phone` 与 `/phone/verify`，与邮箱共用同一套发码与验证语义。手机可作登录方式，也是额外安全因素：验证手机不把它自动选作登录方式，也不解除注册验证的限制（REQ-account-062、REQ-signup-026）；入口标注为安全因素，不承诺解锁；只有邮箱被证明才把 `verification.state` 变成 `verified`。
@@ -302,7 +302,7 @@ sequenceDiagram
 - **成功确认只经区域渲染。** 成功由 `WriteFeedbackRegion` 渲染，间距经区域的 `sx`；本包没有第二种成功区域，调用点不单独渲染 `InlineSuccess`。
 - **每个由用户发起、落定且无一失败的动作都有成功文案**，含撤销单个会话、删除标识、两步验证的登记、重命名与移除，文案点明被改动的对象。档案的文案点名显示名；偏好节的文案点名语言或时区及其新值，清除时读“未选择”；手机验证的文案点名号码。社交绑定的完成是例外：`onBound` 是宿主离开回调路由的信号，离开的宿主以刷新后的绑定行呈现结果；留在该路由或未给 `onBound` 的宿主得到 `done` 阶段的绑定成功文案，挂在 `role="status"` 区域里。
 - **一个节一个失败横幅。** 标识节的失败只经区域渲染一次，添加、验证与移除共用同一个槽；取消添加清空失败横幅、字段错误、成功提示与已发码状态，每次移除都 `reset`，使“已添加”的成功文案不在其后的移除之后停留，取消也不留下失败横幅。口令节的客户端校验失败同样以 `reset` 开头，不让上一次的服务端横幅与新的字段错误并存；口令策略句与当前口令未通过的句子是作用域内的非码失败来源，与区域里的失败共用同一结果位置，二者互斥出现。
-- **“验证码已发送”的目的地文字在验证码一步内持续显示。** 它说明验证码发往哪个号码或邮箱，不是槽的结果，验证失败、`reset` 与无关的移除都不清除它；一个先挂空区域、再填文本的 `role="status"` 只在发码落地时播报一次，发码成功后焦点落在验证码字段。标识节与手机节没有重发控件，回退再发码的路径以 `reset` 开头，播报区的文本因此经空到非空；验证节有重发控件，它在服务端给出的重发间隔内禁用并说明原因，间隔内的重复点击不发请求。
+- **“验证码已发送”的目的地文字在验证码一步内持续显示。** 它说明验证码发往哪个号码或邮箱，不是槽的结果，验证失败、`reset` 与无关的移除都不清除它；一个先挂空区域、再填文本的 `role="status"` 只在发码落地时播报一次，发码成功后焦点落在验证码字段。标识节与手机节没有重发控件，回退再发码的路径以 `reset` 开头，播报区的文本因此经空到非空；验证节有重发控件，它在服务端给出的重发间隔内呈不可用（仍可聚焦）并说明原因，间隔内的重复点击不发请求。
 - **验证节对地址占用给出明确的 409。** 发送与验证两步都在占用时渲染 `email-taken` 的文案，点明地址已被另一个账户使用并给出更换邮箱；发送一步在发码之前判定，被拒的地址不会收到验证码（见“邮箱的验证节”）。
 - **偏好节与档案节的写直接提交，不经加强认证门控。** 两节不接会话属性，写入被服务端拒绝时，失败横幅渲染该错误码的文案，控件退回存下的值；语言写入在 `switchLanguage` 落定之后才落定成功，确认文案按新语言译出并点名所选语言与值。
 - **通行密钥仪式的失败与区域里的失败横幅互斥。** 仪式失败是客户端原因，文本取自本包 bundle 的键，不经错误码白名单；一条出现时另一条被清掉。
@@ -347,7 +347,7 @@ sequenceDiagram
 | 改口令被拒为 401 `authn.login_failed`（当前口令不符，或账户级退避期内的静默拒绝） | 一条横幅渲染本节自己的句子（`password.currentRejected`），不点名失败成因：账户级退避期内服务端对正确的当前口令也答该码，且该次尝试仍计入失败、延后退避，句子的重试指引因此带上“连续失败后稍候”的条件；不渲染该码在登录页的文本：那句话点名邮箱、手机号与验证码，在这里都不适用。与要求加强认证的 401 同状态码，靠问题码区分，不误开门控 |
 | 加手机时号码已属另一账户（409 `authn.conflict`） | 一条横幅渲染该码文本 |
 | 验证码错误或已过期 | 一条横幅渲染统一文案（验证码无效或已过期，请重试或更换邮箱），验证码字段清空，目标地址保留 |
-| 发送验证码被 429 `authn.throttled` 拒绝 | 一条横幅渲染该码文本；重发控件按 `Retry-After` 倒计时禁用并说明原因 |
+| 发送验证码被 429 `authn.throttled` 拒绝 | 一条横幅渲染该码文本；重发控件按 `Retry-After` 倒计时呈不可用（仍可聚焦）并说明原因 |
 | 发送阶段目标地址已被其他账户预留或持有（409 `authn.email_taken`） | 一条横幅渲染该码文本，点明地址已被另一个账户使用并给出更换邮箱；不发信 |
 | 验证阶段目标地址已被其他账户预留或持有（409 `authn.email_taken`） | 一条横幅渲染该码文本，点明地址已被另一个账户使用并给出更换邮箱 |
 | 验证节的发送被 401 `authn.insufficient_user_authentication` 拒绝 | 发送与更换目标地址本身不要求新鲜认证，本包不开加强认证对话框，按普通失败横幅渲染该码文本，且不重放 |
@@ -371,7 +371,7 @@ sequenceDiagram
 | 读本人因素失败 | 不判定为没有因素，照常发起流程，由服务端的拒绝决定 |
 | 加强认证流程的起手被 401 `authn.insufficient_user_authentication` 拒绝（有因素，但没有能强化本会话的，或没有口令可再次证明） | 对话框判定本部署无法完成升级，给出重新登录的出口，不渲染步骤表单；说明陈述本次会话无法用已登记的验证方式完成这次确认，成因可能是这些方式在本次登录之后才登记，或本站没有能进一步加强本次登录的验证方式；并记录待恢复的操作，登录后回到原处续做 |
 | 加强认证流程的起手因其它的原因失败（400 等） | 一条横幅渲染错误码文本 |
-| 加强认证流程的起手或答复被 429 `ratelimit.throttled` 拒绝 | 失败横幅（`role="alert"`）只渲染该码无秒数的静态句，播报一次；剩余秒数在横幅之外的一条非 live 行（`aria-live="off"`）随每秒更新，读屏不整句重念；对话框在该时长内禁用这一步的提交（字段与取消仍可用），倒计时到点后恢复可提交，非 live 行消失 |
+| 加强认证流程的起手或答复被 429 `ratelimit.throttled` 拒绝 | 失败横幅（`role="alert"`）只渲染该码无秒数的静态句，播报一次；剩余秒数在横幅之外的一条非 live 行（`aria-live="off"`）随每秒更新，读屏不整句重念；对话框在该时长内让这一步的提交呈不可用（仍可聚焦）（字段与取消仍可用），倒计时到点后恢复可提交，非 live 行消失 |
 | 删除因素时它是账户最后一个 | 一条横幅渲染该错误码文本，服务端判定 |
 | 偏好写入被拒（`authn.bad_request`） | 一条失败横幅，控件退回存下的值（天然回退，无撤销记账） |
 | 绑定回调读不到流程，宿主给了 `absent`，且发现文档里没有 `kind=redirect` 的方法 | 渲染 `absent` |
@@ -410,7 +410,7 @@ sequenceDiagram
 | 读的刷新失败的陈旧提示 | 已实现 | `web/packages/account-ui/src/internal/async-section.tsx` `AccountAsyncSection`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 已实现 | `web/packages/account-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`、`useAccountUiErrorText`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.session_not_found`、`errors.authn.session_revoked`、`errors.authn.token_expired`、`errors.authn.refresh_token_invalid`、`errors.authn.refresh_token_reused` |
 | 裸 HTTP 状态经 `errors.client.http` 参数化叶子渲染 | 已实现 | `web/packages/account-ui/src/internal/error-text.ts` `useAccountUiErrorText`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.client.http` |
-| 429 限流拒绝的等待倒计时与加强认证对话框的提交禁用 | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp`；`web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpFlow`；`web/packages/account-ui/src/internal/inline-error.tsx` `InlineError`；`web/packages/i18n/src/error-text.ts` `waitCountdownText` |
+| 429 限流拒绝的等待倒计时与加强认证对话框的提交呈不可用（仍可聚焦） | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp`；`web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpFlow`；`web/packages/account-ui/src/internal/inline-error.tsx` `InlineError`；`web/packages/i18n/src/error-text.ts` `waitCountdownText` |
 | 加强认证对话框 `StepUpDialog` 外导（只给宿主用） | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx`；`web/packages/account-ui/src/index.ts` |
 | “验证码已发送”的 live region 与焦点 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 绑定回调完成阶段的成功文案 | 已实现 | `web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |

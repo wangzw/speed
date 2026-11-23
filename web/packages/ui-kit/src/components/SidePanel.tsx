@@ -11,9 +11,9 @@
  * While `busy` is true all three close paths are inert: the close button
  * is unavailable -- focusable, `aria-disabled`, its activation swallowed
  * -- and Escape and backdrop clicks do not call onClose. The close button
- * keeps its focus while the panel turns busy rather than dropping it to
- * the document body, where the panel's focus trap would pull focus back
- * to the paper.
+ * keeps its focus while the panel turns busy; a natively disabled control
+ * stops holding focus, and inside the panel's focus trap the browser lands
+ * it on the paper.
  *
  * MUI's temporary Drawer supplies the dialog semantics on its paper:
  * `role="dialog"`, `aria-modal` and `tabIndex={-1}`. This component adds
@@ -132,8 +132,8 @@ function SidePanelInner(
     onClose()
   }
   // The close button refuses activation while busy without becoming
-  // natively disabled: a focused button that turns disabled drops focus to
-  // the body, and the panel's focus trap then pulls it back to the paper.
+  // natively disabled: a natively disabled control stops holding focus,
+  // and the panel's focus trap then lands it on the paper.
   const handleCloseClick = useActivationGuard(requestClose, { busy })
 
   return (

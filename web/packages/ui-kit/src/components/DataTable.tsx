@@ -740,7 +740,7 @@ export function DataTable<T>({
   // An empty page cannot select anything. The header checkbox may hold
   // focus when the page empties (a batch delete clears it), so it stays
   // focusable, reports `aria-disabled` and refuses the change instead of
-  // turning natively disabled and dropping focus to the body.
+  // turning natively disabled and losing the focus it holds.
   const handleToggleAll = useActivationGuard(toggleAll, {
     busy: false,
     unavailable: pageKeys.length === 0,

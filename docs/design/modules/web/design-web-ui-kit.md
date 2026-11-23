@@ -9,7 +9,7 @@ ui-kit 是平台第一个渲染 DOM 的包，位于 tokens、i18n 与 theme-pres
 本包是平台第一个渲染 DOM 的包。它交付：
 
 - **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9（[REF-mui](../../../references.md)）主题，并承载触摸设备上所有可点击目标的 44×44 下限、表面映射与页面基线（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动、颜色模式、可选的主题预设层与全局重置组成一个运行期。
-- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`ActionRow`（连同 `ActionButton`）、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`、`TotpQrCode`、`TotpEnrollmentPanel`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装辅助函数（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）、两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）与显示时区的时间格式化入口（`useResolvedTimeZone`、`useFormatInstant`）。除 TOTP 登记的一对外，每个组件自带的文案来自 `ui-kit` 命名空间；`TotpQrCode` 与 `TotpEnrollmentPanel` 的全部文案与可及名由调用方经 props 传入。
+- **受控组件**：`PageLayout`、`PageHeader`、`SectionCard`、`ActionRow`（连同 `ActionButton`）、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`、`TotpQrCode`、`TotpEnrollmentPanel`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`useActivationGuard`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装辅助函数（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、邮箱地址规则（`parseEmailAddress`、`EMAIL_ADDRESS_MAX_BYTES`）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）、两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）与显示时区的时间格式化入口（`useResolvedTimeZone`、`useFormatInstant`）。除 TOTP 登记的一对外，每个组件自带的文案来自 `ui-kit` 命名空间；`TotpQrCode` 与 `TotpEnrollmentPanel` 的全部文案与可及名由调用方经 props 传入。
 
 **受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态，同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接口是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。TOTP 登记的一对同样只收宿主解析好的值与文案：它不解析 `otpauth://`、不读命名空间、不做网络或存储副作用；手动入口的展开是唯一交互局部状态，随组件卸载复位。
 
@@ -91,13 +91,13 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `PageLayout` | `title`（渲染为页面的 `h1`）、`description`、`breadcrumbs`、`actions`、子节点、`sx` | 面包屑链接的 `onClick` |
 | `PageHeader` | 标题（渲染为语义 `h1`）、可选面包屑、描述、动作区 | 面包屑链接的 `onClick` |
 | `SectionCard` | `title`、`icon`、`description`、`actions`、`headingLevel`（`h2`～`h6`，缺省 `h2`）、`flushContent`、`contentAligned`（缺省 `true`）、子节点、`sx` | — |
-| `ActionRow`／`ActionButton` | `ActionRow`：`children`（按显示顺序，主操作在后）、`size`（`medium`/`small`，缺省 `medium`）、`sx`；`ActionButton`：`emphasis`（`primary`/`secondary`，缺省 `secondary`）、`tone`（`default`/`danger`，缺省 `default`）、`size`（缺省继承所在行）、其余 MUI 按钮 props | 按钮自身的 `onClick` 等宿主回调 |
+| `ActionRow`／`ActionButton` | `ActionRow`：`children`（按显示顺序，主操作在后）、`size`（`medium`/`small`，缺省 `medium`）、`sx`；`ActionButton`：`emphasis`（`primary`/`secondary`，缺省 `secondary`）、`tone`（`default`/`danger`，缺省 `default`）、`size`（缺省继承所在行）、`busy`（本按钮发起的动作在途）、`unavailable`（前置条件不满足，或作用域有写入在途而本按钮会改变其上下文）、`unavailableReason`（不可用的原因文本）、`unavailableDescribedBy`（页面上已有说明文本的 id）、其余 MUI 按钮 props（不含 `variant`、`color`、`disabled`、`loading`） | 按钮自身的 `onClick` 等宿主回调；`busy` 或 `unavailable` 为真时不调用 |
 | `EmptyState` | `variant`（`empty`/`noPermission`/`error`）、可覆写的标题与描述、动作、图标、`headingLevel`（`h1`～`h6` 或 `none`：`none` 把标题渲染为非标题元素、整块成为 `role="status"` 区域，用于不该进入目录层级的空/状态占位） | 动作节点内的宿主回调 |
-| `ConfirmDialog` | `open`、标题、消息、`variant`、`doubleConfirm`、标签、`confirmLoading`、`children`（渲染在消息之后、不进 `aria-describedby`）、`confirmDisabled`（只禁用确认按钮，不改动双次确认的待命与锁定逻辑） | `onConfirm`、`onCancel` |
+| `ConfirmDialog` | `open`、标题、消息、`variant`、`doubleConfirm`、标签、`confirmLoading`、`children`（渲染在消息之后、不进 `aria-describedby`）、`confirmDisabled`（确认按钮呈不可用：可聚焦、激活被吞掉；不改动双次确认的待命与锁定逻辑）、`confirmDisabledReason`（`confirmDisabled` 成立时确认按钮的原因文本） | `onConfirm`、`onCancel` |
 | `SidePanel` | `open`、`title`（必填）、`description`、`size`（`medium` 或 `wide`，缺省 `medium`）、`busy`、`closeLabel`、`actions`（固定的底部操作行，位于滚动内容之外）、子节点 | `onClose`、`onExited` |
 | `FormField` | `name`、`control`、`rules`、`defaultValue`、`required`、`render` | 经 `render` 暴露的绑定字段状态 |
 | `FormLayout` | `form`、子节点、`onSubmit`、动作行、间距、宽度、`columns` | `onSubmit`（经 RHF 校验后，[REF-react-hook-form](../../../references.md)） |
-| `PhoneNumberField` | `country`、`nationalNumber`、国家/电话两个标签、帮助文本、`disabled`、`showValidationError`、自动填充标记、`preferredCountries`（置顶列出的国家码，按给定次序；缺省即原次序） | `onCountryChange`、`onNationalNumberChange`；帮助文本**平铺在整行之下**（国家/地区选择器与号码字段之下），不挂在号码字段的 helper 上；逐国家的校验错误仍出现在号码字段下方并替换帮助文本；两者都以 `aria-describedby` 关联到号码输入 |
+| `PhoneNumberField` | `country`、`nationalNumber`、国家/电话两个标签、帮助文本、`disabled`、`readOnly`（写入进行中使用：两部分都可聚焦、值不可改）、`showValidationError`、自动填充标记、`preferredCountries`（置顶列出的国家码，按给定次序；缺省即原次序） | `onCountryChange`、`onNationalNumberChange`；帮助文本**平铺在整行之下**（国家/地区选择器与号码字段之下），不挂在号码字段的 helper 上；逐国家的校验错误仍出现在号码字段下方并替换帮助文本；两者都以 `aria-describedby` 关联到号码输入 |
 | `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`（可选 `label`／`placeholder`）、选择、分页、空态文案、`rowVerticalAlign`（整行纵向对齐，缺省 MUI 的居中）、`pinLastColumn`（可选：钉住最后一列，仅在表格实际溢出容器时生效）、`ariaLabel`／`ariaLabelledBy`（替换命名空间默认的可及名） | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
 | `FileUploader` | `rows`、选取/取消/重试/移除回调、`multiple`、`accept`、`allowDrop`、`disabled`、标签 | `onSelectFiles`、`onCancel`、`onRetry`、`onRemove` |
 | `InlineError` | `code`、`resolve`（第二个入参是等待秒数）、`retryAfterSeconds`（拒绝声明的等待，整秒；可及句按它固定）、`liveRetryAfterSeconds`（宿主倒数时的剩余整秒；可见句随它变化，到零只去掉数字）、`detail`（渲染在同一横幅内的补充内容） | — |
@@ -151,9 +151,20 @@ export interface WriteFeedbackRegionProps {
   readonly sx?: SxProps<Theme>
 }
 export function WriteFeedbackRegion(props: WriteFeedbackRegionProps): JSX.Element
+
+export interface ActivationGuardState {
+  readonly busy: boolean            // 本控件发起的动作在途
+  readonly unavailable?: boolean    // 前置条件不满足，或作用域写入在途而控件会改变其上下文
+}
+export function useActivationGuard<A extends readonly unknown[]>(
+  handler: (...args: A) => void,
+  state: ActivationGuardState,
+): (...args: A) => void
 ```
 
 `run` 是一次尝试的标准形态：先 `reset`，把在途计数加一（`pending` 为真），再等待 `attempt`；`attempt` 以字符串落定即以该串调用 `succeed`，以 `null` 落定则不碰槽位（加强认证门控接管的写，见“写入的反馈”；槽位在本次尝试自己的 `reset` 之后为空，之后由重叠的尝试或 `succeed`、`fail` 填入的结果照旧保留），抛出则调用 `fail`；最后把在途计数减一。`run` 自身从不抛出。`succeed`、`fail` 与 `reset` 供不能表达为单个 promise 的流程使用，例如登录的逐步答复。`useWriteFeedback` 不取数、不认识 react-query（[REF-tanstack-query](../../../references.md)），状态属于调用它的宿主组件，各回调在组件存续期内引用稳定。宿主可用 `WriteFeedbackPageProvider` 提供页面级协调：作用域挂载时向它登记自己的清除回调，任一作用域写入时由它清空同页其余作用域的槽（见“写入的反馈”的“单槽”）。一次失败的槽还带上该次拒绝声明的等待：`retryAfterSecondsOf` 从错误的 `retryAfterMs` 读出整秒存入 `retryAfterSeconds`，并在落定时记下该等待的截止时刻 `waitUntil`（epoch 毫秒），使区域无需调用方持有任何时钟即可自己倒数剩余秒数；`retryAfterSeconds` 与 `waitUntil` 随 `resolve` 的第二个入参交给包的解析器，由它在自己的文案里说出“多久之后再试”。`WriteFeedbackRegion` 把槽渲染为 `InlineSuccess`（成功文案，始终挂载）与 `InlineError`（失败码，失败时才挂载），自己没有文案：成功文案由宿主翻译，失败文本经 `resolve` 取自各包自己的命名空间。各包把 `resolve` 绑定进自己的 `internal/` 包装，与 `InlineError` 的包装一致，调用点只传槽。区域的根容器默认带一个间距单位的上边距，成功与失败两部分共用它，调用方的 `sx` 在其后应用；调用点不单独渲染 `InlineSuccess`。使用条款见“写入的反馈”。
+
+`useActivationGuard` 包一层激活处理：`busy` 或 `unavailable` 为真时调用被吞掉，`handler` 不被调用；被吞掉的调用若首个实参是 `submit` 事件，还调用它的 `preventDefault`，浏览器因此不提交表单。两者都为假时以原实参调用 `handler`。返回的函数在组件存续期内引用稳定，调用时按最近一次渲染的状态判定。它不持有写入状态、不读作用域：`busy` 由调用方从作用域的 `pending` 或自己的逐项在途状态传入。用法见“写入的反馈”。
 
 ### 表单校验桥
 
@@ -181,7 +192,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 
 `parseEmailAddress` 把 authn 账户模块的邮箱规范化规则（`NormalizeIdentifier` 的 email 分支）表述在客户端：去空白、可打印 ASCII（0x21 到 0x7e）、恰好一个 `@` 且两侧非空、不超过 254 字节；返回去空白后的地址，不合格返回 `null`。它不改大小写，因为服务端折叠大小写，而折叠用户正在编辑的值会改掉他们的输入。
 
-`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口。基线导出之外的接口：`WriteFeedbackPageProvider`、`useWriteFeedbackPageCoordination` 及其类型 `WriteFeedbackPageCoordination`、`ActionRow`／`ActionButton` 及其 `ActionRowSize`、`ActionEmphasis`、`ActionTone`、`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`useFormatInstant`／`useResolvedTimeZone` 及其 `UseFormatInstantOptions`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有那些在要求 `T` 的地方用到它的使用方无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的使用方仍编译，故可能破坏使用方、是不兼容变更。公开接口的一次改动要与代码、测试、README 以及 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有使用方逐字节不受影响。
+`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口。基线导出之外的接口：`WriteFeedbackPageProvider`、`useWriteFeedbackPageCoordination` 及其类型 `WriteFeedbackPageCoordination`、`ActionRow`／`ActionButton` 及其 `ActionRowSize`、`ActionEmphasis`、`ActionTone`、`ActionButton.busy`／`unavailable`／`unavailableReason`／`unavailableDescribedBy`、`useActivationGuard` 及其 `ActivationGuardState`、`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`useFormatInstant`／`useResolvedTimeZone` 及其 `UseFormatInstantOptions`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`／`confirmDisabledReason`、`PhoneNumberField.readOnly`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有那些在要求 `T` 的地方用到它的使用方无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的使用方仍编译，故可能破坏使用方、是不兼容变更。公开接口的一次改动要与代码、测试、README 以及 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有使用方逐字节不受影响。
 
 ## 依赖
 
@@ -322,7 +333,9 @@ sequenceDiagram
 - `emphasis="primary"` 配 `tone="default"`：`contained` 变体，一行至多一个，渲染在组的最右端。
 - `tone="danger"`：取 error 语义色；作为主操作时是 `contained` 填充，作为次操作时是 `outlined` 描边。删除、撤销、停用这类不可逆动作使用它。
 
-`ActionButton` 不接受 `variant` 与 `color`：变体与语义色由档位决定，调用方无法在操作行里另立一套按钮外观；按钮的其他外观由主题承担，与主题工厂一节的映射一致。
+`ActionButton` 不接受 `variant` 与 `color`：变体与语义色由档位决定，调用方无法在操作行里另立一套按钮外观；按钮的其他外观由主题承担，与主题工厂一节的映射一致。它也不接受 `disabled` 与 `loading`，不可用与忙态由下一段的 `busy` 与 `unavailable` 表达。
+
+**不可用与忙态不置原生禁用。** `ActionButton` 以两个属性表达两种不可用：`busy` 是本按钮发起的动作在途，`unavailable` 是前置条件不满足，或作用域有写入在途而本按钮会改变其上下文。二者任一为真时按钮保持原生可聚焦，带 `aria-disabled="true"`，`onClick` 不被调用，`type="submit"` 时该次点击还被阻止提交表单。`busy` 另带 `aria-busy="true"` 并渲染进度指示：外观与 MUI `loading` 的居中形态一致，文字透明但保留占位与可及名，按钮宽度不变；指示器以 `aria-labelledby` 指向按钮，与 `RefreshButton` 同一接线。`unavailable` 的原因经 `unavailableReason` 或 `unavailableDescribedBy` 给出：前者由组件渲染一段视觉隐藏的原因文本并以 `aria-describedby` 关联，悬停与聚焦时以提示气泡显示同一文本；后者把 `aria-describedby` 指向页面上已有的说明文本，不另渲染原因。原生禁用使控件变为不可聚焦；按 HTML 规范它不再持有焦点，各浏览器引擎在何时、如何挪走焦点并不相同。在侧边面板与对话框的焦点陷阱里，发起控件在这一刻实际会失去焦点：真实 Chromium 下账户页的复现里，焦点落在抽屉纸张上（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。故本包任何在变为不可用的那一刻可能持有焦点的控件都不渲染原生 `disabled`。判据：它自己发起了使它不可用的那个动作，或使它不可用的条件随使用者在同一控件组里的输入成立。按钮形控件一律按可能持有焦点处理。`HumanVerification` 的点位是现状的例外：它在等人机验证时仍按原生 `disabled` 呈现，由“等人机验证时焦点留在发起处”这一单元改造，在那之前是已知例外。
 
 **尺寸由调用方按场合传入，行内按钮继承。** `ActionRow` 的 `size` 只有两个取值：页面表单与对话框用 `medium`（缺省），表格行内与菜单用 `small`。尺寸经 provider 传给行内的 `ActionButton`，按钮不必逐个声明；脱离操作行单独使用的 `ActionButton` 可按同一取值自行给出 `size`。尺寸不随容器宽度自动切换：同一场合的按钮大小是版式决定，不是容器查询。
 
@@ -331,6 +344,8 @@ sequenceDiagram
 ### 焦点环与降级动效
 
 **统一焦点环。** 键盘焦点落在基础控件上时显示 2px 实线轮廓、向外偏移 2px，颜色取 `palette.primary.main`；轮廓只在键盘焦点成立时出现，指针点击不显示。实现落在文档化的 `styleOverrides` 槽里（`&.Mui-focusVisible`），不使用未文档化的 `theme.focusVisible`。以 `ButtonBase` 等基础控件为根的控件继承该环；自有的可聚焦元素若不以它们为根，需在自己的槽里加上同一规则。贴在被裁切表面边缘的控件，其焦点环由内容内边距留出的空间容纳，不被 `Card` 的 `overflow: hidden` 裁掉。
+
+**不可用外观随 `aria-disabled` 出现。** 主题为 `MuiButton`、`MuiIconButton`、`MuiSwitch` 与 `MuiCheckbox` 在根元素或输入元素带 `aria-disabled="true"` 时给出与 `Mui-disabled` 相同的视觉，指针悬停不出现可点击的反馈；统一焦点环照常显示，不可用的控件被键盘聚焦时仍可见焦点位置。
 
 **输入框的静止描边取 `palette.text.secondary`。** MUI 默认以 23% 的前景色画描边，在本主题的表面上约为 2:1，低于 WCAG 1.4.11（[REF-wcag21](../../../references.md)）对“标识控件的边界”要求的 3:1。静止态因此改取 `palette.text.secondary`，在两种模式的每个表面角色上都超过 3:1；悬停与聚焦态分别由 MUI 改取 `text.primary` 与 `primary.main`，不受影响。项目覆写文字色时描边随之移动。
 
@@ -364,7 +379,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 ### 双次确认与锁定窗口
 
-`ConfirmDialog` 的危险变体可与 `doubleConfirm` 搭配：确认按钮第一次点击不确认，而是以“再次点击确认”的内建文本重标自身、仅第二次点击触发 `onConfirm`。待命点击还把确认按钮锁死一个 `CONFIRM_ARM_LOCKOUT_MS` 窗口（600ms）：平台双击阈值约 500ms，该窗口长于它，故真实双击的第二个事件总是落在禁用按钮上，而读过新标签的用户的点击按构造晚于窗口。锁定窗口覆盖确认按钮一处，取消、Escape 与背景点击全程可用。待命与锁定在弹窗关闭时复位（并取消挂起的重启用定时器），也在退出处理器里同步复位，使宿主在同一次状态批里关闭当前弹窗并打开下一个时，下一个从不继承未经其取得的待命。待命还有一条不可视通道：一个礼貌的实时区域在待命时填入“再次点击确认”文本，因为聚焦下的标签变化屏幕阅读器不一定播报。
+`ConfirmDialog` 的危险变体可与 `doubleConfirm` 搭配：确认按钮第一次点击不确认，而是以“再次点击确认”的内建文本重标自身、仅第二次点击触发 `onConfirm`。待命点击还把确认按钮锁死一个 `CONFIRM_ARM_LOCKOUT_MS` 窗口（600ms）：平台双击阈值约 500ms，该窗口长于它，故真实双击的第二个事件总是落在不可用的按钮上、被吞掉，而读过新标签的用户的点击按构造晚于窗口。锁定期间确认按钮保持可聚焦（`aria-disabled="true"`），以键盘待命的用户不失去焦点。锁定窗口覆盖确认按钮一处，取消、Escape 与背景点击全程可用。`confirmLoading` 为真时确认按钮带 `aria-busy` 并呈不可用，取消按钮呈不可用，二者都保持可聚焦。待命与锁定在弹窗关闭时复位（并取消挂起的重启用定时器），也在退出处理器里同步复位，使宿主在同一次状态批里关闭当前弹窗并打开下一个时，下一个从不继承未经其取得的待命。待命还有一条不可视通道：一个礼貌的实时区域在待命时填入“再次点击确认”文本，因为聚焦下的标签变化屏幕阅读器不一定播报。
 
 ### 侧边面板的地标、版式、关闭与焦点
 
@@ -374,11 +389,11 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 **版式。** 纸张占满视口高度，头部（标题、描述、关闭按钮）固定，内容区是面板内唯一的滚动层，内边距取主题间距。可选的 `actions` 页脚位于滚动层之下、同样固定，渲染为一条靠右的操作行（`medium` 档），使任务自身的提交与取消在正文滚动时始终可达。`size` 的 `medium` 取固定宽度 36rem，`wide` 取 52rem；视口在 `sm` 及以上取该宽度，`sm` 以下占满视口宽度。层级取 `theme.zIndex.modal`。内容区宽度是面板宽度减去内边距：两列版式的 `FormLayout` 在 `medium` 内容区内低于它两列起算的容器宽度（`sm`），收为一列；在 `wide` 内容区内高于它，保持两列。
 
-**关闭。** 关闭按钮、Escape 与遮罩点击三条路径都只调用 `onClose`，组件从不自行把 `open` 置假；宿主可以在 `onClose` 里拒绝关闭，例如有未保存内容时先请求确认。`busy` 为真时关闭按钮禁用，Escape 与遮罩点击不上报，与 `ConfirmDialog` 的 `confirmLoading` 一致。`onExited` 在退出过渡结束时调用一次：此时背后的页面已恢复对辅助技术可见，面板仍在文档中，内容在紧随其后的渲染提交里卸载。
+**关闭。** 关闭按钮、Escape 与遮罩点击三条路径都只调用 `onClose`，组件从不自行把 `open` 置假；宿主可以在 `onClose` 里拒绝关闭，例如有未保存内容时先请求确认。`busy` 为真时关闭按钮呈不可用（可聚焦、`aria-disabled="true"`，激活不调用 `onClose`），Escape 与遮罩点击不上报，与 `ConfirmDialog` 的 `confirmLoading` 一致。`onExited` 在退出过渡结束时调用一次：此时背后的页面已恢复对辅助技术可见，面板仍在文档中，内容在紧随其后的渲染提交里卸载。
 
 **内容的存续。** 面板关闭后内容卸载；退出过渡期间渲染宿主此刻传入的子节点，宿主在发出关闭的同一次状态批里清掉内容，面板就带着空白滑出，因此需要内容保留到退出结束的宿主在 `onExited` 里清理。面板内的局部状态随卸载丢失，需要跨关闭保留的状态（表单的字段值）由宿主持有。
 
-**焦点。** 打开后焦点落入面板：MUI 的焦点陷阱把焦点放在纸张上，纸张是带可及名的 `dialog`，读屏读出面板名；Tab 在面板内循环；关闭后焦点回到打开面板的元素。面板打开期间再打开对话框时，焦点陷阱归属最上层的模态，对话框关闭后焦点回到面板内触发它的控件。
+**焦点。** 打开后焦点落入面板：MUI 的焦点陷阱把焦点放在纸张上，纸张是带可及名的 `dialog`，读屏读出面板名；Tab 在面板内循环；关闭后焦点回到打开面板的元素。面板打开期间再打开对话框时，焦点陷阱归属最上层的模态，对话框关闭后焦点回到面板内触发它的控件。面板内的写入不移动焦点：发起控件在写入进行中与落定后都保持可聚焦（见“写入的反馈”），焦点不离开它，面板的焦点陷阱因此不会把焦点收回到纸张上；确认对话框与加强认证对话框关闭时归还的目标就是这个控件。
 
 ### 非模态浮层的焦点空档
 
@@ -396,7 +411,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 **拒绝由调用方判定，经 `refusedState` 交给本组件。** `refusedState` 与 `staleState` 结构相同，都是调用方预先推导的状态标记，取值是 `{title, description}`（无权限 `EmptyState` 的文案）；非 pending 时它替换内容、空占位与错误分支，且不提供重试，因为拒绝之后的重试只会再被拒绝。ui-kit 不读 403、不认识任何权限语义：判定与文案都属于调用方，缺省时各分支逐字节不变。
 
-**刷新控件在读进行中带 `aria-busy`，不置原生 `disabled`。** 被刷新重读的读有任一在进行中时，控件保持原生可聚焦并报告忙态（`RefreshButton` 自带指示器），再次激活不发第二次请求、也不排队。原生禁用只用于另外两种理由：其一，页面任一反馈作用域有写入在途（重读会与写入竞争）；其二，页面的寻址取值为空、没有可重读的读，此时控件以 `aria-describedby` 指向页面原有的选择提示，使禁用原因可被感知。把读进行中渲染成原生禁用会让聚焦的控件失去焦点、焦点落回文档，键盘用户按下 Enter 后要从页首重新 Tab，故不是该状态的表现。`staleState` 缺省不渲染，行为不变。
+**刷新控件从不置原生 `disabled`。** 被刷新重读的读有任一在进行中时，控件保持原生可聚焦并报告忙态（`RefreshButton` 自带指示器），再次激活不发第二次请求、也不排队。另有两种理由使控件不可用，表现与发起控件相同（可聚焦、`aria-disabled="true"`、激活被吞掉，见“写入的反馈”）：其一，页面任一反馈作用域有写入在途（重读会与写入竞争）；其二，页面的寻址取值为空、没有可重读的读，此时控件以 `aria-describedby` 指向页面原有的选择提示，使不可用的原因可被感知。三种状态都不渲染成原生禁用：原生禁用使控件变为不可聚焦，按 HTML 规范它不再持有焦点，各浏览器引擎的时机不同，键盘用户按下 Enter 后可能要从页首重新 Tab。
 
 ### 刷新动作
 
@@ -406,7 +421,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 **更新时间与完成播报。** `updatedAt` 取参与读中最近一次成功落定的最旧时刻：换键后仍以旧值在屏的读沿用换键前的时刻，属性缺席或从未落定的读不计，没有任何读落定时不渲染。每次点击把 `announcements` 归零，使相同文本再次填入也构成变化；被本次刷新重读的每个读都在不早于点击时刻成功落定后，计数加一；任一失败或一次被拒绝的重读抑制播报。自动重读不播报，也不 `reset`，因为它重读的可能正是刚落定的那次写入。
 
-**控件把三种状态分开。** 读忙态是 `aria-busy` 加可聚焦（见“异步读的状态分支”）；写入在途是原生禁用且不带说明；寻址取值为空是原生禁用并带页面自己的选择提示。可见文字由调用方传入本包既有译文键（`admin-ui` 为 `common.refresh`、objectstore 为 `page.refresh`），本包只在调用方未传时用 `refreshButton.label`；`ariaLabel` 供重读对象比页面更具体的场合使用，且必须以可见文字起头。
+**控件把三种状态分开。** 读忙态是 `aria-busy` 加可聚焦（见“异步读的状态分支”）；写入在途是不可用且不带说明；寻址取值为空是不可用并带页面自己的选择提示（`aria-describedby` 与提示气泡）。三种状态都保持可聚焦。可见文字由调用方传入本包既有译文键（`admin-ui` 为 `common.refresh`、objectstore 为 `page.refresh`），本包只在调用方未传时用 `refreshButton.label`；`ariaLabel` 供重读对象比页面更具体的场合使用，且必须以可见文字起头。
 
 admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 `internal/refresh-button.tsx` 与 `internal/use-page-refresh.ts` 的内部副本。
 
@@ -424,9 +439,15 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 
 **声明的等待只在可见句里倒数，可及句不动。** 失败横幅带拒绝声明的等待时，区域把该等待渲染为两句话：按声明等待解析出的句子留在可及树里但被裁剪出视野，读屏因此只在拒绝出现时播报这一次；可见的一句带 `aria-hidden`，随剩余整秒递减，由区域按落定时记下的截止时刻每秒重算，调用方不持有时钟。到零时可见句按无等待的文本解析，只去掉数字，结果本身仍在屏上。`InlineError` 的 `retryAfterSeconds` 是两句共同的起点，`liveRetryAfterSeconds` 是可见那句的当前值；只给前者时可见句不再递减。
 
-**写入在途时，改变其作用域上下文的控件禁用。** 在途尝试落定时照常替换槽位，不因 `reset` 被丢弃；改变某作用域上下文的控件（租户选择器、所选对象的选择器、翻页与刷新）因此在该作用域 `pending` 时禁用，使 `reset` 之后不会有先前上下文发起的尝试落定。
+**写入在途时，改变其作用域上下文的控件不可操作。** 在途尝试落定时照常替换槽位，不因 `reset` 被丢弃；改变某作用域上下文的控件（租户选择器、所选对象的选择器、翻页与刷新）因此在该作用域 `pending` 时不可操作，使 `reset` 之后不会有先前上下文发起的尝试落定。按钮形的上下文控件（翻页、刷新）与发起控件同一表现：可聚焦、`aria-disabled="true"`、激活被吞掉，不带原因说明。选择形的上下文控件（下拉、自动完成）原生禁用：写入从别的控件发起，此刻焦点不在选择器上，而不可用的下拉仍会展开选项（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。选择器自身发起写入（改动即保存）时它是发起控件，按下文的“改动即保存”处理。
 
-**发起控件在写入进行中禁用并标忙。** 禁用即原生 `disabled`，不响应再次点击；标忙即 MUI `Button` 的 `loading`，与 `ConfirmDialog` 的 `confirmLoading` 一致；写入落定后恢复可用。写入由对话框确认发起时，对话框关闭后焦点回到触发控件，该控件随即进入禁用，焦点落回 `body`；结果由区域播报，不强制把焦点移回。
+**发起控件在写入进行中保持可聚焦，呈不可用并标忙。** 发起控件以 `ActionButton` 的 `busy` 表达在途：按钮带 `aria-disabled="true"` 与 `aria-busy="true"`，渲染进度指示，再次激活被吞掉、不发第二次请求，与 `ConfirmDialog` 的 `confirmLoading` 一致；写入落定后恢复。焦点因此停在发起控件上（REQ-presentation-040）：直接激活时焦点不动；写入由对话框确认发起时，对话框关闭后焦点回到触发控件并停在它上面；写入被加强认证接管时，加强认证对话框打开时记下的归还目标就是它，关闭后焦点回到它；侧边面板内发起的写入，焦点不被面板的焦点陷阱收到纸张上。结果由区域播报，焦点不移动（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。
+
+**前置条件不满足的发起控件同样可聚焦，并说明原因。** 表单无改动、必填为空、对象已撤销这类前置条件不满足时，发起控件以 `unavailable` 呈不可用：可聚焦、`aria-disabled="true"`、激活被吞掉；原因经 `unavailableReason` 或 `unavailableDescribedBy` 给出，二者必给其一。作用域写入在途造成的上下文不可操作不带原因。写入成功后前置条件随即成立的控件（成功后清空输入、改动归零、对象已撤销）由此不丢焦点，读屏读出它不可用与原因（REQ-presentation-041）。
+
+**表单提交与改动即保存的控件经守卫。** 输入框里按 Enter 的隐式提交在浏览器里表现为对缺省提交按钮的合成点击，被按钮自己的守卫拦下；表单的提交处理另经 `useActivationGuard`，覆盖没有提交按钮或以程序方式提交的表单。写入进行中，表单的输入框取 `readOnly` 而不是 `disabled`：仍可聚焦，值不可改，在输入框里按 Enter 提交时焦点留在输入框。开关、复选框这类改动即保存的控件，写入进行中带 `aria-disabled="true"`，改动经 `useActivationGuard` 被吞掉，受控的值因此不变；改动即保存的下拉写入进行中取 `readOnly`。
+
+**发起控件随写入落定而卸载时，宿主指定焦点落点。** 写入成功使发起控件离开文档（列表移除了那一行、结束冒充后“当前冒充”一节消失）时，焦点不留在文档正文：宿主在移除它的同一次提交里把焦点交给相邻行的同一控件（下一行，没有则上一行）；没有相邻行时交给该控件组的容器，容器可编程聚焦、不进入 Tab 序列，与陈旧提示卸载时的落点一致（见“异步读的状态分支”）。本包不提供落点组件：落点取决于宿主的页面结构。
 
 **一个动作是一次尝试。** 一个动作含多次请求（批量保存）时，以一次 `run` 结算：`attempt` 内等待全部请求落定（`mutateAsync` 配 `Promise.allSettled`），不用逐次 `mutate` 的回调，因为同一个 mutation 观察者的逐次回调只对最后发起的请求触发，它的 `isPending` 也只反映那一次。有失败时以提交顺序中第一个失败项的码抛出，失败项的草稿保留，成功项的草稿清掉。重叠的动作各自 `await` 一次调用，在途状态取自作用域的 `pending`，不共用一个观察者的逐次回调、`isPending` 与 `variables`。
 
@@ -453,7 +474,7 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | 活动语言超出 MUI 映射表 | provider 落到 en-US MUI 本地化，不抛错；应用自身译文仍按活动语言渲染 |
 | `muiLocaleFor` 被直呼且标签未知 | 抛错（直呼者要主题装配期的响亮失败） |
 | `SidePanel` 的 `busy` 为真时收到关闭请求（按钮、Escape、遮罩点击） | 不调用 `onClose` |
-| `SidePanel` 关闭时打开它的元素已不在文档中（例如面板内移除了列表中的那一行） | 焦点落回 `body`；宿主在 `onExited` 里自行落点 |
+| `SidePanel` 关闭时打开它的元素已不在文档中（例如面板内移除了列表中的那一行） | MUI 的归还落空、焦点落到文档正文；宿主在 `onExited` 里按“发起控件随写入落定而卸载”的落点判据落点 |
 | 同一反馈作用域内两次尝试几乎同时落定 | 后落定者占槽，先落定者的结果被替换 |
 | `reset` 时作用域仍有尝试在途（改变上下文的控件未按规则禁用的宿主） | 在途尝试落定时照常替换槽位，不被丢弃 |
 | `fail` 收到非 ApiError 结构的抛出 | 经 `errorCodeOf` 折叠到 `client.unknown`，区域经 `resolve` 渲染其未知兜底 |
@@ -461,7 +482,10 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | `succeed` 或 `run` 以空串落定 | 槽位存该空串，成功区域渲染一条没有文字的横幅；调用方须传非空文案 |
 | 语言切换时槽里是成功文案 | 文案保持调用 `succeed` 时的译文；失败码随活动语言重新渲染 |
 | 写入在确认对话框的退出过渡内落定为失败 | 失败横幅在退出结束、背后页面重新可读之后才被读屏读到 |
-| 进行中的发起控件进入禁用而失去焦点 | 焦点落回 `body`，结果由区域播报，不强制把焦点移回 |
+| 发起控件在写入进行中或落定后不可用 | 控件保持可聚焦，焦点不动；读屏读出不可用，前置条件不满足时还读出原因；结果由区域播报 |
+| 不可用的按钮被激活（点击、Enter、空格、缺省提交按钮承接的隐式提交） | `onClick` 不被调用，`type="submit"` 时该次点击不提交表单；不发请求、不排队 |
+| 表单的提交处理在 `busy` 或 `unavailable` 为真时被调用（没有提交按钮、以程序方式提交） | 经 `useActivationGuard` 吞掉，并阻止浏览器的默认提交 |
+| 发起控件随写入成功离开文档 | 宿主在同一次提交里把焦点交给相邻行的同一控件，否则交给控件组容器；不落到文档正文 |
 | `AsyncSection` 已有数据（含空载荷）、`staleState` 给出 | 内容或空占位保留，其上渲染陈旧提示与重试动作；重试发出后调用方撤回它，提示卸载，再次失败时重新挂载并再次播报 |
 | `AsyncSection` 的陈旧提示卸载时焦点在提示内 | 焦点交给留在屏上的已结算内容容器，不落到文档正文；焦点已在别处时不抢回 |
 | `AsyncSection` 非 pending、`refusedState` 给出 | 无权限占位替换内容、空占位与错误分支，不提供重试 |
@@ -491,6 +515,9 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | 浅色模式 warning、info、success 的 700 调 `main` 与白色标签 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`；`web/packages/tokens/src/color.ts` `colorTokens.semantic` |
 | 内容节表面 `SectionCard` | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`、`SectionCardProps` |
 | 操作行 `ActionRow` 与按钮档位 `ActionButton` | 已实现 | `web/packages/ui-kit/src/components/ActionRow.tsx` `ActionRow`、`ActionButton`、`ActionRowSize`、`ActionEmphasis`、`ActionTone` |
+| 按钮的可聚焦不可用（`ActionButton` 的 `busy`、`unavailable` 与原因关联） | 部分实现 | `web/packages/ui-kit/src/components/ActionRow.tsx` `ActionButton` |
+| 不可用外观随 `aria-disabled`（按钮、图标按钮、开关、复选框） | 已实现 | `web/packages/ui-kit/src/theme/unavailable.ts` `unavailableComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
+| 激活守卫 `useActivationGuard` | 已实现 | `web/packages/ui-kit/src/activation-guard.ts` `useActivationGuard`、`ActivationGuardState` |
 | 统一焦点环 | 已实现 | `web/packages/ui-kit/src/theme/focus-ring.ts` `focusRingComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 输入框静止描边取 `text.secondary`（非文本 3:1） | 已实现 | `web/packages/ui-kit/src/theme/control-borders.ts` `controlBorderComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 降级动效 | 已实现 | `web/packages/ui-kit/src/theme/reduced-motion.ts` `reducedMotionComponents`、`REDUCED_MOTION_QUERY`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |

@@ -83,9 +83,11 @@
 | REF-us-a2p-10dlc | The Campaign Registry: A2P 10DLC | 美国运营商要求的应用对个人 10 位长号码短信的品牌与活动登记体系 | <https://www.campaignregistry.com/> | — |
 | REF-w3c-baggage | Propagation format for distributed context: Baggage | W3C 规范，定义跨进程传播应用自定义键值对的 `baggage` 头 | <https://www.w3.org/TR/baggage/> | — |
 | REF-w3c-trace-context | Trace Context | W3C 推荐标准，定义跨进程传播追踪上下文的 `traceparent` 与 `tracestate` 头 | <https://www.w3.org/TR/trace-context/> | — |
+| REF-wai-aria | Accessible Rich Internet Applications (WAI-ARIA) 1.2 | W3C 推荐标准，定义角色、状态与属性，含 `aria-disabled`、`aria-busy` 与 `aria-describedby` | <https://www.w3.org/TR/wai-aria-1.2/> | 1.2 |
 | REF-wcag21 | Web Content Accessibility Guidelines (WCAG) 2.1 | W3C 推荐标准，定义网页内容无障碍的成功准则，含对比度要求 | <https://www.w3.org/TR/WCAG21/> | 2.1 |
 | REF-webauthn | Web Authentication: An API for accessing Public Key Credentials | W3C 推荐标准，定义浏览器以公钥凭据登记与断言用户的 WebAuthn API 及依赖方处理 | <https://www.w3.org/TR/webauthn-2/> | Level 2 |
 | REF-whatwg-fetch | Fetch Standard | WHATWG 标准，定义浏览器的请求获取模型，含 CORS 协议与预检请求 | <https://fetch.spec.whatwg.org/> | — |
+| REF-whatwg-html | HTML Living Standard | WHATWG 标准，定义 HTML 元素与浏览器行为，含焦点修正规则与表单的隐式提交 | <https://html.spec.whatwg.org/> | — |
 | REF-xmldsig-core | XML Signature Syntax and Processing Version 1.1 | W3C 推荐标准，定义 XML 数字签名的语法与验签处理 | <https://www.w3.org/TR/xmldsig-core1/> | 1.1 |
 
 ## 开源组件

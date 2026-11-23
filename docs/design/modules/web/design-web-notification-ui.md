@@ -75,7 +75,7 @@ interface NotificationInboxProps {
 
 `onOpen` 给出时，消息的 `link` 非空的行把标题渲染为激活控件。未读行的激活先写该条的已读，写成功后才回调 `onOpen`；已读行直接回调。写失败时该界面的内联错误横幅渲染失败码，`onOpen` 不被调用，宿主因此不会在一个没有落地的状态上导航。
 
-`pageSize` 给出时列表按 `limit` 与 `offset` 读取，页脚按响应的 `total` 渲染“上一页”“下一页”：首页的“上一页”与末页的“下一页”禁用，`total` 不超过一页时不渲染页脚。翻页是一次上下文变化，页脚动作清空该界面反馈作用域里的成功确认与失败的写状态。`group` 给出时列表只读该分组；标记已读与全部标记已读仍按服务的路由作用，不受列表过滤影响。
+`pageSize` 给出时列表按 `limit` 与 `offset` 读取，页脚按响应的 `total` 渲染“上一页”“下一页”：首页的“上一页”与末页的“下一页”呈不可用（仍可聚焦），`total` 不超过一页时不渲染页脚。翻页是一次上下文变化，页脚动作清空该界面反馈作用域里的成功确认与失败的写状态。`group` 给出时列表只读该分组；标记已读与全部标记已读仍按服务的路由作用，不受列表过滤影响。
 
 `variant` 为 `embedded` 时省去页头，改在 `headingLevel` 渲染标题，标记全部已读的动作仍在标题旁；错误与拒绝两种占位跟随 `headingLevel`，空占位与 `page` 形态下一样不带标题，因为它落在界面自身的标题之下，再出一级标题会重复进入大纲。缺省 `page` 以页头渲染标题。
 
@@ -227,7 +227,7 @@ graph TD
 
 ### 偏好矩阵的渲染
 
-矩阵的行来自偏好读（每个在册类型一行），渠道列是 `in_app` 加 `NotificationPresenceProvider` 给出的、特性在场的可选渠道，按平台封闭渠道词表（`in_app`、`email`、`sms`）的次序排列，勾选态取该行的有效集。宿主列出可选渠道的次序不参与列序。没有 provider 时可选渠道为空，矩阵只有 `in_app` 一列；单独挂载的矩阵按同一规则渲染。类型分类法给出每类型的 `unsubscribable`：为 false 的类型整行禁用并标注不可退订（一次写入会被拒 409），分类法尚未到时按未知处理、保持可勾。一次勾选写上该渠道的目标态并回读，勾选态因而是最近一次成功读到的服务端应答；一次写只带被勾的那个渠道。
+矩阵的行来自偏好读（每个在册类型一行），渠道列是 `in_app` 加 `NotificationPresenceProvider` 给出的、特性在场的可选渠道，按平台封闭渠道词表（`in_app`、`email`、`sms`）的次序排列，勾选态取该行的有效集。宿主列出可选渠道的次序不参与列序。没有 provider 时可选渠道为空，矩阵只有 `in_app` 一列；单独挂载的矩阵按同一规则渲染。类型分类法给出每类型的 `unsubscribable`：为 false 的类型整行呈不可用（仍可聚焦）并标注不可退订（一次写入会被拒 409），分类法尚未到时按未知处理、保持可勾。一次勾选写上该渠道的目标态并回读，勾选态因而是最近一次成功读到的服务端应答；一次写只带被勾的那个渠道。
 
 **隐藏一个渠道列不改变偏好的取值。** 偏好按（类型，渠道）逐格写入，隐藏列的已存值不受影响，渠道的取值集也不因装配增减（[notification-preferences](../notification/design-notification-preferences.md)、[ADR-notification-channels](../../../adr/adr-notification-channels.md)）；渠道列只决定矩阵渲染哪些格。
 
@@ -253,8 +253,8 @@ graph TD
 
 收件箱与偏好矩阵各是一个反馈作用域，按 [ui-kit](design-web-ui-kit.md) 的“写入的反馈”组织（[ADR-web-write-feedback](../../../adr/adr-web-write-feedback.md)）。
 
-- **收件箱的标记已读与全部标记已读共用一个槽，作用域内的写入控件互锁。** 任一写入进行中，全部标记已读与每一行的标记已读一并禁用并标忙，与偏好矩阵一致；作用域内的尝试因此不重叠，一次全部已读的失败不会被并发的标记已读的成功替换。标记一条已读也落成功文案，不只靠行上的已读标记翻转。
-- **偏好矩阵的写入落成功文案，点明类型与渠道；失败渲染一条横幅，文本是该失败码的文本，紧贴矩阵。** 写入进行中整张矩阵禁用；失败的单元由矩阵回到服务端应答而可辨认，单元的 `aria-label` 给出它的类型与渠道。
+- **收件箱的标记已读与全部标记已读共用一个槽，作用域内的写入控件互锁。** 任一写入进行中，全部标记已读与每一行的标记已读一并呈不可用并标忙，都保持可聚焦（见 ui-kit“写入的反馈”），与偏好矩阵一致；作用域内的尝试因此不重叠，一次全部已读的失败不会被并发的标记已读的成功替换。标记一条已读也落成功文案，不只靠行上的已读标记翻转。
+- **偏好矩阵的写入落成功文案，点明类型与渠道；失败渲染一条横幅，文本是该失败码的文本，紧贴矩阵。** 写入进行中整张矩阵呈不可用（仍可聚焦）；失败的单元由矩阵回到服务端应答而可辨认，单元的 `aria-label` 给出它的类型与渠道。
 - **读的刷新失败保留旧数据并标明。** 收件箱列表与偏好矩阵在已有数据时刷新失败（标记已读或写偏好之后的失效重读、标签页重新可见的重读）都保持旧内容，其上渲染陈旧提示与重试；勾选态因此是最近一次成功读到的服务端应答。类型分类法的刷新失败不标明：分类法只作提示，不因写入而失效，缓存值仍然正确。
 - **未读铃铛没有失败态，这是有意的。** 未读数读失败时铃铛保持最后一次读到的值（从未读到过则为零），不渲染错误与重试，也不显示实时连接的状态；未读数的读失败不在任何界面上可见，收件箱列表与偏好矩阵的读失败各在自己的界面上渲染占位。
 
@@ -301,7 +301,7 @@ graph TD
 | 声明式路由入口 | 已实现 | `web/packages/notification-ui/src/routes.tsx` `notificationRoutes` |
 | 租户作用域读写与失效 | 已实现 | `web/packages/notification-ui/src/internal/queries.ts` `useNotificationMessages`、`useNotificationUnreadCount`、`useNotificationPreferences`、`useMarkNotificationRead`、`useMarkAllNotificationsRead`、`useSetNotificationPreference` |
 | 文案命名空间与双语资源 | 已实现 | `web/packages/notification-ui/src/resources.ts` `NOTIFICATION_UI_NAMESPACE`、`notificationUiResources` |
-| 收件箱与偏好矩阵的反馈作用域与成功确认 | 已实现 | `web/packages/notification-ui/src/NotificationInbox.tsx` `useWriteFeedback`、`WriteFeedbackRegion`、`markOneRead`；`web/packages/notification-ui/src/NotificationPreferences.tsx` `useWriteFeedback`、`WriteFeedbackRegion` |
+| 收件箱与偏好矩阵的反馈作用域与成功确认 | 部分实现 | `web/packages/notification-ui/src/NotificationInbox.tsx` `useWriteFeedback`、`WriteFeedbackRegion`、`markOneRead`；`web/packages/notification-ui/src/NotificationPreferences.tsx` `useWriteFeedback`、`WriteFeedbackRegion` |
 | 收件箱列表与偏好矩阵读的陈旧提示 | 已实现 | `web/packages/notification-ui/src/internal/tenant-section.tsx` `TenantAsyncSection`；`web/packages/notification-ui/src/NotificationInbox.tsx`、`web/packages/notification-ui/src/NotificationPreferences.tsx` |
 | 特性在场 provider `NotificationPresenceProvider` | 已实现 | `web/packages/notification-ui/src/NotificationPresence.tsx` `NotificationPresenceProvider` |
 | 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 已实现 | `web/packages/notification-ui/src/NotificationPreferences.tsx` `columns` |
