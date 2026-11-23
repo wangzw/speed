@@ -58,7 +58,6 @@ restates nothing another file already carries:
 4. **An OpenAPI declaration change commits its regenerated artifacts together.** The merged contract and both generated clients land in the same commit (`make api-docs`, then `api:gen` in `web` and in `starters/demo/web`). Use the `api` type when the contract is the change.
 5. **New user-facing text is bilingual in the same commit** — zh-CN and en-US both, with matching key sets.
 6. **Test helper directories are not scopes.** A change to `testutil` or `testdata` commits under the domain scope it serves, e.g. `test(billing): ...`.
-7. **A gate enforces the fold.** `tools/check_fixup_commits.py`, which `make repo-check` and therefore `make check` run, fails while a `fixup!`, `squash!` or `amend!` commit sits between `origin/main` and HEAD. A draft pull request runs no check, so a branch may carry fixups until it is marked ready.
 
 ## Workflow Convention
 
@@ -125,6 +124,8 @@ before the scale reaches that point rather than letting the case pass
 silently.
 
 A change that crosses the boundary is two changes: run each side's gate.
+
+**The fold is checked.** `tools/check_fixup_commits.py`, which `make repo-check` and therefore `make check` run, fails while a `fixup!`, `squash!` or `amend!` commit sits between `origin/main` and HEAD. A draft pull request runs no check, so a branch may carry fixups until it is marked ready.
 
 **The gate's CPU budget is `GATE_JOBS`**, defaulted by the Makefile. Every
 tool a gate leg calls that takes a width setting is told that width
