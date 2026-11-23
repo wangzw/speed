@@ -73,7 +73,8 @@
  * fresh one. The verify step sends nothing and presents none.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import { useQueryClient } from '@tanstack/react-query'
@@ -99,6 +100,7 @@ import {
   FORM_MAX_WIDTH,
   SectionCard,
   toE164,
+  useActivationGuard,
   usePhoneCountryDefault,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -216,11 +218,53 @@ export function PhoneSection({
     void verifyCode(nextCode)
   })
 
-  // Disabled through the whole attempt, including the refetches that follow
-  // the mutation, so the controls cannot change context under a pending
-  // scope.
+  // This scope's writes in flight, including the refetches that follow the
+  // mutation: no control that changes the scope's own context may act under
+  // a pending attempt, and the inputs stay focusable but unchangeable.
   const busy =
     startPhone.isPending || verifyPhone.isPending || feedback.pending
+  // Asking for a send is one attempt even while it waits on its proof: its
+  // control reports busy (though the block replaces it), and the form
+  // refuses a second submission. The profile re-read that follows a landed
+  // verify is not a send: while it is open the returning send control is
+  // held as the scope's sibling, never shown with the send's progress.
+  const sendBusy = pendingSend !== null || startPhone.isPending
+  // The verify step's own attempt in flight.
+  const verifyBusy = verifyPhone.isPending || feedback.pending
+  // The form is the control group's focus landing: a landed verify removes
+  // the control that started it, and focus goes here rather than to the
+  // document body.
+  const formRef = useRef<HTMLElement | null>(null)
+  // The verify control as it stands, and the control a landed verify is
+  // about to remove.
+  const verifyButton = useRef<HTMLButtonElement | null>(null)
+  const verifyLanding = useRef<HTMLButtonElement | null>(null)
+
+  // A landed verify replaces the code step, so the control that started it
+  // leaves the document. Focus moves to the control group in the commit that
+  // removes it, but only when the removal is what took focus: a place the
+  // operator chose during the write is left alone.
+  useLayoutEffect(() => {
+    const removed = verifyLanding.current
+    if (removed === null) {
+      return
+    }
+    verifyLanding.current = null
+    if (sentTo !== null) {
+      return
+    }
+    const active = document.activeElement
+    const fell =
+      active === null ||
+      active === document.body ||
+      !(active instanceof HTMLElement) ||
+      !active.isConnected ||
+      removed.contains(active)
+    if (!fell) {
+      return
+    }
+    formRef.current?.focus()
+  }, [sentTo])
 
   function sendCode(nextPhone: string): Promise<void> {
     // A required proof that is not ready yet keeps the send from leaving:
@@ -338,6 +382,10 @@ export function PhoneSection({
         // Given a host, hold the success state rather than reset to the
         // number step: an empty add form must not appear beside the
         // confirmation while the profile re-read is in flight.
+        // The landed verify removes the code step's controls: name the
+        // control that leaves, so the commit that removes it hands focus to
+        // the control group rather than the document body.
+        verifyLanding.current = verifyButton.current
         setVerified(true)
         setSentTo(null)
         setNationalNumber('')
@@ -386,6 +434,28 @@ export function PhoneSection({
   // never returns to the number-entry form; the host dismisses the section.
   const holdsSuccess = onAdded !== undefined && verified
 
+  // The form's submission judges by the control the active step offers: the
+  // send while the number is being entered, the verify once a code was sent.
+  const guardedSubmit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (sentTo === null) {
+        const phone = toE164(country, nationalNumber)
+        if (phone === null) {
+          setPhoneAttempted(true)
+          return
+        }
+        setPhoneAttempted(false)
+        askToSend(phone)
+      } else {
+        void verifyCode(code)
+      }
+    },
+    sentTo === null
+      ? { busy: sendBusy, unavailable: nationalNumber === '' || busy }
+      : { busy: verifyBusy, unavailable: code.trim() === '' },
+  )
+
   return (
     <>
       <SectionCard
@@ -393,22 +463,15 @@ export function PhoneSection({
         description={t('phone.securityNote')}
       >
         <Box
+          // The form is the control group's focus landing, named by the
+          // section's title: `tabIndex={-1}` makes it programmatically
+          // focusable without adding it to the Tab sequence.
+          ref={formRef}
           component="form"
           noValidate
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (sentTo === null) {
-              const phone = toE164(country, nationalNumber)
-              if (phone === null) {
-                setPhoneAttempted(true)
-                return
-              }
-              setPhoneAttempted(false)
-              askToSend(phone)
-            } else {
-              void verifyCode(code)
-            }
-          }}
+          tabIndex={-1}
+          aria-label={t('phone.title')}
+          onSubmit={guardedSubmit}
           sx={{
             display: 'flex',
             flexDirection: 'column',
@@ -447,7 +510,7 @@ export function PhoneSection({
                 numberLabel={t('phone.phone.label')}
                 numberHelperText={t('phone.phone.helper')}
                 showValidationError={phoneAttempted}
-                disabled={busy}
+                readOnly={busy}
                 autoComplete="tel"
               />
               {/* The first send needs a proof too, so the block appears only
@@ -472,7 +535,7 @@ export function PhoneSection({
                   {onCancel === undefined ? null : (
                     <ActionButton
                       type="button"
-                      disabled={busy}
+                      unavailable={busy}
                       onClick={onCancel}
                     >
                       {t('phone.close')}
@@ -485,7 +548,13 @@ export function PhoneSection({
                     <ActionButton
                       type="submit"
                       emphasis="primary"
-                      disabled={busy || nationalNumber === ''}
+                      busy={sendBusy}
+                      unavailable={nationalNumber === '' || busy}
+                      unavailableReason={
+                        nationalNumber === ''
+                          ? t('phone.sendUnavailable')
+                          : undefined
+                      }
                     >
                       {t('phone.send')}
                     </ActionButton>
@@ -513,13 +582,13 @@ export function PhoneSection({
               autoComplete="one-time-code"
               label={t('phone.code.label')}
               value={code}
-              disabled={busy}
+              slotProps={{ htmlInput: { readOnly: busy } }}
               onChange={(event) => setCode(event.target.value)}
             />
             <ActionRow sx={{ width: '100%' }}>
               <ActionButton
                 type="button"
-                disabled={busy}
+                unavailable={busy}
                 onClick={() => {
                   if (onCancel !== undefined) {
                     onCancel()
@@ -534,9 +603,12 @@ export function PhoneSection({
                 {onCancel === undefined ? t('phone.cancel') : t('phone.close')}
               </ActionButton>
               <ActionButton
+                ref={verifyButton}
                 type="submit"
                 emphasis="primary"
-                disabled={busy || code.trim() === ''}
+                busy={verifyBusy}
+                unavailable={code.trim() === ''}
+                unavailableReason={t('phone.verifyUnavailable')}
               >
                 {t('phone.verify')}
               </ActionButton>

@@ -567,11 +567,11 @@ describe('account-ui form geometry', () => {
     await user.click(send)
     await screen.findByLabelText(zhCN.phone.code.label)
 
-    // Code step: the same arrangement, with the verify primary disabled
+    // Code step: the same arrangement, with the verify primary unavailable
     // while the code field is empty.
     const verify = screen.getByRole('button', { name: zhCN.phone.verify })
     const back = screen.getByRole('button', { name: zhCN.phone.close })
-    expect(verify).toBeDisabled()
+    expect(verify).toHaveAttribute('aria-disabled', 'true')
     expectOneActionGroup(verify, back)
   })
 

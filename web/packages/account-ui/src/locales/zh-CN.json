@@ -400,11 +400,13 @@
       "helper": "选择国家/地区后输入本地号码。"
     },
     "send": "发送验证码",
+    "sendUnavailable": "请先输入手机号。",
     "sent": "验证码已发送至 {{phone}}。",
     "code": {
       "label": "验证码"
     },
     "verify": "验证",
+    "verifyUnavailable": "请先输入验证码。",
     "added": "手机号 {{phone}} 已添加。",
     "cancel": "换一个号码",
     "close": "取消"
