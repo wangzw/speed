@@ -53,6 +53,7 @@ import type {
 import type { SignInMode } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
+import { focusPageLanding } from '@speed/ui-kit'
 import {
   authnInviteAccept,
   authnInviteAcceptView,
@@ -66,10 +67,9 @@ import { useAppNotice } from '../app-notice.js'
 import { useAppServices } from '../app-services.js'
 import { getCurrentTenant, setCurrentTenant } from '../chrome.js'
 import {
-  findPageHeading,
   focusFellWithPageSwap,
-  focusPageEntry,
-} from '../focus-landing.js'
+  isPageHeading,
+} from '../focus-handoff.js'
 import { ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 import { loadSelfTenants, selfTenantName, useSelfTenantState } from '../tenant-self.js'
@@ -125,7 +125,13 @@ export function AcceptInvitationPage({
       return
     }
     restoreLandingFocus.current = false
-    focusPageEntry(landing.current)
+    const container = landing.current
+    if (container === null) {
+      return
+    }
+    if (focusPageLanding(container) === null) {
+      container.focus()
+    }
   }, [authMode])
 
   // The heading arrives with the signed-in invitation read, after the landing
@@ -146,11 +152,11 @@ export function AcceptInvitationPage({
         observer.disconnect()
         return
       }
-      if (findPageHeading(container) === null) {
+      const target = focusPageLanding(container)
+      if (target === null || !isPageHeading(target)) {
         return
       }
       observer.disconnect()
-      focusPageEntry(container)
     })
     observer.observe(container, { childList: true, subtree: true })
     return () => {
