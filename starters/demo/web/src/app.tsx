@@ -78,6 +78,7 @@ import { ProductShell } from '@speed/product-shell'
 import {
   ActionButton,
   DisplayTimeZoneProvider,
+  focusPageLanding,
   useAppThemeMode,
   WriteFeedbackPageProvider,
 } from '@speed/ui-kit'
@@ -95,10 +96,9 @@ import type { RouteContext, RoutePresence } from '@speed/route-kit'
 import type { ReactElement, ReactNode } from 'react'
 import { contactVerificationPending } from './contact-verification.js'
 import {
-  findPageHeading,
   focusFellWithPageSwap,
-  focusPageEntry,
-} from './focus-landing.js'
+  isPageHeading,
+} from './focus-handoff.js'
 import {
   tenantAdminTenantsList,
   useAuthnProfileGet,
@@ -411,7 +411,9 @@ function AppFrame({
     if (document.activeElement !== document.body) {
       return
     }
-    focusPageEntry(document.body)
+    if (focusPageLanding(document.body) === null) {
+      document.body.focus()
+    }
   }, [organizationAdmission.status])
 
   // The invitation landing renders outside both shells: an invitee arrives
@@ -1322,31 +1324,38 @@ function SessionGate({
     }
     // A completed sign-in clears the permission domains, so the admin area is
     // still waiting when the flip commits: the gate holds no page entry yet.
-    // Land on the wrapper for now, and hand the focus on once the page's main
-    // landmark and heading arrive.
-    const landing = focusPageEntry(container)
-    if (findPageHeading(container) !== null) {
+    // Land on the wrapper for now, and hand the focus on once the page's own
+    // entry arrives.
+    let current = focusPageLanding(container)
+    if (current === null) {
+      container.focus()
+      current = container
+    }
+    if (isPageHeading(current)) {
       return
     }
     const handOff = (): boolean => {
-      const main = container.querySelector<HTMLElement>(
-        'main, [role="main"]',
-      )
-      if (main === null) {
-        return false
-      }
-      const heading = findPageHeading(main)
-      if (heading === null) {
-        return false
-      }
       // Only when the flip's landing still holds the focus: a place the
       // operator moved to keeps it.
       const active = document.activeElement
-      if (active !== landing && active !== container && active !== document.body) {
+      if (
+        active !== current &&
+        active !== container &&
+        active !== document.body
+      ) {
         return true
       }
-      focusPageEntry(heading)
-      return true
+      // The page's landmark may arrive before its heading; the rule keeps the
+      // focus on whichever landing exists and hands on again when the heading
+      // itself appears.
+      const target = focusPageLanding(container)
+      if (target === null) {
+        container.focus()
+        current = container
+        return false
+      }
+      current = target
+      return isPageHeading(target)
     }
     if (handOff()) {
       return
