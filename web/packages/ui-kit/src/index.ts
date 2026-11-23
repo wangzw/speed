@@ -42,7 +42,11 @@
  * contribute its content alone; and ActionRow + ActionButton are the one
  * right-aligned action row, with the button's weight, colour and size
  * derived from the row's emphasis, tone and size rather than from a
- * call-site variant.
+ * call-site variant; and focusPageLanding is the page-change hand-off
+ * rule -- the new page's first level-one heading inside its main
+ * landmark, else that landmark -- which a shell or host calls when an
+ * authentication flip replaces the page, while @speed/route-kit keeps
+ * the same rule privately for in-app navigation.
  * Everything else stays internal: helpers shared between components live
  * in src/internal/ and are deliberately not exported.
  */
@@ -270,3 +274,4 @@ export {
 } from './phone-country-default.js'
 export { visuallyHiddenSx } from './visually-hidden.js'
 export { touchTargetSx } from './touch-target.js'
+export { focusPageLanding } from './page-landing.js'

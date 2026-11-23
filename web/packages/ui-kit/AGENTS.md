@@ -39,8 +39,10 @@ the display-preference contexts
 `PhoneCountryDefaultProvider` / `usePhoneCountryDefault`), the
 time-formatting entry (`useFormatInstant` / `useResolvedTimeZone`) and the shared
 state primitives (`errorCodeOf`, `httpStatusOf`, the
-`visuallyHiddenSx` clip recipe, and the `touchTargetSx` recipe as the
-fallback floor for interactive elements the theme does not reach). `FileUploader` is no carve-out: the queue renders from
+`visuallyHiddenSx` clip recipe, the `touchTargetSx` recipe as the
+fallback floor for interactive elements the theme does not reach, and
+`focusPageLanding`, the landing rule a shell or host applies when a page
+is replaced as a whole). `FileUploader` is no carve-out: the queue renders from
 host-owned `rows` props, every pick, cancel, retry and remove reports up
 through a callback (`onSelectFiles` / `onCancel` / `onRetry` /
 `onRemove`), and the upload transport — one logical transfer per picked
@@ -300,6 +302,22 @@ plumbing and deliberately not exported.
   `src/internal/validation-error.ts` is the single resolution point.
   `REQUIRED_ERROR_KEY` is the exported key for hosts building their own
   rules.
+- **A replaced page lands focus by one rule.** `focusPageLanding(scope)`
+  hands focus to the first level-one heading inside the scope's main
+  landmark, else to that landmark, else to the first level-one heading in
+  the scope, skipping headings inside `[hidden]`, `[aria-hidden="true"]`
+  and `[inert]` subtrees; the suppression walk stops at the scope, so a
+  hidden ancestor above it does not suppress its content. A target with no
+  `tabindex` gets `tabindex="-1"` for as long as it holds focus and loses
+  the attribute it was given on its first blur; an existing `tabindex` is
+  left alone, and `focus()` is called without `preventScroll` so the
+  heading scrolls into view. The function returns the focused element, or
+  `null` when nothing qualifies or the focus call does not land; a failed
+  landing also clears the temporary `tabindex`, so a caller such as
+  `ProductShell` can fall back. `@speed/route-kit` keeps the same rule,
+  clause for clause, privately (`src/navigation-focus.tsx`) because it
+  imports no sibling package; a change to either copy belongs in both, in
+  one change.
 - **Do not duplicate MUI chrome.** MUI controls already render labels,
   helper text and aria wiring; the form family's "uniform error display"
   is the render-state contract plus FormLayout's skeleton, not a second

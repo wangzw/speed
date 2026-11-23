@@ -23,7 +23,8 @@ pending/error/empty/content branches of an async read (`ListSkeleton`,
 `AsyncSection`) and the
 shared style recipes (`visuallyHiddenSx` for hidden elements,
 `touchTargetSx` for the coarse-pointer floor of elements the theme does
-not reach). Beside them ship the refresh pair (`RefreshButton` +
+not reach) and `focusPageLanding`, the landing rule a shell or host
+applies when a page is replaced as a whole. Beside them ship the refresh pair (`RefreshButton` +
 `usePageRefresh`), the clipboard and one-time-value pair (`CopyButton`,
 `OneTimeValuePanel`), the TOTP enrolment pair (`TotpQrCode`,
 `TotpEnrollmentPanel`), the display-preference contexts
@@ -78,6 +79,7 @@ reads no bundle of its own.
 | `components/HumanVerification.tsx` | `HumanVerification`, `HumanVerificationProps`, `HumanVerificationScope`, `HumanVerificationGate`, `HumanVerificationGateSet`, `HumanVerificationStatus`, `HumanCaptchaChallenge`, `HumanCaptchaForm` |
 | `visually-hidden.ts` | `visuallyHiddenSx` |
 | `touch-target.ts` | `touchTargetSx` |
+| `page-landing.ts` | `focusPageLanding` |
 | `resources.ts` | `UI_KIT_NAMESPACE`, `uiKitResources` |
 
 Everything else (`src/internal/`) is shared component plumbing and is
@@ -1608,6 +1610,34 @@ recipe. The recipe is the fallback for an interactive element the theme
 cannot reach -- a bare `<a>`, a host-drawn clickable element, a widget
 outside MUI's classes -- and no shipped package surface applies it
 today.
+
+### focusPageLanding (the page-change landing rule)
+
+The landing rule for a page replaced as a whole: an in-app navigation or
+an authentication flip unmounts the old page and the browser leaves
+focus on the document body. `focusPageLanding(scope)` hands focus to the
+first level-one heading inside the scope's main landmark, else to that
+landmark, else to the first level-one heading in the scope, skipping
+headings inside `[hidden]`, `[aria-hidden="true"]` and `[inert]`
+subtrees. The suppression walk stops at the scope, so a hidden ancestor
+above it does not suppress its content. A heading is not focusable on
+its own, so an otherwise unfocusable target gets `tabindex="-1"` for as
+long as it holds focus; the rule removes the attribute it set on the
+target's first blur, and leaves an attribute the target already carried
+alone. The call does not pass `preventScroll`, so the heading scrolls
+into view and the reader starts at the top of the new page.
+
+The function returns the element that received focus, or `null` when
+nothing in the scope qualifies or the focus call does not land (an
+element in a `display: none` subtree, for example). On a failed landing
+it removes the temporary `tabindex` again, so the caller can fall back;
+`ProductShell` uses that to focus its own container.
+
+`@speed/route-kit` keeps a private copy of the same rule, clause for
+clause, in `src/navigation-focus.tsx` for in-app navigation, because
+that package imports no sibling package; the two copies change together.
+A shell or host calls this function when an authentication flip replaces
+the page.
 
 ## Text and i18n
 
