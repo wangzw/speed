@@ -52,6 +52,7 @@ python3 tools/check_test_limits.py
 python3 tools/check_e2e_honesty.py
 python3 tools/check_platform_errors.py
 python3 tools/check_pnpm_filters.py
+python3 tools/check_web_build_scripts.py
 python3 tools/check_ci_jobs.py
 python3 tools/lint_composite_actions.py
 ```
@@ -455,6 +456,23 @@ matches a member, or a path selector, with the `...` and `^` markers and a
 leading `!` removed). Exit codes: 0 clean, 1 a finding (each with file, line
 and the call), 2 infrastructure error (the root is not a directory, or the
 workspace file is missing or lists no member).
+
+`check_web_build_scripts.py` — holds the workspace members' build scripts to
+the shape the frontend gate calls. The gate builds the packages with
+`pnpm -r run build:self`, and pnpm silently skips a member whose manifest has
+no `build:self` script, so the leg stays green while that package's dist is
+never written. The gate reads the members `web/pnpm-workspace.yaml` lists and,
+for every one except the two declared exceptions (`@speed/test-utils`, whose
+build is its typecheck, and `demo-web`, which builds through its own script),
+requires `build:self` to be exactly `tsc -p tsconfig.build.json` and `build`
+to be exactly `pnpm --filter <own name>... --fail-if-no-match
+--workspace-concurrency=1 run build:self`: the package and its dependency
+graph, one script at a time, and a filter that fails rather than matching
+nothing. The filter is checked against the package's own name, so a build
+copied from a sibling is a finding. Exit codes: 0 clean, 1 a finding (each
+with file, line, package name and what is wrong), 2 infrastructure error (the
+root is not a directory, the workspace file is missing or lists no readable
+member, or a member manifest cannot be read or parsed).
 
 `check_ci_jobs.py` — holds the `check` workflow to the commit gate, leg for
 leg. `make check` names one segment per leg, and each segment's recipe calls
