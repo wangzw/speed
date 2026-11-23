@@ -709,6 +709,54 @@ describe('TenantDetailPage', () => {
     expect(displayName).toHaveValue('Unsaved')
   })
 
+  it('keeps the profile save control focused and inert while the save is in flight', async () => {
+    const user = userEvent.setup()
+    let settle: (() => void) | undefined
+    const updates: unknown[] = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        getTenant: () =>
+          Promise.resolve(
+            tenantFixture({ name: 'acme-inc', display_name: 'Acme' }),
+          ),
+        setTenantProfile: (input) => {
+          updates.push(input)
+          return new Promise<void>((resolve) => {
+            settle = resolve
+          })
+        },
+      }),
+    )
+    renderWithProviders(<TenantDetailPage name="acme-inc" />, { operations })
+    await screen.findByLabelText(zhCN.tenantProfile.field.displayName)
+
+    const save = screen.getByRole('button', {
+      name: zhCN.tenantProfile.form.save,
+    })
+    await user.click(save)
+    await waitForCondition(() => expect(updates).toHaveLength(1))
+
+    // The write is in flight: the control stays focusable and says so,
+    // rather than turning natively disabled and dropping the operator's
+    // focus to the document body.
+    expect(save).not.toHaveAttribute('disabled')
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAttribute('aria-busy', 'true')
+    expect(save).toHaveFocus()
+
+    // Click, Enter and Space are all swallowed while the write runs: none
+    // of them writes a second time, and focus stays where it was.
+    await user.click(save)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(updates).toHaveLength(1)
+    expect(save).toHaveFocus()
+
+    await act(async () => {
+      settle?.()
+    })
+  })
+
   it('renders a tombstone read-only with no actions', async () => {
     const operations = createAdminOperations(
       makeAdminBackend({
