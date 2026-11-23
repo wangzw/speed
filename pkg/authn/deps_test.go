@@ -23,6 +23,10 @@ const (
 	moduleImportPath = "github.com/vislake/speed/pkg"
 	rootPath         = moduleImportPath + "/authn"
 	authntestPath    = rootPath + "/authntest"
+	mfatestPath      = rootPath + "/mfa/mfatest"
+	mfaPackagePath   = rootPath + "/mfa"
+	factorStorePath  = rootPath + "/mfa/internal/factorstore"
+	totpSeedPath     = rootPath + "/mfa/internal/totpseed"
 	mounttestPath    = internalPrefix + "mount/mounttest"
 	internalPrefix   = rootPath + "/internal/"
 	modelPath        = internalPrefix + "model"
@@ -332,12 +336,15 @@ func layerViolations(pkgs []listed) []string {
 	return out
 }
 
-// authntestViolations is the third rule: no package imports authntest or
-// mounttest in a file that is not a test, except those two themselves, and
-// mounttest, which builds the identities of its requests with authntest, is the
-// one package besides authntest that may import it. The compiler cannot stop
-// production code importing either, and an identity built there would be one no
-// gateway stamped, a route registered there one no gateway guards.
+// authntestViolations is the third rule: no package imports authntest,
+// mounttest or mfatest in a file that is not a test, except those three
+// themselves, and mounttest, which builds the identities of its requests with
+// authntest, is the one package besides authntest that may import it. The
+// compiler cannot stop production code importing either, and an identity built
+// there would be one no gateway stamped, a route registered there one no gateway
+// guards. mfatest writes and reads the multi-factor register for a test; a
+// production import of it would let the product seed factors with nobody
+// enrolled for them.
 func authntestViolations(pkgs []listed) []string {
 	var out []string
 	for _, p := range pkgs {
@@ -346,6 +353,43 @@ func authntestViolations(pkgs []listed) []string {
 		}
 		if p.ImportPath != mounttestPath && slices.Contains(p.Imports, mounttestPath) {
 			out = append(out, p.ImportPath+" imports mounttest outside a test file")
+		}
+		if p.ImportPath != mfatestPath && slices.Contains(p.Imports, mfatestPath) {
+			out = append(out, p.ImportPath+" imports mfatest outside a test file")
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// internalStoreImporters are the packages that may import the multi-factor
+// module's internal statement packages in a file that is not a test: the module
+// whose register delegates to factorstore, the TOTP factor whose seed table is
+// totpseed's, and the test-support package that writes and reads both so a
+// fixture breaks with a renamed column. The internal packages exist so those
+// three share one set of statements; any other importer would be a second
+// writer of the register or of a kind's own data, which the module's API is
+// meant to be the only way through.
+var internalStoreImporters = map[string][]string{
+	factorStorePath: {mfaPackagePath, mfatestPath},
+	totpSeedPath:    {totpPackagePath, mfatestPath},
+}
+
+// internalStoreViolations is the seventh rule: no package outside
+// internalStoreImporters imports a multi-factor module's internal statement
+// package in a file that is not a test. Go admits every package under
+// pkg/authn/mfa to them, so the compiler stops what sits outside the module and
+// this rule stops what sits inside it.
+func internalStoreViolations(pkgs []listed) []string {
+	var out []string
+	for _, p := range pkgs {
+		for store, allowed := range internalStoreImporters {
+			if slices.Contains(allowed, p.ImportPath) {
+				continue
+			}
+			if slices.Contains(p.Imports, store) {
+				out = append(out, p.ImportPath+" imports "+store+" outside a test file: only "+strings.Join(allowed, ", ")+" may")
+			}
 		}
 	}
 	slices.Sort(out)
@@ -542,6 +586,19 @@ func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 	if p, ok := find(pkgs, mounttestPath); !ok || !slices.Contains(p.Imports, authntestPath) {
 		t.Fatal("mounttest is not listed as importing authntest, so the rule about who may import either has nothing to read")
 	}
+	if p, ok := find(pkgs, mfatestPath); !ok || len(p.Imports) == 0 {
+		t.Fatal("the listing does not hold mfatest and its imports, so the rule about who may import it has nothing to read")
+	}
+	for _, want := range []struct{ path, store string }{
+		{mfaPackagePath, factorStorePath},
+		{totpPackagePath, totpSeedPath},
+		{mfatestPath, factorStorePath},
+		{mfatestPath, totpSeedPath},
+	} {
+		if p, ok := find(pkgs, want.path); !ok || !slices.Contains(p.Imports, want.store) {
+			t.Fatalf("%s is not listed as importing %s, so the rule about who may import the internal stores has nothing to read", want.path, want.store)
+		}
+	}
 	for _, writer := range []string{rootPath, rootPath + "/gate", authntestPath} {
 		if p, ok := find(pkgs, writer); !ok || !slices.Contains(p.Imports, identityPath) {
 			t.Fatalf("%s is not listed as importing the identity package, so the writer rule has nothing to read", writer)
@@ -558,6 +615,9 @@ func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 		t.Error(v)
 	}
 	for _, v := range authntestViolations(pkgs) {
+		t.Error(v)
+	}
+	for _, v := range internalStoreViolations(pkgs) {
 		t.Error(v)
 	}
 	for _, v := range identityWriterViolations(pkgs) {
@@ -675,7 +735,13 @@ func writeTree(t *testing.T, files map[string]string) string {
 //   - a production package imports authntest, and another does so from a test
 //     file alone, which is allowed; one imports mounttest, another does so from
 //     a test file alone, and mounttest itself imports authntest, which is
-//     allowed;
+//     allowed; a production package imports mfatest, and another does so from a
+//     test file alone;
+//   - another factor package imports the multi-factor module's internal
+//     factorstore, and one imports totpseed, beside the module, the kind and
+//     mfatest that may; the module imports totpseed and the TOTP factor
+//     imports factorstore, which are each the other store and so keep the two
+//     allowed lists from being one list;
 //   - a backend imports the identity package, as model does too, while the
 //     gateway and the login engine do so legitimately and a session package
 //     does so from a test file alone;
@@ -710,6 +776,14 @@ import (
 		"authn/internal/step/step.go":         "package step\n\nimport _ \"example.com/lib\"\n",
 		"authn/authntest/authntest.go":        "package authntest\n\nimport _ \"" + rootPath + "\"\n",
 		"authn/internal/mount/mounttest/m.go": "package mounttest\n\nimport _ \"" + authntestPath + "\"\n",
+		"authn/mfa/mfatest/mfatest.go":        "package mfatest\n\nimport _ \"" + rootPath + "\"\n",
+		"authn/mfa/mfa.go":                    "package mfa\n\nimport _ \"" + totpSeedPath + "\"\n",
+		"authn/mfa/totp/totp.go":              "package totp\n\nimport _ \"" + factorStorePath + "\"\n",
+		"authn/mfa/webauthn/webauthn.go":      "package webauthn\n\nimport _ \"" + factorStorePath + "\"\n",
+		"authn/mfa/sms/sms.go":                "package sms\n\nimport _ \"" + totpSeedPath + "\"\n",
+		"usesmfatest/usesmfatest.go":          "package usesmfatest\n\nimport _ \"" + mfatestPath + "\"\n",
+		"testsmfatest/testsmfatest.go":        "package testsmfatest\n",
+		"testsmfatest/testsmfatest_test.go":   "package testsmfatest\n\nimport _ \"" + mfatestPath + "\"\n",
 		"usesmounttest/usesmounttest.go":      "package usesmounttest\n\nimport _ \"" + mounttestPath + "\"\n",
 		"mounttestonly/mounttestonly.go":      "package mounttestonly\n",
 		"mounttestonly/mounttestonly_test.go": "package mounttestonly\n\nimport _ \"" + mounttestPath + "\"\n",
@@ -786,11 +860,24 @@ func TestTheDependencyRulesFailOnAViolatingTree(t *testing.T) {
 			name, _, _ := strings.Cut(v, " ")
 			names = append(names, strings.TrimPrefix(name, moduleImportPath+"/"))
 		}
-		want := []string{"onlytagged", "platform", "production", "tagged", "usesmounttest"}
+		want := []string{"onlytagged", "platform", "production", "tagged", "usesmfatest", "usesmounttest"}
 		if !slices.Equal(names, want) {
 			t.Errorf("violations name %q, want %q: a test file's import is allowed, authntest's own import of the root "+
-				"is not an import of itself, and a file another platform or a custom build tag leaves out of the build "+
-				"is still a file that imports it", names, want)
+				"is not an import of itself, a file another platform or a custom build tag leaves out of the build "+
+				"is still a file that imports it, and mfatest is held the same way", names, want)
+		}
+	})
+	t.Run("a factor package outside the owners imports an internal store", func(t *testing.T) {
+		var names []string
+		for _, v := range internalStoreViolations(pkgs) {
+			name, _, _ := strings.Cut(v, " ")
+			names = append(names, strings.TrimPrefix(name, moduleImportPath+"/"))
+		}
+		want := []string{"authn/mfa", "authn/mfa/sms", "authn/mfa/totp", "authn/mfa/webauthn"}
+		if !slices.Equal(names, want) {
+			t.Errorf("violations name %q, want %q: the module, the TOTP factor and mfatest may import the internal "+
+				"stores, and another factor package may not; two of the names are a package the module owns "+
+				"importing the other store, which shows the two lists are kept apart rather than merged", names, want)
 		}
 	})
 	t.Run("a package outside the writers imports the identity package", func(t *testing.T) {
@@ -860,6 +947,8 @@ func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 		"authn/internal/step/step.go":         "package step\n\nimport _ \"" + modelPath + "\"\n",
 		"authn/authntest/authntest.go":        "package authntest\n\nimport (\n\t_ \"" + rootPath + "\"\n\t_ \"" + identityPath + "\"\n)\n",
 		"authn/internal/mount/mounttest/m.go": "package mounttest\n\nimport _ \"" + authntestPath + "\"\n",
+		"authn/mfa/mfatest/mfatest.go":        "package mfatest\n\nimport _ \"" + rootPath + "\"\n",
+		"testonly/mfatestonly_test.go":        "package testonly\n\nimport _ \"" + mfatestPath + "\"\n",
 		"mounttestonly/mounttestonly.go":      "package mounttestonly\n",
 		"mounttestonly/mounttestonly_test.go": "package mounttestonly\n\nimport _ \"" + mounttestPath + "\"\n",
 		"authn/gate/gate.go":                  "package gate\n\nimport _ \"" + identityPath + "\"\n",
@@ -879,6 +968,7 @@ func TestTheDependencyRulesPassOnACleanTree(t *testing.T) {
 		"root":      rootImportViolations(pkgs),
 		"layering":  layerViolations(pkgs),
 		"authntest": authntestViolations(pkgs),
+		"stores":    internalStoreViolations(pkgs),
 		"writers":   identityWriterViolations(pkgs),
 		"unused":    unusedWriterViolations(pkgs),
 		"tenant":    tenantViolations(pkgs),

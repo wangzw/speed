@@ -8,17 +8,22 @@ import (
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+
+	"github.com/vislake/speed/pkg/authn/mfa/internal/totpseed"
 )
 
 // The parameters a seed is generated with. They are the convention every
 // authenticator app follows: a 20-byte random secret, HMAC-SHA1, six digits and
 // a thirty-second step. They are not settings; the step is fixed so that a wider
-// window cannot be turned on, which would only widen an attacker's.
+// window cannot be turned on, which would only widen an attacker's. The step,
+// the digit count and the digest are stated once, in the seed store, so that a
+// fixture writing a seed through it records the same parameters a registration
+// does.
 const (
-	periodSeconds = 30
+	periodSeconds = totpseed.PeriodSeconds
 	secretBytes   = 20
-	digitsOfSix   = 6
-	algorithmSHA1 = "SHA1"
+	digitsOfSix   = totpseed.DigitsOfSix
+	algorithmSHA1 = totpseed.AlgorithmSHA1
 )
 
 // window is how many steps either side of the current one a code is accepted

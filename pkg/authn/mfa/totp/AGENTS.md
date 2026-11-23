@@ -27,7 +27,8 @@ are counted under is the multi-factor module's, reported there and not here.
 - **The seed is a secret and it stays inside this module.** It is written into an
   encrypted column (`secret`, `serializer:encrypted`) and read back through the
   model, so the database module seals it on the way in and opens it on the way out
-  (`register.go`, `seedRow`). It is never written to a log line, an error text, an
+  (`../internal/totpseed`'s row model, reached through `register.load`). It is never
+  written to a log line, an error text, an
   event or a metric. The `otpauth://` address carries the seed, so it is answered
   once by the first registration step and read back nowhere: the confirmation step
   answers with the record and no payload

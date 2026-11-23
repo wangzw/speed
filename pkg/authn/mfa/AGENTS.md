@@ -36,15 +36,15 @@ dashboard or an audit query written against it.
 
 - **The register is the authority, and it is not shared.** `authn_factors` is the
   one row per factor an account holds, whatever its kind
-  (`register.go`, `migrations`). A kind's own table holds only its secret or
-  credential. A read that fails is an outage and never "the account has no
-  factors": the direction of a lost register row is to relax verification, so a
-  failure to read it must not be taken for an empty one
+  (`internal/factorstore`, `migrations`). A kind's own table holds only its
+  secret or credential. A read that fails is an outage and never "the account
+  has no factors": the direction of a lost register row is to relax
+  verification, so a failure to read it must not be taken for an empty one
   (`TestTheListIsAnOutageWhenTheRegisterCannotBeRead`,
   `TestAnUnreadableRegisterAnswersAnOutageAndAsksNoFactor`). A row's zero status
   is pending, and a pending row is never used to verify — a value nobody chose is
   not one to verify with (`TestARowThatIsPendingCannotBeUsedToVerify`,
-  `factorRow.record`).
+  `internal/factorstore`'s `factorRow.record`).
 - **The policy only ever tightens.** `Require` walks its policy table top to
   bottom and takes the first row that holds, and no row cancels another: a first
   factor with user verification asks for nothing more; an account with an active
@@ -274,6 +274,23 @@ impersonation journey is walkable. It adds no product behaviour:
   `ReviewSeasoned` run the register's own remove, list and seasoned statements.
 - Nothing here writes a kind's own data. A TOTP seed is written by
   `totp.ReviewSeedFactor` through that module's encrypted seed register.
+
+## Test-support package
+
+`mfatest/` writes and reads the register for a test, without a build tag: an
+active factor backdated past `sensitive-min-age`, a TOTP factor whose seed is
+sealed by the encrypted model, the account's factors, the register's seasoned
+answer and a seed read back. The impersonation journey needs a seasoned
+non-SMS factor and an enrollment can only activate at now, so the fixture
+chooses the activation instant.
+
+The statements are not a copy of the product's. They live in
+`internal/factorstore` and `internal/totpseed`, which this module's `register`
+and the TOTP module's `register` delegate to, so a renamed column, a changed
+status or a lost serializer breaks a fixture case. Neither module's exported
+surface changes for it. Only test code and the demo's end-to-end `factorseed`
+command may import `mfatest`; `pkg/authn/deps_test.go` fails a production import
+inside this module.
 
 ## Running it
 
