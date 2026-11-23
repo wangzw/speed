@@ -4,10 +4,10 @@
  * length, including a long dotted key).
  */
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import axe from 'axe-core'
 import { useTheme } from '@mui/material/styles'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { SettingsPage } from './SettingsPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { createAdminOperations, makeAdminBackend } from '../test-utils/operations.js'
@@ -245,6 +245,344 @@ describe('SettingsPage content surfaces in Chromium', () => {
     expect(Math.abs(tableRect.left - registerRect.left)).toBeLessThanOrEqual(1.5)
     expect(Math.abs(tableRect.right - registerRect.right)).toBeLessThanOrEqual(1.5)
     expect(Math.abs(tableRect.top - registerRect.top)).toBeLessThanOrEqual(1.5)
+  })
+})
+
+/** One row the layer holds, so it carries a remove control. */
+function overridden(key: string): AdminSetting {
+  const namespace = key.slice(0, key.indexOf('.'))
+  return {
+    key,
+    namespace,
+    type: 'int',
+    description: `Description of ${key}`,
+    domain: '',
+    sensitive: false,
+    default: '3',
+    written: '5',
+    has_row: true,
+    value: '5',
+  }
+}
+
+/** The row Remove control's accessible name for one key. */
+function removeLabel(key: string): string {
+  return enUS.settings.removeAria.replace('{{key}}', key)
+}
+
+/** A promise the case settles by hand, so one write can be held in flight. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+/** One animation frame: the updated state has reached the DOM and the
+ * browser has had its chance to react to it. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
+/** What currently holds focus, for a failure message. */
+function describeActiveElement(): string {
+  const active = document.activeElement
+  if (active === null) {
+    return 'null'
+  }
+  const parts = [active.tagName.toLowerCase()]
+  const role = active.getAttribute('role')
+  const label = active.getAttribute('aria-label')
+  const text = (active.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+  if (role !== null) {
+    parts.push(`role="${role}"`)
+  }
+  if (label !== null) {
+    parts.push(`aria-label="${label}"`)
+  }
+  if (text !== '') {
+    parts.push(`text="${text}"`)
+  }
+  return parts.join(' ')
+}
+
+/** Clicks a row's Remove control and confirms the dialog. */
+async function confirmRemove(key: string): Promise<HTMLElement> {
+  const remove = await screen.findByRole('button', { name: removeLabel(key) })
+  await userEvent.click(remove)
+  const dialog = await screen.findByRole('dialog')
+  await userEvent.click(
+    within(dialog).getByRole('button', { name: enUS.common.confirm }),
+  )
+  return remove
+}
+
+describe('SettingsPage write focus in Chromium', () => {
+  it('keeps focus on the save action while the batch is in flight and after it settles', async () => {
+    await page.viewport(1200, 900)
+    const written = deferred<void>()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () => Promise.resolve([overridden('mail.retry')]),
+        setSetting: () => written.promise,
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations, language: 'en-US' })
+    const input = await screen.findByDisplayValue('5')
+    await userEvent.clear(input)
+    await userEvent.type(input, '9')
+    const save = screen.getByRole('button', {
+      name: enUS.settings.saveBar.save,
+    })
+    await userEvent.click(save)
+    await waitFor(() =>
+      expect(within(save).getByRole('progressbar')).toBeInTheDocument(),
+    )
+    await nextFrame()
+
+    expect(
+      save,
+      `focus while the batch is in flight; document.activeElement is ${describeActiveElement()}`,
+    ).toHaveFocus()
+
+    written.resolve()
+    await waitFor(() =>
+      expect(within(save).queryByRole('progressbar')).not.toBeInTheDocument(),
+    )
+
+    // The landed batch cleared the drafts, so the action's precondition is
+    // gone: it stays where the operator left it, unavailable and explained.
+    await waitFor(() => {
+      expect(
+        save,
+        `focus after the batch settled; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAccessibleDescription(enUS.settings.saveBar.unchanged)
+  })
+
+  it('moves focus to the next removable row when a removal takes its row away', async () => {
+    await page.viewport(1200, 900)
+    const written = deferred<void>()
+    let removedKey = ''
+    const rows = [
+      overridden('mail.a'),
+      overridden('mail.b'),
+      overridden('mail.c'),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () =>
+          Promise.resolve(
+            rows.map((row) =>
+              row.key === removedKey
+                ? { ...row, written: '', has_row: false, value: row.default }
+                : row,
+            ),
+          ),
+        removeSetting: (input) =>
+          written.promise.then(() => {
+            removedKey = `${input.namespace}.${input.key}`
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations, language: 'en-US' })
+
+    const removeB = await confirmRemove('mail.b')
+    await waitFor(() => {
+      expect(
+        removeB,
+        `focus after the confirmation closed; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+    // The row's own removal is in flight: its control says so and still holds
+    // the focus the confirmation returned to it.
+    expect(removeB).toHaveAttribute('aria-busy', 'true')
+    expect(removeB).toHaveAttribute('aria-disabled', 'true')
+    // Wait out the confirmation's exit transition: while the dialog stands,
+    // the page behind it is hidden from role queries.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    written.resolve()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: removeLabel('mail.b') }),
+      ).toBeNull(),
+    )
+    const removeC = screen.getByRole('button', { name: removeLabel('mail.c') })
+    await waitFor(() => {
+      expect(
+        removeC,
+        `focus after the row was removed; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+  })
+
+  it('moves focus to the previous removable row when the last row is removed', async () => {
+    await page.viewport(1200, 900)
+    const written = deferred<void>()
+    let removedKey = ''
+    const rows = [overridden('mail.a'), overridden('mail.b')]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () =>
+          Promise.resolve(
+            rows.map((row) =>
+              row.key === removedKey
+                ? { ...row, written: '', has_row: false, value: row.default }
+                : row,
+            ),
+          ),
+        removeSetting: (input) =>
+          written.promise.then(() => {
+            removedKey = `${input.namespace}.${input.key}`
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations, language: 'en-US' })
+
+    const removeB = await confirmRemove('mail.b')
+    await waitFor(() => {
+      expect(
+        removeB,
+        `focus after the confirmation closed; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+    expect(removeB).toHaveAttribute('aria-busy', 'true')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    written.resolve()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: removeLabel('mail.b') }),
+      ).toBeNull(),
+    )
+    const removeA = screen.getByRole('button', { name: removeLabel('mail.a') })
+    await waitFor(() => {
+      expect(
+        removeA,
+        `focus after the last row was removed; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+  })
+
+  it('moves focus to the table container when the only row is removed', async () => {
+    await page.viewport(1200, 900)
+    const written = deferred<void>()
+    let removedKey = ''
+    const rows = [overridden('mail.retry')]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () =>
+          Promise.resolve(
+            rows.map((row) =>
+              row.key === removedKey
+                ? { ...row, written: '', has_row: false, value: row.default }
+                : row,
+            ),
+          ),
+        removeSetting: (input) =>
+          written.promise.then(() => {
+            removedKey = `${input.namespace}.${input.key}`
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations, language: 'en-US' })
+
+    const remove = await confirmRemove('mail.retry')
+    await waitFor(() => {
+      expect(
+        remove,
+        `focus after the confirmation closed; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+    expect(remove).toHaveAttribute('aria-busy', 'true')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    written.resolve()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: removeLabel('mail.retry') }),
+      ).toBeNull(),
+    )
+
+    // Nothing removable is left on the page, so focus lands on the settings
+    // table's named group container rather than the document body.
+    await waitFor(() => {
+      const active = document.activeElement as HTMLElement | null
+      expect(
+        active,
+        `focus after the only row was removed; document.activeElement is ${describeActiveElement()}`,
+      ).not.toBe(document.body)
+      expect(active).toHaveAttribute('role', 'group')
+      expect(active).toHaveAccessibleName(enUS.settings.tableLabel)
+      expect(active?.querySelector('table')).not.toBeNull()
+    })
+  })
+
+  it('keeps focus where the operator moved it while a removal is in flight', async () => {
+    await page.viewport(1200, 900)
+    const written = deferred<void>()
+    let removedKey = ''
+    const rows = [
+      overridden('mail.a'),
+      overridden('mail.b'),
+      overridden('mail.c'),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () =>
+          Promise.resolve(
+            rows.map((row) =>
+              row.key === removedKey
+                ? { ...row, written: '', has_row: false, value: row.default }
+                : row,
+            ),
+          ),
+        removeSetting: (input) =>
+          written.promise.then(() => {
+            removedKey = `${input.namespace}.${input.key}`
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations, language: 'en-US' })
+
+    const removeB = await confirmRemove('mail.b')
+    await waitFor(() => {
+      expect(
+        removeB,
+        `focus after the confirmation closed; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // The operator leaves the confirmation's landing place and settles on a
+    // control of their own while the removal is still in flight.
+    const elsewhere = screen.getByRole('textbox', { name: 'mail.a' })
+    elsewhere.focus()
+    await nextFrame()
+    expect(elsewhere).toHaveFocus()
+
+    written.resolve()
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: removeLabel('mail.b') }),
+      ).toBeNull(),
+    )
+    await nextFrame()
+
+    // The landed removal does not take the focus the operator chose.
+    expect(
+      elsewhere,
+      `focus after the row was removed; document.activeElement is ${describeActiveElement()}`,
+    ).toHaveFocus()
   })
 })
 
