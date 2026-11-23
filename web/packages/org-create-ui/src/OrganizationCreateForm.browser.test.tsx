@@ -7,7 +7,7 @@
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { FORM_MAX_WIDTH } from '@speed/ui-kit'
 import { OrganizationCreateForm } from './OrganizationCreateForm.js'
 import {
@@ -32,6 +32,54 @@ function PlatformForm() {
       onChange={change}
       submitLabel={enUS.submit}
       onSubmit={() => undefined}
+    />
+  )
+}
+
+/**
+ * A form that enters the write-in-flight state when it submits, the way a
+ * page does once its write starts. The counter records the submits that
+ * reached the page.
+ */
+function SubmittingForm({ submits }: { readonly submits: { count: number } }) {
+  const [values, setValues] = useState<OrganizationCreateValues>(
+    EMPTY_ORGANIZATION_CREATE_VALUES,
+  )
+  const [pending, setPending] = useState(false)
+  return (
+    <OrganizationCreateForm
+      mode="self-service"
+      values={values}
+      onChange={(field, value) => {
+        setValues((current) => ({ ...current, [field]: value }))
+      }}
+      disabled={pending}
+      pending={pending}
+      submitLabel={enUS.submit}
+      onSubmit={() => {
+        submits.count += 1
+        setPending(true)
+      }}
+    />
+  )
+}
+
+/** A form made not operable by a write or identity switch elsewhere. */
+function UnavailableForm({
+  submits,
+}: {
+  readonly submits: { count: number }
+}) {
+  return (
+    <OrganizationCreateForm
+      mode="self-service"
+      values={{ ...EMPTY_ORGANIZATION_CREATE_VALUES, name: 'acme' }}
+      onChange={() => undefined}
+      disabled
+      submitLabel={enUS.submit}
+      onSubmit={() => {
+        submits.count += 1
+      }}
     />
   )
 }
@@ -73,5 +121,87 @@ describe('OrganizationCreateForm reading layout', () => {
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
       window.innerWidth,
     )
+  })
+})
+
+describe('OrganizationCreateForm focus in Chromium', () => {
+  it('keeps focus in the field when Enter submits and the write is in flight', async () => {
+    await page.viewport(900, 700)
+    const submits = { count: 0 }
+    renderWithProviders(<SubmittingForm submits={submits} />, {
+      language: 'en-US',
+    })
+
+    const name = await screen.findByLabelText(enUS.fields.name)
+    await userEvent.click(name)
+    await userEvent.type(name, 'acme')
+    expect(name).toHaveFocus()
+
+    await userEvent.keyboard('{Enter}')
+
+    expect(submits.count).toBe(1)
+    expect(name).toBeEnabled()
+    expect(name).toHaveAttribute('readonly')
+    expect(name).toHaveFocus()
+
+    await userEvent.keyboard('{Enter}')
+    expect(submits.count).toBe(1)
+    expect(name).toHaveFocus()
+  })
+
+  it('keeps focus on the submit control when it starts the write', async () => {
+    await page.viewport(900, 700)
+    const submits = { count: 0 }
+    renderWithProviders(<SubmittingForm submits={submits} />, {
+      language: 'en-US',
+    })
+
+    const submit = await screen.findByRole('button', { name: enUS.submit })
+    await userEvent.click(submit)
+
+    expect(submits.count).toBe(1)
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveFocus()
+
+    // Playwright refuses to click an aria-disabled control; the browser
+    // dispatches the click event all the same, which the guard must swallow.
+    submit.click()
+    expect(submits.count).toBe(1)
+    expect(submit).toHaveFocus()
+  })
+
+  it('stays focusable but not operable while a switch is in flight', async () => {
+    await page.viewport(900, 700)
+    const submits = { count: 0 }
+    renderWithProviders(<UnavailableForm submits={submits} />, {
+      language: 'en-US',
+    })
+
+    const name = await screen.findByLabelText(enUS.fields.name)
+    expect(name).toBeEnabled()
+    expect(name).toHaveAttribute('readonly')
+
+    const submit = screen.getByRole('button', { name: enUS.submit })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toHaveAttribute('aria-busy')
+    expect(submit).toHaveAccessibleDescription('')
+
+    submit.focus()
+    expect(submit).toHaveFocus()
+    // Playwright refuses to click an aria-disabled control; the browser
+    // dispatches the click event all the same, which the guard must swallow.
+    submit.click()
+    expect(submits.count).toBe(0)
+    expect(submit).toHaveFocus()
+    // Keyboard activation is refused the same way.
+    await userEvent.keyboard('{Enter}')
+    expect(submits.count).toBe(0)
+    expect(submit).toHaveFocus()
+
+    await userEvent.click(name)
+    expect(name).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    expect(submits.count).toBe(0)
+    expect(name).toHaveFocus()
   })
 })
