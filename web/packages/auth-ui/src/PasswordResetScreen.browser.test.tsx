@@ -7,8 +7,8 @@
  * boxes jsdom cannot lay out.
  */
 
-import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { makeHarness } from '@speed/test-utils/session-harness'
@@ -33,6 +33,71 @@ const OPERATIONS: PasswordResetOperations = {
   requestReset: () => Promise.resolve(SENT),
   verifyReset: () => Promise.reject(new Error('not used')),
   completeReset: () => Promise.resolve(),
+}
+
+/** The whole reset as a host binds it, for the cases that write a
+ * password: the sent surface's submit verifies the code first. */
+const RESET_OPERATIONS: PasswordResetOperations = {
+  requestReset: () => Promise.resolve(SENT),
+  verifyReset: () =>
+    Promise.resolve({ state: 'verified' as const, expiresIn: 600 }),
+  completeReset: () => Promise.resolve(),
+}
+
+const NEW_PASSWORD = 'n3w-s3cret-pass'
+const CODE = '123456'
+
+/** A code request the case settles by hand, so a focus the viewer moves
+ * while the send runs is observable. */
+function deferredRequest() {
+  let settle: (value: PasswordResetSent) => void = () => undefined
+  const requestReset = vi.fn(
+    () =>
+      new Promise<PasswordResetSent>((resolve) => {
+        settle = resolve
+      }),
+  )
+  return { requestReset, settle: () => settle(SENT) }
+}
+
+/** A password write the case settles by hand, so a focus the viewer moves
+ * while it runs is observable. */
+function deferredComplete() {
+  let settle: () => void = () => undefined
+  const completeReset = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        settle = resolve
+      }),
+  )
+  return { completeReset, settle: () => settle() }
+}
+
+/** Fill the identifier, code and both password fields, then submit. */
+async function writeThePassword(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  const email = screen.getByLabelText(enUS.passwordReset.emailLabel)
+  await user.type(email, 'alice@example.com')
+  await user.click(
+    screen.getByRole('button', { name: enUS.passwordReset.send }),
+  )
+  await screen.findByText(enUS.passwordReset.sentNotice)
+  await user.type(
+    screen.getByLabelText(enUS.passwordReset.codeLabel),
+    CODE,
+  )
+  await user.type(
+    screen.getByLabelText(enUS.passwordReset.newPasswordLabel),
+    NEW_PASSWORD,
+  )
+  await user.type(
+    screen.getByLabelText(enUS.passwordReset.confirmPasswordLabel),
+    NEW_PASSWORD,
+  )
+  await user.click(
+    screen.getByRole('button', { name: enUS.passwordReset.submit }),
+  )
 }
 
 /** The row an action belongs to, found by the row's own marker. */
@@ -69,6 +134,62 @@ describe('PasswordResetScreen action row in Chromium', () => {
     expect(
       Math.abs(submit.getBoundingClientRect().right - contentRightOf(row)),
     ).toBeLessThanOrEqual(1)
+  })
+
+  it('lands focus on the sent surface when the identifier submits by Enter', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <PasswordResetScreen
+        session={makeHarness({}).session}
+        channels={['email']}
+        operations={OPERATIONS}
+      />,
+      { language: 'en-US' },
+    )
+    const email = screen.getByLabelText(enUS.passwordReset.emailLabel)
+    await user.type(email, 'alice@example.com')
+    await user.keyboard('{Enter}')
+    await screen.findByText(enUS.passwordReset.sentNotice)
+
+    // The identifier field left with the request surface; focus lands on
+    // the sent surface's first control, never on the document body.
+    expect(document.activeElement).toBe(
+      screen.getByLabelText(enUS.passwordReset.codeLabel),
+    )
+  })
+
+  it('leaves focus on the persistent back entry when the send lands', async () => {
+    const { requestReset, settle } = deferredRequest()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <PasswordResetScreen
+        session={makeHarness({}).session}
+        channels={['email']}
+        operations={{ ...OPERATIONS, requestReset }}
+        onBackToSignIn={() => undefined}
+      />,
+      { language: 'en-US' },
+    )
+    const email = screen.getByLabelText(enUS.passwordReset.emailLabel)
+    await user.type(email, 'alice@example.com')
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(requestReset).toHaveBeenCalledTimes(1))
+    // The send is in flight and the operator tabs to the back entry, which
+    // both the request and the sent surface render.
+    const back = screen.getByRole('button', {
+      name: enUS.passwordReset.backToSignIn,
+    })
+    await user.tab()
+    expect(document.activeElement).toBe(back)
+
+    await act(async () => {
+      settle()
+      await Promise.resolve()
+    })
+    await screen.findByText(enUS.passwordReset.sentNotice)
+    // The request surface's fields were replaced, but the back entry the
+    // operator chose is still mounted: the switch must not take it back.
+    expect(document.activeElement).toBe(back)
   })
 
   it('groups back, resend and submit one token apart, as one right-aligned row', async () => {
@@ -120,5 +241,57 @@ describe('PasswordResetScreen action row in Chromium', () => {
     expect(Math.abs(submitBox.right - contentRightOf(row))).toBeLessThanOrEqual(
       1,
     )
+  })
+
+  it('lands focus on the done heading when the form is replaced', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <PasswordResetScreen
+        session={makeHarness({}).session}
+        channels={['email']}
+        operations={RESET_OPERATIONS}
+      />,
+      { language: 'en-US' },
+    )
+    await writeThePassword(user)
+
+    const heading = await screen.findByRole('heading', {
+      name: enUS.passwordReset.doneTitle,
+    })
+    // The submit that started the write left with the form; focus lands on
+    // the surface that replaced it, never on the document body.
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    expect(document.activeElement).toBe(heading)
+  })
+
+  it('leaves the focus the viewer moved during the write where it is', async () => {
+    const { completeReset, settle } = deferredComplete()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <>
+        <PasswordResetScreen
+          session={makeHarness({}).session}
+          channels={['email']}
+          operations={{ ...RESET_OPERATIONS, completeReset }}
+        />
+        <button type="button">outside</button>
+      </>,
+      { language: 'en-US' },
+    )
+    await writeThePassword(user)
+    const outside = screen.getByRole('button', { name: 'outside' })
+    await user.click(outside)
+    expect(document.activeElement).toBe(outside)
+
+    await act(async () => {
+      settle()
+      await Promise.resolve()
+    })
+    await screen.findByRole('heading', {
+      name: enUS.passwordReset.doneTitle,
+    })
+    // The removal did not take the focus, so the landing must not take it
+    // back from the place the viewer chose.
+    expect(document.activeElement).toBe(outside)
   })
 })
