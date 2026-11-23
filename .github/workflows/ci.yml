@@ -67,10 +67,15 @@
 
 name: check
 
+# A draft pull request runs no job; marking it ready runs them, and a
+# workflow_dispatch on its branch runs them by hand. merge_group serves a
+# merge queue where the repository has one.
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -93,6 +98,7 @@ env:
 
 jobs:
   static:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
@@ -100,6 +106,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The fold check compares origin/main..HEAD, so it needs the history.
+          fetch-depth: 0
 
       - name: Set up the toolchain
         uses: ./.github/actions/setup
@@ -142,6 +150,7 @@ jobs:
         run: make lint tidy-check repo-check tools-test vet-web-bundle vet-integration vet-review
 
   go-test:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
     timeout-minutes: 90
     steps:
@@ -192,6 +201,7 @@ jobs:
   # save them, so the race build outputs are not cached: one writer avoids two
   # jobs racing to reserve the same key.
   go-race-pkg:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
     timeout-minutes: 120
     steps:
@@ -225,6 +235,7 @@ jobs:
         run: make test-race MODULES=./pkg
 
   go-race-demo:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
     timeout-minutes: 150
     steps:
@@ -261,6 +272,7 @@ jobs:
   # and the build phase reads that same install, so the two stay together; the
   # static-build job also saves the pnpm store.
   web-static-build:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
@@ -288,6 +300,7 @@ jobs:
         run: make web-check-static web-check-build
 
   web-test:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:

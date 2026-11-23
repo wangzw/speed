@@ -68,10 +68,14 @@ Supplements the `commit-convention` skill.
 
 1. **A branch's history is a draft until it lands.** Before a branch lands on `main` its commits may be rewritten freely. Once a commit is on `main` it is treated as pushed: never amended, rebased or reset. A correction found after landing is a new commit that lands like any other change.
 2. **A correction to a commit already on the branch is never a standalone commit.** A test the earlier commit broke, a doc or comment line that belongs to it, a review fix: record it with `git commit --fixup=<sha>` against that commit, or amend when it corrects the branch tip. Use `--fixup` rather than `--squash`, because `--autosquash` folds a fixup without opening an editor while a squash stops to edit the combined message.
-3. **Branches land on a merge train.** Every branch approved to land boards a local train branch, `train/<YYYYMMDD-HHMM>`, cut from `origin/main` and never pushed; a single approved branch is a train of one. Each branch is rebased onto the train in turn with an autosquashing rebase, keeping its own commits: `git rebase --autosquash <base>` folds non-interactively on git 2.44 and later, while earlier versions ignore the option without `-i` and fold with `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`. A conflict that resolves mechanically (adjacent lines, a lock file, keys added side by side) is resolved in the later branch, and a generated artifact is regenerated from both sides' declarations (`make api-docs`, then `api:gen` in `web` and in `starters/demo/web`); a conflict that needs a judgement leaves the later branch off the train. The fast checks run first (`mise exec -- make lint`, the touched packages' type checks and tests, the generated-artifact checks), then the gate runs once on the train's tip: `make check` plus every heavier tier any boarded branch's plan requires (`make test-integration`, `make web-browser`, `make e2e`). When resources allow, the caller may run the gate on several prefixes of the train at once and land the longest passing prefix first; the caller decides how many run concurrently from its resources. When the gate passes, `main` fast-forwards to the train's tip and is pushed once. A fix counts as simple when its cause is found within fifteen minutes, it stays within about fifty lines and five files inside one branch's changes or the seam between two branches, and it changes no design, contract shape or reviewed behaviour; a simple fix is recorded on the train with `git commit --fixup` against the commit it corrects, and the gate reruns in full. A seam fix goes into the later branch. The train is fixed at most twice before the failing branch leaves it. A failure that needs rework takes its branch, and any branch depending on it, off the train, and the rest is rebuilt from `origin/main` and gated again.
+3. **Branches land through pull requests, by GitHub's rebase merge.** A branch approved to land is folded onto `origin/main` with an autosquashing rebase (`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash origin/main`; without `-i`, git before 2.44 ignores `--autosquash`), pushed, marked ready, and handed to auto-merge, which lands it once the `check` workflow passes on a head that is up to date with `main`. The `workflow-convention` skill has the commands. No workflow runs the heavier tiers on a pull request, so every tier the branch's plan requires (`make test-integration`, `make web-browser`, `make e2e`) runs locally on the head that lands. When `main` moves first, the branch is rebased again: a conflict that resolves mechanically (adjacent lines, a lock file, keys added side by side) is resolved in the branch, and a generated artifact is regenerated from both sides' declarations (`make api-docs`, then `api:gen` in `web` and in `starters/demo/web`); a conflict that needs a judgement goes back to review. A fix counts as simple when its cause is found within fifteen minutes, it stays within about fifty lines and five files inside the branch's changes or its seam with `main`, and it changes no design, contract shape or reviewed behaviour; a simple fix is recorded with `git commit --fixup` against the commit it corrects, folded, and landed again, with its diff reported to the reviewer. The branch is fixed at most twice before it goes back for rework.
 4. **A task that is one logical change lands as one commit.** A branch lands as several commits only when each is one logical change under the skill's commit boundaries; the gate runs once, on the branch's final commit, which becomes `main`'s new tip (rule 1). When the commits are not separate logical changes, collapse them, for example `git reset --soft` to the fork point and commit once.
 5. **Updates that belong to a change ride in its commit.** A documentation, comment, design-status or user-facing-text update that belongs to a change goes in that change's commit, not in a follow-up. Rule 5 covers text; the `document-standards` skill covers documents.
-6. **A gate enforces the fold.** `tools/check_fixup_commits.py`, which `make repo-check` and therefore `make check` run, fails while a `fixup!`, `squash!` or `amend!` commit sits between `origin/main` and HEAD.
+6. **A gate enforces the fold.** `tools/check_fixup_commits.py`, which `make repo-check` and therefore `make check` run, fails while a `fixup!`, `squash!` or `amend!` commit sits between `origin/main` and HEAD. A draft pull request runs no check, so a branch may carry fixups until it is marked ready.
+
+## Workflow Convention
+
+- Merge-group tiers: `make test-integration`, `make web-browser`, `make e2e`, each when the branch's plan requires it. No workflow runs them on a pull request or a merge group.
 
 ## Commands
 
@@ -166,8 +170,7 @@ the shared preset appends it explicitly.
 generated-artifact checks below. The whole-side gate — the gate commands the
 change's own bullet above lists, or `make check` when the change crosses the
 boundary — runs once, on the final HEAD: the landable candidate after review
-has approved it, which is the tip of the merge train before `main`
-fast-forwards to it (the procedure is the "Landing a branch" part of the
+has approved it, which is the folded head that lands (the procedure is the "Landing a branch" part of the
 "Commit Convention" section above). What a change sends for review carries
 the fix round's targeted tests and generated-artifact checks, not a
 whole-side run. When the whole-side gate is `make check`, `make test-race`
@@ -177,7 +180,7 @@ The heavy legs run apart from it: `make test-integration`,
 `make web-browser`, `make e2e`. A gate failure on the final HEAD with a small
 fix is fixed, rerun and landed, with its diff reported to the reviewer for an
 after-the-fact check; one that needs rework goes back to review. A unit
-compiled into a local integration branch runs neither when it merges there;
+landed on an integration branch runs neither when it lands there;
 the integration branch runs both once after its last unit lands.
 
 **Before asking for review**, also check:
@@ -238,8 +241,8 @@ through `go.work` like every other.
 - **Commit messages are English, in Conventional Commits form, scoped by
   the capability directory the change touches** — `fix(config): reject a
   manifest with two mounts on one path`.
-- **Rebase onto the target branch and fast-forward.** History stays
-  linear. `main` always passes the gate: a landing of several commits is
+- **History stays linear.** Branches land by GitHub's rebase merge, so
+  `main` has no merge commits. `main` always passes the gate: a landing of several commits is
   gated on its final commit, and its intermediate commits need not pass
   on their own. Before landing, fold each correction into the commit it
   corrects (fixup plus autosquash), and one logical change lands as one

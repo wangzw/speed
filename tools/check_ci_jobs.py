@@ -358,12 +358,19 @@ def workflow_steps(text: str) -> dict[str, list[dict[str, object]]]:
     return jobs
 
 
+SKIP_DRAFT = "github.event_name != 'pull_request' || !github.event.pull_request.draft"
+
+
 def safe_condition(condition: str) -> bool:
-    """A condition that never skips the job: `always()`, bare or in `${{ }}`."""
+    """A condition that never skips a landing gate, bare or in `${{ }}`.
+
+    `always()` never skips. The draft condition skips only a draft pull
+    request, which cannot land; marking it ready runs the jobs.
+    """
     text = condition.strip()
     if text.startswith("${{") and text.endswith("}}"):
         text = text[3:-2].strip()
-    return text == "always()"
+    return text in ("always()", SKIP_DRAFT)
 
 
 def gate_env_findings(workflow: str) -> int:

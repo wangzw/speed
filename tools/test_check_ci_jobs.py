@@ -364,6 +364,30 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         code, out, err = self.write_job_attribute("if: ${{ always() }}")
         self.assertEqual(0, code, out + err)
 
+    def test_skipping_a_draft_pull_request_is_an_allowed_condition(self) -> None:
+        code, out, err = self.write_job_attribute(
+            "if: github.event_name != 'pull_request' || "
+            "!github.event.pull_request.draft"
+        )
+        self.assertEqual(0, code, out + err)
+
+    def test_skipping_a_draft_in_an_expression_is_an_allowed_condition(
+        self,
+    ) -> None:
+        code, out, err = self.write_job_attribute(
+            "if: ${{ github.event_name != 'pull_request' || "
+            "!github.event.pull_request.draft }}"
+        )
+        self.assertEqual(0, code, out + err)
+
+    def test_a_draft_condition_with_more_terms_is_a_finding(self) -> None:
+        code, out, err = self.write_job_attribute(
+            "if: ${{ (github.event_name != 'pull_request' || "
+            "!github.event.pull_request.draft) && github.ref == 'refs/heads/main' }}"
+        )
+        self.assertEqual(1, code, out + err)
+        self.assertIn("which can skip a gate segment", out)
+
     def write_step_attribute(self, line: str) -> tuple[int, str, str]:
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
