@@ -13,7 +13,11 @@ import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { uiKitResources } from '@speed/ui-kit'
 import { SessionsPage } from './SessionsPage.js'
-import type { AdminAccount, AdminAccountSession } from './operations.js'
+import type {
+  AdminAccount,
+  AdminAccountSession,
+  AdminRevokeSessionInput,
+} from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { chooseAccount } from '../test-utils/account-selector.js'
@@ -104,11 +108,53 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+/** The accessible name of the revoke control in the given session's row. */
+function revokeName(id: string): string {
+  return zhCN.sessions.revokeAriaWithId.replace('{{id}}', id)
+}
+
+/** Opens the confirmation for one session and confirms it. */
+async function confirmRevoke(
+  user: ReturnType<typeof userEvent.setup>,
+  id: string,
+): Promise<void> {
+  await user.click(screen.getByRole('button', { name: revokeName(id) }))
+  const dialog = await screen.findByRole('dialog')
+  await user.click(
+    within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+  )
+  // Wait out the dialog's exit transition: while it runs the page behind
+  // it is hidden from the accessibility tree.
+  await waitForCondition(() => {
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+}
+
 describe('SessionsPage', () => {
   it('prompts for an account before listing', () => {
     const operations = withSessions()
     renderWithProviders(<SessionsPage />, { operations })
     expect(screen.getByText(zhCN.sessions.needAccount.title)).toBeInTheDocument()
+  })
+
+  it('puts the empty list placeholder below the list section heading', async () => {
+    const user = userEvent.setup()
+    const operations = withSessions({
+      listAccountSessions: () => Promise.resolve([]),
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+
+    // The titled section is an h2; its placeholder sits one level below it.
+    expect(
+      screen.getByRole('heading', { name: zhCN.sessions.section.title }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', {
+        name: zhCN.sessions.empty.title,
+        level: 3,
+      }),
+    ).toBeInTheDocument()
   })
 
   it('does not read an empty account scope on refresh', () => {
@@ -489,6 +535,76 @@ describe('SessionsPage', () => {
     expect(
       await screen.findByText(zhCN.sessions.revokedNotice),
     ).toBeInTheDocument()
+  })
+
+  it('keeps focus on the revoke control while its write is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    let rows = [session({ id: 'sess-a' }), session({ id: 'sess-b' })]
+    const operations = withSessions({
+      listAccountSessions: () => Promise.resolve(rows),
+      revokeSession: (input) => {
+        rows = rows.filter((row) => row.id !== input.sessionId)
+        return pending.promise
+      },
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-a')
+
+    await confirmRevoke(user, 'sess-a')
+
+    // The revoke keeps its control: it stays focused and reports both the
+    // busy write and the unavailable state without a native disable.
+    const revoke = screen.getByRole('button', { name: revokeName('sess-a') })
+    expect(revoke).toBe(document.activeElement)
+    expect(revoke).toHaveAttribute('aria-disabled', 'true')
+    expect(revoke).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('holds sibling revoke controls back while one row is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    let rows = [
+      session({ id: 'sess-a' }),
+      session({ id: 'sess-b' }),
+      session({ id: 'sess-c' }),
+    ]
+    const revokeSession = vi.fn((input: AdminRevokeSessionInput) => {
+      rows = rows.filter((row) => row.id !== input.sessionId)
+      return pending.promise
+    })
+    const operations = withSessions({
+      listAccountSessions: () => Promise.resolve(rows),
+      revokeSession,
+    })
+    renderWithProviders(<SessionsPage />, { operations })
+    await loadAccount(user)
+    await screen.findByText('sess-b')
+
+    await confirmRevoke(user, 'sess-b')
+    expect(revokeSession).toHaveBeenCalledTimes(1)
+
+    // A row that shares the scope is unavailable without a reason: the
+    // reason belongs to the row whose write is running.
+    const sibling = screen.getByRole('button', { name: revokeName('sess-a') })
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy', 'true')
+    expect(sibling).not.toHaveAccessibleDescription()
+
+    await user.click(sibling)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(revokeSession).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      pending.resolve()
+    })
   })
 
   it('clears a landed revoke confirmation on the page refresh', async () => {
