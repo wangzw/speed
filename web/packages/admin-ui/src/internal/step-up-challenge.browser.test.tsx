@@ -271,9 +271,13 @@ describe('StepUpChallenge focus in Chromium', () => {
     await user.type(await screen.findByLabelText(/code/i), '123456')
     const submit = screen.getByRole('button', { name: zhCN.stepUp.submit })
     await user.click(submit)
-    // The refusal's countdown is on screen and the submit is held.
+    // The refusal's countdown is on screen and the submit is held. The case
+    // asserts the countdown text appears, not a particular remaining second:
+    // under the real clock the wait has already ticked by the time it is
+    // read, and pinning "30" would make the case depend on how long the
+    // browser took to get here.
     await screen.findByText(
-      zhCN.throttle.countdown.replace('{{seconds}}', '30'),
+      new RegExp(zhCN.throttle.countdown.replace('{{seconds}}', '\\d+')),
     )
     await waitFor(() => expect(isUnavailable(submit)).toBe(true))
 

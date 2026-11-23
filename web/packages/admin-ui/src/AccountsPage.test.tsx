@@ -25,6 +25,7 @@ import { adminOperations } from './operations.js'
 import type {
   AdminAccount,
   AdminAccountFactor,
+  AdminAccountSession,
   AdminAddIdentifierInput,
   AdminCreateAccountInput,
   AdminCreateSecretInput,
@@ -190,6 +191,39 @@ function withAccounts(
       ...overrides,
     }),
   )
+}
+
+/** A session row as the fixture read answers it. */
+function sessionFixture(id: string): AdminAccountSession {
+  return {
+    id,
+    kind: 'refresh',
+    assurance: 1,
+    auth_time: '2026-10-15T12:00:00Z',
+    created_at: '2026-10-15T12:00:00Z',
+    last_seen_at: '2026-10-15T12:00:00Z',
+    expires_at: '2026-10-16T12:00:00Z',
+    revoked: false,
+    current: false,
+  }
+}
+
+/** The revoke control a session row carries, named by its id. */
+function revokeSessionName(id: string): string {
+  return fill(zhCN.accounts.sessions.revokeAria, { id })
+}
+
+/** The revoke control a secret row carries, named by its label. */
+function revokeSecretName(label: string): string {
+  return fill(zhCN.accounts.secrets.revokeAria, { label })
+}
+
+/** A session read over the fixture rows minus the ones already revoked. */
+function sessionsWithoutRevoked(
+  rows: readonly AdminAccountSession[],
+  revoked: readonly string[],
+): () => Promise<readonly AdminAccountSession[]> {
+  return () => Promise.resolve(rows.filter((row) => !revoked.includes(row.id)))
 }
 
 async function search(
@@ -1115,22 +1149,11 @@ describe('AccountsPage', () => {
         secret: 'one-time',
       }),
     )
-    // The create-secret control stays focused and becomes unavailable when
-    // the secret lands, which opens its reason tooltip; the tooltip's popper
-    // is portaled to the body, outside the modal's aria-hidden chain, and the
-    // shared background check reads it as page content. Leave the control and
-    // settle on the panel's own close control (still inside the trap) before
-    // scanning.
-    const submit = within(panel).getByRole('button', {
-      name: zhCN.accounts.createSecret.submit,
-    })
-    await user.unhover(submit)
-    within(panel)
-      .getByRole('button', { name: PANEL_CLOSE_LABEL })
-      .focus()
-    await waitFor(() =>
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument(),
-    )
+    // The landed control stays focused and becomes unavailable, which opens
+    // its reason tooltip; that popper is portaled to the body, outside the
+    // modal's aria-hidden chain. The shared helper exempts a tooltip portal
+    // that carries no focusable control, so the scan runs with it open.
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
     await expectNoAxeViolations({
       decidedInBrowser: 'accountsOneTimeSecret',
     })
@@ -2147,6 +2170,121 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('marks only the activated session busy and holds its siblings without a reason', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const calls: string[] = []
+    const operations = withAccounts({
+      listAccountSessions: () =>
+        Promise.resolve([sessionFixture('sess-1'), sessionFixture('sess-2')]),
+      revokeSession: (input) => {
+        calls.push(input.sessionId)
+        return new Promise<void>((resolve) => {
+          finish = resolve
+        })
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const active = await screen.findByRole('button', {
+      name: revokeSessionName('sess-1'),
+    })
+    const sibling = screen.getByRole('button', {
+      name: revokeSessionName('sess-2'),
+    })
+
+    await user.click(active)
+    await confirmDialog(user)
+
+    await waitFor(() => expect(active).toHaveAttribute('aria-busy', 'true'))
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy')
+    expect(sibling).not.toHaveAccessibleDescription()
+    await user.click(sibling)
+    sibling.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(calls).toEqual(['sess-1'])
+
+    await act(async () => {
+      finish?.()
+    })
+  })
+
+  it('marks only the activated secret busy and holds its siblings without a reason', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const calls: string[] = []
+    const operations = withAccounts({
+      listAccountSecrets: () =>
+        Promise.resolve([
+          { id: 'sec-1', label: 'ci', expires_at: null, revoked: false },
+          { id: 'sec-2', label: 'prod', expires_at: null, revoked: false },
+        ]),
+      revokeSecret: (input) => {
+        calls.push(input.secret)
+        return new Promise<void>((resolve) => {
+          finish = resolve
+        })
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const active = await screen.findByRole('button', {
+      name: revokeSecretName('ci'),
+    })
+    const sibling = screen.getByRole('button', {
+      name: revokeSecretName('prod'),
+    })
+
+    await user.click(active)
+    await confirmDialog(user)
+
+    await waitFor(() => expect(active).toHaveAttribute('aria-busy', 'true'))
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy')
+    expect(sibling).not.toHaveAccessibleDescription()
+    await user.click(sibling)
+    sibling.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(calls).toEqual(['sec-1'])
+
+    await act(async () => {
+      finish?.()
+    })
+  })
+
+  it('holds a revoked secret with its reason and refuses click and keyboard activation', async () => {
+    const user = userEvent.setup()
+    const calls: string[] = []
+    const operations = withAccounts({
+      listAccountSecrets: () =>
+        Promise.resolve([
+          { id: 'sec-1', label: 'ci', expires_at: null, revoked: true },
+        ]),
+      revokeSecret: (input) => {
+        calls.push(input.secret)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const revoke = await screen.findByRole('button', {
+      name: revokeSecretName('ci'),
+    })
+
+    expect(revoke).toHaveAttribute('aria-disabled', 'true')
+    expect(revoke).toHaveAccessibleDescription(
+      zhCN.accounts.secrets.revokeUnavailable,
+    )
+    await user.click(revoke)
+    revoke.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(calls).toEqual([])
+  })
+
   it('keeps focus on the row delete control while the delete is in flight', async () => {
     const user = userEvent.setup()
     let finish: (() => void) | undefined
@@ -2262,6 +2400,207 @@ describe('AccountsPage', () => {
     await waitFor(() => expect(container).toHaveFocus())
   })
 
+  it('marks only the activated account busy and holds its siblings without a reason', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const calls: string[] = []
+    const rows = [
+      accountFixture({ id: 'acc-a', display_name: 'Ada Lovelace' }),
+      accountFixture({ id: 'acc-b', display_name: 'Grace Hopper' }),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: () =>
+          Promise.resolve({ accounts: rows, next_cursor: '' }),
+        deleteAccount: (input) => {
+          calls.push(input.id)
+          return new Promise<void>((resolve) => {
+            finish = resolve
+          })
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Grace Hopper')
+    const active = screen.getByRole('button', { name: DELETE_ACCOUNT_NAME })
+    const sibling = screen.getByRole('button', {
+      name: fill(zhCN.accounts.deleteAria, { name: 'Grace Hopper' }),
+    })
+
+    await deleteRowThroughConfirm(user, 'Ada Lovelace')
+
+    await waitFor(() => expect(active).toHaveAttribute('aria-busy', 'true'))
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy')
+    expect(sibling).not.toHaveAccessibleDescription()
+    await user.click(sibling)
+    sibling.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(calls).toEqual(['acc-a'])
+
+    await act(async () => {
+      finish?.()
+    })
+  })
+
+  it('does not take focus back when the operator moved it while the delete was in flight', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const deleted: string[] = []
+    const rows = [
+      accountFixture({ id: 'acc-a', display_name: 'Ada Lovelace' }),
+      accountFixture({ id: 'acc-b', display_name: 'Grace Hopper' }),
+    ]
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listAccounts: listWithoutDeleted(rows, deleted),
+        deleteAccount: (input) => {
+          deleted.push(input.id)
+          return new Promise<void>((resolve) => {
+            finish = resolve
+          })
+        },
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByText('Ada Lovelace')
+
+    await deleteRowThroughConfirm(user, 'Ada Lovelace')
+    const elsewhere = screen.getByLabelText(zhCN.accounts.identifierLabel)
+    elsewhere.focus()
+    expect(elsewhere).toHaveFocus()
+
+    await act(async () => {
+      finish?.()
+    })
+    await waitFor(() => expect(screen.queryByText('Ada Lovelace')).toBeNull())
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it("moves focus to the next session's revoke control when a middle session leaves", async () => {
+    const user = userEvent.setup()
+    const rows = [
+      sessionFixture('sess-a'),
+      sessionFixture('sess-b'),
+      sessionFixture('sess-c'),
+    ]
+    const revoked: string[] = []
+    const operations = withAccounts({
+      listAccountSessions: sessionsWithoutRevoked(rows, revoked),
+      revokeSession: (input) => {
+        revoked.push(input.sessionId)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const next = await screen.findByRole('button', {
+      name: revokeSessionName('sess-c'),
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: revokeSessionName('sess-b') }),
+    )
+    await confirmDialog(user)
+
+    await waitFor(() => expect(next).toHaveFocus())
+  })
+
+  it("moves focus to the previous session's revoke control when the last session leaves", async () => {
+    const user = userEvent.setup()
+    const rows = [sessionFixture('sess-a'), sessionFixture('sess-b')]
+    const revoked: string[] = []
+    const operations = withAccounts({
+      listAccountSessions: sessionsWithoutRevoked(rows, revoked),
+      revokeSession: (input) => {
+        revoked.push(input.sessionId)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const previous = await screen.findByRole('button', {
+      name: revokeSessionName('sess-a'),
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: revokeSessionName('sess-b') }),
+    )
+    await confirmDialog(user)
+
+    await waitFor(() => expect(previous).toHaveFocus())
+  })
+
+  it('moves focus to the sessions heading when the only session leaves', async () => {
+    const user = userEvent.setup()
+    const rows = [sessionFixture('sess-a')]
+    const revoked: string[] = []
+    const operations = withAccounts({
+      listAccountSessions: sessionsWithoutRevoked(rows, revoked),
+      revokeSession: (input) => {
+        revoked.push(input.sessionId)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const heading = await screen.findByRole('heading', {
+      name: zhCN.accounts.sessions.title,
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: revokeSessionName('sess-a') }),
+    )
+    await confirmDialog(user)
+
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(heading).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('does not take focus back when the operator moved it while the session revoke was in flight', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const revoked: string[] = []
+    const rows = [sessionFixture('sess-a'), sessionFixture('sess-b')]
+    const operations = withAccounts({
+      listAccountSessions: sessionsWithoutRevoked(rows, revoked),
+      revokeSession: (input) => {
+        revoked.push(input.sessionId)
+        return new Promise<void>((resolve) => {
+          finish = resolve
+        })
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    await screen.findByRole('button', { name: revokeSessionName('sess-a') })
+
+    await user.click(
+      screen.getByRole('button', { name: revokeSessionName('sess-a') }),
+    )
+    await confirmDialog(user)
+    // The detail panel is modal, so its focus trap keeps focus inside it:
+    // the "elsewhere" place a reader can reach during the write is another
+    // field of the same panel, not the list's filter input behind the trap.
+    const elsewhere = screen.getByLabelText(
+      zhCN.accounts.patch.displayNameLabel,
+    )
+    elsewhere.focus()
+    expect(elsewhere).toHaveFocus()
+
+    await act(async () => {
+      finish?.()
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: revokeSessionName('sess-a') }),
+      ).toBeNull(),
+    )
+    expect(elsewhere).toHaveFocus()
+  })
+
   it('describes each unmet precondition on its write control', async () => {
     const user = userEvent.setup()
     renderWithProviders(<AccountsPage />, { operations: withAccounts() })
@@ -2352,6 +2691,47 @@ describe('AccountsPage', () => {
       .focus()
     await user.keyboard('{Enter}')
     expect(created).toEqual([])
+  })
+
+  it('sends no second create request from a programmatic submit while the first is in flight', async () => {
+    const user = userEvent.setup()
+    let finish: (() => void) | undefined
+    const created: AdminCreateAccountInput[] = []
+    const operations = withAccounts({
+      createAccount: (input) => {
+        created.push(input)
+        return new Promise((resolve) => {
+          finish = () => resolve(accountFixture())
+        })
+      },
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(
+      within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel),
+      'Grace',
+    )
+    await user.type(
+      within(panel).getByLabelText(zhCN.accounts.create.usernameLabel),
+      'grace',
+    )
+    const form = panel.querySelector('form') as HTMLFormElement
+
+    fireEvent.submit(form)
+    await waitFor(() => expect(created).toHaveLength(1))
+    // The form's own submit is guarded as well as the button: a programmatic
+    // submit while the write is in flight does not start a second request.
+    // React Hook Form validates asynchronously, so the submit is flushed
+    // inside `act` -- an assertion right after the dispatch would pass even
+    // without the guard, before the handler ever ran.
+    await act(async () => {
+      fireEvent.submit(form)
+    })
+    expect(created).toHaveLength(1)
+
+    await act(async () => {
+      finish?.()
+    })
   })
 
   it('renders a username-immutable refusal as its own text, not the generic conflict', async () => {
@@ -3372,9 +3752,13 @@ describe('AccountsPage', () => {
     fireEvent.submit(form)
     expect(created).toEqual([])
 
-    // A display name alone is not an account either.
+    // A display name alone is not an account either, and the reason names
+    // the missing piece: a user account still needs its username.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.accounts.create.usernameUnavailable,
+    )
     fireEvent.submit(form)
     expect(created).toEqual([])
 
@@ -3389,6 +3773,9 @@ describe('AccountsPage', () => {
     await user.clear(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel))
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.accounts.create.submitUnavailable,
+    )
     fireEvent.submit(form)
     expect(created).toEqual([])
 

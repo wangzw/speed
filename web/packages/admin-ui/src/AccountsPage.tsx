@@ -210,6 +210,27 @@ interface AccountDetailFeedback {
   readonly createSecret: WriteFeedback
 }
 
+/**
+ * Whether focus was lost when the initiating control's row left the
+ * document. A write that removes its own row hands focus to a neighbour,
+ * but only if the operator had not moved focus elsewhere while the write
+ * was in flight: the browser drops focus to the body (or leaves it on a
+ * detached node inside the removed row) in that case, while a connected
+ * control outside the row means the operator chose that place. `removed`
+ * is the row element the initiating control stood in, captured at the
+ * attempt's start.
+ */
+function focusFellWithRow(removed: HTMLElement | null): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  return removed !== null && removed.contains(active)
+}
+
 function statusLabel(status: string, t: (key: string) => string): string {
   return ACCOUNT_STATUSES.has(status)
     ? t(`accounts.status.${status}`)
@@ -330,15 +351,39 @@ export function AccountsPage({
   // Each row's delete control, so a successful delete can hand focus to the
   // adjacent row's control when the removed row leaves the document.
   const deleteButtons = useRef(new Map<string, HTMLButtonElement>())
-  // The row whose delete has started, with the row order at that moment:
-  // once that row leaves the list, focus moves to the next row's delete
-  // control, else the previous one, else the list container, so it never
-  // lands on the document body.
+  // The row whose delete has started, with the row order at that moment and
+  // the row element itself: once that row leaves the list, focus moves to
+  // the next row's delete control, else the previous one, else the list
+  // container, so it never lands on the document body. The element is what
+  // tells a focus the removal took from a focus the operator moved away.
   const deleteFocus = useRef<{
     readonly id: string
     readonly order: readonly string[]
+    readonly row: HTMLElement | null
   } | null>(null)
+  // The row whose delete is in flight: only that row's control is busy; its
+  // siblings are unavailable without a reason while the scope is pending.
+  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(
+    null,
+  )
   const listRegion = useRef<HTMLDivElement | null>(null)
+
+  // The detail's sessions table: each row's revoke control, the session
+  // whose revoke is in flight, the row whose revoke started (with the row
+  // order and element at that moment), and the section heading a revoked
+  // last row leaves as the focus landing.
+  const sessionButtons = useRef(new Map<string, HTMLButtonElement>())
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(
+    null,
+  )
+  const sessionRevokeFocus = useRef<{
+    readonly id: string
+    readonly order: readonly string[]
+    readonly row: HTMLElement | null
+  } | null>(null)
+  const sessionsHeading = useRef<HTMLHeadingElement | null>(null)
+  // The secret whose revoke is in flight, so only its row is busy.
+  const [revokingSecretId, setRevokingSecretId] = useState<string | null>(null)
 
   // The list's feedback scope: the row-initiated delete and the create
   // success share it, and its region stands below the list.
@@ -523,6 +568,11 @@ export function AccountsPage({
     detailSecretWrite.reset()
     detailSessionWrite.reset()
     detailIdentifierRemoveWrite.reset()
+    // A revoke focus target belongs to the panel that is going away; its
+    // row's next read is a fresh panel, not the one this landing named.
+    sessionRevokeFocus.current = null
+    setRevokingSessionId(null)
+    setRevokingSecretId(null)
     const trigger = detailTrigger.current
     detailTrigger.current = null
     if (trigger !== null && trigger.isConnected) {
@@ -558,10 +608,13 @@ export function AccountsPage({
     // The row order at the attempt's start is what names the neighbour to
     // focus once the row leaves: the read answers with the rows minus the
     // deleted one, so the order of the *next* render alone cannot say
-    // which row stood beside it.
+    // which row stood beside it. The activating row is marked so only its
+    // control reports busy; its siblings are held without a reason.
+    setDeletingAccountId(row.id)
     deleteFocus.current = {
       id: row.id,
       order: (accounts.data?.accounts ?? []).map((entry) => entry.id),
+      row: deleteButtons.current.get(row.id)?.closest('tr') ?? null,
     }
     return listWrite.run(async () => {
       try {
@@ -667,6 +720,9 @@ export function AccountsPage({
   }
 
   function revokeOneSecret(row: AdminAccountSecret): Promise<void> {
+    // Only the row whose revoke started reports busy; its siblings are held
+    // without a reason while the scope is pending.
+    setRevokingSecretId(row.id)
     return detailSecretWrite.run(async () => {
       try {
         await revokeSecret.mutateAsync({ id: selectedId, secret: row.id })
@@ -689,6 +745,15 @@ export function AccountsPage({
   }
 
   function revokeOneSession(row: AdminAccountSession): Promise<void> {
+    // The row whose revoke started carries the busy state, and the row order
+    // and element at this moment name the neighbour that takes focus once
+    // the revoked row leaves the read.
+    setRevokingSessionId(row.id)
+    sessionRevokeFocus.current = {
+      id: row.id,
+      order: (sessions.data ?? []).map((entry) => entry.id),
+      row: sessionButtons.current.get(row.id)?.closest('tr') ?? null,
+    }
     return detailSessionWrite.run(async () => {
       try {
         await revokeSession.mutateAsync({
@@ -696,6 +761,7 @@ export function AccountsPage({
           sessionId: row.id,
         })
       } catch (error) {
+        sessionRevokeFocus.current = null
         if (gate.intercept(error, () => void revokeOneSession(row))) {
           return null
         }
@@ -799,7 +865,8 @@ export function AccountsPage({
             aria-label={t('accounts.deleteAria', {
               name: accountLabel(t, accountIdentityValue(row)),
             })}
-            busy={listWrite.pending}
+            busy={listWrite.pending && deletingAccountId === row.id}
+            unavailable={listWrite.pending && deletingAccountId !== row.id}
             onClick={() =>
               confirm.ask({
                 title: t('accounts.deleteTitle'),
@@ -883,13 +950,27 @@ export function AccountsPage({
       cellWrap: 'nowrap',
       cell: (row) => (
         <ActionButton
+          ref={(element) => {
+            if (element === null) {
+              sessionButtons.current.delete(row.id)
+            } else {
+              sessionButtons.current.set(row.id, element)
+            }
+          }}
           type="button"
           size="small"
           tone="danger"
           aria-label={t('accounts.sessions.revokeAria', { id: row.id })}
-          busy={detailSessionWrite.pending}
-          unavailable={row.revoked}
-          unavailableReason={t('accounts.sessions.revokeUnavailable')}
+          busy={
+            detailSessionWrite.pending && revokingSessionId === row.id
+          }
+          // A revoked row never reaches this table -- the session read
+          // excludes it -- so there is no revoked row to hold with a reason.
+          // The sibling of the row being revoked is held only while the
+          // scope is pending.
+          unavailable={
+            detailSessionWrite.pending && revokingSessionId !== row.id
+          }
           onClick={() =>
             confirm.ask({
               title: t('accounts.sessions.revokeTitle'),
@@ -914,7 +995,9 @@ export function AccountsPage({
   // The delete succeeded and the read no longer carries its row: hand focus
   // to the same control on the adjacent row, otherwise to the list
   // container, in the commit that removes the row rather than leaving it on
-  // the document body.
+  // the document body. Focus is handed over only when the removal is what
+  // took it; an operator who moved it elsewhere during the write keeps that
+  // place.
   useLayoutEffect(() => {
     const target = deleteFocus.current
     if (target === null) {
@@ -925,6 +1008,9 @@ export function AccountsPage({
       return
     }
     deleteFocus.current = null
+    if (!focusFellWithRow(target.row)) {
+      return
+    }
     const index = target.order.indexOf(target.id)
     const candidates =
       index === -1
@@ -945,6 +1031,65 @@ export function AccountsPage({
     }
     listRegion.current?.focus()
   }, [rows])
+  // A revoked session leaves the read, so its control unmounts: focus goes
+  // to the next row's revoke control, else the previous one, else the
+  // section heading. The same focus test applies: a place the operator
+  // chose during the write is left alone.
+  useLayoutEffect(() => {
+    const target = sessionRevokeFocus.current
+    if (target === null) {
+      return
+    }
+    const list = sessions.data
+    if (list === undefined) {
+      return
+    }
+    const remaining = new Set(list.map((row) => row.id))
+    if (remaining.has(target.id)) {
+      return
+    }
+    sessionRevokeFocus.current = null
+    if (!focusFellWithRow(target.row)) {
+      return
+    }
+    const index = target.order.indexOf(target.id)
+    const candidates =
+      index === -1
+        ? [...target.order]
+        : [
+            ...target.order.slice(index + 1),
+            ...target.order.slice(0, index).reverse(),
+          ]
+    for (const id of candidates) {
+      if (!remaining.has(id)) {
+        continue
+      }
+      const button = sessionButtons.current.get(id)
+      if (button !== undefined) {
+        button.focus()
+        return
+      }
+    }
+    sessionsHeading.current?.focus()
+  }, [sessions.data])
+  // The row a write started is marked busy only while that scope is
+  // pending; once it settles the siblings are available again (a successful
+  // delete or revoke removes the active row, a refused one leaves it).
+  useEffect(() => {
+    if (!listWrite.pending) {
+      setDeletingAccountId(null)
+    }
+  }, [listWrite.pending])
+  useEffect(() => {
+    if (!detailSessionWrite.pending) {
+      setRevokingSessionId(null)
+    }
+  }, [detailSessionWrite.pending])
+  useEffect(() => {
+    if (!detailSecretWrite.pending) {
+      setRevokingSecretId(null)
+    }
+  }, [detailSecretWrite.pending])
   const pending = accounts.isPending && rows === undefined
   // Only a settled page names the next one: while a page read is in flight
   // there is no cursor to advance from, and an empty one is the last page.
@@ -1351,6 +1496,7 @@ export function AccountsPage({
               <AccountSecretsSection
                 accountId={selectedId}
                 feedback={detailSecretWrite}
+                revokingSecretId={revokingSecretId}
                 confirm={confirm}
                 onRevoke={revokeOneSecret}
               />
@@ -1359,8 +1505,13 @@ export function AccountsPage({
             {sessionsPresent && (
               <>
                 <Typography
+                  ref={sessionsHeading}
                   component="h3"
                   variant="subtitle1"
+                  // A revoked last row leaves this heading as the focus
+                  // landing: focusable without entering the tab order, and
+                  // named by its own text.
+                  tabIndex={-1}
                   sx={{ mt: 2, mb: 1 }}
                 >
                   {t('accounts.sessions.title')}
@@ -1576,11 +1727,14 @@ function AccountFactorsSection({ accountId }: { readonly accountId: string }) {
 function AccountSecretsSection({
   accountId,
   feedback,
+  revokingSecretId,
   confirm,
   onRevoke,
 }: {
   readonly accountId: string
   readonly feedback: WriteFeedback
+  /** The secret whose revoke is in flight, so only its control is busy. */
+  readonly revokingSecretId: string | null
   readonly confirm: PendingConfirmState
   readonly onRevoke: (row: AdminAccountSecret) => Promise<void>
 }) {
@@ -1633,9 +1787,17 @@ function AccountSecretsSection({
           size="small"
           tone="danger"
           aria-label={t('accounts.secrets.revokeAria', { label: row.label })}
-          busy={feedback.pending}
-          unavailable={row.revoked}
-          unavailableReason={t('accounts.secrets.revokeUnavailable')}
+          busy={feedback.pending && revokingSecretId === row.id}
+          // A revoked secret keeps its own precondition's reason whether or
+          // not another row's revoke is running; a sibling held only by the
+          // running revoke carries no reason.
+          unavailable={
+            row.revoked ||
+            (feedback.pending && revokingSecretId !== row.id)
+          }
+          unavailableReason={
+            row.revoked ? t('accounts.secrets.revokeUnavailable') : undefined
+          }
           onClick={() =>
             confirm.ask({
               title: t('accounts.secrets.revokeTitle'),
@@ -1871,6 +2033,16 @@ function AccountCreateForm({
   const namesAnAccount =
     watched.displayName.trim() !== '' &&
     (watched.kind === 'service' || watched.username.trim() !== '')
+  // The two preconditions read differently: a missing display name is the
+  // first one an empty form meets, and a user account that has a display
+  // name but no username is missing the second. The submit names the one
+  // that is actually unmet.
+  const submitUnavailableKey =
+    watched.displayName.trim() === ''
+      ? 'accounts.create.submitUnavailable'
+      : watched.kind !== 'service' && watched.username.trim() === ''
+        ? 'accounts.create.usernameUnavailable'
+        : undefined
 
   const onSubmit: SubmitHandler<CreateAccountFields> = (values) => {
     // The guard judges the trimmed values, so the request sends those same
@@ -1949,7 +2121,11 @@ function AccountCreateForm({
             emphasis="primary"
             busy={feedback.pending}
             unavailable={!namesAnAccount}
-            unavailableReason={t('accounts.create.submitUnavailable')}
+            unavailableReason={
+              submitUnavailableKey === undefined
+                ? undefined
+                : t(submitUnavailableKey)
+            }
           >
             {t('accounts.create.submit')}
           </ActionButton>
