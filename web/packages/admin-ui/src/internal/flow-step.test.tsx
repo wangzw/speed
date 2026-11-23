@@ -152,6 +152,22 @@ describe('FlowStep labels', () => {
 })
 
 describe('FlowStep passkey ceremony', () => {
+  it('mounts the waiting region empty and fills it on a later frame', async () => {
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      render(ASSERT_STEP)
+      const region = screen.getByRole('status')
+      // The region is inserted by the waiting state's first commit empty.
+      expect(region.textContent).toBe('')
+      await waitFor(() =>
+        expect(region).toHaveTextContent(zhCN.stepUp.passkeyWaiting),
+      )
+    } finally {
+      restore()
+    }
+  })
+
   it('starts an assertion ceremony on arrival, without a second click', async () => {
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })

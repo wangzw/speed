@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
+import enUS from '../locales/en-US.json' with { type: 'json' }
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -130,5 +131,68 @@ describe('FlowStep Label in Name in Chromium', () => {
     await expectNoAxeViolations({
       decidedInBrowser: 'flowStepManualDisclosure',
     })
+  })
+})
+
+describe('FlowStep waiting announcement in Chromium', () => {
+  it('inserts the waiting region empty and fills it a frame later', async () => {
+    // The waiting phase's region and its cancellation row mount in one
+    // commit. A MutationObserver records the region's text in every batch
+    // after it appears, so the empty birth frame and the later fill are
+    // observed facts rather than one snapshot taken when the case chose to
+    // look.
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const original = Object.getOwnPropertyDescriptor(
+      window.navigator,
+      'credentials',
+    )
+    Object.defineProperty(window.navigator, 'credentials', {
+      value: { get, create: vi.fn() },
+      configurable: true,
+    })
+    const snapshots: string[] = []
+    const observer = new MutationObserver(() => {
+      const region = document.querySelector('[role="status"]')
+      if (region !== null) {
+        snapshots.push(region.textContent ?? '')
+      }
+    })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    try {
+      await page.viewport(900, 700)
+      renderWithProviders(
+        <FlowStep
+          step={{ kind: 'webauthn', options: { challenge: 'Y2hhbGxlbmdl' } }}
+          sequence={1}
+          answerStep="answer"
+          submitLabel="Continue"
+          onSubmit={vi.fn()}
+        />,
+        { language: 'en-US' },
+      )
+
+      await waitFor(() => expect(snapshots.length).toBeGreaterThan(0))
+      // The batch that reported the region's insertion read it empty.
+      expect(snapshots[0]).toBe('')
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent(
+          enUS.stepUp.passkeyWaiting,
+        ),
+      )
+      // Some later batch carried the text, so the change reached an
+      // already-inserted region rather than being born with it.
+      expect(snapshots).toContain(enUS.stepUp.passkeyWaiting)
+    } finally {
+      observer.disconnect()
+      if (original === undefined) {
+        delete (window.navigator as { credentials?: unknown }).credentials
+      } else {
+        Object.defineProperty(window.navigator, 'credentials', original)
+      }
+    }
   })
 })
