@@ -227,6 +227,10 @@ function mountApp(options: {
   readonly anonymous?: boolean
   /** The feature document to mount; the organization surface's features by default. */
   readonly features?: ReturnType<typeof authenticatedSnapshot>['features']
+  /** The feature document a retry settles to; absent settles back to the mounted one. */
+  readonly featureRetry?: () => Promise<
+    ReturnType<typeof authenticatedSnapshot>['features']
+  >
 }): { readonly requested: string[]; readonly session: TestSession } {
   const target = options.path ?? '/'
   window.history.replaceState({}, '', target)
@@ -241,6 +245,8 @@ function mountApp(options: {
           options.impersonating === true
             ? { ...snapshot, impersonating: true }
             : snapshot,
+          undefined,
+          options.featureRetry,
         )
   renderDemoApp({
     session,
@@ -814,24 +820,24 @@ describe('the organization admin route admission', () => {
     expect(window.location.pathname).toBe('/organization/admin/invitations')
   })
 
-  it('disables the retry while its reads are in flight', async () => {
+  it('lands on the waiting view while the retry re-reads, then back on the retry when it fails again', async () => {
     const user = userEvent.setup()
-    let settleRetry: (value: {
-      readonly tenants: readonly TenantRow[]
-    }) => void = () => undefined
-    let calls = 0
+    let settleFeatures!: (
+      state: ReturnType<typeof authenticatedSnapshot>['features'],
+    ) => void
+    const featureRetry = new Promise<
+      ReturnType<typeof authenticatedSnapshot>['features']
+    >((resolve) => {
+      settleFeatures = resolve
+    })
     mountApp({
       path: '/organization/admin/invitations',
-      tenants: [],
-      tenantsRead: () => {
-        calls += 1
-        if (calls === 1) {
-          return Promise.reject(new Error('tenant read refused'))
-        }
-        return new Promise((resolve) => {
-          settleRetry = resolve
-        })
-      },
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
+      features: { state: 'failed', error: new Error('feature read refused') },
+      // The real session publishes `pending` synchronously when the retry
+      // starts; holding this promise keeps the case in that state so the
+      // waiting view's own focus can be observed.
+      featureRetry: () => featureRetry,
       permissionsFor: () => ({
         platform: [],
         tenant: ['authn.membership.manage'],
@@ -843,19 +849,119 @@ describe('the organization admin route admission', () => {
 
     await user.click(retry)
 
-    // The reads the retry started are still settling: a second click would
-    // start a competing caller-tenant read, so the control is disabled.
-    expect(retry).toBeDisabled()
+    // The failure page and its retry control unmounted with the pending
+    // document. The waiting view that replaced them holds the focus: it is
+    // never left on the document body.
+    expect(document.activeElement).not.toBe(document.body)
+    expect(document.activeElement).toHaveAccessibleName(
+      demoEnUS.organization.accessPending,
+    )
 
     await act(async () => {
-      settleRetry({
-        tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
-      })
+      settleFeatures({ state: 'failed', error: new Error('still unavailable') })
     })
-    // The retry settles the admission into the page it retried for.
-    expect(
-      await screen.findByRole('heading', { name: tAdmin('invitations.title') }),
-    ).toBeInTheDocument()
+
+    // The re-read failed again: the failure page returns and hands the focus
+    // back to the retry control that started it.
+    const retryAgain = await screen.findByRole('button', {
+      name: demoEnUS.organization.accessFailed.retry,
+    })
+    await waitFor(() => expect(retryAgain).toHaveFocus())
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('lands on the page heading when the retry succeeds', async () => {
+    const user = userEvent.setup()
+    let settleFeatures!: (
+      state: ReturnType<typeof authenticatedSnapshot>['features'],
+    ) => void
+    const featureRetry = new Promise<
+      ReturnType<typeof authenticatedSnapshot>['features']
+    >((resolve) => {
+      settleFeatures = resolve
+    })
+    mountApp({
+      path: '/organization/admin/invitations',
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
+      features: { state: 'failed', error: new Error('feature read refused') },
+      featureRetry: () => featureRetry,
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+    })
+    const retry = await screen.findByRole('button', {
+      name: demoEnUS.organization.accessFailed.retry,
+    })
+
+    await user.click(retry)
+    expect(document.activeElement).toHaveAccessibleName(
+      demoEnUS.organization.accessPending,
+    )
+
+    await act(async () => {
+      settleFeatures(ORGANIZATION_FEATURES)
+    })
+
+    // The retry settled the admission into the page it retried for: the
+    // waiting view gives the focus to the page's own entry, as a whole-page
+    // swap does.
+    const heading = await screen.findByRole('heading', {
+      name: tAdmin('invitations.title'),
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(heading.closest('main')).not.toBeNull()
+  })
+
+  it('leaves focus where the operator moved it when the retry fails again', async () => {
+    const user = userEvent.setup()
+    let settleFeatures!: (
+      state: ReturnType<typeof authenticatedSnapshot>['features'],
+    ) => void
+    const featureRetry = new Promise<
+      ReturnType<typeof authenticatedSnapshot>['features']
+    >((resolve) => {
+      settleFeatures = resolve
+    })
+    mountApp({
+      path: '/organization/admin/invitations',
+      tenants: [{ id: 'acme', name: 'acme', kind: 'business' }],
+      features: { state: 'failed', error: new Error('feature read refused') },
+      featureRetry: () => featureRetry,
+      permissionsFor: () => ({
+        platform: [],
+        tenant: ['authn.membership.manage'],
+      }),
+    })
+    const retry = await screen.findByRole('button', {
+      name: demoEnUS.organization.accessFailed.retry,
+    })
+    await user.click(retry)
+    expect(document.activeElement).toHaveAccessibleName(
+      demoEnUS.organization.accessPending,
+    )
+
+    // A connected control the operator moved to while the re-read was in
+    // flight: the returning failure page must leave it alone.
+    const elsewhere = document.createElement('button')
+    elsewhere.textContent = 'elsewhere'
+    document.body.appendChild(elsewhere)
+    try {
+      elsewhere.focus()
+      await act(async () => {
+        settleFeatures({
+          state: 'failed',
+          error: new Error('still unavailable'),
+        })
+      })
+      const retryAgain = await screen.findByRole('button', {
+        name: demoEnUS.organization.accessFailed.retry,
+      })
+      expect(elsewhere).toHaveFocus()
+      expect(retryAgain).not.toHaveFocus()
+    } finally {
+      elsewhere.remove()
+    }
   })
 
   it('still sends a personal tenant direct visit to the tenant home', async () => {
@@ -1089,6 +1195,10 @@ describe('the organization admin route admission', () => {
       name: tAdmin('permissions.roles.actionsAria', { role: 'editor' }),
     })
     expect(editorActions).toBeEnabled()
+    // A natively enabled button that carries aria-disabled is still
+    // unavailable to the operator, so "enabled" alone is not the liveness
+    // this row asserts.
+    expect(editorActions).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(editorActions)
     expect(
       await screen.findByRole('menuitem', {

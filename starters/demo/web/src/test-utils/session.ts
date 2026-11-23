@@ -112,10 +112,20 @@ function rejecting(): Promise<never> {
   return Promise.reject(new Error('the test session drives no operation'))
 }
 
+/**
+ * The feature document a retry settles to. The real session publishes
+ * `pending` synchronously before it issues the read, then commits the read's
+ * outcome; a suite scripts the outcome -- and, by holding the promise, when
+ * it lands -- through this function so its case follows that state sequence
+ * rather than passing straight from one settled document to the next.
+ */
+export type FeatureRetryScript = () => Promise<FeatureState>
+
 /** A session whose snapshot `set` mutates and notifies; operations reject. */
 export function createTestSession(
   initial: AuthSnapshot = ANONYMOUS_SNAPSHOT,
   methods: AuthnMethodList | (() => Promise<AuthnMethodList>) = FORM_METHODS,
+  featureRetry?: FeatureRetryScript,
 ): TestSession {
   let snapshot = initial
   const listeners = new Set<AuthSessionListener>()
@@ -151,7 +161,36 @@ export function createTestSession(
     // transition is a window that never opens: the release is a no-op.
     beginIdentityTransition: () => () => undefined,
     refresh: rejecting,
-    retryFeatures: rejecting,
+    // The feature re-read mirrors the real session: `pending` is published
+    // synchronously, before the read is issued, so a host that renders from
+    // the snapshot sees the waiting state first. The scripted outcome then
+    // replaces it. Without a script the retry settles back to the document it
+    // replaced, so an unscripted retry neither changes the document nor hangs.
+    retryFeatures: () => {
+      if (snapshot.state !== 'authenticated' || snapshot.principal === null) {
+        return Promise.resolve()
+      }
+      const previous = snapshot.features
+      snapshot = { ...snapshot, features: { state: 'pending' } }
+      for (const listener of listeners) {
+        listener(snapshot)
+      }
+      const settle =
+        featureRetry === undefined
+          ? Promise.resolve(previous)
+          : featureRetry()
+      return settle.then((next) => {
+        // The real session commits the read only for the session it started
+        // under; a sign-out in the meantime keeps its own document.
+        if (snapshot.state !== 'authenticated' || snapshot.principal === null) {
+          return
+        }
+        snapshot = { ...snapshot, features: next }
+        for (const listener of listeners) {
+          listener(snapshot)
+        }
+      })
+    },
     isStepUpShortfall: () => false,
     // Host-attached permissions are out of scope here: the suites set the
     // snapshot's permission lists directly, so attaching is a no-op rather
