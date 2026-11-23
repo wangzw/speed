@@ -18,6 +18,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { useTheme } from '@mui/material/styles'
 import { page } from 'vitest/browser'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -192,6 +193,65 @@ describe('OrganizationSecurityPage touch targets in Chromium', () => {
       expect(box.width).toBeGreaterThan(0)
       expect(box.height).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('OrganizationSecurityPage focus in Chromium', () => {
+  it('keeps focus on the switch through an in-flight write', async () => {
+    await page.viewport(1200, VIEWPORT_HEIGHT)
+    let settle: () => void = () => undefined
+    let writes = 0
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        // The policy declares no danger, so a second activation the guard
+        // failed to swallow would save immediately rather than pausing on a
+        // confirmation the case could mistake for a refusal.
+        listTenantSettings: () =>
+          Promise.resolve(envelope([{ ...MFA, danger: '' }])),
+        writeTenantSetting: () => {
+          writes += 1
+          return new Promise<void>((resolve) => {
+            settle = resolve
+          })
+        },
+      }),
+    )
+    renderWithProviders(
+      <OrganizationAdminOperationsProvider operations={operations}>
+        <OrganizationSecurityPage tenant={TENANT} />
+      </OrganizationAdminOperationsProvider>,
+      { operations, language: 'en-US' },
+    )
+    await screen.findByRole('heading', {
+      level: 2,
+      name: enUS.organization.security.section.title,
+    })
+
+    const mfaSwitch = screen.getByRole('switch', {
+      name: enUS.organization.security.switchAria.replace(
+        '{{title}}',
+        MFA.title,
+      ),
+    })
+    const user = userEvent.setup()
+    await user.click(mfaSwitch)
+
+    // A real browser moves the focus of a control that turns natively
+    // disabled; the switch must stay focusable while its write runs.
+    expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
+    expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(mfaSwitch)
+
+    // A second activation while the write runs is swallowed: no second
+    // write, no confirmation, and the controlled value stays put.
+    await user.click(mfaSwitch)
+    expect(writes).toBe(1)
+    expect(mfaSwitch).toBeChecked()
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    settle()
+    await waitFor(() => expect(mfaSwitch).not.toHaveAttribute('aria-busy'))
+    expect(document.activeElement).toBe(mfaSwitch)
   })
 })
 

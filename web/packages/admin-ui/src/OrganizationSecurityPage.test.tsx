@@ -185,7 +185,10 @@ describe('OrganizationSecurityPage', () => {
       ),
     })
     expect(mfaSwitch).toBeChecked()
-    expect(mfaSwitch).toBeDisabled()
+    expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
+    expect(mfaSwitch).toHaveAccessibleDescription(
+      zhCN.organization.security.platformLocked,
+    )
     expect(
       screen.getByText(zhCN.organization.security.platformLocked),
     ).toBeInTheDocument()
@@ -199,6 +202,54 @@ describe('OrganizationSecurityPage', () => {
     // inert, so no activation can open the dialog.
     expect(screen.queryByRole('dialog')).toBeNull()
   })
+
+  for (const activation of ['a click', 'the space key'] as const) {
+    it(`refuses ${activation} on a platform-enforced switch`, async () => {
+      const user = userEvent.setup()
+      const writes: AdminTenantSetSettingInput[] = []
+      renderPage({
+        settings: envelope([
+          {
+            ...MFA,
+            // No danger, so a swallowed activation cannot be mistaken for
+            // the confirmation dialog: without the guard the switch would
+            // save.
+            danger: '',
+            effective_value: 'true',
+            platform_value: 'true',
+            locked_by_platform: true,
+            source: 'global',
+          },
+        ]),
+        writeTenantSetting: (input) => {
+          writes.push(input)
+          return Promise.resolve()
+        },
+      })
+
+      const mfaSwitch = await screen.findByRole('switch', {
+        name: zhCN.organization.security.switchAria.replace(
+          '{{title}}',
+          MFA.title,
+        ),
+      })
+      expect(mfaSwitch).toBeChecked()
+      expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
+
+      // The platform holds the value, so the tenant's activation reaches
+      // neither the write nor the controlled value, and opens no dialog.
+      if (activation === 'a click') {
+        await user.click(mfaSwitch)
+      } else {
+        mfaSwitch.focus()
+        expect(mfaSwitch).toHaveFocus()
+        await user.keyboard(' ')
+      }
+      expect(writes).toHaveLength(0)
+      expect(mfaSwitch).toBeChecked()
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+  }
 
   it('asks for the two-step confirmation before turning a policy off', async () => {
     const user = userEvent.setup()
@@ -372,7 +423,7 @@ describe('OrganizationSecurityPage', () => {
     // request marks the control busy and inert.
     expect(mfaSwitch).toBeChecked()
     expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
-    expect(mfaSwitch).toBeDisabled()
+    expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
 
     await act(async () => {
       rejectWrite({ code: 'settings.tenant_admission_enforced' })
@@ -380,7 +431,7 @@ describe('OrganizationSecurityPage', () => {
 
     await waitFor(() => expect(mfaSwitch).not.toBeChecked())
     expect(mfaSwitch).not.toHaveAttribute('aria-busy')
-    expect(mfaSwitch).toBeEnabled()
+    expect(mfaSwitch).not.toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByRole('alert')).toHaveTextContent(
       zhCN.errors.settings.tenant_admission_enforced,
     )
@@ -414,25 +465,75 @@ describe('OrganizationSecurityPage', () => {
     })
 
     await user.click(ssoSwitch)
-    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
 
     // The second row saves on its own while the first write is still in
     // flight.
     await user.click(mfaSwitch)
-    expect(mfaSwitch).toBeDisabled()
+    expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
     // The first row stays inert: its request has not settled, and accepting
     // another click would put two writes of one key in flight.
-    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
 
     await act(async () => {
       resolvers.get('tenant.admission.require-sso')?.()
       resolvers.get('tenant.admission.require-mfa')?.()
     })
-    await waitFor(() => expect(ssoSwitch).toBeEnabled())
-    expect(mfaSwitch).toBeEnabled()
+    await waitFor(() =>
+      expect(ssoSwitch).not.toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(mfaSwitch).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keeps focus on a switch through an in-flight write and refuses a second activation', async () => {
+    const user = userEvent.setup()
+    const writes: AdminTenantSetSettingInput[] = []
+    let settle: () => void = () => undefined
+    renderPage({
+      // The policy declares no danger, so the second activation has nowhere
+      // to hide: without the guard it would save immediately instead of
+      // pausing on a confirmation the case could mistake for a refusal.
+      settings: envelope([{ ...MFA, danger: '' }]),
+      writeTenantSetting: (input) => {
+        writes.push(input)
+        return new Promise<void>((resolve) => {
+          settle = resolve
+        })
+      },
+    })
+
+    const mfaSwitch = await screen.findByRole('switch', {
+      name: zhCN.organization.security.switchAria.replace(
+        '{{title}}',
+        MFA.title,
+      ),
+    })
+    await user.click(mfaSwitch)
+
+    expect(writes).toHaveLength(1)
+    // The switch keeps the focus that activated it: the write in flight
+    // never makes it natively disabled.
+    expect(document.activeElement).toBe(mfaSwitch)
+    expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
+    expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
+    expect(mfaSwitch).toBeChecked()
+
+    // A second activation is swallowed: the controlled value does not move,
+    // no second write is issued, and no confirmation opens to explain the
+    // stillness.
+    await user.click(mfaSwitch)
+    expect(writes).toHaveLength(1)
+    expect(mfaSwitch).toBeChecked()
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await act(async () => {
+      settle()
+    })
+    await waitFor(() => expect(mfaSwitch).not.toHaveAttribute('aria-busy'))
+    expect(document.activeElement).toBe(mfaSwitch)
   })
 
   it('blocks enabling require-sso until an enabled provider exists', async () => {
@@ -450,8 +551,51 @@ describe('OrganizationSecurityPage', () => {
       ),
     })
     expect(ssoSwitch).not.toBeChecked()
-    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
+    expect(ssoSwitch).toHaveAccessibleDescription(
+      zhCN.organization.security.sso.noProvider,
+    )
+    // The blocked switch is still reachable: the reason is associated with
+    // it rather than a native disable that would drop the focus.
+    ssoSwitch.focus()
+    expect(ssoSwitch).toHaveFocus()
   })
+
+  for (const activation of ['a click', 'the space key'] as const) {
+    it(`refuses ${activation} while require-sso is blocked`, async () => {
+      const user = userEvent.setup()
+      const writes: AdminTenantSetSettingInput[] = []
+      renderPage({
+        // No enabled provider, so the policy cannot be turned on.
+        writeTenantSetting: (input) => {
+          writes.push(input)
+          return Promise.resolve()
+        },
+      })
+
+      await screen.findByText(zhCN.organization.security.sso.noProvider)
+      const ssoSwitch = screen.getByRole('switch', {
+        name: zhCN.organization.security.switchAria.replace(
+          '{{title}}',
+          SSO.title,
+        ),
+      })
+      expect(ssoSwitch).not.toBeChecked()
+      expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
+
+      // The blocked precondition swallows the activation: no write, and the
+      // controlled value stays off.
+      if (activation === 'a click') {
+        await user.click(ssoSwitch)
+      } else {
+        ssoSwitch.focus()
+        expect(ssoSwitch).toHaveFocus()
+        await user.keyboard(' ')
+      }
+      expect(writes).toHaveLength(0)
+      expect(ssoSwitch).not.toBeChecked()
+    })
+  }
 
   it('keeps require-sso disabled while the provider read is pending', async () => {
     renderPage({
@@ -467,7 +611,10 @@ describe('OrganizationSecurityPage', () => {
       ),
     })
     expect(ssoSwitch).not.toBeChecked()
-    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
+    expect(ssoSwitch).toHaveAccessibleDescription(
+      zhCN.organization.security.sso.providersPending,
+    )
     // Pending is not the same fact as "no provider": no absence is claimed.
     expect(
       screen.queryByText(zhCN.organization.security.sso.noProvider),
@@ -491,7 +638,10 @@ describe('OrganizationSecurityPage', () => {
       ),
     })
     expect(ssoSwitch).not.toBeChecked()
-    expect(ssoSwitch).toBeDisabled()
+    expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
+    expect(ssoSwitch).toHaveAccessibleDescription(
+      zhCN.organization.security.sso.providersUnreadable,
+    )
     // The failure is not reported as "the organization has no provider".
     expect(
       screen.queryByText(zhCN.organization.security.sso.noProvider),
@@ -521,7 +671,7 @@ describe('OrganizationSecurityPage', () => {
     // The policy is on, so it stays possible to turn it off even though the
     // organization has no provider.
     expect(ssoSwitch).toBeChecked()
-    expect(ssoSwitch).toBeEnabled()
+    expect(ssoSwitch).not.toHaveAttribute('aria-disabled', 'true')
     expect(
       screen.queryByText(zhCN.organization.security.sso.noProvider),
     ).toBeNull()
@@ -625,6 +775,41 @@ describe('OrganizationSecurityPage', () => {
       }),
     )
     await waitFor(() => expect(reads).toBeGreaterThan(before))
+  })
+
+  it('keeps focus on the retry button while its re-read is in flight', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    let settle: () => void = () => undefined
+    renderPage({
+      settings: envelope([MFA, SSO], false, 'unavailable'),
+      listTenantSettings: (answer) => {
+        reads += 1
+        if (reads === 1) {
+          return Promise.resolve(answer)
+        }
+        return new Promise<AdminTenantSettings>((resolve) => {
+          settle = () => resolve(answer)
+        })
+      },
+    })
+
+    const retry = await screen.findByRole('button', {
+      name: zhCN.organization.security.retry,
+    })
+    await user.click(retry)
+
+    // The re-read in flight marks the button busy without taking it out of
+    // the Tab sequence, so the focus that activated it stays.
+    await waitFor(() => expect(retry).toHaveAttribute('aria-busy', 'true'))
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(retry)
+
+    await act(async () => {
+      settle()
+    })
+    await waitFor(() => expect(retry).not.toHaveAttribute('aria-busy'))
+    expect(document.activeElement).toBe(retry)
   })
 
   it('falls back to the bundled policy copy when the server omits it', async () => {
