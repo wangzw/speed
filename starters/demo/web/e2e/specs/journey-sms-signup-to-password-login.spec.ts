@@ -315,6 +315,7 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
     // The account is established and the session lands straight in the tenant
     // area.
     await expect(homeHeading(page)).toBeVisible()
+    await expect(homeHeading(page)).toBeFocused()
 
     // The account entry is where the display name first shows: its accessible
     // name is the avatar's initials and the account's display name, so the
@@ -350,6 +351,7 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
       password: SIGNUP_PASSWORD,
     })
     await expect(homeHeading(page)).toBeVisible()
+    await expect(homeHeading(page)).toBeFocused()
 
     // The password sign-in reaches the account's one personal organization:
     // the account menu's organization row names it by the account's display
