@@ -171,15 +171,14 @@ fast-forwards to it (the procedure is the "Landing a branch" part of the
 "Commit Convention" section above). What a change sends for review carries
 the fix round's targeted tests and generated-artifact checks, not a
 whole-side run. When the whole-side gate is `make check`, `make test-race`
-is already one of its steps (the demo server alone takes about ten minutes
-there); run `make test-race` separately only with the backend-only whole-side
-gate, `make build test lint tidy-check repo-check`. The heavy legs run apart
-from it: `make test-integration`, `make web-browser`, `make e2e`. A gate
-failure on the final HEAD with a small fix is fixed, rerun and landed, with
-its diff reported to the reviewer for an after-the-fact check; one that needs
-rework goes back to review. A unit compiled into a local integration branch
-runs neither when it merges there; the integration branch runs both once
-after its last unit lands.
+is already one of its steps; run `make test-race` separately only with the
+backend-only whole-side gate, `make build test lint tidy-check repo-check`.
+The heavy legs run apart from it: `make test-integration`,
+`make web-browser`, `make e2e`. A gate failure on the final HEAD with a small
+fix is fixed, rerun and landed, with its diff reported to the reviewer for an
+after-the-fact check; one that needs rework goes back to review. A unit
+compiled into a local integration branch runs neither when it merges there;
+the integration branch runs both once after its last unit lands.
 
 **Before asking for review**, also check:
 - A change to an OpenAPI declaration or fragment regenerates all three
