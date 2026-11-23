@@ -18,7 +18,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { zhCN as muiZhCN } from '@mui/material/locale'
 import { SettingsPage } from './SettingsPage.js'
@@ -566,9 +566,11 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     const input = await screen.findByDisplayValue('5')
 
-    // Nothing changed yet, so the save bar's action is inert.
+    // Nothing changed yet, so the save bar's action is unavailable and says
+    // why; it stays focusable rather than natively disabling itself.
     const save = screen.getByRole('button', { name: zhCN.settings.saveBar.save })
-    expect(save).toBeDisabled()
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAccessibleDescription(zhCN.settings.saveBar.unchanged)
 
     await user.clear(input)
     await user.type(input, '9')
@@ -577,6 +579,81 @@ describe('SettingsPage', () => {
     expect(writes).toContain('set:mail.retry=9')
     // The landed save confirms itself in the page's standing status region.
     expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()
+  })
+
+  it('keeps the save action focusable and explained while nothing changed', async () => {
+    const user = userEvent.setup()
+    const writes: string[] = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () => Promise.resolve([item]),
+        setSetting: (input) => {
+          writes.push(`${input.key}=${input.value}`)
+          return Promise.resolve()
+        },
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByDisplayValue('5')
+    const save = screen.getByRole('button', { name: zhCN.settings.saveBar.save })
+
+    // Nothing changed, so the action cannot run. It stays focusable, says it
+    // is unavailable, and names the reason; a natively disabled button would
+    // drop the focus of an operator who tabbed to it.
+    save.focus()
+    expect(save).toHaveFocus()
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAccessibleDescription(zhCN.settings.saveBar.unchanged)
+
+    // Activation through the pointer and both keyboard keys is swallowed: no
+    // batch starts and no item is written. The click is refused by the
+    // control's own guard, before the save handler's empty-batch check runs.
+    await user.click(save)
+    expect(fireEvent.click(save)).toBe(false)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(writes).toHaveLength(0)
+    expect(screen.queryByText(zhCN.settings.saved)).toBeNull()
+  })
+
+  it('keeps the save bar out of the progress state while a row removal runs', async () => {
+    const user = userEvent.setup()
+    let release: (() => void) | undefined
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () => Promise.resolve([item]),
+        removeSetting: () =>
+          new Promise<void>((resolve) => {
+            release = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByDisplayValue('5')
+
+    const remove = screen.getByRole('button', {
+      name: text(zhCN.settings.removeAria, { key: 'mail.retry' }),
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    // The removal owns the scope's attempt; the save bar reports the shared
+    // scope without borrowing its progress or the no-change reason, which the
+    // scope's pending result has replaced.
+    const save = screen.getByRole('button', {
+      name: zhCN.settings.saveBar.save,
+    })
+    expect(remove).toHaveAttribute('aria-busy', 'true')
+    expect(save).not.toHaveAttribute('aria-busy', 'true')
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).not.toHaveAccessibleDescription()
+
+    await act(async () => {
+      release?.()
+    })
   })
 
   it('saves a whole batch and confirms once that the settings landed', async () => {
@@ -889,6 +966,53 @@ describe('SettingsPage', () => {
     await user.click(await screen.findByRole('option', { name: '25' }))
     expect(screen.getAllByRole('textbox')).toHaveLength(10)
     expect(screen.queryByRole('textbox', { name: 'mail.key-10' })).toBeNull()
+
+    await act(async () => {
+      release?.()
+    })
+  })
+
+  it('keeps the namespace navigation focusable and inert while a batch save is in flight', async () => {
+    const user = userEvent.setup()
+    const seen: (string | undefined)[] = []
+    let release: (() => void) | undefined
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: (namespace) => {
+          seen.push(namespace)
+          return Promise.resolve([item])
+        },
+        setSetting: () =>
+          new Promise<void>((resolve) => {
+            release = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const input = await screen.findByDisplayValue('5')
+    await user.clear(input)
+    await user.type(input, '9')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.settings.saveBar.save }),
+    )
+
+    // The navigation changes the read the batch settles against: while the
+    // write is in flight its buttons stay focusable, say they are
+    // unavailable, and ignore pointer and keyboard activation.
+    const nav = screen.getByRole('navigation', { name: zhCN.settings.nav.label })
+    const mailButton = within(nav).getByRole('button', { name: 'mail' })
+    await waitFor(() =>
+      expect(mailButton).toHaveAttribute('aria-disabled', 'true'),
+    )
+    // The button stays focusable: it carries the attribute, not a native
+    // disable that would drop a keyboard user's focus.
+    expect(mailButton).not.toBeDisabled()
+    mailButton.focus()
+    expect(mailButton).toHaveFocus()
+    await user.click(mailButton)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(seen).toEqual([undefined])
 
     await act(async () => {
       release?.()

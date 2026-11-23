@@ -560,6 +560,7 @@
       "all": "All namespaces"
     },
     "loading": "Loading settings",
+    "tableLabel": "Settings table",
     "empty": {
       "title": "No settings",
       "description": "There are no settings to show for this selection."
@@ -575,7 +576,8 @@
     },
     "saveBar": {
       "save": "Save changes",
-      "pending": "{{count}} pending"
+      "pending": "{{count}} pending",
+      "unchanged": "No changes to save"
     },
     "remove": "Remove",
     "removeTitle": "Remove setting",

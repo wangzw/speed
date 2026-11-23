@@ -560,6 +560,7 @@
       "all": "全部命名空间"
     },
     "loading": "正在加载设置",
+    "tableLabel": "设置表",
     "empty": {
       "title": "暂无设置",
       "description": "当前选择下没有可查看的设置项。"
@@ -575,7 +576,8 @@
     },
     "saveBar": {
       "save": "保存改动",
-      "pending": "{{count}} 项待保存"
+      "pending": "{{count}} 项待保存",
+      "unchanged": "没有需要保存的改动"
     },
     "remove": "移除",
     "removeTitle": "移除设置项",

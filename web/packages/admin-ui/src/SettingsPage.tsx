@@ -51,8 +51,9 @@
  * sensitive marker that explains the masked text.
  *
  * Editing an item fills its draft (the table's value cell is the draft
- * input); the sticky save bar writes every changed item and stays disabled
- * until something changed. The batch is one write attempt in one feedback
+ * input); the sticky save bar writes every changed item and stays
+ * unavailable, with the no-change reason, until something changed. The
+ * batch is one write attempt in one feedback
  * scope: the save bar issues every item's PUT through `mutateAsync`, waits
  * for all of them with `Promise.allSettled`, and reports one result under
  * the table. Every landed item clears its draft; a partial landing reports
@@ -68,7 +69,11 @@
  * viewport -- while a success leaves the page where it is; the scroll is
  * unanimated when the operator asks for reduced motion. Success is
  * reported only when nothing failed. The row's remove action shares the
- * same scope and names the removed setting. A refused write resolves
+ * same scope and names the removed setting; its control is busy while its
+ * own removal is in flight, and once the landed removal leaves the row
+ * without a row to take back, focus moves to the next removable row, else
+ * the previous one, else the settings table's container. A refused write
+ * resolves
  * through the admin-ui whitelist (a value outside the item's declared
  * domain reads the invalid-value text), never a raw key. A refused read
  * settles into the permission placeholder (403, which replaces any content
@@ -81,9 +86,8 @@
  * PageHeader, so the heading order never skips.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
@@ -92,10 +96,12 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   DataTable,
   ListSkeleton,
   SectionCard,
   primaryColumnMaxWidthSx,
+  useActivationGuard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -137,6 +143,35 @@ type SettingState = 'default' | 'overridden'
  */
 function settingState(setting: AdminSetting): SettingState {
   return setting.has_row ? 'overridden' : 'default'
+}
+
+/**
+ * The row whose remove control takes focus when the removal of `key`'s row
+ * leaves that row without one: the next row that still carries a control,
+ * else the previous one, else none (the caller falls back to the table's
+ * container).
+ */
+function removalLandingKey(
+  settled: readonly AdminSetting[],
+  key: string,
+): string | null {
+  const index = settled.findIndex((setting) => setting.key === key)
+  if (index === -1) {
+    return null
+  }
+  for (let next = index + 1; next < settled.length; next += 1) {
+    const candidate = settled[next]
+    if (candidate !== undefined && candidate.has_row) {
+      return candidate.key
+    }
+  }
+  for (let previous = index - 1; previous >= 0; previous -= 1) {
+    const candidate = settled[previous]
+    if (candidate !== undefined && candidate.has_row) {
+      return candidate.key
+    }
+  }
+  return null
 }
 
 /** A row the page renders. */
@@ -232,6 +267,22 @@ function SettingsPageBody({
   const setSetting = operations.useSetSetting()
   const removeSetting = operations.useRemoveSetting()
   const confirm = usePendingConfirm()
+  // The row whose own removal is in flight. The row actions share the
+  // batch's scope, so `feedback.pending` stays the scope's state; this
+  // tells the active row's control that it started the write and every
+  // other row's control that the scope is busy.
+  const [removingKey, setRemovingKey] = useState<string | null>(null)
+  // The rendered remove controls, by setting key, and the table's container:
+  // the two possible landing places when a landed removal takes its control
+  // out of the document.
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>())
+  const tableContainer = useRef<HTMLDivElement | null>(null)
+  // The removal a write is in flight for, with the row to land on when the
+  // removed row's control leaves the document.
+  const pendingRemoval = useRef<{
+    readonly key: string
+    readonly fallbackKey: string | null
+  } | null>(null)
 
   // The refresh action resets the scope and the failed row's marker and
   // re-reads both body reads; it keeps every unsaved draft and the table's
@@ -285,6 +336,33 @@ function SettingsPageBody({
     })
   }, [feedback.outcome])
 
+  // A landed removal takes its row's control out of the document. The
+  // pending record names the control that replaces it; once the removed
+  // row's control is gone from the rendered rows, focus moves to that
+  // control -- or to the table's container when no row on the page still
+  // carries one -- in the same commit, before the browser paints a focus
+  // on the body.
+  useLayoutEffect(() => {
+    const pending = pendingRemoval.current
+    if (pending === null || removeButtons.current.has(pending.key)) {
+      return
+    }
+    pendingRemoval.current = null
+    // Focus is only placed when the removal left it on the control that
+    // unmounted, which the browser moves to the document body. A reader who
+    // moved focus elsewhere while the write was in flight keeps it.
+    const active = document.activeElement
+    if (active !== null && active !== document.body) {
+      return
+    }
+    const fallback =
+      pending.fallbackKey === null
+        ? undefined
+        : removeButtons.current.get(pending.fallbackKey)
+    const target = fallback ?? tableContainer.current
+    target?.focus()
+  }, [settings.data])
+
   const namespaces = useMemo(() => {
     const set = new Set<string>()
     for (const setting of allSettings.data ?? []) {
@@ -313,6 +391,23 @@ function SettingsPageBody({
   // both read the settled payload through one derivation.
   const changedRows =
     registerItems === undefined ? [] : changedItems(registerItems)
+  // The rows the table renders now. A removed row's landing place is chosen
+  // among the controls rendered with it, so the slice is taken here rather
+  // than inside the table's render.
+  const pageRows =
+    registerItems === undefined
+      ? []
+      : registerItems.slice(
+          page * rowsPerPage,
+          page * rowsPerPage + rowsPerPage,
+        )
+  // The namespace navigation changes the read the batch settles against, so
+  // while the scope has a write in flight its activation is swallowed: the
+  // buttons stay focusable and carry `aria-disabled`.
+  const navigate = useActivationGuard(
+    (namespace: string) => setSelected(namespace),
+    { busy: false, unavailable: feedback.pending },
+  )
 
   const save = (settled: readonly SettingsRow[]) => {
     const changed = changedItems(settled)
@@ -379,11 +474,26 @@ function SettingsPageBody({
         // that belonged to the batch's result is dropped with it; a new
         // result must not be read as the old row's reason.
         setFailedKey(null)
+        // The control that starts this write leaves with its row when the
+        // removal lands, so the landing place is recorded before it unmounts.
+        pendingRemoval.current = {
+          key: setting.key,
+          fallbackKey: removalLandingKey(pageRows, setting.key),
+        }
+        setRemovingKey(setting.key)
         void feedback.run(async () => {
-          await removeSetting.mutateAsync({
-            namespace: setting.namespace,
-            key: settingKeyRest(setting.key, setting.namespace),
-          })
+          try {
+            await removeSetting.mutateAsync({
+              namespace: setting.namespace,
+              key: settingKeyRest(setting.key, setting.namespace),
+            })
+          } catch (error) {
+            // The row stays; there is nothing to land on.
+            pendingRemoval.current = null
+            throw error
+          } finally {
+            setRemovingKey(null)
+          }
           return t('settings.removed', { key: setting.key })
         })
       },
@@ -520,17 +630,24 @@ function SettingsPageBody({
       // reveals nothing about its row.
       cell: (setting) =>
         setting.has_row ? (
-          <Button
+          <ActionButton
+            ref={(element) => {
+              if (element === null) {
+                removeButtons.current.delete(setting.key)
+              } else {
+                removeButtons.current.set(setting.key, element)
+              }
+            }}
             type="button"
             size="small"
-            variant="text"
-            color="error"
+            tone="danger"
             aria-label={t('settings.removeAria', { key: setting.key })}
-            disabled={feedback.pending}
+            busy={removingKey === setting.key}
+            unavailable={removingKey !== setting.key && feedback.pending}
             onClick={() => remove(setting)}
           >
             {t('settings.remove')}
-          </Button>
+          </ActionButton>
         ) : null,
     },
   ]
@@ -543,8 +660,9 @@ function SettingsPageBody({
         actions={
           <RefreshButton
             // A refresh changes the set the batch is settling against, so it
-            // is natively disabled while the scope has a write in flight;
-            // while either body read is in flight it is marked busy.
+            // is unavailable (focusable, `aria-disabled`) while the scope has
+            // a write in flight; while either body read is in flight it is
+            // marked busy.
             busy={pageRefresh.busy}
             writePending={feedback.pending}
             label={t('common.refresh')}
@@ -583,8 +701,8 @@ function SettingsPageBody({
               <ListItem disablePadding>
                 <ListItemButton
                   selected={selected === ALL}
-                  disabled={feedback.pending}
-                  onClick={() => setSelected(ALL)}
+                  aria-disabled={feedback.pending || undefined}
+                  onClick={() => navigate(ALL)}
                 >
                   <ListItemText primary={t('settings.nav.all')} />
                 </ListItemButton>
@@ -593,8 +711,8 @@ function SettingsPageBody({
                 <ListItem key={namespace} disablePadding>
                   <ListItemButton
                     selected={selected === namespace}
-                    disabled={feedback.pending}
-                    onClick={() => setSelected(namespace)}
+                    aria-disabled={feedback.pending || undefined}
+                    onClick={() => navigate(namespace)}
                   >
                     <ListItemText primary={namespace} />
                   </ListItemButton>
@@ -639,12 +757,16 @@ function SettingsPageBody({
                 description: t('settings.empty.description'),
               }}
             >
-              {(settled) => {
-                const pageRows = settled.slice(
-                  page * rowsPerPage,
-                  page * rowsPerPage + rowsPerPage,
-                )
-                return (
+              {(settled) => (
+                // Programmatically focusable, not tabbable, and named as a
+                // group: a removal that leaves no row with a remove control
+                // lands focus here.
+                <Box
+                  ref={tableContainer}
+                  tabIndex={-1}
+                  role="group"
+                  aria-label={t('settings.tableLabel')}
+                >
                   <DataTable
                     rows={pageRows}
                     columns={columns}
@@ -672,8 +794,8 @@ function SettingsPageBody({
                       },
                     }}
                   />
-                )
-              }}
+                </Box>
+              )}
             </AdminAsyncSection>
           </SectionCard>
 
@@ -711,15 +833,24 @@ function SettingsPageBody({
                     {t('settings.saveBar.pending', { count: changedRows.length })}
                   </Typography>
                 )}
-                <Button
+                <ActionButton
                   type="button"
-                  variant="contained"
-                  loading={feedback.pending}
-                  disabled={changedRows.length === 0 || feedback.pending}
+                  emphasis="primary"
+                  // The batch owns the progress indicator; a row removal
+                  // shares this scope but leaves the save action unavailable
+                  // without borrowing the removal's progress or the no-change
+                  // reason the pending result has replaced.
+                  busy={feedback.pending && removingKey === null}
+                  unavailable={feedback.pending || changedRows.length === 0}
+                  unavailableReason={
+                    feedback.pending
+                      ? undefined
+                      : t('settings.saveBar.unchanged')
+                  }
                   onClick={() => save(registerItems)}
                 >
                   {t('settings.saveBar.save')}
-                </Button>
+                </ActionButton>
               </Box>
 
               <Box ref={feedbackRef}>
