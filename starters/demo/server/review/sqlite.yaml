@@ -118,6 +118,12 @@ authn:
     # deployment leaves it off.
     oidc:
       enabled: true
+    # REVIEW: the enterprise SAML method is compiled into every build by
+    # capabilityModules and stands itself down unless a run names it. The review
+    # assembly drives the SAML journey against its local identity provider, so it
+    # is on here; a baseline or deployment leaves it off.
+    saml:
+      enabled: true
   token:
     signing-key-file: var/token-signing-key.pem
   mfa:

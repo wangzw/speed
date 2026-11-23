@@ -166,8 +166,10 @@ keeps. One project is run on its own with `--project webkit`.
   (`fixtures/saml-identity-provider.ts`). A spec that drives it opts in with
   `test.use({ enterpriseSSO: true, samlIdentityProvider: true })`; the first
   supplies the tenant, the DNS stub and the domain proof, the second starts the
-  provider. The review build runs the SAML method (`authn.sso.saml` is in its
-  `reviewModules`), and an operator registers the provider through the admin's
+  provider. The review configuration turns the SAML method on with
+  `authn.sso.saml.enabled: true` (`authn.sso.saml` is in every build's
+  `capabilityModules` and stands itself down without the switch), and an
+  operator registers the provider through the admin's
   provider form with its entity identifier, https sign-on address, certificate
   and claim mapping. The provider receives the AuthnRequest on the redirect
   binding, shows a page for one fixed user and, once the person approves, serves

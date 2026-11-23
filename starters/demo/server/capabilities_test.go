@@ -7,6 +7,10 @@ package main
 // so the import set is the ceiling.
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn/invitemail"
@@ -130,6 +134,7 @@ func TestDefaultBuildNamesTheDeployAndReviewCapabilities(t *testing.T) {
 		"authn.login.wechat-mp",
 		"authn.login.wechat-web",
 		"authn.sso.oidc",
+		"authn.sso.saml",
 		"authn.sms",
 		"sms.registry",
 		"authn.login.sms",
@@ -144,6 +149,43 @@ func TestDefaultBuildNamesTheDeployAndReviewCapabilities(t *testing.T) {
 		if !named[name] {
 			t.Errorf("capabilityModules does not name %q; the default build no longer carries "+
 				"a capability the deploy or review variant used to add", name)
+		}
+	}
+}
+
+// TestTheDefaultRunOffersNoSAMLSignIn serves the default assembly over a
+// configuration that never names the SAML switch and reads the login discovery.
+// The method is compiled into every build, but its own Prepare keeps it out of
+// a run whose configuration does not turn it on, so the default deployment
+// offers no SAML entry.
+func TestTheDefaultRunOffersNoSAMLSignIn(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "demo.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	_, ports := startServing(t, func(ports []int) *process {
+		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
+	})
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	listing := get(t, base+"/api/v1/auth/methods")
+	if listing.status != http.StatusOK {
+		t.Fatalf("GET /api/v1/auth/methods answered %d: %s", listing.status, listing.body)
+	}
+	var discovery struct {
+		Methods []struct {
+			Name string `json:"name"`
+		} `json:"methods"`
+	}
+	if err := json.Unmarshal(listing.body, &discovery); err != nil {
+		t.Fatalf("reading the login discovery: %v\n%s", err, listing.body)
+	}
+	for _, method := range discovery.Methods {
+		if method.Name == "saml" {
+			t.Errorf("the login discovery lists saml although the configuration never turns "+
+				"authn.sso.saml.enabled on: %+v", discovery.Methods)
 		}
 	}
 }

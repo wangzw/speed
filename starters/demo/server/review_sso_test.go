@@ -165,9 +165,9 @@ func TestReviewRunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 
 // TestReviewRunServesTheSAMLLoginMethod runs the review binary over the review
 // configuration and reads the login discovery: the enterprise SAML method is
-// listed beside the enterprise OIDC one. The review build names authn.sso.saml
-// for a run, which a default build does not, so the method's presence is what
-// shows the roster reached the assembly.
+// listed beside the enterprise OIDC one. authn.sso.saml is in every build's
+// capability ceiling and stands itself down unless its switch is on, so the
+// method's presence is what shows the review configuration reached the assembly.
 func TestReviewRunServesTheSAMLLoginMethod(t *testing.T) {
 	t.Parallel()
 	binary := reviewBinary(t)

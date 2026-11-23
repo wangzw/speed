@@ -41,7 +41,6 @@ import (
 	"slices"
 	"strings"
 
-	ssosaml "github.com/vislake/speed/pkg/authn/sso/saml"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 )
@@ -55,16 +54,11 @@ const reviewGuardModuleName = "review.guard"
 // its own fixed namespace, which the guard reads the listener addresses from.
 const reviewHTTPConfigNamespace = "http"
 
-// reviewModules is what the review build adds to the serve roster: the SAML
-// login method, the two test controls and the guard. The other capabilities are
-// named by capabilityModules, which every build carries.
+// reviewModules is what the review build adds to the serve roster: the two test
+// controls and the guard. The capabilities, the enterprise SAML method among
+// them, are named by capabilityModules, which every build carries; what a run
+// starts is decided by configuration, not by this list.
 var reviewModules = []string{
-	// The enterprise SAML login method. A default build imports it for the
-	// contract alone and no command runs it; the review build runs it so the
-	// end-to-end tier can drive an SP-initiated SAML sign-in against a local
-	// identity provider. Its providers are data in the authn.sso register, so
-	// the module needs no configuration of its own to start.
-	ssosaml.ModuleName,
 	// The control that moves one language's vendor verdict on the log SMS
 	// carrier. It mounts nothing in a default build; see review_sms_control.go.
 	reviewSMSControlModuleName,

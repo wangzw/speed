@@ -23,6 +23,9 @@ import (
 // provides, so a run without it does not start at all. That failure is held
 // instead. See TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration.
 var mayLeaveRouteCountUnchanged = map[string]string{
+	"authn.sso.saml": "the metadata route is mounted only while authn.sso.saml.enabled is true, and " +
+		"the baseline template leaves the switch off: the method and the metadata route are not " +
+		"delivered in the baseline, so this removal is vacuous",
 	"sms.admin": "its management routes are mounted only on the endpoints sms.admin.endpoints names, " +
 		"and the item has no default: the baseline template mounts no SMS management surface because " +
 		"an SMS vendor account is not part of the baseline, so this removal is vacuous",

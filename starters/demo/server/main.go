@@ -113,18 +113,16 @@ import (
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
 	tenantselfcreate "github.com/vislake/speed/pkg/tenant/selfcreate"
 
-	// The platform modules whose HTTP fragments belong to the merged contract
-	// even though the baseline names neither for a run. The credential
-	// criterion keeps sms.admin (an SMS vendor's account) and authn.sso.saml
-	// (an enterprise provider's credentials and metadata) out of the baseline,
-	// so no baseline Include lists them; their fragments still describe the
-	// platform's API surface, and what gen and /openapi.json merge is the
-	// fragments of the modules the binary's imports reach, not the modules a
-	// run names. The import is what puts them in the available set. No default
-	// build command runs authn.sso.saml; the review build's serve names it
-	// (review.go). Naming a module for a run and importing it for its contract
-	// are two different questions; see AGENTS.md.
-	_ "github.com/vislake/speed/pkg/authn/sso/saml"
+	// The SMS management surface's HTTP fragment belongs to the merged contract
+	// even though the baseline names no run for it. The credential criterion
+	// keeps sms.admin (an SMS vendor's account) out of the baseline, so no
+	// baseline Include lists it; its fragment still describes the platform's API
+	// surface, and what gen and /openapi.json merge is the fragments of the
+	// modules the binary's imports reach, not the modules a run names. The
+	// import is what puts it in the available set. Naming a module for a run and
+	// importing it for its contract are two different questions; see AGENTS.md.
+	// The enterprise SAML method is imported by capabilities.go, which names it
+	// for serve and lets its own switch decide whether it runs.
 	_ "github.com/vislake/speed/pkg/sms/admin"
 
 	_ "github.com/vislake/speed/pkg/config/format/json"

@@ -81,14 +81,14 @@ The roster is written in two places in the server package. `main.go` carries
 always names because they start without a credential, an external account or a
 service outside the deployment stack. `capabilities.go` carries
 `capabilityModules`, the compile-time ceiling: every other capability the
-program can run — the social and enterprise OIDC login methods, the SMS family,
-the mail carriers and the verification-code sender, and the notification
-fixture — compiled into every build and named by `serve`. A module in that list
-is considered, not started: each states in `Prepare` whether its configuration
-lets it run, so one binary serves both a bare run and a fully configured
-deployment. `worker` names the background modules that need neither a router nor
-a gateway — the roster, settings, the job queue and its scheduler, and the
-outbox relay. The stack's engine, key-value backend, event backend and export
+program can run — the social login methods, the enterprise OIDC and SAML
+methods, the SMS family, the mail carriers and the verification-code sender, and
+the notification fixture — compiled into every build and named by `serve`. A
+module in that list is considered, not started: each states in `Prepare` whether
+its configuration lets it run, so one binary serves both a bare run and a fully
+configured deployment. `worker` names the background modules that need neither a
+router nor a gateway — the roster, settings, the job queue and its scheduler, and
+the outbox relay. The stack's engine, key-value backend, event backend and export
 provider are named on the commands rather than on the stack node, so `migrate`
 still runs the engine and the declarations alone.
 
@@ -113,41 +113,43 @@ configuration answer three different questions:
 So every platform module that declares an HTTP fragment is imported. `sms.admin`
 is in `capabilityModules` and named by `serve`; it runs only when its
 configuration enables the SMS family, which the review configuration does and
-the baseline does not. `authn.sso.saml` is imported for the contract in every
-build; a default build's commands do not name it and only the review build's
-`serve` does (`reviewModules`). Both fragments still describe the platform's API
-surface.
+the baseline does not. `authn.sso.saml` is in `capabilityModules` too and named
+by `serve` in every build; it runs only when `authn.sso.saml.enabled` is true,
+which the review configuration sets and the baseline leaves off. Both fragments
+still describe the platform's API surface.
 Leaving one unimported would drop its operations from the merged document with
-no error — the document would simply be smaller than the platform contract.
-`server/main.go` carries the blank import for `authn.sso.saml` beside a comment
-saying why; the declarations of a module reached this way are collected by the
-stack node's `IncludeAllDeclarations`, and no baseline `Include` names it.
+no error — the document would simply be smaller than the platform contract. The
+SAML method is imported through `server/capabilities.go`, and `server/main.go`
+keeps the blank import for `sms.admin` beside a comment saying why; the
+declarations of a module reached either way are collected by the stack node's
+`IncludeAllDeclarations`, and no baseline `Include` names it.
 
 ### The review build
 
 `go build -tags review` compiles the default build plus the review-only test
 controls and the loopback guard (`server/review.go`, `review_sms_control.go`
 and `notification_control_review.go`). Every capability the program can run —
-the four social methods, the enterprise OIDC method (`authn.sso.oidc`), the SMS
-family with the `sms.log` log carrier and the `sms.admin` template page,
-name-and-password registration with `authn.emailcode` over the `mail.log` log
-carrier, and the SMS second factor (`authn.mfa.sms`) — is compiled into every
-build and considered by `serve` (`capabilities.go`); whether one starts is its
-own configuration decision. `server/review_off.go` is the untagged counterpart
-and names nothing, so a default binary carries neither the controls nor the
-guard.
+the four social methods, the enterprise OIDC method (`authn.sso.oidc`), the
+enterprise SAML method (`authn.sso.saml`), the SMS family with the `sms.log` log
+carrier and the `sms.admin` template page, name-and-password registration with
+`authn.emailcode` over the `mail.log` log carrier, and the SMS second factor
+(`authn.mfa.sms`) — is compiled into every build and considered by `serve`
+(`capabilities.go`); whether one starts is its own configuration decision.
+`server/review_off.go` is the untagged counterpart and names nothing, so a
+default binary carries neither the controls nor the guard.
 
-**The review build runs the enterprise SAML method.** `reviewModules` names
-`authn.sso.saml`, which a default build imports for the contract alone. A SAML
-provider is data in the `authn.sso` register and the method needs no
-configuration to start, so the review build lists a `saml` enterprise method and
-the end-to-end tier can drive an SP-initiated sign-in against its local identity
-provider (`web/e2e/fixtures/saml-identity-provider.ts`). That provider's
-responses are signed by `server/e2e/samlsign`, a command the end-to-end global
-setup builds into its own run directory; nothing in the program imports it. It
-signs with goxmldsig, the library the method validates with, and carries its own
-test (`TestTheSignedResponseValidatesAgainstTheCertificate`). The review-tagged
-case `TestReviewRunServesTheSAMLLoginMethod` holds that the roster reaches the
+**The review build runs the enterprise SAML method.** `authn.sso.saml` is in
+`capabilityModules` and named by every build's `serve`; the review configuration
+turns its switch on with `authn.sso.saml.enabled: true`, which a baseline or
+deployment leaves off. A SAML provider is data in the `authn.sso` register, so
+the review build lists a `saml` enterprise method and the end-to-end tier can
+drive an SP-initiated sign-in against its local identity provider
+(`web/e2e/fixtures/saml-identity-provider.ts`). That provider's responses are
+signed by `server/e2e/samlsign`, a command the end-to-end global setup builds
+into its own run directory; nothing in the program imports it. It signs with
+goxmldsig, the library the method validates with, and carries its own test
+(`TestTheSignedResponseValidatesAgainstTheCertificate`). The review-tagged case
+`TestReviewRunServesTheSAMLLoginMethod` holds that the configuration reaches the
 assembly.
 
 `mail.log` is a carrier built through `mail.NewModule`, the same factory
@@ -194,11 +196,11 @@ drives the enterprise journey points the three at local fixtures the end-to-end
 harness starts: the resolver address of a UDP stub that answers the test
 domain's TXT name, the CA file that signed the local provider's certificate, and
 the loopback relaxation its egress client needs. Those are fixtures, not
-deployment values; a deployment leaves the block as it stands. The one item
-that is not a seam is `authn.sso.oidc.enabled: true`, which turns the method on:
-the method is compiled into every build and stands itself down when the switch
-is absent, so a baseline or a deployment offers no enterprise entry and the
-review assembly does.
+deployment values; a deployment leaves the block as it stands. The two items
+that are not seams are `authn.sso.oidc.enabled: true` and
+`authn.sso.saml.enabled: true`, which turn the methods on: each is compiled into
+every build and stands itself down when its switch is absent, so a baseline or a
+deployment offers no enterprise entry and the review assembly offers both.
 
 `server/review_sms_control.go` is the review-only control over the review
 carrier's per-template review. It mounts

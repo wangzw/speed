@@ -33,7 +33,8 @@ import (
 // conditional unconditionally). The named anchor below is not a census but a
 // property: authn.admin.sso and authn.admin.sso.metadata are declared by a
 // served module whose conditional this baseline does not post (the SSO
-// management group is off by configuration and no SAML provider exists here).
+// management group is off by configuration, and the SAML method is named but
+// stands down, so no metadata refresher exists here).
 //
 // The stack is named sqlite-memory and the configuration gives it a database in
 // a file: seed and serve are two processes, and only a file survives the first

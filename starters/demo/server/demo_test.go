@@ -1196,13 +1196,14 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 			}
 		}
 
-		// The platform modules whose fragment belongs to the contract whether
-		// or not a command names them for a run: the SMS management surface and
-		// the SAML provider are held out of every run by the credential
-		// criterion, and the preference matrix mounts on the endpoints its own
-		// configuration names, but all three still declare a fragment. Each has
-		// to be in the document, and a case that reads only the registry would
-		// miss it — a module left unimported shrinks both sides together.
+		// The platform modules whose fragment belongs to the contract whether or
+		// not a run enables them: the SMS management surface is held out of the
+		// baseline by the credential criterion, the SAML provider is named by
+		// capabilityModules and stands down unless its switch is on, and the
+		// preference matrix mounts on the endpoints its own configuration names.
+		// All three still declare a fragment, and a case that reads only the
+		// registry would miss it — a module left unimported shrinks both sides
+		// together.
 		for _, module := range []string{"sms.admin", "authn.sso.saml", "notification.preferences"} {
 			if merged[module] == 0 {
 				t.Errorf("the document names no fragment for %s: it declares one, and no command has "+

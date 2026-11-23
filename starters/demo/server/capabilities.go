@@ -38,6 +38,7 @@ import (
 	mfasmssms "github.com/vislake/speed/pkg/authn/mfa/sms"
 	authnsms "github.com/vislake/speed/pkg/authn/sms"
 	ssooidc "github.com/vislake/speed/pkg/authn/sso/oidc"
+	ssosaml "github.com/vislake/speed/pkg/authn/sso/saml"
 	maillog "github.com/vislake/speed/pkg/mail/log"
 	"github.com/vislake/speed/pkg/mail/smtp"
 	smsadmin "github.com/vislake/speed/pkg/sms/admin"
@@ -50,12 +51,13 @@ import (
 //
 // The list holds the capabilities the platform baseline leaves out because they
 // need a credential, an external account or a service outside the deployment
-// stack — the social login methods, the enterprise OIDC method, the SMS family
-// with its template management page and second factor, the mail carriers and
-// the email verification code sender — together with the log carriers the
-// local walkthrough uses and the notification fixture. It is the same list in
-// the default build, the Fly image and the review build; the difference between
-// those runs is configuration and the review-only controls, never this roster.
+// stack — the social login methods, the enterprise OIDC and SAML methods, the
+// SMS family with its template management page and second factor, the mail
+// carriers and the email verification code sender — together with the log
+// carriers the local walkthrough uses and the notification fixture. It is the
+// same list in the default build, the Fly image and the review build; the
+// difference between those runs is configuration and the review-only controls,
+// never this roster.
 //
 // A module here is considered by a run, not necessarily started by it. Each
 // module states in Prepare whether its configuration lets it run; a module whose
@@ -77,6 +79,13 @@ var capabilityModules = []string{
 	// data in the authn.sso register; this method is the code that consumes
 	// them.
 	ssooidc.ModuleName,
+
+	// The enterprise SAML login method: an identity provider's signed assertion
+	// as a first factor, beside the service provider metadata that registers
+	// it. Like OIDC, the providers are data in the authn.sso register and the
+	// method is the code that consumes them; authn.sso.saml.enabled decides
+	// whether a run offers it, off unless the deployment names it.
+	ssosaml.ModuleName,
 
 	// The SMS family: the code state machine, its template registry, the login
 	// method over them, the second factor, and the template management page.
