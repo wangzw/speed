@@ -609,7 +609,6 @@
     "retry": "Retry",
     "export": {
       "label": "Export",
-      "busy": "Exporting…",
       "note": "The export includes every record matching the applied filters, not just the current page.",
       "applyFirst": "The filters have unapplied changes. Apply them before exporting."
     },

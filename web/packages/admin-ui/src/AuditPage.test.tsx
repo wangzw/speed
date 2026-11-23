@@ -533,7 +533,7 @@ describe('AuditPage', () => {
     const control = screen.getByRole('button', {
       name: zhCN.audit.export.label,
     })
-    expect(control).toBeEnabled()
+    expect(control).not.toHaveAttribute('aria-disabled', 'true')
     expect(
       screen.queryByText(zhCN.audit.export.applyFirst),
     ).not.toBeInTheDocument()
@@ -594,7 +594,7 @@ describe('AuditPage', () => {
     const control = screen.getByRole('button', {
       name: zhCN.audit.export.label,
     })
-    expect(control).toBeEnabled()
+    expect(control).not.toHaveAttribute('aria-disabled', 'true')
     expect(
       screen.queryByText(zhCN.audit.export.applyFirst),
     ).not.toBeInTheDocument()
@@ -660,7 +660,7 @@ describe('AuditPage', () => {
     const control = screen.getByRole('button', {
       name: zhCN.audit.export.label,
     })
-    expect(control).toBeEnabled()
+    expect(control).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(control)
     await waitForCondition(() => expect(exports).toHaveLength(1))
     expect(exports[0]?.since).toBe('2026-11-01T05:30:00.000Z')
@@ -858,7 +858,65 @@ describe('AuditPage', () => {
     expect(await screen.findByText('tenant.disable')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: zhCN.audit.prevPage }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keeps the pager focusable, refusing the first page’s previous control without a reason', async () => {
+    const user = userEvent.setup()
+    const requests: Array<{ cursor?: string }> = []
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) => {
+          requests.push({ cursor: params?.cursor })
+          return Promise.resolve(page([record], 'c1'))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+    const prev = screen.getByRole('button', { name: zhCN.audit.prevPage })
+    // The first page has nothing behind it: the control is unavailable with
+    // no reason to give, and it stays keyboard reachable.
+    expect(prev).toHaveAttribute('aria-disabled', 'true')
+    expect(prev).not.toHaveAttribute('aria-describedby')
+    prev.focus()
+    expect(prev).toHaveFocus()
+
+    const requestsBefore = requests.length
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    // The pointer activation is refused by the control's own guard, before
+    // the handler's page-floor clamp runs: the dispatched click is cancelled.
+    expect(fireEvent.click(prev)).toBe(false)
+    await waitFor(() => expect(requests.length).toBe(requestsBefore))
+    expect(prev).toHaveFocus()
+  })
+
+  it('keeps focus on the next control when it reaches the last page', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) =>
+          Promise.resolve(
+            params?.cursor === 'c1'
+              ? page([{ ...record, id: '43', action: 'tenant.disable' }])
+              : page([record], 'c1'),
+          ),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations })
+    await screen.findByText('tenant.create')
+    const next = screen.getByRole('button', { name: zhCN.audit.nextPage })
+    expect(next).not.toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(next)
+    expect(await screen.findByText('tenant.disable')).toBeInTheDocument()
+    // The read answered with no further cursor; the control that moved the
+    // operator here becomes unavailable without losing their place.
+    await waitForCondition(() => {
+      expect(next).toHaveAttribute('aria-disabled', 'true')
+    })
+    expect(next).toHaveFocus()
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
@@ -1130,7 +1188,7 @@ describe('AuditPage', () => {
       // with the applied instant.
       fireEvent.change(since, { target: { value: '2026-10-15T09:30' } })
       await user.click(apply)
-      expect(control).toBeEnabled()
+      expect(control).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(control)
       await waitForCondition(() => expect(seen).toHaveLength(1))
       expect(seen[0]).toEqual({ since: '2026-10-15T00:30:00.000Z' })
@@ -1139,7 +1197,7 @@ describe('AuditPage', () => {
       // disagree with the applied payload, so the export is refused: the
       // operator sees the hint instead of exporting the older bound.
       fireEvent.change(since, { target: { value: '2026-10-15T10:30' } })
-      expect(control).toBeDisabled()
+      expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(
         screen.getByText(zhCN.audit.export.applyFirst),
       ).toBeInTheDocument()
@@ -1155,7 +1213,7 @@ describe('AuditPage', () => {
       // Applying C makes the draft and the payload agree again; the export
       // now carries C.
       await user.click(apply)
-      expect(control).toBeEnabled()
+      expect(control).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(control)
       await waitForCondition(() => expect(seen).toHaveLength(2))
       expect(seen[1]).toEqual({ since: '2026-10-15T01:30:00.000Z' })
@@ -1174,12 +1232,12 @@ describe('AuditPage', () => {
         fireEvent.change(screen.getByLabelText(label), {
           target: { value },
         })
-        expect(control).toBeDisabled()
+        expect(control).toHaveAttribute('aria-disabled', 'true')
         expect(
           screen.getByText(zhCN.audit.export.applyFirst),
         ).toBeInTheDocument()
         await user.click(apply)
-        expect(control).toBeEnabled()
+        expect(control).not.toHaveAttribute('aria-disabled', 'true')
       }
     })
 
@@ -1216,7 +1274,7 @@ describe('AuditPage', () => {
       const control = screen.getByRole('button', {
         name: zhCN.audit.export.label,
       })
-      expect(control).toBeDisabled()
+      expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(
         screen.getByText(zhCN.audit.export.applyFirst),
       ).toBeInTheDocument()
@@ -1378,7 +1436,85 @@ describe('AuditPage', () => {
       await waitForCondition(() => {
         expect(control).not.toHaveAttribute('aria-busy')
       })
-      expect(control).toBeEnabled()
+      expect(control).not.toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('keeps the export control focusable while an export runs and after it settles', async () => {
+      const user = userEvent.setup()
+      let resolveExport!: (blob: Blob) => void
+      const operations = createAdminOperations(
+        makeAdminBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: () =>
+            new Promise<Blob>((resolve) => {
+              resolveExport = resolve
+            }),
+        }),
+      )
+      renderWithProviders(<AuditPage />, { operations })
+      await screen.findByText('tenant.create')
+      const control = screen.getByRole('button', {
+        name: zhCN.audit.export.label,
+      })
+      control.focus()
+      await user.keyboard('{Enter}')
+      await waitForCondition(() => {
+        expect(control).toHaveAttribute('aria-busy', 'true')
+      })
+      // In flight the control is unavailable in addition to busy, and the
+      // keyboard user who started the export keeps their place.
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).toHaveFocus()
+
+      await act(async () => {
+        resolveExport(new Blob([]))
+      })
+      await waitForCondition(() => {
+        expect(control).not.toHaveAttribute('aria-busy')
+      })
+      expect(control).not.toHaveAttribute('aria-disabled', 'true')
+      expect(control).toHaveFocus()
+    })
+
+    it('keeps the export control focusable while the drafts are unapplied and refuses activation', async () => {
+      const user = userEvent.setup()
+      const seen: AuditAdminRecordsExportParams[] = []
+      const operations = createAdminOperations(
+        makeAdminBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: (params) => {
+            seen.push(params ?? {})
+            return Promise.resolve(new Blob([]))
+          },
+        }),
+      )
+      renderWithProviders(<AuditPage />, { operations })
+      await screen.findByText('tenant.create')
+      const control = screen.getByRole('button', {
+        name: zhCN.audit.export.label,
+      })
+      fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
+        target: { value: '2026-10-15T09:30' },
+      })
+
+      // The reason is the hint the page already renders; the control stays
+      // reachable so its description can be read where the operator stands.
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).toHaveAccessibleDescription(
+        `${zhCN.audit.export.note} ${zhCN.audit.export.applyFirst}`,
+      )
+      control.focus()
+      expect(control).toHaveFocus()
+
+      // Click, Enter and Space each reach the guard and issue nothing.
+      await user.click(control)
+      await user.keyboard('{Enter}')
+      await user.keyboard(' ')
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(seen).toHaveLength(0)
+      expect(control).toHaveFocus()
     })
 
     it.each([
@@ -1406,7 +1542,7 @@ describe('AuditPage', () => {
 
         await user.click(control)
         expect(await screen.findByText(text)).toBeInTheDocument()
-        expect(control).toBeEnabled()
+        expect(control).not.toHaveAttribute('aria-disabled', 'true')
         expect(control).not.toHaveAttribute('aria-busy')
         // The failure belongs to the action, not to the read's placeholder.
         expect(screen.queryByText(zhCN.audit.error.title)).toBeNull()

@@ -15,11 +15,13 @@
  * description. A download is its own confirmation, so a successful export
  * adds no success message; a bundle without the export action renders no
  * control. The export acts on the applied filters, never on newer drafts:
- * while any draft differs from the applied set the control is disabled and
- * a hint beside it says to apply first, so the visible fields and the
- * payload cannot disagree. A later attempt replaces the previous attempt's
- * failure, and applying or resetting the filters clears it, so no stale
- * banner survives either.
+ * while any draft differs from the applied set the control is unavailable,
+ * and a hint beside it -- the control's accessible description -- says to
+ * apply first, so the visible fields and the payload cannot disagree. The
+ * control stays focusable, so a keyboard user keeps their place while the
+ * condition holds and while an export runs. A later attempt replaces the
+ * previous attempt's failure, and applying or resetting the filters clears
+ * it, so no stale banner survives either.
  *
  * The read is an operation on the console operations bundle -- the host
  * binds the generated /api/v1/system/audit operation to it -- so the page builds
@@ -73,6 +75,7 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   DataTable,
   FormField,
   ListSkeleton,
@@ -668,7 +671,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
    * error text; a success adds nothing, because the download is its own
    * confirmation. The gate and the payload come from the same applied
    * state: a draft that differs from it refuses the export rather than
-   * sending a set the toolbar does not show. The disabled control is the
+   * sending a set the toolbar does not show. The unavailable control is the
    * visible half of that gate; the draft check here closes the same window
    * for a state the control has not painted yet.
    */
@@ -845,25 +848,18 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
                 rowGap: 0.5,
               }}
             >
-              <Button
+              <ActionButton
                 type="button"
-                variant="outlined"
-                loading={exporting}
-                disabled={draftsDirty}
-                aria-busy={exporting || undefined}
-                aria-describedby={
-                  draftsDirty
-                    ? `${EXPORT_NOTE_ID} ${EXPORT_APPLY_FIRST_ID}`
-                    : EXPORT_NOTE_ID
-                }
+                busy={exporting}
+                unavailable={draftsDirty}
+                unavailableDescribedBy={EXPORT_APPLY_FIRST_ID}
+                aria-describedby={EXPORT_NOTE_ID}
                 onClick={() => {
                   void startExport()
                 }}
               >
-                {exporting
-                  ? t('audit.export.busy')
-                  : t('audit.export.label')}
-              </Button>
+                {t('audit.export.label')}
+              </ActionButton>
               <Typography
                 id={EXPORT_NOTE_ID}
                 variant="caption"
@@ -936,20 +932,18 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
           columnGap: 2,
         }}
       >
-        <Button
+        <ActionButton
           type="button"
-          variant="outlined"
           size="small"
-          disabled={page === 0}
+          unavailable={page === 0}
           onClick={() => setPage((current) => Math.max(0, current - 1))}
         >
           {t('audit.prevPage')}
-        </Button>
-        <Button
+        </ActionButton>
+        <ActionButton
           type="button"
-          variant="outlined"
           size="small"
-          disabled={!hasNextPage}
+          unavailable={!hasNextPage}
           onClick={() => {
             setCursors((previous) => {
               const grown = [...previous]
@@ -960,7 +954,7 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
           }}
         >
           {t('audit.nextPage')}
-        </Button>
+        </ActionButton>
       </Box>
     </Box>
   )
