@@ -328,6 +328,45 @@ describe('TenantProfilePage', () => {
     expect(onTenantUpdated).not.toHaveBeenCalled()
   })
 
+  it('keeps the save control focused and inert while the profile save is in flight', async () => {
+    const user = userEvent.setup()
+    const held = deferred<void>()
+    const updates: unknown[] = []
+    renderPage({
+      updateTenantProfile: (input) => {
+        updates.push(input)
+        return held.promise
+      },
+    })
+    await ready()
+
+    const save = screen.getByRole('button', {
+      name: zhCN.tenantProfile.form.save,
+    })
+    await user.click(save)
+    await waitFor(() => expect(updates).toHaveLength(1))
+
+    // The write is in flight: the control stays focusable and says so,
+    // rather than turning natively disabled and dropping the operator's
+    // focus to the document body.
+    expect(save).not.toHaveAttribute('disabled')
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).toHaveAttribute('aria-busy', 'true')
+    expect(save).toHaveFocus()
+
+    // Click, Enter and Space are all swallowed while the write runs: none
+    // of them writes a second time, and focus stays where it was.
+    await user.click(save)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(updates).toHaveLength(1)
+    expect(save).toHaveFocus()
+
+    await act(async () => {
+      held.resolve()
+    })
+  })
+
   it('refuses an invalid contact email before sending anything', async () => {
     const user = userEvent.setup()
     const updates = vi.fn()

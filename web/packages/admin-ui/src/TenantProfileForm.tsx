@@ -15,11 +15,10 @@
  */
 
 import { useState } from 'react'
-import type { ReactElement } from 'react'
+import type { FormEvent, ReactElement } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
-import { FORM_MAX_WIDTH } from '@speed/ui-kit'
+import { ActionButton, FORM_MAX_WIDTH, useActivationGuard } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './internal/translation.js'
 import {
   hasTenantProfileFieldErrors,
@@ -38,7 +37,7 @@ export interface TenantProfileFormProps {
    * local bounds; a server refusal is the page's feedback scope to report.
    */
   readonly onSubmit: (fields: TenantProfileFields) => void
-  /** Whether a write is in flight: the save control stays disabled and busy. */
+  /** Whether a write is in flight: the save control stays focusable and busy. */
   readonly saving: boolean
   /**
    * The name the organization is addressed by, shown as the display name's
@@ -89,14 +88,18 @@ export function TenantProfileForm({
     }
   }
 
-  const submit = (): void => {
-    const nextErrors = validateTenantProfileFields(value)
-    setErrors(nextErrors)
-    if (hasTenantProfileFieldErrors(nextErrors)) {
-      return
-    }
-    onSubmit(value)
-  }
+  const submit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>): void => {
+      event.preventDefault()
+      const nextErrors = validateTenantProfileFields(value)
+      setErrors(nextErrors)
+      if (hasTenantProfileFieldErrors(nextErrors)) {
+        return
+      }
+      onSubmit(value)
+    },
+    { busy: saving },
+  )
 
   const helperOf = (field: keyof TenantProfileFieldErrors, hint?: string) => {
     const error = errors[field]
@@ -107,10 +110,7 @@ export function TenantProfileForm({
     <Box
       component="form"
       noValidate
-      onSubmit={(event) => {
-        event.preventDefault()
-        submit()
-      }}
+      onSubmit={submit}
       sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -167,14 +167,9 @@ export function TenantProfileForm({
         helperText={helperOf('website')}
       />
       <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-        <Button
-          type="submit"
-          variant="contained"
-          loading={saving}
-          disabled={saving}
-        >
+        <ActionButton type="submit" emphasis="primary" busy={saving}>
           {t('tenantProfile.form.save')}
-        </Button>
+        </ActionButton>
       </Box>
     </Box>
   )
