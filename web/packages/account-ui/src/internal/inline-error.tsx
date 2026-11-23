@@ -29,6 +29,11 @@ export interface InlineErrorProps {
    */
   readonly retryAfterSeconds?: number
   /**
+   * The id the countdown line carries, so a control held by the same wait
+   * can reach it through `aria-describedby` as its reason.
+   */
+  readonly countdownId?: string
+  /**
    * Text rendered instead of the code's resolved sentence, for a surface
    * that words this particular code for itself. The banner shell, its role
    * and its announcement stay the shared ones.
@@ -43,7 +48,12 @@ export interface InlineErrorProps {
  * non-live line: announcing it would make the screen reader repeat the whole
  * banner once per second.
  */
-export function InlineError({ code, retryAfterSeconds, message }: InlineErrorProps) {
+export function InlineError({
+  code,
+  retryAfterSeconds,
+  countdownId,
+  message,
+}: InlineErrorProps) {
   const resolve = useAccountUiErrorText()
   const { t } = useAccountUiTranslation()
   const countdown =
@@ -61,7 +71,12 @@ export function InlineError({ code, retryAfterSeconds, message }: InlineErrorPro
         resolve={message === undefined ? resolve : () => message}
       />
       {countdown === null ? null : (
-        <Typography variant="body2" aria-live="off" sx={{ mt: 0.5 }}>
+        <Typography
+          id={countdownId}
+          variant="body2"
+          aria-live="off"
+          sx={{ mt: 0.5 }}
+        >
           {countdown}
         </Typography>
       )}

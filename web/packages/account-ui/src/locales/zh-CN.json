@@ -285,6 +285,7 @@
     "totpDigits": "位数",
     "totpPeriod": "周期（秒）",
     "codeLabel": "6 位验证码",
+    "codeRequired": "请先输入验证码。",
     "field": {
       "identifier": "邮箱或手机号",
       "password": "密码",

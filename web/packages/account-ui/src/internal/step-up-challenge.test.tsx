@@ -1139,24 +1139,30 @@ describe('StepUpChallenge', () => {
       ).toBeTruthy()
 
       // The step stays on screen, but its submit is held until the wait
-      // elapses.
-      expect(screen.getByLabelText(zhCN.flowStep.codeLabel)).toBeTruthy()
+      // elapses. It stays focusable, and the countdown line already on the
+      // page is its reason.
+      const codeField = screen.getByLabelText(zhCN.flowStep.codeLabel)
+      expect(codeField).toBeTruthy()
       const submit = screen.getByRole('button', {
         name: zhCN.mfa.stepUp.confirmLabel,
       }) as HTMLButtonElement
-      expect(submit.disabled).toBe(true)
+      expect(submit).toHaveAttribute('aria-disabled', 'true')
+      expect(submit).not.toBeDisabled()
+      expect(submit).toHaveAccessibleDescription(
+        new RegExp(zhCN.throttle.countdown.replace('{{seconds}}', '\\d+')),
+      )
+      submit.focus()
+      expect(submit).toHaveFocus()
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(30_000)
       })
       await waitFor(() => {
         expect(
-          (
-            screen.getByRole('button', {
-              name: zhCN.mfa.stepUp.confirmLabel,
-            }) as HTMLButtonElement
-          ).disabled,
-        ).toBe(false)
+          screen.getByRole('button', {
+            name: zhCN.mfa.stepUp.confirmLabel,
+          }),
+        ).not.toHaveAttribute('aria-disabled', 'true')
       })
       // The wait is spent, so the non-live countdown is gone and the banner
       // stays the code's static sentence.
@@ -1697,5 +1703,193 @@ describe('StepUpChallenge', () => {
     expect(
       screen.queryByRole('button', { name: zhCN.mfa.stepUp.relogin }),
     ).toBeNull()
+  })
+})
+
+/** A responder whose first answer never settles until the case releases it:
+ * the dialog stays on the factor step with its answer in flight. */
+function hangingFactorAnswerResponder(): {
+  readonly respond: RealResponder
+  readonly release: () => void
+} {
+  let releaseFn: (() => void) | null = null
+  const pending = new Promise<void>((resolve) => {
+    releaseFn = resolve
+  })
+  const respond: RealResponder = (call: RealCall) => {
+    if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+      return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
+    }
+    if (call.method === 'POST' && call.path === FLOW_START) {
+      return jsonResponse(200, {
+        seq: 1,
+        state: 'second',
+        next: {
+          kind: 'factor',
+          factors: [{ id: 'factor-1', kind: 'totp', label: 'Authenticator app' }],
+        },
+      })
+    }
+    if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+      return pending.then(() =>
+        jsonResponse(200, {
+          seq: 2,
+          state: 'second',
+          next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+        }),
+      )
+    }
+    throw new Error(`unexpected ${call.method} ${call.path}`)
+  }
+  return { respond, release: () => releaseFn?.() }
+}
+
+describe('StepUpChallenge held step', () => {
+  it('keeps the activated factor busy while the step cancel stays available', async () => {
+    // The option that started the answer reports busy and keeps focus. The
+    // cancel beside it is the operator's way out at any time: the Escape key
+    // closes the dialog the same way, as the console's own challenge does,
+    // so an answer in flight never holds the exit.
+    const responder = hangingFactorAnswerResponder()
+    const { onCancel } = mount(responder.respond)
+    const user = userEvent.setup()
+
+    const totp = await screen.findByRole('button', {
+      name: zhCN.mfa.factor.kind.totp,
+    })
+    totp.focus()
+    expect(totp).toHaveFocus()
+    await user.click(totp)
+
+    await waitFor(() =>
+      expect(totp).toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(totp).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(totp)
+
+    const cancel = screen.getByRole('button', {
+      name: zhCN.mfa.stepUp.cancelLabel,
+    })
+    expect(cancel).not.toHaveAttribute('aria-disabled')
+    expect(cancel).not.toHaveAttribute('aria-busy')
+    expect(cancel).not.toHaveAccessibleDescription()
+    cancel.focus()
+    expect(cancel).toHaveFocus()
+    await user.click(cancel)
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the step cancel available while the answer waits on a human proof', async () => {
+    // A send the gate holds for a proof is not an answer in flight: the
+    // step's own action waits, and the cancel beside it stays the way out.
+    const fake = installFakeTurnstile()
+    try {
+      const respond: RealResponder = (call) => {
+        if (call.method === 'GET' && call.path === '/api/v1/auth/methods') {
+          return jsonResponse(
+            200,
+            methodList(['password'], {
+              humanRequired: true,
+              humanProvider: 'turnstile',
+              humanSiteKey: 'site-1',
+            }),
+          )
+        }
+        if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+          return jsonResponse(200, {
+            factors: [{ ...ACTIVE_FACTOR, kind: 'sms', label: 'Phone' }],
+          })
+        }
+        if (call.method === 'POST' && call.path === FLOW_START) {
+          return jsonResponse(200, {
+            seq: 1,
+            state: 'second',
+            next: {
+              kind: 'factor',
+              factors: [{ id: 'factor-1', kind: 'sms', label: 'Phone' }],
+            },
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig, onCancel } = mount(respond)
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.mfa.factor.kind.sms }),
+      )
+      // The answer waits on the proof: the block renders above the step and
+      // no answer has left.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+        ),
+      ).toHaveLength(0)
+
+      const cancel = screen.getByRole('button', {
+        name: zhCN.mfa.stepUp.cancelLabel,
+      })
+      expect(cancel).not.toHaveAttribute('aria-disabled')
+      expect(cancel).not.toHaveAttribute('aria-busy')
+      expect(cancel).not.toHaveAccessibleDescription()
+      await user.click(cancel)
+      expect(onCancel).toHaveBeenCalledTimes(1)
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('lands focus on the dialog title when the answer replaces the step', async () => {
+    // The answer settles, the flow parks on its next step, and the control
+    // that gave the answer leaves the document. Focus follows into the
+    // dialog's own title instead of falling to the body for the focus trap
+    // to pull back onto the paper.
+    const responder = hangingFactorAnswerResponder()
+    mount(responder.respond)
+    const user = userEvent.setup()
+
+    const totp = await screen.findByRole('button', {
+      name: zhCN.mfa.factor.kind.totp,
+    })
+    await user.click(totp)
+    await waitFor(() => expect(totp).toHaveAttribute('aria-busy', 'true'))
+
+    await act(async () => {
+      responder.release()
+    })
+    expect(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+    ).toBeTruthy()
+
+    const title = screen.getByRole('heading', { name: zhCN.mfa.stepUp.title })
+    expect(title).toHaveAttribute('tabindex', '-1')
+    expect(document.activeElement).toBe(title)
+  })
+
+  it('does not take focus back from where the operator put it', async () => {
+    // The landing belongs only to a focus the replacement took: an operator
+    // who moved focus elsewhere while the answer was in flight keeps it.
+    const responder = hangingFactorAnswerResponder()
+    mount(responder.respond)
+    const user = userEvent.setup()
+
+    const totp = await screen.findByRole('button', {
+      name: zhCN.mfa.factor.kind.totp,
+    })
+    await user.click(totp)
+    await waitFor(() => expect(totp).toHaveAttribute('aria-busy', 'true'))
+
+    const dialog = screen.getByRole('dialog')
+    dialog.focus()
+    expect(document.activeElement).toBe(dialog)
+
+    await act(async () => {
+      responder.release()
+    })
+    expect(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+    ).toBeTruthy()
+    expect(document.activeElement).toBe(dialog)
   })
 })
