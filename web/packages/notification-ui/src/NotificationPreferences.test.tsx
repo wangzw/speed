@@ -5,12 +5,14 @@
  * provider only the in-app column exists, and the host's optional
  * channels add their columns in the closed vocabulary's order; toggling a
  * channel PUTs that type/channel with the target state and re-reads; a
- * type the taxonomy marks not unsubscribable renders a disabled row with
- * the note; the type label and grouped rendering follow the optional
- * props; an empty taxonomy renders the empty placeholder; a landed write
- * confirms the type, channel and new state under the table while a failure
- * resolves in that same region; the whole matrix locks while a write is in
- * flight; and the surface passes axe.
+ * type the taxonomy marks not unsubscribable renders its checkboxes
+ * unavailable, focusable and described by the note; the type label and
+ * grouped rendering follow the optional props; an empty taxonomy renders
+ * the empty placeholder; a landed write confirms the type, channel and new
+ * state under the table while a failure resolves in that same region; the
+ * whole matrix stays inoperable while a write is in flight, with only the
+ * initiating cell busy and the siblings unavailable; and the surface passes
+ * axe.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -241,7 +243,7 @@ describe('NotificationPreferences', () => {
     ).toBeInTheDocument()
   })
 
-  it('locks the whole matrix while a write is in flight', async () => {
+  it('keeps the whole matrix inoperable while a write is in flight', async () => {
     const gate = deferredResponse()
     const types: TypeRow[] = [
       { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
@@ -260,22 +262,29 @@ describe('NotificationPreferences', () => {
     )
     await screen.findByText('billing.invoice.due')
 
-    await userEvent.click(channelCheckbox('demo.thing.happened', 'email'))
+    const initiating = channelCheckbox('demo.thing.happened', 'email')
+    const sibling = channelCheckbox('billing.invoice.due', 'email')
+    await userEvent.click(initiating)
     await waitFor(() =>
-      expect(channelCheckbox('demo.thing.happened', 'email')).toBeDisabled(),
+      expect(initiating).toHaveAttribute('aria-disabled', 'true'),
     )
-    // The lock belongs to the scope, not to the toggling row: the whole
-    // matrix disables so no second attempt can overlap the first.
-    expect(channelCheckbox('billing.invoice.due', 'email')).toBeDisabled()
+    // Only the initiating cell is in flight; every other cell in the scope
+    // reports unavailable. Neither is natively disabled, so no cell that
+    // holds focus drops it to the document body.
+    expect(initiating).not.toBeDisabled()
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toBeDisabled()
 
     gate.resolve(jsonResponse(200, {}))
     await waitFor(() =>
-      expect(channelCheckbox('demo.thing.happened', 'email')).toBeEnabled(),
+      expect(initiating).not.toHaveAttribute('aria-disabled', 'true'),
     )
-    expect(channelCheckbox('billing.invoice.due', 'email')).toBeEnabled()
+    expect(sibling).not.toHaveAttribute('aria-disabled', 'true')
+    expect(initiating).not.toBeDisabled()
+    expect(sibling).not.toBeDisabled()
   })
 
-  it('ignores a toggle on another row while a write is in flight', async () => {
+  it('leaves the sibling cells focusable but unavailable while a write is in flight', async () => {
     const gate = deferredResponse()
     const types: TypeRow[] = [
       { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
@@ -294,15 +303,28 @@ describe('NotificationPreferences', () => {
     )
     await screen.findByText('billing.invoice.due')
 
-    await userEvent.click(channelCheckbox('demo.thing.happened', 'email'))
+    const initiating = channelCheckbox('demo.thing.happened', 'email')
+    const sibling = channelCheckbox('billing.invoice.due', 'email')
+    await userEvent.click(initiating)
     await waitFor(() =>
-      expect(channelCheckbox('demo.thing.happened', 'email')).toBeDisabled(),
+      expect(initiating).toHaveAttribute('aria-disabled', 'true'),
     )
 
-    // The untouched row is not merely painted as disabled: operating it
-    // while the first write is in flight starts no second write, so the
-    // first attempt's result is the only one the scope can report.
-    await userEvent.click(channelCheckbox('billing.invoice.due', 'email'))
+    // The sibling is unavailable for the scope's write without a reason of
+    // its own: focusable, `aria-disabled`, no busy state, no description.
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toBeDisabled()
+    expect(sibling).not.toHaveAttribute('aria-busy')
+    expect(sibling).not.toHaveAttribute('aria-describedby')
+
+    // The untouched cell is not merely painted as unavailable: operating it
+    // by pointer or keyboard while the first write is in flight starts no
+    // second write, so the first attempt's result is the only one the scope
+    // can report.
+    await userEvent.click(sibling)
+    sibling.focus()
+    expect(sibling).toHaveFocus()
+    await userEvent.keyboard(' ')
     expect(
       rig.calls.some(
         (call) =>
@@ -311,16 +333,69 @@ describe('NotificationPreferences', () => {
             '/api/v1/notifications/preferences/billing.invoice.due/email',
       ),
     ).toBe(false)
-    expect(channelCheckbox('billing.invoice.due', 'email')).not.toBeChecked()
+    expect(sibling).not.toBeChecked()
 
     gate.resolve(jsonResponse(200, {}))
     await waitFor(() =>
-      expect(channelCheckbox('demo.thing.happened', 'email')).toBeEnabled(),
+      expect(initiating).not.toHaveAttribute('aria-disabled', 'true'),
     )
-    // The blocked click left nothing behind: the second row still shows the
-    // server's answer and the scope ran exactly one attempt.
-    expect(channelCheckbox('billing.invoice.due', 'email')).not.toBeChecked()
+    // The blocked attempts left nothing behind: the second row still shows
+    // the server's answer and the scope ran exactly one attempt.
+    expect(sibling).not.toBeChecked()
     expect(rig.calls.filter((call) => call.method === 'PUT')).toHaveLength(1)
+  })
+
+  it('reports the cell that starts the write as busy, keeping focus and the server value', async () => {
+    const gate = deferredResponse()
+    const types: TypeRow[] = [
+      { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
+      { key: 'billing.invoice.due', unsubscribable: true, channels: ['in_app'] },
+    ]
+    const base = preferencesResponder(types)
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'PUT' && call.path.includes('demo.thing.happened')) {
+        return gate.promise.then(() => base(call))
+      }
+      return base(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(
+      withPresence(['email'], <NotificationPreferences />),
+    )
+    await screen.findByText('billing.invoice.due')
+
+    const initiating = channelCheckbox('demo.thing.happened', 'email')
+    const sibling = channelCheckbox('billing.invoice.due', 'email')
+    await userEvent.click(initiating)
+    // Focus stays on the initiating cell for the whole attempt; this is
+    // asserted before the attributes so a control that dropped focus shows
+    // up as the defect, not as a missing busy report.
+    expect(document.activeElement).toBe(initiating)
+    await waitFor(() =>
+      expect(initiating).toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(initiating).toHaveAttribute('aria-disabled', 'true')
+
+    // The busy report belongs to the initiating cell alone; the sibling is
+    // unavailable without a busy report or a reason.
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy', 'true')
+    expect(sibling).not.toHaveAccessibleDescription()
+
+    // No optimistic update: the cell shows the server's answer until the
+    // write lands and the matrix re-reads.
+    expect(initiating).not.toBeChecked()
+
+    gate.resolve(jsonResponse(200, {}))
+    await waitFor(() =>
+      expect(channelCheckbox('demo.thing.happened', 'email')).toBeChecked(),
+    )
+    expect(
+      channelCheckbox('demo.thing.happened', 'email'),
+    ).not.toHaveAttribute('aria-busy', 'true')
+    expect(document.activeElement).toBe(
+      channelCheckbox('demo.thing.happened', 'email'),
+    )
   })
 
   it('offers the in-app column alone when no presence provider is mounted', async () => {
@@ -434,19 +509,29 @@ describe('NotificationPreferences', () => {
     expect(screen.queryByText('Group billing')).not.toBeInTheDocument()
   })
 
-  it('disables a non-unsubscribable type and shows the note', async () => {
-    mount([
+  it('marks a non-unsubscribable type unavailable with the note as its reason', async () => {
+    const { rig } = mount([
       { key: 'authn.security.alert', unsubscribable: false, channels: ['in_app'] },
     ])
     await screen.findByText('authn.security.alert')
     expect(within(rowFor('authn.security.alert')).getByText(
       zhCN.preferences.unsubscribableNote,
     )).toBeInTheDocument()
-    for (const checkbox of within(rowFor('authn.security.alert')).getAllByRole(
-      'checkbox',
-    )) {
-      expect(checkbox).toBeDisabled()
-    }
+    const checkbox = channelCheckbox('authn.security.alert', 'in_app')
+    // Unavailable, not natively disabled: it can still take focus, and the
+    // row's existing note is its accessible description rather than new
+    // copy. Activating it starts no write.
+    expect(checkbox).toHaveAttribute('aria-disabled', 'true')
+    expect(checkbox).not.toBeDisabled()
+    expect(checkbox).toHaveAccessibleDescription(
+      zhCN.preferences.unsubscribableNote,
+    )
+    checkbox.focus()
+    expect(checkbox).toHaveFocus()
+    await userEvent.keyboard(' ')
+    expect(rig.calls.some((call) => call.method === 'PUT')).toBe(false)
+    // The controlled value keeps the server's answer.
+    expect(checkbox).toBeChecked()
   })
 
   it('raises the bare channel checkboxes to the 44px floor under a coarse pointer', async () => {

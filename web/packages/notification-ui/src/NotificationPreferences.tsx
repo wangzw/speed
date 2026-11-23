@@ -15,17 +15,21 @@
  *
  * Every write goes through one `useWriteFeedback` scope whose region
  * renders under the table: a success confirms the type, channel and new
- * state, and a failure resolves in that same region. The whole matrix is
- * disabled while a write is in flight, so no second toggle can overlap the
- * first and replace its result; there is no optimistic update, so a failed
- * cell shows the server's answer again.
+ * state, and a failure resolves in that same region. While a write is in
+ * flight the matrix is inoperable, so no second toggle can overlap the
+ * first and replace its result: the cell that started the write reports
+ * busy and every other cell reports unavailable, all focusable (no cell is
+ * natively disabled, so the cell that holds focus keeps it). There is no
+ * optimistic update, so a failed cell shows the server's answer again.
  *
  * A type the taxonomy marks not unsubscribable (from
- * GET /notifications/types) renders its whole row disabled with a note:
- * a write to such a type is refused 409, so the control is offered as
- * unavailable rather than made to fail. When the taxonomy has not loaded
- * yet, the type is treated as unsubscribable-unknown and left enabled,
- * because the server stays the authority.
+ * GET /notifications/types) renders its checkboxes unavailable with the
+ * note as their accessible description: a write to such a type is refused
+ * 409, so the control is offered as unavailable rather than made to fail.
+ * The checkboxes stay focusable, so a keyboard user still reaches them and
+ * hears why they cannot be changed. When the taxonomy has not loaded yet,
+ * the type is treated as unsubscribable-unknown and left enabled, because
+ * the server stays the authority.
  *
  * A host may relabel a type and group the rows through `typeLabel` and
  * `groupLabel`; the default type label is the type key, and rows render
@@ -41,7 +45,7 @@
  * with a retry.
  */
 
-import { Fragment } from 'react'
+import { Fragment, useId, type ChangeEvent } from 'react'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import Skeleton from '@mui/material/Skeleton'
@@ -56,6 +60,7 @@ import type { NotificationPreference } from '@speed/api-sdk'
 import {
   SectionCard,
   WriteFeedbackRegion,
+  useActivationGuard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { useNotificationPresence } from './NotificationPresence.js'
@@ -121,6 +126,61 @@ function groupRows(
   return groups
 }
 
+/** One matrix cell's inputs. */
+interface PreferenceCellProps {
+  /** The cell's accessible name: the type label and the channel. */
+  readonly ariaLabel: string
+  readonly checked: boolean
+  /** This cell's own write is in flight. */
+  readonly busy: boolean
+  /** The precondition is unmet, or a sibling's write is in flight. */
+  readonly unavailable: boolean
+  /** The id of the note already on the page, for a type that cannot unsubscribe. */
+  readonly describedBy?: string
+  readonly onToggle: (checked: boolean) => void
+}
+
+/**
+ * One matrix cell. It is a component of its own because its change handler
+ * goes through `useActivationGuard`, which cannot be called from the cell
+ * callback. The guard swallows a change while the cell is busy or
+ * unavailable; the controlled value therefore stays the server's answer.
+ */
+function PreferenceCell({
+  ariaLabel,
+  checked,
+  busy,
+  unavailable,
+  describedBy,
+  onToggle,
+}: PreferenceCellProps) {
+  const guardedToggle = useActivationGuard(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      onToggle(event.target.checked)
+    },
+    { busy, unavailable },
+  )
+  return (
+    <Checkbox
+      checked={checked}
+      onChange={guardedToggle}
+      slotProps={{
+        input: {
+          'aria-label': ariaLabel,
+          // Only the cell that started the write reports busy; a sibling is
+          // unavailable for the write in flight without a reason of its
+          // own. A type that cannot unsubscribe is unavailable because of
+          // its precondition and keeps its note as the reason. None of
+          // these is natively disabled, so every cell stays focusable.
+          'aria-busy': busy || undefined,
+          'aria-disabled': busy || unavailable || undefined,
+          'aria-describedby': describedBy,
+        },
+      }}
+    />
+  )
+}
+
 export function NotificationPreferences({
   typeLabel = (type) => type.key,
   groupLabel,
@@ -132,6 +192,9 @@ export function NotificationPreferences({
   const setPreference = useSetNotificationPreference()
   const feedback = useWriteFeedback()
   const resolveError = useNotificationUiErrorText()
+  // The prefix for each locked row's note id, so a cell's `aria-describedby`
+  // points at the note rendered beside its row.
+  const noteIdBase = useId()
 
   const rows = preferences.data ?? []
   const pending = preferences.isPending && preferences.data === undefined
@@ -145,6 +208,11 @@ export function NotificationPreferences({
   const columns = CHANNELS.filter(
     (channel) => channel === 'in_app' || presence.channels.includes(channel),
   )
+
+  // The scope admits one write at a time. The cell that started the write
+  // in flight reports busy; every other cell reports unavailable.
+  const writePending = feedback.pending
+  const pendingTarget = writePending ? setPreference.variables : undefined
 
   const toggle = (
     preference: NotificationPreference,
@@ -177,35 +245,42 @@ export function NotificationPreferences({
       key: preference.type_key,
       group: preference.group,
     })
+    const noteId = locked
+      ? `${noteIdBase}-${encodeURIComponent(preference.type_key)}`
+      : undefined
     return (
       <TableRow key={preference.type_key}>
         <TableCell>
           <Typography variant="body2">{label}</Typography>
           {locked && (
-            <Typography variant="caption" color="text.secondary">
+            <Typography id={noteId} variant="caption" color="text.secondary">
               {t('preferences.unsubscribableNote')}
             </Typography>
           )}
         </TableCell>
-        {columns.map((channel) => (
-          <TableCell key={channel} align="center">
-            <Checkbox
-              checked={hasChannel(preference, channel)}
-              disabled={locked || feedback.pending}
-              onChange={(event) =>
-                toggle(preference, label, channel, event.target.checked)
-              }
-              slotProps={{
-                input: {
-                  'aria-label': t('preferences.channelToggleAria', {
-                    type: label,
-                    channel: t(`preferences.channel.${channel}`),
-                  }),
-                },
-              }}
-            />
-          </TableCell>
-        ))}
+        {columns.map((channel) => {
+          const initiating =
+            pendingTarget !== undefined &&
+            pendingTarget.typeKey === preference.type_key &&
+            pendingTarget.channel === channel
+          return (
+            <TableCell key={channel} align="center">
+              <PreferenceCell
+                checked={hasChannel(preference, channel)}
+                busy={writePending && initiating}
+                unavailable={locked || (writePending && !initiating)}
+                describedBy={noteId}
+                ariaLabel={t('preferences.channelToggleAria', {
+                  type: label,
+                  channel: t(`preferences.channel.${channel}`),
+                })}
+                onToggle={(checked) =>
+                  toggle(preference, label, channel, checked)
+                }
+              />
+            </TableCell>
+          )
+        })}
       </TableRow>
     )
   }
