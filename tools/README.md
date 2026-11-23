@@ -162,8 +162,8 @@ parse.
 `check_conflict_markers.py` — fails when a line of git's conflict
 markers survives into a file. A resolution done by hand and committed
 leaves them as ordinary content: `git status` is clean and no other gate
-reads them, since the document checker reads diagrams, sections, indexes
-and links and the example checker reads Go blocks. The three labeled
+reads them, since the example checker reads only Go blocks and no gate
+reads a document's diagrams, sections, indexes or links. The three labeled
 markers are findings on their own; the bare middle one is reported only
 in a file that also carries a labeled one, because a line of seven `=`
 alone is also how Markdown underlines a heading. Everything text-shaped

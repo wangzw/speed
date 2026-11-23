@@ -5,9 +5,9 @@ A merge resolved by hand leaves its markers in the file unless they are
 removed, and once the resolution is committed the markers are ordinary
 content: `git status` is clean, the build does not read them, and no
 other gate here looks at them. `check_markdown_examples.py` reads Go
-blocks and the document checker reads diagrams, sections, indexes and
-links; a marker inside a table or a paragraph is read by neither. The
-defect this gate is built for was exactly that: two nested conflict
+blocks, and no gate here reads a document's diagrams, sections, indexes
+or links, so a marker inside a table or a paragraph is not read at all.
+The defect this gate is built for was exactly that: two nested conflict
 blocks committed into a design document's status table, found by a
 reader rather than by a check.
 

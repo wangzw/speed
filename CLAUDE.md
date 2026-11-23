@@ -32,7 +32,46 @@ restates nothing another file already carries:
 - references: docs/references.md
 - language: zh-CN
 
-Load the `document-standards` skill before creating or editing anything under these paths.
+Load the system-level `document-standards` skill before creating or editing anything under these paths.
+
+## Commit Convention
+
+Supplements the `commit-convention` skill.
+
+### Scopes
+
+- **Go code under `pkg/`**: the scope is the capability directory name, never a subpackage — `pkg/tenant/catalog` commits under `tenant`. A change inside `pkg/internal/` commits under the shared unit it belongs to: `pkg/internal/pgpool/pgtest` under `pgpool`, and `pkg/internal/natstest` under `natstest`. The directories themselves are the membership authority; read them rather than a list here, which would go stale.
+- **Frontend packages under `web/packages/<scope>/`**: the scope is the package directory name, and `web/pnpm-workspace.yaml` is the membership authority. `starters/demo/web` is a workspace member outside `web/` and commits under `starters`.
+- `deps`: dependency updates.
+- `ci`: CI workflows and their tooling.
+- `starters`: the runnable skeletons under `starters/`, including the demo web host.
+- `adr`: architecture decision records.
+- `repo`: repository-level configuration, guidance and standards (`CLAUDE.md`, `.claude/skills/`, `.gitignore`, the Makefile).
+- `site`: the documentation site under `docs/site/`, generated from the earlier implementation.
+
+### Types
+
+- `api`: an OpenAPI declaration change. Use it when the contract is the change.
+- `i18n`: adding or updating zh-CN / en-US resources.
+
+### Rules
+
+1. **`main` always passes the gate; a commit inside a landing need not.** Every state `main` reaches, the tip after each landing, builds and passes the checks, so a branch cut from `main` at any moment never carries another task's partial, ungated work. A landing that brings several commits onto `main` at once is checked as a whole: the gate runs on its final commit, and an intermediate commit need not compile or pass on its own. A `git bisect` across such a landing may have to `git bisect skip` its intermediate commits.
+2. **Any change to an exported signature is breaking**, even when the internal behaviour is unchanged. These are libraries consumed through `go get` and `npm install`, so a consumer sees the signature.
+3. **Do not tag a release by hand.** How versions are cut is a design decision, settled in `docs/design` and `docs/adr`.
+4. **An OpenAPI declaration change commits its regenerated artifacts together.** The merged contract and both generated clients land in the same commit (`make api-docs`, then `api:gen` in `web` and in `starters/demo/web`). Use the `api` type when the contract is the change.
+5. **New user-facing text is bilingual in the same commit** — zh-CN and en-US both, with matching key sets.
+6. **A bug fix carries the test that reproduces it**, failing before the fix and passing after. When no such test can be added, the body states the reason and the follow-up plan.
+7. **Test helper directories are not scopes.** A change to `testutil` or `testdata` commits under the domain scope it serves, e.g. `test(billing): ...`.
+
+### Landing a branch
+
+1. **A branch's history is a draft until it lands.** Before a branch lands on `main` its commits may be rewritten freely. Once a commit is on `main` it is treated as pushed: never amended, rebased or reset. A correction found after landing is a new commit that lands like any other change.
+2. **A correction to a commit already on the branch is never a standalone commit.** A test the earlier commit broke, a doc or comment line that belongs to it, a review fix: record it with `git commit --fixup=<sha>` against that commit, or amend when it corrects the branch tip. Use `--fixup` rather than `--squash`, because `--autosquash` folds a fixup without opening an editor while a squash stops to edit the combined message.
+3. **Branches land on a merge train.** Every branch approved to land boards a local train branch, `train/<YYYYMMDD-HHMM>`, cut from `origin/main` and never pushed; a single approved branch is a train of one. Each branch is rebased onto the train in turn with an autosquashing rebase, keeping its own commits: `git rebase --autosquash <base>` folds non-interactively on git 2.44 and later, while earlier versions ignore the option without `-i` and fold with `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`. A conflict that resolves mechanically (adjacent lines, a lock file, keys added side by side) is resolved in the later branch, and a generated artifact is regenerated from both sides' declarations (`make api-docs`, then `api:gen` in `web` and in `starters/demo/web`); a conflict that needs a judgement leaves the later branch off the train. The fast checks run first (`mise exec -- make lint`, the touched packages' type checks and tests, the generated-artifact checks), then the gate runs once on the train's tip: `make check` plus every heavier tier any boarded branch's plan requires (`make test-integration`, `make web-browser`, `make e2e`). When resources allow, the caller may run the gate on several prefixes of the train at once and land the longest passing prefix first; the caller decides how many run concurrently from its resources. When the gate passes, `main` fast-forwards to the train's tip and is pushed once. A fix counts as simple when its cause is found within fifteen minutes, it stays within about fifty lines and five files inside one branch's changes or the seam between two branches, and it changes no design, contract shape or reviewed behaviour; a simple fix is recorded on the train with `git commit --fixup` against the commit it corrects, and the gate reruns in full. A seam fix goes into the later branch. The train is fixed at most twice before the failing branch leaves it. A failure that needs rework takes its branch, and any branch depending on it, off the train, and the rest is rebuilt from `origin/main` and gated again.
+4. **A task that is one logical change lands as one commit.** A branch lands as several commits only when each is one logical change under the skill's commit boundaries; the gate runs once, on the branch's final commit, which becomes `main`'s new tip (rule 1). When the commits are not separate logical changes, collapse them, for example `git reset --soft` to the fork point and commit once.
+5. **Updates that belong to a change ride in its commit.** A documentation, comment, design-status or user-facing-text update that belongs to a change goes in that change's commit, not in a follow-up. Rule 5 covers text; the `document-standards` skill covers documents.
+6. **A gate enforces the fold.** `tools/check_fixup_commits.py`, which `make repo-check` and therefore `make check` run, fails while a `fixup!`, `squash!` or `amend!` commit sits between `origin/main` and HEAD.
 
 ## Commands
 
@@ -68,8 +107,8 @@ change spends most of its time on the side that did not move.
 - **Contract change** (API schema, generated client): regenerate and run
   both sides, per the first item under "Before asking for review" below.
 - **Docs, workflows, deployment files, the Makefile**: `make repo-check`
-  and `make tools-test`. When the change touches a document, also run the
-  `document-standards` checker and render every diagram in it.
+  and `make tools-test`. When the change touches a document, render every
+  diagram in it.
 
 `GATE_TIME_SCALE` (a Make variable, read from the same-named environment
 variable, default 1) multiplies the frontend suites' wait limits: Vitest's
@@ -128,19 +167,19 @@ generated-artifact checks below. The whole-side gate — the gate commands the
 change's own bullet above lists, or `make check` when the change crosses the
 boundary — runs once, on the final HEAD: the landable candidate after review
 has approved it, which is the tip of the merge train before `main`
-fast-forwards to it (the procedure is the commit-convention skill's "Landing
-a branch"). What a change sends for review carries the fix round's targeted
-tests and generated-artifact checks, not a whole-side run. When the
-whole-side gate is `make check`, `make test-race` is already one of its steps
-(the demo server alone takes about ten minutes there); run `make test-race`
-separately only with the backend-only whole-side gate, `make build test lint
-tidy-check repo-check`. The heavy legs run apart from it: `make
-test-integration`, `make web-browser`, `make e2e`. A gate failure on the
-final HEAD with a small fix is fixed, rerun and landed, with its diff
-reported to the reviewer for an after-the-fact check; one that needs rework
-goes back to review. A unit compiled into a local integration branch runs
-neither when it merges there; the integration branch runs both once after
-its last unit lands.
+fast-forwards to it (the procedure is the "Landing a branch" part of the
+"Commit Convention" section above). What a change sends for review carries
+the fix round's targeted tests and generated-artifact checks, not a
+whole-side run. When the whole-side gate is `make check`, `make test-race`
+is already one of its steps (the demo server alone takes about ten minutes
+there); run `make test-race` separately only with the backend-only whole-side
+gate, `make build test lint tidy-check repo-check`. The heavy legs run apart
+from it: `make test-integration`, `make web-browser`, `make e2e`. A gate
+failure on the final HEAD with a small fix is fixed, rerun and landed, with
+its diff reported to the reviewer for an after-the-fact check; one that needs
+rework goes back to review. A unit compiled into a local integration branch
+runs neither when it merges there; the integration branch runs both once
+after its last unit lands.
 
 **Before asking for review**, also check:
 - A change to an OpenAPI declaration or fragment regenerates all three
@@ -148,9 +187,10 @@ its last unit lands.
   `starters/demo/web`) and runs the demo server's `TestCommittedMergedDocument`,
   which compares the merged contract byte for byte.
 - Requirements documents state external behaviour only: no problem codes,
-  routes or field names (the document-standards skill).
+  routes or field names (the system-level `document-standards` skill).
 - An incompatible change to an exported Go signature, a published API shape or
-  a problem code is marked breaking in the commit (the commit-convention skill).
+  a problem code is marked breaking in the commit (the system-level
+  `commit-convention` skill).
 
 `starters/demo` carries a Makefile of its own. That one is the copyable
 skeleton's entry point — what a tree lifted out of this repository runs —
@@ -173,7 +213,7 @@ through `go.work` like every other.
 | `tools/` | Repository self-checks. `tools/README.md` says what each one does. |
 | `Makefile`, `.mise.toml`, `.golangci.yml`, `.github/` | The engineering machinery: entry points, toolchain pins, lint configuration, CI workflows with their toolchain action, dependency updates. |
 | `compose.yaml` | The external backends the `integration`-tagged cases run against: PostgreSQL, Redis, NATS and memcached. The tests connect to it; it is the only thing that starts it. |
-| `.claude/skills/` | How the work is done: `document-standards` before writing under the documentation paths, `commit-convention` for commit messages, `frontend-coding-standards` for `web/`, and `browser-review` before opening a headed browser against the demo (every command carries `-s=speed-review`, and `open` carries the fixed profile). |
+| `.claude/skills/` | How the work is done: `frontend-coding-standards` for `web/`, and `browser-review` before opening a headed browser against the demo (every command carries `-s=speed-review`, and `open` carries the fixed profile). |
 | `docs/site/` | Documentation generated for the earlier implementation. No gate builds or validates its content, though the repository-wide hygiene gates still traverse the tree. |
 
 **`docs/site/` is legacy and out of scope by default.** It was generated from the implementation this repository superseded and describes an assembly API this repository no longer has, so it is not a second opinion on anything `docs/design` settles. Do not extend the language rule, the boundaries below, or `docs/design`/`docs/adr` authority to it, and do not read it for ordinary work here.
@@ -204,5 +244,5 @@ through `go.work` like every other.
   gated on its final commit, and its intermediate commits need not pass
   on their own. Before landing, fold each correction into the commit it
   corrects (fixup plus autosquash), and one logical change lands as one
-  commit; the procedure is the commit-convention skill's "Landing a
-  branch" section.
+  commit; the procedure is the "Landing a branch" part of the "Commit
+  Convention" section above.
