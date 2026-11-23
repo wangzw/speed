@@ -32,6 +32,13 @@ updates:
       gomod-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+        # These carrier SDKs are pinned by the version-table guard in
+        # pkg/sms/deps_test.go and upgrade only in their own PRs.
+        exclude-patterns:
+          - "github.com/alibabacloud-go/dysmsapi-20170525/*"
+          - "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms"
+          - "github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2"
+          - "github.com/twilio/twilio-go"
 
   - package-ecosystem: npm
     directory: /web
