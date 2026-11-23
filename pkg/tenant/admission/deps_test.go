@@ -29,7 +29,7 @@ func goList(t *testing.T, args ...string) []string {
 }
 
 // TestTheLayerReachesTheIdentitySystemThroughItsRootPackageAlone holds the
-// direction the design fixes: the layer reads an identity and the interfaces
+// import direction the layer keeps: it reads an identity and the interfaces
 // the account and SSO modules deliver through the authn root package, and
 // imports no implementation subpackage of that tree, not the gateway, a
 // backend, the account module or the login engine. The tree's internal packages

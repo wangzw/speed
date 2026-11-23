@@ -23,7 +23,7 @@ var ErrOwnerInactive = errors.New("tenant: the new owner's account is not active
 // gone stale is refused instead of carried out.
 var ErrOwnerChanged = errors.New("tenant: the caller is no longer the owner of the organization")
 
-// The sentinels of the owner-transfer request. A transfer now takes effect only
+// The sentinels of the owner-transfer request. A transfer takes effect only
 // after the target confirms it, so the request has a lifecycle of its own and
 // each refusal below names one state of it.
 

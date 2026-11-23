@@ -72,7 +72,8 @@ func tenantFieldOf(s *gormschema.Schema) (*gormschema.Field, error) {
 // what is refused: on every statement through it, under any context, as a
 // model embedding the convention where GORM does not read it is. The read on
 // an owner the caller builds by its key goes through no statement of the
-// owner's, and stays out of reach; the design writes it as a non-guarantee.
+// owner's, and stays out of reach; that read is not a guarantee this filter
+// makes.
 func unjudgedRead(s *gormschema.Schema, field *gormschema.Field) error {
 	for _, m := range s.Relationships.Many2Many {
 		if m.Schema != s || m.JoinTable == nil || m.FieldSchema == nil {

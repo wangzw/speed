@@ -301,8 +301,8 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 			Order:    limiterOrder,
 		}))
 	}
-	// The authorization layer of the design: it shares admission's stage and
-	// points at the admission anchor, so the constraint is what puts it inside.
+	// The authorization layer: it shares admission's stage and points at the
+	// admission anchor, so the constraint is what puts it inside.
 	reg.Register(layerModule("authorization", "public", speedhttp.Middleware{
 		Provides: []core.Token{(*authorization)(nil)},
 		Stage:    speedhttp.StageAuthorize,
@@ -465,15 +465,13 @@ func chainOf(t *testing.T, logs *recorder, endpoint string) []string {
 }
 
 // TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization
-// reads the chain the real entry point assembled, the check the design lists as
-// not yet made: the position is derived from the After entries by the ordering
-// algorithm, and the algorithm was not run against an assembly when it was
-// written down. The authorization stand-in prefers the outermost position. The
-// audit and rate-limiting stand-ins carry the Orders of the real layers in the
-// first case and an Order that prefers to sit inside admission in the second, so
-// that no position asserted here follows from an Order alone; the third and
-// fourth leave one of them out, which is the assembly in which the other's
-// constraint is the only thing placing the layer.
+// reads the chain the real entry point assembled: the position is derived from
+// the After entries by the ordering algorithm. The authorization stand-in
+// prefers the outermost position. The audit and rate-limiting stand-ins carry
+// the Orders of the real layers in the first case and an Order that prefers to
+// sit inside admission in the second, so that no position asserted here follows
+// from an Order alone; the third and fourth leave one of them out, which is the
+// assembly in which the other's constraint is the only thing placing the layer.
 func TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization(t *testing.T) {
 	for name, c := range map[string]chain{
 		"the Orders of the real layers": {},

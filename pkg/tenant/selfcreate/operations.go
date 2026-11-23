@@ -69,6 +69,8 @@ type createInput struct {
 type OrganizationCreatedReply struct {
 	_ struct{} `description:"The organization this call created."`
 
+	// Tenant is the organization this call created, rendered as the answer shows
+	// it.
 	Tenant OrganizationCreatedTenant `json:"tenant" required:"true"`
 }
 
@@ -78,10 +80,16 @@ type OrganizationCreatedReply struct {
 type OrganizationCreatedTenant struct {
 	_ struct{} `description:"The created organization: the caller's name and profile, and the active state. The generated identifier is internal and never appears."`
 
-	Name        string `json:"name" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
+	// Name is the caller's chosen name; it is unique across the roster and
+	// immutable after creation.
+	Name string `json:"name" required:"true" description:"The request-surface name the caller chose; unique across the roster and immutable after creation."`
+	// DisplayName is the display name as stored, trimmed of surrounding space.
 	DisplayName string `json:"display_name" required:"true" description:"The organization's display name, trimmed."`
+	// Description is the description as stored, trimmed of surrounding space.
 	Description string `json:"description" required:"true" description:"The organization's description, trimmed."`
-	Status      string `json:"status" required:"true" enum:"active" description:"The organization's state; a self-service organization starts active."`
+	// Status is always active on this answer; a self-service organization starts
+	// active.
+	Status string `json:"status" required:"true" enum:"active" description:"The organization's state; a self-service organization starts active."`
 }
 
 // rateLimitedResponse is the 429 answer with the Retry-After header declared. A

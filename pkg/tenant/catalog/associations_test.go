@@ -655,8 +655,8 @@ func (assocTextDeal) TableName() string { return "assoc_deals" }
 // A scoped model declaring such an association without that half — joining by
 // the rest of its key, or through a tenant field that is not an identifier —
 // is refused on every statement through it, under any context, and nothing is
-// written. The read itself, on an owner no statement goes through, is the
-// design's non-guarantee.
+// written. The read itself, on an owner no statement goes through, is not a
+// guarantee this filter makes.
 func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T) {
 	for _, d := range shapeDialects {
 		t.Run(d.name, func(t *testing.T) {
@@ -738,8 +738,8 @@ func TestAnAssociationWhoseReadCannotBeHeldToATenantRefusesItsOwner(t *testing.T
 // carries nothing of the owner: the join table is joined into it by its table
 // name, the owner's key is written into the ON, and neither the owner's model
 // nor its schema appears in the statement. Nothing in that read holds it to a
-// tenant, which is why the design writes it as a non-guarantee; the case pins
-// what that statement says. On the declaration joining by the rest of its key,
+// tenant, which is why that read is not a guarantee this filter makes; the case
+// pins what that statement says. On the declaration joining by the rest of its key,
 // the join table carries no tenant and the read reaches the links of every
 // tenant holding that key, under any context. On the declaration whose tenant
 // field is a string, the value that field holds decides which tenant's links

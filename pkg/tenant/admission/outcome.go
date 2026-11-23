@@ -49,6 +49,7 @@ var names = [outcomeCount]string{
 	unavailable:      "unavailable",
 }
 
+// String returns the outcome's value in the metric attribute.
 func (o outcome) String() string { return names[o] }
 
 // passes reports whether the request goes on to the layers inside.

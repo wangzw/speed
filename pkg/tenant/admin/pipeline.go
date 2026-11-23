@@ -46,7 +46,7 @@ const (
 // realmOf reads back the endpoint a management route was mounted on, the name
 // the handler writes as the realm of its 401. It is empty off the mounted route
 // — the handler called directly — and the challenge is then written with an
-// empty realm, which is the shape the design fixes and not a value a client
+// empty realm, which is the shape this surface writes and not a value a client
 // reads off the header.
 func realmOf(c *gin.Context) string {
 	if v, ok := c.Get(realmKey); ok {
@@ -75,9 +75,9 @@ func writeNoIdentity401(c *gin.Context, realm string) {
 // start another header.
 //
 // It is the rule the authorization layer writes, kept byte-identical here
-// because the design promises the no-identity 401 of this face and of that layer
-// are the same shape, and no package boundary between them carries a symbol the
-// two may share.
+// because the no-identity 401 of this face and of that layer must be the same
+// shape, and no package boundary between them carries a symbol the two may
+// share.
 func quoteRealm(name string) string {
 	var b strings.Builder
 	for i := 0; i < len(name); i++ {
@@ -204,7 +204,7 @@ func (p *product) guardSelfRoute(verify bool, next gin.HandlerFunc) gin.HandlerF
 // The subject it reads is the request's actor, not the account the request is
 // taken to be from: under an impersonation the actor is whose hands are on the
 // request and the target's verification state does not participate, which is the
-// design's rule for this gate on every capability's management face. A given
+// rule for this gate on every capability's management face. A given
 // actor is exempt — one with no email address to verify, a service account, and
 // a static-table subject, which has no account row and no email address — and a
 // read route does not consult it at all.

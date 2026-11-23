@@ -80,9 +80,9 @@ func IsPersonalTenantID(id string) bool {
 // tenant.
 const personalTenantAdminRole = authz.TenantAdminRole
 
-// legacyPersonalOwnerRole is the role the old personal-tenant model wrote. The
-// ensure removes it, with its grants and bindings, once the tenant-admin role
-// and the account's binding are in place.
+// legacyPersonalOwnerRole is the owner role a personal tenant may still carry
+// from before the tenant-admin role. The ensure removes it, with its grants and
+// bindings, once the tenant-admin role and the account's binding are in place.
 const legacyPersonalOwnerRole = authz.Role("owner")
 
 // personalTenantAdminDescriptionKey is the description key written with the
@@ -98,7 +98,7 @@ const personalMemberSource = "personal"
 // personalBusinessPermissions is the set of business-resource permissions a
 // personal tenant's tenant-admin may hold. It is written out in code and not
 // derived from the process catalog, so a permission a module declares later
-// does not join the role on its own. It is empty in this skeleton.
+// does not join the role on its own.
 var personalBusinessPermissions = []authz.Permission{}
 
 // personalExcludedPermissions is the part of the business-resource face a

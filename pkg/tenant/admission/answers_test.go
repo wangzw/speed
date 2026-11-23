@@ -171,7 +171,7 @@ func TestTheOutcomeNamesAreTheDocumentedClosedSet(t *testing.T) {
 }
 
 // TestTheStatusSetIsClosed holds that 403 is not an answer of this layer and the
-// statuses are the three the design lists.
+// statuses are the three this layer writes.
 func TestTheStatusSetIsClosed(t *testing.T) {
 	allowed := map[int]bool{
 		nethttp.StatusOK: true, nethttp.StatusNotFound: true,

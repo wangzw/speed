@@ -119,7 +119,7 @@ func (d *recordingDispatcher) reset() {
 
 // testDefaultLocale is the deployment default every case assembles with. It is
 // deliberately not "en-US": a case expecting "en-US" could not tell a fallback
-// to the configured default from the value the module used to fall back to.
+// to the configured default from a fallback to a hard-coded value.
 const testDefaultLocale = "zh-CN"
 
 func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {

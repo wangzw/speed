@@ -65,10 +65,9 @@ var localesFS embed.FS
 
 // notificationTypes are the four kinds of message this module declares. The
 // request notice goes to the target; the confirmed and declined results go to
-// the account that made the request, and the expired type is declared for a
-// later active-expiry notice but is not dispatched in this release. They are
-// in-app only: a target need not have a proved email address, and the target
-// page is the authoritative place to act either way.
+// the account that made the request, and the expired type is declared but not
+// dispatched. They are in-app only: a target need not have a proved email
+// address, and the target page is the authoritative place to act either way.
 var notificationTypes = []notification.TypeSpec{
 	{
 		Key:                    notificationTransferRequested,

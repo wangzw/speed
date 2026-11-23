@@ -7,8 +7,8 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section. The title and the version are the ones the
-// hand-written fragment published before the declaration generated it.
+// The fragment's info section: the title and the version the fragment
+// publishes.
 const (
 	fragmentTitle   = "tenant.admin"
 	fragmentVersion = "1.0.0"
@@ -35,8 +35,7 @@ const (
 const pathOrganizationFragment = "/:tenant"
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
-// publishes the wrapper inline, as the hand-written fragment did, rather than as
-// a component of its own.
+// publishes the wrapper inline rather than as a component of its own.
 type (
 	// tenantListBody is the 200 answer of the listing.
 	tenantListBody = struct {
@@ -61,8 +60,8 @@ type (
 // will address the tenant by and its optional profile. The identifier is
 // generated, so it is not part of the body and a body that carries one is
 // refused. The status is not here either: a registration starts the tenant
-// active. The type name is unexported, and the declaration publishes the body
-// under the name the hand-written fragment used.
+// active. The type name is unexported; the declaration publishes the body under
+// TenantAdminTenantRegistration.
 type createBody struct {
 	_    struct{} `description:"The name and optional profile of a tenant to register. The identifier is generated and the state starts active, so neither is part of the body."`
 	Name string   `json:"name" required:"true" description:"The name to give the tenant; the roster refuses one another tenant already holds."`

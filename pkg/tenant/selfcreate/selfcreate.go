@@ -47,27 +47,25 @@ import (
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
-// command that assembles self-service creation. It is org.create, the name the
-// host module used before the logic moved here: the feature document requires a
-// feature's first segment to equal the declaring module's, and the feature name
-// org.create is the one a frontend gates entry points on, so the registry name
-// keeps that segment rather than the package path's tenant.
+// command that assembles self-service creation. It is org.create rather than
+// the package path's tenant: a frontend gates entry points on the feature name
+// org.create, and a feature's first name segment must equal the first segment
+// of its declaring module's name.
 const ModuleName = "org.create"
 
 // FeatureName is the feature this module serves while its configuration switch
-// is on. It is kept as org.create, the name the host module declared before the
-// logic moved here, so a frontend gating entry points on it keeps working.
+// is on. It is org.create, the name a frontend gates entry points on.
 const FeatureName = featureCompatibilityName
 
 // featureCompatibilityName is the feature's name. It is spelled apart from
-// ModuleName only so the compatibility rule is documented in one place; the two
-// are the same string today and the feature document requires the segment to
-// match.
+// ModuleName only so the naming rule is stated in one place; the two are the
+// same string, and a feature's first name segment must equal the first segment
+// of its declaring module's name.
 const featureCompatibilityName = "org.create"
 
 // ConfigNamespace is the section the switch is read from. It is the product's
-// name for the capability rather than the module's, and it stays org.create for
-// the same compatibility reason.
+// name for the capability rather than the module's, kept as org.create for the
+// same compatibility reason.
 const ConfigNamespace = "org.create"
 
 // SettingsNamespace is the namespace of the two numeric limits. They are

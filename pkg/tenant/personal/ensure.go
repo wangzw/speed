@@ -181,9 +181,9 @@ func (p *product) ensure(ctx context.Context, account authn.AccountID) (personal
 		}
 	}
 
-	// A tenant built under the old model still carries its owner role. The
-	// tenant-admin role and the account's binding are in place above, so removing
-	// the old role finishes the migration.
+	// A tenant may still carry the owner role it had before the tenant-admin
+	// role. The tenant-admin role and the account's binding are in place above,
+	// so removing the old role completes the transition.
 	if err := p.manager.DeleteRole(ctx, string(personalID), legacyPersonalOwnerRole); err != nil &&
 		!errors.Is(err, authz.ErrBuiltinRole) {
 		return fail(fmt.Errorf("removing the personal tenant's legacy owner role: %w", err))

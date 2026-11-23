@@ -20,6 +20,9 @@ import (
 // the handler's own decode then sees an empty one while the caller's request
 // was complete.
 type Extractor interface {
+	// Extract returns the tenant name the request carries, and false when it
+	// carries none. A non-empty name free of blanks is well formed; whether it
+	// names a tenant is the roster's to decide.
 	Extract(r *nethttp.Request) (string, bool)
 }
 

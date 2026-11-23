@@ -13,9 +13,9 @@ import "github.com/vislake/speed/pkg/authz"
 // engine matches a permission on its (object, action) pair and never on the
 // permission key, and a permission the process's translation has no row for is a
 // decision the guard cannot express — it answers a denial, so a route held to
-// either of these would refuse every caller. Without the spec beside it the
-// permissions would not be declared, and a host's permission picker would not
-// list them.
+// either of these would refuse every caller. Without translationSpec beside it
+// the permissions would not be declared, and a host's permission picker would
+// not list them.
 const (
 	// PermissionTenantRead is what a caller needs to read the roster: list every
 	// tenant, or read one back.

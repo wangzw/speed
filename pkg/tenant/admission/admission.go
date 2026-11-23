@@ -186,9 +186,8 @@ func Module() core.Module {
 // carries the product's methods for the product is the shape to reject: a
 // wrapper a host writes around it carries every one of them, and the callbacks
 // would then register the layer on the strength of a type that is not the
-// product. The price is that such an assembly has no layer on the chain and the
-// registry says it has one; the design lists that among what it does not
-// guarantee.
+// product. The price is that such an assembly has no layer on the chain while
+// the registry says it has one.
 func productOf(instance any) (*layer, bool) {
 	l, ok := instance.(*layer)
 	return l, ok

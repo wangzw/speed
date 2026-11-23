@@ -75,9 +75,9 @@ func TestTheGetOfAnUnknownTenantIs404(t *testing.T) {
 	}
 }
 
-// Names are immutable after creation and the name-change route is gone: a
-// PATCH on a tenant path reaches no handler, so the request is a bare 404 and
-// nothing reaches the roster or the audit.
+// Names are immutable after creation and no route changes one: a PATCH on a
+// tenant path reaches no handler, so the request is a bare 404 and nothing
+// reaches the roster or the audit.
 func TestTheNameChangeRouteIsGone(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPatch, pathTenants+"/t_acme", map[string]string{"name": "acme-labs"})
@@ -477,7 +477,7 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 	})
 }
 
-// The view carries the fields the design names, per state, spelled the way
+// The view carries the named fields, per state, spelled the way
 // tenant.Status and tenant.DisabledBy spell them: the name, the kind, the owner
 // account and the state's name on every row, and disabled_by only on a disabled
 // one. It carries no identifier. A field added to a record later does not reach a

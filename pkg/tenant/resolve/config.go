@@ -17,13 +17,17 @@ const (
 	pathIndexItem  = "path-index"
 )
 
-// The names the built-in extractors are registered under. A configuration
-// selects one of them by name, and a module registering its own chooses a name
-// that is not one of these.
+// A configuration selects one of these built-in extractor names, and a module
+// registering its own chooses a name that is not one of them.
 const (
-	HeaderExtractor    = "header"
+	// HeaderExtractor is the name the built-in header extractor is registered
+	// under.
+	HeaderExtractor = "header"
+	// SubdomainExtractor is the name the built-in subdomain extractor is
+	// registered under.
 	SubdomainExtractor = "subdomain"
-	PathExtractor      = "path"
+	// PathExtractor is the name the built-in path extractor is registered under.
+	PathExtractor = "path"
 )
 
 // configDefaults is what this module is worth without a configuration file.

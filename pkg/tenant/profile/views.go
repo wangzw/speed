@@ -35,17 +35,39 @@ import (
 type TenantProfileView struct {
 	_ struct{} `description:"One tenant's organization profile: the read-only name, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read."`
 
-	Name             string    `json:"name" required:"true" description:"The name the request surface addresses the tenant by."`
-	Kind             string    `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name."`
-	DisplayName      string    `json:"display_name" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the name then."`
-	Description      string    `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
-	ContactEmail     string    `json:"contact_email" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
-	Website          string    `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
-	OwnerDisplayName string    `json:"owner_display_name" required:"true" description:"The owner's display name, read from the account store. It is not the account identifier. Empty when the owner cannot be resolved, and never an identifier."`
-	OwnerUsername    string    `json:"owner_username" required:"true" description:"The owner's account username, read from the account store: unique and user-facing, and not the account identifier. Empty when the owner cannot be resolved or the account has none, and never an identifier."`
-	OwnerAccount     string    `json:"owner_account" required:"true" description:"The owning account's internal identifier, from the roster row's owner column. It is the key the ownership decision and the transfer-target exclusion use, and a client compares it to identify the owner; it is not displayed. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner."`
-	Status           string    `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
-	CreatedAt        time.Time `json:"created_at" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
+	// Name is the tenant's handle and never changes after creation.
+	Name string `json:"name" required:"true" description:"The name the request surface addresses the tenant by."`
+	// Kind is what a client branches on to tell a personal space from an ordinary
+	// tenant; a personal organization's name is the owner's username, so the name
+	// cannot tell them apart.
+	Kind string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name."`
+	// DisplayName may be empty; a surface falls back to Name then, so the field is
+	// not a handle.
+	DisplayName string `json:"display_name" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the name then."`
+	// Description is free text the tenant administrator controls; empty is a
+	// legal profile value.
+	Description string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
+	// ContactEmail is the organization's own address, never a login identity; its
+	// form is validated, but nothing proves ownership of it.
+	ContactEmail string `json:"contact_email" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
+	// Website is the organization's published address; the domain requires an
+	// absolute http or https address with a host and no userinfo.
+	Website string `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
+	// OwnerDisplayName is resolved on read and is never an identifier; an
+	// unresolved owner leaves it empty.
+	OwnerDisplayName string `json:"owner_display_name" required:"true" description:"The owner's display name, read from the account store. It is not the account identifier. Empty when the owner cannot be resolved, and never an identifier."`
+	// OwnerUsername is unique and user-facing; an unresolved owner, or an account
+	// without one, leaves it empty, never an identifier.
+	OwnerUsername string `json:"owner_username" required:"true" description:"The owner's account username, read from the account store: unique and user-facing, and not the account identifier. Empty when the owner cannot be resolved or the account has none, and never an identifier."`
+	// OwnerAccount is the internal key the ownership decision and the
+	// transfer-target exclusion compare; clients never display it.
+	OwnerAccount string `json:"owner_account" required:"true" description:"The owning account's internal identifier, from the roster row's owner column. It is the key the ownership decision and the transfer-target exclusion use, and a client compares it to identify the owner; it is not displayed. A business organization carries one; a personal organization's owner is the account itself. Empty only for a tenant the roster holds with no owner."`
+	// Status is the tenant's lifecycle state; deleted is terminal and such a row is
+	// never served again.
+	Status string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
+	// CreatedAt is always present; the roster records a registration time for
+	// every row.
+	CreatedAt time.Time `json:"created_at" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
 }
 
 // profileViewOf builds the view field by field from a root-package value.

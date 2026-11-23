@@ -15,7 +15,7 @@ import (
 // The two host-supplied seams protect the roster from writes a host declares
 // off-limits. The compiler is what holds their shape: a host that implements one
 // with another signature fails to build against the interface, so these
-// assertions are the executable statement of the surface the design declares.
+// assertions are the executable statement of the declared surface.
 var (
 	_ WriteGuard  = (*recordingWriteGuard)(nil)
 	_ Provisioner = (*recordingProvisioner)(nil)
@@ -54,7 +54,7 @@ func (p *recordingProvisioner) Provision(_ context.Context, _ Tenant, _ string) 
 }
 
 // TestTheWriteOperationsAreDistinctAndTheZeroValueIsTheDestructiveOne holds the
-// closed set the design declares: two operations, and the zero value lands on
+// closed set this package declares: two operations, and the zero value lands on
 // the disable. A value nobody wrote must read as the write protection exists to
 // refuse, the same direction Status's and DisabledBy's zero values fall.
 func TestTheWriteOperationsAreDistinctAndTheZeroValueIsTheDestructiveOne(t *testing.T) {

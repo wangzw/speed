@@ -12,8 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here hold the visibility the design requires of a setting moved to a
-// more permissive value: one Warn naming the key and the direction and one
+// The cases here hold the visibility required of a setting moved to a more
+// permissive value: one Warn naming the key and the direction and one
 // best-effort audit record, and nothing for a change that does not relax a
 // check.
 

@@ -27,14 +27,30 @@ import (
 type TenantAdminTenant struct {
 	_ struct{} `description:"One tenant as the management routes render it: the name, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled."`
 
-	Name         string `json:"name" required:"true" description:"The name the request surface addresses the tenant by, and the one every view and path uses."`
-	Kind         string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name."`
-	DisplayName  string `json:"display_name" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the name then."`
-	Description  string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
+	// Name is the tenant's name and never changes after creation; every view and
+	// path addresses the tenant by it.
+	Name string `json:"name" required:"true" description:"The name the request surface addresses the tenant by, and the one every view and path uses."`
+	// Kind is what a client branches on to tell a personal space from an ordinary
+	// tenant; the name's shape says nothing about it.
+	Kind string `json:"kind" required:"true" enum:"business,personal" description:"The tenant's kind: business for an ordinary tenant, personal for the single-person space a host derives for an account. A client branches on this value, never on the name."`
+	// DisplayName is a label for people, not a handle; it may be empty, and the
+	// name remains the address either way.
+	DisplayName string `json:"display_name" required:"true" description:"The organization's display name. Empty when its profile names none; a surface falls back to the name then."`
+	// Description is free text the tenant administrator controls; empty is a
+	// legal profile value.
+	Description string `json:"description" required:"true" description:"The organization's description. Empty when its profile names none."`
+	// ContactEmail is the organization's own address, never a login identity; its
+	// form is validated, but nothing proves ownership of it.
 	ContactEmail string `json:"contact_email" required:"true" description:"The organization's contact address. Empty when its profile names none. It is the organization's address, not a login identity."`
-	Website      string `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
+	// Website is the organization's published address; the domain requires an
+	// absolute http or https address with a host and no userinfo.
+	Website string `json:"website" required:"true" description:"The organization's absolute http or https address. Empty when its profile names none."`
+	// OwnerAccount is a platform-domain detail: no member-facing view carries it,
+	// and a tenant without an owner leaves it empty.
 	OwnerAccount string `json:"owner_account" required:"true" description:"The account that owns the organization, from the roster row's owner column. Empty for a tenant that carries no owner, such as the platform's own tenant. This is a platform-domain detail; no member-facing view carries it."`
-	Status       string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
+	// Status is the tenant's lifecycle state; deleted is terminal and such a row is
+	// never served again.
+	Status string `json:"status" required:"true" enum:"active,disabled,deleted" description:"The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again."`
 	// CreatedAt is when the roster recorded the registration. Every row carries
 	// one, so the field is always present and a surface needs no fallback.
 	CreatedAt time.Time `json:"created_at" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
@@ -83,12 +99,24 @@ func tenantViewOf(t tenant.Tenant, kind tenant.Kind) TenantAdminTenant {
 type TenantTransferView struct {
 	_ struct{} `description:"One pending or finished owner-transfer request on the organization's own surface."`
 
-	ID                string    `json:"id" required:"true" description:"The request identifier the target and the canonical paths address."`
-	TargetDisplayName string    `json:"target_display_name" required:"true" description:"The target account's display name. Empty when the account store does not resolve it."`
-	TargetUsername    string    `json:"target_username" required:"true" description:"The target account's username. Empty when the account store does not resolve it."`
-	RequestedAt       time.Time `json:"requested_at" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
-	ExpiresAt         time.Time `json:"expires_at" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
-	Status            string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be cancelled or confirmed."`
+	// ID is the request identifier; the canonical paths and the target's answer
+	// take it.
+	ID string `json:"id" required:"true" description:"The request identifier the target and the canonical paths address."`
+	// TargetDisplayName is resolved on read; an unresolved target leaves it empty
+	// rather than falling back to the account identifier.
+	TargetDisplayName string `json:"target_display_name" required:"true" description:"The target account's display name. Empty when the account store does not resolve it."`
+	// TargetUsername is the target's login name; an unresolved target leaves it
+	// empty, and it is never the account identifier.
+	TargetUsername string `json:"target_username" required:"true" description:"The target account's username. Empty when the account store does not resolve it."`
+	// RequestedAt is fixed when the request is made and does not change with a
+	// decision.
+	RequestedAt time.Time `json:"requested_at" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
+	// ExpiresAt bounds the confirmation window and is fixed when the request is
+	// made.
+	ExpiresAt time.Time `json:"expires_at" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
+	// Status is the request's lifecycle state; only pending requests can be
+	// acted on.
+	Status string `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be cancelled or confirmed."`
 }
 
 // MyTransferView is one owner-transfer request as the target's account-level
@@ -97,11 +125,20 @@ type TenantTransferView struct {
 type MyTransferView struct {
 	_ struct{} `description:"One owner-transfer request addressed to the caller."`
 
-	ID          string    `json:"id" required:"true" description:"The request identifier."`
-	Tenant      string    `json:"tenant" required:"true" description:"The organization whose ownership the request is about, by its name."`
+	// ID is the request identifier the target answers by.
+	ID string `json:"id" required:"true" description:"The request identifier."`
+	// Tenant is the organization's name; the tenant identifier stays internal and
+	// never appears here.
+	Tenant string `json:"tenant" required:"true" description:"The organization whose ownership the request is about, by its name."`
+	// RequestedAt is fixed when the request is made and does not change with a
+	// decision.
 	RequestedAt time.Time `json:"requested_at" required:"true" description:"When the request was made, as an RFC 3339 instant in UTC."`
-	ExpiresAt   time.Time `json:"expires_at" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
-	Status      string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be confirmed or declined."`
+	// ExpiresAt bounds the confirmation window and is fixed when the request is
+	// made.
+	ExpiresAt time.Time `json:"expires_at" required:"true" description:"When the confirmation window closes, as an RFC 3339 instant in UTC."`
+	// Status is the request's lifecycle state; only pending requests can be
+	// confirmed or declined.
+	Status string `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be confirmed or declined."`
 }
 
 // transferViewOf builds the requester's view and resolves the target's two

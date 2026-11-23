@@ -242,7 +242,7 @@ func rosterWithoutTable(t *testing.T) *roster {
 }
 
 // requireRosterMissingOnLoad holds one load's failure to the sentinel and the
-// table name the design promises it carries.
+// table name it carries.
 func requireRosterMissingOnLoad(t *testing.T, r *roster) {
 	t.Helper()
 	err := r.load(context.Background())
@@ -258,8 +258,8 @@ func requireRosterMissingOnLoad(t *testing.T, r *roster) {
 	}
 }
 
-// TestLoadEndsTheStartupWhenTheTableIsNotThere holds the sentinel the design
-// names for a table that is not there: ErrRosterMissing is reported when the
+// TestLoadEndsTheStartupWhenTheTableIsNotThere holds the sentinel for a table
+// that is not there: ErrRosterMissing is reported when the
 // snapshot is loaded, ends the startup, and names the table. It is the failure
 // with no other repair than applying the migration set, so a load that reported
 // it as anything else — or as nothing at all — would leave a deployment serving

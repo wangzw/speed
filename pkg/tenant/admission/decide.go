@@ -15,8 +15,8 @@ import (
 )
 
 // decide is the judgement over one request. The rows are tried in this order and
-// the first that applies ends it; the order is the design's, and several of the
-// properties the layer guarantees are properties of it:
+// the first that applies ends it; several of the layer's guarantees are
+// properties of that order:
 //
 //   - every refusal of a request that is not a member is the same 404, because
 //     the strength rows come after the membership row, so a caller that is not

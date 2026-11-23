@@ -283,8 +283,8 @@ type routerStub struct{}
 func (routerStub) Endpoint(string) (speedhttp.Endpoint, error) { return nil, nil }
 func (routerStub) Endpoints() []string                         { return nil }
 
-// TestASuppliedInstanceThatIsNotTheProductIsLeftAlone holds the design's
-// non-guarantee about a host's own instance: the callbacks do nothing to it, so
+// TestASuppliedInstanceThatIsNotTheProductIsLeftAlone holds what the module does
+// not guarantee about a host's own instance: the callbacks do nothing to it, so
 // a command with no entry point starts, which a product could not.
 func TestASuppliedInstanceThatIsNotTheProductIsLeftAlone(t *testing.T) {
 	err := fixture{noRouter: true, instance: &hostAdmission{}}.drive(t, core.StageInit, nil)

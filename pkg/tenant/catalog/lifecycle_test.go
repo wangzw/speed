@@ -253,9 +253,9 @@ func TestLoadWritesTheStartupAccount(t *testing.T) {
 // for that failure's text among the record's attributes: the error value and its
 // message are the same text to a reader, and which one the code hands over is
 // not something this promise fixes. The level is not part of it either — the
-// bootstrap chain's level defaults to Info but configuration sets it
-// (docs/design/modules/design-log.md) — so a line recorded at Debug is still the
-// line that says the previous snapshot stays in force.
+// bootstrap chain's level defaults to Info but configuration may set it — so a
+// line recorded at Debug is still the line that says the previous snapshot
+// stays in force.
 func TestRefreshOnceKeepsTheSnapshotAndSaysSo(t *testing.T) {
 	r := rosterOver(t, insert("acme", "acme"))
 	ctx := context.Background()
@@ -430,9 +430,9 @@ func TestAPeriodAboveZeroRereadsTheTable(t *testing.T) {
 	}
 }
 
-// TestStopEndsTheRefresher holds the refresher's end. The design fixes it, in
-// docs/design/modules/tenant/design-tenant.md: the refresh goroutine is cancelled at
-// Stop. The observable that follows is that the table is not reread afterwards —
+// TestStopEndsTheRefresher holds the refresher's end: the refresh goroutine is
+// cancelled at Stop. The observable that follows is that the table is not
+// reread afterwards —
 // a tenant written once the roster has been stopped never becomes resolvable.
 //
 // The case establishes first that a refresher is running at all, so that a

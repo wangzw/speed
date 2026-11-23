@@ -56,7 +56,11 @@ func WithID(ctx context.Context, id string) context.Context {
 // this repository — the logging module arrives with the configuration's whole
 // dependency set, and a package that defines a model would carry all of it.
 type Logger struct {
-	With    func(ctx context.Context, args ...any) context.Context
+	// With binds a field onto the logger a context carries and returns the
+	// context carrying it.
+	With func(ctx context.Context, args ...any) context.Context
+	// Without takes fields off the logger a context carries and returns the
+	// context carrying the logger without them.
 	Without func(ctx context.Context, keys ...string) context.Context
 }
 

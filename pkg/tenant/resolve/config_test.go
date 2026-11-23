@@ -141,8 +141,8 @@ func TestPrepareFailsOnAnEmptyExtractorName(t *testing.T) {
 	}
 }
 
-// TestPrepareTellsTheTwoAbsencesApart pins the distinction the design draws
-// between the two ways Prepare can find nothing: a registry whose config module
+// TestPrepareTellsTheTwoAbsencesApart pins the distinction between the two ways
+// Prepare can find nothing: a registry whose config module
 // the host never supplied a reader to, and a section missing a key. The first is
 // the host's omission and carries core's ErrMissingProvider out as it stands;
 // the second is this module's own configuration and names the key. Merging the

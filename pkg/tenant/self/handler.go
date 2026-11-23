@@ -122,8 +122,8 @@ func writeNoIdentity401(c *gin.Context, realm string) {
 // the admission layer and the mount layer as byte-identical copies, because no
 // package boundary between them carries a symbol the others may share: an
 // unexported one is out of reach and an internal one is out of the tree. The
-// design promises the no-identity 401 of these faces are the same shape, so a
-// change to the rule has to be made in all of them by hand.
+// no-identity 401 of these faces must be the same shape, so a change to the
+// rule has to be made in all of them by hand.
 func quoteRealm(name string) string {
 	var b strings.Builder
 	for i := 0; i < len(name); i++ {

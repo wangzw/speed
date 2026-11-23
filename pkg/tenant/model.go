@@ -103,7 +103,10 @@ package tenant
 // reads only. A write through it is filled and checked like any other, but the
 // table's key does not lead with the tenant column, so an upsert by its key can
 // reach another tenant's row, and the table is its declaring module's to write.
-// The filter cannot tell a read-only model from a scoped one; review holds this.
+// The filter cannot tell a read-only model from a scoped one, so keeping a
+// model read-only is the declaring module's obligation.
 type Model struct {
+	// TenantID is the tenant the row belongs to; the tenant filter conditions
+	// every read and fills every write through this column.
 	TenantID ID `gorm:"column:tenant_id;not null;primaryKey"`
 }

@@ -133,14 +133,14 @@ func Module() core.Module {
 			return newResolver(set, catalog), nil
 		},
 
-		// The window is opened in Migrate and shut in Start, the two stage
-		// slots the design's stage table gives it. The window that leaves open
-		// contains the Init stage whole and reaches beyond it at both ends,
-		// because a stage advances one module at a time: this module's Migrate
-		// callback runs before the assembly enters Init, and its Start callback
-		// runs once Init has ended. Neither end could be this module's own Init
-		// — a module registering an extractor declares no dependency on this
-		// one, so it may legally register from an Init that runs first.
+		// The window is opened in Migrate and shut in Start. The window this
+		// leaves open contains the Init stage whole and reaches beyond it at
+		// both ends, because a stage advances one module at a time: this
+		// module's Migrate callback runs before the assembly enters Init, and
+		// its Start callback runs once Init has ended. Neither end could be this
+		// module's own Init — a module registering an extractor declares no
+		// dependency on this one, so it may legally register from an Init that
+		// runs first.
 		//
 		// A drive stopping exactly at Migrate opens the window with nobody to
 		// shut it. That run registers nothing and serves nothing, and the way
