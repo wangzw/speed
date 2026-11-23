@@ -408,14 +408,15 @@ python-version:
 # shared test preset (web/scripts/workspace-test-config.test.mjs) would not run
 # at all.
 #
-# The build leg runs its package scripts one at a time, and that serial width
-# is a correctness property, not a load decision: each package's script
-# rebuilds the workspace siblings it imports before compiling itself, so a
-# concurrent -r run has several packages writing the same sibling's dist/ at
-# once, and a compiler that reads a half-written declaration file fails with
-# "is not a module". The redundancy is the package scripts' own (a standalone
-# package build has to bring its dependencies along); running the build at
-# width one is what makes the gate repeatable.
+# The build leg runs each package's `build:self` once, at the GATE_JOBS width:
+# that script compiles only its own package into its own dist/, so no two
+# concurrent packages write the same output and the width carries no
+# correctness condition. pnpm -r orders the packages topologically, so a
+# package's dependencies have their declarations in place before it compiles
+# against them. The demo host is built separately by vite, which reads the
+# packages' sources through its aliases rather than their dist/, and
+# test-utils is left out because its build is its typecheck, which the static
+# phase already runs.
 #
 # The unit-test leg is also serial at the package level, but for the budget
 # rather than correctness: each package's `test` script starts its own vitest
@@ -449,7 +450,8 @@ web-check-test: ## Run the frontend's unit tests and route-level accessibility s
 	@$(MAKE) web-a11y
 
 web-check-build: ## Build every frontend package
-	@pnpm -C web -r --workspace-concurrency=1 build
+	@pnpm -C web -r --filter !@speed/test-utils --filter !demo-web --fail-if-no-match --workspace-concurrency=$(GATE_JOBS) run build:self
+	@pnpm -C web --filter demo-web --fail-if-no-match exec vite build
 
 web-a11y: ## Run the frontend's route-level accessibility sweep
 	@pnpm -C web --filter demo-web --fail-if-no-match run test:a11y --maxWorkers=$(GATE_JOBS)

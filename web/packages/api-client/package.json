@@ -21,7 +21,8 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "pnpm --filter @speed/api-client... --fail-if-no-match --workspace-concurrency=1 run build:self",
+    "build:self": "tsc -p tsconfig.build.json"
   },
   "devDependencies": {
     "@types/node": "^26.6.6"

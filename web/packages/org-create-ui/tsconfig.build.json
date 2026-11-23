@@ -3,8 +3,7 @@
   "compilerOptions": {
     // ESM authoring rules: NodeNext emits relative imports verbatim, so
     // sources write explicit .js extensions. Siblings resolve through
-    // their published exports maps to the dist declarations the build
-    // script rebuilds first.
+    // their published exports maps to their emitted dist declarations.
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "jsx": "react-jsx",
@@ -12,10 +11,10 @@
     "declaration": true,
     "outDir": "dist",
     "rootDir": "src",
-    // Incremental emit: a build script rebuilds the workspace siblings it
-    // imports, so one clean `pnpm -r build` compiles a sibling several
-    // times; this turns the later rebuilds into no-ops. The build info sits
-    // in dist/ so a dist clean drops it with the output it describes.
+    // Incremental emit: the build info records what an earlier run emitted,
+    // so a repeat build reads it and skips the unchanged files. The build
+    // info sits in dist/ so a dist clean drops it with the output it
+    // describes.
     "incremental": true,
     "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },

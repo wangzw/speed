@@ -127,7 +127,5 @@ changes no asserted result.
 ## Building and testing
 
 `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` from the package
-directory, all zero warnings. The build rebuilds the five workspace
-siblings it consumes (`@speed/api-client`, `@speed/api-sdk`,
-`@speed/auth-core`, `@speed/i18n`, `@speed/ui-kit`) before emitting its own
-`dist/`.
+directory, all zero warnings. `build` runs `build:self` over its dependency
+graph first, then emits this package's own `dist/`.

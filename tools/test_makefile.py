@@ -228,13 +228,13 @@ EMBEDS_FRONTEND_BUILD = (
 # The three phases `web-check` splits into, in order, and the commands each
 # carries. Together they are the whole frontend gate -- install, lint,
 # typecheck and the rule tests; the unit tests and the route-level sweep; the
-# build -- with the width every command takes from GATE_JOBS. Two commands are
-# exceptions to GATE_JOBS as a workspace width. The build's package scripts
-# write one sibling's dist/ each, so its serial width is a correctness
-# property and stays at 1. The test leg's package scripts each start their own
-# vitest process, so its workspace width is also 1 and each process takes the
-# whole GATE_JOBS: the product of the two widths is what the budget bounds,
-# not either factor alone.
+# build -- with the width every command takes from GATE_JOBS. One command is an
+# exception to GATE_JOBS as a workspace width: the test leg's package scripts
+# each start their own vitest process, so its workspace width is 1 and each
+# process takes the whole GATE_JOBS: the product of the two widths is what the
+# budget bounds, not either factor alone. The build's `build:self` scripts
+# compile only their own package into its own dist/, so its workspace width is
+# GATE_JOBS too.
 WEB_CHECK_PHASES = {
     "web-check-static": (
         "pnpm -C web install --frozen-lockfile",
@@ -246,7 +246,11 @@ WEB_CHECK_PHASES = {
         "pnpm -C web -r --workspace-concurrency=1 test --maxWorkers=$(GATE_JOBS)",
         "$(MAKE) web-a11y",
     ),
-    "web-check-build": ("pnpm -C web -r --workspace-concurrency=1 build",),
+    "web-check-build": (
+        "pnpm -C web -r --filter !@speed/test-utils --filter !demo-web "
+        "--fail-if-no-match --workspace-concurrency=$(GATE_JOBS) run build:self",
+        "pnpm -C web --filter demo-web --fail-if-no-match exec vite build",
+    ),
 }
 
 WEB_CHECK_PHASE_ORDER = ("web-check-static", "web-check-test", "web-check-build")
@@ -820,13 +824,17 @@ class LoopingLegTests(unittest.TestCase):
                     f"--maxWorkers={width}", self.pnpm_call(calls, "test:a11y")["args"]
                 )
             with self.subTest(leg="web-check-build", gate_jobs=gate_jobs):
-                # The build's serial width is a correctness property: several
-                # package scripts write one sibling's dist/. GATE_JOBS does not
-                # widen it.
+                # `build:self` compiles only its own package, so the workspace
+                # runs at GATE_JOBS; the demo host is built separately by vite.
                 calls = self.leg_calls("web-check-build", gate_jobs)
-                build_call = self.pnpm_call(calls, "build")
-                self.assertIn("--workspace-concurrency=1", build_call["args"])
-                self.assertNotIn(f"--workspace-concurrency={width}", build_call["args"])
+                package_build = self.pnpm_call(calls, "build:self")
+                self.assertIn(f"--workspace-concurrency={width}", package_build["args"])
+                self.assertIn("-r", package_build["args"])
+                self.assertIn("!@speed/test-utils", package_build["args"])
+                self.assertIn("!demo-web", package_build["args"])
+                demo_build = self.pnpm_call(calls, "vite")
+                self.assertIn("build", demo_build["args"])
+                self.assertIn("demo-web", demo_build["args"])
             with self.subTest(leg="web-browser", gate_jobs=gate_jobs):
                 calls = self.leg_calls("web-browser", gate_jobs)
                 self.assertIn(f"--maxWorkers={width}", self.pnpm_call(calls, "vitest")["args"])
@@ -1123,9 +1131,9 @@ class EntryPointTests(unittest.TestCase):
         A filter that matches no package makes pnpm print "No projects
         matched" and exit 0, so a recipe whose filter misses would run nothing
         and pass. Each filter therefore names the package.json name of a
-        member web/pnpm-workspace.yaml lists, and its invocation carries
-        `--fail-if-no-match`, which turns a miss into a failure if the member
-        is later renamed or dropped.
+        member web/pnpm-workspace.yaml lists, with a leading `!` read as the
+        negation it is, and its invocation carries `--fail-if-no-match`, which
+        turns a miss into a failure if the member is later renamed or dropped.
         """
         names = workspace_package_names(ROOT / "web")
         self.assertIn("demo-web", names, "the workspace member scan finds no demo host")
@@ -1142,7 +1150,7 @@ class EntryPointTests(unittest.TestCase):
             filtered.append(number)
             where = f"Makefile:{number}: {line.strip()}"
             for selector in selectors:
-                if selector not in names:
+                if selector.removeprefix("!") not in names:
                     offenders.append(f"{where}: {selector!r} is no workspace member's name")
             if re.search(r"\s--fail-if-no-match(?:\s|$)", line) is None:
                 offenders.append(f"{where}: no --fail-if-no-match")

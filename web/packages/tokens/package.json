@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "pnpm --filter @speed/tokens... --fail-if-no-match --workspace-concurrency=1 run build:self",
+    "build:self": "tsc -p tsconfig.build.json"
   },
   "devDependencies": {
     "@mui/material": "^9.5.0"

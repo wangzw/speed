@@ -143,7 +143,7 @@ pnpm install --frozen-lockfile   # reproduce CI's install exactly
 pnpm -r lint                     # eslint over every package (flat config)
 pnpm -r typecheck                # tsc --noEmit over every package
 pnpm -r test                     # vitest run over every package
-pnpm -r build                    # emit dist/ (ESM .js + .d.ts) per package
+pnpm build                       # emit dist/ (ESM .js + .d.ts) per package
 ```
 
 Single-package runs work from the package directory (`pnpm test`, `pnpm
@@ -228,12 +228,13 @@ rather than in the commit gate.
   `noEmit`; `tsconfig.build.json` emits declarations into `dist/` with
   `rootDir: src` so tests and `test-utils/` never leak into the artifact.
   The build program is incremental: `incremental: true` with
-  `tsBuildInfoFile` at `dist/tsconfig.build.tsbuildinfo`. A build script
-  rebuilds the siblings it imports, so one `pnpm -r build` compiles a
-  sibling several times; the repeat runs read the build info and skip. The
-  build info lives inside `dist/` so a `dist` clean drops it together with
-  the output it describes, and the negated `files` entry above keeps it out
-  of the published package.
+  `tsBuildInfoFile` at `dist/tsconfig.build.tsbuildinfo`, so a repeat build
+  reads the build info and skips unchanged files. `build:self` compiles one
+  package into its own `dist/`; `build` runs `build:self` across that
+  package's dependency graph through pnpm's `...` filter, one package at a
+  time. The build info lives inside `dist/` so a `dist` clean drops it
+  together with the output it describes, and the negated `files` entry above
+  keeps it out of the published package.
 - The build runs under `module`/`moduleResolution: nodenext`, which emits
   relative imports verbatim: **sources write explicit `.js` extensions on
   every relative import** (TS2835 otherwise), so the shipped `dist/` is

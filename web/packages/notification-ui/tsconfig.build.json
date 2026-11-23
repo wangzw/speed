@@ -11,8 +11,8 @@
     // exactly like a consumer resolves them: through each package exports
     // map to the sibling's emitted dist/ declarations (no paths mapping).
     // tsconfig.json (the noEmit typecheck, tests included) maps the
-    // workspace specifiers onto sibling sources instead; the build script
-    // rebuilds the five siblings first so the dist declarations this
+    // workspace specifiers onto sibling sources instead; `build` runs its
+    // dependency graph's `build:self` first so the dist declarations this
     // program type-checks against are never stale.
     "module": "nodenext",
     "moduleResolution": "nodenext",
@@ -21,10 +21,10 @@
     "declaration": true,
     "outDir": "dist",
     "rootDir": "src",
-    // Incremental emit: a build script rebuilds the workspace siblings it
-    // imports, so one clean `pnpm -r build` compiles a sibling several
-    // times; this turns the later rebuilds into no-ops. The build info sits
-    // in dist/ so a dist clean drops it with the output it describes.
+    // Incremental emit: the build info records what an earlier run emitted,
+    // so a repeat build reads it and skips the unchanged files. The build
+    // info sits in dist/ so a dist clean drops it with the output it
+    // describes.
     "incremental": true,
     "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
