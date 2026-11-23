@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { orgCreateUiResources } from '@speed/org-create-ui'
 import type { AdminCreateTenantInput } from './operations.js'
@@ -187,4 +187,63 @@ describe('TenantCreatePage', () => {
     expect(received?.contactEmail).toBe('')
     expect(received?.website).toBe('')
   })
+
+  it.each([
+    { initiator: 'Enter in the name field', route: 'enter' as const },
+    { initiator: 'the submit control', route: 'click' as const },
+  ])(
+    'keeps focus on the initiating control when $initiator starts the registration, in flight and after refusal',
+    async ({ route }) => {
+      const user = userEvent.setup()
+      let rejectWrite: (error: unknown) => void = () => undefined
+      const createTenant = vi.fn(
+        () =>
+          new Promise<never>((_resolve, reject) => {
+            rejectWrite = reject
+          }),
+      )
+      const operations = createAdminOperations(
+        makeAdminBackend({ createTenant }),
+      )
+      renderWithProviders(<TenantCreatePage onCreated={vi.fn()} />, {
+        operations,
+      })
+
+      await fill(user)
+      const name = screen.getByLabelText(orgZh.fields.name)
+      const submit = screen.getByRole('button', {
+        name: zhCN.tenants.create.submit,
+      })
+
+      let initiating: HTMLElement
+      if (route === 'enter') {
+        await user.click(name)
+        await user.keyboard('{Enter}')
+        initiating = name
+      } else {
+        await user.click(submit)
+        initiating = submit
+      }
+      await waitFor(() => expect(createTenant).toHaveBeenCalledTimes(1))
+
+      // In flight: the write marks the submit busy and the fields read-only;
+      // neither drops the control that started it to the document body.
+      await waitFor(() =>
+        expect(submit).toHaveAttribute('aria-busy', 'true'),
+      )
+      expect(name).toHaveAttribute('readonly')
+      expect(initiating).toHaveFocus()
+
+      await act(async () => {
+        rejectWrite({ code: 'tenant.conflict' })
+      })
+      expect(
+        await screen.findByText(zhCN.errors.tenant.conflict),
+      ).toBeInTheDocument()
+      // The refusal keeps the draft and the focus on the same control.
+      expect(submit).not.toHaveAttribute('aria-busy')
+      expect(name).not.toHaveAttribute('readonly')
+      expect(initiating).toHaveFocus()
+    },
+  )
 })
