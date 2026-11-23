@@ -3,7 +3,8 @@
  * flow with the entered identifier and password, takes the ready step's
  * result and fires onSignedIn (scripted through the bindRequestFn harness,
  * asserted on the request bodies and the store token), a busy submit
- * disables the button for the flight's duration, a login-failed answer
+ * marks the button busy (focusable, aria-disabled, aria-busy) for the
+ * flight's duration and keeps its focus through a refusal, a login-failed answer
  * attaches the password channel's own text to the password field (invalid,
  * described by the message, focused) and changes nothing, an empty
  * submit never reaches the network, a forced password change renders the
@@ -15,7 +16,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PasswordSignInForm } from './PasswordSignInForm.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -131,7 +132,7 @@ describe('PasswordSignInForm', () => {
     expect(startFlow.mock.calls[0]?.[0]?.delivery).not.toBe('token')
   })
 
-  it('disable the submit button while the login is in flight, re-enable after', async () => {
+  it('mark the submit button busy while the login is in flight, idle after', async () => {
     let resolveStart: (value: unknown) => void = () => {}
     const harness = makeHarness({
       [LOGIN_START]: () =>
@@ -153,9 +154,98 @@ describe('PasswordSignInForm', () => {
     )
     const submit = screen.getByRole('button', { name: SUBMIT_ZH })
     await user.click(submit)
-    await waitFor(() => expect(submit).toBeDisabled())
+    await waitFor(() =>
+      expect(submit).toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(submit).toHaveAttribute('aria-busy', 'true')
     resolveStart(completeFlow(1))
-    await waitFor(() => expect(submit).toBeEnabled())
+    await waitFor(() =>
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(submit).not.toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('keep focus on the submit button while the login is in flight and after a refusal lands', async () => {
+    let rejectStart: (reason: unknown) => void = () => {}
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        new Promise((_resolve, reject) => {
+          rejectStart = reject
+        }),
+    })
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      'alice@example.com',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      's3cret-pass',
+    )
+    const submit = screen.getByRole('button', { name: SUBMIT_ZH })
+    await user.click(submit)
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+
+    // The submit control is the one that started this write: it stays
+    // focusable and marked busy for the flight's duration instead of
+    // being natively disabled, which would drop its focus.
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+
+    // The refusal lands through the whole-attempt banner: the control
+    // that started the attempt is idle again and still holds focus.
+    await act(async () => {
+      rejectStart(apiError(429, 'client.http.429'))
+    })
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    expect(submit).not.toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveFocus()
+  })
+
+  it('refuse an implicit resubmission while the login is in flight', async () => {
+    // Enter in a field (or a programmatic submit) reaches the form's own
+    // onSubmit without going through the submit button's guard: the form
+    // must be guarded by the same busy state so one login never starts
+    // twice.
+    let resolveStart: (value: unknown) => void = () => {}
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        new Promise((resolve) => {
+          resolveStart = resolve
+        }),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      'alice@example.com',
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      's3cret-pass',
+    )
+    const submit = screen.getByRole('button', { name: SUBMIT_ZH })
+    await user.click(submit)
+    await waitFor(() => expect(harness.calls).toHaveLength(1))
+
+    const form = submit.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+    await act(async () => {})
+
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
+    ).toHaveLength(1)
+
+    await act(async () => {
+      resolveStart(completeFlow(1))
+    })
+    await waitFor(() =>
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true'),
+    )
   })
 
   it('attach a login-failed refusal to the password field and focus it', async () => {
@@ -578,7 +668,9 @@ describe('PasswordSignInForm', () => {
     )
     const submit = screen.getByRole('button', { name: SUBMIT_ZH })
     await user.click(submit)
-    await waitFor(() => expect(submit).toBeDisabled())
+    await waitFor(() =>
+      expect(submit).toHaveAttribute('aria-disabled', 'true'),
+    )
     // The winning sign-in commits while the first answer is in flight.
     await act(async () => {
       await harness.session.answerFlow({ seq: 1, step: 'complete', input: {} })
@@ -590,7 +682,9 @@ describe('PasswordSignInForm', () => {
     await act(async () => {
       releaseFirst(authenticatedCompletion())
     })
-    await waitFor(() => expect(submit).toBeEnabled())
+    await waitFor(() =>
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true'),
+    )
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(onSignedIn).not.toHaveBeenCalled()
     expect(harness.store.get()).toBe('access-race')

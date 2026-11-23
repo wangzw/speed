@@ -47,7 +47,12 @@ import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
-import { ActionButton, FormField, FormLayout } from '@speed/ui-kit'
+import {
+  ActionButton,
+  FormField,
+  FormLayout,
+  useActivationGuard,
+} from '@speed/ui-kit'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import {
@@ -185,6 +190,20 @@ export function PasswordSignInForm({
     })
   }
 
+  // The submit control shows busy from the moment RHF begins the submit,
+  // while the form's guard waits for the flow driver, whose flag is set
+  // inside the handler. RHF raises its own `isSubmitting` before calling
+  // the handler, so a guard judged by it would swallow the handler's very
+  // first call; `driver.busy` stays true until the request settles.
+  const submitBusy = form.formState.isSubmitting || driver.busy
+
+  // The form's own submit is guarded by the same in-flight state the
+  // submit control carries: Enter in a field (the browser's synthetic
+  // click on the submit button) and a programmatic submit are swallowed
+  // while the login is in flight, and the control that started it keeps
+  // focus.
+  const guardedSubmit = useActivationGuard(onSubmit, { busy: driver.busy })
+
   // A step the flow parked after the credentials were accepted (a forced
   // password change, a second factor) replaces this form's fields: only
   // one surface renders at a time. A second factor that sends a code
@@ -224,14 +243,14 @@ export function PasswordSignInForm({
     <FormLayout
       ref={surfaceRef}
       form={form}
-      onSubmit={onSubmit}
+      onSubmit={guardedSubmit}
       actions={
         <>
           {actionsLeading}
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={form.formState.isSubmitting}
+            busy={submitBusy}
           >
             {t('passwordSignIn.submit')}
           </ActionButton>
