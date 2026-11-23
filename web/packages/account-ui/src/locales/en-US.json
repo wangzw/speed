@@ -285,6 +285,7 @@
     "totpDigits": "Digits",
     "totpPeriod": "Period (seconds)",
     "codeLabel": "6-digit code",
+    "codeRequired": "Enter the code first.",
     "field": {
       "identifier": "Email or phone number",
       "password": "Password",

@@ -92,7 +92,7 @@
  * session shows its code text and the host's session gate converges.
  */
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
@@ -418,6 +418,38 @@ function StepUpFlow({
   // factor from the answer. A first-factor re-proof starts with no chosen
   // factor, whose steps travel under `answer` instead.
   const chosenFactor = useRef<string | null>(null)
+  // The dialog's title, and the step number last rendered: a settled answer
+  // parks the flow on its next step, and the control that gave the answer
+  // leaves the document with the old step. Focus follows to the title --
+  // inside the dialog, off the paper the focus trap would otherwise pull it
+  // to -- but only when the replacement is what took it: an operator who
+  // moved focus somewhere still on the page keeps it.
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const previousSeq = useRef(seq)
+  useLayoutEffect(() => {
+    if (previousSeq.current === seq) {
+      return
+    }
+    // A first step arriving is the opening, not a replacement: nothing it
+    // shows took focus from a control that left.
+    const replacing = previousSeq.current !== null
+    previousSeq.current = seq
+    if (!replacing) {
+      return
+    }
+    const active = document.activeElement
+    const fell =
+      active === null ||
+      active === document.body ||
+      !(active instanceof HTMLElement) ||
+      !active.isConnected
+    if (fell) {
+      titleRef.current?.focus()
+    }
+  }, [seq])
+  // The id of the countdown line a throttled answer renders: the step's
+  // held controls describe themselves through it.
+  const throttleNoteId = useId()
 
   function handleAnswer(value: AuthnFlowAnswer): void {
     const input = value.input ?? {}
@@ -437,10 +469,14 @@ function StepUpFlow({
   }
 
   const starting = phase === 'starting' || checking || readingSession
+  // The step's own answer is in flight: its control shows the progress
+  // state and the rest of the step refuses activation.
+  const stepBusy = pending || submitting
   // A throttled answer names how long the caller must hold off: the
   // banner renders the code's own wait-free sentence once, the remaining
-  // seconds tick outside its live region, and the step's submit stays
-  // disabled until the wait elapses.
+  // seconds tick outside its live region, and the step's submit is
+  // unavailable -- focusable, described by that countdown line -- until the
+  // wait elapses.
   const waiting = retryAfterSeconds !== null
   // The flow reached its ready state and the hook is answering its
   // `complete` step on its own: the starting placeholder covers that answer
@@ -480,10 +516,16 @@ function StepUpFlow({
     !reloginOnly &&
     !unavailable &&
     !starting
+  const cancelLabel = t('mfa.stepUp.cancelLabel')
   const cancelButton = (
-    <ActionButton onClick={onCancel}>
-      {t('mfa.stepUp.cancelLabel')}
-    </ActionButton>
+    <ActionButton onClick={onCancel}>{cancelLabel}</ActionButton>
+  )
+  // The step's own row: the cancel beside its answer is the operator's way
+  // out at any time. The Escape key closes the dialog the same way, and the
+  // console's challenge leaves its cancel available too, so neither the
+  // answer in flight nor a proof still outstanding holds the exit.
+  const stepCancelButton = (
+    <ActionButton onClick={onCancel}>{cancelLabel}</ActionButton>
   )
 
   // The unavailable phase's and the unknown-method state's one action:
@@ -500,7 +542,9 @@ function StepUpFlow({
 
   return (
     <>
-      <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
+      <DialogTitle id={titleId} ref={titleRef} tabIndex={-1}>
+        {t('mfa.stepUp.title')}
+      </DialogTitle>
       <DialogContent sx={DIALOG_BODY_SX}>
         {notice === undefined ? null : (
           <Typography variant="body2" color="text.secondary">
@@ -514,6 +558,7 @@ function StepUpFlow({
             <InlineError
               code={errorCode}
               retryAfterSeconds={retryAfterSeconds ?? undefined}
+              countdownId={throttleNoteId}
             />
           </Box>
         ) : freshFirst ? (
@@ -545,6 +590,7 @@ function StepUpFlow({
                 <InlineError
                   code={errorCode}
                   retryAfterSeconds={retryAfterSeconds ?? undefined}
+                  countdownId={throttleNoteId}
                 />
               </Box>
             )}
@@ -576,12 +622,15 @@ function StepUpFlow({
                       key={`${seq ?? 0}-${step.kind}`}
                       step={step}
                       sequence={seq ?? 0}
-                      busy={pending || submitting}
+                      busy={stepBusy}
                       submitDisabled={waiting}
+                      submitUnavailableDescribedBy={
+                        waiting ? throttleNoteId : undefined
+                      }
                       answerStep={answerStep}
                       submitLabel={t('mfa.stepUp.confirmLabel')}
                       onSubmit={handleAnswer}
-                      secondaryAction={cancelButton}
+                      secondaryAction={stepCancelButton}
                       lockedFields={lockedFieldsOf(step, session)}
                     />
                   </>

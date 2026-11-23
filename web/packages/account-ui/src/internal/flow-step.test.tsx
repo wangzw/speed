@@ -28,7 +28,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { configure, screen, waitFor } from '@testing-library/react'
+import { configure, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -38,12 +38,20 @@ import {
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStep } from './flow-step.js'
 
-function render(step: AuthnStep, onSubmit = vi.fn()) {
+function render(
+  step: AuthnStep,
+  onSubmit = vi.fn(),
+  options: {
+    readonly busy?: boolean
+    readonly submitDisabled?: boolean
+  } = {},
+) {
   const rendered = renderWithProviders(
     <FlowStep
       step={step}
       sequence={1}
-      busy={false}
+      busy={options.busy ?? false}
+      submitDisabled={options.submitDisabled}
       answerStep="answer"
       submitLabel="Continue"
       onSubmit={onSubmit}
@@ -642,5 +650,149 @@ describe('FlowStep TOTP enrolment', () => {
     await expectNoAxeViolations({
       decidedInBrowser: 'flowStepAccountManualDisclosure',
     })
+  })
+})
+
+const CHALLENGE_STEP: AuthnStep = {
+  kind: 'challenge',
+  fields: [{ name: 'code', kind: 'code' }],
+}
+
+const FACTOR_STEP: AuthnStep = {
+  kind: 'factor',
+  factors: [
+    { id: 'f1', kind: 'totp' },
+    { id: 'f2', kind: 'sms' },
+  ],
+}
+
+describe('FlowStep held actions', () => {
+  it('keeps the submitted control focused while the answer is in flight', async () => {
+    // The control that gave the answer stays focused and keeps its place:
+    // a native disable would drop focus to the document body. The fields
+    // turn read-only instead, so the value stays readable and focusable.
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    function Harness() {
+      const [busy, setBusy] = useState(false)
+      return (
+        <FlowStep
+          step={CHALLENGE_STEP}
+          sequence={1}
+          busy={busy}
+          answerStep="answer"
+          submitLabel="Continue"
+          onSubmit={() => {
+            setBusy(true)
+            onSubmit()
+          }}
+        />
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    const field = screen.getByLabelText(zhCN.flowStep.codeLabel)
+    await user.type(field, '123456')
+    const submit = screen.getByRole('button', { name: 'Continue' })
+    await user.click(submit)
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(submit)
+    expect(field).toHaveAttribute('readonly')
+    expect(field).not.toBeDisabled()
+  })
+
+  it('keeps the activated option busy and holds the rest of its group', async () => {
+    // Only the option that started the answer reports busy; its sibling
+    // refuses another answer without a reason of its own.
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    function Harness() {
+      const [busy, setBusy] = useState(false)
+      return (
+        <FlowStep
+          step={FACTOR_STEP}
+          sequence={1}
+          busy={busy}
+          answerStep="answer"
+          submitLabel="Continue"
+          onSubmit={() => {
+            setBusy(true)
+            onSubmit()
+          }}
+        />
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    const totp = screen.getByRole('button', {
+      name: zhCN.mfa.factor.kind.totp,
+    })
+    const sms = screen.getByRole('button', {
+      name: zhCN.mfa.factor.kind.sms,
+    })
+    await user.click(totp)
+
+    expect(totp).toHaveAttribute('aria-busy', 'true')
+    expect(totp).toHaveAttribute('aria-disabled', 'true')
+    expect(document.activeElement).toBe(totp)
+    expect(sms).toHaveAttribute('aria-disabled', 'true')
+    expect(sms).not.toHaveAttribute('aria-busy')
+    expect(sms).not.toHaveAccessibleDescription()
+    await user.click(sms)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the TOTP confirm without a code and names the missing code', async () => {
+    const user = userEvent.setup()
+    const { onSubmit } = render(TOTP_STEP)
+
+    const confirm = screen.getByRole('button', { name: 'Continue' })
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).toHaveAccessibleDescription(zhCN.flowStep.codeRequired)
+    expect(confirm).not.toBeDisabled()
+
+    await user.click(confirm)
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText(zhCN.flowStep.codeLabel), '123456')
+    expect(confirm).not.toHaveAttribute('aria-disabled', 'true')
+    await user.click(confirm)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a keyboard activation of a held option', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(FACTOR_STEP, onSubmit, { submitDisabled: true })
+
+    const totp = screen.getByRole('button', {
+      name: zhCN.mfa.factor.kind.totp,
+    })
+    expect(totp).toHaveAttribute('aria-disabled', 'true')
+    totp.focus()
+    expect(totp).toHaveFocus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a programmatic form submit while the step is held', () => {
+    // The submit button's own guard swallows the implicit submission it
+    // carries; the form's handler is guarded too, for a submit the button
+    // does not carry (a programmatic one, or a form without its button).
+    const onSubmit = vi.fn()
+    render(CHALLENGE_STEP, onSubmit, { submitDisabled: true })
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement)
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a programmatic form submit while an answer is in flight', () => {
+    const onSubmit = vi.fn()
+    render(CHALLENGE_STEP, onSubmit, { busy: true })
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement)
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 })
