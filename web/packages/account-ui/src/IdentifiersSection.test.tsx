@@ -746,7 +746,17 @@ describe('IdentifiersSection', () => {
           value: 'ada@x.test',
         })
       } finally {
-        vi.useRealTimers()
+        // Drain the frames the announcement regions scheduled while the
+        // clock was fake. jsdom's animation loop is an interval under
+        // that clock: uninstalling the fake timers drops the interval
+        // without restarting the loop, and a callback left queued keeps
+        // the loop's internal id set, so every later
+        // requestAnimationFrame in this file would never run.
+        try {
+          vi.advanceTimersByTime(100)
+        } finally {
+          vi.useRealTimers()
+        }
       }
     },
   )
@@ -1769,8 +1779,9 @@ describe('IdentifiersSection', () => {
       '{{value}}',
       'ada@x.test',
     )
-    expect(screen.getByText(sentNotice)).toBeTruthy()
-    expect(screen.getByText(sentNotice).closest('[role="status"]')).not.toBeNull()
+    // The region is inserted empty and fills on a later frame.
+    const sentText = await screen.findByText(sentNotice)
+    expect(sentText.closest('[role="status"]')).not.toBeNull()
     expect(screen.getByLabelText(zhCN.identifiers.add.code.label)).toHaveFocus()
     await user.type(
       screen.getByLabelText(zhCN.identifiers.add.code.label),

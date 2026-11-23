@@ -14,7 +14,7 @@
 
 import Button from '@mui/material/Button'
 import { describe, expect, it } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { PhoneCountryDefaultProvider } from '@speed/ui-kit'
@@ -90,6 +90,55 @@ function expectOneActionGroup(primary: Element, secondary: Element): void {
   const contentRight =
     rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
   expect(Math.abs(primaryBox.right - contentRight)).toBeLessThanOrEqual(1)
+}
+
+/**
+ * Records the text of every role="status" node in each batch of mutations,
+ * keyed by the node, so a region's own birth frame and later fill can be
+ * read back after the fact. Regions are inserted empty by
+ * AnnouncementRegion and filled on a later frame; a batch that only sees
+ * the insertion therefore records ''. Other long-lived status regions
+ * (the feedback slots) simply keep their own histories.
+ */
+function recordStatusHistories(): {
+  readonly stop: () => void
+  readonly historyOf: (node: Element) => readonly string[]
+} {
+  const histories = new WeakMap<Element, string[]>()
+  const observer = new MutationObserver(() => {
+    for (const node of document.querySelectorAll('[role="status"]')) {
+      const history = histories.get(node) ?? []
+      history.push(node.textContent ?? '')
+      histories.set(node, history)
+    }
+  })
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  })
+  return {
+    stop: () => observer.disconnect(),
+    historyOf: (node) => histories.get(node) ?? [],
+  }
+}
+
+/** The first status node whose text is exactly `message`, once it appears. */
+async function statusWithText(message: string): Promise<Element> {
+  await waitFor(() => {
+    expect(
+      [...document.querySelectorAll('[role="status"]')].some(
+        (node) => node.textContent === message,
+      ),
+    ).toBe(true)
+  })
+  const node = [...document.querySelectorAll('[role="status"]')].find(
+    (candidate) => candidate.textContent === message,
+  )
+  if (node === undefined) {
+    throw new Error(`no status region carried ${message}`)
+  }
+  return node
 }
 
 describe('account-ui form geometry', () => {
@@ -541,5 +590,92 @@ describe('account-ui form geometry', () => {
     const cancel = screen.getByRole('button', { name: 'Cancel' })
     expectOneActionGroup(confirm, cancel)
     unmount()
+  })
+})
+
+describe('account-ui sent notices in Chromium', () => {
+  it('inserts the phone section\'s sent region empty and fills it a frame later', async () => {
+    await page.viewport(1100, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <PhoneCountryDefaultProvider country="US">
+        <PhoneSection
+          session={rig.session}
+          onCancel={() => undefined}
+          onAdded={() => undefined}
+        />
+      </PhoneCountryDefaultProvider>,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      '4155552671',
+    )
+
+    const recorded = recordStatusHistories()
+    try {
+      await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+      const message = zhCN.phone.sent.replace('{{phone}}', '+14155552671')
+      const region = await statusWithText(message)
+      const history = recorded.historyOf(region)
+      // The batch that reported the region's insertion read it empty; the
+      // fill arrived in a later batch.
+      expect(history[0]).toBe('')
+      expect(history).toContain(message)
+    } finally {
+      recorded.stop()
+    }
+  })
+
+  it('inserts the identifier add face\'s sent region empty and fills it a frame later', async () => {
+    await page.viewport(1100, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<IdentifiersSection session={rig.session} />)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+
+    const recorded = recordStatusHistories()
+    try {
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      const message = zhCN.identifiers.add.sent.replace(
+        '{{value}}',
+        'ada@x.test',
+      )
+      const region = await statusWithText(message)
+      const history = recorded.historyOf(region)
+      expect(history[0]).toBe('')
+      expect(history).toContain(message)
+    } finally {
+      recorded.stop()
+    }
   })
 })

@@ -186,6 +186,22 @@ describe('FlowStep labels', () => {
     expect(screen.getByRole('button', { name: 'magic' })).toBeTruthy()
   })
 
+  it('mounts the waiting region empty and fills it on a later frame', async () => {
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      render(ASSERT_STEP)
+      const region = screen.getByRole('status')
+      // The region is inserted by the waiting state's first commit empty.
+      expect(region.textContent).toBe('')
+      await waitFor(() =>
+        expect(region).toHaveTextContent(zhCN.flowStep.passkeyWaiting),
+      )
+    } finally {
+      restore()
+    }
+  })
+
   it('waits on the arrival ceremony, cancels into a retry, and retries the ceremony', async () => {
     // The assertion ceremony starts on arrival and sits pending in the
     // browser: it shows an explicit waiting state whose cancel control takes

@@ -243,6 +243,7 @@ import { humanGateNeedsProof, stepUpReasonOf, useStepUpGate, useHumanVerificatio
 import {
   ActionButton,
   ActionRow,
+  AnnouncementRegion,
   ConfirmDialog,
   errorCodeOf,
   FORM_MAX_WIDTH,
@@ -692,10 +693,6 @@ export function IdentifiersSection({
   )
   const [addValue, setAddValue] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
-  // The sent notice's live region must never mount together with its text:
-  // it fills one commit after the code step mounts, so the announcement is a
-  // content change the screen reader already knows.
-  const [sentCommitted, setSentCommitted] = useState(false)
   const [code, setCode] = useState('')
   const [fieldErrorKey, setFieldErrorKey] = useState<string | null>(null)
 
@@ -719,10 +716,10 @@ export function IdentifiersSection({
   const [rowResendFromSuccess, setRowResendFromSuccess] = useState(false)
   const [rowNow, setRowNow] = useState(() => Date.now())
 
-  // Arm the sent notice's live region one commit after the code step mounts,
-  // so the notice fills an already-mounted region rather than arriving with
-  // it, and hand focus to the code field. The region is empty again when the
-  // flow returns to the value field.
+  // Hand focus to the code field when the code step mounts. The sent
+  // notice's live region handles its own empty birth frame; it is empty
+  // again when the flow returns to the value field, because the step's
+  // region unmounts with it.
   const addCodeRef = useRef<HTMLInputElement>(null)
   // The add face's value input, focused when the server refuses the value.
   const valueInput = useRef<HTMLInputElement>(null)
@@ -731,7 +728,6 @@ export function IdentifiersSection({
   // refusal itself would be dropped.
   const focusValuePending = useRef(false)
   useEffect(() => {
-    setSentCommitted(sentTo !== null)
     if (sentTo !== null) {
       addCodeRef.current?.focus()
     }
@@ -2432,22 +2428,16 @@ export function IdentifiersSection({
                 </>
               ) : (
                 <>
-                  {/* The destination text stays through the step; being the
-                      live region itself, it announces the code's landing
-                      once (empty, then filled one commit later). */}
-                  <Typography
-                    component="div"
-                    role="status"
-                    variant="body2"
-                    color="text.secondary"
-                  >
-                    {sentCommitted
-                      ? t('identifiers.add.sent', {
-                          value: sentTo,
-                          interpolation: { escapeValue: false },
-                        })
-                      : ''}
-                  </Typography>
+                  {/* The destination text stays through the step; as the
+                      announcement region it announces the code's landing
+                      once (inserted empty, then filled a frame later). */}
+                  <AnnouncementRegion
+                    message={t('identifiers.add.sent', {
+                      value: sentTo,
+                      interpolation: { escapeValue: false },
+                    })}
+                    sx={{ typography: 'body2', color: 'text.secondary' }}
+                  />
                   <TextField
                     fullWidth
                     inputMode="numeric"

@@ -56,7 +56,11 @@ import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
 import type { AuthSession, AuthnFlowState, AuthnStep } from '@speed/auth-core'
-import { errorCodeOf, useWriteFeedback } from '@speed/ui-kit'
+import {
+  AnnouncementRegion,
+  errorCodeOf,
+  useWriteFeedback,
+} from '@speed/ui-kit'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { InlineError } from './internal/inline-error.js'
@@ -297,17 +301,6 @@ export function BindingCallbackHandler({
     [session, applySettled],
   )
 
-  // The pending live region must never mount together with its text: a
-  // role="status" region announces only content changes that follow its
-  // own insertion, so the pending text born in the same commit as the
-  // region would be silent. The text is gated on `pendingCommitted`,
-  // which lags the reading phase by one commit.
-  const reading = phase === 'reading'
-  const [pendingCommitted, setPendingCommitted] = useState(false)
-  useEffect(() => {
-    setPendingCommitted(reading)
-  }, [reading])
-
   useEffect(() => {
     // A refused landing carries its code in the fragment: the server already
     // consumed the flow and said what went wrong, so there is no flow to
@@ -464,7 +457,6 @@ export function BindingCallbackHandler({
         </Box>
       ) : (
         <Box
-          role="status"
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -473,13 +465,14 @@ export function BindingCallbackHandler({
           }}
         >
           {/* Decorative: the pending text on its own announces the state from
-              the role=status container; naming the spinner too would read the
-              notice twice. The text renders only once `pendingCommitted`
-              arms it, one commit after this region mounts. */}
+              the announcement region; naming the spinner too would read the
+              notice twice. The region is inserted empty and fills a frame
+              later. */}
           <CircularProgress size={18} aria-hidden={true} />
-          <Typography>
-            {pendingCommitted ? t('bindingCallback.pending') : ''}
-          </Typography>
+          <AnnouncementRegion
+            message={t('bindingCallback.pending')}
+            sx={{ typography: 'body1' }}
+          />
         </Box>
       )}
     </Box>

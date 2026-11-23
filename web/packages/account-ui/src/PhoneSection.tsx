@@ -34,7 +34,7 @@
  * A verified number refetches the profile so the identifiers surface shows
  * it, and the region confirms with a message naming the number. The "code
  * sent" notice is the code step's own state, not a settled action, so it
- * stays outside the outcome slot: it is its own role="status" region, mounted
+ * stays outside the outcome slot: it is its own announcement region, inserted
  * empty and filled when the code lands, and focus moves to the code field.
  * The slot holds at most one result, so a success and a failure never stand
  * beside each other. The confirmation settles the moment the write lands,
@@ -76,7 +76,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getAuthnProfileGetQueryKey,
@@ -93,6 +92,7 @@ import {
 import {
   ActionButton,
   ActionRow,
+  AnnouncementRegion,
   errorCodeOf,
   HumanVerification,
   PhoneNumberField,
@@ -198,10 +198,6 @@ export function PhoneSection({
   // the section. The number-entry form must not come back beside the
   // confirmation while the profile re-read is in flight.
   const [verified, setVerified] = useState(false)
-  // The sent notice's live region must never mount together with its text:
-  // it fills one commit after the code step mounts, so the announcement is a
-  // content change the screen reader already knows.
-  const [sentCommitted, setSentCommitted] = useState(false)
   const feedback = useWriteFeedback()
   // The verify's async chain outlives the section when the host reuses one
   // page across sections: a re-read that settles after the reader left must
@@ -225,13 +221,6 @@ export function PhoneSection({
   // scope.
   const busy =
     startPhone.isPending || verifyPhone.isPending || feedback.pending
-
-  // Arm the sent notice's live region one commit after the code step mounts,
-  // so the notice fills an already-mounted region rather than arriving with
-  // it. The region is empty again when the viewer returns to the number.
-  useEffect(() => {
-    setSentCommitted(sentTo !== null)
-  }, [sentTo])
 
   function sendCode(nextPhone: string): Promise<void> {
     // A required proof that is not ready yet keeps the send from leaving:
@@ -507,22 +496,16 @@ export function PhoneSection({
           )
         ) : (
           <>
-            {/* The destination text stays through the step; being the live
-                region itself, it announces the code's landing once (empty,
-                then filled one commit later). */}
-            <Typography
-              component="div"
-              role="status"
-              variant="body2"
-              color="text.secondary"
-            >
-              {sentCommitted
-                ? t('phone.sent', {
-                    phone: sentTo,
-                    interpolation: { escapeValue: false },
-                  })
-                : ''}
-            </Typography>
+            {/* The destination text stays through the step; as the
+                announcement region it announces the code's landing once
+                (inserted empty, then filled a frame later). */}
+            <AnnouncementRegion
+              message={t('phone.sent', {
+                phone: sentTo,
+                interpolation: { escapeValue: false },
+              })}
+              sx={{ typography: 'body2', color: 'text.secondary' }}
+            />
             <TextField
               fullWidth
               autoFocus

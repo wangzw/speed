@@ -49,6 +49,7 @@ import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/web
 import {
   ActionButton,
   ActionRow,
+  AnnouncementRegion,
   TotpEnrollmentPanel,
 } from '@speed/ui-kit'
 import { useAccountUiTranslation } from './translation.js'
@@ -493,10 +494,10 @@ interface PasskeyPromptProps {
  * The ceremony can sit pending for as long as the browser waits on the
  * device, so the step shows an explicit waiting state: the waiting message
  * and a cancel control instead of leaving a disabled button as the only
- * signal. The waiting notice mounts as an empty `role="status"` region and
- * fills a commit later, so a
- * screen reader announces it; focus moves to the cancel control, since
- * the control that had it unmounted. Cancel is its own state transition,
+ * signal. The waiting notice is the shared announcement region: it mounts
+ * empty and fills a frame later, so a screen reader announces it; focus
+ * moves to the cancel control, since the control that had it unmounted.
+ * Cancel is its own state transition,
  * taken at once: it shows the failure and retry without waiting for the
  * ceremony to settle, and only best-effort asks the browser to give up
  * (the credential API does not guarantee it honours an abort). A late
@@ -525,9 +526,6 @@ function PasskeyPrompt({
   const arrivalKey = assertionKey(options, sequence)
   const [working, setWorking] = useState(arrivalKey !== null)
   const [failure, setFailure] = useState<PasskeyFailure | null>(null)
-  // The waiting notice's text, one commit behind the waiting phase: the
-  // region must mount empty.
-  const [waitingCommitted, setWaitingCommitted] = useState(false)
   const cancelRef = useRef<HTMLButtonElement>(null)
   // The ceremony currently being waited on. Cancel clears it before the
   // failure renders, so the ceremony's late settlement and a retry's own
@@ -554,11 +552,10 @@ function PasskeyPrompt({
     [],
   )
 
-  // The waiting notice's role="status" region must never mount together
-  // with its text, and the cancel control takes the focus the control that
-  // had it (the Continue button, or the entry that opened the step) held.
+  // The cancel control takes the focus the control that had it (the
+  // Continue button, or the entry that opened the step) held. The waiting
+  // notice's live region handles its own empty birth frame.
   useEffect(() => {
-    setWaitingCommitted(working)
     if (working) {
       cancelRef.current?.focus()
     }
@@ -646,13 +643,13 @@ function PasskeyPrompt({
       {working ? (
         <>
           <Box
-            role="status"
             sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2 }}
           >
             <CircularProgress size={18} aria-hidden={true} />
-            <Typography>
-              {waitingCommitted ? t('flowStep.passkeyWaiting') : ''}
-            </Typography>
+            <AnnouncementRegion
+              message={t('flowStep.passkeyWaiting')}
+              sx={{ typography: 'body1' }}
+            />
           </Box>
           <ActionRow sx={{ mt: 1.5 }}>
             <ActionButton
