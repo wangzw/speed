@@ -36,6 +36,7 @@ import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   ConfirmDialog,
   CopyButton,
   DataTable,
@@ -48,7 +49,10 @@ import {
   useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import type {
+  ActionButtonUnavailableExplanation,
+  DataTableColumn,
+} from '@speed/ui-kit'
 import { AdminPageHeader } from './internal/page-header.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { AccountsIcon, InvitationsIcon } from './internal/icons.js'
@@ -99,6 +103,16 @@ const DEFAULT_EXPIRY_DAYS = 7
 
 /** The expiry choices the issue form offers, in days. */
 const EXPIRY_CHOICES = [1, 7, 30] as const
+
+/**
+ * The texts that explain why the issue control cannot run: each is the
+ * paragraph the role's grant check already renders for that state, so the
+ * control points at it rather than repeating it.
+ */
+const ISSUE_ROLE_CHECKING_ID = 'invitation-issue-role-checking'
+const ISSUE_ROLE_FAILED_ID = 'invitation-issue-role-failed'
+const ISSUE_ROLE_UNCONFIRMED_ID = 'invitation-issue-role-unconfirmed'
+const ISSUE_ROLE_BLOCKED_ID = 'invitation-issue-role-blocked'
 
 /**
  * The two tables carry five high-priority columns from the `sm` container
@@ -287,6 +301,16 @@ export function OrganizationMembersPage({
 
   const [panelMember, setPanelMember] = useState<AdminMember | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
+  // The member list's container: the focus target when a removal leaves no
+  // adjacent row to take the place of the one that left.
+  const memberListRef = useRef<HTMLDivElement | null>(null)
+  // The member a removal took away, as the panel saw it. The account finds
+  // the row while it is still on screen; the index names the row that moved
+  // up once the re-read has dropped it.
+  const removalFocus = useRef<{
+    readonly account: string
+    readonly index: number
+  } | null>(null)
   // The panel belongs to the tenant it was opened under. A tenant switch
   // closes it and drops the snapshot; the derivation below also refuses a
   // snapshot from another tenant, so even the render before this effect
@@ -337,8 +361,60 @@ export function OrganizationMembersPage({
   const requestPanelClose = () => {
     setPanelOpen(false)
   }
+  /**
+   * Places focus after a removal closed the panel that its opener's row
+   * opened. The same control on the next row takes it, else the previous
+   * row's, else the list container: the opener itself is gone, and a
+   * focused control that leaves the document must not drop focus to the
+   * body. A row still on screen names its own position, so the adjacent
+   * control is the one beside it; once the re-read has dropped the row, the
+   * position recorded when the removal started names the row that moved up.
+   */
+  const placeFocusAfterRemoval = (
+    removed: { readonly account: string; readonly index: number } | null,
+  ) => {
+    if (removed === null) {
+      return
+    }
+    const list = memberListRef.current
+    if (list === null) {
+      return
+    }
+    // Only recover focus the removal left behind: the body (the opener was
+    // removed while focused), anything inside the closing panel (its content
+    // unmounts right after this callback), or the removed row's own opener.
+    // A reader who moved focus elsewhere has chosen a new resting place.
+    const active = document.activeElement
+    const focusWasLost =
+      active === null ||
+      active === document.body ||
+      (active instanceof Element &&
+        (active.closest('[role="dialog"]') !== null ||
+          active.getAttribute('data-member-manage') === removed.account))
+    if (!focusWasLost) {
+      return
+    }
+    const controls = Array.from(
+      list.querySelectorAll<HTMLElement>('[data-member-manage]'),
+    )
+    const stillListed = controls.findIndex(
+      (control) => control.dataset.memberManage === removed.account,
+    )
+    const target =
+      stillListed >= 0
+        ? (controls[stillListed + 1] ?? controls[stillListed - 1])
+        : (controls[removed.index] ?? controls[removed.index - 1])
+    if (target !== undefined) {
+      target.focus()
+      return
+    }
+    list.focus()
+  }
   const panelExited = () => {
     setPanelMember(null)
+    const removed = removalFocus.current
+    removalFocus.current = null
+    placeFocusAfterRemoval(removed)
     const message = removalSuccess.current
     removalSuccess.current = null
     if (message !== null) {
@@ -346,6 +422,17 @@ export function OrganizationMembersPage({
     }
   }
   const memberRemoved = (message: string) => {
+    const removed = livePanelMember
+    removalFocus.current =
+      removed === null
+        ? null
+        : {
+            account: removed.account,
+            index:
+              memberRows?.findIndex(
+                (row) => row.account === removed.account,
+              ) ?? -1,
+          }
     removalSuccess.current = message
     setPanelOpen(false)
   }
@@ -461,6 +548,15 @@ export function OrganizationMembersPage({
   }, [tenant])
 
   const [issued, setIssued] = useState<IssuedNotice | null>(null)
+  // The invitation-scope control the in-flight write belongs to, so only the
+  // activated control reports busy and the issue form is unavailable while a
+  // row's resend or revoke runs.
+  const [pendingInvitationWrite, setPendingInvitationWrite] = useState<
+    | { readonly kind: 'issue' }
+    | { readonly kind: 'resend'; readonly id: string }
+    | { readonly kind: 'revoke'; readonly id: string }
+    | null
+  >(null)
   const [closeIssuedOpen, setCloseIssuedOpen] = useState(false)
 
   const issueInvitation = operations.useIssueInvitation()
@@ -474,13 +570,23 @@ export function OrganizationMembersPage({
     invitationFeedback.outcome,
     resolveErrorText,
   )
-  const issueDisabled =
-    invitationFeedback.pending ||
-    email.trim() === '' ||
-    issueGrantsPending ||
-    issueGrantsFailed ||
-    issueGrantUnconfirmed ||
-    issueEscalationBlocked
+  // The issue control's unmet preconditions, in the order an operator meets
+  // them. The address is what the form is for; the role's grant check is a
+  // precondition of the optional choice beside it. Every role state already
+  // renders its own explanation, which the control points at; an empty
+  // address has no standing text, so the control carries the reason.
+  const issueExplanation: ActionButtonUnavailableExplanation | undefined =
+    email.trim() === ''
+      ? { unavailableReason: t('invitations.issue.emailRequired') }
+      : issueGrantsPending
+        ? { unavailableDescribedBy: ISSUE_ROLE_CHECKING_ID }
+        : issueGrantsFailed
+          ? { unavailableDescribedBy: ISSUE_ROLE_FAILED_ID }
+          : issueGrantUnconfirmed
+            ? { unavailableDescribedBy: ISSUE_ROLE_UNCONFIRMED_ID }
+            : issueEscalationBlocked
+              ? { unavailableDescribedBy: ISSUE_ROLE_BLOCKED_ID }
+              : undefined
   const confirm = usePendingConfirm()
 
   const resetPageFeedback = useCallback(() => {
@@ -516,20 +622,23 @@ export function OrganizationMembersPage({
     // resend or revoke must not keep a dangling `aria-describedby` once this
     // attempt replaces that failure's text.
     setFailedInvitation(null)
-    void invitationFeedback.run(async () => {
-      const answer = await issueInvitation.mutateAsync({
-        tenant,
-        email: address,
-        expiresAt: expiryInstant(expiryDays),
-        ...(canManageRoles && issueRole !== '' ? { role: issueRole } : {}),
+    setPendingInvitationWrite({ kind: 'issue' })
+    void invitationFeedback
+      .run(async () => {
+        const answer = await issueInvitation.mutateAsync({
+          tenant,
+          email: address,
+          expiresAt: expiryInstant(expiryDays),
+          ...(canManageRoles && issueRole !== '' ? { role: issueRole } : {}),
+        })
+        setEmail('')
+        setIssueRole('')
+        setIssued({ answer, tenant })
+        return t('invitations.issued.confirm', {
+          email: answer.invitation.email,
+        })
       })
-      setEmail('')
-      setIssueRole('')
-      setIssued({ answer, tenant })
-      return t('invitations.issued.confirm', {
-        email: answer.invitation.email,
-      })
-    })
+      .finally(() => setPendingInvitationWrite(null))
   }
 
   const requestResend = (invitation: AdminInvitation) => {
@@ -542,23 +651,26 @@ export function OrganizationMembersPage({
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedInvitation(null)
-        void invitationFeedback.run(async () => {
-          try {
-            // Resend replaces the token on this invitation; it neither
-            // extends the deadline nor creates another row.
-            const answer = await resendInvitation.mutateAsync({
-              tenant,
-              id: invitation.id,
-            })
-            setIssued({ answer, tenant })
-            return t('invitations.resent', {
-              email: answer.invitation.email,
-            })
-          } catch (error) {
-            setFailedInvitation(invitation.id)
-            throw error
-          }
-        })
+        setPendingInvitationWrite({ kind: 'resend', id: invitation.id })
+        void invitationFeedback
+          .run(async () => {
+            try {
+              // Resend replaces the token on this invitation; it neither
+              // extends the deadline nor creates another row.
+              const answer = await resendInvitation.mutateAsync({
+                tenant,
+                id: invitation.id,
+              })
+              setIssued({ answer, tenant })
+              return t('invitations.resent', {
+                email: answer.invitation.email,
+              })
+            } catch (error) {
+              setFailedInvitation(invitation.id)
+              throw error
+            }
+          })
+          .finally(() => setPendingInvitationWrite(null))
       },
     })
   }
@@ -570,32 +682,35 @@ export function OrganizationMembersPage({
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedInvitation(null)
-        void invitationFeedback.run(async () => {
-          try {
-            await revokeInvitation.mutateAsync({
-              tenant,
-              id: invitation.id,
-            })
-            // The row leaves the filtered list; keep focus on the section's
-            // heading, which stays visible and names the section the result
-            // belongs to.
-            focusInvitationHeading()
-            return t('invitations.revoked', { email: invitation.email })
-          } catch (error) {
-            setFailedInvitation(invitation.id)
-            // A terminal refusal leaves the row out of the current filter
-            // too, so focus does not fall back to the body when the re-read
-            // drops it. An "all" filter keeps the row, so its menu keeps
-            // focus there.
-            if (
-              statusFilter !== 'all' &&
-              errorCodeOf(error) === INVITATION_TERMINAL_CODE
-            ) {
+        setPendingInvitationWrite({ kind: 'revoke', id: invitation.id })
+        void invitationFeedback
+          .run(async () => {
+            try {
+              await revokeInvitation.mutateAsync({
+                tenant,
+                id: invitation.id,
+              })
+              // The row leaves the filtered list; keep focus on the section's
+              // heading, which stays visible and names the section the result
+              // belongs to.
               focusInvitationHeading()
+              return t('invitations.revoked', { email: invitation.email })
+            } catch (error) {
+              setFailedInvitation(invitation.id)
+              // A terminal refusal leaves the row out of the current filter
+              // too, so focus does not fall back to the body when the re-read
+              // drops it. An "all" filter keeps the row, so its menu keeps
+              // focus there.
+              if (
+                statusFilter !== 'all' &&
+                errorCodeOf(error) === INVITATION_TERMINAL_CODE
+              ) {
+                focusInvitationHeading()
+              }
+              throw error
             }
-            throw error
-          }
-        })
+          })
+          .finally(() => setPendingInvitationWrite(null))
       },
     })
   }
@@ -775,6 +890,9 @@ export function OrganizationMembersPage({
               identityLabel(member.display_name, member.username) ??
               t('common.accountUnavailable'),
           })}
+          // Names the row's own control so a removal can hand focus to the
+          // neighbouring row's.
+          data-member-manage={member.account}
           onClick={() => openPanel(member)}
         >
           {t('members.manage')}
@@ -1089,68 +1207,78 @@ export function OrganizationMembersPage({
             </Button>
           )}
         </Box>
-        <AdminAsyncSection
-          pending={members.isPending && memberRows === undefined}
-          payload={memberRows}
-          error={members.error}
-          refreshing={members.isFetching}
-          empty={memberEmpty}
-          headingLevel="h3"
-          loading={
-            <ListSkeleton
-              label={t('members.loading')}
-              rows={[<Skeleton key="a" variant="text" width="50%" />]}
-            />
-          }
-          errorState={{
-            title: t('members.error.title'),
-            description: t('members.error.description'),
-            retryLabel: t('members.retry'),
-            onRetry: () => void members.refetch(),
-          }}
-          emptyState={{
-            title: roleFilterActive
-              ? t('members.empty.roleTitle')
-              : memberSearchActive
-                ? t('members.empty.searchTitle')
-                : t('members.empty.title'),
-            description: roleFilterActive
-              ? t('members.empty.roleDescription', { role: roleFilter })
-              : memberSearchActive
-                ? t('members.empty.searchDescription', {
-                    query: debouncedMemberSearch,
-                  })
-                : t('members.empty.description'),
-          }}
-          ssoRelogin={session === null ? undefined : relogin}
-          mfaRelogin={session === null ? undefined : relogin}
+        {/* The list group is the fallback focus target after a removal
+            leaves no adjacent row; it stays mounted through the empty and
+            failed branches, so the container is always there to take it. */}
+        <Box
+          ref={memberListRef}
+          role="group"
+          aria-label={t('members.title')}
+          tabIndex={-1}
         >
-          {(settled) => (
-            <DataTable
-              rows={settled}
-              columns={memberColumns}
-              rowKey={(member) => member.account}
-              pinLastColumn
-              sx={COMPACT_TABLE_SX}
-            />
-          )}
-        </AdminAsyncSection>
-        {memberRows !== undefined && (
-          <CursorPager
-            page={memberPage}
-            hasNext={memberNextCursor !== ''}
-            busy={membersFeedback.pending}
-            reading={members.isFetching}
-            onPrevious={previousMemberPage}
-            onNext={nextMemberPage}
-          />
-        )}
-        <Box ref={membersRegionRef} sx={{ mt: 2 }}>
-          <WriteFeedbackRegion
-            outcome={membersFeedback.outcome}
+          <AdminAsyncSection
+            pending={members.isPending && memberRows === undefined}
+            payload={memberRows}
+            error={members.error}
+            refreshing={members.isFetching}
+            empty={memberEmpty}
+            headingLevel="h3"
+            loading={
+              <ListSkeleton
+                label={t('members.loading')}
+                rows={[<Skeleton key="a" variant="text" width="50%" />]}
+              />
+            }
+            errorState={{
+              title: t('members.error.title'),
+              description: t('members.error.description'),
+              retryLabel: t('members.retry'),
+              onRetry: () => void members.refetch(),
+            }}
+            emptyState={{
+              title: roleFilterActive
+                ? t('members.empty.roleTitle')
+                : memberSearchActive
+                  ? t('members.empty.searchTitle')
+                  : t('members.empty.title'),
+              description: roleFilterActive
+                ? t('members.empty.roleDescription', { role: roleFilter })
+                : memberSearchActive
+                  ? t('members.empty.searchDescription', {
+                      query: debouncedMemberSearch,
+                    })
+                  : t('members.empty.description'),
+            }}
             ssoRelogin={session === null ? undefined : relogin}
             mfaRelogin={session === null ? undefined : relogin}
-          />
+          >
+            {(settled) => (
+              <DataTable
+                rows={settled}
+                columns={memberColumns}
+                rowKey={(member) => member.account}
+                pinLastColumn
+                sx={COMPACT_TABLE_SX}
+              />
+            )}
+          </AdminAsyncSection>
+          {memberRows !== undefined && (
+            <CursorPager
+              page={memberPage}
+              hasNext={memberNextCursor !== ''}
+              busy={membersFeedback.pending}
+              reading={members.isFetching}
+              onPrevious={previousMemberPage}
+              onNext={nextMemberPage}
+            />
+          )}
+          <Box ref={membersRegionRef} sx={{ mt: 2 }}>
+            <WriteFeedbackRegion
+              outcome={membersFeedback.outcome}
+              ssoRelogin={session === null ? undefined : relogin}
+              mfaRelogin={session === null ? undefined : relogin}
+            />
+          </Box>
         </Box>
       </SectionCard>
 
@@ -1215,25 +1343,39 @@ export function OrganizationMembersPage({
               ))}
             </TextField>
           )}
-          <Button
+          <ActionButton
             type="button"
-            variant="contained"
-            disabled={issueDisabled}
+            emphasis="primary"
+            busy={pendingInvitationWrite?.kind === 'issue'}
+            unavailable={
+              issueExplanation !== undefined ||
+              (pendingInvitationWrite !== null &&
+                pendingInvitationWrite.kind !== 'issue')
+            }
+            {...(issueExplanation ?? {})}
             onClick={issue}
           >
             {t('invitations.issue.submit')}
-          </Button>
+          </ActionButton>
         </Box>
         {canManageRoles && issueRoleSelected && (
           <Box sx={{ mb: 2 }}>
             {issueGrantsPending && (
-              <Typography variant="body2" color="text.secondary">
+              <Typography
+                id={ISSUE_ROLE_CHECKING_ID}
+                variant="body2"
+                color="text.secondary"
+              >
                 {t('invitations.issue.roleChecking')}
               </Typography>
             )}
             {issueGrantsFailed && (
               <>
-                <Typography variant="body2" color="error">
+                <Typography
+                  id={ISSUE_ROLE_FAILED_ID}
+                  variant="body2"
+                  color="error"
+                >
                   {t('invitations.issue.roleFailed')}
                 </Typography>
                 <Button
@@ -1247,12 +1389,20 @@ export function OrganizationMembersPage({
               </>
             )}
             {issueGrantUnconfirmed ? (
-              <Typography variant="body2" color="error">
+              <Typography
+                id={ISSUE_ROLE_UNCONFIRMED_ID}
+                variant="body2"
+                color="error"
+              >
                 {t('invitations.issue.roleUnconfirmed')}
               </Typography>
             ) : (
               issueEscalationBlocked && (
-                <Typography variant="body2" color="error">
+                <Typography
+                  id={ISSUE_ROLE_BLOCKED_ID}
+                  variant="body2"
+                  color="error"
+                >
                   {t('invitations.issue.roleBlocked')}
                 </Typography>
               )

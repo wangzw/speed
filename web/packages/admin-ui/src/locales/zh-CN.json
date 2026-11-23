@@ -1254,6 +1254,7 @@
     },
     "issue": {
       "emailLabel": "邮箱地址",
+      "emailRequired": "请输入要邀请的邮箱地址。",
       "quickLabel": "有效期",
       "submit": "发出邀请",
       "oneDay": "1 天",
@@ -1415,6 +1416,7 @@
       "rolesNoRead": "你没有查看角色绑定的权限。",
       "rolesReadOnly": "你的角色不允许绑定或解绑角色。",
       "suspendedBindNote": "停用成员不能绑定角色，请先恢复。",
+      "bindNoRole": "请先选择一个角色再绑定。",
       "roleLabel": "角色",
       "roleNone": "选择角色",
       "allRolesBound": "没有可绑定的角色",

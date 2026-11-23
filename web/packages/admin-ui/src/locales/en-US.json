@@ -1254,6 +1254,7 @@
     },
     "issue": {
       "emailLabel": "Email address",
+      "emailRequired": "Enter the email address to invite.",
       "quickLabel": "Valid for",
       "submit": "Send invitation",
       "oneDay": "1 day",
@@ -1415,6 +1416,7 @@
       "rolesNoRead": "You do not have permission to view role bindings.",
       "rolesReadOnly": "Your role does not allow binding or unbinding roles.",
       "suspendedBindNote": "A suspended member cannot be bound to a role. Resume the member first.",
+      "bindNoRole": "Select a role before binding.",
       "roleLabel": "Role",
       "roleNone": "Choose a role",
       "allRolesBound": "There are no roles to bind.",

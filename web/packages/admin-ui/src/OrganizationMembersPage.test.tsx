@@ -17,7 +17,7 @@
 
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { attachSession } from '@speed/auth-core'
 import { formatInstant } from '@speed/i18n'
@@ -93,6 +93,19 @@ const BOB: AdminMember = {
   sso_exempt: false,
   roles: [],
   joined_at: '2026-10-20T08:30:00Z',
+}
+
+/** A third member, so a removal case can see the row after the one removed. */
+const CAROL: AdminMember = {
+  account: 'acc-3',
+  tenant: TENANT,
+  active: true,
+  display_name: 'Carol Reed',
+  username: 'carol',
+  source: 'admin',
+  sso_exempt: false,
+  roles: [],
+  joined_at: '2026-10-25T09:00:00Z',
 }
 
 const ROLE_OPERATOR: AdminTenantRole = {
@@ -283,6 +296,21 @@ function attachTenantPermissions(
       permissionSets: { tenant, system: null },
     }),
   )
+}
+
+/** A promise the case settles by hand, so one write can be held in flight. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+  readonly reject: (reason: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle
+    reject = fail
+  })
+  return { promise, resolve, reject }
 }
 
 interface Recorder {
@@ -500,10 +528,12 @@ function composedName(member: AdminMember): string {
     : `${member.display_name} (${member.username})`
 }
 
+function manageAria(member: AdminMember): string {
+  return zhCN.members.manageAria.replace('{{name}}', composedName(member))
+}
+
 function manageButton(member: AdminMember): HTMLElement {
-  return screen.getByRole('button', {
-    name: zhCN.members.manageAria.replace('{{name}}', composedName(member)),
-  })
+  return screen.getByRole('button', { name: manageAria(member) })
 }
 
 /** Opens one invitation row's action menu and picks one item. */
@@ -538,6 +568,31 @@ async function openPanel(
   await screen.findAllByText(member.display_name)
   await user.click(manageButton(member))
   return screen.getByRole('dialog', { name: zhCN.members.panel.title })
+}
+
+/** Removes one member through the panel's double confirmation and returns
+ * once the write has been sent. */
+async function removeThroughPanel(
+  user: ReturnType<typeof userEvent.setup>,
+  member: AdminMember,
+): Promise<void> {
+  const panel = await openPanel(user, member)
+  await user.click(
+    within(panel).getByRole('button', { name: zhCN.members.remove }),
+  )
+  await user.click(
+    await screen.findByRole('button', { name: zhCN.common.confirm }),
+  )
+  // The first click only arms the guard; the second confirmation is the one
+  // that sends the write.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 700))
+  })
+  await user.click(
+    screen.getByRole('button', {
+      name: uiKitZh.confirmDialog.confirmAgainLabel,
+    }),
+  )
 }
 
 beforeEach(() => {
@@ -1173,7 +1228,7 @@ describe('the member management panel', () => {
     const bind = within(panel).getByRole('button', {
       name: zhCN.members.panel.bind,
     })
-    expect(bind).toBeEnabled()
+    expect(bind).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(bind)
     await waitFor(() =>
       expect(recorder.binds).toEqual([
@@ -1283,9 +1338,13 @@ describe('the member management panel', () => {
     if (row === null) {
       throw new Error('no tenant-admin binding row')
     }
-    expect(
-      within(row).getByRole('button', { name: zhCN.members.panel.unbind }),
-    ).toBeDisabled()
+    const unbind = within(row).getByRole('button', {
+      name: zhCN.members.panel.unbind,
+    })
+    expect(unbind).toHaveAttribute('aria-disabled', 'true')
+    expect(unbind).toHaveAccessibleDescription(
+      zhCN.members.panel.cannotUnbindOwnAdmin,
+    )
     expect(recorder.unbinds).toEqual([])
   })
 
@@ -1403,9 +1462,13 @@ describe('the member management panel', () => {
     expect(
       within(panel).getByText(zhCN.members.panel.suspendedBindNote),
     ).toBeInTheDocument()
-    expect(
-      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
-    ).toBeDisabled()
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveAccessibleDescription(
+      zhCN.members.panel.suspendedBindNote,
+    )
   })
 
   it('disables suspending yourself and says why', async () => {
@@ -1414,11 +1477,13 @@ describe('the member management panel', () => {
     const { backend } = scripted()
     renderPage(backend)
     const panel = await openPanel(user, ADA)
-    expect(
-      within(panel).getByRole('button', {
-        name: zhCN.members.panel.suspend,
-      }),
-    ).toBeDisabled()
+    const suspend = within(panel).getByRole('button', {
+      name: zhCN.members.panel.suspend,
+    })
+    expect(suspend).toHaveAttribute('aria-disabled', 'true')
+    expect(suspend).toHaveAccessibleDescription(
+      zhCN.members.panel.cannotSuspendSelf,
+    )
     expect(
       within(panel).getByText(zhCN.members.panel.cannotSuspendSelf),
     ).toBeInTheDocument()
@@ -1491,12 +1556,326 @@ describe('the member management panel', () => {
     const { backend } = scripted()
     renderPage(backend)
     const panel = await openPanel(user, ADA)
-    expect(
-      within(panel).getByRole('button', { name: zhCN.members.remove }),
-    ).toBeDisabled()
+    const remove = within(panel).getByRole('button', {
+      name: zhCN.members.remove,
+    })
+    expect(remove).toHaveAttribute('aria-disabled', 'true')
+    expect(remove).toHaveAccessibleDescription(
+      zhCN.members.panel.cannotSuspendSelf,
+    )
     expect(
       within(panel).getByText(zhCN.members.panel.cannotSuspendSelf),
     ).toBeInTheDocument()
+  })
+
+  it('explains that binding needs a role before it sends anything', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderPage(backend)
+    const panel = await openPanel(user, ADA)
+
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveAccessibleDescription(
+      zhCN.members.panel.bindNoRole,
+    )
+    await user.click(bind)
+    expect(recorder.binds).toEqual([])
+  })
+
+  it('locks the role choice read-only while a bind is in flight', async () => {
+    const user = userEvent.setup()
+    let resolveBind: () => void = () => {}
+    const { backend, recorder } = scripted({
+      listTenantAccountBindings: () => Promise.resolve([SUPER_BINDING]),
+      bindTenantRole: (input) => {
+        recorder.binds.push(input)
+        return new Promise<void>((resolve) => {
+          resolveBind = resolve
+        })
+      },
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, ADA)
+    const select = within(panel).getByRole('combobox', {
+      name: zhCN.members.panel.roleLabel,
+    })
+    await waitFor(() => expect(select).toBeEnabled())
+    await user.click(select)
+    await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
+    await waitFor(() =>
+      expect(
+        within(panel).queryByText(zhCN.members.panel.escalationChecking),
+      ).toBeNull(),
+    )
+
+    await user.click(
+      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
+    )
+    await waitFor(() =>
+      expect(recorder.binds).toHaveLength(1),
+    )
+    // The write in flight locks the choice without natively disabling it:
+    // a disabled control drops a focused control's focus.
+    expect(select).toHaveAttribute('aria-readonly', 'true')
+    expect(select).not.toHaveAttribute('aria-disabled', 'true')
+    await user.click(select)
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    await act(async () => {
+      resolveBind()
+    })
+    await waitFor(() =>
+      expect(select).not.toHaveAttribute('aria-readonly', 'true'),
+    )
+  })
+
+  it('moves focus to the next row when the panel removes a member', async () => {
+    const user = userEvent.setup()
+    let members: AdminMember[] = [ADA, BOB, CAROL]
+    const { backend } = scripted({
+      listMembers: () => Promise.resolve({ members, next_cursor: '' }),
+      removeMember: (input) => {
+        members = members.filter((row) => row.account !== input.account)
+        return Promise.resolve()
+      },
+    })
+    renderPage(backend)
+    await removeThroughPanel(user, BOB)
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: manageAria(BOB) }),
+      ).toBeNull(),
+    )
+    expect(manageButton(CAROL)).toHaveFocus()
+  })
+
+  it('moves focus to the previous row when the panel removes the last member', async () => {
+    const user = userEvent.setup()
+    let members: AdminMember[] = [ADA, BOB]
+    const { backend } = scripted({
+      listMembers: () => Promise.resolve({ members, next_cursor: '' }),
+      removeMember: (input) => {
+        members = members.filter((row) => row.account !== input.account)
+        return Promise.resolve()
+      },
+    })
+    renderPage(backend)
+    await removeThroughPanel(user, BOB)
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: manageAria(BOB) }),
+      ).toBeNull(),
+    )
+    expect(manageButton(ADA)).toHaveFocus()
+  })
+
+  it('moves focus to the member list container when the removed row was the only one', async () => {
+    const user = userEvent.setup()
+    let members: AdminMember[] = [BOB]
+    const { backend } = scripted({
+      listMembers: () => Promise.resolve({ members, next_cursor: '' }),
+      removeMember: (input) => {
+        members = members.filter((row) => row.account !== input.account)
+        return Promise.resolve()
+      },
+    })
+    renderPage(backend)
+    await removeThroughPanel(user, BOB)
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: manageAria(BOB) }),
+      ).toBeNull(),
+    )
+    expect(document.activeElement).not.toBe(document.body)
+    expect(
+      screen.getByRole('group', { name: zhCN.members.title }),
+    ).toHaveFocus()
+  })
+
+  it('marks only the bind control busy and the other panel controls unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const unbindRole = vi.fn(() => Promise.resolve())
+    const writeMember = vi.fn(() => Promise.resolve())
+    const { backend } = scripted({
+      listMembers: () => Promise.resolve({ members: [CAROL], next_cursor: '' }),
+      // The tenant-super role has no grants, so the escalation check passes
+      // and the bind control can start.
+      listTenantGrants: () => Promise.resolve([]),
+      bindTenantRole: () => pending.promise,
+      unbindTenantRole: unbindRole,
+      writeMember,
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, CAROL)
+
+    const select = within(panel).getByRole('combobox', {
+      name: zhCN.members.panel.roleLabel,
+    })
+    await waitFor(() => expect(select).toBeEnabled())
+    await user.click(select)
+    await user.click(await screen.findByRole('option', { name: ROLE_SUPER.role }))
+    await waitFor(() =>
+      expect(
+        within(panel).queryByText(zhCN.members.panel.escalationChecking),
+      ).toBeNull(),
+    )
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    await user.click(bind)
+
+    expect(bind).toHaveAttribute('aria-busy', 'true')
+    const unbind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.unbind,
+    })
+    const suspend = within(panel).getByRole('button', {
+      name: zhCN.members.panel.suspend,
+    })
+    const remove = within(panel).getByRole('button', {
+      name: zhCN.members.remove,
+    })
+    for (const control of [unbind, suspend, remove]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy')
+      expect(control).not.toHaveAttribute('aria-describedby')
+    }
+
+    // A forced activation on each sibling starts nothing.
+    fireEvent.click(unbind)
+    fireEvent.click(suspend)
+    fireEvent.click(remove)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(unbindRole).not.toHaveBeenCalled()
+    expect(writeMember).not.toHaveBeenCalled()
+    expect(
+      screen.queryByRole('dialog', { name: zhCN.members.removeTitle }),
+    ).toBeNull()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the unbinding row busy and the other panel controls unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const bindTenantRole = vi.fn(() => Promise.resolve())
+    const { backend } = scripted({
+      listMembers: () => Promise.resolve({ members: [CAROL], next_cursor: '' }),
+      listTenantGrants: () => Promise.resolve([]),
+      bindTenantRole,
+      unbindTenantRole: () => pending.promise,
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, CAROL)
+
+    await user.click(
+      within(panel).getByRole('button', { name: zhCN.members.panel.unbind }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    const unbind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.unbind,
+    })
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    const suspend = within(panel).getByRole('button', {
+      name: zhCN.members.panel.suspend,
+    })
+    const remove = within(panel).getByRole('button', {
+      name: zhCN.members.remove,
+    })
+    expect(unbind).toHaveAttribute('aria-busy', 'true')
+    // The bind control's own unmet role choice keeps its reason; the
+    // sibling write only makes it unavailable.
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).not.toHaveAttribute('aria-busy')
+    for (const control of [suspend, remove]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy')
+      expect(control).not.toHaveAttribute('aria-describedby')
+    }
+
+    fireEvent.click(bind)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(bindTenantRole).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks only the removing control busy and the other panel controls unavailable', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const { backend } = scripted({
+      listMembers: () => Promise.resolve({ members: [CAROL], next_cursor: '' }),
+      listTenantGrants: () => Promise.resolve([]),
+      removeMember: () => pending.promise,
+    })
+    renderPage(backend)
+    const panel = await openPanel(user, CAROL)
+
+    await user.click(
+      within(panel).getByRole('button', { name: zhCN.members.remove }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, 700),
+      )
+    })
+    await user.click(
+      screen.getByRole('button', {
+        name: uiKitZh.confirmDialog.confirmAgainLabel,
+      }),
+    )
+
+    const remove = within(panel).getByRole('button', {
+      name: zhCN.members.remove,
+    })
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    const unbind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.unbind,
+    })
+    const suspend = within(panel).getByRole('button', {
+      name: zhCN.members.panel.suspend,
+    })
+    expect(remove).toHaveAttribute('aria-busy', 'true')
+    // The bind control's own unmet role choice keeps its reason; the
+    // sibling write only makes it unavailable.
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).not.toHaveAttribute('aria-busy')
+    for (const control of [unbind, suspend]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy')
+      expect(control).not.toHaveAttribute('aria-describedby')
+    }
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
   })
 })
 
@@ -1602,9 +1981,13 @@ describe('the bind escalation check', () => {
     expect(
       await within(panel).findByText(zhCN.members.panel.escalationBlocked),
     ).toBeInTheDocument()
-    expect(
-      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
-    ).toBeDisabled()
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveAccessibleDescription(
+      zhCN.members.panel.escalationBlocked,
+    )
     expect(recorder.binds).toEqual([])
   })
 
@@ -1642,7 +2025,7 @@ describe('the bind escalation check', () => {
     ).toBeNull()
     expect(
       within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('trusts the server permission even when the recorded pair is not inferable', async () => {
@@ -1685,7 +2068,7 @@ describe('the bind escalation check', () => {
     ).toBeNull()
     expect(
       within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('fails closed when a grant carries no permission code, while unbind stays available', async () => {
@@ -1715,9 +2098,13 @@ describe('the bind escalation check', () => {
         zhCN.members.panel.escalationUnconfirmed,
       ),
     ).toBeInTheDocument()
-    expect(
-      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
-    ).toBeDisabled()
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveAccessibleDescription(
+      zhCN.members.panel.escalationUnconfirmed,
+    )
     expect(recorder.binds).toEqual([])
 
     // The escalation check never gates unbinding: a role the caller can see
@@ -1725,7 +2112,7 @@ describe('the bind escalation check', () => {
     const unbind = within(panel).getByRole('button', {
       name: zhCN.members.panel.unbind,
     })
-    expect(unbind).toBeEnabled()
+    expect(unbind).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(unbind)
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
@@ -1758,9 +2145,13 @@ describe('the bind escalation check', () => {
     expect(
       await within(panel).findByText(zhCN.members.panel.escalationFailed),
     ).toBeInTheDocument()
-    expect(
-      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
-    ).toBeDisabled()
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveAccessibleDescription(
+      zhCN.members.panel.escalationFailed,
+    )
     expect(
       within(panel).getByRole('button', {
         name: zhCN.members.panel.escalationRetry,
@@ -1785,15 +2176,19 @@ describe('the bind escalation check', () => {
         within(panel).queryByText(zhCN.members.panel.escalationChecking),
       ).toBeNull(),
     )
-    expect(
-      within(panel).getByRole('button', { name: zhCN.members.panel.bind }),
-    ).toBeDisabled()
+    const bind = within(panel).getByRole('button', {
+      name: zhCN.members.panel.bind,
+    })
+    expect(bind).toHaveAttribute('aria-disabled', 'true')
+    expect(bind).toHaveAccessibleDescription(
+      zhCN.members.panel.suspendedBindNote,
+    )
     expect(
       within(panel).getByText(zhCN.members.panel.suspendedBindNote),
     ).toBeInTheDocument()
     expect(
       within(panel).getByRole('button', { name: zhCN.members.panel.unbind }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
   })
 })
 
@@ -2053,6 +2448,69 @@ describe('the invitation section', () => {
     expect(restored).not.toHaveTextContent(ROLE_OPERATOR.role)
   })
 
+  it('explains the empty address on the issue control without sending', async () => {
+    const user = userEvent.setup()
+    const { backend, recorder } = scripted()
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.invitations.issue.emailRequired,
+    )
+    await user.click(submit)
+    submit.focus()
+    expect(submit).toHaveFocus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(recorder.issues).toEqual([])
+  })
+
+  it('keeps focus on the issue control while the write runs and after it clears the address', async () => {
+    const user = userEvent.setup()
+    let resolveIssue: () => void = () => {}
+    const { backend, recorder } = scripted({
+      issueInvitation: (input) => {
+        recorder.issues.push(input)
+        return new Promise<AdminIssuedInvitation>((resolve) => {
+          resolveIssue = () => resolve(issuedFixture(input.email))
+        })
+      },
+    })
+    renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'again@example.com',
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    await user.click(submit)
+
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveFocus()
+
+    await act(async () => {
+      resolveIssue()
+    })
+    // The address clears on success, so the precondition is unmet the
+    // moment the write settles: the control stays focusable and says what
+    // is missing rather than dropping focus to the document.
+    await waitFor(() =>
+      expect(submit).toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.invitations.issue.emailRequired,
+    )
+    await user.click(submit)
+    expect(recorder.issues).toHaveLength(1)
+  })
+
   it('blocks attaching a role whose grants exceed the caller', async () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()
@@ -2072,9 +2530,13 @@ describe('the invitation section', () => {
     expect(
       await screen.findByText(zhCN.invitations.issue.roleBlocked),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
-    ).toBeDisabled()
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.invitations.issue.roleBlocked,
+    )
     expect(recorder.issues).toEqual([])
   })
 
@@ -2105,9 +2567,13 @@ describe('the invitation section', () => {
     expect(
       screen.getByText(zhCN.invitations.issue.roleChecking),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
-    ).toBeDisabled()
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.invitations.issue.roleChecking,
+    )
 
     await act(async () => {
       resolveGrants([])
@@ -2145,9 +2611,13 @@ describe('the invitation section', () => {
     expect(
       screen.getByRole('button', { name: zhCN.invitations.issue.roleRetry }),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
-    ).toBeDisabled()
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.invitations.issue.roleFailed,
+    )
     expect(recorder.issues).toEqual([])
   })
 
@@ -2184,9 +2654,13 @@ describe('the invitation section', () => {
     expect(
       await screen.findByText(zhCN.invitations.issue.roleUnconfirmed),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
-    ).toBeDisabled()
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.invitations.issue.roleUnconfirmed,
+    )
     expect(recorder.issues).toEqual([])
   })
 
@@ -2916,6 +3390,56 @@ describe('the invitation section', () => {
       limit: 50,
       status: 'pending',
       after: 'inv-pending',
+    })
+  })
+})
+
+describe('the invitation issue control write attribution', () => {
+  it('marks the issue control unavailable, not busy, while a row resend is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const { backend, recorder } = scripted({
+      resendInvitation: () =>
+        pending.promise.then(() => issuedFixture(PENDING_INVITATION.email)),
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [PENDING_INVITATION],
+          next_cursor: '',
+        }),
+    })
+    renderPage(backend)
+    await screen.findByText(PENDING_INVITATION.email)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+
+    await chooseInvitationAction(
+      user,
+      PENDING_INVITATION.email,
+      zhCN.invitations.resend,
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    const issue = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    expect(issue).toHaveAttribute('aria-disabled', 'true')
+    expect(issue).not.toHaveAttribute('aria-busy')
+    fireEvent.click(issue)
+    issue.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(recorder.issues).toEqual([])
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
     })
   })
 })

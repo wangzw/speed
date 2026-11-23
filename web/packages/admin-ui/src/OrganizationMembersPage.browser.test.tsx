@@ -146,6 +146,13 @@ const SUPPORT_ROLE: AdminTenantRole = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
+/** A second role the member under test does not hold, so the panel's bind
+ * control has a choice to make. */
+const AUDITOR_ROLE: AdminTenantRole = {
+  ...SUPPORT_ROLE,
+  role: 'auditor',
+}
+
 const ADA_BINDING: AdminTenantBinding = {
   tenant: TENANT,
   account: ADA.account,
@@ -1297,5 +1304,239 @@ describe('OrganizationMembersPage touch targets in Chromium', () => {
         `"${controlName(control)}" is shorter than the touch floor`,
       ).toBeGreaterThanOrEqual(43.5)
     }
+  })
+})
+
+/** A promise the case settles by hand, so one request can be held in
+ * flight across frames. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+/** One animation frame: the component's updated state has reached the DOM
+ * and the browser has had its chance to react to it. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
+/** What currently holds focus, for a failure message. */
+function describeActiveElement(): string {
+  const active = document.activeElement
+  if (active === null) {
+    return 'null'
+  }
+  const label = active.getAttribute('aria-label')
+  const text = (active.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+  return `${active.tagName.toLowerCase()}${
+    label === null ? '' : ` aria-label="${label}"`
+  }${text === '' ? '' : ` text="${text}"`}`
+}
+
+describe('OrganizationMembersPage write focus in Chromium', () => {
+  it('keeps focus on the panel bind control while the bind is in flight', async () => {
+    await page.viewport(1200, 900)
+    const written = deferred<void>()
+    const scripted = makeAdminBackend({
+      listMembers: () =>
+        Promise.resolve({ members: [...MEMBERS], next_cursor: '' }),
+      listInvitations: () =>
+        Promise.resolve({ invitations: [...INVITATIONS], next_cursor: '' }),
+      listTenantRoles: () =>
+        Promise.resolve([SUPPORT_ROLE, AUDITOR_ROLE]),
+      listTenantAccountBindings: () => Promise.resolve([ADA_BINDING]),
+      bindTenantRole: () => written.promise,
+    })
+    renderPage({}, undefined, scripted)
+    await waitForMemberName(ADA.display_name)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: manageName(ADA) }))
+    const panel = await screen.findByRole('dialog', {
+      name: enUS.members.panel.title,
+    })
+    const select = within(panel).getByRole('combobox', {
+      name: enUS.members.panel.roleLabel,
+    })
+    await waitFor(() => expect(select).toBeEnabled())
+    await user.click(select)
+    await user.click(
+      await screen.findByRole('option', { name: AUDITOR_ROLE.role }),
+    )
+    const bind = within(panel).getByRole('button', {
+      name: enUS.members.panel.bind,
+    })
+    await waitFor(() =>
+      expect(
+        within(panel).queryByText(enUS.members.panel.escalationChecking),
+      ).toBeNull(),
+    )
+    await user.click(bind)
+
+    // The write is in flight across at least one frame, so the browser has
+    // had its chance to move a focused control whose availability changed.
+    await waitFor(() =>
+      expect(within(bind).getByRole('progressbar')).toBeInTheDocument(),
+    )
+    await nextFrame()
+    expect(
+      bind,
+      `focus while the bind is in flight; document.activeElement is ${describeActiveElement()}`,
+    ).toHaveFocus()
+    expect(bind).toHaveAttribute('aria-busy', 'true')
+
+    written.resolve()
+    await waitFor(() =>
+      expect(within(bind).queryByRole('progressbar')).toBeNull(),
+    )
+  })
+
+  it('keeps an unavailable bind control focusable and points it at the reason', async () => {
+    await page.viewport(1200, 900)
+    renderPage({}, undefined, backend([ADA, BOB]))
+    await waitForMemberName(BOB.display_name)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: manageName(BOB) }))
+    const panel = await screen.findByRole('dialog', {
+      name: enUS.members.panel.title,
+    })
+    const bind = within(panel).getByRole('button', {
+      name: enUS.members.panel.bind,
+    })
+    await waitFor(() =>
+      expect(bind).toHaveAttribute('aria-disabled', 'true'),
+    )
+    bind.focus()
+    expect(bind).toHaveFocus()
+    expect(bind).toHaveAccessibleDescription(
+      enUS.members.panel.suspendedBindNote,
+    )
+  })
+
+  it('moves focus to the next binding row after an unbind lands, inside the panel', async () => {
+    await page.viewport(1200, 900)
+    let bindings: AdminTenantBinding[] = [
+      { ...ADA_BINDING, role: SUPPORT_ROLE.role },
+      { ...ADA_BINDING, role: AUDITOR_ROLE.role },
+    ]
+    const scripted = makeAdminBackend({
+      listMembers: () => Promise.resolve({ members: [ADA], next_cursor: '' }),
+      listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
+      listTenantRoles: () => Promise.resolve([SUPPORT_ROLE, AUDITOR_ROLE]),
+      listTenantAccountBindings: () => Promise.resolve([...bindings]),
+      unbindTenantRole: (input) => {
+        bindings = bindings.filter((binding) => binding.role !== input.role)
+        return Promise.resolve()
+      },
+    })
+    renderPage({}, undefined, scripted)
+    await waitForMemberName(ADA.display_name)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: manageName(ADA) }))
+    const panel = await screen.findByRole('dialog', {
+      name: enUS.members.panel.title,
+    })
+    const unbinds = within(panel).getAllByRole('button', {
+      name: enUS.members.panel.unbind,
+    })
+    expect(unbinds).toHaveLength(2)
+    await user.click(unbinds[0]!)
+
+    await user.click(
+      await screen.findByRole('button', { name: enUS.common.confirm }),
+    )
+
+    // The row the write removed leaves the panel; the same control on the
+    // remaining row takes the focus, and the panel's focus trap keeps it
+    // inside the dialog rather than on the paper or the page body.
+    await waitFor(() =>
+      expect(
+        within(panel).getAllByRole('button', {
+          name: enUS.members.panel.unbind,
+        }),
+      ).toHaveLength(1),
+    )
+    const remaining = within(panel).getByRole('button', {
+      name: enUS.members.panel.unbind,
+    })
+    await waitFor(() =>
+      expect(
+        remaining,
+        `focus after the unbind; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus(),
+    )
+    expect(panel).toContainElement(document.activeElement as HTMLElement)
+  })
+
+  it("leaves the panel paper's focus alone when the reader clicks it during an unbind", async () => {
+    await page.viewport(1200, 900)
+    const removed = deferred<void>()
+    let bindings: AdminTenantBinding[] = [
+      { ...ADA_BINDING, role: SUPPORT_ROLE.role },
+      { ...ADA_BINDING, role: AUDITOR_ROLE.role },
+    ]
+    const scripted = makeAdminBackend({
+      listMembers: () => Promise.resolve({ members: [ADA], next_cursor: '' }),
+      listInvitations: () => Promise.resolve({ invitations: [], next_cursor: '' }),
+      listTenantRoles: () => Promise.resolve([SUPPORT_ROLE, AUDITOR_ROLE]),
+      listTenantAccountBindings: () => Promise.resolve([...bindings]),
+      unbindTenantRole: (input) =>
+        removed.promise.then(() => {
+          bindings = bindings.filter((binding) => binding.role !== input.role)
+        }),
+    })
+    renderPage({}, undefined, scripted)
+    await waitForMemberName(ADA.display_name)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: manageName(ADA) }))
+    const panel = await screen.findByRole('dialog', {
+      name: enUS.members.panel.title,
+    })
+    const unbinds = within(panel).getAllByRole('button', {
+      name: enUS.members.panel.unbind,
+    })
+    expect(unbinds).toHaveLength(2)
+    await user.click(unbinds[0]!)
+    await user.click(
+      await screen.findByRole('button', { name: enUS.common.confirm }),
+    )
+
+    // The write is in flight; the operator clicks the panel's blank area, so
+    // the modal paper -- not the removed control -- holds focus.
+    await waitFor(() =>
+      expect(unbinds[0]).toHaveAttribute('aria-busy', 'true'),
+    )
+    await user.click(panel)
+    expect(
+      panel,
+      `focus after clicking the panel; document.activeElement is ${describeActiveElement()}`,
+    ).toHaveFocus()
+
+    removed.resolve()
+    await waitFor(() =>
+      expect(
+        within(panel).getAllByRole('button', {
+          name: enUS.members.panel.unbind,
+        }),
+      ).toHaveLength(1),
+    )
+    await nextFrame()
+    // The removed control did not hold focus when it left, so the landing
+    // must not pull the paper's focus to the remaining row.
+    expect(
+      panel,
+      `focus after the unbind; document.activeElement is ${describeActiveElement()}`,
+    ).toHaveFocus()
   })
 })
