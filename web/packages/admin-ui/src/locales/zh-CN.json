@@ -918,6 +918,7 @@
     "status": {
       "label": "状态",
       "submit": "保存状态",
+      "unchanged": "状态未改动",
       "active": "已启用",
       "disabled": "已停用",
       "deleted": "已删除",

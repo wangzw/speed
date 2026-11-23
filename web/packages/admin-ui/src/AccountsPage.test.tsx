@@ -3186,10 +3186,10 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     // The status control is seeded from the account (active), so the save
-    // is disabled until the operator picks a different status: a stray
+    // is unavailable until the operator picks a different status: a stray
     // click can never disable an account the operator did not mean to.
     const save = await screen.findByRole('button', { name: zhCN.accounts.status.submit })
-    expect(save).toBeDisabled()
+    expect(save).toHaveAttribute('aria-disabled', 'true')
     await user.click(screen.getByLabelText(zhCN.accounts.status.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)

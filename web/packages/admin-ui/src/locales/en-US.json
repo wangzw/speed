@@ -918,6 +918,7 @@
     "status": {
       "label": "Status",
       "submit": "Save status",
+      "unchanged": "Status unchanged",
       "active": "Active",
       "disabled": "Disabled",
       "deleted": "Deleted",

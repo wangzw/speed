@@ -113,6 +113,7 @@ import type { SubmitHandler, UseFormReturn } from 'react-hook-form'
 import type { UseMutationResult } from '@tanstack/react-query'
 import { useStepUpGate } from '@speed/auth-core'
 import {
+  ActionButton,
   ConfirmDialog,
   DataTable,
   FormField,
@@ -2475,15 +2476,15 @@ function AccountDetailWrites({
           <MenuItem value="active">{t('accounts.status.active')}</MenuItem>
           <MenuItem value="disabled">{t('accounts.status.disabled')}</MenuItem>
         </TextField>
-        <Button
+        <ActionButton
           type="button"
-          variant="outlined"
-          loading={feedback.status.pending}
-          disabled={feedback.status.pending || statusUnchanged}
+          busy={feedback.status.pending}
+          unavailable={statusUnchanged}
+          unavailableReason={t('accounts.status.unchanged')}
           onClick={() => writeStatus()}
         >
           {t('accounts.status.submit')}
-        </Button>
+        </ActionButton>
       </Box>
       <WriteFeedbackRegion outcome={feedback.status.outcome} />
 
