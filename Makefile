@@ -425,8 +425,10 @@ python-version:
 # --workspace-concurrency=1 lets each vitest process take the whole GATE_JOBS
 # budget, so the product stays GATE_JOBS instead of GATE_JOBS squared. The lint
 # and typecheck legs start one process per package and carry no second width,
-# so they keep GATE_JOBS. The a11y sweep and the browser tier each start a
-# single vitest process, so their --maxWorkers is already the budget.
+# so they keep GATE_JOBS. Neither emits a file (every package extends
+# noEmit), so they also pass --no-sort: no ordering dependency exists to
+# respect. The a11y sweep and the browser tier each start a single vitest
+# process, so their --maxWorkers is already the budget.
 #
 # The frontend gate is three phases, so `check` can run each at the point its
 # cost belongs: the static phase rejects most changes in a fraction of a run,
@@ -441,8 +443,8 @@ web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule test
 
 web-check-static: ## Install the frontend dependencies and run its static checks
 	@pnpm -C web install --frozen-lockfile
-	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) lint
-	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) typecheck
+	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint
+	@pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck
 	@pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/
 
 web-check-test: ## Run the frontend's unit tests and route-level accessibility sweep

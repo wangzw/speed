@@ -238,8 +238,8 @@ EMBEDS_FRONTEND_BUILD = (
 WEB_CHECK_PHASES = {
     "web-check-static": (
         "pnpm -C web install --frozen-lockfile",
-        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) lint",
-        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) typecheck",
+        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint",
+        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck",
         "pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/",
     ),
     "web-check-test": (
