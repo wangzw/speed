@@ -1184,6 +1184,7 @@
       "startFailed": "发起失败"
     },
     "terminate": "终止",
+    "terminateEnded": "该冒充已结束，无需终止。",
     "terminated": "已终止对账户{{account}}的冒充。",
     "terminatedUnnamed": "已终止对该账户的冒充。",
     "recordsUnavailable": "冒充期间无法查看冒充记录，也不能终止冒充；结束冒充后可在此查看。",
@@ -1208,6 +1209,7 @@
       "title": "发起冒充",
       "precondition": "开始冒充前，你本人的账户必须已启用短信以外的第二因素，且启用至今已满本系统要求的时长。刚添加的第二因素不算，重新登录也不会缩短这段等待。",
       "accountLabel": "目标账户",
+      "accountRequired": "请先选择目标账户。",
       "tenantHint": "请先选择一个组织；被冒充账户必须属于该组织。",
       "reasonLabel": "理由",
       "ttlLabel": "有效期（秒）",

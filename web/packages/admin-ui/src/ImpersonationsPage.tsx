@@ -79,10 +79,9 @@
  * both halves render together.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
@@ -99,6 +98,7 @@ import type { AuthnImpersonationGrant } from '@speed/api-sdk'
 import { useStepUpGate } from '@speed/auth-core'
 import type { StepUpGate } from '@speed/auth-core'
 import {
+  ActionButton,
   DataTable,
   EmptyState,
   ListSkeleton,
@@ -133,6 +133,7 @@ import { ADMIN_UI_NAMESPACE } from './resources.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useAdminUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
+import { useSectionHeadingFocus } from './internal/section-heading-focus.js'
 import { useAdminOperations } from './operations.js'
 import type { AdminAccount, AdminImpersonation } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
@@ -151,13 +152,15 @@ interface ImpersonationStatusView {
  */
 function TerminateButton({
   record,
-  disabled,
-  loading,
+  busy,
+  unavailable,
+  unavailableReason,
   onTerminate,
 }: {
   readonly record: AdminImpersonation
-  readonly disabled: boolean
-  readonly loading: boolean
+  readonly busy: boolean
+  readonly unavailable: boolean
+  readonly unavailableReason?: string
   readonly onTerminate: (
     record: AdminImpersonation,
     identity: AccountIdentityValue,
@@ -166,13 +169,13 @@ function TerminateButton({
   const { t } = useAdminUiTranslation()
   const identity = useAccountIdentity(record.target)
   return (
-    <Button
+    <ActionButton
       type="button"
       size="small"
-      variant="outlined"
-      color="error"
-      disabled={disabled}
-      loading={loading}
+      tone="danger"
+      busy={busy}
+      unavailable={unavailable}
+      unavailableReason={unavailableReason}
       onClick={() =>
         onTerminate(record, {
           name: identity.name,
@@ -181,7 +184,7 @@ function TerminateButton({
       }
     >
       {t('impersonations.terminate')}
-    </Button>
+    </ActionButton>
   )
 }
 
@@ -268,6 +271,19 @@ export function ImpersonationsPage({
   // The record table's scope: its terminate actions share one result
   // location under the table.
   const recordsFeedback = useWriteFeedback()
+  // Which record's termination is in flight. The busy state stays on the row
+  // the operator activated; while one record's termination runs, its siblings
+  // report a context change instead of borrowing that row's progress.
+  const [terminatingIds, setTerminatingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
+  // The current-impersonation section's heading: a landed end removes the
+  // grant block that held the end button, so focus moves to the section.
+  const { sectionRef: currentSectionRef, focusHeading: focusCurrentHeading } =
+    useSectionHeadingFocus()
+  // The end control itself, so a settled end can tell whether it still held
+  // focus when the grant block left the document.
+  const endButtonRef = useRef<HTMLButtonElement | null>(null)
   // The console session, and the step-up gate over it: the gate treats a
   // write as a shortfall exactly when the session says so (a 401 that ends
   // the session is not a shortfall, and arming a step-up for it would
@@ -367,6 +383,18 @@ export function ImpersonationsPage({
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
 
+  const markTerminating = useCallback((id: string, inFlight: boolean) => {
+    setTerminatingIds((previous) => {
+      const next = new Set(previous)
+      if (inFlight) {
+        next.add(id)
+      } else {
+        next.delete(id)
+      }
+      return next
+    })
+  }, [])
+
   const endAttempt = (): Promise<void> =>
     currentFeedback.run(async () => {
       try {
@@ -392,6 +420,19 @@ export function ImpersonationsPage({
           queryKey: getAuthnAdminImpersonationsListQueryKey(tenant),
         })
       }
+      // The grant block that held the end button leaves the document; focus
+      // lands on the section's heading, which stays. Focus is only taken
+      // over when the end control still holds it or its unmount has already
+      // returned it to the document body; a reader who moved it elsewhere
+      // keeps it.
+      const active = document.activeElement
+      if (
+        active === null ||
+        active === document.body ||
+        active === endButtonRef.current
+      ) {
+        focusCurrentHeading()
+      }
       // The write settled: the host re-reads the identity, without the
       // page waiting for it.
       notifyIdentityChange(identityChange, 'ended')
@@ -409,8 +450,9 @@ export function ImpersonationsPage({
     record: AdminImpersonation,
     identity: AccountIdentityValue,
   ): void => {
-    const attempt = (): Promise<void> =>
-      recordsFeedback.run(async () => {
+    const attempt = (): Promise<void> => {
+      markTerminating(record.id, true)
+      return recordsFeedback.run(async () => {
         try {
           await revokeImpersonation.mutateAsync({ id: record.id, tenant })
           // A termination changes what the caller's own status read may
@@ -430,8 +472,11 @@ export function ImpersonationsPage({
             return null
           }
           throw error
+        } finally {
+          markTerminating(record.id, false)
         }
       })
+    }
     void attempt()
   }
 
@@ -516,14 +561,21 @@ export function ImpersonationsPage({
       align: 'right',
       header: t('impersonations.column.actions'),
       cellWrap: 'nowrap',
-      cell: (record) => (
-        <TerminateButton
-          record={record}
-          disabled={!isNullInstant(record.ended_at) || recordsFeedback.pending}
-          loading={recordsFeedback.pending}
-          onTerminate={terminate}
-        />
-      ),
+      cell: (record) => {
+        const ended = !isNullInstant(record.ended_at)
+        const terminating = terminatingIds.has(record.id)
+        return (
+          <TerminateButton
+            record={record}
+            busy={terminating}
+            unavailable={ended || (recordsFeedback.pending && !terminating)}
+            unavailableReason={
+              ended ? t('impersonations.terminateEnded') : undefined
+            }
+            onTerminate={terminate}
+          />
+        )
+      },
     },
   ]
 
@@ -551,7 +603,11 @@ export function ImpersonationsPage({
         sx={{ mb: 2 }}
       />
 
-      <SectionCard title={t('impersonations.current.title')} sx={{ mb: 3 }}>
+      <SectionCard
+        ref={currentSectionRef}
+        title={t('impersonations.current.title')}
+        sx={{ mb: 3 }}
+      >
         <AdminAsyncSection
           pending={statusPending}
           payload={statusPayload}
@@ -593,17 +649,16 @@ export function ImpersonationsPage({
                     })}
                   </Typography>
                 </Stack>
-                <Button
+                <ActionButton
+                  ref={endButtonRef}
                   type="button"
                   size="small"
-                  variant="outlined"
-                  color="error"
-                  disabled={currentFeedback.pending}
-                  loading={currentFeedback.pending}
+                  tone="danger"
+                  busy={currentFeedback.pending}
                   onClick={() => void endAttempt()}
                 >
                   {t('impersonations.current.end')}
-                </Button>
+                </ActionButton>
               </Alert>
             )
           }
@@ -787,6 +842,17 @@ function StartImpersonationForm({
   // the in-force section renders. An unresolved read leaves the notice
   // neutral; the recorded id is never its fallback.
   const identity = useAccountIdentity(account?.id)
+  const tenantHintId = useId()
+
+  // The submit is unavailable until both a tenant and a target account are
+  // chosen. The tenant gap points at the hint already on the page; the
+  // account gap has its own reason.
+  const submitExplanation =
+    tenant === ''
+      ? { unavailableDescribedBy: tenantHintId }
+      : account === null
+        ? { unavailableReason: t('impersonations.start.accountRequired') }
+        : {}
 
   const ttlSeconds = ttl.trim() === '' ? undefined : Number(ttl)
 
@@ -890,19 +956,20 @@ function StartImpersonationForm({
           onChange={(event) => setTtl(event.target.value)}
           label={t('impersonations.start.ttlLabel')}
         />
-        <Button
+        <ActionButton
           type="button"
-          variant="contained"
-          disabled={feedback.pending || account === null || tenant === ''}
-          loading={feedback.pending}
+          emphasis="primary"
+          busy={feedback.pending}
+          unavailable={account === null || tenant === ''}
+          {...submitExplanation}
           onClick={submit}
         >
           {t('impersonations.start.submit')}
-        </Button>
+        </ActionButton>
       </Box>
       {tenant === '' && (
         <Box sx={{ mt: 1 }}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography id={tenantHintId} variant="body2" color="text.secondary">
             {t('impersonations.start.tenantHint')}
           </Typography>
         </Box>

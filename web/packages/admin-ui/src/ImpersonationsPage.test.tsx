@@ -490,7 +490,74 @@ describe('ImpersonationsPage', () => {
         }),
       ),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: zhCN.impersonations.terminate })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.impersonations.terminate })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keeps the ended record’s terminate control focusable and explains why', async () => {
+    const user = userEvent.setup()
+    const revokeImpersonation = vi.fn(() => Promise.resolve())
+    const operations = withPage({
+      listImpersonations: () =>
+        Promise.resolve([
+          record({ ended_at: '2026-10-15T12:30:00Z', end_reason: 'revoked' }),
+        ]),
+      revokeImpersonation,
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+    const terminate = await screen.findByRole('button', {
+      name: zhCN.impersonations.terminate,
+    })
+
+    // The record has already ended, so the control is unavailable; it stays
+    // focusable and names the reason instead of turning natively disabled
+    // (REQ-presentation-041).
+    terminate.focus()
+    expect(terminate).toHaveFocus()
+    expect(terminate).toHaveAttribute('aria-disabled', 'true')
+    expect(terminate).toHaveAccessibleDescription(
+      zhCN.impersonations.terminateEnded,
+    )
+
+    // Every activation path refuses: click, Enter and Space send nothing.
+    await user.click(terminate)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(revokeImpersonation).not.toHaveBeenCalled()
+  })
+
+  it('keeps the start submit focusable while its precondition is unmet', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
+    await screen.findByText(zhCN.impersonations.current.none)
+
+    const submit = screen.getByRole('button', {
+      name: zhCN.impersonations.start.submit,
+    })
+    // No tenant and no account: the control stays focusable and points at
+    // the page's own selection hint.
+    submit.focus()
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.impersonations.start.tenantHint,
+    )
+
+    // With a tenant chosen the remaining gap is the account, which has its
+    // own reason.
+    await pickTenant(user)
+    const withTenant = screen.getByRole('button', {
+      name: zhCN.impersonations.start.submit,
+    })
+    expect(withTenant).toHaveAttribute('aria-disabled', 'true')
+    expect(withTenant).toHaveAccessibleDescription(
+      zhCN.impersonations.start.accountRequired,
+    )
+    withTenant.focus()
+    expect(withTenant).toHaveFocus()
   })
 
   it('terminates an in-force impersonation and re-reads the session status', async () => {
@@ -720,6 +787,50 @@ describe('ImpersonationsPage', () => {
 
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.terminate }))
     await expectRefreshInert(readCounts, readsBefore)
+
+    await act(async () => {
+      pending.resolve()
+    })
+  })
+
+  it('holds sibling terminate controls back while one record is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const revokeImpersonation = vi.fn(() => pending.promise)
+    const operations = withPage({
+      listImpersonations: () =>
+        Promise.resolve([
+          record({ id: 'imp-1', actor: 'staff-1', target: 'acc-1' }),
+          record({ id: 'imp-2', actor: 'staff-2', target: 'acc-7' }),
+        ]),
+      revokeImpersonation,
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+
+    const first = (await screen.findByText('Target One')).closest('tr')
+    const second = (await screen.findByText('Target Seven')).closest('tr')
+    expect(first).not.toBeNull()
+    expect(second).not.toBeNull()
+    const terminate = (row: Element): HTMLElement =>
+      within(row as HTMLElement).getByRole('button', {
+        name: zhCN.impersonations.terminate,
+      })
+
+    await user.click(terminate(first as Element))
+    expect(revokeImpersonation).toHaveBeenCalledTimes(1)
+
+    // A row that shares the scope is unavailable without a reason: the
+    // reason belongs to the record whose termination is running.
+    const sibling = terminate(second as Element)
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy', 'true')
+    expect(sibling).not.toHaveAccessibleDescription()
+
+    await user.click(sibling)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(revokeImpersonation).toHaveBeenCalledTimes(1)
 
     await act(async () => {
       pending.resolve()
@@ -987,7 +1098,7 @@ describe('ImpersonationsPage', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: zhCN.impersonations.start.submit }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('states the impersonation precondition without the configuration key or a fixed wait', async () => {
@@ -1022,9 +1133,9 @@ describe('ImpersonationsPage', () => {
     await screen.findByText(zhCN.impersonations.current.none)
     await pickStartAccount(user, 'acc-9')
     const submit = screen.getByRole('button', { name: zhCN.impersonations.start.submit })
-    expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(submit)
-    // A disabled control dispatches nothing; flush the queue so an
+    // An unavailable control refuses activation; flush the queue so an
     // accidental request would have landed before the assertion.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1032,7 +1143,7 @@ describe('ImpersonationsPage', () => {
     expect(backend.started).toEqual([])
 
     await pickTenant(user)
-    expect(submit).toBeEnabled()
+    expect(submit).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it("starts an impersonation, sending the endpoint's request body", async () => {

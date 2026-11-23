@@ -1184,6 +1184,7 @@
       "startFailed": "start failed"
     },
     "terminate": "Terminate",
+    "terminateEnded": "This impersonation has already ended.",
     "terminated": "Terminated the impersonation of account {{account}}.",
     "terminatedUnnamed": "Terminated the impersonation of the account.",
     "recordsUnavailable": "While impersonating, you cannot view impersonation records or terminate the impersonation. View them after ending it.",
@@ -1208,6 +1209,7 @@
       "title": "Start an impersonation",
       "precondition": "To start an impersonation, your own account must already have a second factor other than SMS, enabled for at least as long as this system requires. A second factor added just now does not count, and signing in again does not shorten the wait.",
       "accountLabel": "Target account",
+      "accountRequired": "Choose a target account first.",
       "tenantHint": "Select an organization first; the target account must belong to that organization.",
       "reasonLabel": "Reason",
       "ttlLabel": "Valid for (seconds)",
