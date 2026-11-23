@@ -21,7 +21,7 @@
  * back to a fresh-visitor sign-in.
  */
 
-import { act, fireEvent } from '@testing-library/react'
+import { act, fireEvent, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { attachSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
@@ -393,9 +393,15 @@ describe('ProductShell view machine', () => {
     expect(active).not.toBe(document.body)
     expect(utils.container.contains(active)).toBe(true)
     expect(active?.textContent).toContain(authUiZhCN.sessionEnded.title)
-    expect(active?.textContent).toContain(productShellZhCN.announcements.sessionEnded)
     const status = utils.getByRole('status')
-    expect(status).toHaveTextContent(productShellZhCN.announcements.sessionEnded)
+    // The region is inserted empty and fills on a later frame.
+    expect(status).toHaveTextContent('')
+    await waitFor(() =>
+      expect(status).toHaveTextContent(
+        productShellZhCN.announcements.sessionEnded,
+      ),
+    )
+    expect(active?.textContent).toContain(productShellZhCN.announcements.sessionEnded)
     // The shell-owned parts of the ended branch (the focusable container
     // and the sr-only live region) carry no axe violations of their own;
     // the branch is a whole-page placeholder by design, so the `region`

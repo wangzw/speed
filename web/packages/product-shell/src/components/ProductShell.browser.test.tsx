@@ -33,6 +33,7 @@ import { attachSession } from '@speed/auth-core'
 import { Avatar } from '@speed/layout-kit'
 import layoutKitEnUS from '../../../layout-kit/src/locales/en-US.json' with { type: 'json' }
 import layoutKitZhCN from '../../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
+import productShellEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderWithProviders } from '../../test-utils/render.js'
 import {
   authenticatedCompletion,
@@ -153,7 +154,7 @@ function tenantHeaderShell(language: Language): ReactElement {
 
 /** A login script over the real-client rig: the flow start, its first
  * answer and the profile the completion reads. */
-async function signIn(): Promise<void> {
+async function signIn(): Promise<ReturnType<typeof makeRealClientRig>['session']> {
   const rig = makeRealClientRig((call) => {
     const key = `${call.method} ${call.path}`
     if (key === 'POST /api/v1/auth/flows') {
@@ -164,6 +165,9 @@ async function signIn(): Promise<void> {
     }
     if (key === 'GET /api/v1/auth/me') {
       return jsonResponse(200, principal())
+    }
+    if (key === 'POST /api/v1/auth/logout') {
+      return new Response(null, { status: 204 })
     }
     throw new Error(`unexpected request: ${key}`)
   })
@@ -179,6 +183,7 @@ async function signIn(): Promise<void> {
       input: { identifier: 'alice@example.com', password: 'password-1' },
     })
   })
+  return rig.session
 }
 
 /** The app-shell strings in the case's language: the drawer trigger's
@@ -304,4 +309,54 @@ describe('ProductShell md header band in Chromium', () => {
       expectEveryTenantControlReachable(language, false)
     })
   }
+})
+
+describe('ProductShell session-ended announcement in Chromium', () => {
+  it('inserts the live region empty and fills it a frame later', async () => {
+    // The ended branch mounts its announcement region and the whole
+    // session-ended screen in one commit. A MutationObserver records the
+    // region's text in every batch after it appears, so the empty birth
+    // frame and the later fill are observed facts: an effect-armed gate
+    // could be flushed inside that commit by a descendant's commit-phase
+    // update and the region would be born with its text.
+    const message = productShellEnUS.announcements.sessionEnded
+    const snapshots: string[] = []
+    const observer = new MutationObserver(() => {
+      const region = document.querySelector('[role="status"]')
+      if (region !== null) {
+        snapshots.push(region.textContent ?? '')
+      }
+    })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    try {
+      await page.viewport(900, VIEWPORT_HEIGHT)
+      const session = await signIn()
+      renderWithProviders(tenantHeaderShell('en-US'), { language: 'en-US' })
+      await screen.findByRole('banner')
+
+      await act(async () => {
+        await session.logout()
+      })
+
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toBeInTheDocument(),
+      )
+      await waitFor(() => expect(snapshots.length).toBeGreaterThan(0))
+      // The batch that reported the region's insertion read it empty.
+      expect(snapshots[0]).toBe('')
+
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent(message),
+      )
+      // Some later batch carried the text, so the change reached an
+      // already-inserted region rather than being born with it.
+      expect(snapshots).toContain(message)
+    } finally {
+      observer.disconnect()
+    }
+  })
 })

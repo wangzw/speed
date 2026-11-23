@@ -78,7 +78,7 @@ import { SessionEndedScreen } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { AppShell } from '@speed/layout-kit'
 import type { AppShellProps } from '@speed/layout-kit'
-import { visuallyHiddenSx } from '@speed/ui-kit'
+import { AnnouncementRegion, visuallyHiddenSx } from '@speed/ui-kit'
 import { PRODUCT_SHELL_NAMESPACE } from '../resources.js'
 
 /** The AppShell chrome props the authenticated frame is built from,
@@ -175,13 +175,6 @@ export function ProductShell({
   const snapshot = useAuthState()
   const [reachedApp, setReachedApp] = useState(false)
   const { t, i18n } = useTranslation(PRODUCT_SHELL_NAMESPACE)
-  // The ended branch's polite announcement, stored structurally and
-  // rendered at render time in the active language -- the FileUploader
-  // pattern (a standing role="status" region whose text flips). It is
-  // set by the flip effect only after the ended branch has committed
-  // with an empty region, so the text lands as an insertion into a live
-  // region that is already in the tree -- the one reliable announce.
-  const [announced, setAnnounced] = useState(false)
   // The focus target of whichever branch renders: conditional rendering
   // mounts exactly one branch, so this ref always names the current
   // branch's container.
@@ -209,13 +202,14 @@ export function ProductShell({
 
   // The branch-flip effect: on a real change of branch -- never on the
   // first render, whose focus belongs to the host's page load -- move
-  // focus into the new branch's container, and manage the polite
-  // announcement: a flip into the ended view announces (session death
-  // and explicit sign-out are the same snapshot flip; the destination
-  // screen the shell itself placed there is the flip worth a polite
-  // word), and any flip that leaves the ended view clears the standing
-  // announcement so the next arrival inserts fresh text into the live
-  // region instead of finding it pre-filled.
+  // focus into the new branch's container. The ended view's polite
+  // announcement is the branch's own live region: a flip into it mounts
+  // AnnouncementRegion, which inserts the region empty and writes the
+  // session-ended text a frame later. A flip that leaves the ended view
+  // unmounts both, so the next arrival starts from an empty birth frame
+  // again (session death and an explicit sign-out are the same snapshot
+  // flip; the destination screen the shell itself placed there is the
+  // flip worth a polite word).
   useEffect(() => {
     const previous = previousBranchRef.current
     previousBranchRef.current = branch
@@ -223,11 +217,6 @@ export function ProductShell({
       return
     }
     branchContainerRef.current?.focus()
-    if (branch === 'ended') {
-      setAnnounced(true)
-    } else if (previous === 'ended') {
-      setAnnounced(false)
-    }
   }, [branch])
 
   // The shell's own text needs its own namespace registration, exactly
@@ -284,9 +273,10 @@ export function ProductShell({
       // same tabIndex={-1} mechanism AppShell's own main uses.
       <Box ref={branchContainerRef} component="main" tabIndex={-1}>
         {announcementsRegistered && (
-          <Box component="p" role="status" sx={visuallyHiddenSx}>
-            {announced ? t('announcements.sessionEnded') : ''}
-          </Box>
+          <AnnouncementRegion
+            message={t('announcements.sessionEnded')}
+            sx={visuallyHiddenSx}
+          />
         )}
         {sessionEnded !== undefined ? (
           typeof sessionEnded === 'function' ? (
