@@ -249,6 +249,85 @@ function polyfillElementsFromPoint(): void {
 }
 
 /**
+ * The control shapes that make a subtree interactive. Shared by the
+ * focus-trap walk below (which additionally drops non-tabbable entries) and
+ * the tooltip-portal exemption (which counts any focusable control): a
+ * portal carrying one must never be exempted as inert decoration.
+ */
+const FOCUSABLE_CONTROL_SELECTOR = [
+  'a[href]',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'iframe',
+  'summary',
+  'audio[controls]',
+  'video[controls]',
+  '[contenteditable]:not([contenteditable="false"])',
+  '[tabindex]',
+].join(', ')
+
+/**
+ * Whether a candidate is reachable by keyboard. A disabled control and a
+ * hidden input are not. `aria-hidden` does NOT remove a control from the
+ * tab order -- it only takes the node out of the accessibility tree -- so
+ * it is deliberately not consulted here: an aria-hidden control is still
+ * keyboard-reachable content the background holds.
+ */
+function isReachableControl(candidate: Element): boolean {
+  if (candidate.hasAttribute('disabled')) {
+    return false
+  }
+  if (
+    candidate.tagName === 'INPUT' &&
+    candidate.getAttribute('type') === 'hidden'
+  ) {
+    return false
+  }
+  return true
+}
+
+/**
+ * Whether `element` is itself a control a keyboard could reach, or holds
+ * one. The root is checked too: a portal root carrying `tabindex` is
+ * focusable without any descendant, so counting descendants alone would
+ * exempt interactive content as inert.
+ */
+function hasFocusableControl(element: Element): boolean {
+  if (element.matches(FOCUSABLE_CONTROL_SELECTOR) && isReachableControl(element)) {
+    return true
+  }
+  for (const candidate of element.querySelectorAll(FOCUSABLE_CONTROL_SELECTOR)) {
+    if (isReachableControl(candidate)) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * A MUI Popper root carries `role="tooltip"` and is portaled to the body,
+ * outside the open modal's aria-hidden chain. A tooltip with no focusable
+ * content is not something a reader can reach behind the modal, so the
+ * background check does not count it as page content. Three conditions
+ * keep the exemption narrow: the portal must be a direct body child (a
+ * tooltip nested inside the overlay's ancestor chain is not a body
+ * portal, and exempting it would hide page content from the check); the
+ * root itself and any descendant must carry no keyboard-reachable control
+ * (`tabindex` on the root counts); and the role alone is never enough,
+ * because a portal holding a control is interactive content the
+ * background really does expose.
+ */
+function isExemptTooltipPortal(element: Element): boolean {
+  return (
+    element.parentElement === document.body &&
+    element.getAttribute('role') === 'tooltip' &&
+    !hasFocusableControl(element)
+  )
+}
+
+/**
  * Body-child tags that cannot carry aria-hidden -- the ARIA conformance
  * list MUI's own modal manager skips -- plus a hidden input. The
  * background check below exempts them: they are not content an assistive
@@ -374,7 +453,10 @@ function openOverlays(): OpenOverlay[] {
  * rules cannot be answered against content hidden from assistive tech --
  * the state passForModal exists to skip. A page that does not hide its
  * background could let a screen reader reach content the overlay covers,
- * so the scan fails instead of exempting the rules silently.
+ * so the scan fails instead of exempting the rules silently. One portal is
+ * exempt: a MUI Popper root carrying role="tooltip" with no focusable
+ * descendant (see isExemptTooltipPortal), which is decoration a reader
+ * cannot reach.
  */
 function assertBackgroundAriaHidden(overlay: OpenOverlay): void {
   const keepChain = new Set<Element>()
@@ -393,7 +475,8 @@ function assertBackgroundAriaHidden(overlay: OpenOverlay): void {
       // checked.
       if (
         child === overlay.root ||
-        isAriaHiddenForbiddenTag(child.tagName, child.getAttribute('type'))
+        isAriaHiddenForbiddenTag(child.tagName, child.getAttribute('type')) ||
+        isExemptTooltipPortal(child)
       ) {
         continue
       }
@@ -499,20 +582,7 @@ async function runAxeScan(options: axe.RunOptions = {}): Promise<axe.AxeResults>
 
 /** The tabbable elements inside an overlay's focus trap, in DOM order. */
 function tabbableElements(root: HTMLElement): HTMLElement[] {
-  const selector = [
-    'a[href]',
-    'button',
-    'input',
-    'select',
-    'textarea',
-    'iframe',
-    'summary',
-    'audio[controls]',
-    'video[controls]',
-    '[contenteditable]:not([contenteditable="false"])',
-    '[tabindex]',
-  ].join(', ')
-  return [...root.querySelectorAll<HTMLElement>(selector)].filter((element) => {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE_CONTROL_SELECTOR)].filter((element) => {
     if (element.hasAttribute('disabled')) {
       return false
     }

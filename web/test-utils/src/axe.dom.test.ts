@@ -17,6 +17,8 @@ import { expectNoAxeViolations, isBrowserTier } from './axe.js'
 const BACKGROUND_ID = 'axe-jsdom-fixture-background'
 const DIALOG_ID = 'axe-jsdom-fixture-dialog'
 const MENU_ID = 'axe-jsdom-fixture-menu'
+const TOOLTIP_ID = 'axe-jsdom-fixture-tooltip'
+const NESTED_HOST_ID = 'axe-jsdom-fixture-nested-host'
 
 const CHROMIUM_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
@@ -133,10 +135,92 @@ function buildOpenDialogWithMismatch(): void {
   document.body.append(root)
 }
 
+/**
+ * A MUI Popper's portal root: a body child outside the open overlay carrying
+ * `role="tooltip"`. With `focusable` it also holds a control, which makes it
+ * interactive content the page behind the modal must not lose.
+ */
+function buildTooltipPortal(focusable: boolean): void {
+  const portal = document.createElement('div')
+  portal.id = TOOLTIP_ID
+  portal.setAttribute('role', 'tooltip')
+  if (focusable) {
+    const action = document.createElement('button')
+    action.type = 'button'
+    action.textContent = 'Tooltip action'
+    portal.append(action)
+  } else {
+    portal.textContent = 'Saved.'
+  }
+  document.body.append(portal)
+}
+
+/**
+ * A role="tooltip" portal that is NOT a direct body child: it shares a
+ * body-child host with the open dialog, so it sits inside the overlay's
+ * ancestor chain rather than beside it. The exemption is only for a body
+ * portal, so this nested one must still be read as background content.
+ */
+function buildNestedTooltipPortal(): void {
+  const host = document.createElement('div')
+  host.id = NESTED_HOST_ID
+
+  const root = document.createElement('div')
+  root.id = DIALOG_ID
+  root.className = 'MuiModal-root MuiDialog-root'
+  const paper = document.createElement('div')
+  paper.className = 'MuiDialog-paper'
+  paper.setAttribute('role', 'dialog')
+  paper.setAttribute('aria-modal', 'true')
+  paper.setAttribute('aria-label', 'Fixture dialog')
+  root.append(paper)
+
+  const portal = document.createElement('div')
+  portal.id = TOOLTIP_ID
+  portal.setAttribute('role', 'tooltip')
+  portal.textContent = 'Saved.'
+
+  host.append(root, portal)
+  document.body.append(host)
+}
+
+/**
+ * A body-child tooltip portal whose root itself carries `tabindex`: it is
+ * keyboard-focusable without any descendant, so the portal is interactive
+ * content rather than inert decoration.
+ */
+function buildTooltipPortalFocusableRoot(): void {
+  const portal = document.createElement('div')
+  portal.id = TOOLTIP_ID
+  portal.setAttribute('role', 'tooltip')
+  portal.setAttribute('tabindex', '0')
+  portal.textContent = 'Saved.'
+  document.body.append(portal)
+}
+
+/**
+ * A body-child tooltip portal holding a control that is aria-hidden but
+ * stays in the tab order: aria-hidden removes it from the accessibility
+ * tree without making it unreachable by keyboard.
+ */
+function buildTooltipPortalWithHiddenControl(): void {
+  const portal = document.createElement('div')
+  portal.id = TOOLTIP_ID
+  portal.setAttribute('role', 'tooltip')
+  const action = document.createElement('button')
+  action.type = 'button'
+  action.setAttribute('aria-hidden', 'true')
+  action.textContent = 'Tooltip action'
+  portal.append(action)
+  document.body.append(portal)
+}
+
 afterEach(() => {
   document.getElementById(BACKGROUND_ID)?.remove()
   document.getElementById(DIALOG_ID)?.remove()
   document.getElementById(MENU_ID)?.remove()
+  document.getElementById(TOOLTIP_ID)?.remove()
+  document.getElementById(NESTED_HOST_ID)?.remove()
   delete (globalThis as { __speedAxeKeyboardDriver?: () => Promise<void> })
     .__speedAxeKeyboardDriver
   if (userAgentDescriptor === undefined) {
@@ -198,5 +282,59 @@ describe('the tier decision under jsdom', () => {
     await expect(
       expectNoAxeViolations({ decidedInBrowser: 'totpManualDisclosure' }),
     ).rejects.toThrow(/left it incomplete/)
+  })
+
+  it('exempts a tooltip portal that carries no focusable control', async () => {
+    // MUI's Popper root carries role="tooltip" and is portaled to the body,
+    // outside the open modal's aria-hidden chain. A tooltip with nothing to
+    // focus is not content a reader can reach behind the modal, so the
+    // background check must not read it as page content.
+    buildOpenDialog()
+    buildTooltipPortal(false)
+    await expect(expectNoAxeViolations()).resolves.toBeUndefined()
+  })
+
+  it('refuses a tooltip portal that carries a focusable control', async () => {
+    // Only the role must not be enough: a portal that holds a real control
+    // is interactive content left readable outside the modal, and the
+    // background check fails instead of exempting it.
+    buildOpenDialog()
+    buildTooltipPortal(true)
+    await expect(expectNoAxeViolations()).rejects.toThrow(
+      /background is not aria-hidden/,
+    )
+  })
+
+  it('does not exempt a tooltip portal nested inside the overlay ancestor chain', async () => {
+    // The exemption is for a body portal, which is the shape MUI's own
+    // Popper produces. A role="tooltip" node nested beside the overlay
+    // inside a shared body-child host is page content the walk reaches
+    // through an ancestor, not a body portal, so the check must fail on
+    // it rather than let the role exempt it at any depth.
+    buildNestedTooltipPortal()
+    await expect(expectNoAxeViolations()).rejects.toThrow(
+      /background is not aria-hidden/,
+    )
+  })
+
+  it('refuses a tooltip portal whose root itself is focusable', async () => {
+    // A portal root carrying tabindex is focusable with no descendant at
+    // all. Counting descendants alone would exempt it as inert.
+    buildOpenDialog()
+    buildTooltipPortalFocusableRoot()
+    await expect(expectNoAxeViolations()).rejects.toThrow(
+      /background is not aria-hidden/,
+    )
+  })
+
+  it('refuses a tooltip portal whose control is aria-hidden but still keyboard-focusable', async () => {
+    // aria-hidden takes a control out of the accessibility tree without
+    // removing it from the tab order, so the portal still holds content a
+    // keyboard can reach and must not be exempted.
+    buildOpenDialog()
+    buildTooltipPortalWithHiddenControl()
+    await expect(expectNoAxeViolations()).rejects.toThrow(
+      /background is not aria-hidden/,
+    )
   })
 })
