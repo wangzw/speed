@@ -746,9 +746,14 @@ describe('the member search and paging', () => {
     await user.click(next)
     // While the second page loads, the kept first page's envelope still
     // names `acc-1`. A second click would push that same cursor onto the
-    // stack and show one page twice, so the control must be disabled until
-    // the read settles.
-    await waitFor(() => expect(next).toBeDisabled())
+    // stack and show one page twice, so the direction is busy for the read
+    // until it settles and refuses a second activation.
+    await waitFor(() => {
+      expect(next).toHaveAttribute('aria-busy', 'true')
+      expect(next).toHaveAttribute('aria-disabled', 'true')
+    })
+    await user.click(next)
+    expect(recorder.memberParams).toHaveLength(2)
 
     await act(async () => {
       resolveNext({ members: [BOB], next_cursor: '' })

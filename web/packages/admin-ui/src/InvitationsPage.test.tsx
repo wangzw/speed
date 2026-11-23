@@ -898,9 +898,14 @@ describe('InvitationsPage', () => {
     })
     await user.click(next)
     // While the next page loads, `keepPreviousData` still holds the first
-    // page's envelope, whose next_cursor names the same page. The control is
-    // busy for the read and the handler refuses a second advance.
-    await waitForCondition(() => expect(next).toBeDisabled())
+    // page's envelope, whose next_cursor names the same page. The activated
+    // direction is busy for the read and refuses a second advance.
+    await waitForCondition(() => {
+      expect(next).toHaveAttribute('aria-busy', 'true')
+      expect(next).toHaveAttribute('aria-disabled', 'true')
+    })
+    expect(listMembers).toHaveBeenCalledTimes(2)
+    await user.click(next)
     expect(listMembers).toHaveBeenCalledTimes(2)
 
     await act(async () => {
