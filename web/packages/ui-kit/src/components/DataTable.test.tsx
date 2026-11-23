@@ -277,10 +277,11 @@ describe('DataTable', () => {
     // reader already knows, each written a frame after its commit. The
     // same DOM node must survive the transition, which is what makes the
     // later text change an announcement rather than another mount. A
-    // stateful host drives the flip (the refresh is the host's own
-    // action): RTL's rerender would replace the provider tree and
-    // remount the table, which is exactly the mount the mechanism must
-    // prevent.
+    // stateful host drives the flip, the way a control owned by the host
+    // would: its own setState re-renders the table in place, so the same
+    // region node survives the loading flip. RTL's rerender keeps the
+    // providers mounted now too, but the refresh belongs to the host, and
+    // its state update is the transition this case exercises.
     function RefreshHarness() {
       const [loading, setLoading] = useState(false)
       return (

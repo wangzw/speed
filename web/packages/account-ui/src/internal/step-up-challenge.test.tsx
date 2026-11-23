@@ -309,9 +309,11 @@ function mountSession(
 }
 
 /** Test control over a dialog mounted once under the providers: the reopen
- * and re-render cases need one provider tree (and so one QueryClient)
- * across several renders, which RTL's `rerender` cannot give -- it
- * replaces the whole tree, providers included. */
+ * and re-render cases drive `open` and a version bump from the host's own
+ * state, so the dialog keeps one provider tree (and so one QueryClient)
+ * across the transitions. RTL's `rerender` keeps the providers mounted
+ * now too, but the host owns `open` here, and its state update is the
+ * shape these cases exercise. */
 interface DialogControl {
   setOpen(dialogOpen: boolean): void
   rerender(): void

@@ -26,11 +26,31 @@
  * zone formats times in the fixed TEST_TIME_ZONE instead of the
  * machine's own -- a rendered time never depends on where the test runs.
  * A case that exercises another zone passes `timeZone`.
+ *
+ * The provider tree is passed as the RTL `wrapper` option, not wrapped
+ * around `ui` by hand: RTL re-wraps a `rerender(ui)` call in the very
+ * same wrapper it rendered with, so a rerendered unit stays inside the
+ * providers and React reconciles it in place. A hand-wrapped tree
+ * instead gets REPLACED by the bare rerendered `ui` (the wrapper was
+ * applied outside RTL's knowledge), which unmounts the providers and
+ * remounts the unit -- a fresh instance whose refs and state reset, and
+ * whose query and tenant context are rebuilt, on the first rerender.
+ *
+ * A test that really needs a fresh mount changes the unit's `key`: the
+ * element type and position stay the same, so only the keyed unit
+ * remounts, while the provider tree, its query client and its i18n
+ * instance all survive -- the query cache keeps its entries. Unmounting
+ * the tree with the result's `unmount` and calling renderWithProviders
+ * again is the other way to start over, and it does start over: the new
+ * call builds a fresh query client (the old cache is gone) and, when the
+ * test passes no instance of its own, a fresh i18n instance. Pick the
+ * first when only the unit should reset, the second when the whole
+ * provider stack should.
  */
 
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { TenantProvider } from '@speed/auth-core'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
@@ -78,22 +98,27 @@ export function renderWithProviders(
   const { language = 'zh-CN', i18n, timeZone } = options
   const instance = i18n ?? createNotificationUiI18n(language)
   const queryClient = createTestQueryClient()
-  const result = render(
-    <TestTimeZoneProvider timeZone={timeZone}>
-      <I18nextProvider i18n={instance}>
-        <AppThemeProvider i18n={instance}>
-          <QueryClientProvider client={queryClient}>
-            {/* The page heading the surfaces nest under: every axe scan in
-                the suite runs at the end of a behavioural test, and
-                page-has-heading-one needs a level-1 heading in the tree. */}
-            <TenantProvider tenantId={TEST_TENANT_ID}>
-              <h1>App</h1>
-              {ui}
-            </TenantProvider>
-          </QueryClientProvider>
-        </AppThemeProvider>
-      </I18nextProvider>
-    </TestTimeZoneProvider>,
-  )
+
+  function Wrapper({ children }: { readonly children: ReactNode }): ReactElement {
+    return (
+      <TestTimeZoneProvider timeZone={timeZone}>
+        <I18nextProvider i18n={instance}>
+          <AppThemeProvider i18n={instance}>
+            <QueryClientProvider client={queryClient}>
+              {/* The page heading the surfaces nest under: every axe scan in
+                  the suite runs at the end of a behavioural test, and
+                  page-has-heading-one needs a level-1 heading in the tree. */}
+              <TenantProvider tenantId={TEST_TENANT_ID}>
+                <h1>App</h1>
+                {children}
+              </TenantProvider>
+            </QueryClientProvider>
+          </AppThemeProvider>
+        </I18nextProvider>
+      </TestTimeZoneProvider>
+    )
+  }
+
+  const result = render(ui, { wrapper: Wrapper })
   return { ...result, i18n: instance, queryClient }
 }
