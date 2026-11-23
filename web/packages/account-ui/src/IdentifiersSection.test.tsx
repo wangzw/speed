@@ -117,6 +117,19 @@ async function clickRowAction(
   )
 }
 
+/** A response the case settles itself, so a write stays in flight while the
+ * controls' state is asserted. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 /** The open verification form, scoped by its code field so the row's own
  * verify action (which shares the action word) is not matched. */
 function verificationForm(): HTMLElement {
@@ -418,7 +431,9 @@ describe('IdentifiersSection', () => {
     expect(actions.map((button) => button.textContent?.trim())).toEqual([
       zhCN.identifiers.verify,
     ])
-    expect(rowAction('only@x.test', zhCN.identifiers.verify)).toBeEnabled()
+    const onlyVerify = rowAction('only@x.test', zhCN.identifiers.verify)
+    expect(onlyVerify).toBeEnabled()
+    expect(onlyVerify).not.toHaveAttribute('aria-disabled', 'true')
     // The only login name withholds removal, not verification.
     expect(rowAction('only@x.test', zhCN.identifiers.remove)).toBeNull()
     // The row carries no overflow trigger and no menu item.
@@ -707,7 +722,7 @@ describe('IdentifiersSection', () => {
         const resend = scoped.getByRole('button', {
           name: zhCN.verification.resend,
         })
-        expect(resend).toBeDisabled()
+        expect(resend).toHaveAttribute('aria-disabled', 'true')
         // A successful send leaves no banner, so the row's own note states
         // the wait, and the resend points at it.
         const note = scoped.getByText(
@@ -721,11 +736,14 @@ describe('IdentifiersSection', () => {
           vi.advanceTimersByTime(5000)
         })
         expect(resend).toBeEnabled()
+        expect(resend).not.toHaveAttribute('aria-disabled', 'true')
         expect(
           scoped.queryByText(
             zhCN.verification.resendIn.replace('{{seconds}}', '5'),
           ),
         ).toBeNull()
+        // The hold's note leaves with the hold, so nothing describes the
+        // ready control.
         expect(resend).not.toHaveAttribute('aria-describedby')
 
         await act(async () => {
@@ -855,14 +873,17 @@ describe('IdentifiersSection', () => {
     const resend = scoped.getByRole('button', {
       name: zhCN.verification.resend,
     })
-    expect(resend).toBeDisabled()
+    // The banner carries the countdown, so the row renders no note; the
+    // control names the waiting state itself instead of pointing at a
+    // sentence that is not on the page.
+    expect(resend).toHaveAttribute('aria-disabled', 'true')
     const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
     expect(
       scoped.queryByText((content) =>
         content.startsWith(before ?? '') && content.endsWith(after ?? ''),
       ),
     ).toBeNull()
-    expect(resend).not.toHaveAttribute('aria-describedby')
+    expect(resend).toHaveAccessibleDescription(zhCN.identifiers.resendWaiting)
   })
 
   it('does not offer the row verify action while the account is pending', async () => {
@@ -1041,9 +1062,9 @@ describe('IdentifiersSection', () => {
         screen.getByRole('group', { name: zhCN.identifiers.kind.username }),
       ).queryAllByRole('button'),
     ).toHaveLength(0)
-    expect(
-      rowAction('+14155550123', zhCN.identifiers.remove),
-    ).toBeEnabled()
+    const phoneRemove = rowAction('+14155550123', zhCN.identifiers.remove)
+    expect(phoneRemove).toBeEnabled()
+    expect(phoneRemove).not.toHaveAttribute('aria-disabled', 'true')
     // The permanence note belongs to the username group, not to the phone row.
     expect(screen.getByText(zhCN.identifiers.usernamePermanent)).toBeTruthy()
   })
@@ -2736,15 +2757,20 @@ describe('IdentifiersSection', () => {
         name: zhCN.identifiers.add.submitEmail,
       })
       expect(submit).toBeEnabled()
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(submit)
 
       // The send waits on the proof: the block renders and the control that
       // asked gives way.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
-      expect(
-        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
-      ).toBeDisabled()
+      const waitingSend = screen.getByRole('button', {
+        name: zhCN.identifiers.add.submitEmail,
+      })
+      // The waiting send is still the same attempt's control: busy, not
+      // merely unavailable.
+      expect(waitingSend).toHaveAttribute('aria-disabled', 'true')
+      expect(waitingSend).toHaveAttribute('aria-busy', 'true')
       expect(
         rig.calls.filter(
           (call) =>
@@ -2864,20 +2890,33 @@ describe('IdentifiersSection', () => {
       const resend = within(form).getByRole('button', {
         name: zhCN.verification.resend,
       })
-      await waitFor(() => expect(resend).toBeEnabled())
+      await waitFor(() => {
+        expect(resend).toBeEnabled()
+        expect(resend).not.toHaveAttribute('aria-disabled', 'true')
+      })
       await user.click(resend)
       await waitFor(() => expect(fake.widgets).toHaveLength(2))
-      expect(
-        within(form).getByRole('button', {
-          name: zhCN.identifiers.add.verify,
-        }),
-      ).toBeDisabled()
+      const blockedVerify = within(form).getByRole('button', {
+        name: zhCN.identifiers.add.verify,
+      })
+      // A send waiting on its proof is not a write in flight: only the
+      // resend waits, and the code already in hand stays submittable.
+      blockedVerify.focus()
+      expect(blockedVerify).toHaveFocus()
+      expect(blockedVerify).toBeEnabled()
+      expect(blockedVerify).not.toHaveAttribute('aria-disabled', 'true')
+      expect(blockedVerify).not.toHaveAttribute('aria-busy')
+      const cancel = within(form).getByRole('button', {
+        name: zhCN.identifiers.add.cancel,
+      })
+      expect(cancel).toBeEnabled()
+      expect(cancel).not.toHaveAttribute('aria-disabled', 'true')
 
-      // A verification can still begin while the wait is outstanding: a
-      // step-up replay of a code the visitor already tried reaches it
-      // directly. It calls the wait off, so the late proof never sends and
-      // the code just proved is not invalidated by a second one.
-      fireEvent.submit(form)
+      // A verification can still begin while the wait is outstanding. It
+      // calls the wait off, so the late proof never sends and the code just
+      // proved is not invalidated by a second one.
+      blockedVerify.focus()
+      await user.keyboard('{Enter}')
       await waitFor(() =>
         expect(
           rig.calls.filter(
@@ -2894,6 +2933,168 @@ describe('IdentifiersSection', () => {
         expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
       )
       expect(sends()).toHaveLength(1)
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('holds a row resend whose proof arrives during another row’s sign-in write', async () => {
+    // The row resend waits on a fresh proof. While it waits, the viewer turns
+    // the email group’s sign-in off, and that write is still in flight when
+    // the proof arrives. The send belongs to the section’s one write scope,
+    // so it must wait for the write to settle instead of running beside it:
+    // otherwise the two attempts share the feedback scope and the switch’s
+    // result is not what the section ends on.
+    const fake = installFakeTurnstile()
+    try {
+      let primarySignIn = true
+      let sends = 0
+      const held = deferred<Response>()
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              verification: {
+                state: 'verified',
+                email: 'ada@x.test',
+                since: null,
+              },
+              identifiers: [
+                identifier({
+                  id: 'id-primary',
+                  kind: 'email',
+                  value: 'ada@x.test',
+                  proven: true,
+                  sign_in: primarySignIn,
+                }),
+                identifier({
+                  id: 'id-secondary',
+                  kind: 'email',
+                  value: 'second@x.test',
+                  proven: false,
+                  sign_in: false,
+                  verified_via: 'admin',
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          sends += 1
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            // The first send leaves the resend usable; the held resend
+            // states its own wait, which is the result the case checks for.
+            resend_after: sends === 1 ? 0 : 60,
+          })
+        }
+        if (
+          call.method === 'PUT' &&
+          call.path === '/api/v1/auth/identifiers/id-primary'
+        ) {
+          primarySignIn = (call.body as { sign_in?: boolean }).sign_in === true
+          return held.promise
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond, {
+        required: true,
+        provider: 'turnstile',
+        site_key: 'site-1',
+      })
+      const user = userEvent.setup()
+      const posted = () =>
+        rig.calls.filter(
+          (call) =>
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers',
+        )
+
+      // The row’s first send carries its proof and lands.
+      await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(posted()).toHaveLength(1))
+
+      // The resend waits on a fresh proof.
+      const codeField = await screen.findByLabelText(
+        zhCN.identifiers.add.code.label,
+      )
+      const form = codeField.closest('form') as HTMLFormElement
+      const resend = within(form).getByRole('button', {
+        name: zhCN.verification.resend,
+      })
+      await waitFor(() => expect(resend).toBeEnabled())
+      await user.click(resend)
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+
+      // Another row’s sign-in write starts and stays in flight.
+      const signInRegion = screen.getByRole('region', {
+        name: zhCN.identifiers.groups.signIn,
+      })
+      await user.click(
+        within(signInRegion).getByRole('switch', {
+          name: zhCN.identifiers.action.disable,
+        }),
+      )
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) =>
+              call.method === 'PUT' &&
+              call.path === '/api/v1/auth/identifiers/id-primary',
+          ),
+        ).toHaveLength(1),
+      )
+
+      // The proof arrives while that write is still in flight: the resend
+      // must not leave yet.
+      act(() => {
+        fake.token('token-2')
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(posted()).toHaveLength(1)
+
+      // Settling the write releases the resend, which presents its proof.
+      act(() => {
+        held.resolve(new Response(null, { status: 204 }))
+      })
+      await waitFor(() => expect(posted()).toHaveLength(2))
+      expect(posted()[1]?.body).toEqual({
+        kind: 'email',
+        value: 'second@x.test',
+        human_proof: 'token-2',
+      })
+
+      // Both results stay visible: the switch reads the write’s landed
+      // state, and the resend states the hold its answer gave it.
+      await waitFor(() =>
+        expect(
+          within(signInRegion).getByRole('switch', {
+            name: zhCN.identifiers.action.enable,
+          }),
+        ).toBeTruthy(),
+      )
+      expect(codeField).toBeInTheDocument()
+      expect(resend).toHaveAttribute('aria-disabled', 'true')
+      const note = within(form).getByText(
+        new RegExp(
+          zhCN.verification.resendIn.replace('{{seconds}}', '\\d+'),
+        ),
+      )
+      expect(note).toBeTruthy()
     } finally {
       fake.restore()
     }
@@ -4300,8 +4501,12 @@ describe('IdentifiersSection', () => {
       actions.every((button) => button.closest('[data-action-row]') !== null),
     ).toBe(true)
     expect(screen.queryByRole('menuitem')).toBeNull()
-    expect(rowAction('ada@example.test', zhCN.identifiers.verify)).toBeEnabled()
-    expect(rowAction('ada@example.test', zhCN.identifiers.remove)).toBeEnabled()
+    const mergedVerify = rowAction('ada@example.test', zhCN.identifiers.verify)
+    const mergedRemove = rowAction('ada@example.test', zhCN.identifiers.remove)
+    expect(mergedVerify).toBeEnabled()
+    expect(mergedVerify).not.toHaveAttribute('aria-disabled', 'true')
+    expect(mergedRemove).toBeEnabled()
+    expect(mergedRemove).not.toHaveAttribute('aria-disabled', 'true')
 
     // The verify action opens the row's fixed-address flow, and the remove
     // action still asks for confirmation before its write.
@@ -4401,6 +4606,1528 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getByText(zhCN.identifiers.empty.title)).toBeTruthy(),
     )
+  })
+
+  describe('focusable initiating controls', () => {
+    /** Two proved sign-in emails: the section's switch, picker, radios and
+     * row actions are all on screen. */
+    function twoEmailProfile(
+      overrides: Record<string, unknown> = {},
+    ): Record<string, unknown> {
+      return profileBody({
+        password_set: false,
+        identifiers: [
+          identifier({
+            id: 'id-a',
+            kind: 'email',
+            value: 'a@x.test',
+            proven: true,
+            sign_in: true,
+          }),
+          identifier({
+            id: 'id-b',
+            kind: 'email',
+            value: 'b@x.test',
+            proven: true,
+            sign_in: true,
+          }),
+        ],
+        ...overrides,
+      })
+    }
+
+    it('keeps the switch that started the write busy and holds its siblings without a reason', async () => {
+      const put = deferred<Response>()
+      const writes: unknown[] = []
+      let signInA = true
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: true,
+                  sign_in: signInA,
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: true,
+                  sign_in: false,
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'PUT' &&
+          call.path === '/api/v1/auth/identifiers/id-a'
+        ) {
+          writes.push(call.body)
+          return put.promise.then((response) => {
+            signInA =
+              (call.body as { sign_in?: boolean }).sign_in === true
+            return response
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      const toggle = screen.getByRole('switch', {
+        name: zhCN.identifiers.action.disable,
+      })
+      await user.click(toggle)
+      await waitFor(() => expect(writes).toHaveLength(1))
+
+      // The switch started the write: it keeps focus, reports the in-flight
+      // state instead of turning natively disabled, and swallows a second
+      // activation without moving its own value.
+      expect(toggle).toHaveFocus()
+      expect(toggle).toHaveAttribute('aria-disabled', 'true')
+      expect(toggle).not.toHaveAttribute('aria-busy')
+      expect(toggle).not.toHaveAccessibleDescription()
+      expect(toggle).toBeChecked()
+      await user.click(toggle)
+      await user.keyboard(' ')
+      expect(toggle).toHaveFocus()
+      expect(writes).toHaveLength(1)
+      expect(toggle).toBeChecked()
+      // A sibling row's remove action answers but cannot run: unavailable,
+      // no busy marker and no reason to give.
+      const siblingRemove = rowAction('b@x.test', zhCN.identifiers.remove)
+      expect(siblingRemove).not.toBeNull()
+      ;(siblingRemove as HTMLElement).focus()
+      expect(siblingRemove).toHaveFocus()
+      expect(siblingRemove).toHaveAttribute('aria-disabled', 'true')
+      expect(siblingRemove).not.toHaveAttribute('aria-busy')
+      expect(siblingRemove).not.toHaveAccessibleDescription()
+      // A picker that saves on change is read-only rather than disabled:
+      // it keeps focus, and the write in flight does not close it.
+      const picker = screen.getByRole('combobox', {
+        name: zhCN.identifiers.kind.email,
+      })
+      picker.focus()
+      expect(picker).toHaveFocus()
+      expect(picker).toHaveAttribute('aria-readonly', 'true')
+      // A chose-on-change radio is held the same way as the sibling action,
+      // and its activation is swallowed with its value unchanged.
+      const siblingDefault = screen.getByRole('radio', {
+        name: zhCN.identifiers.axes.defaultAria.replace(
+          '{{value}}',
+          'b@x.test',
+        ),
+      })
+      siblingDefault.focus()
+      expect(siblingDefault).toHaveFocus()
+      expect(siblingDefault).toHaveAttribute('aria-disabled', 'true')
+      expect(siblingDefault).not.toHaveAttribute('aria-busy')
+      expect(siblingDefault).not.toHaveAccessibleDescription()
+      await user.click(siblingDefault)
+      await user.keyboard(' ')
+      expect(siblingDefault).toHaveFocus()
+      expect(writes).toHaveLength(1)
+      expect(siblingDefault).not.toBeChecked()
+
+      const deleteCalls = () =>
+        rig.calls.filter((call) => call.method === 'DELETE')
+      await user.click(siblingRemove as HTMLElement)
+      ;(siblingRemove as HTMLElement).focus()
+      await user.keyboard('{Enter}')
+      await user.keyboard(' ')
+      expect(deleteCalls()).toHaveLength(0)
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      put.resolve(new Response(null, { status: 204 }))
+      await waitFor(() => {
+        const ready = screen.getByRole('switch', {
+          name: zhCN.identifiers.action.enable,
+        })
+        expect(ready).toBeEnabled()
+        expect(ready).not.toHaveAttribute('aria-disabled', 'true')
+      })
+    })
+
+    it('keeps an empty add-form send focusable and guards its programmatic submit', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(200, profileBody({ identifiers: [] }))
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+      const sends = () =>
+        rig.calls.filter(
+          (call) =>
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers',
+        )
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.identifiers.add.open,
+        }),
+      )
+      const submit = screen.getByRole('button', {
+        name: zhCN.identifiers.add.submitEmail,
+      })
+      const form = screen
+        .getByLabelText(zhCN.identifiers.add.value.labelEmail)
+        .closest('form') as HTMLFormElement
+
+      // The precondition is unmet: the control stays focusable and says why.
+      submit.focus()
+      expect(submit).toHaveFocus()
+      expect(submit).toHaveAttribute('aria-disabled', 'true')
+      expect(submit).not.toHaveAttribute('disabled')
+      expect(submit).toHaveAccessibleDescription(
+        zhCN.identifiers.add.emailEmpty,
+      )
+
+      // An activation that reaches it is swallowed: no request, and no
+      // field error either (the guard owns the attempt).
+      await user.keyboard('{Enter}')
+      expect(sends()).toHaveLength(0)
+      expect(screen.queryByText(zhCN.identifiers.add.invalidEmail)).toBeNull()
+
+      // A submit that bypasses the button, as Enter in an empty field or a
+      // programmatic request does, is held by the form's own guard.
+      fireEvent.submit(form)
+      expect(sends()).toHaveLength(0)
+
+      // A value makes the same control usable again, and the form's guard
+      // lets the programmatic submit through.
+      await user.type(
+        screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+        'new@x.test',
+      )
+      expect(submit).toBeEnabled()
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true')
+      fireEvent.submit(form)
+      await waitFor(() => expect(sends()).toHaveLength(1))
+    })
+
+    it('keeps an empty verification send focusable and explains the missing code', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(200, twoEmailProfile())
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.open }),
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+        'new@x.test',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      await screen.findByLabelText(zhCN.identifiers.add.code.label)
+      const verify = screen.getByRole('button', {
+        name: zhCN.identifiers.add.verify,
+      })
+      verify.focus()
+      expect(verify).toHaveFocus()
+      expect(verify).toHaveAttribute('aria-disabled', 'true')
+      expect(verify).toHaveAccessibleDescription(zhCN.identifiers.add.codeEmpty)
+      const verifies = () =>
+        rig.calls.filter(
+          (call) =>
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers/verify',
+        )
+      await user.keyboard('{Enter}')
+      expect(verifies()).toHaveLength(0)
+    })
+
+    it('keeps a default choice without a manageable record focusable and names why', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              identifiers: [
+                identifier({
+                  id: undefined,
+                  kind: 'email',
+                  value: 'ada@x.test',
+                  proven: true,
+                  sign_in: true,
+                }),
+              ],
+            }),
+          )
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('ada@x.test')
+      const choice = screen.getByRole('radio', {
+        name: zhCN.identifiers.axes.defaultAria.replace(
+          '{{value}}',
+          'ada@x.test',
+        ),
+      })
+      // The address has no identifier record the write could address, so the
+      // choice is unavailable and states that cause, not merely that it
+      // cannot run now.
+      choice.focus()
+      expect(choice).toHaveFocus()
+      expect(choice).toHaveAttribute('aria-disabled', 'true')
+      expect(choice).not.toHaveAttribute('aria-busy')
+      expect(choice).toHaveAccessibleDescription(
+        zhCN.identifiers.axes.defaultUnavailable,
+      )
+
+      const writes = () =>
+        rig.calls.filter((call) => call.method === 'PUT')
+      await user.click(choice)
+      await user.keyboard(' ')
+      expect(writes()).toHaveLength(0)
+      expect(choice).not.toBeChecked()
+    })
+
+    it('guards the row verification form\'s programmatic submit while its code is missing', async () => {
+      let proven = false
+      let verifies = 0
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              identifiers: [
+                identifier({
+                  id: 'id-primary',
+                  kind: 'email',
+                  value: 'ada@x.test',
+                  proven: true,
+                }),
+                identifier({
+                  id: 'id-secondary',
+                  kind: 'email',
+                  value: 'second@x.test',
+                  proven,
+                  verified_via: proven ? 'email-code' : 'admin',
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers/verify'
+        ) {
+          verifies += 1
+          proven = true
+          return jsonResponse(200, { state: 'added' })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      mount(respond)
+      const user = userEvent.setup()
+
+      await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
+      const form = screen
+        .getByLabelText(zhCN.identifiers.add.value.labelEmail)
+        .closest('form') as HTMLFormElement
+      await user.click(
+        within(form).getByRole('button', {
+          name: zhCN.identifiers.add.submitEmail,
+        }),
+      )
+      await screen.findByLabelText(zhCN.identifiers.add.code.label)
+
+      // A submit that bypasses the button is held by the form's own guard
+      // while the code is missing, with no request.
+      fireEvent.submit(form)
+      expect(verifies).toBe(0)
+
+      // The code in hand lets the same programmatic submit through.
+      await user.type(
+        screen.getByLabelText(zhCN.identifiers.add.code.label),
+        '123456',
+      )
+      fireEvent.submit(form)
+      await waitFor(() => expect(verifies).toBe(1))
+    })
+
+    it("hands focus to the next row's remove control when the removed row leaves", async () => {
+      let removed = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            removed
+              ? twoEmailProfile({
+                  identifiers: [
+                    identifier({
+                      id: 'id-b',
+                      kind: 'email',
+                      value: 'b@x.test',
+                      proven: true,
+                      sign_in: true,
+                    }),
+                  ],
+                })
+              : twoEmailProfile(),
+          )
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/identifiers/id-a'
+        ) {
+          removed = true
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      const nextRemove = rowAction('b@x.test', zhCN.identifiers.remove)
+      expect(nextRemove).not.toBeNull()
+      await clickRowAction(user, 'a@x.test', zhCN.identifiers.remove)
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.identifiers.confirmLabel,
+        }),
+      )
+
+      await waitFor(() => expect(screen.queryByText('a@x.test')).toBeNull())
+      await waitFor(() => expect(nextRemove).toHaveFocus())
+      expect(rig.calls.filter((call) => call.method === 'DELETE')).toHaveLength(1)
+    })
+
+    it('hands focus to the section container when the only row leaves', async () => {
+      let removed = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: removed
+                ? []
+                : [
+                    identifier({
+                      id: 'id-only',
+                      kind: 'email',
+                      value: 'only@x.test',
+                      proven: true,
+                      sign_in: true,
+                    }),
+                  ],
+            }),
+          )
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/identifiers/id-only'
+        ) {
+          removed = true
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      mount(respond)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('only@x.test')
+      await clickRowAction(user, 'only@x.test', zhCN.identifiers.remove)
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.identifiers.confirmLabel,
+        }),
+      )
+
+      await waitFor(() =>
+        expect(screen.getByText(zhCN.identifiers.empty.title)).toBeTruthy(),
+      )
+      // The confirmation's exit still hides the page from role queries.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      const container = screen.getByRole('group', {
+        name: zhCN.identifiers.title,
+      })
+      await waitFor(() => expect(container).toHaveFocus())
+    })
+
+    it('does not take focus back when the operator moved it during the removal', async () => {
+      const remove = deferred<Response>()
+      let removed = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            removed
+              ? twoEmailProfile({
+                  identifiers: [
+                    identifier({
+                      id: 'id-b',
+                      kind: 'email',
+                      value: 'b@x.test',
+                      proven: true,
+                      sign_in: true,
+                    }),
+                  ],
+                })
+              : twoEmailProfile(),
+          )
+        }
+        if (call.method === 'DELETE') {
+          return remove.promise.then(() => {
+            removed = true
+            return new Response(null, { status: 204 })
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      mount(respond)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      await clickRowAction(user, 'a@x.test', zhCN.identifiers.remove)
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.identifiers.confirmLabel,
+        }),
+      )
+      // The confirmation leaves the page free while the write is in flight;
+      // the operator settles on a control of their own.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      const elsewhere = screen.getByRole('button', {
+        name: zhCN.identifiers.add.open,
+      })
+      elsewhere.focus()
+      expect(elsewhere).toHaveFocus()
+
+      remove.resolve(new Response(null, { status: 204 }))
+      await waitFor(() => expect(screen.queryByText('a@x.test')).toBeNull())
+      expect(elsewhere).toHaveFocus()
+    })
+
+    it('hands focus to the add entry when a landed add closes its form', async () => {
+      let added = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              identifiers: added
+                ? [
+                    identifier({
+                      id: 'id-new',
+                      kind: 'email',
+                      value: 'new@x.test',
+                    }),
+                  ]
+                : [],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers/verify'
+        ) {
+          added = true
+          return jsonResponse(200, { state: 'added' })
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      mount(respond)
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.identifiers.add.open,
+        }),
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+        'new@x.test',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      const code = await screen.findByLabelText(
+        zhCN.identifiers.add.code.label,
+      )
+      await user.type(code, '123456')
+      const verify = screen.getByRole('button', {
+        name: zhCN.identifiers.add.verify,
+      })
+      await user.click(verify)
+
+      // The form leaves with the control that sent the code: focus returns
+      // to the entry that reopens it, not to the document body.
+      const entry = await screen.findByRole('button', {
+        name: zhCN.identifiers.add.open,
+      })
+      await waitFor(() => expect(entry).toHaveFocus())
+    })
+
+    it('closes a landed add at once and lands on the entry when the re-read fails', async () => {
+      // The write landed; the profile re-read is a separate read. The form
+      // must close without waiting for it, or a failed read leaves the same
+      // add available for a second submit.
+      const reRead = deferred<Response>()
+      let added = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return added
+            ? reRead.promise
+            : jsonResponse(200, profileBody({ identifiers: [] }))
+        }
+        if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+          added = true
+          return jsonResponse(200, { state: 'added' })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      mount(respond)
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+      )
+      fireEvent.mouseDown(
+        screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+      )
+      await user.click(
+        screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+        'ada2',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+      )
+
+      // The form is gone while the re-read is still in flight.
+      await waitFor(() =>
+        expect(
+          screen.queryByLabelText(zhCN.identifiers.add.value.labelUsername),
+        ).toBeNull(),
+      )
+
+      reRead.resolve(errorResponse(500, 'authn.unavailable'))
+      // The failed re-read keeps the old list: the entry is still there and
+      // takes focus, with the stale notice stating the read failed.
+      const entry = await screen.findByRole('button', {
+        name: zhCN.identifiers.add.open,
+      })
+      await waitFor(() => expect(entry).toHaveFocus())
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(zhCN.stale.description)
+    })
+
+    it("hands focus to the next row's default action when the landed choice removes it", async () => {
+      let defaultA = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: true,
+                  sign_in: true,
+                  default_contact: defaultA,
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: true,
+                  sign_in: true,
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'PUT' &&
+          call.path === '/api/v1/auth/identifiers/id-a'
+        ) {
+          defaultA = true
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <IdentifiersSection session={rig.session} axis="contact" />,
+      )
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      const nextDefault = rowAction(
+        'b@x.test',
+        zhCN.identifiers.axes.defaultContact,
+      )
+      expect(nextDefault).not.toBeNull()
+      await user.click(
+        rowAction('a@x.test', zhCN.identifiers.axes.defaultContact) as HTMLElement,
+      )
+
+      // The landed choice takes this row's action out of the document;
+      // focus goes to the same action on the row below.
+      await waitFor(() => expect(nextDefault).toHaveFocus())
+    })
+
+    it("hands focus to the next row's verify action when a landed verification removes one", async () => {
+      let provenA = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: provenA,
+                  verified_via: provenA ? 'email-code' : 'admin',
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: false,
+                  verified_via: 'admin',
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers/verify'
+        ) {
+          provenA = true
+          return jsonResponse(200, { state: 'added' })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(<IdentifiersSection session={rig.session} />)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      const nextVerify = rowAction('b@x.test', zhCN.identifiers.verify)
+      expect(nextVerify).not.toBeNull()
+      await clickRowAction(user, 'a@x.test', zhCN.identifiers.verify)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      const code = await screen.findByLabelText(
+        zhCN.identifiers.add.code.label,
+      )
+      await user.type(code, '123456')
+      await user.click(
+        within(verificationForm()).getByRole('button', {
+          name: zhCN.identifiers.add.verify,
+        }),
+      )
+
+      // The landed verification drops the row's action with its form;
+      // focus goes to the next row's verify action.
+      await waitFor(() => expect(nextVerify).toHaveFocus())
+    })
+
+    it('closes the add form and drops the waiting send when it is cancelled', async () => {
+      const fake = installFakeTurnstile()
+      try {
+        const respond: RealResponder = (call: RealCall) => {
+          if (call.method === 'GET' && call.path === PROFILE_PATH) {
+            return jsonResponse(200, profileBody({ identifiers: [] }))
+          }
+          if (
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers'
+          ) {
+            return jsonResponse(200, {
+              state: 'pending',
+              expires_in: 600,
+              resend_after: 60,
+            })
+          }
+          throw new Error(`unexpected ${call.method} ${call.path}`)
+        }
+        const { rig } = mount(respond, {
+          required: true,
+          provider: 'turnstile',
+          site_key: 'site-1',
+        })
+        const user = userEvent.setup()
+
+        await user.click(
+          await screen.findByRole('button', {
+            name: zhCN.identifiers.add.open,
+          }),
+        )
+        await user.type(
+          screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+          'new@x.test',
+        )
+        await user.click(
+          screen.getByRole('button', {
+            name: zhCN.identifiers.add.submitEmail,
+          }),
+        )
+        await waitFor(() => expect(fake.widgets).toHaveLength(1))
+
+        // The send waits on its proof; the way out of the wait does not.
+        const cancel = screen.getByRole('button', {
+          name: zhCN.identifiers.add.cancel,
+        })
+        cancel.focus()
+        expect(cancel).toHaveFocus()
+        await user.keyboard('{Enter}')
+
+        await waitFor(() =>
+          expect(
+            screen.queryByLabelText(zhCN.identifiers.add.value.labelEmail),
+          ).toBeNull(),
+        )
+        // A proof that arrives after the cancel has no send to carry.
+        act(() => {
+          fake.token('token-1')
+        })
+        expect(
+          rig.calls.filter(
+            (call) =>
+              call.method === 'POST' &&
+              call.path === '/api/v1/auth/identifiers',
+          ),
+        ).toHaveLength(0)
+      } finally {
+        fake.restore()
+      }
+    })
+
+    it('closes the row flow and drops the waiting resend when it is cancelled', async () => {
+      const fake = installFakeTurnstile()
+      try {
+        const respond: RealResponder = (call: RealCall) => {
+          if (call.method === 'GET' && call.path === PROFILE_PATH) {
+            return jsonResponse(
+              200,
+              profileBody({
+                identifiers: [
+                  identifier({
+                    id: 'id-primary',
+                    kind: 'email',
+                    value: 'ada@x.test',
+                  }),
+                  identifier({
+                    id: 'id-secondary',
+                    kind: 'email',
+                    value: 'second@x.test',
+                    proven: false,
+                    verified_via: 'admin',
+                  }),
+                ],
+              }),
+            )
+          }
+          if (
+            call.method === 'POST' &&
+            call.path === '/api/v1/auth/identifiers'
+          ) {
+            return jsonResponse(200, {
+              state: 'pending',
+              expires_in: 600,
+              resend_after: 0,
+            })
+          }
+          throw new Error(`unexpected ${call.method} ${call.path}`)
+        }
+        const { rig } = mount(respond, {
+          required: true,
+          provider: 'turnstile',
+          site_key: 'site-1',
+        })
+        const user = userEvent.setup()
+        const sends = () =>
+          rig.calls.filter(
+            (call) =>
+              call.method === 'POST' &&
+              call.path === '/api/v1/auth/identifiers',
+          )
+
+        await clickRowAction(user, 'second@x.test', zhCN.identifiers.verify)
+        await user.click(
+          screen.getByRole('button', {
+            name: zhCN.identifiers.add.submitEmail,
+          }),
+        )
+        await waitFor(() => expect(fake.widgets).toHaveLength(1))
+        act(() => {
+          fake.token('token-1')
+        })
+        await waitFor(() => expect(sends()).toHaveLength(1))
+
+        const codeField = await screen.findByLabelText(
+          zhCN.identifiers.add.code.label,
+        )
+        const form = codeField.closest('form') as HTMLFormElement
+        await user.click(
+          within(form).getByRole('button', { name: zhCN.verification.resend }),
+        )
+        await waitFor(() => expect(fake.widgets).toHaveLength(2))
+
+        const cancel = within(form).getByRole('button', {
+          name: zhCN.identifiers.add.cancel,
+        })
+        cancel.focus()
+        expect(cancel).toHaveFocus()
+        await user.keyboard('{Enter}')
+
+        await waitFor(() =>
+          expect(
+            screen.queryByLabelText(zhCN.identifiers.add.code.label),
+          ).toBeNull(),
+        )
+        // The cancelled wait must not send the code a late proof carries.
+        act(() => {
+          fake.token('token-2')
+        })
+        expect(sends()).toHaveLength(1)
+      } finally {
+        fake.restore()
+      }
+    })
+
+    it('lands on the form when the add entry opens it', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(200, profileBody({ identifiers: [] }))
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      mount(respond)
+      const user = userEvent.setup()
+
+      // The entry leaves the document as the form replaces it.
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.identifiers.add.open,
+        }),
+      )
+      const firstField = screen.getByRole('combobox', {
+        name: zhCN.identifiers.add.kind.label,
+      })
+      await waitFor(() => expect(firstField).toHaveFocus())
+    })
+
+    it("lands on the next row's default action when a step-up challenge replays the choice", async () => {
+      captureRefreshWarning()
+      let elevated = false
+      let defaultA = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: true,
+                  sign_in: true,
+                  default_contact: defaultA,
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: true,
+                  sign_in: true,
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'PUT' &&
+          call.path === '/api/v1/auth/identifiers/id-a'
+        ) {
+          if (!elevated) {
+            return errorResponse(
+              401,
+              'authn.insufficient_user_authentication',
+            )
+          }
+          defaultA = true
+          return new Response(null, { status: 204 })
+        }
+        if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+          return jsonResponse(200, {
+            factors: [
+              {
+                id: 'factor-1',
+                kind: 'totp',
+                label: 'App',
+                status: 'active',
+                created_at: '2026-01-01T00:00:00Z',
+              },
+            ],
+          })
+        }
+        if (call.method === 'POST' && call.path === FLOW_START) {
+          return jsonResponse(200, {
+            seq: 1,
+            state: 'second',
+            next: {
+              kind: 'factor',
+              factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+            },
+          })
+        }
+        if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+          const body = call.body as { seq: number }
+          if (body.seq === 1) {
+            return jsonResponse(200, {
+              seq: 2,
+              state: 'second',
+              next: {
+                kind: 'challenge',
+                fields: [{ name: 'code', kind: 'text' }],
+              },
+            })
+          }
+          elevated = true
+          return jsonResponse(200, {
+            state: 'elevated',
+            token_type: 'Bearer',
+            access_token: 'access-2',
+            expires_in: 3600,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <IdentifiersSection session={rig.session} axis="contact" />,
+      )
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      const nextDefault = rowAction(
+        'b@x.test',
+        zhCN.identifiers.axes.defaultContact,
+      )
+      expect(nextDefault).not.toBeNull()
+      await user.click(
+        rowAction(
+          'a@x.test',
+          zhCN.identifiers.axes.defaultContact,
+        ) as HTMLElement,
+      )
+
+      await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
+      await user.click(
+        screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }),
+      )
+      await user.type(
+        await screen.findByLabelText(zhCN.flowStep.codeLabel),
+        '123456',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+      )
+
+      // The replay reaches the write without a click of its own, and its
+      // landed choice still names the neighbour.
+      await waitFor(() => expect(nextDefault).toHaveFocus())
+      expect(
+        rig.calls.filter((call) => call.method === 'PUT'),
+      ).toHaveLength(2)
+    })
+
+    it("lands on the previous row's default action when the last row's choice removes it", async () => {
+      let defaultC = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: true,
+                  sign_in: true,
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: true,
+                  sign_in: true,
+                }),
+                identifier({
+                  id: 'id-c',
+                  kind: 'email',
+                  value: 'c@x.test',
+                  proven: true,
+                  sign_in: true,
+                  default_contact: defaultC,
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'PUT' &&
+          call.path === '/api/v1/auth/identifiers/id-c'
+        ) {
+          defaultC = true
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <IdentifiersSection session={rig.session} axis="contact" />,
+      )
+      const user = userEvent.setup()
+
+      await screen.findAllByText('c@x.test')
+      const previousDefault = rowAction(
+        'b@x.test',
+        zhCN.identifiers.axes.defaultContact,
+      )
+      expect(previousDefault).not.toBeNull()
+      await user.click(
+        rowAction(
+          'c@x.test',
+          zhCN.identifiers.axes.defaultContact,
+        ) as HTMLElement,
+      )
+
+      // The last row has no neighbour below: the choice lands on the row
+      // above.
+      await waitFor(() => expect(previousDefault).toHaveFocus())
+    })
+
+    it('does not take focus back when the operator moved it during the default choice', async () => {
+      const put = deferred<Response>()
+      let defaultA = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: true,
+                  sign_in: true,
+                  default_contact: defaultA,
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: true,
+                  sign_in: true,
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'PUT' &&
+          call.path === '/api/v1/auth/identifiers/id-a'
+        ) {
+          return put.promise.then(() => {
+            defaultA = true
+            return new Response(null, { status: 204 })
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <IdentifiersSection session={rig.session} axis="contact" />,
+      )
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      await user.click(
+        rowAction(
+          'a@x.test',
+          zhCN.identifiers.axes.defaultContact,
+        ) as HTMLElement,
+      )
+      await waitFor(() =>
+        expect(
+          rig.calls.filter((call) => call.method === 'PUT'),
+        ).toHaveLength(1),
+      )
+
+      const elsewhere = rowAction('b@x.test', zhCN.identifiers.remove)
+      expect(elsewhere).not.toBeNull()
+      ;(elsewhere as HTMLElement).focus()
+      expect(elsewhere).toHaveFocus()
+
+      put.resolve(new Response(null, { status: 204 }))
+      await waitFor(() =>
+        expect(
+          rowAction('a@x.test', zhCN.identifiers.axes.defaultContact),
+        ).toBeNull(),
+      )
+      expect(elsewhere).toHaveFocus()
+    })
+
+    it("lands on the previous row's verify action when the last row's verification removes one", async () => {
+      let provenB = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: false,
+                  verified_via: 'admin',
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: provenB,
+                  verified_via: provenB ? 'email-code' : 'admin',
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers/verify'
+        ) {
+          provenB = true
+          return jsonResponse(200, { state: 'added' })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(<IdentifiersSection session={rig.session} />)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      const previousVerify = rowAction('a@x.test', zhCN.identifiers.verify)
+      expect(previousVerify).not.toBeNull()
+      await clickRowAction(user, 'b@x.test', zhCN.identifiers.verify)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      const code = await screen.findByLabelText(
+        zhCN.identifiers.add.code.label,
+      )
+      await user.type(code, '123456')
+      await user.click(
+        within(verificationForm()).getByRole('button', {
+          name: zhCN.identifiers.add.verify,
+        }),
+      )
+
+      await waitFor(() => expect(previousVerify).toHaveFocus())
+    })
+
+    it('does not take focus back when the operator moved it during a row verification', async () => {
+      const verify = deferred<Response>()
+      let provenB = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: false,
+                  verified_via: 'admin',
+                }),
+                identifier({
+                  id: 'id-b',
+                  kind: 'email',
+                  value: 'b@x.test',
+                  proven: provenB,
+                  verified_via: provenB ? 'email-code' : 'admin',
+                }),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers/verify'
+        ) {
+          return verify.promise.then(() => {
+            provenB = true
+            return jsonResponse(200, { state: 'added' })
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(<IdentifiersSection session={rig.session} />)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      await clickRowAction(user, 'b@x.test', zhCN.identifiers.verify)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      const code = await screen.findByLabelText(
+        zhCN.identifiers.add.code.label,
+      )
+      await user.type(code, '123456')
+      await user.click(
+        within(verificationForm()).getByRole('button', {
+          name: zhCN.identifiers.add.verify,
+        }),
+      )
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) =>
+              call.method === 'POST' &&
+              call.path === '/api/v1/auth/identifiers/verify',
+          ),
+        ).toHaveLength(1),
+      )
+
+      const elsewhere = screen.getByRole('button', {
+        name: zhCN.identifiers.add.open,
+      })
+      elsewhere.focus()
+      expect(elsewhere).toHaveFocus()
+
+      verify.resolve(jsonResponse(200, { state: 'added' }))
+      await waitFor(() =>
+        expect(rowAction('b@x.test', zhCN.identifiers.verify)).toBeNull(),
+      )
+      expect(elsewhere).toHaveFocus()
+    })
+
+    it('does not take focus back when the operator moved it during a landed add', async () => {
+      const verify = deferred<Response>()
+      let added = false
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profileBody({
+              password_set: false,
+              identifiers: [
+                identifier({
+                  id: 'id-a',
+                  kind: 'email',
+                  value: 'a@x.test',
+                  proven: true,
+                  sign_in: true,
+                }),
+                ...(added
+                  ? [
+                      identifier({
+                        id: 'id-new',
+                        kind: 'email',
+                        value: 'new@x.test',
+                      }),
+                    ]
+                  : []),
+              ],
+            }),
+          )
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 0,
+          })
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers/verify'
+        ) {
+          return verify.promise.then(() => {
+            added = true
+            return jsonResponse(200, { state: 'added' })
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(<IdentifiersSection session={rig.session} />)
+      const user = userEvent.setup()
+
+      await screen.findAllByText('a@x.test')
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.open }),
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+        'new@x.test',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+      )
+      const code = await screen.findByLabelText(
+        zhCN.identifiers.add.code.label,
+      )
+      await user.type(code, '123456')
+      await user.click(
+        screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+      )
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) =>
+              call.method === 'POST' &&
+              call.path === '/api/v1/auth/identifiers/verify',
+          ),
+        ).toHaveLength(1),
+      )
+
+      const elsewhere = rowAction('a@x.test', zhCN.identifiers.remove)
+      expect(elsewhere).not.toBeNull()
+      ;(elsewhere as HTMLElement).focus()
+      expect(elsewhere).toHaveFocus()
+
+      verify.resolve(jsonResponse(200, { state: 'added' }))
+      await waitFor(() =>
+        expect(
+          screen.queryByLabelText(zhCN.identifiers.add.code.label),
+        ).toBeNull(),
+      )
+      expect(elsewhere).toHaveFocus()
+    })
   })
 })
 

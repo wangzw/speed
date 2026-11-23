@@ -463,9 +463,12 @@
       "defaultContact": "默认联系地址",
       "defaultAria": "默认联系地址：{{value}}",
       "signInChanged": "已更新 {{value}} 是否可作登录方式。",
-      "defaultChanged": "{{value}} 现在是默认联系地址。"
+      "defaultChanged": "{{value}} 现在是默认联系地址。",
+      "defaultUnavailable": "这条地址还没有可管理的标识记录，暂时不能设为默认联系地址。"
     },
     "verify": "验证",
+    "verifyInProgress": "请先完成正在进行的验证。",
+    "resendWaiting": "重发要等倒计时结束。",
     "verifyCodeInvalid": "验证码无效或已过期，请重试。",
     "lastLoginName": "这是你当前唯一的登录名。请先添加另一个用户名或邮箱，再删除它。",
     "usernamePermanent": "用户名是固定的登录名，不能更改或删除。",
@@ -499,6 +502,9 @@
       },
       "submitEmail": "发送验证码",
       "submitUsername": "添加",
+      "emailEmpty": "请先输入邮箱地址。",
+      "usernameEmpty": "请先输入用户名。",
+      "codeEmpty": "请先输入验证码。",
       "invalidEmail": "请输入有效的邮箱地址。",
       "usernameTaken": "该用户名已被占用，请换一个。",
       "usernameReserved": "该用户名是系统保留的名称，请换一个。",

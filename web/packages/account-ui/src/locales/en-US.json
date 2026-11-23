@@ -460,12 +460,15 @@
     "axes": {
       "signIn": "Sign-in way",
       "signInAria": "Sign-in way: {{value}}",
-      "defaultContact": "Default contact",
-      "defaultAria": "Default contact: {{value}}",
+      "defaultContact": "Default contact address",
+      "defaultAria": "Default contact address: {{value}}",
       "signInChanged": "Updated whether {{value}} can be used to sign in.",
-      "defaultChanged": "{{value}} is now the default contact address."
+      "defaultChanged": "{{value}} is now the default contact address.",
+      "defaultUnavailable": "This address has no manageable identifier record yet, so it cannot be made the default contact address right now."
     },
     "verify": "Verify",
+    "verifyInProgress": "Finish the verification in progress first.",
+    "resendWaiting": "Wait for the countdown before resending.",
     "verifyCodeInvalid": "The verification code is invalid or has expired. Try again.",
     "lastLoginName": "This is your only sign-in name. Add another username or email address before removing it.",
     "usernamePermanent": "Your username is your fixed sign-in name. It cannot be changed or removed.",
@@ -499,6 +502,9 @@
       },
       "submitEmail": "Send code",
       "submitUsername": "Add",
+      "emailEmpty": "Enter an email address first.",
+      "usernameEmpty": "Enter a username first.",
+      "codeEmpty": "Enter the verification code first.",
       "invalidEmail": "Enter a valid email address.",
       "usernameTaken": "That username is already taken. Choose another.",
       "usernameReserved": "That username is reserved by the system. Choose another.",

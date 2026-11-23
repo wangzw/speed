@@ -307,7 +307,9 @@ describe('account-ui form geometry', () => {
     const change = screen.getByRole('button', {
       name: zhCN.identifiers.add.change,
     })
-    expect(verify).toBeDisabled()
+    // The empty code is a precondition: the verify control stays focusable
+    // and reports unavailable instead of turning natively disabled.
+    expect(verify).toHaveAttribute('aria-disabled', 'true')
     expectOneActionGroup(verify, change)
     expect(verify).toHaveClass('MuiButton-contained')
     expect(change).not.toHaveClass('MuiButton-contained')
@@ -317,7 +319,7 @@ describe('account-ui form geometry', () => {
       screen.getByLabelText(zhCN.identifiers.add.code.label),
       '123456',
     )
-    expect(verify).toBeEnabled()
+    expect(verify).not.toHaveAttribute('aria-disabled', 'true')
     expectOneActionGroup(verify, change)
   })
 
