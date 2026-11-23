@@ -11,7 +11,7 @@
  * locale bundles (or English fixtures), never inline translations.
  */
 
-import { act, fireEvent, within } from '@testing-library/react'
+import { act, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { flushSync } from 'react-dom'
@@ -239,10 +239,14 @@ describe('DataTable', () => {
     expect(creditCells[0]).toHaveStyle({ width: '120px' })
   })
 
-  it('renders a status row with the translated loading text while rows are empty', () => {
+  it('renders a status row with the translated loading text while rows are empty', async () => {
     const utils = renderTable({ rows: [], loading: true })
     const status = utils.getByRole('status')
-    expect(status.textContent).toContain(zhCN.dataTable.loading)
+    // The region is inserted empty; its text arrives on a later frame.
+    expect(status.textContent).toBe('')
+    await waitFor(() =>
+      expect(status.textContent).toContain(zhCN.dataTable.loading),
+    )
     expect(utils.getByRole('progressbar')).toBeInTheDocument()
     expect(utils.queryByRole('row', { name: /Ada/ })).not.toBeInTheDocument()
   })
@@ -261,8 +265,8 @@ describe('DataTable', () => {
     ).toBeInTheDocument()
   })
 
-  it('announces the loading state on the empty-then-refresh path through a live region that already exists (P2-6 regression)', () => {
-    // The role="status" region is mounted for the whole empty phase and
+  it('announces the loading state on the empty-then-refresh path through a live region that already exists (P2-6 regression)', async () => {
+    // The announcement region is mounted for the whole empty phase and
     // carries that phase's text: on the empty-table refresh path (rows
     // stay empty, loading flips false -> true) the region must already
     // exist before the loading text lands, because a live region
@@ -270,12 +274,13 @@ describe('DataTable', () => {
     // text that mounts together with it. Both fills -- the
     // empty-result wording while not loading, the loading text on
     // refresh -- are therefore text changes inside a region the screen
-    // reader already knows. The same DOM node must survive the
-    // transition, which is what makes the later text change an
-    // announcement rather than another mount. A stateful host drives
-    // the flip (the refresh is the host's own action): RTL's rerender
-    // would replace the provider tree and remount the table, which is
-    // exactly the mount the mechanism must prevent.
+    // reader already knows, each written a frame after its commit. The
+    // same DOM node must survive the transition, which is what makes the
+    // later text change an announcement rather than another mount. A
+    // stateful host drives the flip (the refresh is the host's own
+    // action): RTL's rerender would replace the provider tree and
+    // remount the table, which is exactly the mount the mechanism must
+    // prevent.
     function RefreshHarness() {
       const [loading, setLoading] = useState(false)
       return (
@@ -294,13 +299,20 @@ describe('DataTable', () => {
     }
     const utils = renderWithProviders(<RefreshHarness />)
     const region = utils.getByRole('status')
-    expect(region).toHaveTextContent(zhCN.dataTable.noData)
+    await waitFor(() =>
+      expect(region).toHaveTextContent(zhCN.dataTable.noData),
+    )
     fireEvent.click(utils.getByRole('button', { name: 'refresh' }))
-    expect(region).toHaveTextContent(zhCN.dataTable.loading)
+    // The commit that flipped loading cleared the region; the text
+    // arrives on a later frame.
+    expect(region.textContent).toBe('')
+    await waitFor(() =>
+      expect(region).toHaveTextContent(zhCN.dataTable.loading),
+    )
     expect(utils.getByRole('progressbar')).toBeInTheDocument()
   })
 
-  it('mounts the loading region empty when the empty phase begins already loading (D5 regression)', () => {
+  it('mounts the loading region empty when the empty phase begins already loading (D5 regression)', async () => {
     // The empty-then-refresh route above covers a region that already
     // existed, but the empty phase can also BEGIN already loading: rows
     // empty out and loading flips in the same host commit (a filter
@@ -308,16 +320,15 @@ describe('DataTable', () => {
     // born inside that commit would carry its text with it and the
     // announcement would never fire -- live regions speak about content
     // changes that follow their own existence, never text that mounts
-    // together with them. The region's first committed frame is
-    // therefore empty whatever transition enters the empty phase: the
-    // loading text is gated behind a one-commit lag armed by an effect
-    // after that first commit, so it always fills a region the screen
-    // reader already knows. The assertion between the two commits below
-    // is what distinguishes the shapes: the region's text content must
-    // still be empty the moment the node first appears. A stateful host
-    // drives the flip; flushSync lands its one commit synchronously,
-    // and the act scope holds back the post-commit effect that fills
-    // the region until this assertion has seen the birth frame.
+    // together with them. AnnouncementRegion therefore spends the
+    // region's first committed frame empty and writes the loading text a
+    // frame later, whatever transition entered the phase. The assertion
+    // between the two writes below is what distinguishes the shapes: the
+    // region's text content must still be empty the moment the node
+    // first appears. A stateful host drives the flip; flushSync lands
+    // its one commit synchronously, and the animation frames that fill
+    // the region have not run yet when the assertion sees the birth
+    // frame.
     function EmptyingRefreshHarness() {
       const [rows, setRows] = useState<readonly Member[]>(MEMBERS)
       const [loading, setLoading] = useState(false)
@@ -352,11 +363,13 @@ describe('DataTable', () => {
       expect(region.textContent).toBe('')
     })
     const region = utils.getByRole('status')
-    expect(region.textContent).toContain(zhCN.dataTable.loading)
+    await waitFor(() =>
+      expect(region.textContent).toContain(zhCN.dataTable.loading),
+    )
     expect(utils.getByRole('progressbar')).toBeInTheDocument()
   })
 
-  it('announces the empty result when a load ends with no rows: the region fills with the empty-result wording (P2-2 regression)', () => {
+  it('announces the empty result when a load ends with no rows: the region fills with the empty-result wording (P2-2 regression)', async () => {
     // The region's text is the empty-result wording once the load
     // finishes: the stock EmptyState — the empty result's own
     // presentation — sits outside the region as a sibling, so an
@@ -397,11 +410,18 @@ describe('DataTable', () => {
       utils.getByRole('button', { name: 'clear and load' }).click()
     })
     const region = utils.getByRole('status')
-    expect(region.textContent).toContain(zhCN.dataTable.loading)
+    await waitFor(() =>
+      expect(region.textContent).toContain(zhCN.dataTable.loading),
+    )
     act(() => {
       utils.getByRole('button', { name: 'finish empty' }).click()
     })
-    expect(region.textContent).toContain(zhCN.dataTable.noData)
+    // The commit cleared the loading text; the empty-result wording
+    // arrives on a later frame.
+    expect(region.textContent).toBe('')
+    await waitFor(() =>
+      expect(region.textContent).toContain(zhCN.dataTable.noData),
+    )
     // The EmptyState visual is untouched: the stock placeholder still
     // renders beneath the region, its own title and description.
     expect(
@@ -412,7 +432,7 @@ describe('DataTable', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps the announced empty wording independent of an overridden visible title (P2-2 regression)', () => {
+  it('keeps the announced empty wording independent of an overridden visible title (P2-2 regression)', async () => {
     // The region announces the empty result in the ui-kit's own wording
     // (the dataTable namespace, like the loading label); a host's
     // emptyTitle override stays the EmptyState's visible title — the
@@ -437,11 +457,15 @@ describe('DataTable', () => {
     }
     const utils = renderWithProviders(<OverrideHarness />)
     const region = utils.getByRole('status')
-    expect(region.textContent).toContain(zhCN.dataTable.loading)
+    await waitFor(() =>
+      expect(region.textContent).toContain(zhCN.dataTable.loading),
+    )
     act(() => {
       utils.getByRole('button', { name: 'finish empty' }).click()
     })
-    expect(region.textContent).toContain(zhCN.dataTable.noData)
+    await waitFor(() =>
+      expect(region.textContent).toContain(zhCN.dataTable.noData),
+    )
     expect(
       utils.getByRole('heading', { name: 'No matches' }),
     ).toBeInTheDocument()
@@ -450,16 +474,15 @@ describe('DataTable', () => {
     ).not.toBeInTheDocument()
   })
 
-  it("fills the empty-result wording only after the region's first committed frame (P2-2 regression)", () => {
-    // The loading fill owes its announcability to the one-commit birth
-    // discipline (see the test above): the region's first committed
-    // frame is empty whatever transition enters the empty phase, so any
-    // later text fill is a change. The empty-result fill must spend
-    // that same first frame empty — an empty phase entered not loading
-    // may not be born carrying the empty-result wording, or that
-    // wording is never a change and never announces. The assertion
-    // inside the act scope pins the birth frame; the one after it pins
-    // the fill.
+  it("fills the empty-result wording only after the region's first committed frame (P2-2 regression)", async () => {
+    // The loading fill owes its announcability to the birth discipline
+    // (see the test above): the region's first committed frame is empty
+    // whatever transition enters the empty phase, so any later text
+    // fill is a change. The empty-result fill must spend that same
+    // first frame empty — an empty phase entered not loading may not be
+    // born carrying the empty-result wording, or that wording is never
+    // a change and never announces. The assertion inside the act scope
+    // pins the birth frame; the one after it pins the fill.
     function ShowsEmptyHarness() {
       const [rows, setRows] = useState<readonly Member[]>(MEMBERS)
       return (
@@ -480,8 +503,10 @@ describe('DataTable', () => {
       const region = utils.getByRole('status')
       expect(region.textContent).toBe('')
     })
-    expect(utils.getByRole('status').textContent).toContain(
-      zhCN.dataTable.noData,
+    await waitFor(() =>
+      expect(utils.getByRole('status').textContent).toContain(
+        zhCN.dataTable.noData,
+      ),
     )
   })
 
@@ -832,15 +857,19 @@ describe('DataTable', () => {
         }}
       />,
     )
-    expect(utils.getByRole('status').textContent).toContain(
-      zhCN.dataTable.loading,
+    await waitFor(() =>
+      expect(utils.getByRole('status').textContent).toContain(
+        zhCN.dataTable.loading,
+      ),
     )
     expect(utils.getByText(zhCN.dataTable.rowsPerPage)).toBeInTheDocument()
     await act(async () => {
       await switchLanguage(utils.i18n, 'en-US')
     })
-    expect(utils.getByRole('status').textContent).toContain(
-      enUS.dataTable.loading,
+    await waitFor(() =>
+      expect(utils.getByRole('status').textContent).toContain(
+        enUS.dataTable.loading,
+      ),
     )
     expect(utils.getByText(enUS.dataTable.rowsPerPage)).toBeInTheDocument()
     expect(

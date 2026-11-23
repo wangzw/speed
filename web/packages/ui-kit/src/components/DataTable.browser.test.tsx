@@ -10,6 +10,7 @@
  * the cap bounds content and control together, never clipping the
  * control.
  */
+import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { page } from 'vitest/browser'
@@ -20,6 +21,7 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
 } from './DataTable.js'
 import type { DataTableColumn } from './DataTable.js'
+import { ActionButton } from './ActionRow.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { uiKitResources } from '../resources.js'
 
@@ -441,5 +443,71 @@ describe('DataTable row-actions pinning in Chromium', () => {
     )
     // ... and the opaque base survives underneath the extra layer.
     expect(alphaOf(hovered.backgroundColor)).toBe(1)
+  })
+})
+
+describe('DataTable empty-phase announcement in Chromium', () => {
+  it('inserts the region empty beside a tooltip-wrapped action and fills it a frame later', async () => {
+    // The empty result's action is an ActionButton, whose resident MUI
+    // Tooltip updates state during the commit that enters the empty
+    // phase. An effect-armed gate would be flushed inside that same
+    // commit and the region would be born carrying its text. A
+    // MutationObserver records the region's text in every batch after it
+    // appears, so the empty birth frame and the later fill are observed
+    // facts rather than one snapshot taken when the case chose to look.
+    const noData = (
+      uiKitResources['en-US'] as unknown as {
+        readonly dataTable: { readonly noData: string }
+      }
+    ).dataTable.noData
+    const snapshots: string[] = []
+    const observer = new MutationObserver(() => {
+      const region = document.querySelector('[role="status"]')
+      if (region !== null) {
+        snapshots.push(region.textContent ?? '')
+      }
+    })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+    try {
+      function Host() {
+        const [rows, setRows] = useState<readonly Row[]>([ROW])
+        return (
+          <>
+            <button type="button" onClick={() => setRows([])}>
+              clear
+            </button>
+            <DataTable
+              rows={rows}
+              columns={FLAT_COLUMNS}
+              rowKey={(row) => row.id}
+              emptyAction={
+                <ActionButton type="button" onClick={() => undefined}>
+                  Clear filters
+                </ActionButton>
+              }
+            />
+          </>
+        )
+      }
+      renderWithProviders(<Host />, { language: 'en-US' })
+
+      await page.getByRole('button', { name: 'clear' }).click()
+      await waitFor(() => expect(snapshots.length).toBeGreaterThan(0))
+      // The batch that reported the region's insertion read it empty.
+      expect(snapshots[0]).toBe('')
+
+      await waitFor(() =>
+        expect(screen.getByRole('status').textContent).toBe(noData),
+      )
+      // Some later batch carried the text, so the change reached an
+      // already-inserted region rather than being born with it.
+      expect(snapshots).toContain(noData)
+    } finally {
+      observer.disconnect()
+    }
   })
 })

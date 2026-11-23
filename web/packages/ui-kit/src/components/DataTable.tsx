@@ -24,7 +24,7 @@
  * emptiness means more than "no data yet".
  *
  * The empty phase's announcements follow the FileUploader live-region
- * twin: a role="status" region is mounted (empty and visually silent)
+ * twin: the shared AnnouncementRegion stands (empty and visually silent)
  * for the whole empty phase, and its text states the phase's current
  * state -- the loading text while loading, and the empty-result wording
  * (`dataTable.noData`, the ui-kit's own, deliberately not the
@@ -37,14 +37,15 @@
  * loading. A region that only appeared together with its text could
  * never announce any of this -- live regions speak about content changes
  * that follow their own existence, not text that mounts with them -- so
- * the empty phase's first committed frame is empty whatever transition
- * entered the phase: a phase that begins already loading (rows emptied
- * and loading flipped in the same host commit) shows the region empty
- * for one commit, the loading text filling it on the next, and an empty
- * phase entered not loading spends that same first frame empty before
- * the empty-result wording fills it -- the same fill-an-existing-region
- * shape, guaranteed for every route into the empty phase rather than
- * only the refresh of a phase that began not loading.
+ * AnnouncementRegion inserts every state's text a frame after the
+ * commit that asked for it. The empty phase's first committed frame is
+ * therefore empty whatever transition entered the phase: a phase that
+ * begins already loading (rows emptied and loading flipped in the same
+ * host commit) shows the region empty for a frame, the loading text
+ * filling it on a later one, and an empty phase entered not loading
+ * spends that same first frame empty before the empty-result wording
+ * fills it -- guaranteed for every route into the empty phase rather
+ * than only the refresh of a phase that began not loading.
  *
  * The stock placeholder's title is a real heading element whose correct
  * level only the host knows (see EmptyState's own heading-level note):
@@ -217,6 +218,7 @@ import { CopyButton } from './CopyButton.js'
 import { POINTER_FINE_HOVER_QUERY } from '../internal/pointer.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 import { useActivationGuard } from '../activation-guard.js'
+import { AnnouncementRegion } from './AnnouncementRegion.js'
 
 /**
  * Opt-in column visibility priority (see the header note for the full
@@ -656,25 +658,13 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   const { t } = useUiKitTranslation()
 
-  const emptyPhase = rows.length === 0
-
-  // The loading live region must never mount together with its text: a
-  // role="status" region announces only content changes that follow its
-  // own insertion, so text born in the same commit as the region would
-  // be silent -- and the empty phase can begin already loading (rows
-  // emptied and loading flipped in the same host commit), not only via a
-  // refresh of a phase that began not loading.
-  // The loading text below is therefore gated on `statusRegionCommitted`,
-  // which lags the empty phase by one commit: the effect after the
-  // phase's first commit arms it, so the region's first committed frame
-  // is empty whatever transition entered the phase, and the text fills
-  // an existing region a commit later. Leaving the empty phase disarms
-  // it, so the next phase's region also spends its own first committed
-  // frame empty, whatever loading state that phase begins with.
-  const [statusRegionCommitted, setStatusRegionCommitted] = useState(false)
-  useEffect(() => {
-    setStatusRegionCommitted(emptyPhase)
-  }, [emptyPhase])
+  // The empty phase's live region mounts and unmounts with that phase.
+  // AnnouncementRegion inserts each state's text empty and writes it a
+  // frame later, so the region's first committed frame is empty whatever
+  // transition entered the phase (see the header note).
+  const emptyAnnouncement = loading
+    ? t('dataTable.loading')
+    : t('dataTable.noData')
 
   // The pin is an enhancement over the scroll fallback, so it may only
   // appear while the table actually overflows its container: a table that
@@ -896,7 +886,7 @@ export function DataTable<T>({
                   align="center"
                   sx={{ border: 0, padding: 0 }}
                 >
-                  {/* The status region mounts (empty) for the whole empty
+                  {/* The announcement region stands for the whole empty
                       phase, so a transition into a new state fills an
                       existing region instead of mounting one together
                       with its text -- see the file header. The region
@@ -904,13 +894,13 @@ export function DataTable<T>({
                       never silence in between; when not loading that text
                       is visually hidden (clipped, not display:none --
                       the EmptyState beneath is the visual, and a hidden
-                      region would not be live). Its first committed frame
-                      is empty even when the phase begins already loading
-                      or already empty: the text below renders only once
-                      `statusRegionCommitted` arms it, one commit after
-                      the region mounts. */}
+                      region would not be live). AnnouncementRegion spends
+                      each state's first committed frame empty and writes
+                      the text a frame later, even when the phase begins
+                      already loading or already empty. The spinner sits
+                      beside the region rather than inside it: it is
+                      decorative to the announcement, which is the text. */}
                   <Box
-                    role="status"
                     sx={
                       loading
                         ? {
@@ -924,28 +914,16 @@ export function DataTable<T>({
                         : { display: 'flex' }
                     }
                   >
-                    {statusRegionCommitted ? (
-                      loading ? (
-                        <>
-                          <CircularProgress
-                            size={22}
-                            aria-label={t('dataTable.loading')}
-                          />
-                          {t('dataTable.loading')}
-                        </>
-                      ) : (
-                        // The empty-result wording inside the status
-                        // region: the EmptyState beneath is the empty
-                        // result's visual, so the region's copy takes
-                        // the package's clip recipe (see
-                        // src/visually-hidden.ts) and no painted space,
-                        // staying in the accessibility tree so the
-                        // region still has something to announce.
-                        <Box component="span" sx={visuallyHiddenSx}>
-                          {t('dataTable.noData')}
-                        </Box>
-                      )
-                    ) : null}
+                    {loading && (
+                      <CircularProgress
+                        size={22}
+                        aria-label={t('dataTable.loading')}
+                      />
+                    )}
+                    <AnnouncementRegion
+                      message={emptyAnnouncement}
+                      sx={loading ? undefined : visuallyHiddenSx}
+                    />
                   </Box>
                   {!loading && (
                     <EmptyState
