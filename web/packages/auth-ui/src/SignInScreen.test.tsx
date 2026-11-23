@@ -11,10 +11,13 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { flushSync } from 'react-dom'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { SignInScreen } from './SignInScreen.js'
+import type { SignInMode } from './SignInScreen.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import {
   LOGIN_ANSWER,
@@ -38,6 +41,49 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const PASS = 's3cret-pass'
 const MAIL = 'alice@example.com'
+
+/** Fill the password-registration channel and submit it, leaving the
+ * submit key as the focused control while the request runs. The caller
+ * has already switched the screen to register mode. */
+async function submitPasswordRegistration(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  await user.type(screen.getByLabelText(zhCN.register.usernameLabel), 'ada')
+  await user.type(screen.getByLabelText(zhCN.register.emailLabel), MAIL)
+  await user.type(screen.getByLabelText(zhCN.register.passwordLabel), PASS)
+  await user.type(
+    screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+    PASS,
+  )
+  await user.click(screen.getByRole('button', { name: zhCN.register.submit }))
+}
+
+/** A controlled host whose mode update can be held back: with `hold` true
+ * it ignores the screen's mode reports, as a host that never wires the
+ * update does. */
+function ControlledModeHost({
+  session,
+  discovery,
+  control,
+}: {
+  readonly session: AuthSession
+  readonly discovery: AuthnMethodList
+  readonly control: { hold: boolean }
+}) {
+  const [mode, setMode] = useState<SignInMode>('register')
+  return (
+    <SignInScreen
+      session={session}
+      discovery={discovery}
+      mode={mode}
+      onModeChange={(next) => {
+        if (!control.hold) {
+          setMode(next)
+        }
+      }}
+    />
+  )
+}
 
 /** A discovery document with both form channels. */
 const BOTH_FORMS = methodList([
@@ -2500,6 +2546,152 @@ describe('SignInScreen', () => {
     expect(
       screen.queryByRole('heading', { name: zhCN.mode.registerTitle }),
     ).not.toBeInTheDocument()
+  })
+
+  it("land on the sign-in form's first field when a refused auto-login unmounts the registration form", async () => {
+    const harness = makeHarness({
+      'POST /api/v1/auth/register': () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: MAIL },
+      }),
+      [LOGIN_START]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            { name: 'sms', kind: 'form', opens_account: true },
+          ],
+          { signup: true, signupPassword: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    await submitPasswordRegistration(user)
+
+    // The whole registration form left with the submit key that held the
+    // focus, and the channel switch remounted the panel around the
+    // replacement form. The sign-in form's first field takes the focus, so
+    // a keyboard user continues from the new surface instead of the
+    // document body.
+    const identifier = await screen.findByLabelText(
+      zhCN.passwordSignIn.identifierLabel,
+    )
+    expect(identifier).toHaveFocus()
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('leave the focus the operator moved during the auto-login where it is', async () => {
+    let rejectLogin: (reason?: unknown) => void = () => {}
+    const loginGate = new Promise((_resolve, reject) => {
+      rejectLogin = reject
+    })
+    const harness = makeHarness({
+      'POST /api/v1/auth/register': () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: MAIL },
+      }),
+      [LOGIN_START]: () => loginGate,
+    })
+    renderWithProviders(
+      <>
+        <SignInScreen
+          session={harness.session}
+          discovery={methodList(
+            [
+              { name: 'password', kind: 'form' },
+              { name: 'sms', kind: 'form', opens_account: true },
+            ],
+            { signup: true, signupPassword: true },
+          )}
+        />
+        <button type="button">outside</button>
+      </>,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    await submitPasswordRegistration(user)
+    await waitFor(() =>
+      expect(
+        harness.calls.some(
+          (call) => `${call.method} ${call.path}` === LOGIN_START,
+        ),
+      ).toBe(true),
+    )
+    // The auto-login is still in flight; the operator moves focus out of
+    // the registration form while it runs.
+    const outside = screen.getByRole('button', { name: 'outside' })
+    await user.click(outside)
+    expect(outside).toHaveFocus()
+
+    await act(async () => {
+      rejectLogin(apiError(401, 'authn.login_failed'))
+      await Promise.resolve()
+    })
+    const identifier = await screen.findByLabelText(
+      zhCN.passwordSignIn.identifierLabel,
+    )
+    // The removal did not take the focus, so the landing must not take it
+    // back from the place the operator chose.
+    expect(outside).toHaveFocus()
+    expect(identifier).not.toHaveFocus()
+  })
+
+  it('drop a held handoff at the commit after the controlled host declines to switch', async () => {
+    const harness = makeHarness({
+      'POST /api/v1/auth/register': () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: MAIL },
+      }),
+      [LOGIN_START]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    const control = { hold: true }
+    renderWithProviders(
+      <ControlledModeHost
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: true, signupPassword: true },
+        )}
+        control={control}
+      />,
+    )
+    const user = userEvent.setup()
+    await submitPasswordRegistration(user)
+
+    // The auto-login was refused and the screen asked for the sign-in
+    // surface, but this host holds the mode where it is: the registration
+    // form stays with its notice, and no sign-in form mounts.
+    await screen.findByText(zhCN.register.signInRequired)
+    expect(
+      screen.queryByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).not.toBeInTheDocument()
+
+    // The viewer later chooses to sign in, and this time the host applies
+    // it. The declined handoff is gone: this ordinary switch planted no
+    // focus move, so it must not take the viewer's focus to the form.
+    control.hold = false
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.signInEntry }),
+    )
+    const identifier = await screen.findByLabelText(
+      zhCN.passwordSignIn.identifierLabel,
+    )
+    expect(identifier).not.toHaveFocus()
   })
 
   it('keep the register entry hidden when password registration and account-opening methods are both off', () => {

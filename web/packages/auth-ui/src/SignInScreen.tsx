@@ -82,7 +82,7 @@
  * begin (a false answer starts nothing and renders no error).
  */
 
-import { Fragment, useEffect, useId, useState } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -112,6 +112,7 @@ import {
 import { useSignInDiscovery } from './internal/use-signin-discovery.js'
 import type { SignInDiscovery } from './internal/use-signin-discovery.js'
 import { methodLabel } from './internal/labels.js'
+import { firstControl } from './internal/step-focus.js'
 import { InlineError } from './internal/inline-error.js'
 import { RetryAction } from './internal/retry-action.js'
 import { useAuthUiTranslation } from './internal/translation.js'
@@ -386,6 +387,49 @@ export function SignInScreen({
   const [prefillUsername, setPrefillUsername] = useState<string | undefined>(
     undefined,
   )
+  // The mounted form surface, so the handoff below can name the first
+  // control of the form that replaced the registration one.
+  const formSurfaceRef = useRef<HTMLDivElement | null>(null)
+  // Whether a refused auto-login has asked for the sign-in handoff. The
+  // flag is set in the callback that also switches the mode, and the
+  // commit that unmounts the registration form consumes it.
+  const signInHandoff = useRef(false)
+
+  // A refused auto-login unmounts the whole registration form, taking the
+  // control that held focus with it. Hand focus to the first control of
+  // the sign-in form that replaced it -- but only when that removal is
+  // what took the focus: the browser leaves it on the body when the
+  // focused control leaves, while a connected control means the operator
+  // moved focus elsewhere during the auto-login, and that choice stands.
+  //
+  // The write and the commit that unmounts the registration form belong
+  // together, so the flag is one commit's: it is consumed by the first
+  // commit after the write, whether or not the mode moved. A controlled
+  // host that keeps its mode where it is presents no sign-in surface, and
+  // a flag left behind would later fire on an unrelated mode switch that
+  // asked for no focus move.
+  useLayoutEffect(() => {
+    if (!signInHandoff.current) {
+      return
+    }
+    signInHandoff.current = false
+    if (activeMode !== 'sign-in') {
+      return
+    }
+    const surface = formSurfaceRef.current
+    if (surface === null) {
+      return
+    }
+    const active = document.activeElement
+    const focusCameFromTheForm =
+      active === null ||
+      active === document.body ||
+      active === document.documentElement ||
+      (active instanceof HTMLElement && !active.isConnected)
+    if (focusCameFromTheForm) {
+      firstControl(surface)?.focus()
+    }
+  })
 
   if (state.status === 'loading') {
     return (
@@ -568,6 +612,9 @@ export function SignInScreen({
               // The account exists; the viewer is handed to the sign-in
               // form with the username the registration used. The
               // selection belongs to the sign-in side this handoff picks.
+              // The commit that replaces this form hands focus to the
+              // sign-in form's first control (see the layout effect).
+              signInHandoff.current = true
               setPrefillUsername(username)
               pickChannel('password', 'sign-in')
               requestMode('sign-in')
@@ -637,10 +684,16 @@ export function SignInScreen({
           id={panelIdOf(selected)}
           aria-labelledby={tabIdOf(selected)}
         >
-          {activeDescriptor ? renderForm(activeDescriptor) : null}
+          {activeDescriptor ? (
+            <Box ref={formSurfaceRef} sx={{ display: 'contents' }}>
+              {renderForm(activeDescriptor)}
+            </Box>
+          ) : null}
         </Box>
       ) : activeDescriptor ? (
-        renderForm(activeDescriptor)
+        <Box ref={formSurfaceRef} sx={{ display: 'contents' }}>
+          {renderForm(activeDescriptor)}
+        </Box>
       ) : null}
       {activeMode === 'sign-in' && smsOpensAccount && selected === 'sms' ? (
         <Typography variant="body2" color="text.secondary">

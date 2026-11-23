@@ -36,7 +36,14 @@
  * sign in, keeping the username in place; a host that supplies
  * `onSignInRequired` takes the username and moves the viewer to its own
  * sign-in surface. The retry action re-runs only the password login with
- * the credentials the registration used.
+ * the credentials the registration used, replacing the submit in the same
+ * slot so React reconciles it onto the same element and a focused control
+ * keeps its focus. The fields go read-only rather than disabled: the
+ * opened account must not be edited into a second one, but a viewer who
+ * submitted from a field (Enter) keeps the focus there. The form's submit
+ * path is closed once the account is open -- the auto-login refused or
+ * settled: the submit key is gone, but the form element remains, so a
+ * synthetic submit must not re-open the account.
  *
  * An auto-login that settles -- the first one or the retry -- moves the
  * form to `signedIn`: the account-created and sign-in-required notices
@@ -45,18 +52,19 @@
  * "please sign in".
  *
  * A registration refused with 429 is a throttle. When the response
- * stated a `Retry-After` wait, the submit key is disabled until it
- * elapses and the banner counts the seconds down; once it does, the key
- * re-enables without the viewer reloading and the banner stays with the
- * wait-free sentence. A throttle that
- * stated no wait keeps the key available at once and says so through
- * the same register-section text.
+ * stated a `Retry-After` wait, the submit key is unavailable until it
+ * elapses: it stays focusable and carries the banner's wait sentence as
+ * its description while the banner counts the seconds down. Once the wait
+ * elapses the key is available again without the viewer reloading and the
+ * banner stays with the wait-free sentence. A throttle that stated no
+ * wait keeps the key available at once and says so through the same
+ * register-section text.
  *
  * The heading above the form is host content. Nothing here navigates,
  * reads storage or issues a request outside the session's operations.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
@@ -69,6 +77,7 @@ import {
   FormLayout,
   errorCodeOf,
   parseEmailAddress,
+  useActivationGuard,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
@@ -146,6 +155,9 @@ export function PasswordRegisterForm({
   humanGate,
 }: PasswordRegisterFormProps) {
   const { t } = useAuthUiTranslation()
+  // The throttle banner's id: the submit key it holds names the wait
+  // sentence as its reason, so the reason is not rendered a second time.
+  const throttleNoteId = useId()
   const form = useForm<RegisterFields>({
     defaultValues: {
       username: '',
@@ -175,6 +187,15 @@ export function PasswordRegisterForm({
   // The moment a throttled registration may be retried, when the
   // response stated one; null otherwise.
   const [retryUntil, setRetryUntil] = useState<number | null>(null)
+  // Whether this form's registration attempt is running. RHF's
+  // `isSubmitting` cannot carry this: it is raised before the submit
+  // handler is called, and cleared as soon as the handler returns (the
+  // activation guard returns synchronously by contract, so the async
+  // handler's promise never reaches RHF). A guard keyed to it would
+  // swallow the submission that set it and report the flight as ended.
+  // This flag starts inside the handler and spans the same attempt, the
+  // opening and the auto-login that follows.
+  const [attempting, setAttempting] = useState(false)
   // The username input itself: RHF's setFocus targets the control the
   // Controller's ref is attached to, not MUI's inner input.
   const usernameInput = useRef<HTMLInputElement>(null)
@@ -257,7 +278,9 @@ export function PasswordRegisterForm({
     })
   }
 
-  const onSubmit: SubmitHandler<RegisterFields> = async (values) => {
+  const submitRegistration = async (
+    values: RegisterFields,
+  ): Promise<void> => {
     setFailure(null)
     form.clearErrors()
     // The gate decides whether this registration begins; a refusal starts
@@ -331,12 +354,35 @@ export function PasswordRegisterForm({
     await startSignIn()
   }
 
+  const onSubmit: SubmitHandler<RegisterFields> = async (values) => {
+    setAttempting(true)
+    try {
+      await submitRegistration(values)
+    } finally {
+      setAttempting(false)
+    }
+  }
+
   // The credentials are never in a request body beyond the flows this
   // form drives, and the form holds them only in memory.
 
   const autoSignInFailed = status === 'signInRequired'
   const signedIn = status === 'signedIn'
-  const busy = form.formState.isSubmitting || driver.busy
+  const busy = attempting || driver.busy
+  // A stated wait is a precondition, not a flight: the submit cannot run
+  // yet, but nothing this form started is still running.
+  const throttled = retryUntil !== null
+  // The form's own submit path judges the same state as its key, so an
+  // Enter press in a field cannot start a second attempt either. An open
+  // account closes the path as well, whether its auto-login was refused or
+  // settled: the submit key is gone, but the form element is still in the
+  // page and a synthetic submit would otherwise re-open the account. The
+  // driver's own flight covers the retry action, which this form does not
+  // submit.
+  const guardedSubmit = useActivationGuard(onSubmit, {
+    busy,
+    unavailable: throttled || autoSignInFailed || signedIn,
+  })
 
   // The registration fields and a parked step of the auto-login are two
   // surfaces of this channel; a switch between them moves focus to the
@@ -383,7 +429,7 @@ export function PasswordRegisterForm({
             label={t('register.usernameLabel')}
             autoComplete="username"
             fullWidth
-            disabled={autoSignInFailed}
+            slotProps={{ input: { readOnly: autoSignInFailed } }}
             error={invalid}
             helperText={errorText ?? undefined}
           />
@@ -397,7 +443,7 @@ export function PasswordRegisterForm({
             label={t('register.displayNameLabel')}
             autoComplete="name"
             fullWidth
-            disabled={autoSignInFailed}
+            slotProps={{ input: { readOnly: autoSignInFailed } }}
             error={invalid}
             helperText={errorText ?? t('register.displayNameHelp')}
           />
@@ -422,7 +468,7 @@ export function PasswordRegisterForm({
             type="email"
             autoComplete="email"
             fullWidth
-            disabled={autoSignInFailed}
+            slotProps={{ input: { readOnly: autoSignInFailed } }}
             error={invalid}
             helperText={errorText ?? undefined}
           />
@@ -438,7 +484,7 @@ export function PasswordRegisterForm({
             type="password"
             autoComplete="new-password"
             fullWidth
-            disabled={autoSignInFailed}
+            slotProps={{ input: { readOnly: autoSignInFailed } }}
             error={invalid}
             helperText={errorText ?? undefined}
           />
@@ -459,7 +505,7 @@ export function PasswordRegisterForm({
             type="password"
             autoComplete="new-password"
             fullWidth
-            disabled={autoSignInFailed}
+            slotProps={{ input: { readOnly: autoSignInFailed } }}
             error={invalid}
             helperText={errorText ?? undefined}
           />
@@ -472,13 +518,13 @@ export function PasswordRegisterForm({
     <FormLayout
       ref={surfaceRef}
       form={form}
-      onSubmit={onSubmit}
+      onSubmit={guardedSubmit}
       actions={
         signedIn ? undefined : autoSignInFailed ? (
           <ActionButton
             type="button"
             emphasis="primary"
-            disabled={driver.busy}
+            busy={driver.busy}
             onClick={() => void startSignIn()}
           >
             {t('register.retrySignIn')}
@@ -487,7 +533,9 @@ export function PasswordRegisterForm({
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={busy || retryUntil !== null}
+            busy={busy}
+            unavailable={throttled}
+            unavailableDescribedBy={throttled ? throttleNoteId : undefined}
           >
             {t('register.submit')}
           </ActionButton>
@@ -523,17 +571,22 @@ export function PasswordRegisterForm({
             {failure.text}
           </Alert>
         ) : (
-          <InlineError
-            code={failure.code}
-            retryAfterSeconds={failure.retryAfterSeconds}
-            liveRetryAfterSeconds={
-              failure.retryAfterSeconds === undefined
-                ? undefined
-                : retryUntil === null
-                  ? 0
-                  : Math.max(0, Math.ceil((retryUntil - Date.now()) / 1000))
-            }
-          />
+          // The banner is the submit key's stated reason while the wait
+          // holds: the key names it rather than the sentence being
+          // rendered twice.
+          <Box id={throttleNoteId}>
+            <InlineError
+              code={failure.code}
+              retryAfterSeconds={failure.retryAfterSeconds}
+              liveRetryAfterSeconds={
+                failure.retryAfterSeconds === undefined
+                  ? undefined
+                  : retryUntil === null
+                    ? 0
+                    : Math.max(0, Math.ceil((retryUntil - Date.now()) / 1000))
+              }
+            />
+          </Box>
         )
       ) : null}
     </FormLayout>
