@@ -46,7 +46,8 @@ reads no bundle of its own.
 | `theme/system-color-mode.ts` | (internal) `useSystemColorMode` |
 | `components/PageLayout.tsx` | `PageLayout`, `PageLayoutProps` |
 | `components/PageHeader.tsx` | `PageHeader`, `PageHeaderProps`, `PageHeaderBreadcrumb` |
-| `components/ActionRow.tsx` | `ActionRow`, `ActionRowProps`, `ActionRowSize`, `ActionButton`, `ActionButtonProps`, `ActionEmphasis`, `ActionTone` |
+| `components/ActionRow.tsx` | `ActionRow`, `ActionRowProps`, `ActionRowSize`, `ActionButton`, `ActionButtonProps`, `ActionButtonUnavailableExplanation`, `ActionEmphasis`, `ActionTone` |
+| `activation-guard.ts` | `useActivationGuard`, `ActivationGuardState` |
 | `components/EmptyState.tsx` | `EmptyState`, `EmptyStateProps`, `EmptyStateVariant`, `EmptyStateHeadingLevel`, `EmptyStateNoHeading` |
 | `components/ConfirmDialog.tsx` | `ConfirmDialog`, `ConfirmDialogProps`, `ConfirmDialogVariant`, `CONFIRM_ARM_LOCKOUT_MS` |
 | `components/SidePanel.tsx` | `SidePanel`, `SidePanelProps`, `SidePanelSize` |
@@ -565,16 +566,81 @@ margin -- the text before the cluster takes the free width, so the
 cluster lands at the row end. Every page form, dialog, step and row
 actions block uses `ActionRow`.
 
+`ActionButton` never renders a natively disabled control: a control that
+leaves the focus order takes a keyboard user's place with it. Two props
+replace native disabling, and both keep the button focusable, carry
+`aria-disabled="true"` and swallow activation -- `onClick` is not called,
+the activation's `preventDefault()` keeps a submit button from submitting,
+and the event still propagates:
+
+- `busy`: the action this button started is in flight. It adds
+  `aria-busy="true"` and a centred progress indicator; the label stays in
+  the layout and the accessibility tree (painted transparent), so the
+  width and the accessible name do not change, and the indicator is a
+  progressbar named by the button.
+- `unavailable`: the action cannot run now -- its precondition is unmet,
+  or a write is in flight in a scope whose context this button changes.
+
+An unavailable button explains itself one of two ways.
+`unavailableReason` takes translated text: the button renders it visually
+hidden, links it through `aria-describedby` and shows it in a tooltip on
+hover and focus. `unavailableDescribedBy` takes the id of text already on
+the page; the button adds it to `aria-describedby` and renders nothing
+itself. A caller-supplied `aria-describedby` stays first either way. With
+neither, the button carries `aria-disabled` alone -- the shape a write in
+flight leaves on a contextual control. A busy button gives no reason.
+`disabled` and `loading` remain for call sites that have not migrated, are
+deprecated, and are removed once every call site uses `busy` /
+`unavailable`.
+
 ```tsx
 import { ActionButton, ActionRow } from '@speed/ui-kit'
 
 <ActionRow>
   <ActionButton onClick={close}>Cancel</ActionButton>
-  <ActionButton type="submit" emphasis="primary" loading={saving}>
+  <ActionButton type="submit" emphasis="primary" busy={saving}>
     Save
   </ActionButton>
 </ActionRow>
 ```
+
+### useActivationGuard (a focusable control's activation guard)
+
+`useActivationGuard(handler, { busy, unavailable })` returns a handler
+with one identity for the component's lifetime. While `busy` or
+`unavailable` holds, a call never reaches `handler`; when the call's
+first argument is a submit event (a React `FormEvent` or a native
+`SubmitEvent`), the guard calls `preventDefault()`, so the browser does
+not submit the form. Any other argument is left untouched: a change event
+is not cancelled, because a controlled value does not change when its
+handler is swallowed. Otherwise the original arguments reach `handler`; a
+promise it returns is neither awaited nor has its rejection taken over,
+so react-hook-form's `handleSubmit(...)` result can be passed as it is.
+
+The guard holds no write state, reads no feedback scope and never touches
+focus. It is the stop for a control that cannot be natively disabled
+without dropping a keyboard user's focus, and it judges by the latest
+committed render, so a state change applies to the next activation:
+
+```tsx
+const pending = feedback.pending
+const submit = useActivationGuard(handleSubmit(onValid), { busy: pending })
+const toggle = useActivationGuard(onSettingChange, { busy: pending })
+
+<form onSubmit={submit}>...</form>
+
+<Switch
+  checked={enabled}
+  onChange={toggle}
+  slotProps={{ input: { 'aria-disabled': pending || undefined } }}
+/>
+```
+
+Use it for a form's `onSubmit` (an `ActionButton` submit button guards the
+same way, so the two layers agree), a change-saves-immediately switch or
+checkbox, and any button-shaped control that cannot become an
+`ActionButton`. The control carries `aria-disabled="true"` itself and
+stops passing `disabled`.
 
 ### ConfirmDialog
 
@@ -604,11 +670,14 @@ the left and the confirm closes the group on the right.
 `children` renders host content inside the dialog below the message (a
 required acknowledgement, a detail list); it is deliberately **not**
 part of `aria-describedby`, so the message stays the dialog's
-description. `confirmDisabled` disables the confirm button on its own --
-a host-owned precondition independent of the busy state -- and leaves
-the double-confirm arming and lockout logic alone: the disabled button
-cannot arm, and an arm already in progress resumes when the flag clears.
-Both default to absent and change nothing for existing callers.
+description. `confirmDisabled` makes the confirm button unavailable on
+its own -- a host-owned precondition independent of the busy state -- and
+leaves the double-confirm arming and lockout logic alone: the unavailable
+button cannot arm, and an arm already in progress resumes when the flag
+clears. `confirmDisabledReason` supplies the translated text the button
+carries as its description while the flag holds; without it the button
+explains nothing. Each defaults to absent and changes nothing for
+existing callers.
 
 ### SidePanel
 
@@ -618,8 +687,9 @@ it -- a list row's detail, a create form wider than a confirmation.
 `open` shows it; the close button, Escape and a backdrop click all report
 `onClose` and nothing closes itself, so the host may refuse a close (an
 unsaved-content guard, a confirmation first). `busy` makes all three
-close paths inert: the close button is disabled and Escape and backdrop
-clicks do not report. `onExited` fires once when the exit transition
+close paths inert: the close button is unavailable (focusable,
+`aria-disabled`) and Escape and backdrop clicks do not report. `onExited`
+fires once when the exit transition
 ends: by then the page behind is reachable again and the panel is still
 in the document, and the content unmounts in the render commit
 immediately after. During the exit the panel renders whatever children
@@ -850,6 +920,12 @@ const phone = toE164(country, nationalNumber) // null while invalid
   `+`-number typed by hand does not lose its leading sign. While such a
   draft is on screen the host's number is emptied with it, so a submit
   cannot send the number the draft replaced.
+- **`readOnly?: boolean`** keeps both parts focusable but unchangeable:
+  the state a host uses while a write that includes this number is in
+  flight. The selector does not open and the local field is natively
+  `readonly`, still selectable and copyable; neither `onCountryChange`
+  nor `onNationalNumberChange` is called. `disabled` wins when both are
+  true.
 - **Validation** is per country and names the calling code:
   `phoneNumber.incomplete` ("The number is incomplete under +86.") for a
   number shorter than the country allows, `phoneNumber.invalid` for an
@@ -1220,14 +1296,17 @@ so the sentence can name how long to retry.
 
 ```tsx
 import { useState } from 'react'
-import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import {
   CLIENT_TRANSPORT_ERROR_CODES,
   createErrorTextResolver,
   useTranslation,
 } from '@speed/i18n'
-import { useWriteFeedback, WriteFeedbackRegion } from '@speed/ui-kit'
+import {
+  ActionButton,
+  useWriteFeedback,
+  WriteFeedbackRegion,
+} from '@speed/ui-kit'
 
 // The codes the tenant namespace carries text for: its own refusal codes
 // plus the transport codes every write can reach. Anything else resolves
@@ -1249,9 +1328,8 @@ function TenantNameSection() {
         value={name}
         onChange={(event) => setName(event.target.value)}
       />
-      <Button
-        loading={feedback.pending}
-        disabled={feedback.pending}
+      <ActionButton
+        busy={feedback.pending}
         onClick={() => {
           void feedback.run(async () => {
             if (name.trim() === '') {
@@ -1263,7 +1341,7 @@ function TenantNameSection() {
         }}
       >
         {t('save')}
-      </Button>
+      </ActionButton>
       <WriteFeedbackRegion
         outcome={feedback.outcome}
         resolve={createErrorTextResolver(t, ERROR_TEXT_CODES)}
@@ -1377,7 +1455,8 @@ const refresh = usePageRefresh(
 `aria-busy` and a spinner in place of its icon while busy (focusable and
 a second activation dropped). `disabled` carries the "choose a scope
 first" description (`describedBy` + `disabledReason` tooltip);
-`writePending` renders a native disable with neither; `ariaLabel` names
+`writePending` makes the button unavailable (focusable,
+`aria-disabled`) with neither; `ariaLabel` names
 what is re-read. `label` is the visible text -- callers pass their own
 package's existing translation, and the ui-kit namespace's
 `refreshButton.label` is the default.
@@ -1426,8 +1505,9 @@ manual-entry disclosure with `manualToggleLabel`, `secretLabel` and a
 `parameters` is the labelled list the caller wants beside the secret
 (algorithm, digit count and period in the account surface's own
 wording). The code field is controlled by `code` / `onCodeChange`, asks
-for a numeric one-time code and holds six characters; `busy` disables
-it. `secondaryAction` and `primaryAction` are the caller's controls --
+for a numeric one-time code and holds six characters; `busy` makes it
+read-only, so it stays focusable. `secondaryAction` and `primaryAction`
+are the caller's controls --
 the panel renders the secondary first and the primary last, pushed to
 the far right when both are present. Omit `secret` and `parameters` and
 the panel keeps the code field and actions without a manual block; omit

@@ -42,7 +42,6 @@ import {
   switchLanguage,
   useTranslation,
 } from '@speed/i18n'
-import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -56,7 +55,11 @@ import { EmptyState } from './components/EmptyState.js'
 import { FileUploader } from './components/FileUploader.js'
 import type { FileUploaderRow } from './components/FileUploader.js'
 import { PageHeader } from './components/PageHeader.js'
-import { useWriteFeedback, WriteFeedbackRegion } from './index.js'
+import {
+  ActionButton,
+  useWriteFeedback,
+  WriteFeedbackRegion,
+} from './index.js'
 
 interface Member {
   id: number
@@ -732,9 +735,8 @@ function TenantNameSection() {
         value={name}
         onChange={(event) => setName(event.target.value)}
       />
-      <Button
-        loading={feedback.pending}
-        disabled={feedback.pending}
+      <ActionButton
+        busy={feedback.pending}
         onClick={() => {
           void feedback.run(async () => {
             if (name.trim() === '') {
@@ -746,7 +748,7 @@ function TenantNameSection() {
         }}
       >
         {t('save')}
-      </Button>
+      </ActionButton>
       <WriteFeedbackRegion
         outcome={feedback.outcome}
         resolve={createErrorTextResolver(t, TENANT_ERROR_CODES)}
