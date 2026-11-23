@@ -5,13 +5,13 @@
  * Covers the idle state (one mounted live region and nothing else), the
  * active banner (subject, tenant and expiry when given, the management
  * notice, a named region landmark), the shared attempt's presentation
- * (disabled and busy while pending, the failure code rendered inside the
- * banner, the success message announced and shown), the dismissal (the
- * visible region hides without unmounting, the close control names
- * itself, the live region keeps announcing), the host-driven end edge,
- * the tenant identifier's ellipsis with its full value as a title, and an
- * axe pass. Text expectations read the shipped bundles, never inline
- * language.
+ * (focusable, aria-disabled and aria-busy while pending, the failure code
+ * rendered inside the banner, the success message announced and shown),
+ * the dismissal (the visible region hides without unmounting, the close
+ * control names itself, the live region keeps announcing), the host-driven
+ * end edge, the tenant identifier's ellipsis with its full value as a
+ * title, and an axe pass. Text expectations read the shipped bundles,
+ * never inline language.
  */
 
 import { useState } from 'react'
@@ -390,9 +390,9 @@ describe('ImpersonationBanner', () => {
     })
     expect(notice).toHaveTextContent(ACTING_AS_ZH)
     expect(notice).not.toHaveTextContent(EXPIRY_LABEL_ZH)
-    expect(
-      screen.getByRole('button', { name: zhCN.impersonation.end }),
-    ).toBeEnabled()
+    const end = screen.getByRole('button', { name: zhCN.impersonation.end })
+    expect(end).not.toHaveAttribute('aria-disabled', 'true')
+    expect(end).toBeEnabled()
   })
 
   it('falls back to the browser zone when the host’s display time zone is not an IANA name', () => {
@@ -424,22 +424,36 @@ describe('ImpersonationBanner', () => {
     expect(notice).toHaveTextContent(
       zhCN.impersonation.expiresAt.replace('{{expiresAt}}', browserExpiry),
     )
-    expect(
-      screen.getByRole('button', { name: zhCN.impersonation.end }),
-    ).toBeEnabled()
+    const end = screen.getByRole('button', { name: zhCN.impersonation.end })
+    expect(end).not.toHaveAttribute('aria-disabled', 'true')
+    expect(end).toBeEnabled()
   })
 
-  it('disables and marks the end control busy while the shared attempt is in flight', () => {
+  it('keeps the end control focusable and reports it unavailable and busy while the shared attempt is in flight', async () => {
+    const onEnd = vi.fn()
     renderWithProviders(
       <ImpersonationBanner
         impersonation={{ subject: SUBJECT }}
-        onEnd={() => {}}
+        onEnd={onEnd}
         pending
       />,
     )
-    expect(
-      screen.getByRole('button', { name: zhCN.impersonation.ending }),
-    ).toBeDisabled()
+    const ending = screen.getByRole('button', {
+      name: zhCN.impersonation.ending,
+    })
+    // The in-flight state rides on an operable element: no native disabled
+    // attribute, so the button keeps its place in the tab order ...
+    expect(ending).not.toHaveAttribute('disabled')
+    // ... and says what it is doing to assistive technology.
+    expect(ending).toHaveAttribute('aria-disabled', 'true')
+    expect(ending).toHaveAttribute('aria-busy', 'true')
+    // The control can still take focus at any time.
+    ending.focus()
+    expect(ending).toHaveFocus()
+    // Activation while the attempt is in flight is swallowed: the shared
+    // attempt is not started twice.
+    await userEvent.setup().click(ending)
+    expect(onEnd).not.toHaveBeenCalled()
   })
 
   it('renders the shared attempt failure inside the banner and leaves the control retryable', async () => {
@@ -458,6 +472,7 @@ describe('ImpersonationBanner', () => {
     expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
     // The control is back and a click is a new attempt.
     const end = screen.getByRole('button', { name: zhCN.impersonation.end })
+    expect(end).not.toHaveAttribute('aria-disabled', 'true')
     expect(end).toBeEnabled()
     await userEvent.setup().click(end)
     expect(onEnd).toHaveBeenCalledTimes(1)
@@ -529,6 +544,84 @@ describe('ImpersonationBanner', () => {
         zhCN.impersonation.ended,
       ),
     )
+  })
+
+  it('lands focus on the settlement when the end control that started it unmounts', async () => {
+    // The success clears the impersonation, so the end control leaves the
+    // document with focus on it. Without a landing the browser drops focus
+    // to the body; the banner slot's remaining section -- the settlement
+    // that now carries the end's announcement -- takes it instead.
+    function Host() {
+      const [impersonation, setImpersonation] =
+        useState<ImpersonationBannerState | null>({ subject: SUBJECT })
+      return (
+        <ImpersonationBanner
+          impersonation={impersonation}
+          onEnd={() => setImpersonation(null)}
+        />
+      )
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<Host />)
+    const end = screen.getByRole('button', { name: zhCN.impersonation.end })
+    end.focus()
+    expect(end).toHaveFocus()
+
+    await user.click(end)
+
+    expect(
+      screen.queryByRole('region', {
+        name: zhCN.impersonation.regionLabel,
+      }),
+    ).not.toBeInTheDocument()
+    const status = screen.getByRole('status')
+    const settlement = status.closest('.MuiAlert-root')?.parentElement
+    expect(settlement).not.toBeNull()
+    // Focus moved off the body and onto the settlement section, never onto
+    // the unmounted control's place in the tab order.
+    await waitFor(() => expect(settlement).toHaveFocus())
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('leaves focus alone when the operator moved it before the impersonation ended', async () => {
+    // The end settles from another entry point after the operator left the
+    // banner's end control; their chosen resting place must not be pulled
+    // back to the banner slot.
+    function Host() {
+      const [impersonation, setImpersonation] =
+        useState<ImpersonationBannerState | null>({ subject: SUBJECT })
+      return (
+        <>
+          <ImpersonationBanner
+            impersonation={impersonation}
+            onEnd={() => {}}
+          />
+          <button type="button" onClick={() => setImpersonation(null)}>
+            end elsewhere
+          </button>
+        </>
+      )
+    }
+    const user = userEvent.setup()
+    renderWithProviders(<Host />)
+    const end = screen.getByRole('button', { name: zhCN.impersonation.end })
+    end.focus()
+    expect(end).toHaveFocus()
+
+    const elsewhere = screen.getByRole('button', { name: 'end elsewhere' })
+    await user.click(elsewhere)
+
+    expect(
+      screen.queryByRole('region', {
+        name: zhCN.impersonation.regionLabel,
+      }),
+    ).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.impersonation.ended,
+      ),
+    )
+    expect(elsewhere).toHaveFocus()
   })
 
   it('replaces a standing end confirmation when a new impersonation appears', async () => {

@@ -35,12 +35,21 @@
  * The end control does not depend on `tenant` or `expiresAt`: those are
  * the host's status read, both are optional, and the control renders and
  * works even when neither arrived. The control starts the host's one
- * attempt: while `pending` it is disabled and busy, and a failure renders
- * the answer's code text inside the banner while leaving the control
- * retryable. A bare 404 answering "there is no impersonation to end" is
- * the host's concern: its attempt treats that as settled, and this
+ * attempt: while `pending` it stays focusable and reports the state the
+ * attempt gives it (`aria-disabled` and `aria-busy`), so starting the
+ * attempt never moves focus off the control that started it; a failure
+ * renders the answer's code text inside the banner while leaving the
+ * control retryable. A bare 404 answering "there is no impersonation to
+ * end" is the host's concern: its attempt treats that as settled, and this
  * component never inspects an HTTP status -- a failure code that reaches
  * it is rendered like any other.
+ *
+ * When the end succeeds and the host clears `impersonation`, the end
+ * control leaves the document. If it held focus, the component gives
+ * focus to the settlement section that remains in the banner slot and
+ * carries the end's announcement, instead of letting the browser drop
+ * focus to the document body; a viewer who moved focus elsewhere while
+ * the attempt ran keeps their new resting place.
  *
  * The component never counts down and never acts at `expiresAt`; the
  * host re-reads the session when the impersonation expires.
@@ -56,7 +65,7 @@
  * controls out of it.
  */
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -66,6 +75,7 @@ import Typography from '@mui/material/Typography'
 import type { Theme } from '@mui/material/styles'
 import {
   AnnouncementRegion,
+  useActivationGuard,
   useFormatInstant,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -93,9 +103,9 @@ export interface ImpersonationBannerProps {
   readonly impersonation: ImpersonationBannerState | null
   /** Starts the host's one end-impersonation write attempt. */
   readonly onEnd: () => void
-  /** Whether that shared attempt is in flight. The end control is
-   * disabled and marked busy while it is, and the account menu's own end
-   * item is disabled beside it. */
+  /** Whether that shared attempt is in flight. The end control stays
+   * focusable and carries `aria-disabled` and `aria-busy` while it is,
+   * and the account menu's own end item is disabled beside it. */
   readonly pending?: boolean
   /** The attempt's failure code, rendered inside the banner. */
   readonly failureCode?: string | null
@@ -285,6 +295,51 @@ export function ImpersonationBanner({
   // The resolved display zone: the host's when usable, the browser's when
   // not, UTC as the last resort.
   const formatTime = useFormatInstant()
+  // The end control stays focusable while its attempt is in flight, so
+  // the click has to be refused by the guard instead of MUI's native
+  // disabled state; a native disable would drop the focused control's
+  // focus to the document body.
+  const guardedEnd = useActivationGuard(onEnd, { busy: pending })
+
+  // The end control unmounts when the impersonation it ended clears. Keep
+  // whether it held focus at that moment -- React calls a ref callback with
+  // null before the node leaves the document, so the active element still
+  // names it there -- and let the landing below tell a control that left
+  // with focus from one the operator already left.
+  const settlementRef = useRef<HTMLDivElement | null>(null)
+  const endControl = useRef<HTMLButtonElement | null>(null)
+  const endHeldFocus = useRef(false)
+  const setEndControl = useCallback((node: HTMLButtonElement | null) => {
+    if (node !== null) {
+      endControl.current = node
+      endHeldFocus.current = false
+      return
+    }
+    if (
+      endControl.current !== null &&
+      endControl.current === document.activeElement
+    ) {
+      endHeldFocus.current = true
+    }
+    endControl.current = null
+  }, [])
+
+  // The end's success clears `impersonation`, which takes the end control
+  // out of the document with focus on it. Hand focus to the one element
+  // that stays in the banner slot: the settlement section that now carries
+  // the end's announcement. Nothing moves when the control did not hold
+  // focus (an end from the account menu keeps focus on that menu's own
+  // trigger) or when the operator moved focus elsewhere while the attempt
+  // ran -- their new resting place is left alone.
+  useEffect(() => {
+    if (impersonation !== null || !endHeldFocus.current) {
+      return
+    }
+    endHeldFocus.current = false
+    if (document.activeElement === document.body) {
+      settlementRef.current?.focus()
+    }
+  }, [impersonation])
 
   // The region stands for the component's whole life and inserts every
   // message empty before writing it a frame later, so the announcement
@@ -331,6 +386,10 @@ export function ImpersonationBanner({
           branch keeps the slot non-scrollable, so the first Tab in the
           banner reaches the end control. */}
       <Box
+        ref={settlementRef}
+        // The settlement section is the focus target when the end control
+        // leaves with focus: a programmatic target, not a Tab stop.
+        tabIndex={-1}
         sx={
           settlement !== null
             ? {
@@ -402,12 +461,14 @@ export function ImpersonationBanner({
           </Typography>
           <Box sx={controlsSx}>
             <Button
+              ref={setEndControl}
               type="button"
               size="small"
               variant="outlined"
               color="inherit"
-              loading={pending}
-              onClick={onEnd}
+              aria-disabled={pending || undefined}
+              aria-busy={pending || undefined}
+              onClick={guardedEnd}
               sx={{ px: 0.75 }}
             >
               {t(
