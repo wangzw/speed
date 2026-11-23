@@ -204,11 +204,11 @@ export const productShellResources: Readonly<Record<string, ResourceBundle>>
 | `@speed/i18n` | 读本包自身命名空间的翻译 hook |
 | `@speed/api-client` | 仅 `./bootstrap`：HTTP 客户端（含 401 刷新环节） |
 | `@speed/api-sdk` | 仅 `./bootstrap`：绑定每个生成调用经过的运行时接口（`./runtime`） |
-| `@speed/ui-kit` | 仅 `./bootstrap`：主题 provider；主入口只经 layout-kit 间接用到它 |
+| `@speed/ui-kit` | 主入口：翻转落点 `focusPageLanding`、会话结束播报区 `AnnouncementRegion` 与隐藏样式 `visuallyHiddenSx`；`./bootstrap`：主题 provider |
 
 peer（必需）：`react`、`react-dom`、`@mui/material`（[REF-mui](../../../references.md)）、`@emotion/react`（[REF-emotion](../../../references.md)）、`@emotion/styled`、`react-hook-form`（[REF-react-hook-form](../../../references.md)）（配对的 auth-ui 登录族渲染所依赖）、`@tanstack/react-query`（装配的 QueryClient 所在库，宿主提供实例）。
 
-**主入口的依赖下限止于四个包**：`layout-kit`、`auth-ui`、`auth-core`、`i18n`。平台侧的同层兄弟外壳必须能原样复用这条下限，故 `ui-kit`、`api-client`、`api-sdk` 不进主入口的 import 图。`./bootstrap` 子路径额外 import `api-client`、`api-sdk`、`ui-kit` 与 `@tanstack/react-query`，每一项都已在主入口依赖的传递闭包内（auth-core 拉前两者，layout-kit 与 auth-ui 拉 ui-kit），故不为消费者新增安装项。`@speed/tenancy-ui` 故意缺席：切换器是 `userMenu` 槽里的宿主组装，tenancy-ui 只是测试套件的 dev 依赖，本包不 import、不打包、不依赖它。
+**主入口的依赖下限就是这条列表**：`layout-kit`、`auth-ui`、`auth-core`、`i18n` 与 `ui-kit`。平台侧的同层兄弟外壳必须能原样复用这条下限，故 `api-client`、`api-sdk` 不进主入口的 import 图。主入口用 `ui-kit` 的 `focusPageLanding`、`AnnouncementRegion` 与 `visuallyHiddenSx`，与 layout-kit、auth-ui 已经传递引入的是同一个包，不为消费者新增安装项。`./bootstrap` 子路径额外 import `api-client`、`api-sdk` 与 `@tanstack/react-query`，两个 `@speed` 包已在主入口依赖的传递闭包内（auth-core 拉它们），故不为消费者新增安装项。`@speed/tenancy-ui` 故意缺席：切换器是 `userMenu` 槽里的宿主组装，tenancy-ui 只是测试套件的 dev 依赖，本包不 import、不打包、不依赖它。
 
 ## UML 图
 
@@ -243,7 +243,7 @@ stateDiagram-v2
 | `frame` | 快照为已认证 | 用 `AppShell` 包住业务子节点，把 `children` 放进 `main` 地标 | 人在屋里，框架围着他 |
 | `ended` | 到达过应用之后快照转匿名 | 渲染 `sessionEnded` 槽或缺省的 `SessionEndedScreen`，并把“再次登录”接成返回登录分支 | 人出来了，门还留着一条回头的路 |
 
-`reachedApp` 是组件局部记忆，是 `signIn` 与 `ended` 之间唯一的分界；分支翻转时焦点移入新分支的容器。
+`reachedApp` 是组件局部记忆，是 `signIn` 与 `ended` 之间唯一的分界；分支翻转时焦点交给新分支的页面标题。
 
 ## 核心算法与流程
 
@@ -265,11 +265,11 @@ stateDiagram-v2
 3. 分支按顺序判定：已认证即 `frame`；否则 `reachedApp` 为真即 `ended`；否则 `signIn`。
 4. `ended` 分支在 `signIn` 槽存在时，其缺省结束屏的“再次登录”动作把 `reachedApp` 复位为假（回到登录分支）；`signIn` 槽缺席时该动作什么都不做，访问者停在结束屏。
 
-**已认证分支用 `AppShell` 包住 `children`；会话结束分支的容器本身即页面的 `main` 地标**（整页被替换，同一时刻只渲染一个分支，页面的 `main` 唯一）。焦点经同一个 `tabIndex={-1}` 机制落到该容器。
+**已认证分支用 `AppShell` 包住 `children`；会话结束分支的容器本身即页面的 `main` 地标**（整页被替换，同一时刻只渲染一个分支，页面的 `main` 唯一）。该容器与另两支的包装一样带 `tabIndex={-1}`，是翻转落点的最后回落。
 
 ### 翻转的无障碍契约
 
-- **每次分支翻转把焦点移入新分支的容器**（各分支渲染在一个可聚焦、非 Tab 停靠的包装里），首次渲染不移焦点（页面加载的焦点归宿主），分支未变的重渲染也不移。
+- **每次分支翻转把焦点交给新分支的页面标题**：分支内 `main` 地标里第一个一级标题，没有时交给该 `main`；分支内没有 `main` 时交给分支里第一个一级标题；都没有时交给分支自己的包装（可聚焦、非 Tab 停靠）。规则是 ui-kit 的 `focusPageLanding`，与 route-kit 的导航落点同一条规则（[ADR-web-navigation-focus](../../../adr/adr-web-navigation-focus.md)）。翻转时焦点已被新分支的内容放在分支内某处（例如注册后账户页聚焦验证码输入框）时不移；首次渲染不移焦点（页面加载的焦点归宿主），分支未变的重渲染也不移。翻转与一次导航同次提交时，本包先落点，route-kit 看到焦点已在新页面的 `main` 里而不再移。
 - **进入会话结束分支的翻转额外经 `role="status"` 区域播报**：服务端会话死亡与显式登出是同一个快照翻转，本包区分不了成因，而两者都把访问者落在本包自己放下的那个屏上，所以结束屏的文案对两者都成立，不陈述成因（[auth-ui](design-web-auth-ui.md) 的 `SessionEndedScreen`）。播报文字由翻转副作用在结束分支以空区域提交之后再置入，使文字作为一次插入进入已在树中的实时区域（可靠播报的形态）。
 - **未注册 `product-shell` 命名空间的宿主得到焦点转移与不出现的原始键文本**：播报区域只在命名空间已注册时渲染，命名空间未注册是配置状态而非缺键，缺键噪声不得进入视野。
 

@@ -14,6 +14,7 @@ route-kit 是产品的路由与导航层，独立于壳与其它同族包，由�
 - **这些事由本包一处承担：** 选中态（当前 URL 命中哪一条导航项）、链接构造（由路径生成可点的链接）、深链接解析（一个深链接直接打开对应页面）、未命中回退（没有登记项匹配时渲染回退视图）、精确命中的查询（当前 URL 在有效注册表上命中哪一条声明），以及入口判定（一条路径是否在有效注册表上有声明）。
 - **链接属性与历史动作也由本包交出。** `RouteLink` 渲染可点链接并透传其余 props；`useRouteLinkProps` 交出宿主自绘锚点所需的 `href` 与点击处理器；`useNavigate` 推入历史、`useRedirect` 替换当前历史项、`useLocationPath` 交出当前 URL 的原始路径与查询串。宿主因此不直接 import react-router-dom（[REF-react-router](../../../references.md)）。
 - **壳共用同一注册表。** 租户侧装配壳 [product-shell](design-web-product-shell.md) 与平台管理后台壳 [admin-ui](design-web-admin-ui.md) 都用这套注册表，差别只在各自的壳。
+- **导航后的焦点落点也由本包承担。** 一次应用内导航换了页面之后，焦点交给新页面 `main` 地标里的第一个一级标题，没有标题时交给该 `main`；首屏与加载期的替换跳转不移，新页面已把焦点放进自己的 `main` 或模态对话框持有焦点时不移（[ADR-web-navigation-focus](../../../adr/adr-web-navigation-focus.md)）。
 
 ### 非职责
 
@@ -91,6 +92,7 @@ function RouteProvider(props: {
   readonly pending?: (context: RouteContext) => ReactNode // 谓词读取中时门控路径的视图
   readonly failed?: (context: RouteContext) => ReactNode  // 谓词读取失败时门控路径的视图
   readonly basename?: string                              // 部署路径前缀，缺省为源站根
+  readonly navigationFocus?: 'page-heading' | 'none'      // 导航后的焦点落点，缺省 'page-heading'
   readonly children: ReactNode
 }): ReactElement
 
@@ -145,6 +147,8 @@ interface RouteLocationPath {
 function useLocationPath(): RouteLocationPath
 ```
 
+**`navigationFocus` 缺省开启导航后的落点。** 取缺省值 `'page-heading'` 时，本包在一次应用内导航换了页面之后把焦点交给新页面 `main` 地标里的第一个一级标题，没有标题时交给该 `main`；首屏、文档收到首次交互之前的替换跳转、以及新页面已把焦点放进自己的 `main` 或模态对话框持有焦点时不移动焦点。取 `'none'` 时本包从不移动焦点，落点归宿主。这条落点是缺省行为，既有宿主不传该项也生效。
+
 **声明接口的每一处都由产品在一处给出。** 产品把它的全部页面声明组成一张 `RouteTable`，交给 `RouteProvider`；`RouteView` 渲染命中的页面，`useNavItems` 交出导航条目，而 `RouteView` 与 `useNavItems` 读同一份注册表与同一个在场谓词，因而不一致无从产生。
 
 **带 `requires` 的表要求在场谓词与等待、失败视图，约束的主体是每个交出这种表的宿主。** 表里只要有一条声明带 `requires`，`presence`、`pending`、`failed` 缺任何一项，`RouteProvider` 即在装配处抛错，与缺 `fallback` 同样处理。不带 `requires` 的表不需要这几项，匹配与导航的结果与只按注册表进行时逐项相同。
@@ -161,7 +165,7 @@ function useLocationPath(): RouteLocationPath
 
 **`NavItem` 的 `onClick` 由 `useNavItems` 填入。** 它与 `useRouteLinkProps` 的处理器同一判定，配合 `href` 让壳的条目在普通单击时留在应用内、在修饰键单击时开新标签。`NavItem` 的必填字段与附加的可选字段（`onClick`）同壳的框架条目结构兼容，两者因此仍不需要共享类型边。
 
-**对外接口。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence`、`NavItem`、`RouteLinkTarget`、`RouteLocationPath` 的字段与结构，`RouteProvider`、`RouteView`、`RouteLink`、`RouteLinkProps`、`useRouteLinkProps`、`useNavItems`、`useNavigate`、`useRedirect`、`useLocationPath`、`presentDeclarations`、`useMatch`、`useHasRoute` 的签名，是宿主可见的接口。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。变更分类与判据见 [ADR-web-route-seam](../../../adr/adr-web-route-seam.md)。
+**对外接口。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence`、`RouteNavigationFocus`、`NavItem`、`RouteLinkTarget`、`RouteLocationPath` 的字段与结构，`RouteProvider`（含 `navigationFocus`）、`RouteView`、`RouteLink`、`RouteLinkProps`、`useRouteLinkProps`、`useNavItems`、`useNavigate`、`useRedirect`、`useLocationPath`、`presentDeclarations`、`useMatch`、`useHasRoute` 的签名，是宿主可见的接口。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。变更分类与判据见 [ADR-web-route-seam](../../../adr/adr-web-route-seam.md)。
 
 ## 依赖
 
@@ -202,6 +206,7 @@ classDiagram
         +pending RouteView
         +failed RouteView
         +basename string
+        +navigationFocus RouteNavigationFocus
     }
     class RouteView {
         +render() ReactElement
@@ -319,6 +324,22 @@ flowchart TD
 
 `useNavigate` 推入历史，供事件处理器使用（如一个成败提示后的返回）；`useRedirect` 以替换语义改当前历史项，用于回调页、登录完成这类不应留在后退栈里的跳转；`useLocationPath` 交出当前 URL 的原始路径与查询串，路径不因是否命中声明而不同。这些接口都只改或读 URL，页面随之被 `RouteView` 按匹配重渲染：`RouteView` 读的是 URL，不是任何组件局部状态。
 
+### 导航后的焦点落点
+
+`RouteProvider` 在 `navigationFocus` 取 `'page-heading'` 时，于 `children` 之后渲染一个不渲染任何内容的落点组件，由它在提交后的被动副作用里判断并移焦。判断依据与次序如下。
+
+1. 以 `location.key` 判断是否发生了一次导航：键未变即重渲染，不动。路径未变（只有查询串或 hash 变化）不是换页，不动。
+2. 首屏（`RouteProvider` 挂载后的第一个位置）不动：焦点在文档起点，读屏正从头读跳转链接与地标。
+3. 文档收到首次受信交互（`pointerdown`、`keydown` 或 `click`，捕获阶段记下第一次后即移除监听）之前发生的替换跳转是加载期重定向，不是使用者发起的导航，不动。
+4. 其余导航（`PUSH`、交互后的 `REPLACE`、`POP`，含浏览器前进后退）按焦点所在判断：焦点在 `body`、为 `null` 或已不在文档中，移交；焦点在 `main` 之外或就在 `main` 元素本身，移交；焦点在新页面 `main` 内部的某个元素上（不是 `main` 本身），不动；焦点在打开的模态对话框里（祖先带 `aria-modal="true"`），不动。
+5. 落点组件渲染在 `children` 之后，React 先执行页面与壳的副作用，再执行它，所以页面或壳在同一次提交里放好的焦点先发生，第 4 条看到的是它的结果。页面在此之后异步移焦会覆盖落点，这一覆盖是有意的。
+
+查找规则：在作用域内找第一个 `main` 或 `[role="main"]`（作用域本身是它时就是它）；在该 `main` 里找第一个 `h1` 或 `[role="heading"][aria-level="1"]`，跳过位于 `[hidden]`、`[aria-hidden="true"]`、`[inert]` 子树里的元素；没有标题时目标是该 `main`；作用域里没有 `main` 时取作用域里第一个满足上述条件的一级标题；都没有时返回 `null`，本包什么都不做。目标没有 `tabindex` 且不是原生可聚焦元素时临时加 `tabindex="-1"`，在它第一次 `blur` 时移除；已有 `tabindex` 的不动；随后 `focus()`，不传 `preventScroll`，标题滚入视口。
+
+本条规则由本包私有实现，与 ui-kit 的 `focusPageLanding` 是两份独立实现（本包不 import 同族包），同 `isPlainPrimaryClick` 的先例：改动其中一份时同时审视另一份，不假定两份逐条相同。
+
+新页面在落点时刻只渲染了等待态（权限守卫或特性谓词读取中）时没有一级标题，焦点落在 `main`；标题稍后出现时不上移。
+
 ## 错误与失败语义
 
 本包的失败情形如下。
@@ -334,6 +355,8 @@ flowchart TD
 | 表里有带 `requires` 的声明，而 `presence`、`pending`、`failed` 缺任一项 | 注册表自洽校验失败，装配处抛出 |
 | 一条从未被任何声明覆盖的深链接 | 与“没有登记项匹配”相同，落到 `fallback` |
 | `requires` 里写了一个永远不会在场的名字 | 与特性缺席无法区分，该页恒落到 `fallback`；本包不拦，由名字对齐检查在编译期拦下（[ADR-feature-vocabulary](../../../adr/adr-feature-vocabulary.md)） |
+| 新页面在落点时刻没有一级标题 | 焦点落在该页 `main`；标题稍后出现时不再上移 |
+| 作用域里没有 `main` 也没有一级标题 | 焦点不动 |
 | 一个页面渲染了它无权取的资源 | 不在路由层被拦下；授权由宿主在内容区里组合（本包按路径匹配，不看 `permission`） |
 
 **本包不降级、不重试、不发请求。** 一次匹配是渲染期的一次纯判定；失败是注册表的配置错误（在装配处抛出）或未命中（落到回退视图）。谓词读取失败时的重试是宿主的事：宿主在 `failed` 视图里给出重试，重试改变的是它交来的谓词，本包随之重渲染。
@@ -360,3 +383,4 @@ flowchart TD
 | 链接属性与点击判定（`useRouteLinkProps`、`NavItem.onClick`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useRouteLinkProps`、`useNavItems`；`web/packages/route-kit/src/link.ts` `isPlainPrimaryClick`、`createLinkClickHandler`；`web/packages/route-kit/src/types.ts` `NavItem` |
 | 历史动作与原始定位（`useRedirect`、`useLocationPath`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useRedirect`、`useLocationPath` |
 | 部署路径前缀（`RouteProvider.basename`） | 已实现 | `web/packages/route-kit/src/RouteProvider.tsx` `RouteProvider` |
+| 导航后的焦点落点（`navigationFocus`） | 已实现 | `web/packages/route-kit/src/navigation-focus.tsx` `NavigationFocus`；`web/packages/route-kit/src/RouteProvider.tsx` `RouteProvider`、`RouteProviderProps`、`RouteNavigationFocus` |

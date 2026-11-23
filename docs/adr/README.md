@@ -118,6 +118,7 @@
 | [账户自助写归前端的一组组件](adr-web-account-ui-selfservice.md) |
 | [特性态由 auth-core 随会话提交持有，读取失败是独立状态，只有宿主读它](adr-web-feature-state.md) |
 | [route-kit 按宿主给出的特性在场判定收窄注册接口，特性缺席的页面与未登记路径同走 `fallback`](adr-web-route-kit.md) |
+| [应用内导航与认证翻转后焦点交给新页面的一级标题，首屏不移](adr-web-navigation-focus.md) |
 | [管理后台列表页的行详情与创建改由侧边面板承载，面板是页内状态而非路由](adr-web-side-panel.md) |
 | [写入的结果由每个反馈作用域的一个槽承载、同页至多一条结果，成功确认为默认；不可用的按钮形控件保持可聚焦并以 `aria-disabled` 表示](adr-web-write-feedback.md) |
 | [冒充期间由应用壳在应用栏之下显示可隐藏的横幅、外壳常驻 chrome 区里的身份指示并提供结束入口，身份变更按会话边界处理依赖身份的状态](adr-web-impersonation-shell.md) |
