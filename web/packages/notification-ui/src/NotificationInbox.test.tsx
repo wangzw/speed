@@ -276,10 +276,11 @@ describe('NotificationInbox', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
-  it('disables and marks every scope control busy while one attempt is in flight', async () => {
+  it('marks the mark-all control busy and holds sibling write controls back while it runs', async () => {
     const gate = deferredResponse()
     const responder = inboxResponder([
       { id: 'm1', title: 'Build finished', body: '', read: false },
+      { id: 'm2', title: 'Welcome', body: '', read: false },
     ])
     const rig = makeRealClientRigWithoutSession((call) => {
       if (call.path === READ_ALL_PATH && call.method === 'POST') {
@@ -295,21 +296,342 @@ describe('NotificationInbox', () => {
     const rowAction = screen.getByRole('button', {
       name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
     })
+    const sibling = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'Welcome'),
+    })
+    markAll.focus()
     await userEvent.click(markAll)
 
-    // The header action and every row action share the scope's in-flight
-    // state: both disable and both read as busy, so attempts never overlap.
-    await waitFor(() => expect(markAll).toBeDisabled())
-    expect(rowAction).toBeDisabled()
+    // Only the control that started the write reports busy, and focus stays
+    // on it for the attempt.
+    await waitFor(() => expect(markAll).toHaveAttribute('aria-busy', 'true'))
+    expect(markAll).toHaveAttribute('aria-disabled', 'true')
     expect(within(markAll).getByRole('progressbar')).toBeInTheDocument()
-    expect(within(rowAction).getByRole('progressbar')).toBeInTheDocument()
+    expect(document.activeElement).toBe(markAll)
 
-    gate.resolve(jsonResponse(200, { read_count: 1 }))
+    // The scope's other write controls are unavailable without a reason: no
+    // busy report, no progress indicator, nothing to describe them.
+    for (const control of [rowAction, sibling]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy', 'true')
+      expect(within(control).queryByRole('progressbar')).toBeNull()
+      expect(control).not.toHaveAccessibleDescription()
+    }
+
+    // A sibling activation is swallowed by pointer and keyboard alike.
+    const rowWrites = () =>
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path.endsWith('/read'),
+      ).length
+    expect(rowWrites()).toBe(0)
+    await userEvent.click(rowAction)
+    sibling.focus()
+    await userEvent.keyboard('{Enter}')
+    await userEvent.keyboard(' ')
+    expect(rowWrites()).toBe(0)
+
+    markAll.focus()
+    gate.resolve(jsonResponse(200, { read_count: 2 }))
     expect(
       await screen.findByText(
-        zhCN.inbox.markAllReadDone.replace('{{n}}', '1'),
+        zhCN.inbox.markAllReadDone.replace('{{n}}', '2'),
       ),
     ).toBeInTheDocument()
+
+    // Nothing is unread now: the action's precondition is unmet. It stays
+    // unavailable with its reason, is no longer busy, and never lost focus.
+    await waitFor(() =>
+      expect(markAll).toHaveAccessibleDescription(
+        zhCN.inbox.markAllReadUnavailable,
+      ),
+    )
+    expect(markAll).toHaveAttribute('aria-disabled', 'true')
+    expect(markAll).not.toHaveAttribute('aria-busy', 'true')
+    expect(document.activeElement).toBe(markAll)
+  })
+
+  it('marks only the row action that started the write busy and lands focus on the next unread row', async () => {
+    const gate = deferredResponse()
+    const responder = inboxResponder([
+      { id: 'm1', title: 'One', body: '', read: false },
+      { id: 'm2', title: 'Two', body: '', read: false },
+      { id: 'm3', title: 'Three', body: '', read: true },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`) {
+        return gate.promise.then(() => responder(call))
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    await screen.findByText('One')
+
+    const first = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'One'),
+    })
+    const second = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'Two'),
+    })
+    const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
+    first.focus()
+    await userEvent.click(first)
+
+    await waitFor(() => expect(first).toHaveAttribute('aria-busy', 'true'))
+    expect(first).toHaveAttribute('aria-disabled', 'true')
+    expect(within(first).getByRole('progressbar')).toBeInTheDocument()
+    expect(document.activeElement).toBe(first)
+
+    // The header action and the other row's action are siblings in the same
+    // scope: unavailable, no busy report, no reason.
+    for (const control of [second, markAll]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy', 'true')
+      expect(control).not.toHaveAccessibleDescription()
+    }
+    const posts = () => rig.calls.filter((call) => call.method === 'POST').length
+    const before = posts()
+    await userEvent.click(second)
+    markAll.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(posts()).toBe(before)
+
+    first.focus()
+    gate.resolve(new Response(null, { status: 204 }))
+    // The row's own action leaves with the row once it turns read. Focus
+    // moves in the same commit to the same control on the next unread row,
+    // never to the document body.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.inbox.markReadAria.replace('{{title}}', 'One'),
+        }),
+      ).toBeNull(),
+    )
+    await waitFor(() => expect(document.activeElement).toBe(second))
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('lands focus on the list container when no unread row is left', async () => {
+    const gate = deferredResponse()
+    const responder = inboxResponder([
+      { id: 'm1', title: 'One', body: '', read: false },
+      { id: 'm2', title: 'Two', body: '', read: true },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`) {
+        return gate.promise.then(() => responder(call))
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    await screen.findByText('One')
+
+    const markRead = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'One'),
+    })
+    markRead.focus()
+    await userEvent.click(markRead)
+    await waitFor(() => expect(markRead).toHaveAttribute('aria-busy', 'true'))
+
+    gate.resolve(new Response(null, { status: 204 }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.inbox.markReadAria.replace('{{title}}', 'One'),
+        }),
+      ).toBeNull(),
+    )
+
+    // No unread row's action remains, so the named list takes focus: a
+    // stable element the write did not remove, programmatically focusable.
+    const list = screen.getByRole('list', { name: zhCN.inbox.title })
+    await waitFor(() => expect(document.activeElement).toBe(list))
+  })
+
+  it('does not take focus back when the operator moved it away during the write', async () => {
+    const gate = deferredResponse()
+    const responder = inboxResponder([
+      { id: 'm1', title: 'One', body: '', read: false },
+      { id: 'm2', title: 'Two', body: '', read: false },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`) {
+        return gate.promise.then(() => responder(call))
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    await screen.findByText('One')
+
+    const first = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'One'),
+    })
+    const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
+    first.focus()
+    await userEvent.click(first)
+    await waitFor(() => expect(first).toHaveAttribute('aria-busy', 'true'))
+
+    // The operator moves focus outside the list while the write runs. The
+    // landing place -- the next unread row's action -- is deliberately not
+    // where the operator went, so a guard that moved focus unconditionally
+    // would take it from the control the operator chose.
+    markAll.focus()
+    expect(document.activeElement).toBe(markAll)
+
+    gate.resolve(new Response(null, { status: 204 }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.inbox.markReadAria.replace('{{title}}', 'One'),
+        }),
+      ).toBeNull(),
+    )
+    // The landing place belongs only to focus the removal dropped; the
+    // operator's own choice is not taken back.
+    expect(document.activeElement).toBe(markAll)
+  })
+
+  it('lands focus on the previous unread row when no unread row follows', async () => {
+    const gate = deferredResponse()
+    const responder = inboxResponder([
+      { id: 'm1', title: 'One', body: '', read: false },
+      { id: 'm2', title: 'Two', body: '', read: false },
+      { id: 'm3', title: 'Three', body: '', read: true },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m2/read`) {
+        return gate.promise.then(() => responder(call))
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    await screen.findByText('Two')
+
+    const activated = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'Two'),
+    })
+    const previous = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'One'),
+    })
+    activated.focus()
+    await userEvent.click(activated)
+    await waitFor(() => expect(activated).toHaveAttribute('aria-busy', 'true'))
+
+    gate.resolve(new Response(null, { status: 204 }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.inbox.markReadAria.replace('{{title}}', 'Two'),
+        }),
+      ).toBeNull(),
+    )
+
+    // The row that follows is already read, so the criterion falls back to
+    // the same action on the previous unread row.
+    await waitFor(() => expect(document.activeElement).toBe(previous))
+  })
+
+  it('reports the title that starts a read as busy and keeps focus on it', async () => {
+    const gate = deferredResponse()
+    const responder = inboxResponder([
+      { id: 'm1', title: 'Open me', body: '', read: false, link: '/objects/1' },
+      { id: 'm2', title: 'Other', body: '', read: false },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`) {
+        return gate.promise.then(() => responder(call))
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    const onOpen = vi.fn()
+    renderWithProviders(<NotificationInbox onOpen={onOpen} />)
+    const title = await screen.findByRole('button', { name: 'Open me' })
+    const rowAction = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'Open me'),
+    })
+    const sibling = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'Other'),
+    })
+    const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
+
+    await userEvent.click(title)
+    // Focus stays on the initiating title for the whole attempt; the
+    // assertions below name that first, so a control that dropped focus is
+    // reported as the defect rather than as a missing attribute.
+    expect(document.activeElement).toBe(title)
+    await waitFor(() => expect(title).toHaveAttribute('aria-busy', 'true'))
+    expect(title).toHaveAttribute('aria-disabled', 'true')
+
+    // The title is the one control that started the write: its row's action,
+    // the sibling row's action and the header action are unavailable
+    // siblings, without a busy report or a reason of their own.
+    for (const control of [rowAction, sibling, markAll]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy', 'true')
+      expect(control).not.toHaveAccessibleDescription()
+    }
+
+    gate.resolve(new Response(null, { status: 204 }))
+    // A title stays in the document when its row turns read, so the landed
+    // write hands the message to the host with focus still on the title.
+    await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(title).not.toHaveAttribute('aria-busy', 'true'))
+    expect(document.activeElement).toBe(title)
+  })
+
+  it('holds message titles back while a write runs in the inbox scope', async () => {
+    const gate = deferredResponse()
+    const responder = inboxResponder([
+      { id: 'm1', title: 'Open me', body: '', read: false, link: '/objects/1' },
+      { id: 'm2', title: 'Other', body: '', read: false },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m2/read`) {
+        return gate.promise.then(() => responder(call))
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    const onOpen = vi.fn()
+    renderWithProviders(<NotificationInbox onOpen={onOpen} />)
+    const title = await screen.findByRole('button', { name: 'Open me' })
+    const other = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'Other'),
+    })
+
+    other.focus()
+    await userEvent.click(other)
+    await waitFor(() => expect(other).toHaveAttribute('aria-busy', 'true'))
+
+    // The title opens a message and, for an unread one, writes its read
+    // first; it is a write control of the same scope. It stays focusable and
+    // unavailable without a reason, and its activation is swallowed.
+    expect(title).toHaveAttribute('aria-disabled', 'true')
+    expect(title).not.toHaveAttribute('aria-busy', 'true')
+    expect(title).not.toHaveAccessibleDescription()
+    await userEvent.click(title)
+    title.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(
+      rig.calls.some(
+        (call) => call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`,
+      ),
+    ).toBe(false)
+
+    gate.resolve(new Response(null, { status: 204 }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.inbox.markReadAria.replace('{{title}}', 'Other'),
+        }),
+      ).toBeNull(),
+    )
   })
 
   it('marks a linked message read before handing it to onOpen', async () => {
@@ -369,14 +691,17 @@ describe('NotificationInbox', () => {
     await screen.findByText('One')
     expect(screen.queryByText('Three')).toBeNull()
     const previous = screen.getByRole('button', { name: zhCN.inbox.previous })
-    expect(previous).toBeDisabled()
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(previous).not.toHaveAccessibleDescription()
 
-    await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
+    const nextOne = screen.getByRole('button', { name: zhCN.inbox.next })
+    nextOne.focus()
+    await userEvent.click(nextOne)
     expect(await screen.findByText('Three')).toBeInTheDocument()
     expect(screen.queryByText('One')).toBeNull()
     expect(
       screen.getByRole('button', { name: zhCN.inbox.previous }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
     // The next page is the second window of the list.
     expect(
       rig.calls.some(
@@ -389,20 +714,25 @@ describe('NotificationInbox', () => {
     ).toBe(true)
     expect(
       screen.getByRole('button', { name: zhCN.inbox.next }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
 
     // The last page: five rows at a page size of two leave one row in the
     // third window, and no fourth window exists to read. The pager must
     // stop there rather than point past the total.
-    await userEvent.click(screen.getByRole('button', { name: zhCN.inbox.next }))
+    const nextToEnd = screen.getByRole('button', { name: zhCN.inbox.next })
+    nextToEnd.focus()
+    await userEvent.click(nextToEnd)
     expect(await screen.findByText('Five')).toBeInTheDocument()
     expect(screen.queryByText('Three')).toBeNull()
-    expect(
-      screen.getByRole('button', { name: zhCN.inbox.next }),
-    ).toBeDisabled()
+    const nextAtEnd = screen.getByRole('button', { name: zhCN.inbox.next })
+    // The action that moved to the last page stays focusable and keeps the
+    // focus it had; its precondition is unmet with no reason to state.
+    expect(nextAtEnd).toHaveAttribute('aria-disabled', 'true')
+    expect(nextAtEnd).not.toHaveAccessibleDescription()
+    expect(nextAtEnd).toHaveFocus()
     expect(
       screen.getByRole('button', { name: zhCN.inbox.previous }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
     expect(
       rig.calls.some(
         (call) =>
@@ -437,7 +767,7 @@ describe('NotificationInbox', () => {
     // messages on page one: the whole-inbox action stays available.
     await screen.findByText('Three')
     const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
-    expect(markAll).toBeEnabled()
+    expect(markAll).not.toHaveAttribute('aria-disabled', 'true')
 
     await userEvent.click(markAll)
     expect(
@@ -745,7 +1075,7 @@ describe('NotificationInbox', () => {
   })
 
   it('renders the empty placeholder when there are no messages', async () => {
-    mount([])
+    const { rig } = mount([])
     const emptyTitle = await screen.findByText(zhCN.inbox.empty.title)
     expect(emptyTitle).toBeInTheDocument()
     // The empty placeholder is a status, not a section: it must not enter the
@@ -756,10 +1086,17 @@ describe('NotificationInbox', () => {
       screen.queryByRole('heading', { name: zhCN.inbox.empty.title }),
     ).not.toBeInTheDocument()
     expect(emptyTitle.closest('[role="status"]')).not.toBeNull()
-    // With nothing unread, the header action is disabled.
-    expect(
-      screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
-    ).toBeDisabled()
+    // With nothing unread, the header action's precondition is unmet: it
+    // stays focusable, carries its reason, and swallows activation.
+    const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
+    expect(markAll).toHaveAttribute('aria-disabled', 'true')
+    expect(markAll).toHaveAccessibleDescription(
+      zhCN.inbox.markAllReadUnavailable,
+    )
+    markAll.focus()
+    expect(document.activeElement).toBe(markAll)
+    await userEvent.click(markAll)
+    expect(rig.calls.some((call) => call.method === 'POST')).toBe(false)
   })
 
   it('raises the inbox actions to the 44px floor under a coarse pointer', async () => {

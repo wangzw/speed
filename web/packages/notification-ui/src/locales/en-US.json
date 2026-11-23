@@ -40,6 +40,7 @@
     "markReadAria": "Mark as read: {{title}}",
     "markReadDone": "Marked the notification \"{{title}}\" as read.",
     "markAllRead": "Mark all as read",
+    "markAllReadUnavailable": "No unread notifications",
     "markAllReadDone": "Marked {{n}} notifications as read.",
     "previous": "Previous page",
     "next": "Next page",
