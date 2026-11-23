@@ -76,6 +76,10 @@ type assembly struct {
 	// methods are login methods the drive delivers from stand-in modules of
 	// their own, so that the module's Init sees exactly these protocols.
 	methods []authn.LoginMethod
+	// loginSwitch, when non-nil, is the run-time switch the drive delivers from
+	// a stand-in module of its own, so that the module's Init takes it up. It is
+	// nil for a run that delivers none.
+	loginSwitch authn.LoginMethodSwitch
 }
 
 // drive advances the assembly to Start, runs action there, and returns what the
@@ -122,6 +126,10 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 		name := fmt.Sprintf("stand-in.method.%d", i)
 		reg.Register(standIn(name, method, false, (*authn.LoginMethod)(nil)))
 		names = append(names, name)
+	}
+	if a.loginSwitch != nil {
+		reg.Register(standIn("stand-in.switch", a.loginSwitch, false, (*authn.LoginMethodSwitch)(nil)))
+		names = append(names, "stand-in.switch")
 	}
 
 	return reg.Drive(t.Context(), core.Drive{
@@ -271,8 +279,35 @@ func (m standInMethod) Answer(context.Context, authn.FlowState, authn.StepInput)
 // providers the discovery names for each domain.
 func discoveryUnder(t *testing.T, methods []authn.LoginMethod) map[string][]AuthnSsoProvider {
 	t.Helper()
+	return discoveryUnderSwitch(t, methods, nil)
+}
+
+// discoveryUnderSwitch is discoveryUnder for a run that also delivers a
+// run-time switch, nil for a run that delivers none.
+func discoveryUnderSwitch(t *testing.T, methods []authn.LoginMethod, loginSwitch authn.LoginMethodSwitch) map[string][]AuthnSsoProvider {
+	t.Helper()
 	answers := map[string][]AuthnSsoProvider{}
-	err := (assembly{migrate: true, methods: methods}).drive(t, func(ctx context.Context, reg *core.Registry) error {
+	discoveryDriving(t, methods, loginSwitch, func(_ context.Context, _ *product, discover func(string) (discoverResponse, error)) {
+		for _, domain := range []string{"oidc.example.com", "saml.example.com"} {
+			answer, err := discover(domain)
+			if err != nil {
+				t.Fatalf("handleDiscover(%s): %v", domain, err)
+			}
+			answers[domain] = answer.Providers
+		}
+	})
+	return answers
+}
+
+// discoveryDriving drives an assembly whose run delivers methods and loginSwitch
+// (nil for none), verifies one OIDC provider and one SAML provider on a domain
+// of their own, and hands the case the product together with a discover that
+// reads one domain's answer.
+func discoveryDriving(t *testing.T, methods []authn.LoginMethod, loginSwitch authn.LoginMethodSwitch,
+	run func(ctx context.Context, p *product, discover func(domain string) (discoverResponse, error)),
+) {
+	t.Helper()
+	err := (assembly{migrate: true, methods: methods, loginSwitch: loginSwitch}).drive(t, func(ctx context.Context, reg *core.Registry) error {
 		delivered, err := core.Resolve[authn.SSOProviders](reg)
 		if err != nil {
 			return err
@@ -316,19 +351,14 @@ func discoveryUnder(t *testing.T, methods []authn.LoginMethod) map[string][]Auth
 		verify(authn.SSOProtocolOIDC, "oidc-idp", "oidc.example.com")
 		verify(authn.SSOProtocolSAML, "saml-idp", "saml.example.com")
 
-		for _, domain := range []string{"oidc.example.com", "saml.example.com"} {
-			answer, err := p.handleDiscover(ctx, discoverRequest{Email: "someone@" + domain})
-			if err != nil {
-				t.Fatalf("handleDiscover(%s): %v", domain, err)
-			}
-			answers[domain] = answer.Providers
-		}
+		run(ctx, p, func(domain string) (discoverResponse, error) {
+			return p.handleDiscover(ctx, discoverRequest{Email: "someone@" + domain})
+		})
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("the drive failed: %v", err)
 	}
-	return answers
 }
 
 // TestTheDiscoveryNamesOnlyTheProtocolTheAssemblyDelivers holds the wiring: in
@@ -390,6 +420,72 @@ func TestTheDiscoveryListsNothingWhenNoMethodIsDelivered(t *testing.T) {
 	for _, domain := range []string{"oidc.example.com", "saml.example.com"} {
 		if got := answers[domain]; len(got) != 0 {
 			t.Errorf("the discovery of %s listed %+v, want none", domain, got)
+		}
+	}
+}
+
+// TestTheDiscoveryLeavesOutAMethodTheRunTimeSwitchDisabled holds the run-time
+// filter: a method the switch reports off has its providers left out of the
+// answer, while a method it does not report stays.
+func TestTheDiscoveryLeavesOutAMethodTheRunTimeSwitchDisabled(t *testing.T) {
+	answers := discoveryUnderSwitch(t, []authn.LoginMethod{
+		standInMethod{name: authn.SSOProtocolOIDC},
+		standInMethod{name: authn.SSOProtocolSAML},
+	}, &standInSwitch{disabled: []string{authn.SSOProtocolOIDC}})
+
+	if got := answers["oidc.example.com"]; len(got) != 0 {
+		t.Errorf("the discovery of oidc.example.com listed %+v, want none: the switch turned the method off", got)
+	}
+	if got := answers["saml.example.com"]; len(got) != 1 || got[0].Protocol != authn.SSOProtocolSAML {
+		t.Errorf("the discovery of saml.example.com listed %+v, want the one saml provider", got)
+	}
+}
+
+// TestTheDiscoveryFollowsTheRunTimeSwitchAsItChanges holds that the switch is
+// read on every request: a method turned off disappears from the answer and a
+// method turned back on reappears, with no restart and no cached set.
+func TestTheDiscoveryFollowsTheRunTimeSwitchAsItChanges(t *testing.T) {
+	sw := &standInSwitch{disabled: []string{authn.SSOProtocolOIDC}}
+	discoveryDriving(t, []authn.LoginMethod{
+		standInMethod{name: authn.SSOProtocolOIDC},
+		standInMethod{name: authn.SSOProtocolSAML},
+	}, sw, func(_ context.Context, _ *product, discover func(string) (discoverResponse, error)) {
+		held := func(domain string) []AuthnSsoProvider {
+			t.Helper()
+			answer, err := discover(domain)
+			if err != nil {
+				t.Fatalf("handleDiscover(%s): %v", domain, err)
+			}
+			return answer.Providers
+		}
+		if got := held("oidc.example.com"); len(got) != 0 {
+			t.Errorf("while oidc was off the discovery listed %+v, want none", got)
+		}
+		sw.set(nil, nil)
+		if got := held("oidc.example.com"); len(got) != 1 || got[0].Protocol != authn.SSOProtocolOIDC {
+			t.Errorf("after oidc was turned back on the discovery listed %+v, want the one oidc provider", got)
+		}
+		sw.set([]string{authn.SSOProtocolOIDC}, nil)
+		if got := held("oidc.example.com"); len(got) != 0 {
+			t.Errorf("after oidc was turned off again the discovery listed %+v, want none", got)
+		}
+	})
+}
+
+// TestTheDiscoveryListsEveryDeliveredMethodWithoutARunTimeSwitch holds the
+// absent switch: a run with no login engine delivers no switch, so nothing is
+// filtered by it and every delivered method's provider is named.
+func TestTheDiscoveryListsEveryDeliveredMethodWithoutARunTimeSwitch(t *testing.T) {
+	answers := discoveryUnder(t, []authn.LoginMethod{
+		standInMethod{name: authn.SSOProtocolOIDC},
+		standInMethod{name: authn.SSOProtocolSAML},
+	})
+	for _, held := range []struct{ domain, protocol string }{
+		{"oidc.example.com", authn.SSOProtocolOIDC},
+		{"saml.example.com", authn.SSOProtocolSAML},
+	} {
+		if got := answers[held.domain]; len(got) != 1 || got[0].Protocol != held.protocol {
+			t.Errorf("the discovery of %s listed %+v, want the one %s provider", held.domain, got, held.protocol)
 		}
 	}
 }

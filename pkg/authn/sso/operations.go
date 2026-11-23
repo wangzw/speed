@@ -75,11 +75,13 @@ var discoverOperation = speedhttp.NewOperation[discoverRequest, discoverResponse
 			"The request body is over the endpoint's limit"),
 		speedhttp.ProblemResponseOf(http.StatusUnsupportedMediaType,
 			"The request body is not application/json", typePrefix+"unsupported-media-type"),
-		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "The provider register could not be reached"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
+			"The provider register could not be reached, or the run-time login-method switch could not be read"),
 		{
-			Status:      http.StatusOK,
-			Description: "The providers that have verified the domain, an empty list when none match",
-			Body:        &speedhttp.Body{MediaType: "application/json"},
+			Status: http.StatusOK,
+			Description: "The providers that have verified the domain and are enabled, leaving out those whose " +
+				"login method the run-time switch has turned off; an empty list when none match",
+			Body: &speedhttp.Body{MediaType: "application/json"},
 		},
 	},
 	speedhttp.Public(),

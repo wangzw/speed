@@ -117,13 +117,25 @@ func isJSONObject(body []byte) bool {
 // whose domain no provider has verified is the same empty list as one that has
 // providers disabled.
 //
-// A provider is named only when its protocol is delivered in this run. The
-// filter sits here and not in Discover, because Discover also decides which
-// provider owns a domain: dropping a protocol there would make another
-// protocol's sign-in of the same tenant a domain mismatch. The query runs
-// unfiltered and the delivered set is applied to its result, so a match and a
-// non-match cost the same.
+// A provider is named only when its protocol is delivered in this run and its
+// login method is not turned off by the run-time switch. Both filters sit here
+// and not in Discover, because Discover also decides which provider owns a
+// domain: dropping a protocol there would make another protocol's sign-in of the
+// same tenant a domain mismatch. The switch is read once per request, before the
+// query, so a change takes effect without a restart and a match and a non-match
+// cost the same; a read that fails answers unavailable whether or not the domain
+// matches, rather than listing everything.
 func (p *product) handleDiscover(ctx context.Context, in discoverRequest) (discoverResponse, error) {
+	disabled := map[string]bool{}
+	if p.loginSwitch != nil {
+		names, err := p.loginSwitch.DisabledMethods()
+		if err != nil {
+			return discoverResponse{}, authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
+		}
+		for _, name := range names {
+			disabled[name] = true
+		}
+	}
 	providers, err := p.Discover(ctx, emailDomain(in.Email))
 	if err != nil {
 		if errors.Is(err, errInvalidDomain) {
@@ -133,7 +145,7 @@ func (p *product) handleDiscover(ctx context.Context, in discoverRequest) (disco
 	}
 	out := discoverResponse{Providers: make([]AuthnSsoProvider, 0, len(providers))}
 	for _, prov := range providers {
-		if !p.delivered[prov.Protocol] {
+		if !p.delivered[prov.Protocol] || disabled[prov.Protocol] {
 			continue
 		}
 		out.Providers = append(out.Providers, AuthnSsoProvider{ID: prov.ID, Name: prov.Name, Protocol: prov.Protocol})

@@ -124,9 +124,9 @@ var _ authn.SSOProviders = (*product)(nil)
 // by another module, so a command that names this one without them fails in
 // resolution. The settings store is required as optional only so that it is
 // initialised before this one and its snapshot is loaded when Init subscribes to
-// the settings change event; the event bus, the audit capability and the logging
-// capability are taken up in Init, each with a stated behaviour for its absence,
-// which is a legal assembly.
+// the settings change event; the event bus, the audit capability, the
+// login-method switch and the logging capability are taken up in Init, each with
+// a stated behaviour for its absence, which is a legal assembly.
 //
 // SSOProviders is delivered exclusively and the stance is StateEnabled and never
 // StateAuto: an exclusive provider that states StateAuto is the cell resolution
@@ -246,6 +246,12 @@ type product struct {
 	// its protocol is in this set, and an empty set lists none.
 	delivered map[string]bool
 
+	// loginSwitch is the run-time switch of the login methods, taken up in Init
+	// when the login engine delivers it. It is nil in a process without that
+	// engine, where no method can start a flow either, so the discovery filters
+	// nothing.
+	loginSwitch authn.LoginMethodSwitch
+
 	// allowPrivateEgress is the developer relaxation of the restricted egress
 	// client. It is read here only so that the startup diagnostics can name it;
 	// the egress client itself is built by the protocol modules.
@@ -353,6 +359,12 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {
+		return err
+	}
+	// The run-time switch is optional: a process that does not run the login
+	// engine delivers none, and then no method can start a flow either, so the
+	// discovery filters nothing.
+	if p.loginSwitch, err = optional[authn.LoginMethodSwitch](reg, "the login-method switch"); err != nil {
 		return err
 	}
 	p.subscribe()
