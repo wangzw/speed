@@ -2759,7 +2759,8 @@ describe('SignInScreen', () => {
     await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
     // The gate has not answered yet: the provider button is already busy,
     // so a second click cannot pass the same gate and start another flow.
-    expect(provider).toBeDisabled()
+    expect(provider).toHaveAttribute('aria-disabled', 'true')
+    expect(provider).toHaveAttribute('aria-busy', 'true')
     expect(
       harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
     ).toHaveLength(0)

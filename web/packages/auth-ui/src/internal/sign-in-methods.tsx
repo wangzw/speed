@@ -15,7 +15,7 @@
  *    held until the proof arrives, the submit control gives way to the
  *    block meanwhile, and editing a field abandons the wait. The start
  *    presents the proof the control holds. Once the held start leaves, the
- *    submit is back on screen and stays disabled while that request is in
+ *    submit is back on screen and stays busy while that request is in
  *    flight, so it cannot begin a second flow.
  *  - `EnterpriseSignIn` is an `enterprise` method's email-first entry: the
  *    viewer gives an email, the session discovers the identity providers
@@ -33,7 +33,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import TextField from '@mui/material/TextField'
 import { useForm } from 'react-hook-form'
@@ -51,6 +50,7 @@ import {
   FormLayout,
   HumanVerification,
   errorCodeOf,
+  useActivationGuard,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
@@ -63,7 +63,7 @@ import {
 } from './write-feedback.js'
 import { HumanGatedFlowStep } from './flow-step.js'
 import { retryWaitMs } from './retry-wait.js'
-import { stepKey, useStepFocus } from './step-focus.js'
+import { firstControl, stepKey, useStepFocus } from './step-focus.js'
 import { useFlowDriver } from './use-flow-driver.js'
 import { isOpenFlow } from './flow.js'
 import { useGroupHeadingVariant } from './group-heading.js'
@@ -240,6 +240,15 @@ export function DescriptorSignInForm({
     await askToStart(values)
   }
 
+  // The form's own submit is guarded as well: an implicit submission the
+  // submit button does not carry (Enter in a field, a programmatic submit)
+  // is swallowed while the start is in flight or held for its proof. The
+  // form's own `isSubmitting` is already true when this handler runs, so it
+  // is not the guard's measure; the start's own state is.
+  const guardedSubmit = useActivationGuard(onSubmit, {
+    busy: driver.busy || pendingStart !== null,
+  })
+
   // The descriptor's own fields and a parked step are two surfaces of
   // this channel; a switch moves focus to the new one's first control.
   const surfaceRef = useStepFocus(
@@ -277,13 +286,13 @@ export function DescriptorSignInForm({
     <FormLayout
       ref={surfaceRef}
       form={form}
-      onSubmit={onSubmit}
+      onSubmit={guardedSubmit}
       actions={
         pendingStart === null ? (
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={form.formState.isSubmitting || driver.busy}
+            busy={form.formState.isSubmitting || driver.busy}
           >
             {t('signInFlow.submit')}
           </ActionButton>
@@ -371,33 +380,40 @@ export function EnterpriseSignIn({
   const [providers, setProviders] = useState<readonly AuthnSsoProvider[] | null>(
     null,
   )
-  const [busy, setBusy] = useState(false)
+  // Which write the entry has in flight: a discovery, or one provider's
+  // start. Only the control that started it is busy; the entry's other
+  // context controls report unavailable.
+  const [pending, setPending] = useState<
+    | { readonly kind: 'discover' }
+    | { readonly kind: 'provider'; readonly id: string }
+    | null
+  >(null)
   // The enterprise entry's own feedback scope: a discovery or start failure
   // renders in its region and a new attempt clears the previous one.
   const feedback = useChannelFeedback()
 
   const discover: SubmitHandler<{ email: string }> = async ({ email }) => {
     feedback.reset()
-    setBusy(true)
+    setPending({ kind: 'discover' })
     try {
       setProviders(await session.discoverSso(email))
     } catch (error) {
       // A throttled discovery states its wait; the banner names it.
       feedback.fail(errorCodeOf(error), retryWaitMs(error))
     } finally {
-      setBusy(false)
+      setPending(null)
     }
   }
 
   const authorize = async (provider: AuthnSsoProvider): Promise<void> => {
-    // Take the busy flag before the gate resolves as well: an async gate
-    // suspends under the same disabled button, so a second click cannot
+    // Take the in-flight state before the gate resolves as well: an async
+    // gate suspends under the same busy control, so a second click cannot
     // pass the gate and begin a second flow.
-    setBusy(true)
+    setPending({ kind: 'provider', id: provider.id })
     // The gate decides whether this provider's flow begins; a refusal
     // starts nothing and renders no error of its own.
     if (!(await allowedToStart(beforeStart, { method: provider.protocol }))) {
-      setBusy(false)
+      setPending(null)
       return
     }
     feedback.reset()
@@ -423,7 +439,7 @@ export function EnterpriseSignIn({
       // banner names how long the viewer has to wait.
       wait = retryWaitMs(error)
     } finally {
-      setBusy(false)
+      setPending(null)
     }
     if (failure !== null) {
       feedback.fail(failure, wait)
@@ -444,6 +460,13 @@ export function EnterpriseSignIn({
     setProviders(null)
   }
 
+  // The form's own submit is guarded as well: an implicit submission the
+  // submit button does not carry (Enter in the field, a programmatic
+  // submit) is swallowed while the discovery is in flight.
+  const guardedSubmit = useActivationGuard(discover, {
+    busy: pending?.kind === 'discover',
+  })
+
   // The discovery result's notice in the entry's one status region. The
   // region stands for the whole life of the entry, born empty: a live
   // region announces only content changes that follow its own insertion,
@@ -458,8 +481,46 @@ export function EnterpriseSignIn({
         ? t('enterprise.noProviders')
         : t('enterprise.providersTitle')
 
+  // The entry swaps its whole surface when a discovery lands -- the email
+  // form gives way to the provider list, or to the one way back when
+  // nothing matched -- and again when the viewer returns to the email
+  // form. The control that had focus unmounts with its surface, so the
+  // browser leaves focus on the body; the new surface's first control
+  // takes it from there (the first provider, the way back, or the email
+  // field). Focus on anything still in the document is where the viewer
+  // moved it, and taking it would undo their choice.
+  const surfaceRef = useRef<HTMLDivElement>(null)
+  const surfaceKey =
+    providers === null
+      ? 'email-form'
+      : providers.length === 0
+        ? 'no-providers'
+        : 'providers'
+  const previousSurface = useRef(surfaceKey)
+  useEffect(() => {
+    const replaced = previousSurface.current !== surfaceKey
+    previousSurface.current = surfaceKey
+    if (!replaced) {
+      return
+    }
+    const container = surfaceRef.current
+    if (container === null) {
+      return
+    }
+    const active = document.activeElement
+    const focusWasWithTheReplacedSurface =
+      active === null ||
+      active === document.body ||
+      active === document.documentElement ||
+      !active.isConnected
+    if (focusWasWithTheReplacedSurface) {
+      firstControl(container)?.focus()
+    }
+  }, [surfaceKey])
+
   return (
     <Box
+      ref={surfaceRef}
       sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}
     >
       <Divider textAlign="center" sx={{ color: 'text.secondary' }}>
@@ -475,9 +536,13 @@ export function EnterpriseSignIn({
       {providers === null ? (
         <FormLayout
           form={form}
-          onSubmit={discover}
+          onSubmit={guardedSubmit}
           actions={
-            <ActionButton type="submit" emphasis="primary" disabled={busy}>
+            <ActionButton
+              type="submit"
+              emphasis="primary"
+              busy={pending?.kind === 'discover'}
+            >
               {t('enterprise.continue')}
             </ActionButton>
           }
@@ -500,25 +565,33 @@ export function EnterpriseSignIn({
           <ChannelFeedbackRegion feedback={feedback} />
         </FormLayout>
       ) : providers.length === 0 ? (
-        <Button variant="text" onClick={editEmail}>
+        <ActionButton unavailable={pending !== null} onClick={editEmail}>
           {t('enterprise.editEmail')}
-        </Button>
+        </ActionButton>
       ) : (
         <>
-          {providers.map((provider) => (
-            <Button
-              key={provider.id}
-              variant="outlined"
-              fullWidth
-              disabled={busy}
-              onClick={() => void authorize(provider)}
-            >
-              {provider.name}
-            </Button>
-          ))}
-          <Button variant="text" onClick={editEmail}>
+          {providers.map((provider) => {
+            // Only the provider whose start is in flight is busy; the
+            // other providers and the way back to the email field change
+            // this entry's context, so they report unavailable.
+            const starting =
+              pending?.kind === 'provider' && pending.id === provider.id
+            return (
+              <ActionButton
+                key={provider.id}
+                emphasis="primary"
+                fullWidth
+                busy={starting}
+                unavailable={pending !== null && !starting}
+                onClick={() => void authorize(provider)}
+              >
+                {provider.name}
+              </ActionButton>
+            )
+          })}
+          <ActionButton unavailable={pending !== null} onClick={editEmail}>
             {t('enterprise.editEmail')}
-          </Button>
+          </ActionButton>
           <ChannelFeedbackRegion feedback={feedback} />
         </>
       )}
@@ -605,14 +678,14 @@ export function PasskeySignIn({
         {t(headingVariant === 'plain' ? 'passkey.titleFirst' : 'passkey.title')}
       </Divider>
       {driver.step === null ? (
-        <Button
-          variant="outlined"
+        <ActionButton
+          emphasis="primary"
           fullWidth
-          disabled={driver.busy}
+          busy={driver.busy}
           onClick={() => void begin()}
         >
           {methodLabel(method, t)}
-        </Button>
+        </ActionButton>
       ) : (
         <HumanGatedFlowStep
           session={session}
