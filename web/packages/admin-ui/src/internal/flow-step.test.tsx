@@ -25,8 +25,13 @@ import {
 } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { FlowStep } from './flow-step.js'
+import type { FlowStepProps } from './flow-step.js'
 
-function render(step: AuthnStep, onSubmit = vi.fn()) {
+function render(
+  step: AuthnStep,
+  onSubmit = vi.fn(),
+  props: Partial<FlowStepProps> = {},
+) {
   const rendered = renderWithProviders(
     <FlowStep
       step={step}
@@ -34,6 +39,7 @@ function render(step: AuthnStep, onSubmit = vi.fn()) {
       answerStep="answer"
       submitLabel="Continue"
       onSubmit={onSubmit}
+      {...props}
     />,
   )
   return { ...rendered, onSubmit }
@@ -586,5 +592,101 @@ describe('FlowStep passkey failure wording', () => {
     } finally {
       restore()
     }
+  })
+})
+
+/** A factor step offering two kinds, so a case can watch one of them. */
+const FACTOR_STEP: AuthnStep = {
+  kind: 'factor',
+  factors: [
+    { id: 'f1', kind: 'totp' },
+    { id: 'f2', kind: 'sms' },
+  ],
+}
+
+describe('FlowStep held actions', () => {
+  it('holds the TOTP confirm until a code is typed and names the missing code', async () => {
+    const user = userEvent.setup()
+    const { onSubmit } = render(TOTP_STEP)
+
+    const confirm = screen.getByRole('button', { name: 'Continue' })
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).toHaveAccessibleDescription(zhCN.stepUp.codeRequired)
+
+    // The control stays focusable; activating it answers nothing.
+    await user.click(confirm)
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText(zhCN.stepUp.codeLabel), '123456')
+    expect(confirm).not.toHaveAttribute('aria-disabled', 'true')
+    await user.click(confirm)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the activated option busy and holds the rest of its group', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    function Harness() {
+      const [busy, setBusy] = useState(false)
+      return (
+        <FlowStep
+          step={FACTOR_STEP}
+          sequence={1}
+          answerStep="answer"
+          submitLabel="Continue"
+          busy={busy}
+          onSubmit={() => {
+            setBusy(true)
+            onSubmit()
+          }}
+        />
+      )
+    }
+    renderWithProviders(<Harness />)
+
+    const totp = screen.getByRole('button', {
+      name: zhCN.stepUp.factorKind.totp,
+    })
+    const sms = screen.getByRole('button', {
+      name: zhCN.stepUp.factorKind.sms,
+    })
+    await user.click(totp)
+
+    // The option that was activated carries the progress state; the rest of
+    // the group refuses another answer without a reason of its own.
+    expect(totp).toHaveAttribute('aria-busy', 'true')
+    expect(sms).toHaveAttribute('aria-disabled', 'true')
+    await user.click(sms)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses an implicit submit from the field while the step is held', async () => {
+    // Enter in a field synthesizes a click on the form's submit button; the
+    // form's own guard refuses it as well, so no answer leaves.
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      { kind: 'challenge', fields: [{ name: 'code', kind: 'code' }] },
+      onSubmit,
+      { unavailable: true },
+    )
+
+    await user.type(screen.getByLabelText('code'), '123456{Enter}')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a keyboard activation of a held option', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(FACTOR_STEP, onSubmit, { unavailable: true })
+
+    const totp = screen.getByRole('button', {
+      name: zhCN.stepUp.factorKind.totp,
+    })
+    expect(totp).toHaveAttribute('aria-disabled', 'true')
+    totp.focus()
+    expect(totp).toHaveFocus()
+    await user.keyboard(' ')
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 })

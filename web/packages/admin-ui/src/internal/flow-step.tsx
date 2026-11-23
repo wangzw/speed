@@ -44,7 +44,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -57,6 +56,7 @@ import {
   ActionRow,
   AnnouncementRegion,
   TotpEnrollmentPanel,
+  useActivationGuard,
 } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './translation.js'
 
@@ -136,12 +136,24 @@ export interface FlowStepProps {
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
   /**
-   * True while the driver holds the step's primary action back -- a
-   * throttled answer's wait. The fields stay editable and a secondary
-   * control (cancel) stays usable; only the actions that would send another
-   * answer are disabled.
+   * The step's answer is in flight. The option that was activated -- or the
+   * step's single submit control -- shows the progress state and stays
+   * focusable, and the rest of an option group refuses another answer until
+   * the answer settles.
    */
-  readonly submitDisabled?: boolean
+  readonly busy?: boolean
+  /**
+   * The step cannot be answered now because a precondition the caller owns
+   * is unmet -- a throttled answer's wait. The fields stay editable and the
+   * controls stay focusable; activation is refused.
+   */
+  readonly unavailable?: boolean
+  /**
+   * The id of the text already on the page that explains what holds the
+   * step back. The held controls describe themselves through it instead of
+   * repeating the text.
+   */
+  readonly unavailableDescribedBy?: string
   /**
    * The passkey ceremony's failure, held by the caller so one failure
    * banner stands at a time in the surrounding region. Omit it and the
@@ -159,7 +171,9 @@ export function FlowStep({
   answerStep,
   submitLabel,
   onSubmit,
-  submitDisabled = false,
+  busy = false,
+  unavailable = false,
+  unavailableDescribedBy,
   ceremonyError,
   onCeremonyError,
 }: FlowStepProps) {
@@ -167,6 +181,18 @@ export function FlowStep({
   // The free-text answer of a TOTP code field, and the typed values of a
   // `challenge` step's fields.
   const [values, setValues] = useState<Record<string, string>>({})
+  // The option that was activated for this step, so the progress state sits
+  // on it while the rest of its group refuses another answer. The driver
+  // keys the renderer on the step, so a settled answer remounts this state.
+  const [activated, setActivated] = useState<string | null>(null)
+  // The challenge form's submit is guarded as well as its button: an
+  // implicit submission from a field must be refused while the answer is in
+  // flight or the step is held.
+  const handleSubmit = (event: FormEvent): void => {
+    event.preventDefault()
+    onSubmit({ step: answerStep, input: { ...values } })
+  }
+  const guardedSubmit = useActivationGuard(handleSubmit, { busy, unavailable })
 
   if (step.kind === 'complete') {
     return (
@@ -174,7 +200,9 @@ export function FlowStep({
         <ActionButton
           type="button"
           emphasis="primary"
-          disabled={submitDisabled}
+          busy={busy}
+          unavailable={unavailable}
+          unavailableDescribedBy={unavailable ? unavailableDescribedBy : undefined}
           onClick={() => onSubmit({ step: 'complete' })}
         >
           {submitLabel}
@@ -203,15 +231,21 @@ export function FlowStep({
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
         {step.factors.map((factor, index) => (
-          <Button
+          <ActionButton
             key={factor.id}
             type="button"
-            variant="outlined"
-            disabled={submitDisabled}
-            onClick={() => onSubmit({ step: 'factor', input: { factor: factor.id } })}
+            busy={busy && activated === factor.id}
+            unavailable={unavailable || (busy && activated !== factor.id)}
+            unavailableDescribedBy={
+              !busy && unavailable ? unavailableDescribedBy : undefined
+            }
+            onClick={() => {
+              setActivated(factor.id)
+              onSubmit({ step: 'factor', input: { factor: factor.id } })
+            }}
           >
             {factorLabels[index] ?? factorKindLabel(factor.kind, t)}
-          </Button>
+          </ActionButton>
         ))}
       </Box>
     )
@@ -221,15 +255,21 @@ export function FlowStep({
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
         {step.kinds.map((kind) => (
-          <Button
+          <ActionButton
             key={kind}
             type="button"
-            variant="outlined"
-            disabled={submitDisabled}
-            onClick={() => onSubmit({ step: 'enroll', input: { kind } })}
+            busy={busy && activated === kind}
+            unavailable={unavailable || (busy && activated !== kind)}
+            unavailableDescribedBy={
+              !busy && unavailable ? unavailableDescribedBy : undefined
+            }
+            onClick={() => {
+              setActivated(kind)
+              onSubmit({ step: 'enroll', input: { kind } })
+            }}
           >
             {factorKindLabel(kind, t)}
-          </Button>
+          </ActionButton>
         ))}
       </Box>
     )
@@ -244,7 +284,9 @@ export function FlowStep({
           code={values.code ?? ''}
           onCodeChange={(code) => setValues({ ...values, code })}
           submitLabel={submitLabel}
-          submitDisabled={submitDisabled}
+          busy={busy}
+          unavailable={unavailable}
+          unavailableDescribedBy={unavailableDescribedBy}
           onSubmit={(code) => onSubmit({ step: answerStep, input: { code } })}
         />
       )
@@ -256,7 +298,9 @@ export function FlowStep({
         answerStep={answerStep}
         submitLabel={submitLabel}
         onSubmit={onSubmit}
-        submitDisabled={submitDisabled}
+        busy={busy}
+        unavailable={unavailable}
+        unavailableDescribedBy={unavailableDescribedBy}
         ceremonyError={ceremonyError}
         onCeremonyError={onCeremonyError}
       />
@@ -264,13 +308,8 @@ export function FlowStep({
   }
 
   // challenge: one text field per requested field, submitted together.
-  const handleSubmit = (event: FormEvent): void => {
-    event.preventDefault()
-    onSubmit({ step: answerStep, input: { ...values } })
-  }
-
   return (
-    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+    <Box component="form" onSubmit={guardedSubmit} sx={{ mt: 2 }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {step.fields.map((field) => (
           <TextField
@@ -289,7 +328,9 @@ export function FlowStep({
         <ActionButton
           type="submit"
           emphasis="primary"
-          disabled={submitDisabled}
+          busy={busy}
+          unavailable={unavailable}
+          unavailableDescribedBy={unavailable ? unavailableDescribedBy : undefined}
         >
           {submitLabel}
         </ActionButton>
@@ -305,9 +346,13 @@ interface TotpEnrollStepProps {
   readonly code: string
   readonly onCodeChange: (code: string) => void
   readonly submitLabel: string
-  /** True while a throttled answer's wait holds the confirm action back.
-   * The code field stays editable. */
-  readonly submitDisabled?: boolean
+  /** The step's answer is in flight; the confirm action shows the progress
+   * state. The code field stays editable. */
+  readonly busy?: boolean
+  /** The step cannot be answered now -- a throttled answer's wait. */
+  readonly unavailable?: boolean
+  /** The id of the page text explaining what holds the step back. */
+  readonly unavailableDescribedBy?: string
   /** Reports the trimmed code; the caller answers the flow with it. */
   readonly onSubmit: (code: string) => void
 }
@@ -331,7 +376,9 @@ function TotpEnrollStep({
   code,
   onCodeChange,
   submitLabel,
-  submitDisabled = false,
+  busy = false,
+  unavailable = false,
+  unavailableDescribedBy,
   onSubmit,
 }: TotpEnrollStepProps) {
   const { t } = useAdminUiTranslation()
@@ -351,6 +398,17 @@ function TotpEnrollStep({
           { label: t('stepUp.totpDigits'), value: String(otpauth.digits) },
           { label: t('stepUp.totpPeriod'), value: String(otpauth.period) },
         ]
+
+  // The wait the caller owns explains the control before a missing code
+  // does: the operator cannot type their way past the wait. The two
+  // explanations are exclusive by construction.
+  const codeEmpty = code.trim() === ''
+  const explanation =
+    unavailable && unavailableDescribedBy !== undefined
+      ? { unavailableDescribedBy }
+      : !unavailable && codeEmpty
+        ? { unavailableReason: t('stepUp.codeRequired') }
+        : {}
 
   return (
     <TotpEnrollmentPanel
@@ -378,7 +436,9 @@ function TotpEnrollStep({
         <ActionButton
           type="button"
           emphasis="primary"
-          disabled={submitDisabled || code.trim() === ''}
+          busy={busy}
+          unavailable={unavailable || codeEmpty}
+          {...explanation}
           onClick={() => onSubmit(code.trim())}
         >
           {submitLabel}
@@ -397,8 +457,13 @@ interface PasskeyPromptProps {
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
-  /** True while a throttled answer's wait holds the start/retry action back. */
-  readonly submitDisabled?: boolean
+  /** The step's answer is in flight; the start/retry action shows the
+   * progress state. */
+  readonly busy?: boolean
+  /** The step cannot be answered now -- a throttled answer's wait. */
+  readonly unavailable?: boolean
+  /** The id of the page text explaining what holds the step back. */
+  readonly unavailableDescribedBy?: string
   readonly ceremonyError?: string | null
   readonly onCeremonyError?: (errorKey: string | null) => void
 }
@@ -414,11 +479,11 @@ interface PasskeyPromptProps {
  *
  * The ceremony can sit pending for as long as the browser waits on the
  * device, so the step shows an explicit waiting state: the waiting message
- * and a cancel control instead of leaving a disabled button as the only
- * signal. The waiting notice is the shared announcement region: it mounts
- * empty and fills a frame later, so a screen reader announces it; focus
- * moves to the cancel control, since the control that had it unmounted.
- * Cancel fails at
+ * and a cancel control instead of leaving the start button's own state as
+ * the only signal. The waiting notice is the shared announcement region: it
+ * mounts empty and fills a frame later, so a screen reader announces it;
+ * focus moves to the cancel control, since the control that had it
+ * unmounted. Cancel fails at
  * once -- it shows the cancelled text and a retry without waiting for the
  * ceremony to settle -- and only best-effort asks the browser to give up
  * (the credential API does not guarantee it honours an abort). A late
@@ -434,7 +499,9 @@ function PasskeyPrompt({
   answerStep,
   submitLabel,
   onSubmit,
-  submitDisabled = false,
+  busy = false,
+  unavailable = false,
+  unavailableDescribedBy,
   ceremonyError,
   onCeremonyError,
 }: PasskeyPromptProps) {
@@ -588,7 +655,11 @@ function PasskeyPrompt({
           <ActionButton
             type="button"
             emphasis="primary"
-            disabled={submitDisabled}
+            busy={busy}
+            unavailable={unavailable}
+            unavailableDescribedBy={
+              unavailable ? unavailableDescribedBy : undefined
+            }
             onClick={() => void run()}
           >
             {errorKey === null ? submitLabel : t('stepUp.passkeyRetry')}

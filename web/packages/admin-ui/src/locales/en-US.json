@@ -223,6 +223,7 @@
     "factorOptionOrdinal": "{{kind}} ({{position}})",
     "cannotElevate": "This session can't be confirmed with the verification methods you registered: they may have been registered after this sign-in, or this site may have no way to verify you further for this sign-in. Sign in again.",
     "relogin": "Sign in again",
+    "codeRequired": "Enter the 6-digit code first.",
     "codeLabel": "6-digit code",
     "enrollTotpHelp": "Scan the QR code with your authenticator app, then enter the 6-digit code the app shows.",
     "totpQrLabel": "Scan this QR code with your authenticator app",

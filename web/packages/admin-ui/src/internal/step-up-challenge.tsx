@@ -237,6 +237,9 @@ function StepUpFlow({
   onRestart,
 }: StepUpFlowProps) {
   const { t } = useAdminUiTranslation()
+  // The failure banner's text, counted down while a throttled answer's wait
+  // runs. The controls the wait holds describe themselves through it.
+  const waitTextId = useId()
   // A hook reply can outlive this driver: closing the dialog unmounts it,
   // and the shared hook only drops a stale reply when its active flag turns
   // false, which an unmount never does. The gate would then replay a write
@@ -358,7 +361,7 @@ function StepUpFlow({
           // code's banner and the restart action are the whole surface.
           // The alert is one full-width child, so the stack's gap places it
           // the same distance from whatever precedes and follows it.
-          <Box>
+          <Box id={waitTextId}>
             <InlineError
               code={errorCode}
               retryAfterSeconds={retryAfterSeconds ?? undefined}
@@ -374,7 +377,7 @@ function StepUpFlow({
               {t('stepUp.description')}
             </Typography>
             {serverFailure ? (
-              <Box>
+              <Box id={waitTextId}>
                 <InlineError
                   code={errorCode}
                   retryAfterSeconds={retryAfterSeconds ?? undefined}
@@ -412,7 +415,9 @@ function StepUpFlow({
                       answerStep={answerStep}
                       submitLabel={t('stepUp.submit')}
                       onSubmit={handleAnswer}
-                      submitDisabled={waiting || submitting || pending}
+                      busy={submitting || pending}
+                      unavailable={waiting}
+                      unavailableDescribedBy={waiting ? waitTextId : undefined}
                       ceremonyError={ceremonyError}
                       onCeremonyError={setCeremonyError}
                     />
@@ -428,7 +433,8 @@ function StepUpFlow({
         {terminalFailure ? (
           <ActionButton
             emphasis="primary"
-            disabled={waiting}
+            unavailable={waiting}
+            unavailableDescribedBy={waiting ? waitTextId : undefined}
             onClick={onRestart}
           >
             {t('stepUp.restart')}
