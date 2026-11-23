@@ -957,7 +957,8 @@
         "importUnverified": "导入，未验证"
       },
       "submit": "新建",
-      "submitUnavailable": "填写显示名；用户账户还需填写用户名。",
+      "submitUnavailable": "请填写显示名。",
+      "usernameUnavailable": "用户账户还需要填写用户名。",
       "usernameTaken": "该用户名已被占用，请换一个。",
       "usernameReserved": "该用户名是系统保留的名称，请换一个。",
       "usernameInvalid": "该用户名不符合规则，请按提示修改。",
@@ -1101,7 +1102,6 @@
       "revoked": "已撤销",
       "active": "有效",
       "revoke": "撤销",
-      "revokeUnavailable": "该会话已撤销。",
       "revokeAria": "撤销会话 {{id}}",
       "revokeTitle": "撤销会话",
       "revokeMessage": "撤销会话「{{id}}」。",

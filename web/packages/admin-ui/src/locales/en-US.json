@@ -957,7 +957,8 @@
         "importUnverified": "Imported, unverified"
       },
       "submit": "Create",
-      "submitUnavailable": "Enter a display name and, for a user account, a username.",
+      "submitUnavailable": "Enter a display name.",
+      "usernameUnavailable": "A user account also needs a username.",
       "usernameTaken": "That username is already taken. Choose another.",
       "usernameReserved": "That username is reserved by the system. Choose another.",
       "usernameInvalid": "That username doesn't meet the rules shown here.",
@@ -1101,7 +1102,6 @@
       "revoked": "Revoked",
       "active": "Active",
       "revoke": "Revoke",
-      "revokeUnavailable": "This session is already revoked.",
       "revokeAria": "Revoke session {{id}}",
       "revokeTitle": "Revoke session",
       "revokeMessage": "Revoke the session \"{{id}}\".",

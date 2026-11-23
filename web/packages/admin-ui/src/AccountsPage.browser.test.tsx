@@ -12,7 +12,6 @@ import { screen, waitFor, within } from '@testing-library/react'
 import type { AuthSession } from '@speed/auth-core'
 import Box from '@mui/material/Box'
 import { page, userEvent } from 'vitest/browser'
-import { uiKitResources } from '@speed/ui-kit'
 import { AccountsPage } from './AccountsPage.js'
 import type { AdminAccount, AdminAccountSecretCreated } from './operations.js'
 import { createStepUpSession } from '../test-utils/session.js'
@@ -31,13 +30,6 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
-
-/** The side panel's built-in close control label in the suite's language. */
-const PANEL_CLOSE_LABEL = (
-  uiKitResources['en-US'] as unknown as {
-    readonly sidePanel: { readonly closeLabel: string }
-  }
-).sidePanel.closeLabel
 
 const ACCOUNTS = [
   accountFixture({
@@ -455,6 +447,67 @@ describe('AccountsPage focus traps in Chromium', () => {
     revoked.resolve()
   })
 
+  /** A session row as the fixture read answers it. */
+  function sessionRow(id: string) {
+    return {
+      id,
+      kind: 'refresh',
+      assurance: 1,
+      auth_time: '2026-10-15T12:00:00Z',
+      created_at: '2026-10-15T12:00:00Z',
+      last_seen_at: '2026-10-15T12:00:00Z',
+      expires_at: '2026-10-16T12:00:00Z',
+      revoked: false,
+      current: false,
+    }
+  }
+
+  it("moves focus to the next session's revoke control when a middle session leaves", async () => {
+    // The revoked row drops out of the read, so its control unmounts. Focus
+    // must land on the next row's revoke control inside the drawer rather
+    // than fall to the body, where the panel's focus trap pulls it back to
+    // the paper a frame later.
+    const revoked: string[] = []
+    const rows = [sessionRow('sess-a'), sessionRow('sess-b'), sessionRow('sess-c')]
+    const panel = await openDetail({
+      getAccount: () => Promise.resolve(TARGET_ACCOUNT),
+      listAccountSessions: () =>
+        Promise.resolve(rows.filter((row) => !revoked.includes(row.id))),
+      revokeSession: (input) => {
+        revoked.push(input.sessionId)
+        return Promise.resolve()
+      },
+    })
+    const next = await within(panel).findByRole('button', {
+      name: enUS.accounts.sessions.revokeAria.replace('{{id}}', 'sess-c'),
+    })
+    await userEvent.click(
+      within(panel).getByRole('button', {
+        name: enUS.accounts.sessions.revokeAria.replace('{{id}}', 'sess-b'),
+      }),
+    )
+    const confirm = await screen.findByRole('dialog', {
+      name: enUS.accounts.sessions.revokeTitle,
+    })
+    await userEvent.click(
+      within(confirm).getByRole('button', { name: enUS.common.confirm }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', {
+          name: enUS.accounts.sessions.revokeTitle,
+        }),
+      ).not.toBeInTheDocument(),
+    )
+
+    await waitFor(() => {
+      expect(
+        next,
+        `focus after the revoked row left; document.activeElement is ${describeActiveElement()}`,
+      ).toHaveFocus()
+    })
+  })
+
   it('keeps the detail panel focus trap holding over a hidden page', async () => {
     // The unit suite's open-panel scan cannot press Tab, so aria-hidden-focus
     // is indeterminate there; the helper's browser pass exercises the trap
@@ -481,18 +534,11 @@ describe('AccountsPage focus traps in Chromium', () => {
         .replace('{{label}}', 'label')
         .replace('{{secret}}', 'one-time'),
     )
-    // The control stays focused and becomes unavailable when the secret
-    // lands, which opens its reason tooltip; that popper is portaled to the
-    // body, outside the modal's aria-hidden chain, and the shared background
-    // check reads it as page content. Leave the control and settle on the
-    // panel's own close control (still inside the trap) before scanning.
-    await userEvent.unhover(submit)
-    within(panel)
-      .getByRole('button', { name: PANEL_CLOSE_LABEL })
-      .focus()
-    await waitFor(() => {
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-    })
+    // The landed control stays focused and becomes unavailable, which opens
+    // its reason tooltip; that popper is portaled to the body, outside the
+    // modal's aria-hidden chain. The shared helper exempts a tooltip portal
+    // that carries no focusable control, so the scan runs with it open.
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
     await expectNoAxeViolations({
       decidedInBrowser: 'accountsOneTimeSecret',
     })

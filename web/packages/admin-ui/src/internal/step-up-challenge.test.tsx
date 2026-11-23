@@ -647,6 +647,42 @@ describe('StepUpChallenge', () => {
     }
   })
 
+  it('describes the restart control with the wait a throttled start stated', async () => {
+    // A throttled start leaves no step to retry, so the restart is the whole
+    // surface; it is held for the wait and names the countdown already on
+    // the page as its reason.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      bindFactors([ACTIVE_FACTOR])
+      const session = refusingStartSession(
+        new ApiError({
+          status: 429,
+          code: 'ratelimit.throttled',
+          attempts: 1,
+          retryAfterMs: 30_000,
+        }),
+      )
+      renderWithProviders(
+        <StepUpChallenge
+          open
+          session={session}
+          onSuccess={() => undefined}
+          onCancel={() => undefined}
+        />,
+      )
+
+      const restart = await screen.findByRole('button', {
+        name: zhCN.stepUp.restart,
+      })
+      expect(restart).toHaveAttribute('aria-disabled', 'true')
+      expect(restart).toHaveAccessibleDescription(
+        new RegExp(zhCN.throttle.countdown.replace('{{seconds}}', '\\d+')),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('answers a passkey step-up under the factor step, driven by its options', async () => {
     const requests: Array<{ step: string | undefined; input?: Readonly<Record<string, string>> }> = []
     const session: AuthSession = {

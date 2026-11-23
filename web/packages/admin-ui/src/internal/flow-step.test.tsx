@@ -16,7 +16,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -656,6 +656,8 @@ describe('FlowStep held actions', () => {
     // the group refuses another answer without a reason of its own.
     expect(totp).toHaveAttribute('aria-busy', 'true')
     expect(sms).toHaveAttribute('aria-disabled', 'true')
+    expect(sms).not.toHaveAttribute('aria-busy')
+    expect(sms).not.toHaveAccessibleDescription()
     await user.click(sms)
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
@@ -686,7 +688,33 @@ describe('FlowStep held actions', () => {
     expect(totp).toHaveAttribute('aria-disabled', 'true')
     totp.focus()
     expect(totp).toHaveFocus()
+    await user.keyboard('{Enter}')
     await user.keyboard(' ')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a programmatic form submit while the step is held', () => {
+    // The submit button's own guard swallows the implicit submission it
+    // carries; the form's handler is guarded too, for a submit the button
+    // does not carry (a programmatic one, or a form without its button).
+    const onSubmit = vi.fn()
+    render(
+      { kind: 'challenge', fields: [{ name: 'code', kind: 'code' }] },
+      onSubmit,
+      { unavailable: true },
+    )
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement)
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('refuses a programmatic form submit while an answer is in flight', () => {
+    const onSubmit = vi.fn()
+    render(
+      { kind: 'challenge', fields: [{ name: 'code', kind: 'code' }] },
+      onSubmit,
+      { busy: true },
+    )
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement)
     expect(onSubmit).not.toHaveBeenCalled()
   })
 })
