@@ -96,7 +96,7 @@
  * PageHeader.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -128,6 +128,7 @@ import {
   pageRefreshRead,
   primaryColumnMaxWidthSx,
   useFormatInstant,
+  useActivationGuard,
   usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -326,6 +327,18 @@ export function AccountsPage({
   // written after `onExited`: while the modal is open the page behind it is
   // aria-hidden, so a notice written then would never be announced.
   const createSuccess = useRef<string | null>(null)
+  // Each row's delete control, so a successful delete can hand focus to the
+  // adjacent row's control when the removed row leaves the document.
+  const deleteButtons = useRef(new Map<string, HTMLButtonElement>())
+  // The row whose delete has started, with the row order at that moment:
+  // once that row leaves the list, focus moves to the next row's delete
+  // control, else the previous one, else the list container, so it never
+  // lands on the document body.
+  const deleteFocus = useRef<{
+    readonly id: string
+    readonly order: readonly string[]
+  } | null>(null)
+  const listRegion = useRef<HTMLDivElement | null>(null)
 
   // The list's feedback scope: the row-initiated delete and the create
   // success share it, and its region stands below the list.
@@ -379,6 +392,8 @@ export function AccountsPage({
     if (listWrite.pending) {
       return
     }
+    // A page move leaves the row a settled delete was watching behind.
+    deleteFocus.current = null
     if (nextPage === page - 1 && page > 0) {
       // A page move is a change of the list's context: the previous page's
       // result does not describe the page now shown.
@@ -443,10 +458,13 @@ export function AccountsPage({
   // it opens again -- and resets the list's feedback scope first.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('accounts', accounts)],
-    () => listWrite.reset(),
+    () => {
+      deleteFocus.current = null
+      listWrite.reset()
+    },
   )
 
-  // The write controls a detail section starts are disabled and marked busy
+  // The write controls a detail section starts are marked busy or unavailable
   // from the scope's own in-flight count, never from one mutation observer's
   // `isPending`: overlapping attempts of the same group would otherwise
   // disagree about which one is running.
@@ -537,10 +555,19 @@ export function AccountsPage({
   }
 
   function deleteOne(row: AdminAccount): Promise<void> {
+    // The row order at the attempt's start is what names the neighbour to
+    // focus once the row leaves: the read answers with the rows minus the
+    // deleted one, so the order of the *next* render alone cannot say
+    // which row stood beside it.
+    deleteFocus.current = {
+      id: row.id,
+      order: (accounts.data?.accounts ?? []).map((entry) => entry.id),
+    }
     return listWrite.run(async () => {
       try {
         await deleteAccount.mutateAsync({ id: row.id })
       } catch (error) {
+        deleteFocus.current = null
         if (gate.intercept(error, () => void deleteOne(row))) {
           return null
         }
@@ -758,16 +785,21 @@ export function AccountsPage({
           >
             {t('accounts.manage')}
           </Button>
-          <Button
+          <ActionButton
+            ref={(element) => {
+              if (element === null) {
+                deleteButtons.current.delete(row.id)
+              } else {
+                deleteButtons.current.set(row.id, element)
+              }
+            }}
             type="button"
             size="small"
-            variant="outlined"
-            color="error"
+            tone="danger"
             aria-label={t('accounts.deleteAria', {
               name: accountLabel(t, accountIdentityValue(row)),
             })}
-            loading={listWrite.pending}
-            disabled={listWrite.pending}
+            busy={listWrite.pending}
             onClick={() =>
               confirm.ask({
                 title: t('accounts.deleteTitle'),
@@ -786,7 +818,7 @@ export function AccountsPage({
             }
           >
             {t('accounts.delete')}
-          </Button>
+          </ActionButton>
         </Box>
       ),
     },
@@ -850,14 +882,14 @@ export function AccountsPage({
       header: t('accounts.sessions.column.actions'),
       cellWrap: 'nowrap',
       cell: (row) => (
-        <Button
+        <ActionButton
           type="button"
           size="small"
-          variant="outlined"
-          color="error"
+          tone="danger"
           aria-label={t('accounts.sessions.revokeAria', { id: row.id })}
-          loading={detailSessionWrite.pending}
-          disabled={row.revoked || detailSessionWrite.pending}
+          busy={detailSessionWrite.pending}
+          unavailable={row.revoked}
+          unavailableReason={t('accounts.sessions.revokeUnavailable')}
           onClick={() =>
             confirm.ask({
               title: t('accounts.sessions.revokeTitle'),
@@ -873,12 +905,46 @@ export function AccountsPage({
           }
         >
           {t('accounts.sessions.revoke')}
-        </Button>
+        </ActionButton>
       ),
     },
   ]
 
   const rows = accounts.data?.accounts
+  // The delete succeeded and the read no longer carries its row: hand focus
+  // to the same control on the adjacent row, otherwise to the list
+  // container, in the commit that removes the row rather than leaving it on
+  // the document body.
+  useLayoutEffect(() => {
+    const target = deleteFocus.current
+    if (target === null) {
+      return
+    }
+    const remaining = new Set((rows ?? []).map((row) => row.id))
+    if (remaining.has(target.id)) {
+      return
+    }
+    deleteFocus.current = null
+    const index = target.order.indexOf(target.id)
+    const candidates =
+      index === -1
+        ? [...target.order]
+        : [
+            ...target.order.slice(index + 1),
+            ...target.order.slice(0, index).reverse(),
+          ]
+    for (const id of candidates) {
+      if (!remaining.has(id)) {
+        continue
+      }
+      const button = deleteButtons.current.get(id)
+      if (button !== undefined) {
+        button.focus()
+        return
+      }
+    }
+    listRegion.current?.focus()
+  }, [rows])
   const pending = accounts.isPending && rows === undefined
   // Only a settled page names the next one: while a page read is in flight
   // there is no cursor to advance from, and an empty one is the last page.
@@ -897,7 +963,7 @@ export function AccountsPage({
           <Box sx={{ display: 'flex', gap: 1 }}>
             <RefreshButton
               // Refreshing changes the list scope's context: while one of
-              // its writes is in flight it is natively disabled, so a late
+              // its writes is in flight it is unavailable, so a late
               // result cannot land against a list it no longer describes.
               // While the list read is in flight it is marked busy.
               busy={pageRefresh.busy}
@@ -996,14 +1062,18 @@ export function AccountsPage({
               </MenuItem>
             ))}
           </TextField>
-          <Button
+          <ActionButton
             type="button"
-            variant="contained"
-            disabled={listWrite.pending}
+            emphasis="primary"
+            // A button-shaped context control: while one of the list's
+            // writes is in flight it stays focusable, reports unavailable
+            // and swallows activation without a reason.
+            unavailable={listWrite.pending}
             onClick={() => {
               // A submitted filter is a new list: the result written under
               // the previous filter does not describe it.
               listWrite.reset()
+              deleteFocus.current = null
               setIdentifier(identifierDraft.trim())
               setIdentifierKind(kindDraft)
               setDisplayName(displayNameDraft.trim())
@@ -1016,69 +1086,76 @@ export function AccountsPage({
             }}
           >
             {t('accounts.search')}
-          </Button>
+          </ActionButton>
         </Box>
       </SectionCard>
 
       <SectionCard flushContent>
-        <AdminAsyncSection
-          pending={pending}
-          payload={rows}
-          error={accounts.error}
-          refreshing={accounts.isFetching}
-          // Only the first page treats an empty answer as "no accounts": a
-          // later page that comes back empty still renders the table (its
-          // own empty state) so the footer, and the page before it, stay
-          // reachable.
-          empty={
-            rows !== undefined && rows.length === 0 && page === 0
-          }
-          headingLevel="h2"
-          loading={
-            <ListSkeleton
-              label={t('accounts.loading')}
-              rows={[
-                <Skeleton key="a" variant="text" width="58%" />,
-                <Skeleton key="b" variant="text" width="46%" />,
-              ]}
-            />
-          }
-          errorState={{
-            title: t('accounts.error.title'),
-            description: t('accounts.error.description'),
-            retryLabel: t('accounts.retry'),
-            onRetry: () => void accounts.refetch(),
-          }}
-          emptyState={{
-            title: t('accounts.empty.title'),
-            description: t('accounts.empty.description'),
-          }}
+        <Box
+          ref={listRegion}
+          tabIndex={-1}
+          role="group"
+          aria-label={t('accounts.listRegion')}
         >
-          {(settled) => (
-            <DataTable
-              rows={settled}
-              columns={columns}
-              rowKey={(row) => row.id}
-              // The row-actions column is last, and at the mobile floor
-              // the primary cell and the actions together can be wider
-              // than the page content. Pinning the actions keeps Manage
-              // and Delete reachable while the main columns scroll under
-              // them; where the table already fits, the pin is inert.
-              pinLastColumn
-              // The primary cell stacks the display name over its first
-              // identifier, so the row is top-aligned: the copy control
-              // sits beside the identity line instead of dropping to the
-              // middle of a two-line cell.
-              rowVerticalAlign="top"
-              // The table stands in for the async section's empty branch on
-              // a later page, so it carries the same wording and heading
-              // level.
-              emptyTitle={t('accounts.empty.title')}
-              emptyDescription={t('accounts.empty.description')}
-              emptyHeadingLevel="h2"
-            />
-          )}
-        </AdminAsyncSection>
+          <AdminAsyncSection
+            pending={pending}
+            payload={rows}
+            error={accounts.error}
+            refreshing={accounts.isFetching}
+            // Only the first page treats an empty answer as "no accounts": a
+            // later page that comes back empty still renders the table (its
+            // own empty state) so the footer, and the page before it, stay
+            // reachable.
+            empty={
+              rows !== undefined && rows.length === 0 && page === 0
+            }
+            headingLevel="h2"
+            loading={
+              <ListSkeleton
+                label={t('accounts.loading')}
+                rows={[
+                  <Skeleton key="a" variant="text" width="58%" />,
+                  <Skeleton key="b" variant="text" width="46%" />,
+                ]}
+              />
+            }
+            errorState={{
+              title: t('accounts.error.title'),
+              description: t('accounts.error.description'),
+              retryLabel: t('accounts.retry'),
+              onRetry: () => void accounts.refetch(),
+            }}
+            emptyState={{
+              title: t('accounts.empty.title'),
+              description: t('accounts.empty.description'),
+            }}
+          >
+            {(settled) => (
+              <DataTable
+                rows={settled}
+                columns={columns}
+                rowKey={(row) => row.id}
+                // The row-actions column is last, and at the mobile floor
+                // the primary cell and the actions together can be wider
+                // than the page content. Pinning the actions keeps Manage
+                // and Delete reachable while the main columns scroll under
+                // them; where the table already fits, the pin is inert.
+                pinLastColumn
+                // The primary cell stacks the display name over its first
+                // identifier, so the row is top-aligned: the copy control
+                // sits beside the identity line instead of dropping to the
+                // middle of a two-line cell.
+                rowVerticalAlign="top"
+                // The table stands in for the async section's empty branch on
+                // a later page, so it carries the same wording and heading
+                // level.
+                emptyTitle={t('accounts.empty.title')}
+                emptyDescription={t('accounts.empty.description')}
+                emptyHeadingLevel="h2"
+              />
+            )}
+          </AdminAsyncSection>
+        </Box>
       </SectionCard>
 
       {/* The paging footer lives outside the async section's branches: it
@@ -1212,11 +1289,9 @@ export function AccountsPage({
                   }}
                 >
                   {factorsPresent && (
-                    <Button
+                    <ActionButton
                       type="button"
-                      variant="outlined"
-                      loading={detailActionWrite.pending}
-                      disabled={detailActionWrite.pending}
+                      busy={detailActionWrite.pending}
                       onClick={() =>
                         confirm.ask({
                           title: t('accounts.resetMFATitle'),
@@ -1227,15 +1302,13 @@ export function AccountsPage({
                       }
                     >
                       {t('accounts.resetMFA')}
-                    </Button>
+                    </ActionButton>
                   )}
                   {sessionsPresent && (
-                    <Button
+                    <ActionButton
                       type="button"
-                      variant="outlined"
-                      color="error"
-                      loading={detailActionWrite.pending}
-                      disabled={detailActionWrite.pending}
+                      tone="danger"
+                      busy={detailActionWrite.pending}
                       onClick={() =>
                         confirm.ask({
                           title: t('accounts.revokeSessionsTitle'),
@@ -1250,7 +1323,7 @@ export function AccountsPage({
                       }
                     >
                       {t('accounts.revokeSessions')}
-                    </Button>
+                    </ActionButton>
                   )}
                 </Box>
                 <WriteFeedbackRegion
@@ -1347,15 +1420,12 @@ export function AccountsPage({
                 onChange={(event) => setIdentifierToRemove(event.target.value)}
                 label={t('accounts.removeIdentifier.label')}
               />
-              <Button
+              <ActionButton
                 type="button"
-                variant="outlined"
-                color="error"
-                loading={detailIdentifierRemoveWrite.pending}
-                disabled={
-                  detailIdentifierRemoveWrite.pending ||
-                  identifierToRemove.trim() === ''
-                }
+                tone="danger"
+                busy={detailIdentifierRemoveWrite.pending}
+                unavailable={identifierToRemove.trim() === ''}
+                unavailableReason={t('accounts.removeIdentifier.unavailable')}
                 onClick={() =>
                   confirm.ask({
                     title: t('accounts.removeIdentifier.confirmTitle'),
@@ -1368,7 +1438,7 @@ export function AccountsPage({
                 }
               >
                 {t('accounts.removeIdentifier.submit')}
-              </Button>
+              </ActionButton>
             </Box>
             <WriteFeedbackRegion
               outcome={detailIdentifierRemoveWrite.outcome}
@@ -1558,14 +1628,14 @@ function AccountSecretsSection({
       header: t('accounts.secrets.column.actions'),
       cellWrap: 'nowrap',
       cell: (row) => (
-        <Button
+        <ActionButton
           type="button"
           size="small"
-          variant="outlined"
-          color="error"
+          tone="danger"
           aria-label={t('accounts.secrets.revokeAria', { label: row.label })}
-          loading={feedback.pending}
-          disabled={row.revoked || feedback.pending}
+          busy={feedback.pending}
+          unavailable={row.revoked}
+          unavailableReason={t('accounts.secrets.revokeUnavailable')}
           onClick={() =>
             confirm.ask({
               title: t('accounts.secrets.revokeTitle'),
@@ -1576,7 +1646,7 @@ function AccountSecretsSection({
           }
         >
           {t('accounts.secrets.revoke')}
-        </Button>
+        </ActionButton>
       ),
     },
   ]
@@ -1621,7 +1691,7 @@ function AccountSecretsSection({
 /**
  * Parses an optional attribute map the operator typed as a JSON object with
  * string values. Returns null when the text is not such an object, so a form
- * can mark the field and keep the submit disabled.
+ * can mark the field and keep the submit unavailable.
  */
 function parseStringMap(text: string): Record<string, string> | null {
   try {
@@ -1739,7 +1809,7 @@ function createFailureKey(
  * identifiers beside it, so neither of them can stand in for it. A service
  * account signs in with a service secret and so needs no username -- the
  * server exempts it from that requirement -- and only the display name is
- * required. The submit stays disabled until the form could produce a usable
+ * required. The submit stays unavailable until the form could produce a usable
  * account, and the submit handler itself re-checks, so no path sends a
  * request the server is known to refuse. The fields flow through ui-kit's
  * form family (FormLayout's responsive grid of FormField adapters), kept two
@@ -1795,7 +1865,7 @@ function AccountCreateForm({
   // service kind or a username; a service account signs in with a service
   // secret, so it needs no username, and a user account is opened with one
   // (an email address or phone number beside it does not stand in for it).
-  // Before that the submit is disabled, and the handler below refuses to
+  // Before that the submit is unavailable, and the handler below refuses to
   // send anyway.
   const watched = form.watch()
   const namesAnAccount =
@@ -1858,22 +1928,31 @@ function AccountCreateForm({
     })
   }
 
+  // The form's own submit is guarded as well: an implicit submission the
+  // submit button does not carry (Enter in a field, a programmatic submit)
+  // is swallowed while the write is in flight or the form names no account.
+  const guardedSubmit = useActivationGuard(onSubmit, {
+    busy: feedback.pending,
+    unavailable: !namesAnAccount,
+  })
+
   return (
     <>
       <FormLayout
         form={form}
-        onSubmit={onSubmit}
+        onSubmit={guardedSubmit}
         columns={2}
         maxWidth={false}
         actions={
-          <Button
+          <ActionButton
             type="submit"
-            variant="contained"
-            loading={feedback.pending}
-            disabled={feedback.pending || !namesAnAccount}
+            emphasis="primary"
+            busy={feedback.pending}
+            unavailable={!namesAnAccount}
+            unavailableReason={t('accounts.create.submitUnavailable')}
           >
             {t('accounts.create.submit')}
-          </Button>
+          </ActionButton>
         }
       >
         <FormField
@@ -2275,6 +2354,10 @@ function AccountDetailWrites({
   const [identifierValue, setIdentifierValue] = useState('')
   const [secretLabel, setSecretLabel] = useState('')
   const [secretExpires, setSecretExpires] = useState('')
+  // The attributes editor's helper text, so the patch control can point at
+  // the existing error text instead of repeating the reason.
+  const attributesFieldId = useId()
+  const attributesHelperId = `${attributesFieldId}-helper-text`
 
   // Declared attribute fields always hold serialized JSON the page wrote
   // itself, so there is nothing to mark invalid there.
@@ -2504,15 +2587,15 @@ function AccountDetailWrites({
               <MenuItem value="true">{t('accounts.mfa.required')}</MenuItem>
               <MenuItem value="false">{t('accounts.mfa.notRequired')}</MenuItem>
             </TextField>
-            <Button
+            <ActionButton
               type="button"
-              variant="outlined"
-              loading={feedback.mfa.pending}
-              disabled={feedback.mfa.pending || mfaUnchanged}
+              busy={feedback.mfa.pending}
+              unavailable={mfaUnchanged}
+              unavailableReason={t('accounts.mfa.unchanged')}
               onClick={() => writeMfa()}
             >
               {t('accounts.mfa.submit')}
-            </Button>
+            </ActionButton>
           </Box>
           <WriteFeedbackRegion outcome={feedback.mfa.outcome} />
         </>
@@ -2527,6 +2610,7 @@ function AccountDetailWrites({
         />
         {attributeFields === undefined ? (
           <TextField
+            id={attributesFieldId}
             size="small"
             value={attributes}
             onChange={(event) => setAttributes(event.target.value)}
@@ -2573,17 +2657,20 @@ function AccountDetailWrites({
           <MenuItem value="true">{t('accounts.patch.protected.true')}</MenuItem>
           <MenuItem value="false">{t('accounts.patch.protected.false')}</MenuItem>
         </TextField>
-        <Button
+        <ActionButton
           type="button"
-          variant="outlined"
-          loading={feedback.patch.pending}
-          disabled={
-            feedback.patch.pending || attributesInvalid || patchUnchanged
-          }
+          busy={feedback.patch.pending}
+          unavailable={attributesInvalid || patchUnchanged}
+          // The field already carries the parse error, so the control points
+          // at it rather than rendering the same reason again; the
+          // no-change case has no text on the page to borrow.
+          {...(attributesInvalid
+            ? { unavailableDescribedBy: attributesHelperId }
+            : { unavailableReason: t('accounts.patch.unchanged') })}
           onClick={() => writePatch()}
         >
           {t('accounts.patch.submit')}
-        </Button>
+        </ActionButton>
       </Box>
       <WriteFeedbackRegion outcome={feedback.patch.outcome} />
 
@@ -2597,15 +2684,15 @@ function AccountDetailWrites({
               onChange={(event) => setTempPassword(event.target.value)}
               label={t('accounts.password.label')}
             />
-            <Button
+            <ActionButton
               type="button"
-              variant="outlined"
-              loading={feedback.password.pending}
-              disabled={feedback.password.pending || tempPassword === ''}
+              busy={feedback.password.pending}
+              unavailable={tempPassword === ''}
+              unavailableReason={t('accounts.password.unavailable')}
               onClick={() => writePassword()}
             >
               {t('accounts.password.submit')}
-            </Button>
+            </ActionButton>
           </Box>
           <WriteFeedbackRegion outcome={feedback.password.outcome} />
         </>
@@ -2633,15 +2720,15 @@ function AccountDetailWrites({
           onChange={(event) => setIdentifierValue(event.target.value)}
           label={t('accounts.addIdentifier.valueLabel')}
         />
-        <Button
+        <ActionButton
           type="button"
-          variant="outlined"
-          loading={feedback.addIdentifier.pending}
-          disabled={feedback.addIdentifier.pending || identifierValue === ''}
+          busy={feedback.addIdentifier.pending}
+          unavailable={identifierValue === ''}
+          unavailableReason={t('accounts.addIdentifier.unavailable')}
           onClick={() => addOne()}
         >
           {t('accounts.addIdentifier.submit')}
-        </Button>
+        </ActionButton>
       </Box>
       <WriteFeedbackRegion outcome={feedback.addIdentifier.outcome} />
 
@@ -2661,15 +2748,15 @@ function AccountDetailWrites({
               label={t('accounts.createSecret.expiresLabel')}
               helperText={t('accounts.createSecret.expiresHelper')}
             />
-            <Button
+            <ActionButton
               type="button"
-              variant="outlined"
-              loading={feedback.createSecret.pending}
-              disabled={feedback.createSecret.pending || secretLabel === ''}
+              busy={feedback.createSecret.pending}
+              unavailable={secretLabel === ''}
+              unavailableReason={t('accounts.createSecret.unavailable')}
               onClick={() => createOne()}
             >
               {t('accounts.createSecret.submit')}
-            </Button>
+            </ActionButton>
           </Box>
           <WriteFeedbackRegion
             outcome={feedback.createSecret.outcome}
