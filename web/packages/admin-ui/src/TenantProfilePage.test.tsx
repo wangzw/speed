@@ -9,7 +9,7 @@
  * exactly as the operator typed it.
  */
 
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { attachSession } from '@speed/auth-core'
@@ -51,6 +51,21 @@ const CONFIRM_AGAIN_LABEL = (
     readonly confirmDialog: { readonly confirmAgainLabel: string }
   }
 ).confirmDialog.confirmAgainLabel
+
+/** A promise the case settles by hand, so one write can be held in flight. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+  readonly reject: (reason: unknown) => void
+} {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
 
 const ADA: AdminMember = {
   account: OWNER,
@@ -555,6 +570,83 @@ describe('TenantProfilePage ownership', () => {
     status: 'pending' as const,
   }
 
+  it('keeps the transfer control focusable and explains the pending request', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        getPendingOrganizationOwner: () => Promise.resolve(PENDING),
+      },
+    })
+    await ready()
+
+    // The pending read can land while the control holds focus: a native
+    // disable moves that focus to the document body, so the control stays
+    // focusable and points at the request that holds it.
+    const transfer = await screen.findByRole('button', {
+      name: zhCN.tenantProfile.ownership.transfer.button,
+    })
+    expect(transfer).toHaveAttribute('aria-disabled', 'true')
+    expect(transfer).not.toHaveAttribute('disabled')
+    expect(transfer).toHaveAccessibleDescription(
+      zhCN.tenantProfile.ownership.pending.description,
+    )
+
+    transfer.focus()
+    expect(transfer).toHaveFocus()
+    await user.click(transfer)
+    // The activation was swallowed: no dialog opened and focus stayed put.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(transfer).toHaveFocus()
+  })
+
+  it('keeps focus on the delete control while the delete is in flight', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    const removed = deferred<void>()
+    renderPage({
+      profile: ownerProfile(),
+      onOrganizationLeft: vi.fn(),
+      backend: { deleteOrganization: () => removed.promise },
+    })
+    await ready()
+
+    const remove = screen.getByRole('button', {
+      name: zhCN.tenantProfile.ownership.delete.button,
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog', { name: deleteTitle() })
+    await user.type(
+      within(dialog).getByLabelText(
+        zhCN.tenantProfile.ownership.delete.nameLabel,
+      ),
+      ORG_URL_NAME,
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.delete.confirmLabel,
+    )
+
+    // The confirmation closed and the write runs; the control that started
+    // it keeps its focus instead of handing it to the document body.
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: deleteTitle() })).toBeNull(),
+    )
+    expect(
+      document.activeElement,
+      `focus after confirming the delete; document.activeElement is ${
+        document.activeElement?.tagName ?? 'null'
+      }`,
+    ).toBe(remove)
+    expect(remove).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => {
+      removed.resolve()
+    })
+  })
+
   it('asks an active member to take ownership and shows the pending request without changing the owner', async () => {
     const user = userEvent.setup()
     attachAccount(OWNER)
@@ -590,7 +682,7 @@ describe('TenantProfilePage ownership', () => {
       screen.getByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,
       }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
 
     await user.click(
       screen.getByRole('button', {
@@ -676,13 +768,13 @@ describe('TenantProfilePage ownership', () => {
       screen.getByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,
       }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
     // Deletion stays available: the delete transaction settles the request.
     expect(
       screen.getByRole('button', {
         name: zhCN.tenantProfile.ownership.delete.button,
       }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('lets the owner cancel the pending request and keeps the ownership unchanged', async () => {
@@ -746,10 +838,71 @@ describe('TenantProfilePage ownership', () => {
       screen.getByRole('button', {
         name: zhCN.tenantProfile.ownership.transfer.button,
       }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
     expect(
       screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
     ).toBeInTheDocument()
+    // The pending panel took the cancel control out of the document; focus
+    // rests on the ownership card's own heading, which stays on screen.
+    expect(
+      screen.getByRole('heading', {
+        name: zhCN.tenantProfile.ownership.title,
+      }),
+    ).toHaveFocus()
+  })
+
+  it('leaves focus where the operator moved it when the cancel lands', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    const settled = deferred<void>()
+    let pending: typeof PENDING | null = PENDING
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        getPendingOrganizationOwner: () => Promise.resolve(pending),
+        cancelOrganizationOwner: () => {
+          pending = null
+          return settled.promise
+        },
+      },
+    })
+    await ready()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.tenantProfile.ownership.pending.cancel,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.tenantProfile.ownership.pending.cancelTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.tenantProfile.ownership.pending.cancelConfirm,
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', {
+          name: zhCN.tenantProfile.ownership.pending.cancelTitle,
+        }),
+      ).toBeNull(),
+    )
+    // The operator moves to the transfer control before the request settles;
+    // the landing must not pull focus back to the card heading.
+    const transfer = screen.getByRole('button', {
+      name: zhCN.tenantProfile.ownership.transfer.button,
+    })
+    transfer.focus()
+    await act(async () => {
+      settled.resolve()
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByText(zhCN.tenantProfile.ownership.pending.title),
+      ).toBeNull(),
+    )
+    expect(transfer).toHaveFocus()
   })
 
   it('keeps the controls off the page for a tenant administrator who is not the owner', async () => {
@@ -793,6 +946,49 @@ describe('TenantProfilePage ownership', () => {
         name: zhCN.tenantProfile.ownership.delete.button,
       }),
     ).toBeNull()
+  })
+
+  it('keeps the transfer submit unavailable with a reason until a target is chosen', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    const requests: unknown[] = []
+    renderPage({
+      profile: ownerProfile(),
+      backend: {
+        listMembers: () => Promise.resolve({ members: [BOB], next_cursor: '' }),
+        requestOrganizationOwner: (input) => {
+          requests.push(input)
+          return Promise.resolve(PENDING)
+        },
+      },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.transfer.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: transferTitle() })
+    const submit = within(dialog).getByRole('button', {
+      name: zhCN.tenantProfile.ownership.transfer.confirmLabel,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.tenantProfile.ownership.transfer.targetRequired,
+    )
+
+    // Activation is swallowed for click, Enter and Space: with no target
+    // chosen the confirmation never opens and nothing is written.
+    await user.click(submit)
+    submit.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(
+      within(dialog).queryByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    ).toBeNull()
+    expect(requests).toEqual([])
+    expect(document.activeElement).toBe(submit)
   })
 
   it('resolves a refused transfer to its readable text', async () => {
@@ -974,6 +1170,10 @@ describe('TenantProfilePage ownership', () => {
       name: zhCN.tenantProfile.ownership.delete.confirmLabel,
     })
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    // The typed-name guard states the mismatch on the confirming button.
+    expect(confirm).toHaveAccessibleDescription(
+      zhCN.tenantProfile.ownership.delete.nameMismatch,
+    )
 
     await user.type(
       within(dialog).getByLabelText(
@@ -1001,6 +1201,52 @@ describe('TenantProfilePage ownership', () => {
         name: zhCN.tenantProfile.ownership.delete.button,
       }),
     ).toBeNull()
+  })
+
+  it('keeps the confirmation in the card and lands focus on its heading when the host does not depart', async () => {
+    const user = userEvent.setup()
+    attachAccount(OWNER)
+    renderPage({
+      profile: ownerProfile(),
+      backend: { deleteOrganization: () => Promise.resolve() },
+    })
+    await ready()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', { name: deleteTitle() })
+    await user.type(
+      within(dialog).getByLabelText(
+        zhCN.tenantProfile.ownership.delete.nameLabel,
+      ),
+      ORG_URL_NAME,
+    )
+    await armAndConfirm(
+      user,
+      dialog,
+      zhCN.tenantProfile.ownership.delete.confirmLabel,
+    )
+
+    const message = zhCN.tenantProfile.ownership.delete.saved.replace(
+      '{{name}}',
+      ORG_NAME,
+    )
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.tenantProfile.ownership.delete.button,
+      }),
+    ).toBeNull()
+    // The withdrawn controls left nothing to hold the focus the delete
+    // started with; the card's heading is the stable landmark that takes it.
+    expect(
+      screen.getByRole('heading', {
+        name: zhCN.tenantProfile.ownership.title,
+      }),
+    ).toHaveFocus()
   })
 
   it('names the conflict when the delete meets a 409', async () => {
