@@ -198,6 +198,18 @@ function section(name: string): HTMLElement {
   return element as HTMLElement
 }
 
+/** The remove control of the member row that shows the given display name. */
+function removeInRow(displayName: string): HTMLElement {
+  const cell = screen.getByText(displayName)
+  const row = cell.closest('tr')
+  if (row === null) {
+    throw new Error(`no member row for ${displayName}`)
+  }
+  return within(row as HTMLElement).getByRole('button', {
+    name: zhCN.members.remove,
+  })
+}
+
 /** jsdom implements no layout; a scroll observer installs this stub. */
 function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   const spy = vi.fn()
@@ -2793,7 +2805,7 @@ describe('InvitationsPage', () => {
     // No account chosen: the picker holds no id yet.
     expect(
       screen.getByRole('button', { name: zhCN.members.write.submit }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
     // A display name finds the account; the write carries its id ("acc-2"),
     // never the typed name.
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
@@ -3617,5 +3629,506 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await screen.findByText('ada@example.com')
     await expectNoAxeViolations()
+  })
+})
+
+describe('InvitationsPage write controls stay focusable', () => {
+  it('keeps the issue control focused and busy while the invitation is sent', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTenant({
+      issueInvitation: () =>
+        pending.promise.then(() => issuedInvitationFixture()),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    await user.click(submit)
+
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    await waitForCondition(() =>
+      expect(submit).not.toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(submit).toHaveFocus()
+  })
+
+  it('keeps the issue control focusable and names the missing address', async () => {
+    const user = userEvent.setup()
+    const issueInvitation = vi.fn(() =>
+      Promise.resolve(issuedInvitationFixture()),
+    )
+    renderWithProviders(<InvitationsPage />, {
+      operations: withTenant({ issueInvitation }),
+    })
+    await pickTenant(user)
+    const submit = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.invitations.issue.emailRequired,
+    )
+
+    submit.focus()
+    fireEvent.click(submit)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(submit).toHaveFocus()
+    expect(issueInvitation).not.toHaveBeenCalled()
+  })
+
+  it('keeps the member write control focused and busy while the membership is saved', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTenant({ writeMember: () => pending.promise })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await chooseAccount(
+      user,
+      zhCN.members.write.accountLabel,
+      'Ada',
+      'Ada (ada)',
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.members.write.submit,
+    })
+    await user.click(submit)
+
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    await waitForCondition(() =>
+      expect(submit).not.toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(submit).toHaveFocus()
+  })
+
+  it('keeps the member write control focusable and names the missing account', async () => {
+    const user = userEvent.setup()
+    const writeMember = vi.fn(() => Promise.resolve())
+    renderWithProviders(<InvitationsPage />, {
+      operations: withTenant({ writeMember }),
+    })
+    await pickTenant(user)
+    const submit = screen.getByRole('button', {
+      name: zhCN.members.write.submit,
+    })
+
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.members.write.accountRequired,
+    )
+
+    submit.focus()
+    fireEvent.click(submit)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(submit).toHaveFocus()
+    expect(writeMember).not.toHaveBeenCalled()
+  })
+
+  it('keeps the SSO toggle focused and marks the remove control unavailable while it runs', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Member One' })]),
+      setMemberSsoExempt: () => pending.promise,
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Member One')
+    const toggle = screen.getByRole('button', {
+      name: zhCN.members.ssoExemptSet,
+    })
+    const remove = screen.getByRole('button', { name: zhCN.members.remove })
+    await user.click(toggle)
+
+    expect(toggle).toHaveFocus()
+    expect(toggle).toHaveAttribute('aria-busy', 'true')
+    // The other control in the row belongs to the same scope: unavailable,
+    // not busy, and with no reason of its own.
+    expect(remove).toHaveAttribute('aria-disabled', 'true')
+    expect(remove).not.toHaveAttribute('aria-busy')
+    expect(remove).not.toHaveAttribute('aria-describedby')
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    await waitForCondition(() =>
+      expect(remove).not.toHaveAttribute('aria-disabled', 'true'),
+    )
+  })
+
+  it('keeps the remove control focused and marks the SSO toggle unavailable while it runs', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Member One' })]),
+      removeMember: () => pending.promise,
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Member One')
+    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    const remove = screen.getByRole('button', { name: zhCN.members.remove })
+    const toggle = screen.getByRole('button', {
+      name: zhCN.members.ssoExemptSet,
+    })
+    await waitForCondition(() => expect(remove).toHaveFocus())
+    expect(remove).toHaveAttribute('aria-busy', 'true')
+    expect(toggle).toHaveAttribute('aria-disabled', 'true')
+    expect(toggle).not.toHaveAttribute('aria-busy')
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    await waitForCondition(() =>
+      expect(toggle).not.toHaveAttribute('aria-disabled', 'true'),
+    )
+  })
+
+  it('moves focus to the next row after a removal lands', async () => {
+    const user = userEvent.setup()
+    let members = [
+      member({ account: 'acc-a', display_name: 'Alpha', username: 'alpha' }),
+      member({ account: 'acc-b', display_name: 'Bravo', username: 'bravo' }),
+      member({ account: 'acc-c', display_name: 'Charlie', username: 'charlie' }),
+    ]
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([...members]),
+      removeMember: (input) => {
+        members = members.filter((row) => row.account !== input.account)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Bravo')
+
+    await user.click(removeInRow('Bravo'))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    await waitForCondition(() => expect(screen.queryByText('Bravo')).toBeNull())
+    await waitForCondition(() => expect(removeInRow('Charlie')).toHaveFocus())
+  })
+
+  it('moves focus to the previous row after the last row is removed', async () => {
+    const user = userEvent.setup()
+    let members = [
+      member({ account: 'acc-a', display_name: 'Alpha', username: 'alpha' }),
+      member({ account: 'acc-b', display_name: 'Bravo', username: 'bravo' }),
+    ]
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([...members]),
+      removeMember: (input) => {
+        members = members.filter((row) => row.account !== input.account)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Bravo')
+
+    await user.click(removeInRow('Bravo'))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    await waitForCondition(() => expect(screen.queryByText('Bravo')).toBeNull())
+    await waitForCondition(() => expect(removeInRow('Alpha')).toHaveFocus())
+  })
+
+  it('moves focus to the member list container when the only row is removed', async () => {
+    const user = userEvent.setup()
+    let members = [
+      member({ account: 'acc-b', display_name: 'Bravo', username: 'bravo' }),
+    ]
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([...members]),
+      removeMember: (input) => {
+        members = members.filter((row) => row.account !== input.account)
+        return Promise.resolve()
+      },
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Bravo')
+
+    await user.click(removeInRow('Bravo'))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    await waitForCondition(() => expect(screen.queryByText('Bravo')).toBeNull())
+    await waitForCondition(() =>
+      expect(screen.getByRole('group', { name: zhCN.members.title })).toHaveFocus(),
+    )
+  })
+})
+
+describe('InvitationsPage removal focus guards', () => {
+  it('leaves focus where the reader moved it when a removal lands', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    let rows = [
+      member({ account: 'acc-a', display_name: 'Alpha', username: 'alpha' }),
+      member({ account: 'acc-b', display_name: 'Bravo', username: 'bravo' }),
+      member({ account: 'acc-c', display_name: 'Charlie', username: 'charlie' }),
+    ]
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([...rows]),
+      removeMember: (input) =>
+        pending.promise.then(() => {
+          rows = rows.filter((row) => row.account !== input.account)
+        }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Bravo')
+
+    await user.click(removeInRow('Bravo'))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    // The reader moves focus to another row while the write is in flight.
+    const alpha = removeInRow('Alpha')
+    alpha.focus()
+    expect(alpha).toHaveFocus()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+    await waitForCondition(() => expect(screen.queryByText('Bravo')).toBeNull())
+    expect(alpha).toHaveFocus()
+  })
+
+  it('forgets the removal when its re-read fails, so a later read leaves focus alone', async () => {
+    const user = userEvent.setup()
+    let fail = false
+    let page = 0
+    const listMembers = vi.fn(() => {
+      if (fail) {
+        return Promise.reject({ status: 500, code: 'client.http.500' })
+      }
+      return page === 0
+        ? Promise.resolve({
+            members: [
+              member({ account: 'acc-b', display_name: 'Bravo', username: 'bravo' }),
+              member({ account: 'acc-c', display_name: 'Charlie', username: 'charlie' }),
+            ],
+            next_cursor: 'c2',
+          })
+        : Promise.resolve({
+            members: [
+              member({ account: 'acc-d', display_name: 'Delta', username: 'delta' }),
+            ],
+            next_cursor: '',
+          })
+    })
+    const operations = withTenant({
+      listMembers,
+      removeMember: () => Promise.resolve(),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Bravo')
+
+    await user.click(removeInRow('Bravo'))
+    const dialog = await screen.findByRole('dialog')
+    // The write lands but the re-read that confirms it fails. The failed
+    // read must drop the remembered row; otherwise a later successful read
+    // moves focus on its own.
+    fail = true
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+    )
+    await waitForCondition(() => expect(listMembers.mock.calls.length).toBeGreaterThan(1))
+    await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fail = false
+
+    // The stale list still shows the removed row. Focus its control, then
+    // change the page: the control leaves with the old page and focus drops
+    // to the body, the one place a remembered removal would take over.
+    const staleTrigger = removeInRow('Bravo')
+    staleTrigger.focus()
+    expect(staleTrigger).toHaveFocus()
+
+    page = 1
+    fireEvent.click(screen.getByRole('button', { name: zhCN.common.pager.next }))
+    await screen.findByText('Delta')
+    expect(document.activeElement).toBe(document.body)
+  })
+})
+
+describe('InvitationsPage write attribution', () => {
+  it('marks the issue control unavailable, not busy, while a resend is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const issueInvitation = vi.fn(() =>
+      Promise.resolve(issuedInvitationFixture()),
+    )
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({
+          invitations: [invitation()],
+          next_cursor: '',
+        }),
+      resendInvitation: () =>
+        pending.promise.then(() => issuedInvitationFixture()),
+      issueInvitation,
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('ada@example.com')
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+
+    await chooseInvitationAction(
+      user,
+      'ada@example.com',
+      zhCN.invitations.resend,
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.common.confirm }),
+    )
+
+    const issue = screen.getByRole('button', {
+      name: zhCN.invitations.issue.submit,
+    })
+    expect(issue).toHaveAttribute('aria-disabled', 'true')
+    expect(issue).not.toHaveAttribute('aria-busy')
+    fireEvent.click(issue)
+    issue.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(issueInvitation).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks the membership-write control unavailable, not busy, while a row write is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const writeMember = vi.fn(() => Promise.resolve())
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ display_name: 'Member One' })]),
+      setMemberSsoExempt: () => pending.promise,
+      writeMember,
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Member One')
+    await chooseAccount(
+      user,
+      zhCN.members.write.accountLabel,
+      'Ada',
+      'Ada (ada)',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.members.ssoExemptSet }),
+    )
+
+    const submit = screen.getByRole('button', {
+      name: zhCN.members.write.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toHaveAttribute('aria-busy')
+    fireEvent.click(submit)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(writeMember).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
+  })
+
+  it('marks the row controls unavailable, not busy, while the membership write is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<void>()
+    const removeMember = vi.fn(() => Promise.resolve())
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([member({ display_name: 'Member One' })]),
+      writeMember: () => pending.promise,
+      removeMember,
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Member One')
+    await chooseAccount(
+      user,
+      zhCN.members.write.accountLabel,
+      'Ada',
+      'Ada (ada)',
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.members.write.submit,
+    })
+    await user.click(submit)
+
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    const remove = screen.getByRole('button', { name: zhCN.members.remove })
+    expect(remove).toHaveAttribute('aria-disabled', 'true')
+    expect(remove).not.toHaveAttribute('aria-busy')
+    expect(remove).not.toHaveAttribute('aria-describedby')
+    fireEvent.click(remove)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(removeMember).not.toHaveBeenCalled()
+    expect(
+      screen.queryByRole('dialog', { name: zhCN.members.removeTitle }),
+    ).toBeNull()
+
+    await act(async () => {
+      pending.resolve()
+      await pending.promise
+    })
   })
 })
