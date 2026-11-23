@@ -11,7 +11,6 @@ replace github.com/vislake/speed/pkg => ../../../pkg
 require (
 	github.com/beevik/etree v1.8.1
 	github.com/gin-gonic/gin v1.12.0
-	github.com/google/uuid v1.6.0
 	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/vislake/speed/pkg v0.0.0
 	go.yaml.in/yaml/v3 v3.0.6
@@ -55,6 +54,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
