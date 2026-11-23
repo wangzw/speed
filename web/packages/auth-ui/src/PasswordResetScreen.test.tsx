@@ -62,6 +62,49 @@ function stableSentence(alert: HTMLElement): HTMLElement | null {
   return alert.querySelector<HTMLElement>('span:not([aria-hidden])')
 }
 
+/** A send the test settles by hand, so the in-flight state is observable. */
+function deferredSend() {
+  let reject: (error: unknown) => void = () => undefined
+  const requestReset = vi.fn(
+    () =>
+      new Promise<PasswordResetSent>((_resolve, settle) => {
+        reject = settle
+      }),
+  )
+  return { requestReset, reject: (error: unknown) => reject(error) }
+}
+
+/** A password write the test settles by hand, so the in-flight state and a
+ * focus the viewer moves during it are both observable. */
+function deferredComplete() {
+  let settle: () => void = () => undefined
+  const completeReset = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        settle = resolve
+      }),
+  )
+  return { completeReset, settle: () => settle() }
+}
+
+/** A verify step the test settles by hand. */
+function deferredVerify() {
+  let settle: (value: PasswordResetVerified) => void = () => undefined
+  const verifyReset = vi.fn(
+    () =>
+      new Promise<PasswordResetVerified>((resolve) => {
+        settle = resolve
+      }),
+  )
+  return { verifyReset, settle: () => settle(VERIFIED) }
+}
+
+/** The gate that holds nothing: a send leaves at once, with no proof. */
+const OPEN_GATE = {
+  phone: { required: false as const, provider: 'off' as const },
+  other: { required: false as const, provider: 'off' as const },
+}
+
 function resetOperations(
   overrides: Partial<PasswordResetOperations> = {},
 ): PasswordResetOperations {
@@ -214,6 +257,66 @@ describe('PasswordResetScreen', () => {
     expect(onDone).not.toHaveBeenCalled()
   })
 
+  it('land on the sent surface when the identifier submits by Enter', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <PasswordResetScreen
+        session={session()}
+        channels={['email']}
+        operations={resetOperations()}
+        humanGate={OPEN_GATE}
+      />,
+    )
+    const identifier = screen.getByLabelText(zhCN.passwordReset.emailLabel)
+    await user.type(identifier, MAIL)
+    await user.keyboard('{Enter}')
+    await screen.findByText(zhCN.passwordReset.sentNotice)
+
+    // The identifier field the viewer submitted from left with the request
+    // surface; focus lands on the sent surface's first control instead of
+    // the document body.
+    expect(
+      screen.getByLabelText(zhCN.passwordReset.codeLabel),
+    ).toHaveFocus()
+  })
+
+  it('leave focus the viewer moved while a send is in flight', async () => {
+    let resolveSend: (value: PasswordResetSent) => void = () => undefined
+    const requestReset = vi.fn(
+      () =>
+        new Promise<PasswordResetSent>((resolve) => {
+          resolveSend = resolve
+        }),
+    )
+    const user = userEvent.setup()
+    renderWithProviders(
+      <>
+        <PasswordResetScreen
+          session={session()}
+          channels={['email']}
+          operations={resetOperations({ requestReset })}
+          humanGate={OPEN_GATE}
+        />
+        <button type="button">outside</button>
+      </>,
+    )
+    const identifier = screen.getByLabelText(zhCN.passwordReset.emailLabel)
+    await user.type(identifier, MAIL)
+    await user.keyboard('{Enter}')
+    const outside = screen.getByRole('button', { name: 'outside' })
+    await user.click(outside)
+    expect(outside).toHaveFocus()
+
+    await act(async () => {
+      resolveSend(SENT)
+      await Promise.resolve()
+    })
+    await screen.findByText(zhCN.passwordReset.sentNotice)
+    // The removal did not take the focus: the viewer chose this place while
+    // the send ran, so the landing must not take it back.
+    expect(outside).toHaveFocus()
+  })
+
   it('keep the phone control on the SMS channel alone and refuse a short number locally', async () => {
     const requestReset = vi.fn(() => Promise.resolve(SENT))
     renderWithProviders(
@@ -352,7 +455,7 @@ describe('PasswordResetScreen', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(waitSentence(30))
       expect(
         screen.getByRole('button', { name: zhCN.passwordReset.send }),
-      ).toBeDisabled()
+      ).toHaveAttribute('aria-disabled', 'true')
 
       fireEvent.click(
         screen.getByRole('button', { name: zhCN.passwordReset.channel.sms }),
@@ -361,7 +464,7 @@ describe('PasswordResetScreen', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(
         screen.getByRole('button', { name: zhCN.passwordReset.send }),
-      ).toBeEnabled()
+      ).not.toHaveAttribute('aria-disabled', 'true')
     } finally {
       vi.useRealTimers()
     }
@@ -395,7 +498,12 @@ describe('PasswordResetScreen', () => {
       // asked gives way until the proof is in hand.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
-      expect(send).toBeDisabled()
+      // The control that asked stays where it was and says its send is in
+      // flight while the proof is obtained.
+      expect(send).toHaveFocus()
+      expect(send).toBeEnabled()
+      expect(send).toHaveAttribute('aria-disabled', 'true')
+      expect(send).toHaveAttribute('aria-busy', 'true')
       expect(requestReset).not.toHaveBeenCalled()
 
       act(() => {
@@ -413,6 +521,407 @@ describe('PasswordResetScreen', () => {
     } finally {
       fake.restore()
     }
+  })
+
+  it('keep the send control focused and reachable through the send and a stated wait', async () => {
+    const { requestReset, reject } = deferredSend()
+    renderWithProviders(
+      <PasswordResetScreen
+        session={session()}
+        channels={['email']}
+        operations={resetOperations({ requestReset })}
+        humanGate={OPEN_GATE}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.passwordReset.emailLabel), MAIL)
+    const send = screen.getByRole('button', { name: zhCN.passwordReset.send })
+    await user.click(send)
+
+    // In flight: the control that asked keeps the focus and says so.
+    expect(send).toHaveFocus()
+    expect(send).toBeEnabled()
+    expect(send).toHaveAttribute('aria-disabled', 'true')
+    expect(send).toHaveAttribute('aria-busy', 'true')
+    // An implicit submission from a field is swallowed while it is in flight.
+    const form = send.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+    expect(requestReset).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      reject(
+        new ApiError({
+          status: 429,
+          code: 'authn.throttled',
+          attempts: 1,
+          retryAfterMs: 30000,
+        }),
+      )
+      await Promise.resolve()
+    })
+
+    // The stated wait holds the control without moving it: still focusable,
+    // no longer in flight, and described by the wait it is held for.
+    expect(send).toHaveFocus()
+    expect(send).toBeEnabled()
+    expect(send).toHaveAttribute('aria-disabled', 'true')
+    expect(send).not.toHaveAttribute('aria-busy')
+    expect(send).toHaveAccessibleDescription(waitSentence(30))
+    await user.click(send)
+    expect(requestReset).toHaveBeenCalledTimes(1)
+    fireEvent.submit(form as HTMLFormElement)
+    expect(requestReset).toHaveBeenCalledTimes(1)
+
+    // Reachable with Tab: the held state is not a native disabling.
+    send.blur()
+    await user.tab()
+    await user.tab()
+    expect(send).toHaveFocus()
+  })
+
+  it('keep the resend control focused through its send and the stated wait', async () => {
+    const { requestReset: resendRequest, reject } = deferredSend()
+    const requestReset = vi
+      .fn()
+      .mockResolvedValueOnce({ ...SENT, resendAfter: 0 })
+      .mockImplementationOnce(resendRequest)
+    renderWithProviders(
+      <PasswordResetScreen
+        session={session()}
+        channels={['email']}
+        operations={resetOperations({ requestReset })}
+        humanGate={OPEN_GATE}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.passwordReset.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.send }),
+    )
+    await screen.findByText(zhCN.passwordReset.sentNotice)
+    const resend = screen.getByRole('button', {
+      name: zhCN.passwordReset.resend,
+    })
+    await user.click(resend)
+
+    // In flight: the resend control itself carries the progress state; the
+    // form's other action is held for the same one attempt, without a
+    // reason of its own.
+    expect(resend).toHaveFocus()
+    expect(resend).toBeEnabled()
+    expect(resend).toHaveAttribute('aria-disabled', 'true')
+    expect(resend).toHaveAttribute('aria-busy', 'true')
+    const submit = screen.getByRole('button', {
+      name: zhCN.passwordReset.submit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toHaveAttribute('aria-busy')
+    expect(submit).not.toHaveAttribute('aria-describedby')
+
+    await act(async () => {
+      reject(
+        new ApiError({
+          status: 429,
+          code: 'authn.throttled',
+          attempts: 1,
+          retryAfterMs: 30000,
+        }),
+      )
+      await Promise.resolve()
+    })
+
+    // The stated wait holds it in place. Its visible label carries no
+    // interval here (the resend interval already elapsed), so it is
+    // described by the wait the banner counts down.
+    expect(resend).toHaveFocus()
+    expect(resend).toBeEnabled()
+    expect(resend).toHaveAttribute('aria-disabled', 'true')
+    expect(resend).not.toHaveAttribute('aria-busy')
+    expect(resend).toHaveAccessibleDescription(waitSentence(30))
+    await user.click(resend)
+    expect(requestReset).toHaveBeenCalledTimes(2)
+  })
+
+  it('describe the resend with the stated wait when it is throttled again', async () => {
+    vi.useFakeTimers()
+    try {
+      let rejectResend: (error: unknown) => void = () => undefined
+      const requestReset = vi
+        .fn()
+        .mockResolvedValueOnce({ ...SENT, resendAfter: 0 })
+        .mockImplementationOnce(
+          () =>
+            new Promise<PasswordResetSent>((_resolve, reject) => {
+              rejectResend = reject
+            }),
+        )
+        .mockRejectedValueOnce(
+          new ApiError({
+            status: 429,
+            code: 'authn.throttled',
+            attempts: 1,
+            retryAfterMs: 3000,
+          }),
+        )
+      renderWithProviders(
+        <PasswordResetScreen
+          session={session()}
+          channels={['email']}
+          operations={resetOperations({ requestReset })}
+          humanGate={OPEN_GATE}
+        />,
+      )
+      fireEvent.change(
+        screen.getByLabelText(zhCN.passwordReset.emailLabel),
+        { target: { value: MAIL } },
+      )
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: zhCN.passwordReset.send }),
+        )
+        await Promise.resolve()
+      })
+      const resend = screen.getByRole('button', {
+        name: zhCN.passwordReset.resend,
+      })
+
+      // The first resend is throttled: the stated wait holds it and is the
+      // description it carries.
+      await act(async () => {
+        fireEvent.click(resend)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        rejectResend(
+          new ApiError({
+            status: 429,
+            code: 'authn.throttled',
+            attempts: 1,
+            retryAfterMs: 3000,
+          }),
+        )
+        await Promise.resolve()
+      })
+      expect(resend).toHaveAttribute('aria-disabled', 'true')
+      expect(resend).toHaveAccessibleDescription(waitSentence(3))
+
+      // Once the wait elapses the control is available again; a second
+      // throttled answer describes it by the new wait just the same.
+      act(() => {
+        vi.advanceTimersByTime(3000)
+      })
+      expect(resend).not.toHaveAttribute('aria-disabled', 'true')
+      expect(resend).not.toHaveAccessibleDescription(waitSentence(3))
+      await act(async () => {
+        fireEvent.click(resend)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(resend).toHaveAttribute('aria-disabled', 'true')
+      expect(resend).toHaveAccessibleDescription(waitSentence(3))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('land on the done heading and leave the way back next', async () => {
+    const onBackToSignIn = vi.fn()
+    const user = await reachSent(resetOperations(), { onBackToSignIn })
+    await fillCodeAndPassword(user)
+
+    const heading = await screen.findByRole('heading', {
+      name: zhCN.passwordReset.doneTitle,
+    })
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    // The form's submit left with the surface; focus lands on the completion
+    // heading, which assistive technology reads, not on its way-back button.
+    expect(heading).toHaveFocus()
+    // The way back is the next stop in the tab order after the heading.
+    await user.tab()
+    expect(
+      screen.getByRole('button', { name: zhCN.passwordReset.backToSignIn }),
+    ).toHaveFocus()
+  })
+
+  it('land on the done heading when the host binds no exit', async () => {
+    const user = await reachSent(resetOperations())
+    await fillCodeAndPassword(user)
+
+    const heading = await screen.findByRole('heading', {
+      name: zhCN.passwordReset.doneTitle,
+    })
+    expect(heading).toHaveAttribute('tabindex', '-1')
+    expect(heading).toHaveFocus()
+  })
+
+  it('leave the focus the viewer moved during the write where it is', async () => {
+    const { completeReset, settle } = deferredComplete()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <>
+        <PasswordResetScreen
+          session={session()}
+          channels={['email']}
+          operations={resetOperations({ completeReset })}
+        />
+        <button type="button">outside</button>
+      </>,
+    )
+    await user.type(screen.getByLabelText(zhCN.passwordReset.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.send }),
+    )
+    await screen.findByText(zhCN.passwordReset.sentNotice)
+    await user.type(screen.getByLabelText(zhCN.passwordReset.codeLabel), CODE)
+    await user.type(
+      screen.getByLabelText(zhCN.passwordReset.newPasswordLabel),
+      NEW_PASSWORD,
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordReset.confirmPasswordLabel),
+      NEW_PASSWORD,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.submit }),
+    )
+    const outside = screen.getByRole('button', { name: 'outside' })
+    await user.click(outside)
+    expect(outside).toHaveFocus()
+
+    await act(async () => {
+      settle()
+      await Promise.resolve()
+    })
+    await screen.findByRole('heading', { name: zhCN.passwordReset.doneTitle })
+    // The removal did not take the focus: the viewer chose this place
+    // while the write ran, so the landing must not take it back.
+    expect(outside).toHaveFocus()
+  })
+
+  it('keep the code submit available while a held resend waits for its proof', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const verifyReset = vi.fn(() => Promise.resolve(VERIFIED))
+      const requestReset = vi
+        .fn()
+        .mockResolvedValueOnce({ ...SENT, resendAfter: 0 })
+        .mockResolvedValueOnce(SENT)
+      renderWithProviders(
+        <PasswordResetScreen
+          session={session()}
+          channels={['email']}
+          operations={resetOperations({ requestReset, verifyReset })}
+          humanGate={{
+            phone: { required: false, provider: 'off' },
+            other: { required: true, provider: 'turnstile', site_key: 'site-1' },
+          }}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.type(
+        screen.getByLabelText(zhCN.passwordReset.emailLabel),
+        MAIL,
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.passwordReset.send }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('proof-1')
+      })
+      await screen.findByText(zhCN.passwordReset.sentNotice)
+      // The viewer already holds a code from the first send.
+      await user.type(
+        screen.getByLabelText(zhCN.passwordReset.codeLabel),
+        CODE,
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.passwordReset.newPasswordLabel),
+        NEW_PASSWORD,
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.passwordReset.confirmPasswordLabel),
+        NEW_PASSWORD,
+      )
+
+      const resend = screen.getByRole('button', {
+        name: zhCN.passwordReset.resend,
+      })
+      await user.click(resend)
+      // The resend itself waits on its proof: it stays where it was and
+      // reports that state instead of leaving the surface.
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      expect(resend).toHaveFocus()
+      expect(resend).toHaveAttribute('aria-disabled', 'true')
+      expect(resend).toHaveAttribute('aria-busy', 'true')
+
+      // The code submit is not the control that is waiting, so it stays
+      // available and the form guard lets it through.
+      const submit = screen.getByRole('button', {
+        name: zhCN.passwordReset.submit,
+      })
+      expect(submit).not.toHaveAttribute('aria-disabled', 'true')
+      expect(submit).not.toHaveAttribute('aria-busy')
+      await user.click(submit)
+      await waitFor(() =>
+        expect(verifyReset).toHaveBeenCalledWith({ code: CODE }),
+      )
+      expect(requestReset).toHaveBeenCalledTimes(1)
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('hold the resend, not busy, while the code submit writes', async () => {
+    const { verifyReset, settle } = deferredVerify()
+    const requestReset = vi
+      .fn()
+      .mockResolvedValueOnce({ ...SENT, resendAfter: 0 })
+    renderWithProviders(
+      <PasswordResetScreen
+        session={session()}
+        channels={['email']}
+        operations={resetOperations({ requestReset, verifyReset })}
+        humanGate={OPEN_GATE}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText(zhCN.passwordReset.emailLabel), MAIL)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.send }),
+    )
+    await screen.findByText(zhCN.passwordReset.sentNotice)
+    await user.type(screen.getByLabelText(zhCN.passwordReset.codeLabel), CODE)
+    await user.type(
+      screen.getByLabelText(zhCN.passwordReset.newPasswordLabel),
+      NEW_PASSWORD,
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordReset.confirmPasswordLabel),
+      NEW_PASSWORD,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordReset.submit }),
+    )
+
+    // The submit started the write, so it is the one reporting it; the
+    // resend in the same attempt scope is held without a reason.
+    const resend = screen.getByRole('button', {
+      name: zhCN.passwordReset.resend,
+    })
+    expect(resend).toHaveAttribute('aria-disabled', 'true')
+    expect(resend).not.toHaveAttribute('aria-busy')
+    expect(resend).not.toHaveAttribute('aria-describedby')
+    await user.click(resend)
+    fireEvent.keyDown(resend, { key: 'Enter' })
+    expect(requestReset).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      settle()
+      await Promise.resolve()
+    })
+    await screen.findByRole('heading', { name: zhCN.passwordReset.doneTitle })
   })
 
   it('runs the other surface for an email reset', async () => {
@@ -584,11 +1093,15 @@ describe('PasswordResetScreen', () => {
         )
         await Promise.resolve()
       })
-      expect(
-        screen.getByRole('button', {
-          name: zhCN.passwordReset.resendIn.replace('{{seconds}}', '30'),
-        }),
-      ).toBeDisabled()
+      const resendWaiting = screen.getByRole('button', {
+        name: zhCN.passwordReset.resendIn.replace('{{seconds}}', '30'),
+      })
+      expect(resendWaiting).toHaveAttribute('aria-disabled', 'true')
+      // Focusable: its visible text carries the interval, and it stays in
+      // the tab order instead of being natively disabled.
+      expect(resendWaiting).toBeEnabled()
+      fireEvent.click(resendWaiting)
+      expect(requestReset).toHaveBeenCalledTimes(1)
       act(() => {
         vi.advanceTimersByTime(29000)
       })
@@ -596,7 +1109,7 @@ describe('PasswordResetScreen', () => {
         screen.getByRole('button', {
           name: zhCN.passwordReset.resendIn.replace('{{seconds}}', '1'),
         }),
-      ).toBeDisabled()
+      ).toHaveAttribute('aria-disabled', 'true')
       act(() => {
         vi.advanceTimersByTime(1000)
       })
@@ -649,7 +1162,7 @@ describe('PasswordResetScreen', () => {
       const send = screen.getByRole('button', {
         name: zhCN.passwordReset.send,
       })
-      expect(send).toBeDisabled()
+      expect(send).toHaveAttribute('aria-disabled', 'true')
 
       const alert = screen.getByRole('alert')
       // The banner names the wait the answer stated; the sentence assistive
@@ -663,14 +1176,14 @@ describe('PasswordResetScreen', () => {
       })
       expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
       expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
-      expect(send).toBeDisabled()
+      expect(send).toHaveAttribute('aria-disabled', 'true')
 
       // One millisecond before the stated boundary the control is still
       // disabled, so an implementation that waits less cannot pass.
       act(() => {
         vi.advanceTimersByTime(1999)
       })
-      expect(send).toBeDisabled()
+      expect(send).toHaveAttribute('aria-disabled', 'true')
 
       // At the boundary the control re-enables and the painted sentence
       // drops the number -- with no stale "0 seconds" -- while the banner
@@ -678,7 +1191,7 @@ describe('PasswordResetScreen', () => {
       act(() => {
         vi.advanceTimersByTime(1)
       })
-      expect(send).toBeEnabled()
+      expect(send).not.toHaveAttribute('aria-disabled', 'true')
       expect(visibleSentence(alert)).toHaveTextContent(
         zhCN.errors.authn.throttled,
       )
