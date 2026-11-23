@@ -157,9 +157,12 @@ export interface AccountSelectorProps {
   /** Called with the chosen account, or null when the choice is cleared. */
   readonly onChange: (account: AdminAccount | null) => void
   /**
-   * Whether the picker is disabled. A page disables it while a scope the
-   * chosen account drives has a write in flight: a change would reset that
-   * scope and leave a settling attempt describing the account left behind.
+   * Whether the picker is disabled. This is a selection-shaped context
+   * control, so it stays natively disabled while a write into a scope the
+   * chosen account addresses is in flight: a change would reset that scope
+   * and leave a settling attempt describing the account left behind. The
+   * write is started from another control, so focus is not on the picker
+   * while it is disabled.
    */
   readonly disabled?: boolean
   /**
