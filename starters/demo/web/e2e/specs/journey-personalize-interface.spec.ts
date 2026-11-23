@@ -87,6 +87,7 @@ import {
   selectAccountSection,
 } from '../helpers/account-sections'
 import { copy, type CopyLocale } from '../helpers/i18n'
+import { chooseSelectOption } from '../helpers/select-option'
 
 // The seeded member holds no platform permission and starts with no stored
 // language or time zone: the template's seed carries the operator alone, so
@@ -405,8 +406,14 @@ test('personalize-interface: the chosen language and time zone take effect and s
     // The option carries its BCP-47 tag as a data attribute, so the choice is
     // addressed by the value the product stores, not by a name either side's
     // ICU might spell differently.
-    await languageSelect(page, 'en-US').click()
-    await page.locator('[role="option"][data-value="zh-CN"]').click()
+    // The control re-renders the chosen language in the new interface
+    // language, so its closed label is asserted below, from the rendered
+    // option, rather than against the label the option had in en-US.
+    await chooseSelectOption(
+      languageSelect(page, 'en-US'),
+      page.locator('[role="option"][data-value="zh-CN"]'),
+      null,
+    )
 
     // No reload: the page heading, navigation, browser tab title and document
     // language all follow the switch in place.
@@ -464,10 +471,10 @@ test('personalize-interface: the chosen language and time zone take effect and s
       copy('accountUi', 'preferences.timezone.notChosen', {}, CHOSEN_LOCALE),
     )
 
-    await timeZone.click()
-    await page
-      .getByRole('option', { name: CHOSEN_ZONE, exact: true })
-      .click()
+    await chooseSelectOption(
+      timeZone,
+      page.getByRole('option', { name: CHOSEN_ZONE, exact: true }),
+    )
 
     // The success text names the zone and sits beneath the control.
     await expect(
@@ -625,13 +632,13 @@ test('personalize-interface: the color mode applies at once, follows the device 
     await expect(select).toHaveText(colorModeOptionLabel('system', 'en-US'))
     // Count only loads caused by the mode change itself.
     loads = 0
-    await select.click()
-    await page
-      .getByRole('option', {
+    await chooseSelectOption(
+      select,
+      page.getByRole('option', {
         name: colorModeOptionLabel('dark', 'en-US'),
         exact: true,
-      })
-      .click()
+      }),
+    )
     // The write lands first; the provider then repaints in the dark palette.
     await expect(body).toHaveCSS('background-color', DARK_PAGE_BACKGROUND)
     expect(loads, 'the dark mode applies without a reload').toBe(0)
@@ -640,13 +647,13 @@ test('personalize-interface: the color mode applies at once, follows the device 
   await test.step('follow-device repaints with the system scheme both ways', async () => {
     const select = colorModeSelect(page, 'en-US')
     await expect(select).toBeEnabled()
-    await select.click()
-    await page
-      .getByRole('option', {
+    await chooseSelectOption(
+      select,
+      page.getByRole('option', {
         name: colorModeOptionLabel('system', 'en-US'),
         exact: true,
-      })
-      .click()
+      }),
+    )
     // The device is light right now, so following it returns the page to the
     // light background through the same write-then-apply path.
     await expect(body).toHaveCSS('background-color', LIGHT_PAGE_BACKGROUND)
@@ -760,10 +767,10 @@ test('personalize-interface: the chosen time zone drives times on every surface'
     await expandAccountRows(page)
     const preferences = preferencesSection(page, 'en-US')
     const timeZone = timeZoneSelect(page, 'en-US')
-    await timeZone.click()
-    await page
-      .getByRole('option', { name: CHOSEN_ZONE, exact: true })
-      .click()
+    await chooseSelectOption(
+      timeZone,
+      page.getByRole('option', { name: CHOSEN_ZONE, exact: true }),
+    )
     // The save confirmation lands first: the select shows the chosen value as
     // soon as it is picked, but the audit page below must read the zone the
     // server stored, not one whose write is still in flight.

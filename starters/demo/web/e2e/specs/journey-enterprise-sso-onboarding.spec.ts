@@ -117,6 +117,7 @@ import {
   startEnterpriseSignIn,
 } from '../helpers/enterprise-sso'
 import { copy } from '../helpers/i18n'
+import { chooseSelectOption } from '../helpers/select-option'
 import { approveEnterpriseSignIn } from '../helpers/social'
 import { switchToTenant } from '../helpers/switch-tenant'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
@@ -424,18 +425,16 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // The administrator's assertion is the verification channel a
     // pre-provisioned enterprise login needs on the address; it is not proof
     // of ownership.
-    await dialog
-      .getByRole('combobox', {
+    await chooseSelectOption(
+      dialog.getByRole('combobox', {
         name: copy('adminUi', 'accounts.create.emailViaLabel'),
         exact: true,
-      })
-      .click()
-    await page
-      .getByRole('option', {
+      }),
+      page.getByRole('option', {
         name: copy('adminUi', 'accounts.create.via.admin'),
         exact: true,
-      })
-      .click()
+      }),
+    )
     await expect(submit).toBeEnabled()
     await submit.click()
 

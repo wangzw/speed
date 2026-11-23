@@ -98,6 +98,7 @@ import type { Accounts } from '../helpers/accounts'
 import { copy, copyPattern } from '../helpers/i18n'
 import { expiryChoices, expectOneOfText } from '../helpers/invitation-expiry'
 import { columnIndex } from '../helpers/organization-admin'
+import { chooseSelectOption } from '../helpers/select-option'
 
 // The admin tables carry low-priority columns and the admin sidebar takes
 // part of the width, so the desktop viewport has to be wide enough for the
@@ -692,10 +693,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 
       // The selector lists the roster by the name each tenant's profile
       // shows (its display name), and reports the chosen name underneath.
-      await tenantSelector(page).click()
-      await page
-        .getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true })
-        .click()
+      await chooseSelectOption(
+        tenantSelector(page),
+        page.getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true }),
+      )
 
       // The role catalog, then the role.
       const roles = permissionsSection(
@@ -745,15 +746,16 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         ),
       ).toBeVisible()
 
-      await grants
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        grants.getByRole('combobox', {
           name: copy('adminUi', 'permissions.grants.permissionLabel'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', { name: new RegExp(escapeRegExp(PERMISSION)) })
-        .click()
+        }),
+        page.getByRole('option', {
+          name: new RegExp(escapeRegExp(PERMISSION)),
+        }),
+        PERMISSION,
+      )
       await grants
         .getByRole('button', {
           name: copy('adminUi', 'permissions.grants.add'),
@@ -865,10 +867,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       // state is what shows. Its member list holds the operator: opening a
       // tenant binds its creator as the first tenant-admin, and a tenant-admin
       // is a member as well.
-      await tenantSelector(page).click()
-      await page
-        .getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true })
-        .click()
+      await chooseSelectOption(
+        tenantSelector(page),
+        page.getByRole('option', { name: TENANT_DISPLAY_NAME, exact: true }),
+      )
       await expect(
         invitationSection(page)
           .getByRole('heading', {
@@ -896,17 +898,16 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         .fill(reviewInvitee.identifier)
       // REQ-platform-admin-032: the expiry is a fixed lifetime choice, not a
       // free-form time.
-      await page
-        .getByLabel(copy('adminUi', 'invitations.issue.quickLabel'), {
+      await chooseSelectOption(
+        page.getByRole('combobox', {
+          name: copy('adminUi', 'invitations.issue.quickLabel'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'invitations.issue.thirtyDays'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       // The deadline the product must write is measured from this instant, so
       // a chosen lifetime the implementation ignored cannot pass on both
       // pages agreeing with each other.
@@ -982,36 +983,32 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
 
       // REQ-platform-admin-120: the list opens on the pending state and the
       // filter narrows it to another state.
-      await page
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        page.getByRole('combobox', {
           name: copy('adminUi', 'invitations.filter.label'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'invitations.status.accepted'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await expect(
         invitationSection(page).getByRole('heading', {
           name: copy('adminUi', 'invitations.empty.filteredTitle'),
           exact: true,
         }),
       ).toBeVisible()
-      await page
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        page.getByRole('combobox', {
           name: copy('adminUi', 'invitations.filter.label'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'invitations.status.pending'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await expect(invitationRow(page)).toBeVisible()
 
       // REQ-tenancy-011's one-time handover: the panel carries the acceptance
@@ -1453,18 +1450,16 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
       // The list opens on the pending state, so the accepted invitation is
       // read under its own filter.
-      await page
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        page.getByRole('combobox', {
           name: copy('adminUi', 'invitations.filter.label'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'invitations.status.accepted'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await page
         .getByRole('button', {
           name: copy('adminUi', 'common.refresh'),

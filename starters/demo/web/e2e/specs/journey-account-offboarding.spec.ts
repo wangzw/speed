@@ -74,6 +74,7 @@ import {
 } from '../helpers/account-sections'
 import { expect, test } from '../fixtures/demo'
 import { copy, copyPattern } from '../helpers/i18n'
+import { chooseSelectOption } from '../helpers/select-option'
 import { switchToTenant } from '../helpers/switch-tenant'
 import { totpCode } from '../helpers/totp'
 
@@ -419,21 +420,21 @@ test('account-offboarding: an operator disables a member and the member returns 
     })
 
     await test.step("step 2: the operator filters by the member's identifier and enabled status and opens the detail", async () => {
-      await identifierKind(page).click()
-      await page
-        .getByRole('option', {
+      await chooseSelectOption(
+        identifierKind(page),
+        page.getByRole('option', {
           name: copy('adminUi', 'accounts.identifierKind.username'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await identifierPrefixField(page).fill(MEMBER.identifier)
-      await statusFilter(page).click()
-      await page
-        .getByRole('option', {
+      await chooseSelectOption(
+        statusFilter(page),
+        page.getByRole('option', {
           name: copy('adminUi', 'accounts.status.active'),
           exact: true,
-        })
-        .click()
+        }),
+      )
 
       // The draft filters apply nothing: the list still holds all three
       // accounts.
@@ -459,18 +460,16 @@ test('account-offboarding: an operator disables a member and the member returns 
 
     await test.step('step 3: the operator saves the account as disabled, and the detail and the list show it', async () => {
       const dialog = page.getByRole('dialog', { name: detailTitle() })
-      await dialog
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        dialog.getByRole('combobox', {
           name: copy('adminUi', 'accounts.status.label'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'accounts.status.disabled'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await dialog
         .getByRole('button', {
           name: copy('adminUi', 'accounts.status.submit'),
@@ -499,13 +498,13 @@ test('account-offboarding: an operator disables a member and the member returns 
       // The enabled-filtered list no longer matches the account, and the
       // disabled filter lists it with the new status.
       await expect(emptyState(page)).toBeVisible()
-      await statusFilter(page).click()
-      await page
-        .getByRole('option', {
+      await chooseSelectOption(
+        statusFilter(page),
+        page.getByRole('option', {
           name: copy('adminUi', 'accounts.status.disabled'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await searchButton(page).click()
       const row = memberRow(page)
       await expect(row).toHaveCount(1)
@@ -619,18 +618,16 @@ test('account-offboarding: an operator disables a member and the member returns 
       await expect(
         statusLine(dialog, copy('adminUi', 'accounts.status.disabled')),
       ).toBeVisible()
-      await dialog
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        dialog.getByRole('combobox', {
           name: copy('adminUi', 'accounts.status.label'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'accounts.status.active'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await dialog
         .getByRole('button', {
           name: copy('adminUi', 'accounts.status.submit'),
@@ -654,13 +651,13 @@ test('account-offboarding: an operator disables a member and the member returns 
       // The disabled filter no longer matches the restored account, and the
       // enabled filter lists it as enabled again.
       await expect(emptyState(page)).toBeVisible()
-      await statusFilter(page).click()
-      await page
-        .getByRole('option', {
+      await chooseSelectOption(
+        statusFilter(page),
+        page.getByRole('option', {
           name: copy('adminUi', 'accounts.status.active'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await searchButton(page).click()
       await expect(memberRow(page)).toHaveCount(1)
       await expect(

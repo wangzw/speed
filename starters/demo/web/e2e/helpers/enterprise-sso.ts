@@ -24,6 +24,7 @@ import {
 import { waitForVerificationCode } from '../fixtures/log'
 import { adminEntry, backToApp, openAccountMenu } from './account-menu'
 import { copy } from './i18n'
+import { chooseSelectOption } from './select-option'
 import { switchToTenant } from './switch-tenant'
 
 /** The seeded platform administrator the review assembly writes. */
@@ -152,8 +153,10 @@ export async function leaveConsole(page: Page): Promise<void> {
 
 /** Select one organization through a tenant-addressed page's selector. */
 export async function selectTenant(page: Page, tenant: string): Promise<void> {
-  await tenantSelector(page).click()
-  await page.getByRole('option', { name: tenant, exact: true }).click()
+  await chooseSelectOption(
+    tenantSelector(page),
+    page.getByRole('option', { name: tenant, exact: true }),
+  )
 }
 
 /** The sign-in surface's work-address entry. */
@@ -262,13 +265,13 @@ export async function claimAndVerifyDomain(
   providerName: string,
 ): Promise<void> {
   const domains = domainSection(page)
-  await domains
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    domains.getByRole('combobox', {
       name: copy('adminUi', 'sso.domains.providerLabel'),
       exact: true,
-    })
-    .click()
-  await page.getByRole('option', { name: providerName, exact: true }).click()
+    }),
+    page.getByRole('option', { name: providerName, exact: true }),
+  )
   await domains
     .getByLabel(copy('adminUi', 'sso.domains.domainLabel'), { exact: true })
     .fill(enterpriseIdentityProviderDomain)
@@ -474,50 +477,44 @@ export async function registerProvider(
   if (claim !== undefined) {
     // The strategy field belongs to a just-in-time provider, and the claim
     // field appears only once "From claim" is chosen.
-    await form
-      .getByRole('combobox', {
+    await chooseSelectOption(
+      form.getByRole('combobox', {
         name: copy('adminUi', 'sso.provider.usernameStrategyLabel'),
         exact: true,
-      })
-      .click()
-    await page
-      .getByRole('option', {
+      }),
+      page.getByRole('option', {
         name: copy('adminUi', 'sso.provider.usernameStrategy.claim'),
         exact: true,
-      })
-      .click()
-    await form
-      .getByRole('combobox', {
+      }),
+    )
+    await chooseSelectOption(
+      form.getByRole('combobox', {
         name: copy('adminUi', 'sso.provider.usernameClaimLabel'),
         exact: true,
-      })
-      .click()
-    await page
-      .getByRole('option', {
+      }),
+      page.getByRole('option', {
         name:
           claim === 'email'
             ? copy('adminUi', 'sso.provider.usernameClaim.email')
             : copy('adminUi', 'sso.provider.usernameClaim.preferredUsername'),
         exact: true,
-      })
-      .click()
+      }),
+    )
   }
 
   // The enabled flag is a three-state field whose untouched value leaves the
   // module's default; the journey's provider is enabled, so the operator
   // states it.
-  await form
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    form.getByRole('combobox', {
       name: copy('adminUi', 'sso.provider.enabledLabel'),
       exact: true,
-    })
-    .click()
-  await page
-    .getByRole('option', {
+    }),
+    page.getByRole('option', {
       name: copy('adminUi', 'sso.provider.tri.true'),
       exact: true,
-    })
-    .click()
+    }),
+  )
 
   // The provider configuration is the protocol's own JSON, and the client
   // secret is write-only and belongs to the protocols that have one.

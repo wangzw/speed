@@ -155,6 +155,7 @@ import {
   organizationHomeCard,
   organizationPath,
 } from '../helpers/organization-admin'
+import { chooseSelectOption } from '../helpers/select-option'
 
 /** The seeded business tenant the organization surface acts on. Its id is its name. */
 const TENANT = 'acme'
@@ -275,10 +276,10 @@ async function chooseInvitationStatus(
   page: Page,
   key: string,
 ): Promise<void> {
-  await invitationStatusFilter(page).click()
-  await page
-    .getByRole('option', { name: copy('adminUi', key), exact: true })
-    .click()
+  await chooseSelectOption(
+    invitationStatusFilter(page),
+    page.getByRole('option', { name: copy('adminUi', key), exact: true }),
+  )
 }
 
 /** The impersonation page's start controls. */
@@ -624,10 +625,10 @@ test.describe('the tenant administrator manages the organization', () => {
         // REQ-tenant-admin-053: the role filter is server-side, writes the
         // role into the address, and a direct visit with that address opens
         // the filtered view with the filter applied.
-        await memberRoleFilter(page).click()
-        await page
-          .getByRole('option', { name: 'tenant-admin', exact: true })
-          .click()
+        await chooseSelectOption(
+          memberRoleFilter(page),
+          page.getByRole('option', { name: 'tenant-admin', exact: true }),
+        )
         await expect
           .poll(async () => memberRow(page, reviewTenantAdmin.displayName).count())
           .toBe(1)
@@ -655,13 +656,18 @@ test.describe('the tenant administrator manages the organization', () => {
         await expect(memberRow(page, reviewOrdinaryMember.displayName)).toHaveCount(0)
 
         // Clearing the filter removes the parameter and restores both rows.
-        await memberRoleFilter(page).click()
-        await page
-          .getByRole('option', {
+        // A cleared role filter keeps the Select's empty value, which the
+        // closed control renders as the zero-width placeholder rather than
+        // the option's "Any role" text; the address and rows below carry the
+        // cleared state.
+        await chooseSelectOption(
+          memberRoleFilter(page),
+          page.getByRole('option', {
             name: copy('adminUi', 'members.filter.anyRole'),
             exact: true,
-          })
-          .click()
+          }),
+          null,
+        )
         await expect
           .poll(async () => memberRow(page, reviewOrdinaryMember.displayName).count())
           .toBe(1)
@@ -1166,19 +1172,18 @@ test.describe('the tenant administrator manages the organization', () => {
             { exact: true },
           ),
         ).toBeVisible()
-        await grants
-          .getByRole('combobox', {
+        await chooseSelectOption(
+          grants.getByRole('combobox', {
             name: copy('adminUi', 'permissions.grants.permissionLabel'),
             exact: true,
-          })
-          .click()
-        await page
-          .getByRole('option', {
+          }),
+          page.getByRole('option', {
             name: new RegExp(
               `^${escapeRegExp(permissionDescription(PERMISSION))}`,
             ),
-          })
-          .click()
+          }),
+          PERMISSION,
+        )
         await grants
           .getByRole('button', {
             name: copy('adminUi', 'permissions.grants.add'),
@@ -1290,13 +1295,13 @@ test.describe('the tenant administrator manages the organization', () => {
         await openOrganizationPage(page, 'invitations')
 
         const chooseRole = async (panel: Locator): Promise<void> => {
-          await panel
-            .getByRole('combobox', {
+          await chooseSelectOption(
+            panel.getByRole('combobox', {
               name: copy('adminUi', 'members.panel.roleLabel'),
               exact: true,
-            })
-            .click()
-          await page.getByRole('option', { name: ROLE, exact: true }).click()
+            }),
+            page.getByRole('option', { name: ROLE, exact: true }),
+          )
         }
         const bindRole = async (panel: Locator): Promise<void> => {
           await panel
@@ -1658,15 +1663,13 @@ test.describe('the tenant administrator manages the organization', () => {
         // permission, so the issue form offers the tenant's own roles. The
         // role created in step 10 is the one chosen; the builtin tenant-admin
         // role is left alone, so the tenant keeps its single administrator.
-        await page
-          .getByRole('combobox', {
+        await chooseSelectOption(
+          page.getByRole('combobox', {
             name: copy('adminUi', 'invitations.issue.roleLabel'),
             exact: true,
-          })
-          .click()
-        await page
-          .getByRole('option', { name: ROLE, exact: true })
-          .click()
+          }),
+          page.getByRole('option', { name: ROLE, exact: true }),
+        )
         await page
           .getByRole('button', {
             name: copy('adminUi', 'invitations.issue.submit'),
@@ -1815,13 +1818,13 @@ test.describe('the tenant administrator manages the organization', () => {
             exact: true,
           })
           .fill(ROLE_INVITEE)
-        await page
-          .getByRole('combobox', {
+        await chooseSelectOption(
+          page.getByRole('combobox', {
             name: copy('adminUi', 'invitations.issue.roleLabel'),
             exact: true,
-          })
-          .click()
-        await page.getByRole('option', { name: ROLE, exact: true }).click()
+          }),
+          page.getByRole('option', { name: ROLE, exact: true }),
+        )
         await page
           .getByRole('button', {
             name: copy('adminUi', 'invitations.issue.submit'),
@@ -2260,15 +2263,13 @@ test.describe('the organization SSO page', () => {
     /** Set the provider's enabled flag through its edit form. */
     const setProviderEnabled = async (enabled: boolean): Promise<void> => {
       const form = providerFormSection(page)
-      await form
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        form.getByRole('combobox', {
           name: copy('adminUi', 'sso.provider.editLabel'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', { name: PROVIDER_NAME, exact: true })
-        .click()
+        }),
+        page.getByRole('option', { name: PROVIDER_NAME, exact: true }),
+      )
       await expect(
         form.getByLabel(copy('adminUi', 'sso.provider.nameLabel'), {
           exact: true,
@@ -2288,21 +2289,19 @@ test.describe('the organization SSO page', () => {
             claims: enterpriseIdentityProviderClaims,
           }),
         )
-      await form
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        form.getByRole('combobox', {
           name: copy('adminUi', 'sso.provider.enabledLabel'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy(
             'adminUi',
             enabled ? 'sso.provider.tri.true' : 'sso.provider.tri.false',
           ),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await form
         .getByRole('button', {
           name: copy('adminUi', 'sso.provider.updateSubmit'),
@@ -2404,18 +2403,16 @@ test.describe('the organization SSO page', () => {
           exact: true,
         })
         .fill('jit')
-      await form
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        form.getByRole('combobox', {
           name: copy('adminUi', 'sso.provider.enabledLabel'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'sso.provider.tri.true'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await form
         .getByLabel(copy('adminUi', 'sso.provider.configLabel'), {
           exact: true,
@@ -2462,15 +2459,13 @@ test.describe('the organization SSO page', () => {
       // REQ-tenant-admin-015: the claim hands out the token and the DNS
       // record; publishing it and verifying flips the row.
       const domains = domainsSection(page)
-      await domains
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        domains.getByRole('combobox', {
           name: copy('adminUi', 'sso.domains.providerLabel'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', { name: PROVIDER_NAME, exact: true })
-        .click()
+        }),
+        page.getByRole('option', { name: PROVIDER_NAME, exact: true }),
+      )
       await domains
         .getByLabel(copy('adminUi', 'sso.domains.domainLabel'), {
           exact: true,
@@ -2622,13 +2617,13 @@ test.describe('an impersonated session hides the organization', () => {
         }),
       ).toBeVisible()
 
-      await page
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        page.getByRole('combobox', {
           name: copy('adminUi', 'common.tenant'),
           exact: true,
-        })
-        .click()
-      await page.getByRole('option', { name: TENANT, exact: true }).click()
+        }),
+        page.getByRole('option', { name: TENANT, exact: true }),
+      )
       await chooseImpersonationTarget(page)
       await reasonField(page).fill(IMPERSONATION_REASON)
       await expect(startButton(page)).toBeEnabled()
@@ -3264,19 +3259,17 @@ async function requestOwnerTransfer(
     exact: true,
   })
   await expect(dialog).toBeVisible()
-  await dialog
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    dialog.getByRole('combobox', {
       name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
       exact: true,
-    })
-    .click()
-  // Only the organization's active members are offered, minus the current
-  // owner; the target is one.
-  const option = page.getByRole('option', {
-    name: new RegExp(`^${escapeRegExp(target.displayName)} \\(.+\\)$`),
-  })
-  await expect(option).toBeVisible()
-  await option.click()
+    }),
+    // Only the organization's active members are offered, minus the current
+    // owner; the target is one.
+    page.getByRole('option', {
+      name: new RegExp(`^${escapeRegExp(target.displayName)} \\(.+\\)$`),
+    }),
+  )
 
   // The request asks for the deliberate second confirmation.
   await dialog
@@ -3739,13 +3732,13 @@ async function bindMemberRole(
   await manageMemberButton(page, displayName).click()
   const panel = memberPanel(page)
   await expect(panel).toBeVisible()
-  await panel
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    panel.getByRole('combobox', {
       name: copy('adminUi', 'members.panel.roleLabel'),
       exact: true,
-    })
-    .click()
-  await page.getByRole('option', { name: role, exact: true }).click()
+    }),
+    page.getByRole('option', { name: role, exact: true }),
+  )
   await panel
     .getByRole('button', {
       name: copy('adminUi', 'members.panel.bind'),
@@ -4465,19 +4458,17 @@ test.describe('the organization profile page belongs to its owner', () => {
         exact: true,
       })
       await expect(dialog).toBeVisible()
-      await dialog
-        .getByRole('combobox', {
+      await chooseSelectOption(
+        dialog.getByRole('combobox', {
           name: copy('adminUi', 'tenantProfile.ownership.transfer.targetLabel'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: new RegExp(
             `^${escapeRegExp(reviewInvitee.displayName)} \\(.+\\)$`,
           ),
-        })
-        .click()
+        }),
+      )
 
       // A second administrator session suspends the target after the dialog
       // read listed it. The write that follows therefore meets a membership

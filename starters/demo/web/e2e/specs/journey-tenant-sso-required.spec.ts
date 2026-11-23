@@ -97,6 +97,7 @@ import {
   openAccountMenu,
 } from '../helpers/account-menu'
 import { copy } from '../helpers/i18n'
+import { chooseSelectOption } from '../helpers/select-option'
 import { approveEnterpriseSignIn } from '../helpers/social'
 import { switchToTenant } from '../helpers/switch-tenant'
 import { expectClippedAnnouncement } from '../helpers/tenant-switch'
@@ -178,8 +179,10 @@ function tenantSelector(page: Page): Locator {
 
 /** Select one organization through a tenant-addressed page's selector. */
 async function selectTenant(page: Page, tenant: string): Promise<void> {
-  await tenantSelector(page).click()
-  await page.getByRole('option', { name: tenant, exact: true }).click()
+  await chooseSelectOption(
+    tenantSelector(page),
+    page.getByRole('option', { name: tenant, exact: true }),
+  )
 }
 
 /** The platform's own organization. The account menu offers the admin entry
@@ -389,18 +392,16 @@ async function registerProvider(
   // The enabled flag is a three-state field whose untouched value leaves the
   // module's default; the journey's provider is enabled, so the operator
   // states it.
-  await form
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    form.getByRole('combobox', {
       name: copy('adminUi', 'sso.provider.enabledLabel'),
       exact: true,
-    })
-    .click()
-  await page
-    .getByRole('option', {
+    }),
+    page.getByRole('option', {
       name: copy('adminUi', 'sso.provider.tri.true'),
       exact: true,
-    })
-    .click()
+    }),
+  )
 
   await form
     .getByLabel(copy('adminUi', 'sso.provider.configLabel'), { exact: true })
@@ -435,13 +436,13 @@ async function registerProvider(
 /** Claim the provider's e-mail domain, publish the record and verify it. */
 async function claimAndVerifyDomain(page: Page, stub: DNSStub): Promise<void> {
   const domains = domainSection(page)
-  await domains
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    domains.getByRole('combobox', {
       name: copy('adminUi', 'sso.domains.providerLabel'),
       exact: true,
-    })
-    .click()
-  await page.getByRole('option', { name: PROVIDER_NAME, exact: true }).click()
+    }),
+    page.getByRole('option', { name: PROVIDER_NAME, exact: true }),
+  )
   await domains
     .getByLabel(copy('adminUi', 'sso.domains.domainLabel'), { exact: true })
     .fill(enterpriseIdentityProviderDomain)

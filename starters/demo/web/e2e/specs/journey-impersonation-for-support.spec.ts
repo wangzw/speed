@@ -103,6 +103,7 @@ import {
   organizationRow,
 } from '../helpers/account-menu'
 import { copy, copyPattern } from '../helpers/i18n'
+import { chooseSelectOption } from '../helpers/select-option'
 import { totpCode } from '../helpers/totp'
 
 // The impersonation factors change how the seeded operator signs in, so only
@@ -476,8 +477,10 @@ test('impersonation-for-support: the operator acts as a member and the record an
       }),
     ).toBeVisible()
 
-    await tenantSelector(page).click()
-    await page.getByRole('option', { name: TENANT, exact: true }).click()
+    await chooseSelectOption(
+      tenantSelector(page),
+      page.getByRole('option', { name: TENANT, exact: true }),
+    )
     await chooseTarget(page)
     await expect(startButton(page)).toBeEnabled()
 
@@ -844,8 +847,10 @@ test('impersonation-for-support: the operator acts as a member and the record an
       }),
     ).toBeVisible()
 
-    await tenantSelector(page).click()
-    await page.getByRole('option', { name: TENANT, exact: true }).click()
+    await chooseSelectOption(
+      tenantSelector(page),
+      page.getByRole('option', { name: TENANT, exact: true }),
+    )
 
     // One record: the operator, the target, the tenant, the planned start and
     // end instants, and the ended state with its reason.

@@ -85,6 +85,7 @@ import {
   selectAccountSection,
 } from '../helpers/account-sections'
 import { copy, copyPattern } from '../helpers/i18n'
+import { chooseSelectOption } from '../helpers/select-option'
 import { approveEnterpriseSignIn } from '../helpers/social'
 import { switchToTenant } from '../helpers/switch-tenant'
 import {
@@ -346,8 +347,10 @@ async function proveWithPasskey(page: Page): Promise<void> {
 
 /** Select one organization through a tenant-addressed page's selector. */
 async function selectTenant(page: Page, tenant: string): Promise<void> {
-  await tenantSelector(page).click()
-  await page.getByRole('option', { name: tenant, exact: true }).click()
+  await chooseSelectOption(
+    tenantSelector(page),
+    page.getByRole('option', { name: tenant, exact: true }),
+  )
 }
 
 /**
@@ -385,18 +388,16 @@ async function registerJITProvider(
   // The enabled flag is a three-state field whose untouched value leaves the
   // module's default; the journey's provider is enabled, so the operator
   // states it.
-  await form
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    form.getByRole('combobox', {
       name: copy('adminUi', 'sso.provider.enabledLabel'),
       exact: true,
-    })
-    .click()
-  await page
-    .getByRole('option', {
+    }),
+    page.getByRole('option', {
       name: copy('adminUi', 'sso.provider.tri.true'),
       exact: true,
-    })
-    .click()
+    }),
+  )
 
   // The provider configuration names the local issuer, its client identifier
   // and the claim mapping that finds the user's address and display name.
@@ -446,13 +447,13 @@ async function claimAndVerifyDomain(
   providerName: string,
 ): Promise<void> {
   const domains = domainSection(page)
-  await domains
-    .getByRole('combobox', {
+  await chooseSelectOption(
+    domains.getByRole('combobox', {
       name: copy('adminUi', 'sso.domains.providerLabel'),
       exact: true,
-    })
-    .click()
-  await page.getByRole('option', { name: providerName, exact: true }).click()
+    }),
+    page.getByRole('option', { name: providerName, exact: true }),
+  )
   await domains
     .getByLabel(copy('adminUi', 'sso.domains.domainLabel'), { exact: true })
     .fill(enterpriseIdentityProviderDomain)

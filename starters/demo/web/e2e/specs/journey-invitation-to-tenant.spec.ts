@@ -124,6 +124,7 @@ import {
   collectTenantAccountIds,
   expectNoAccountIds,
 } from '../helpers/organization-admin'
+import { chooseSelectOption } from '../helpers/select-option'
 import { switchToTenant } from '../helpers/switch-tenant'
 
 // The admin's invitation table has a low-priority expiry column, and the
@@ -388,8 +389,10 @@ async function openTenantInvitations(page: Page): Promise<void> {
     }),
   ).toBeVisible()
 
-  await tenantSelector(page).click()
-  await page.getByRole('option', { name: TENANT, exact: true }).click()
+  await chooseSelectOption(
+    tenantSelector(page),
+    page.getByRole('option', { name: TENANT, exact: true }),
+  )
 }
 
 /** Fill the issue form and submit it, without waiting for the answer. */
@@ -402,17 +405,16 @@ async function submitInvitation(page: Page, email: string): Promise<void> {
   // REQ-platform-admin-032: the expiry is a fixed lifetime choice, not a
   // free-form time. Thirty days is far from the seven-day default, so a
   // lifetime the product ignored would render a different deadline.
-  await page
-    .getByLabel(copy('adminUi', 'invitations.issue.quickLabel'), {
+  await chooseSelectOption(
+    page.getByRole('combobox', {
+      name: copy('adminUi', 'invitations.issue.quickLabel'),
       exact: true,
-    })
-    .click()
-  await page
-    .getByRole('option', {
+    }),
+    page.getByRole('option', {
       name: copy('adminUi', 'invitations.issue.thirtyDays'),
       exact: true,
-    })
-    .click()
+    }),
+  )
   await page
     .getByRole('button', {
       name: copy('adminUi', 'invitations.issue.submit'),
@@ -1050,17 +1052,16 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       // The list opens on the pending state, so the accepted invitation is
       // read under its own filter. The refresh re-reads the list the filter
       // narrows.
-      await page
-        .getByLabel(copy('adminUi', 'invitations.filter.label'), {
+      await chooseSelectOption(
+        page.getByRole('combobox', {
+          name: copy('adminUi', 'invitations.filter.label'),
           exact: true,
-        })
-        .click()
-      await page
-        .getByRole('option', {
+        }),
+        page.getByRole('option', {
           name: copy('adminUi', 'invitations.status.accepted'),
           exact: true,
-        })
-        .click()
+        }),
+      )
       await page
         .getByRole('button', {
           name: copy('adminUi', 'common.refresh'),
