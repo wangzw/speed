@@ -130,7 +130,13 @@ describe('OrganizationCreatePage', () => {
     await submit(user)
 
     expect(await screen.findByText(enUS.switching.title)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: enUS.submit })).toBeDisabled()
+    const submitControl = screen.getByRole('button', { name: enUS.submit })
+    // The form stays focusable but not operable while the hand-over runs:
+    // unavailable for context, with no busy state and no reason of its own.
+    expect(submitControl).toHaveAttribute('aria-disabled', 'true')
+    expect(submitControl).not.toHaveAttribute('aria-busy')
+    expect(submitControl).toHaveAccessibleDescription('')
+    expect(screen.getByLabelText(enUS.fields.name)).toHaveAttribute('readonly')
     expect(onNavigate).not.toHaveBeenCalled()
 
     enter.resolve()

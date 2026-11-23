@@ -16,11 +16,15 @@
  * helper.
  */
 
+import type { FormEvent } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import { useTranslation } from '@speed/i18n'
-import { FORM_MAX_WIDTH } from '@speed/ui-kit'
+import {
+  ActionButton,
+  FORM_MAX_WIDTH,
+  useActivationGuard,
+} from '@speed/ui-kit'
 import { ORG_CREATE_UI_NAMESPACE } from './resources.js'
 import type {
   OrganizationCreateField,
@@ -38,9 +42,13 @@ export interface OrganizationCreateFormProps {
   readonly onChange: (field: OrganizationCreateField, value: string) => void
   /** The violations to show, keyed by field. */
   readonly violations?: OrganizationCreateViolations
-  /** Disables every control (a write or an identity switch is in flight). */
+  /**
+   * Makes the form not operable (a write or an identity switch is in
+   * flight): the fields are read-only and the submit control is
+   * unavailable.
+   */
   readonly disabled?: boolean
-  /** Renders the submit control busy. */
+  /** The submit is in flight. */
   readonly pending?: boolean
   /** The submit control's text, translated by the page's namespace. */
   readonly submitLabel: string
@@ -59,6 +67,18 @@ export function OrganizationCreateForm({
   onSubmit,
 }: OrganizationCreateFormProps) {
   const { t } = useTranslation(ORG_CREATE_UI_NAMESPACE)
+
+  // The submit control and the form judge activation by the same state:
+  // the form's own submit is in flight, or the form is not operable for a
+  // reason of its own context. Both layers refuse a repeated submit, and
+  // the browser's implicit submission from a field reaches the same guard.
+  const guardedSubmit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      onSubmit()
+    },
+    { busy: pending, unavailable: disabled && !pending },
+  )
 
   /** A field's helper: its violation, else its standing hint, else none. */
   const helperOf = (field: OrganizationCreateField, hint?: string) => {
@@ -92,7 +112,10 @@ export function OrganizationCreateForm({
           name,
           options.hintKey === undefined ? undefined : t(options.hintKey),
         )}
-        disabled={disabled}
+        // Read-only, not disabled: while the form is not operable the
+        // field stays focusable and readable, and a focused field is not
+        // dropped to the document body.
+        slotProps={{ input: { readOnly: disabled } }}
         autoComplete="off"
       />
     )
@@ -104,10 +127,7 @@ export function OrganizationCreateForm({
     <Box
       component="form"
       noValidate
-      onSubmit={(event) => {
-        event.preventDefault()
-        onSubmit()
-      }}
+      onSubmit={guardedSubmit}
     >
       <Box
         sx={{
@@ -133,14 +153,14 @@ export function OrganizationCreateForm({
         })}
       </Box>
       <Box sx={{ mt: 3 }}>
-        <Button
+        <ActionButton
           type="submit"
-          variant="contained"
-          disabled={disabled || pending}
-          loading={pending}
+          emphasis="primary"
+          busy={pending}
+          unavailable={disabled && !pending}
         >
           {submitLabel}
-        </Button>
+        </ActionButton>
       </Box>
     </Box>
   )

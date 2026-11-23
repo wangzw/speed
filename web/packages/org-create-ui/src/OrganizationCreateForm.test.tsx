@@ -5,7 +5,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { OrganizationCreateForm } from './OrganizationCreateForm.js'
 import {
@@ -39,6 +39,51 @@ function ControlledForm({
       }}
       submitLabel="Create organization"
       onSubmit={onSubmit ?? (() => undefined)}
+    />
+  )
+}
+
+/**
+ * A form that enters the write-in-flight state when it submits, the way a
+ * page does once its write starts.
+ */
+function SubmittingForm({
+  onSubmit,
+}: {
+  readonly onSubmit?: () => void
+}) {
+  const [values, setValues] = useState<OrganizationCreateValues>(
+    EMPTY_ORGANIZATION_CREATE_VALUES,
+  )
+  const [pending, setPending] = useState(false)
+  return (
+    <OrganizationCreateForm
+      mode="self-service"
+      values={values}
+      onChange={(field, value) => {
+        setValues((current) => ({ ...current, [field]: value }))
+      }}
+      disabled={pending}
+      pending={pending}
+      submitLabel="Create organization"
+      onSubmit={() => {
+        onSubmit?.()
+        setPending(true)
+      }}
+    />
+  )
+}
+
+/** A form made not operable by a write or identity switch elsewhere. */
+function UnavailableForm({ onSubmit }: { readonly onSubmit: () => void }) {
+  return (
+    <OrganizationCreateForm
+      mode="self-service"
+      values={{ ...EMPTY_ORGANIZATION_CREATE_VALUES, name: 'acme' }}
+      onChange={() => undefined}
+      disabled
+      submitLabel="Create organization"
+      onSubmit={onSubmit}
     />
   )
 }
@@ -128,5 +173,134 @@ describe('OrganizationCreateForm', () => {
       screen.getByRole('button', { name: 'Create organization' }),
     )
     expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a programmatic submit while the write is in flight', () => {
+    // A submit the button does not carry (a programmatic one, or one from a
+    // form without its button) reaches only the form's own guard. The
+    // handler is the page's request; neither it nor the request runs.
+    const request = vi.fn()
+    const onSubmit = vi.fn(() => {
+      request()
+    })
+    const { container } = renderWithProviders(
+      <OrganizationCreateForm
+        mode="self-service"
+        values={{ ...EMPTY_ORGANIZATION_CREATE_VALUES, name: 'acme' }}
+        onChange={() => undefined}
+        pending
+        submitLabel="Create organization"
+        onSubmit={onSubmit}
+      />,
+      { language: 'en-US' },
+    )
+
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement)
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('refuses a programmatic submit while the form is not operable', () => {
+    // Not operable from a write or identity switch elsewhere: the form is
+    // disabled but not itself pending, so its guard judges by unavailable.
+    const request = vi.fn()
+    const onSubmit = vi.fn(() => {
+      request()
+    })
+    const { container } = renderWithProviders(
+      <OrganizationCreateForm
+        mode="self-service"
+        values={{ ...EMPTY_ORGANIZATION_CREATE_VALUES, name: 'acme' }}
+        onChange={() => undefined}
+        disabled
+        submitLabel="Create organization"
+        onSubmit={onSubmit}
+      />,
+      { language: 'en-US' },
+    )
+
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement)
+
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(request).not.toHaveBeenCalled()
+  })
+
+  it('keeps focus in the field when Enter submits and the write is in flight', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderWithProviders(<SubmittingForm onSubmit={onSubmit} />, {
+      language: 'en-US',
+    })
+
+    const name = screen.getByLabelText(enUS.fields.name)
+    await user.click(name)
+    await user.keyboard('acme')
+    expect(name).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    // The field stays focusable and readable; only its value is held still.
+    expect(name).toBeEnabled()
+    expect(name).toHaveAttribute('readonly')
+    expect(name).toHaveFocus()
+    const submit = screen.getByRole('button', { name: 'Create organization' })
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+
+    // A second activation is swallowed; the write is already in flight.
+    await user.keyboard('{Enter}')
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(name).toHaveFocus()
+  })
+
+  it('keeps focus on the submit control when it starts the write', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderWithProviders(<SubmittingForm onSubmit={onSubmit} />, {
+      language: 'en-US',
+    })
+
+    const submit = screen.getByRole('button', { name: 'Create organization' })
+    await user.click(submit)
+
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveFocus()
+
+    await user.click(submit)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(submit).toHaveFocus()
+  })
+
+  it('stays focusable but not operable while a switch is in flight', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    renderWithProviders(<UnavailableForm onSubmit={onSubmit} />, {
+      language: 'en-US',
+    })
+
+    const name = screen.getByLabelText(enUS.fields.name)
+    expect(name).toBeEnabled()
+    expect(name).toHaveAttribute('readonly')
+
+    const submit = screen.getByRole('button', { name: 'Create organization' })
+    // A write or identity switch elsewhere is the context for this
+    // unavailability; the button carries no reason of its own.
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toHaveAttribute('aria-busy')
+    expect(submit).toHaveAccessibleDescription('')
+    expect(submit).toBeEnabled()
+
+    await user.click(submit)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(submit).toHaveFocus()
+
+    // The implicit submission from a field is refused the same way.
+    await user.click(name)
+    await user.keyboard('{Enter}')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(name).toHaveFocus()
   })
 })
