@@ -33,11 +33,11 @@
 
 ### 登记单元
 
-根包 `pkg/authn` 只放接口与数据类型，不登记模块。`authn.login` 不交付任何功能，是流程引擎加路由；每个方法住在一个叶子包、登记一个模块、非排他地交付 `LoginMethod`，引擎经 `core.ResolveAll` 取用（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)、[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)）。本表列出本仓库交付的方法，是该范围内的封闭集；第三方方法自带名字，不在表内。配置键与设置键的全表见 [authn-config](design-authn-config.md)。
+根包 `pkg/authn` 只放接口与数据类型，不登记模块。`authn.login` 是流程引擎加路由，除排他交付运行期开关 `LoginMethodSwitch` 外不交付功能；每个方法住在一个叶子包、登记一个模块、非排他地交付 `LoginMethod`，引擎经 `core.ResolveAll` 取用（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)、[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)）。本表列出本仓库交付的方法，是该范围内的封闭集；第三方方法自带名字，不在表内。配置键与设置键的全表见 [authn-config](design-authn-config.md)。
 
 | 包 | 模块名 | 方法名（`Name()`） | 说明 |
 |---|---|---|---|
-| `authn/login` | `authn.login` | — | 引擎与路由，不交付功能 |
+| `authn/login` | `authn.login` | — | 引擎与路由；排他交付 `LoginMethodSwitch`，见扩展点 |
 | `authn/login/password` | `authn.login.password` | `password` | 本文规定流程 |
 | `authn/login/sms` | `authn.login.sms` | `sms` | 验证码状态机归 [authn-sms](design-authn-sms.md) |
 | `authn/login/google` | `authn.login.google` | `google` | 本文规定流程 |
@@ -1025,7 +1025,7 @@ SP 发起的应答只在绑定分支里被接受，那里 `InResponseTo` 与 `Re
 
 - **第三方 `LoginMethod`。** 实现接口并满足准入条件，登记为一个模块、非排他地交付 `LoginMethod`，即被引擎经 `ResolveAll` 取用；新增方法不新增路由，路由由 `flows` 与 `callback` 承载。名字全局唯一，重名即启动失败。社交类回跳方法的路径是 `callback/<方法名>`，企业 SSO 的路径是 `callback/<提供方标识>`。
 - **`Provisioner`。** 根包的可选接口，非排他。联合登录或短信首登开户之前被调用，宿主可改写拟创建账户的显示名与属性，或返回 `ErrProvisionRefused` 拒绝开户；返回的 `CreateAccount` 只可改显示名与属性。
-- **紧急开关与交付方式。** 设置 `authn.login.disabled-methods` 在运行期关闭某个方法（例如遭遇短信轰炸时关 `sms`），口令方式不在可关闭集合内，`delivery-modes` 限定允许的交付方式；`disabled-methods` 与 `delivery-modes` 是设置，不是配置。改到更宽松的取值时写一行 Warn 并经审计接口记一条尽力档记录（[authn-config](design-authn-config.md)）。
+- **紧急开关与交付方式。** 设置 `authn.login.disabled-methods` 在运行期关闭某个方法（例如遭遇短信轰炸时关 `sms`），口令方式不在可关闭集合内，`delivery-modes` 限定允许的交付方式；`disabled-methods` 与 `delivery-modes` 是设置，不是配置。`disabled-methods` 同时决定企业发现：`authn.sso` 经根包接口 `LoginMethodSwitch` 取用本模块交付的读取侧，发现应答不列出被关闭方式的提供方（[authn-sso](design-authn-sso.md)）。改到更宽松的取值时写一行 Warn 并经审计接口记一条尽力档记录（[authn-config](design-authn-config.md)）。
 
 ## 实现状态
 
@@ -1033,7 +1033,7 @@ SP 发起的应答只在绑定分支里被接受，那里 `InResponseTo` 与 `Re
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包登录接口：`LoginMethod`、`Start`、`FlowState`、`StepInput`、`Step` 及构造器、`Proof`、`Field` | 已实现 | `pkg/authn/login.go` `LoginMethod`、`StepPrompt`；`pkg/authn/ids.go` `Proof`、`Field`、`Start`、`FlowState`、`StepInput`；`pkg/authn/internal/step/step.go` `Step`、`Prompt`、`KindOf`、`ProofOf`；`pkg/authn/internal/model/flow.go` `Start`、`FlowState`、`StepInput`；`pkg/authn/internal/model/login.go` `Proof`、`Field` |
+| 根包登录接口：`LoginMethod`、`LoginMethodSwitch`、`Start`、`FlowState`、`StepInput`、`Step` 及构造器、`Proof`、`Field` | 已实现 | `pkg/authn/login.go` `LoginMethod`、`LoginMethodSwitch`、`StepPrompt`；`pkg/authn/ids.go` `Proof`、`Field`、`Start`、`FlowState`、`StepInput`；`pkg/authn/internal/step/step.go` `Step`、`Prompt`、`KindOf`、`ProofOf`；`pkg/authn/internal/model/flow.go` `Start`、`FlowState`、`StepInput`；`pkg/authn/internal/model/login.go` `Proof`、`Field` |
 | 登录引擎：流程记录、状态机、迁移、比较并交换 | 部分实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/engine.go`、`pkg/authn/login/flow.go` |
 | 租户要求引起的登录内登记：`reprove` 状态、`mfa.enroll_multi`、登记后重证口令并使用新因素 | 已实现 | `pkg/authn/login/flow.go` `stateReprove`、`mfaState.EnrollMulti`；`pkg/authn/login/engine.go` `(*routes).decidePolicy`、`(*routes).tenantRequiresMFA`；`pkg/authn/login/start.go` `(*routes).applyEnroll`；`pkg/authn/login/answer.go`、`pkg/authn/login/respond.go` `(*routes).nextOf`；`pkg/authn/login/login.go` `product.tenantMFA` |
 | 流程令牌的承载与绑定（cookie 与请求头载体） | 已实现 | `pkg/authn/login/flow.go`、`pkg/authn/login/callback.go` |
@@ -1065,3 +1065,4 @@ SP 发起的应答只在绑定分支里被接受，那里 `InResponseTo` 与 `Re
 | 发现接口的 `password_reset` 能力位 | 已实现 | `pkg/authn/login/respond.go` `(*routes).methods`；`pkg/authn/login/reset.go` `(*routes).passwordResetCapability`；`pkg/authn/login/operations.go` `passwordResetView`、`AuthnLoginPasswordReset` |
 | 删除用户名标识答 409 `username-immutable` | 已实现 | `pkg/authn/login/internal/selfservice/identifiers.go` `(*routes).removeIdentifier`；`pkg/authn/login/internal/selfservice/call.go` `(*routes).fail`（`authn.ErrUsernameImmutable` 映射到 `mount.CodeUsernameImmutable`）；`pkg/authn/account/admin.go` `(*product).RemoveIdentifier` |
 | `disabled-methods` 对 `password` 不生效：发现接口照常列出，开始流程照常接受 | 已实现 | `pkg/authn/login/config.go` `disabledMethodsTextInDomain`、`withoutPassword`、`(*reader).disabledMethods`；`pkg/authn/login/respond.go` `(*routes).methods`；`pkg/authn/login/start.go` `(*routes).startFlow` |
+| 运行期开关的读取侧 `LoginMethodSwitch`：排他交付，返回 `disabled-methods` 关闭的方法名，读失败返回错误 | 已实现 | `pkg/authn/login.go` `LoginMethodSwitch`；`pkg/authn/login/login.go` `(*product).DisabledMethods`；`pkg/authn/login/config.go` `(*reader).disabledMethods`、`withoutPassword` |
