@@ -6,7 +6,8 @@
  * fully controlled components (PageLayout, PageHeader, SectionCard, EmptyState,
  * ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField,
  * DataTable, FileUploader, InlineError, InlineSuccess,
- * WriteFeedbackRegion, ListSkeleton, AsyncSection, HumanVerification) with
+ * WriteFeedbackRegion, AnnouncementRegion, ListSkeleton, AsyncSection,
+ * HumanVerification) with
  * their ui-kit-namespace translations (UI_KIT_NAMESPACE + uiKitResources)
  * for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
@@ -17,7 +18,9 @@
  * whole-attempt failure banner), InlineSuccess (its success twin, the
  * mount-empty-then-fill role="status" notice), useWriteFeedback +
  * WriteFeedbackRegion (one feedback scope's slot and the region that
- * renders it), useActivationGuard (swallows a focusable control's
+ * renders it), AnnouncementRegion (a status-or-alert region that inserts
+ * each change empty and writes its text on a later frame),
+ * useActivationGuard (swallows a focusable control's
  * activation while its write is in flight or its precondition is unmet),
  * ListSkeleton and AsyncSection (the pending/error/empty/
  * content branches of an async read, with `staleState` marking a failed
@@ -181,6 +184,10 @@ export {
   retryAfterSecondsOf,
   type InlineErrorProps,
 } from './components/InlineError.js'
+export {
+  AnnouncementRegion,
+  type AnnouncementRegionProps,
+} from './components/AnnouncementRegion.js'
 export {
   CopyButton,
   type CopyButtonProps,

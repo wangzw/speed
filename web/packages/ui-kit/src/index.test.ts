@@ -124,6 +124,8 @@ const PUBLIC_EXPORTS = [
   'ActionRowSize',
   'ActionTone',
   'ActivationGuardState',
+  'AnnouncementRegion',
+  'AnnouncementRegionProps',
   'AppTheme',
   'AppThemeMode',
   'AppThemeModeControl',

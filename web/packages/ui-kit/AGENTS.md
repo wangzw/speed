@@ -14,7 +14,7 @@ components (`PageLayout`, `PageHeader`, `SectionCard`, `EmptyState`,
 `ConfirmDialog`, `SidePanel`,
 `FormField`, `FormLayout`, `PhoneNumberField`, `DataTable`,
 `FileUploader`, `InlineError`, `InlineSuccess`, `WriteFeedbackRegion`,
-`ListSkeleton`, `AsyncSection`, `HumanVerification`, and the one action
+`AnnouncementRegion`, `ListSkeleton`, `AsyncSection`, `HumanVerification`, and the one action
 row (`ActionRow` with its `ActionButton`, right-aligned, one spacing
 token between adjacent controls, the primary action last, weight and
 colour from `emphasis`/`tone` and size from the row)
@@ -257,6 +257,19 @@ plumbing and deliberately not exported.
   default top margin of one spacing unit and the caller's `sx` applies
   after it; that is why `InlineSuccess` takes no `sx` and is not rendered
   separately.
+- **`AnnouncementRegion` inserts empty and fills after two frames.**
+  `politeness="status"` (the default) renders `role="status"` with
+  `aria-live="polite"`; `politeness="alert"` renders `role="alert"`
+  alone, without an `aria-live` attribute (the role supplies assertive,
+  and stating both is announced twice). Both carry `aria-atomic="true"`.
+  The region stays mounted and every change is inserted empty, with its
+  text written after two animation frames, so the change lands in a
+  region the accessibility tree already holds; a message change remounts
+  the text node through a generation key and cancels the frames the
+  previous node armed, and unmounting cancels them too. A `null` or empty
+  message leaves it empty. The root carries `data-announcement-written`
+  while it holds the written text, for a host skin that clips itself
+  through `:has()` until the text arrives; styling is the caller's `sx`.
 - **`AsyncSection.staleState` marks a failed refresh that kept its
   data.** Supply it exactly while the latest refresh failed, the data is
   still on screen and no read is in flight; withdraw it when the retry

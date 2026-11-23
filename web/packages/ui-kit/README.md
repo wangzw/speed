@@ -60,6 +60,7 @@ reads no bundle of its own.
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `LONG_TEXT_COLUMN_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf`, `httpStatusOf` |
+| `components/AnnouncementRegion.tsx` | `AnnouncementRegion`, `AnnouncementRegionProps` |
 | `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
 | `components/RefreshButton.tsx` | `RefreshButton`, `RefreshButtonProps` |
 | `use-page-refresh.ts` | `usePageRefresh`, `pageRefreshRead`, `PageRefresh`, `PageRefreshRead`, `PageRefreshReadHandle`, `PageRefreshSettled` |
@@ -1257,6 +1258,30 @@ for `null`. The banner takes no styling props: `WriteFeedbackRegion`
 renders it inside the region's root and owns the spacing, and call sites
 render the region, never this banner on its own.
 Props: `message` (required, `string | null`).
+
+### AnnouncementRegion (the delayed live region)
+
+One live region for a single announcement. `politeness` selects what it
+is: `'status'` (the default) renders `role="status"` with
+`aria-live="polite"`; `'alert'` renders `role="alert"` alone, without an
+`aria-live` attribute, because the role already supplies the assertive
+setting and stating both makes some screen readers announce the region
+twice. Both carry `aria-atomic="true"`, so the whole region is read
+rather than the changed node.
+
+A live region announces changes that follow its existence, never text
+that mounts with it. The component inserts every change empty and writes
+the text after two animation frames: the first frame paints the empty
+region, so the change reaches an accessibility tree that already holds
+it. A message change remounts the text node through a generation key and
+cancels the frames the previous node armed; unmounting the component
+cancels them as well. A `null` or empty message leaves the region empty.
+
+The root marks itself with `data-announcement-written` while it holds the
+written text, so a host whose visible skin (an alert, a banner) stands
+around the region can keep that skin clipped through `:has()` until the
+text is actually there. Styling is the caller's: pass the `sx` the
+former region used.
 
 ### Write feedback (useWriteFeedback + WriteFeedbackRegion)
 
