@@ -421,6 +421,8 @@
     "codeLabel": "验证码",
     "codeHelper": "输入邮件中的 6 位验证码。",
     "verify": "验证",
+    "codeEmpty": "请先输入验证码。",
+    "emailEmpty": "请先输入邮箱地址。",
     "change": "更换邮箱地址",
     "changeLabel": "新邮箱地址",
     "changeSubmit": "发送验证码",

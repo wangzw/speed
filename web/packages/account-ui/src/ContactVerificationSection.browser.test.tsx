@@ -2,11 +2,14 @@
  * ContactVerificationSection's action row in a real browser: the send,
  * change-address and verify controls share one row -- one top edge, the
  * primary verify at the row's right end -- and the verify control stays
- * disabled until a code is entered. jsdom lays nothing out, so only the
- * browser tier can see the boxes' geometry.
+ * unavailable-marked until a code is entered. jsdom lays nothing out, so
+ * only the browser tier can see the boxes' geometry, and only a real
+ * engine drops a focused control's focus when it becomes natively
+ * disabled, so the in-flight focus case lives here.
  */
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { profileBody } from '../test-utils/fixtures.js'
@@ -20,6 +23,19 @@ import { renderWithProviders } from '../test-utils/render.js'
 import { ContactVerificationSection } from './ContactVerificationSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
+const VERIFY_PATH = '/api/v1/auth/identifiers/verify'
+
+/** One answer held open, so a case can inspect the in-flight control. */
+function deferredResponse(): {
+  readonly response: Promise<Response>
+  readonly release: (response: Response) => void
+} {
+  let release: (response: Response) => void = () => {}
+  const response = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  return { response, release }
+}
 
 describe('ContactVerificationSection verification actions in Chromium', () => {
   it('keeps the three actions on one row, with verify rightmost and disabled while empty', async () => {
@@ -52,7 +68,7 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
     })
 
     // The verify control is the primary action: no code, nothing to submit.
-    expect(verify).toBeDisabled()
+    expect(verify).toHaveAttribute('aria-disabled', 'true')
 
     const sendBox = send.getBoundingClientRect()
     const changeBox = change.getBoundingClientRect()
@@ -79,5 +95,68 @@ describe('ContactVerificationSection verification actions in Chromium', () => {
       rowBox.right -
       Number.parseFloat(getComputedStyle(row as HTMLElement).paddingRight)
     expect(Math.abs(verifyBox.right - contentRight)).toBeLessThanOrEqual(1)
+  })
+
+  it('keeps the verify control focused while its write is in flight, then lands on the verified section', async () => {
+    await page.viewport(900, 900)
+    let verified = false
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: {
+              state: verified ? 'verified' : 'pending',
+              email: 'ada@x.test',
+              since: null,
+            },
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return held.response
+      }
+      return jsonResponse(404, { code: 'authn.bad_request' })
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<ContactVerificationSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    const verify = screen.getByRole('button', {
+      name: zhCN.verification.verify,
+    })
+    const boxBefore = verify.getBoundingClientRect()
+    await user.click(verify)
+    await waitFor(() =>
+      expect(
+        rig.calls.some(
+          (call) => call.method === 'POST' && call.path === VERIFY_PATH,
+        ),
+      ).toBe(true),
+    )
+
+    // The control that started the write keeps the focus it had when it was
+    // activated, reports the busy state, and keeps its box.
+    expect(verify).toHaveFocus()
+    expect(verify).toHaveAttribute('aria-busy', 'true')
+    const boxBusy = verify.getBoundingClientRect()
+    expect(Math.abs(boxBusy.width - boxBefore.width)).toBeLessThanOrEqual(1)
+
+    // The landed verification replaces the code step: the control leaves
+    // the document, so focus lands on the section that stays.
+    verified = true
+    await act(async () => {
+      held.release(jsonResponse(200, { state: 'verified' }))
+    })
+    const landing = await screen.findByRole('group', {
+      name: zhCN.verification.verifiedTitle,
+    })
+    await waitFor(() => expect(landing).toHaveFocus())
   })
 })

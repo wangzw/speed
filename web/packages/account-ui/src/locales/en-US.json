@@ -421,6 +421,8 @@
     "codeLabel": "Verification code",
     "codeHelper": "Enter the 6-digit code from the email.",
     "verify": "Verify",
+    "codeEmpty": "Enter the verification code first.",
+    "emailEmpty": "Enter an email address first.",
     "change": "Use a different email address",
     "changeLabel": "New email address",
     "changeSubmit": "Send code",
