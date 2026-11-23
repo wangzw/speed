@@ -55,9 +55,13 @@
  * replaces the form and its one action returns to the channel's first step
  * by requesting a fresh code for the same number -- a new start request,
  * never the answer the dead flow refused.
- * Busy states: the send button
- * disables for the request's flight, the code step's submit while the
- * answer is in flight (RHF's isSubmitting). A further step the flow parks
+ * Busy states: the send control reports the request's flight as its own
+ * busy state, and the code step's submit does the same while the answer
+ * is in flight. A control held by a resend interval
+ * reports unavailable and explains the wait; all of them stay focusable,
+ * so an activation never drops the focus it holds, and a control that did
+ * not start the write in flight reports the context as unavailable
+ * without a spinner or a reason. A further step the flow parks
  * after the code (a required second factor) is rendered by the shared step
  * renderer; this form's own two-step surface is only the SMS method's
  * first factor. Nothing navigates; a settled login fires onSignedIn once
@@ -111,6 +115,7 @@ import {
   HumanVerification,
   PhoneNumberField,
   toE164,
+  useActivationGuard,
   usePhoneCountryDefault,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -218,6 +223,11 @@ export function SMSSignInForm({
   // One send at a time: the resend control's direct path and the deferred
   // path that waits for a proof can both reach the send in the same tick.
   const sendingRef = useRef(false)
+  // Which of this surface's own actions is in flight. The driver's busy flag
+  // covers a send and a code answer alike, so the controls need the owner:
+  // only it reports busy, while its sibling reports the context as
+  // unavailable.
+  const [flightOwner, setFlightOwner] = useState<'send' | 'answer' | null>(null)
   // The channel's feedback scope: failure codes settle its slot, while the
   // SMS step's own two notices (this step's code refusal and the used-code
   // notice) are bundle copy rather than codes. The local notice shares the
@@ -423,41 +433,46 @@ export function SMSSignInForm({
     // actually issued (the send succeeded), because a refused request
     // leaves the previous code spent.
     sentToRef.current = phone
-    // The proof is single-use: the send spends it, so the control obtains
-    // a fresh one for the next send whatever this answer is.
-    const presented = needsProof ? human.proof : null
-    const issued = await driver.start({
-      method: 'sms',
-      binding: 'cookie',
-      input: { phone },
-      ...(presented === null ? {} : { human_proof: presented }),
-    })
-    if (presented !== null) {
-      human.consume()
+    setFlightOwner('send')
+    try {
+      // The proof is single-use: the send spends it, so the control obtains
+      // a fresh one for the next send whatever this answer is.
+      const presented = needsProof ? human.proof : null
+      const issued = await driver.start({
+        method: 'sms',
+        binding: 'cookie',
+        input: { phone },
+        ...(presented === null ? {} : { human_proof: presented }),
+      })
+      if (presented !== null) {
+        human.consume()
+      }
+      if (!issued) {
+        return
+      }
+      // A fresh code was just issued: the previous session's spent-code
+      // memory describes a code this send invalidates, and any code typed
+      // against the one it replaces is stale too.
+      setSpentCode(null)
+      form.resetField('code', { defaultValue: '' })
+      // Remember the number this send went to. The sentence is rendered from
+      // it below, so it follows a later language switch. The send start
+      // cleared it first, so even a resend that produces the same sentence is
+      // a change; the announcement region inserts it empty and writes it a
+      // frame later.
+      setSentPhone(sentToRef.current)
+      // The reply's challenge may state how long to wait before another code
+      // may be requested. It is read from the driver's parked step, because
+      // this handler's state copy predates the reply's render.
+      const parked = driver.currentStep()
+      const seconds =
+        parked !== null && parked.next.kind === 'challenge'
+          ? parked.next.resend_after
+          : undefined
+      holdResend(typeof seconds === 'number' ? seconds * 1000 : 0, false)
+    } finally {
+      setFlightOwner(null)
     }
-    if (!issued) {
-      return
-    }
-    // A fresh code was just issued: the previous session's spent-code
-    // memory describes a code this send invalidates, and any code typed
-    // against the one it replaces is stale too.
-    setSpentCode(null)
-    form.resetField('code', { defaultValue: '' })
-    // Remember the number this send went to. The sentence is rendered from
-    // it below, so it follows a later language switch. The send start
-    // cleared it first, so even a resend that produces the same sentence is
-    // a change; the announcement region inserts it empty and writes it a
-    // frame later.
-    setSentPhone(sentToRef.current)
-    // The reply's challenge may state how long to wait before another code
-    // may be requested. It is read from the driver's parked step, because
-    // this handler's state copy predates the reply's render.
-    const parked = driver.currentStep()
-    const seconds =
-      parked !== null && parked.next.kind === 'challenge'
-        ? parked.next.resend_after
-        : undefined
-    holdResend(typeof seconds === 'number' ? seconds * 1000 : 0, false)
   }
 
   /** One send at a time, whichever path asked for it: the control's direct
@@ -549,11 +564,47 @@ export function SMSSignInForm({
     // The code answer verifies rather than sends, so the proof rides along
     // only for a step that may ask for a phone next; the server ignores it
     // otherwise, and the proof stays unspent.
-    await driver.answer(
-      { code: values.code },
-      needsProof ? (human.proof ?? undefined) : undefined,
-    )
+    setFlightOwner('answer')
+    try {
+      await driver.answer(
+        { code: values.code },
+        needsProof ? (human.proof ?? undefined) : undefined,
+      )
+    } finally {
+      setFlightOwner(null)
+    }
   }
+
+  // Which control reports the driver's flight: the one that started it.
+  // The other control reports the same context as unavailable without a
+  // reason, because it did not start that write and its context is
+  // changing underneath.
+  const answerInFlight = flightOwner === 'answer'
+  const sendInFlight = flightOwner === 'send'
+  // The form's submit is the same action as its submit control: an Enter in
+  // a field is the browser's synthetic click on that control, so both are
+  // guarded by the same state. The guard reads the driver's flight, never
+  // RHF's isSubmitting: react-hook-form marks the form submitting before it
+  // invokes the handler, so a guard on that flag would swallow the very
+  // submit that starts the write.
+  const guardedSubmit = useActivationGuard(onSubmit, {
+    busy: driver.busy,
+    unavailable: !onCodeStep && remainingSeconds > 0,
+  })
+  // A held control explains itself with the note beside it when one stands.
+  // A throttled send's wait is counted down by the failure banner, and no
+  // note stands beside the control then, so its own description names the
+  // wait instead.
+  const resendHoldExplanation =
+    remainingSeconds > 0
+      ? holdFromFailure
+        ? {
+            unavailableReason: t('smsSignIn.resendIn', {
+              seconds: remainingSeconds,
+            }),
+          }
+        : { unavailableDescribedBy: RESEND_NOTE_ID }
+      : {}
 
   /** Answer a further step the flow parked (a second factor, an
    * enrollment). The shared renderer obtained the proof the answer spends. */
@@ -700,7 +751,7 @@ export function SMSSignInForm({
   // to that one task, with a way back to the code the viewer already holds.
   if (onCodeStep && pendingSend !== null) {
     return (
-      <FormLayout ref={surfaceRef} form={form} onSubmit={onSubmit}>
+      <FormLayout ref={surfaceRef} form={form} onSubmit={guardedSubmit}>
         {humanBlock}
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button size="small" onClick={() => setPendingSend(null)}>
@@ -715,13 +766,14 @@ export function SMSSignInForm({
     <FormLayout
       ref={surfaceRef}
       form={form}
-      onSubmit={onSubmit}
+      onSubmit={guardedSubmit}
       actions={
         onCodeStep ? (
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={form.formState.isSubmitting}
+            busy={answerInFlight}
+            unavailable={sendInFlight}
           >
             {t('smsSignIn.submit')}
           </ActionButton>
@@ -729,7 +781,20 @@ export function SMSSignInForm({
           <ActionButton
             type="submit"
             emphasis="primary"
-            disabled={driver.busy || remainingSeconds > 0}
+            busy={sendInFlight}
+            // Changing the phone while the code answer is in flight returns
+            // to this step with that answer still running: the send did not
+            // start it, so it reports the context as unavailable without a
+            // reason. The form guard swallows the submit meanwhile, and a
+            // control that looked ready would lose the click silently.
+            unavailable={answerInFlight || remainingSeconds > 0}
+            {...(remainingSeconds > 0
+              ? {
+                  unavailableReason: t('smsSignIn.resendIn', {
+                    seconds: remainingSeconds,
+                  }),
+                }
+              : {})}
           >
             {t('smsSignIn.sendCode')}
           </ActionButton>
@@ -808,18 +873,15 @@ export function SMSSignInForm({
             </Alert>
           ) : null}
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
+            <ActionButton
               size="small"
               onClick={() => askToSend(sentToRef.current)}
-              disabled={driver.busy || remainingSeconds > 0}
-              aria-describedby={
-                remainingSeconds > 0 && !holdFromFailure
-                  ? RESEND_NOTE_ID
-                  : undefined
-              }
+              busy={sendInFlight}
+              unavailable={answerInFlight || remainingSeconds > 0}
+              {...resendHoldExplanation}
             >
               {t('smsSignIn.resendCode')}
-            </Button>
+            </ActionButton>
             <Button size="small" onClick={editPhone}>
               {t('smsSignIn.editPhone')}
             </Button>
