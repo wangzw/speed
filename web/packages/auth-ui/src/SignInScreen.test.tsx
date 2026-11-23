@@ -900,10 +900,19 @@ describe('SignInScreen', () => {
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       )
       // The mutations are recorded rather than the DOM sampled between the
-      // two commits: whether a passive effect's state update lands before or
-      // after flushSync returns depends on how the environment schedules
-      // effects, but the order of the two writes does not.
-      const observer = new MutationObserver(() => {})
+      // two writes: the region must be inserted empty in the commit the
+      // retry lands, and its text must arrive later as a change inside
+      // that same node. (The channel's feedback scope adds its own silent
+      // success region, hence the lookup by node identity.)
+      const before = new Set(screen.getAllByRole('status'))
+      // Records are collected by the callback, not drained afterwards:
+      // the fill happens in a later task, so its records are delivered to
+      // the callback (and dropped from the queue) before a later
+      // takeRecords() could read them.
+      const records: MutationRecord[] = []
+      const observer = new MutationObserver((batch) => {
+        records.push(...batch)
+      })
       observer.observe(document.body, {
         childList: true,
         subtree: true,
@@ -917,39 +926,37 @@ describe('SignInScreen', () => {
               .click()
           })
         })
-        const records = observer.takeRecords()
-        // The waiting region is born empty: a live region announces only
-        // content changes that follow its own insertion, and the text fills
-        // the existing region a commit later. (The channel's feedback scope
-        // adds its own silent success region, hence the lookup by text.)
         const region = screen
           .getAllByRole('status')
-          .find(
-            (candidate) =>
-              candidate.textContent === zhCN.signInFlow.passkeyWaiting,
-          )
-        expect(region).toBeDefined()
-        const insertedAt = records.findIndex((record) =>
-          Array.from(record.addedNodes).some((node) => node.contains(region!)),
+          .find((candidate) => !before.has(candidate))
+        if (region === undefined) {
+          throw new Error('the retry inserted no waiting region')
+        }
+        // The waiting region is born empty: a live region announces only
+        // content changes that follow its own insertion.
+        expect(region).toHaveTextContent('')
+
+        await waitFor(() =>
+          expect(region).toHaveTextContent(zhCN.signInFlow.passkeyWaiting),
         )
-        const filledAt = records.findIndex((record) =>
-          region!.contains(record.target),
-        )
-        expect(insertedAt).toBeGreaterThanOrEqual(0)
-        expect(filledAt).toBeGreaterThan(insertedAt)
+        // The region was inserted as part of the retry's commit ...
+        expect(
+          records.some((record) =>
+            Array.from(record.addedNodes).some(
+              (node) =>
+                node === region ||
+                (node instanceof Element && node.contains(region)),
+            ),
+          ),
+        ).toBe(true)
+        // ... and the text arrived later as a mutation inside that same
+        // node, never with its birth frame.
+        expect(
+          records.some((record) => region.contains(record.target)),
+        ).toBe(true)
       } finally {
         observer.disconnect()
       }
-      await waitFor(() =>
-        expect(
-          screen
-            .getAllByRole('status')
-            .some(
-              (region) =>
-                region.textContent === zhCN.signInFlow.passkeyWaiting,
-            ),
-        ).toBe(true),
-      )
       // The control that had focus unmounted with the phase; the control
       // the waiting state offers has it now.
       expect(

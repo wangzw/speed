@@ -148,7 +148,7 @@ describe('ImpersonationBanner', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('announces the impersonation and states subject, tenant, expiry and the management notice', () => {
+  it('announces the impersonation and states subject, tenant, expiry and the management notice', async () => {
     renderWithProviders(
       <ImpersonationBanner
         impersonation={{
@@ -160,8 +160,11 @@ describe('ImpersonationBanner', () => {
       />,
     )
     // The start is announced through the one live region that was
-    // already mounted before the impersonation appeared.
-    expect(screen.getByRole('status')).toHaveTextContent(ACTING_AS_ZH)
+    // already mounted before the impersonation appeared: inserted empty,
+    // filled on a later frame.
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('')
+    await waitFor(() => expect(status).toHaveTextContent(ACTING_AS_ZH))
 
     const notice = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,
@@ -337,17 +340,19 @@ describe('ImpersonationBanner', () => {
     expect(markup.split(`>${SUBJECT}<`)).toHaveLength(2)
   })
 
-  it('announces an impersonation that is already current on first mount', () => {
+  it('announces an impersonation that is already current on first mount', async () => {
     // The frame mounts after a start, and a reload while impersonating
     // mounts this component too: the region is born empty and filled on
-    // the next tick, so both cases are announced.
+    // a later frame, so both cases are announced.
     renderWithProviders(
       <ImpersonationBanner
         impersonation={{ subject: SUBJECT }}
         onEnd={() => {}}
       />,
     )
-    expect(screen.getByRole('status')).toHaveTextContent(ACTING_AS_ZH)
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('')
+    await waitFor(() => expect(status).toHaveTextContent(ACTING_AS_ZH))
   })
 
   it('keeps the end control usable when tenant and expiry are unknown', async () => {
@@ -458,7 +463,7 @@ describe('ImpersonationBanner', () => {
     expect(onEnd).toHaveBeenCalledTimes(1)
   })
 
-  it('announces and shows the shared attempt success, and the text outlives the banner', () => {
+  it('announces and shows the shared attempt success, and the text outlives the banner', async () => {
     // The host's own shape: the attempt's success message arrives while
     // the banner is still mounted, then the host clears `impersonation`.
     const { rerender } = renderWithProviders(
@@ -469,7 +474,10 @@ describe('ImpersonationBanner', () => {
       />,
     )
     const status = screen.getByRole('status')
-    expect(status).toHaveTextContent(zhCN.impersonation.ended)
+    expect(status).toHaveTextContent('')
+    await waitFor(() =>
+      expect(status).toHaveTextContent(zhCN.impersonation.ended),
+    )
     // The confirmed text is shown, not left inside the 1x1 hidden box.
     expect(isVisuallyHidden(status)).toBe(false)
 
@@ -481,8 +489,12 @@ describe('ImpersonationBanner', () => {
       />,
     )
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(
-      zhCN.impersonation.ended,
+    // The confirmation stands in the live region after the banner is
+    // gone; a fresh mount inserts it empty and fills a frame later.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.impersonation.ended,
+      ),
     )
   })
 
@@ -575,14 +587,15 @@ describe('ImpersonationBanner', () => {
       />,
     )
     const status = screen.getByRole('status')
-    const outer = status.parentElement
+    // The Alert is the region's skin; the clipping Box is its parent.
+    const outer = status.closest('.MuiAlert-root')?.parentElement
     expect(outer).not.toBeNull()
     expect(messageSlotDeclaration(outer as Element, 'overflow')).toBe(
       'hidden',
     )
   })
 
-  it('keeps the announcement clipped to the hidden box while impersonating', () => {
+  it('keeps the announcement clipped to the hidden box while impersonating', async () => {
     renderWithProviders(
       <ImpersonationBanner
         impersonation={{ subject: SUBJECT }}
@@ -592,7 +605,7 @@ describe('ImpersonationBanner', () => {
     // The region is the announcement's carrier, but the banner itself
     // states the same line: the region must stay visually hidden.
     const status = screen.getByRole('status')
-    expect(status).toHaveTextContent(ACTING_AS_ZH)
+    await waitFor(() => expect(status).toHaveTextContent(ACTING_AS_ZH))
     expect(isVisuallyHidden(status)).toBe(true)
   })
 

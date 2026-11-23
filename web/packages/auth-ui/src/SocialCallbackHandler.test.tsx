@@ -83,7 +83,7 @@ describe('SocialCallbackHandler', () => {
     renderWithProviders(
       <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
     )
-    expect(screen.getByText(zhCN.socialCallback.pending)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.socialCallback.pending)).toBeInTheDocument()
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(harness.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       'GET /api/v1/auth/flows/current',
@@ -199,17 +199,18 @@ describe('SocialCallbackHandler', () => {
     // The pending notice's role="status" region mounts empty on every
     // entry into the pending state -- the initial mount and a retry's
     // re-entry alike -- because a live region announces content changes
-    // that follow its own existence, never text that mounts with it.
-    // The text is gated behind a one-commit lag armed by an effect
-    // after the pending phase's first commit, so the region's first
-    // committed frame is empty whatever transition entered the phase,
-    // and the text fills an existing region a commit later. The
-    // assertion between the two commits below is what distinguishes
-    // the shapes: the region's text content must still be empty the
-    // moment the node re-appears on the retry. flushSync lands the
-    // retry's one commit synchronously, and the act scope holds back
-    // the post-commit effect that fills the region until this assertion
-    // has seen the birth frame.
+    // that follow its own existence, never text that mounts with it. The
+    // region is inserted first and its text is written after the next
+    // paint, scheduled from the ref callback in the commit that inserted
+    // it (two animation frames, so the empty region is painted before
+    // the text changes), so the region's first committed frame is empty
+    // whatever transition entered the phase, and the text fills an
+    // existing region a frame later. The assertion between the two
+    // writes below is what distinguishes the shapes: the region's text
+    // content must still be empty the moment the node re-appears on the
+    // retry. flushSync lands the retry's one commit synchronously, and
+    // the act scope holds back the animation frames that fill the region
+    // until this assertion has seen the birth frame.
     let attempts = 0
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => {
@@ -386,7 +387,7 @@ describe('SocialCallbackHandler', () => {
     ).toHaveLength(1)
     expect(harness.store.get()).toBe('access-1')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.getByText(zhCN.socialCallback.pending)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.socialCallback.pending)).toBeInTheDocument()
   })
 
   it('render the en-US pending notice on an English-starting instance', async () => {
@@ -401,7 +402,7 @@ describe('SocialCallbackHandler', () => {
       <SocialCallbackHandler session={harness.session} />,
       { language: 'en-US' },
     )
-    expect(screen.getByText(enUS.socialCallback.pending)).toBeInTheDocument()
+    expect(await screen.findByText(enUS.socialCallback.pending)).toBeInTheDocument()
     resolveRead(completeFlow(1))
   })
 
@@ -453,7 +454,7 @@ describe('SocialCallbackHandler', () => {
     expect(
       screen.queryByRole('button', { name: zhCN.socialCallback.retry }),
     ).not.toBeInTheDocument()
-    expect(screen.getByText(zhCN.socialCallback.pending)).toBeInTheDocument()
+    expect(await screen.findByText(zhCN.socialCallback.pending)).toBeInTheDocument()
     expect(
       harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
     ).toHaveLength(1)

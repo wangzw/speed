@@ -73,9 +73,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
-import Typography from '@mui/material/Typography'
 import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
-import { errorCodeOf } from '@speed/ui-kit'
+import { AnnouncementRegion, errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import {
   ChannelFeedbackRegion,
@@ -212,22 +211,6 @@ export function SocialCallbackHandler({
   // that is already gone.
   const onSignInRef = useRef(onSignIn)
   onSignInRef.current = onSignIn
-
-  // The pending live region must never mount together with its text: a
-  // role="status" region announces only content changes that follow its
-  // own insertion, so the pending text born in the same commit as the
-  // region -- the initial mount, or a retry's re-entry into the pending
-  // branch -- would be silent. The text below is therefore gated on
-  // `pendingCommitted`, which lags the pending phase by one commit (the
-  // effect after the phase's first commit arms it, leaving the phase
-  // disarms it): the region's first committed frame is empty whatever
-  // transition entered the phase, and the text fills an existing region
-  // a commit later.
-  const pending = !failed && driver.step === null
-  const [pendingCommitted, setPendingCommitted] = useState(false)
-  useEffect(() => {
-    setPendingCommitted(pending)
-  }, [pending])
 
   // One read per attempt: the ref survives StrictMode's double effect
   // invocation, so the second run starts nothing.
@@ -432,19 +415,25 @@ export function SocialCallbackHandler({
   return (
     <>
       {framed(
+        // The pending notice is the shared announcement region: it is
+        // inserted empty on every entry into the pending phase and fills
+        // a frame later, independent of when React flushes effects.
+        // Decorative spinner: the notice on its own announces the pending
+        // state from the region, so naming the spinner too would read the
+        // notice twice.
         <Box
-          role="status"
-          sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            width: '100%',
+          }}
         >
-          {/* Decorative: the notice on its own announces the pending state
-              from the role=status container; naming the spinner too would
-              read the notice twice. The text renders only once
-              `pendingCommitted` arms it, one commit after this region mounts
-              (see the comment on the state above). */}
           <CircularProgress size={18} aria-hidden={true} />
-          <Typography>
-            {pendingCommitted ? t('socialCallback.pending') : ''}
-          </Typography>
+          <AnnouncementRegion
+            message={t('socialCallback.pending')}
+            sx={{ typography: 'body1' }}
+          />
         </Box>,
       )}
     </>

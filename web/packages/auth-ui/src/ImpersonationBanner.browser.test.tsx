@@ -16,6 +16,7 @@ import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
+import { fireEvent } from '@testing-library/react'
 import axe from 'axe-core'
 import { page, userEvent } from 'vitest/browser'
 import { ImpersonationBanner } from './ImpersonationBanner.js'
@@ -126,5 +127,47 @@ describe('ImpersonationBanner live region in Chromium', () => {
     // No visible control remains; the hidden region still must not enter
     // the tab order.
     expect(document.activeElement).not.toBe(screen.getByRole('status'))
+  })
+
+  it('keeps the settlement skin clipped until its text is painted', async () => {
+    await page.viewport(900, 900)
+    const SETTLED = 'The session ended'
+    function Host() {
+      const [settled, setSettled] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setSettled(true)}>
+            settle
+          </button>
+          <ImpersonationBanner
+            impersonation={null}
+            onEnd={() => undefined}
+            successMessage={settled ? SETTLED : null}
+          />
+        </>
+      )
+    }
+
+    renderBanner(<Host />)
+    const status = screen.getByRole('status')
+    const alert = status.closest('.MuiAlert-root') as HTMLElement
+    expect(alert).not.toBeNull()
+    // The element carrying the skin is the Box the component styles around
+    // the alert; it is the one that clips or paints.
+    const skin = alert.parentElement as HTMLElement
+    expect(status.textContent).toBe('')
+    expect(getComputedStyle(skin).clipPath).toBe('inset(50%)')
+
+    // The commit set the settlement. The region is still empty for two
+    // animation frames, and the skin must not paint an empty box in them.
+    fireEvent.click(screen.getByRole('button', { name: 'settle' }))
+    expect(status.textContent).toBe('')
+    expect(getComputedStyle(skin).clipPath).toBe('inset(50%)')
+
+    await waitFor(() => {
+      expect(status.textContent).toBe(SETTLED)
+    })
+    // The skin unclips in the same frame the text is painted.
+    expect(getComputedStyle(skin).clipPath).toBe('none')
   })
 })

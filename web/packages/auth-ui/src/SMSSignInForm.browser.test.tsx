@@ -15,7 +15,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 // The provider-backed keyboard performs the browser's own default action
 // (the DOM-simulating user-event does not move a native range).
-import { userEvent as browserUserEvent } from 'vitest/browser'
+import { page, userEvent as browserUserEvent } from 'vitest/browser'
 import {
   CAPTCHA_CHALLENGE,
   LOGIN_METHODS,
@@ -27,7 +27,7 @@ import {
   openFlow,
 } from '@speed/test-utils/session-harness'
 import { PhoneCountryDefaultProvider } from '@speed/ui-kit'
-import { SMSSignInForm } from './SMSSignInForm.js'
+import { SMSSignInForm, SMS_NOTICE_ID } from './SMSSignInForm.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import uiKitZhCN from '../../ui-kit/src/locales/zh-CN.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -331,5 +331,81 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     expect(sends(harness)[0]?.options?.body).toMatchObject({
       human_proof: 'Y2FwdGNoYS1jaGFsbGVuZ2U.12345',
     })
+  })
+
+  it('keeps the sent-notice skin clipped until its text is painted', async () => {
+    await page.viewport(900, 900)
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(
+      <PhoneCountryDefaultProvider country="CN">
+        <SMSSignInForm session={harness.session} />
+      </PhoneCountryDefaultProvider>,
+    )
+
+    // Sample the alert's painted state on every animation frame of the code
+    // step, from the moment its field appears while the send is in flight.
+    // The phone step's own region is empty and clipped for its whole life,
+    // so frames recorded there would satisfy the empty-and-clipped assertion
+    // without saying anything about the notice. On the code step the region
+    // is inserted empty and filled two frames later; a frame that shows the
+    // skin unclipped while the region is still empty is the empty box this
+    // case rules out.
+    const frames: { readonly text: string; readonly clip: string }[] = []
+    let sampling = true
+    const onCodeStep = () =>
+      document.querySelector('input[autocomplete="one-time-code"]') !== null
+    const sample = () => {
+      if (!sampling) {
+        return
+      }
+      const node = document.getElementById(SMS_NOTICE_ID)
+      const alert = node?.closest('.MuiAlert-root')
+      if (
+        onCodeStep() &&
+        node !== null &&
+        node !== undefined &&
+        alert instanceof HTMLElement
+      ) {
+        frames.push({
+          text: node.textContent ?? '',
+          clip: getComputedStyle(alert).clipPath,
+        })
+      }
+      requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+
+    const sent = zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164)
+    try {
+      const send = await fillPhone()
+      await userEvent.setup().click(send)
+      await waitFor(() =>
+        expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(sent),
+      )
+    } finally {
+      sampling = false
+    }
+
+    // The sampler observed the empty region before the write, clipped on
+    // every one of those frames.
+    expect(
+      frames.some(
+        (frame) => frame.text === '' && frame.clip === 'inset(50%)',
+      ),
+    ).toBe(true)
+    expect(
+      frames.some(
+        (frame) => frame.text === '' && frame.clip !== 'inset(50%)',
+      ),
+    ).toBe(false)
+
+    // Once the text is written the skin is painted in the same frame: the
+    // settled state is unclipped.
+    const written = document.getElementById(SMS_NOTICE_ID)!
+    const writtenAlert = written.closest('.MuiAlert-root') as HTMLElement
+    expect(written).toHaveTextContent(sent)
+    expect(getComputedStyle(writtenAlert).clipPath).toBe('none')
   })
 })

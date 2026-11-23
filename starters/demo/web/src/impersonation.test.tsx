@@ -84,15 +84,15 @@ const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
  * The impersonation banner's standing live region. The app mounts more than
  * one standing status region: the invitation-acceptance confirmation, and the
  * tenant-switch confirmation each account-menu placement carries. The
- * impersonation announcement is the only Alert-shaped one, so select that
- * rather than assuming a sole unnamed region.
+ * impersonation announcement is the only status region that is atomic, so
+ * select that rather than assuming a sole unnamed region.
  */
 function announcementRegion(): HTMLElement {
   const regions = screen
     .getAllByRole('status')
     .filter(
       (region) =>
-        region.classList.contains('MuiAlert-root') &&
+        region.getAttribute('aria-atomic') === 'true' &&
         region.getAttribute('aria-label') !==
           demoEnUS.home.notice.region,
     )
@@ -1065,7 +1065,7 @@ describe('the impersonation shell', () => {
     // component keeps mounted.
     await waitFor(() => expect(banner()).toBeNull())
     expect(
-      screen.getByText(tAuth('impersonation.ended')),
+      await screen.findByText(tAuth('impersonation.ended')),
     ).toBeInTheDocument()
 
     // The operator's own identity is back: both account triggers name the
@@ -1522,7 +1522,9 @@ describe('the impersonation shell', () => {
     // end control went with the banner.
     await waitFor(() => expect(gated.pendingRestores()).toBe(1))
     await waitFor(() => expect(banner()).toBeNull())
-    expect(screen.getByText(tAuth('impersonation.ended'))).toBeInTheDocument()
+    expect(
+      await screen.findByText(tAuth('impersonation.ended')),
+    ).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: tAuth('impersonation.end') }),
     ).toBeNull()
@@ -1532,7 +1534,9 @@ describe('the impersonation shell', () => {
     await gated.releaseRestore()
     await waitFor(() => expect(gated.pendingRestores()).toBe(0))
     expect(banner()).toBeNull()
-    expect(screen.getByText(tAuth('impersonation.ended'))).toBeInTheDocument()
+    expect(
+      await screen.findByText(tAuth('impersonation.ended')),
+    ).toBeInTheDocument()
   })
 
   it('returns the banner to the snapshot once the bounded re-read spends its check-ttl bound', async () => {
@@ -2670,11 +2674,10 @@ describe('the impersonation shell', () => {
     // shell's permanent live region is no longer the only status region.
     // Locate the ended confirmation through its text and assert the region
     // that carries it.
-    expect(
-      screen
-        .getByText(tAuth('impersonation.ended'))
-        .closest('[role="status"]'),
-    ).toHaveTextContent(tAuth('impersonation.ended'))
+    const endedText = await screen.findByText(tAuth('impersonation.ended'))
+    expect(endedText.closest('[role="status"]')).toHaveTextContent(
+      tAuth('impersonation.ended'),
+    )
     expect(backend.deletes()).toBe(1)
   })
 
@@ -2837,8 +2840,10 @@ describe('the impersonation shell', () => {
         name: tAuth('impersonation.regionLabel'),
       }),
     ).toBeInTheDocument()
-    expect(announcementRegion()).toHaveTextContent(
-      tAuth('impersonation.actingAs', { subject: 'Target Two' }),
+    await waitFor(() =>
+      expect(announcementRegion()).toHaveTextContent(
+        tAuth('impersonation.actingAs', { subject: 'Target Two' }),
+      ),
     )
   })
 

@@ -11,8 +11,11 @@
  * and changing the phone returns to the first step. The notice is written
  * into a region that mounted empty, and an identical resend clears it
  * before writing the same sentence again, so a successful repeat is
- * announced rather than read as an unchanged string. A resend is held for
- * the interval the server states -- the `resend_after` a challenge carried,
+ * announced rather than read as an unchanged string. The sentence is
+ * rendered from the number on every render, so a language switch
+ * re-translates it rather than freezing the language it was sent in. A
+ * resend is held for the interval the server states -- the `resend_after` a
+ * challenge carried,
  * or the `Retry-After` of a 429 -- and the countdown timer stops at its own
  * expiry. The hold a successful send's `resend_after` imposes is explained
  * by a note beside the control, which counts the seconds down; when the
@@ -102,6 +105,7 @@ import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
 import {
   ActionButton,
+  AnnouncementRegion,
   FormField,
   FormLayout,
   HumanVerification,
@@ -205,13 +209,12 @@ export function SMSSignInForm({
   // The phone step's announcement: the exact message the control renders
   // under the number, filled after the refused submit has rendered it.
   const [phoneNotice, setPhoneNotice] = useState('')
-  // The sent notice the status region carries. It is written a commit
-  // after an accepted send (so the region is never born with its text)
-  // and cleared before an identical resend writes the same sentence again:
-  // a live region announces a change, not a value rewritten, so a
-  // repeated sentence must pass through empty to be spoken.
-  const [sentNotice, setSentNotice] = useState('')
-  const [sentSeq, setSentSeq] = useState(0)
+  // The number the current code session was sent to. The notice sentence is
+  // rendered from it on every render rather than translated and stored at
+  // send time, so switching the language re-renders the sentence in the new
+  // language. It is cleared before a send leaves, so an identical resend is
+  // a change rather than a value rewritten.
+  const [sentPhone, setSentPhone] = useState('')
   // One send at a time: the resend control's direct path and the deferred
   // path that waits for a proof can both reach the send in the same tick.
   const sendingRef = useRef(false)
@@ -332,6 +335,11 @@ export function SMSSignInForm({
 
   const onCodeStep =
     driver.step !== null && isCodePrompt(driver.step)
+  // The sent sentence, translated on every render from the number the code
+  // went to, so a language switch re-renders it instead of leaving the
+  // language it was translated in at send time.
+  const sentText =
+    sentPhone === '' ? '' : t('smsSignIn.sentNotice', { phone: sentPhone })
   // The two SMS steps read the gate and obtain a proof only once a send is
   // asked for. A parked step the flow later shows is the shared renderer's,
   // which carries its own gate and proof. A host that already read the
@@ -372,17 +380,6 @@ export function SMSSignInForm({
     setPhoneNotice(message)
   }, [phoneAttempt])
 
-  // Fill the sent notice one commit after the send was accepted. A first
-  // send and a resend take the same path, so the region always changes --
-  // an identical resend included, because the accepted send cleared it in
-  // the commit that bumped `sentSeq`.
-  useEffect(() => {
-    if (sentSeq === 0) {
-      return
-    }
-    setSentNotice(t('smsSignIn.sentNotice', { phone: sentToRef.current }))
-  }, [sentSeq, t])
-
   // Tick the countdown only while one is running, and stop the timer at its
   // own expiry rather than leaving it ticking for the rest of the mount.
   useEffect(() => {
@@ -417,7 +414,7 @@ export function SMSSignInForm({
     // The previous send's notice describes a code this attempt replaces: it
     // goes before the request leaves, so a refusal never leaves an older
     // "sent to" sentence standing beside the new failure.
-    setSentNotice('')
+    setSentPhone('')
     answeringCodeRef.current = false
     answeredSignupRef.current = false
     // A request does not yet open a new code session: whether one opens is
@@ -446,11 +443,12 @@ export function SMSSignInForm({
     // against the one it replaces is stale too.
     setSpentCode(null)
     form.resetField('code', { defaultValue: '' })
-    // Empty the region before the notice is written again: when a resend
-    // produces the same sentence, passing through empty is what makes the
-    // successful repeat audible.
-    setSentNotice('')
-    setSentSeq((value) => value + 1)
+    // Remember the number this send went to. The sentence is rendered from
+    // it below, so it follows a later language switch. The send start
+    // cleared it first, so even a resend that produces the same sentence is
+    // a change; the announcement region inserts it empty and writes it a
+    // frame later.
+    setSentPhone(sentToRef.current)
     // The reply's challenge may state how long to wait before another code
     // may be requested. It is read from the driver's parked step, because
     // this handler's state copy predates the reply's render.
@@ -574,7 +572,7 @@ export function SMSSignInForm({
 
   const editPhone = (): void => {
     resetScope()
-    setSentNotice('')
+    setSentPhone('')
     setPendingSend(null)
     setSignupExpired(false)
     // Leaving the code step clears its attempt state: the code-entry
@@ -739,27 +737,36 @@ export function SMSSignInForm({
       }
     >
       {/* The form's one status region: the sent notice on the code step,
-          the number field's refusal on the phone step. It must never
-          mount together with its text: a role="status" region announces
-          only content changes that follow its own insertion, so a notice
-          born in the same commit as the region would be silent. The
-          region therefore stands for the whole life of the form --
-          mounted empty and visually silent (clipped, never display:none)
-          while nothing is announced -- and each accepted notice fills
-          the text into a region the screen reader already knows. */}
+          the number field's refusal on the phone step. The shared
+          announcement region stands for the whole life of the form --
+          visually silent (clipped, never display:none) while nothing is
+          announced -- and inserts every notice empty before writing it a
+          frame later, so each one is a change the screen reader already
+          knows. */}
+      {/* The info skin is the Alert's; the live role and the empty-first
+          write belong to the shared region inside it. The Alert carries
+          no role of its own, so the notice is announced once. Its visible
+          skin follows the region's written marker: the commit that sets
+          the notice leaves the region empty for two frames, so an always
+          visible skin would paint an empty box until the text arrived. It
+          stays clipped until `data-announcement-written` appears, then
+          unclips in the same frame the text is painted. */}
       <Alert
-        id={SMS_NOTICE_ID}
         severity="info"
-        role="status"
+        role="none"
         sx={
-          onCodeStep && sentNotice !== ''
-            ? { width: '100%' }
+          onCodeStep && sentText !== ''
+            ? {
+                width: '100%',
+                '&:not(:has([data-announcement-written]))': visuallyHiddenSx,
+              }
             : visuallyHiddenSx
         }
       >
-        {onCodeStep
-          ? sentNotice
-          : phoneNotice}
+        <AnnouncementRegion
+          id={SMS_NOTICE_ID}
+          message={onCodeStep ? sentText : phoneNotice}
+        />
       </Alert>
       {onCodeStep ? (
         <>

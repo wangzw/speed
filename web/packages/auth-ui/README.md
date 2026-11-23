@@ -898,9 +898,10 @@ owns contrast and is verified browser-side), and `region` is disabled
 because the units under test are components, not full app pages.
 Interaction semantics are asserted by the tests rather than left to axe:
 sent notices and the social-callback and passkey-waiting states announce
-through `role="status"` containers mounted empty and filled a commit later
-(the pending spinners are `aria-hidden`, so the notice is not read twice;
-entering the passkey waiting state moves focus to its cancel control),
+through `AnnouncementRegion`, whose `role="status"` region mounts empty and
+writes its text after two animation frames (the pending spinners are
+`aria-hidden`, so the notice is not read twice; entering the passkey
+waiting state moves focus to its cancel control),
 the authenticator-app symbol is a `role="img"` carrying the bundle's
 accessible name and its manual-entry disclosure is a button with
 `aria-expanded`/`aria-controls`,

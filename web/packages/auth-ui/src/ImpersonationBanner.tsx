@@ -18,10 +18,10 @@
  * `successMessage`, or the "impersonation ended" text the component
  * announces when the impersonation it was displaying disappears -- the
  * latter covers an end made from another entry point, such as the account
- * menu). The announcement is filled on the tick after the region is in
- * the tree, so a first mount that already has an impersonation -- the
- * frame mounting after a start, or a whole-page reload while
- * impersonating -- is announced too. The confirmation therefore survives
+ * menu). The announcement region is inserted empty and filled a frame
+ * later, so a first mount that already has an impersonation -- the frame
+ * mounting after a start, or a whole-page reload while impersonating --
+ * is announced too. The confirmation therefore survives
  * the banner's own disappearance (the host clears `impersonation` after
  * re-reading the session) and stands until the next attempt or a page
  * reload replaces it.
@@ -56,14 +56,19 @@
  * controls out of it.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ReactElement } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import type { Theme } from '@mui/material/styles'
-import { InlineSuccess, useFormatInstant, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  AnnouncementRegion,
+  useFormatInstant,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 
@@ -281,35 +286,34 @@ export function ImpersonationBanner({
   // not, UTC as the last resort.
   const formatTime = useFormatInstant()
 
-  // The announcement is committed one tick after the impersonation
-  // appears. The live region is therefore already in the tree and empty
-  // when its text arrives, including on the component's very first
-  // mount with an impersonation already current -- a start that mounts
-  // the frame, or a reload while impersonating -- which would otherwise
-  // be silent. A new impersonation also replaces the previous one's
+  // The region stands for the component's whole life and inserts every
+  // message empty before writing it a frame later, so the announcement
+  // is reliable even on the very first mount with an impersonation
+  // already current -- a start that mounts the frame, or a reload while
+  // impersonating. A new impersonation also replaces the previous one's
   // confirmation: a standing "impersonation ended" would describe a
   // context that is gone. The transition from a displayed impersonation
   // to none is a settlement by whatever entry point ended it, so the
   // ended text is announced for that edge too.
+  //
+  // What the last commit displayed and whether the previous one ended
+  // are adjusted while rendering rather than in an effect: the message
+  // the commit carries is then already the settlement, and the region
+  // (not an effect) owns the empty-first write.
   const subject = impersonation?.subject ?? null
-  const [announcedSubject, setAnnouncedSubject] = useState<string | null>(null)
+  const [displayedSubject, setDisplayedSubject] = useState<string | null>(
+    subject,
+  )
   const [ended, setEnded] = useState(false)
-  const previousSubject = useRef<string | null>(subject)
-  useEffect(() => {
-    const previous = previousSubject.current
-    previousSubject.current = subject
-    setAnnouncedSubject(subject)
-    if (subject !== null) {
-      setEnded(false)
-    } else if (previous !== null) {
-      setEnded(true)
-    }
-  }, [subject])
+  if (subject !== displayedSubject) {
+    setEnded(subject === null && displayedSubject !== null)
+    setDisplayedSubject(subject)
+  }
 
   const announcement =
-    announcedSubject === null
+    displayedSubject === null
       ? null
-      : t('impersonation.actingAs', { subject: announcedSubject })
+      : t('impersonation.actingAs', { subject: displayedSubject })
   const settlement = successMessage ?? (ended ? t('impersonation.ended') : null)
   const liveText = settlement ?? announcement
 
@@ -329,14 +333,31 @@ export function ImpersonationBanner({
       <Box
         sx={
           settlement !== null
-            ? { width: '100%' }
+            ? {
+                width: '100%',
+                // The settlement skin follows the region's written marker:
+                // the commit that sets the settlement leaves the region
+                // empty for two frames, so a skin that showed at once would
+                // paint an empty box. It stays clipped until the marker
+                // appears and unclips in the same frame as the text.
+                '&:not(:has([data-announcement-written]))': {
+                  ...visuallyHiddenSx,
+                  '& .MuiAlert-message': { overflow: 'hidden' },
+                },
+              }
             : {
                 ...visuallyHiddenSx,
                 '& .MuiAlert-message': { overflow: 'hidden' },
               }
         }
       >
-        <InlineSuccess message={liveText} />
+        {/* The success skin is the Alert's, but the live role and the
+            empty-first write belong to the shared region inside it. The
+            Alert itself carries no role, so the announcement is made
+            once. */}
+        <Alert severity="success" role="none" sx={{ width: '100%' }}>
+          <AnnouncementRegion message={liveText} />
+        </Alert>
       </Box>
       {impersonation !== null && !dismissed && (
         <Box

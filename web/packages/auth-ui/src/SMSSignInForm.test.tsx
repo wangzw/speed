@@ -22,6 +22,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@speed/api-client'
+import { switchLanguage } from '@speed/i18n'
 import { SMSSignInForm, SMS_NOTICE_ID } from './SMSSignInForm.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -149,8 +150,38 @@ describe('SMSSignInForm', () => {
       binding: 'cookie',
       input: { phone: CN_E164 },
     })
-    expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(
-      zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164),
+    await waitFor(() =>
+      expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(
+        zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164),
+      ),
+    )
+  })
+
+  it('re-render the sent notice in the switched language', async () => {
+    // The notice is a translation of the number the code went to. It is
+    // rendered from state on every render, so switching the language after
+    // the send re-renders the sentence rather than leaving the language it
+    // was translated in at send time.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    const { i18n } = renderWithProviders(
+      <SMSSignInForm session={harness.session} />,
+    )
+    await sendCode()
+    await waitFor(() =>
+      expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(
+        zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164),
+      ),
+    )
+
+    await act(async () => {
+      await switchLanguage(i18n, 'en-US')
+    })
+    await waitFor(() =>
+      expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(
+        enUS.smsSignIn.sentNotice.replace('{{phone}}', CN_E164),
+      ),
     )
   })
 

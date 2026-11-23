@@ -108,6 +108,7 @@ import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
 import {
   ActionButton,
   ActionRow,
+  AnnouncementRegion,
   FormField,
   FormLayout,
   HumanVerification as HumanVerificationBlock,
@@ -740,9 +741,10 @@ function TotpFields({
  * device (a page with no authenticator at all keeps it pending until it is
  * dismissed), so the step shows an explicit waiting state: the waiting
  * message and a cancel control instead of leaving a disabled button as the
- * only signal. The waiting notice mounts as an empty `role="status"` region
- * and fills a commit later, so a screen reader announces it; focus moves to
- * the cancel control, since the control that had it unmounted. Cancel is
+ * only signal. The waiting notice is the shared announcement region: it
+ * mounts empty and fills a frame later, so a screen reader announces it;
+ * focus moves to the cancel control, since the control that had it
+ * unmounted. Cancel is
  * its own state
  * transition, taken at once: it shows the failure and retry without waiting
  * for the ceremony to settle, and only best-effort asks the browser to give
@@ -796,9 +798,6 @@ function PasskeyFields({
   // The scope owns the failure: it renders the banner and keeps it mutually
   // exclusive with the channel's server failure. This step only reports it.
   const errorKey = clientFailure
-  // The waiting notice's text, one commit behind the waiting phase (see
-  // the effect below): the region must mount empty.
-  const [waitingCommitted, setWaitingCommitted] = useState(false)
   const cancelRef = useRef<HTMLButtonElement>(null)
   // The ceremony currently being waited on. Cancel clears it before the
   // failure renders, so the ceremony's late settlement and a retry's own
@@ -828,17 +827,11 @@ function PasskeyFields({
     [],
   )
 
-  // The waiting notice's role="status" region must never mount together
-  // with its text: a live region announces only content changes that
-  // follow its own insertion, so a notice born in the same commit as the
-  // region would be silent. The text is therefore gated on
-  // `waitingCommitted`, which lags the waiting phase by one commit: the
-  // region is born empty and the text fills it a commit later. The same
-  // effect moves focus to the cancel control, because the control that had
-  // it (the Continue button, or the entry that opened the step) unmounted
-  // with the phase change.
+  // The cancel control takes the focus the control that had it (the
+  // Continue button, or the entry that opened the step) held, because
+  // that control unmounted with the phase change. The waiting notice's
+  // live region handles its own empty birth frame.
   useEffect(() => {
-    setWaitingCommitted(working)
     if (working) {
       cancelRef.current?.focus()
     }
@@ -916,14 +909,12 @@ function PasskeyFields({
       </Typography>
       {working ? (
         <>
-          <Box
-            role="status"
-            sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}
-          >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <CircularProgress size={18} aria-hidden={true} />
-            <Typography>
-              {waitingCommitted ? t('signInFlow.passkeyWaiting') : ''}
-            </Typography>
+            <AnnouncementRegion
+              message={t('signInFlow.passkeyWaiting')}
+              sx={{ typography: 'body1' }}
+            />
           </Box>
           <ActionRow>
             <ActionButton
