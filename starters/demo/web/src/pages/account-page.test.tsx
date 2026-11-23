@@ -32,7 +32,7 @@ import type { RequestFn, RequestOptions } from '@speed/api-client'
 import type { SpeedAppThemeOptions } from '@speed/product-shell/bootstrap'
 import { languageDisplayName } from '@speed/i18n'
 import type { AuthnMethodList } from '@speed/auth-core'
-import { useAppThemeMode } from '@speed/ui-kit'
+import { uiKitResources, useAppThemeMode } from '@speed/ui-kit'
 import { createBackend } from '../a11y/backends.js'
 import {
   COLOR_MODE_STORAGE_KEY,
@@ -137,6 +137,13 @@ const accountEnUS = accountUiResources['en-US'] as {
   }
 }
 const bindingEnUS = accountEnUS.bindingCallback
+/** The confirmation's cancel label, from the ui-kit namespace the page
+ * renders the dialog with. */
+const CANCEL_LABEL = (
+  uiKitResources['en-US'] as {
+    readonly confirmDialog: { readonly cancelLabel: string }
+  }
+).confirmDialog.cancelLabel
 
 /** The calls the page issued in the current case, in order. */
 let calls: {
@@ -1070,6 +1077,337 @@ describe('AccountSettingsPage block consistency', () => {
     expect(alert).toHaveTextContent(accountEnUS.errors.unknown)
     // A code without a leaf never renders as a raw resource key.
     expect(alert).not.toHaveTextContent('errors.')
+  })
+
+  /** The profile's one phone number, as the fixture read answers it. */
+  const PHONE_IDENTIFIER = {
+    id: 'id-phone',
+    kind: 'phone',
+    value: '+14155550123',
+    proven: true,
+    contact: true,
+    default_contact: false,
+    sign_in: false,
+    verified_at: '2026-01-01T00:00:00Z',
+    verified_via: 'sms-code',
+  } as const
+
+  /**
+   * The profile with one phone number, whose delete succeeds. `holdDelete`
+   * keeps the DELETE pending; `holdRefresh` keeps the profile read that
+   * follows it pending, so a case can observe the dialog and the row at
+   * chosen moments.
+   */
+  function phoneDeleteBackend(
+    options: {
+      readonly holdDelete?: boolean
+      readonly holdRefresh?: boolean
+    } = {},
+  ): {
+    readonly request: RequestFn
+    readonly releaseDelete: () => void
+    readonly releaseRefresh: () => void
+  } {
+    const backend = patchedBackend({
+      identifiers: [PHONE_IDENTIFIER],
+      verification: { state: 'none', email: '', since: null },
+    })
+    let deleted = false
+    let releaseDelete = (): void => undefined
+    const deleteHeld = new Promise<void>((resolve) => {
+      releaseDelete = resolve
+    })
+    let releaseRefresh = (): void => undefined
+    const refreshHeld = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    const request = (async (
+      path: string,
+      requestOptions?: RequestOptions,
+    ) => {
+      const method = requestOptions?.method ?? 'GET'
+      if (path === '/api/v1/auth/identifiers/id-phone' && method === 'DELETE') {
+        if (options.holdDelete === true) {
+          await deleteHeld
+        }
+        deleted = true
+        return undefined
+      }
+      if (path === '/api/v1/auth/me' && method === 'GET' && deleted) {
+        if (options.holdRefresh === true) {
+          await refreshHeld
+        }
+        const answer = (await backend(path, requestOptions)) as Record<
+          string,
+          unknown
+        >
+        return { ...answer, identifiers: [] }
+      }
+      return backend(path, requestOptions)
+    }) as RequestFn
+    return {
+      request,
+      releaseDelete: () => releaseDelete(),
+      releaseRefresh: () => releaseRefresh(),
+    }
+  }
+
+  /** The phone delete calls the page issued. */
+  function phoneDeletes() {
+    return calls.filter(
+      (call) =>
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/identifiers/id-phone',
+    )
+  }
+
+  /** Opens the phone row's confirmation and confirms it. */
+  async function confirmPhoneRemoval(
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<{ readonly remove: HTMLElement; readonly dialog: HTMLElement }> {
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: demoEnUS.account.phoneRemove.removeConfirm,
+      }),
+    )
+    return { remove, dialog }
+  }
+
+  it('marks the phone delete control busy and holds the dialog cancel without a reason', async () => {
+    const user = userEvent.setup()
+    const backend = phoneDeleteBackend({ holdDelete: true })
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: backend.request,
+    })
+
+    const { remove, dialog } = await confirmPhoneRemoval(user)
+    // The control that opened the confirmation reports the write it started:
+    // focusable, disabled to assistive technology, and busy.
+    await waitFor(() => expect(remove).toHaveAttribute('aria-busy', 'true'))
+    expect(remove).toHaveAttribute('aria-disabled', 'true')
+    // The dialog's cancel is the delete's sibling in this write: held while
+    // the write runs, without a busy indicator or a reason.
+    const cancel = within(dialog).getByRole('button', { name: CANCEL_LABEL })
+    expect(cancel).toHaveAttribute('aria-disabled', 'true')
+    expect(cancel).not.toHaveAttribute('aria-busy')
+    expect(cancel).not.toHaveAccessibleDescription()
+    await user.click(cancel)
+    cancel.focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(phoneDeletes()).toHaveLength(1)
+
+    await act(async () => {
+      backend.releaseDelete()
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('returns focus to the delete control when the confirmation is cancelled', async () => {
+    const user = userEvent.setup()
+    const backend = phoneDeleteBackend()
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: backend.request,
+    })
+
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: CANCEL_LABEL }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(remove).toHaveFocus()
+    expect(phoneDeletes()).toHaveLength(0)
+  })
+
+  it('lands focus in the phone block when the removed row takes its delete control', async () => {
+    const user = userEvent.setup()
+    const backend = phoneDeleteBackend({ holdRefresh: true })
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: backend.request,
+    })
+
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: demoEnUS.account.phoneRemove.removeConfirm,
+      }),
+    )
+
+    // The dialog closes when the delete lands and hands focus back to the
+    // control that opened it, which is still mounted because the profile read
+    // after the delete is held.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(remove).toHaveFocus()
+
+    await act(async () => {
+      backend.releaseRefresh()
+    })
+    await waitFor(() => expect(remove).not.toBeInTheDocument())
+    // The row took its control with it: focus lands on the block that held
+    // the table, not the document body.
+    expect(phone).toHaveFocus()
+    expect(phone).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('leaves focus where the operator put it while the removed row lands', async () => {
+    const user = userEvent.setup()
+    const backend = phoneDeleteBackend({ holdRefresh: true })
+    renderAccount('?section=profile', {
+      features: ['authn.phone', 'authn.identifiers.email'],
+      backend: backend.request,
+    })
+
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: demoEnUS.account.phoneRemove.removeConfirm,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(remove).toHaveFocus()
+
+    // The operator moves on before the read that removes the row lands; that
+    // place belongs to the operator, not to the removal.
+    const elsewhere = screen.getByRole('button', {
+      name: demoEnUS.account.action.add,
+    })
+    elsewhere.focus()
+    expect(elsewhere).toHaveFocus()
+
+    await act(async () => {
+      backend.releaseRefresh()
+    })
+    await waitFor(() => expect(remove).not.toBeInTheDocument())
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it('leaves focus in an unrelated dialog while the removed row lands', async () => {
+    const user = userEvent.setup()
+    const backend = phoneDeleteBackend({ holdRefresh: true })
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: backend.request,
+    })
+
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: demoEnUS.account.phoneRemove.removeConfirm,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(remove).toHaveFocus()
+
+    // A dialog that is not this removal's own surface holds the operator's
+    // focus when the row lands. Only the confirmation and step-up dialogs
+    // this write opened are the removal's; any other dialog is a place the
+    // operator chose.
+    const otherDialog = document.createElement('div')
+    otherDialog.setAttribute('role', 'dialog')
+    const inside = document.createElement('button')
+    inside.textContent = 'another surface'
+    otherDialog.appendChild(inside)
+    document.body.appendChild(otherDialog)
+    try {
+      inside.focus()
+      expect(inside).toHaveFocus()
+
+      await act(async () => {
+        backend.releaseRefresh()
+      })
+      await waitFor(() => expect(remove).not.toBeInTheDocument())
+      expect(inside).toHaveFocus()
+      expect(phone).not.toHaveFocus()
+    } finally {
+      otherDialog.remove()
+    }
+  })
+
+  it('lands in the phone block when the row leaves before the confirmation releases focus', async () => {
+    const user = userEvent.setup()
+    // Neither the delete nor the read that follows it is held: the row can
+    // leave while the confirmation is still closing and still holds focus.
+    const backend = phoneDeleteBackend()
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: backend.request,
+    })
+
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const { remove } = await confirmPhoneRemoval(user)
+
+    await waitFor(() => expect(remove).not.toBeInTheDocument())
+    // The dialog that carried the removal is one of this write's own
+    // surfaces; a focus still inside it when the row leaves fell with the
+    // removal just as focus on the removed row or the body did.
+    await waitFor(() => expect(phone).toHaveFocus())
+  })
+
+  it('returns focus to the delete control when a removal is refused', async () => {
+    const user = userEvent.setup()
+    renderAccount('?section=profile', {
+      features: ['authn.phone'],
+      backend: refusedPhoneDeleteBackend(),
+    })
+
+    const phone = await screen.findByRole('region', {
+      name: demoEnUS.account.rows.label.phone,
+    })
+    const remove = await within(phone).findByRole('button', {
+      name: demoEnUS.account.action.delete,
+    })
+    await user.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: demoEnUS.account.phoneRemove.removeConfirm,
+      }),
+    )
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(remove).toHaveFocus()
+    expect(await within(phone).findByRole('alert')).toBeInTheDocument()
   })
 
   it('clears the phone-removal failure when the visitor leaves the pane', async () => {
