@@ -210,6 +210,39 @@ func (r *rig) publishTXT(domain, token string) {
 	r.txt[txtName(domain)] = []string{"speed-authn=" + token}
 }
 
+// standInSwitch is the run-time switch a case scripts. It reports the methods a
+// case turned off now, or the error it set, under a lock so that a case can
+// change the answer between requests.
+type standInSwitch struct {
+	mu       sync.Mutex
+	disabled []string
+	err      error
+	reads    int
+}
+
+// DisabledMethods reports what the case set, counting the read.
+func (s *standInSwitch) DisabledMethods() ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads++
+	return append([]string(nil), s.disabled...), s.err
+}
+
+// calls reports how many times the switch has been read.
+func (s *standInSwitch) calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reads
+}
+
+// set turns the given methods off, or makes the read fail when err is non-nil.
+func (s *standInSwitch) set(disabled []string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disabled = append([]string(nil), disabled...)
+	s.err = err
+}
+
 func (r *rig) failTXT(domain string, err error) {
 	r.txtErr[txtName(domain)] = err
 }

@@ -2,6 +2,7 @@ package sso
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -187,6 +188,100 @@ func TestTheDiscoveryWithNothingDeliveredMatchesNoMatch(t *testing.T) {
 	}
 	if got := string(raw["providers"]); got != "[]" {
 		t.Errorf("the answer's providers = %s, want an empty array", got)
+	}
+}
+
+// TestTheDiscoveryAnswersUnavailableWhenTheSwitchCannotBeRead holds that a
+// failed read of the run-time switch answers 503 unavailable, and that the
+// answer does not depend on whether the domain matches: a domain with a
+// provider, one without, and an address that reduces to no domain at all
+// answer the same problem document. A successful read followed by a failing one
+// answers 503, so a failure is never answered from the last result.
+//
+// The address with no domain pins the order of the two readings: the switch is
+// read before the address is reduced, so a failing read answers 503 rather than
+// the 400 the reduction would give.
+func TestTheDiscoveryAnswersUnavailableWhenTheSwitchCannotBeRead(t *testing.T) {
+	r := routed(t)
+	r.verified("tenant-a", "oidc-idp", "oidc.example.com")
+	sw := &standInSwitch{}
+	r.p.loginSwitch = sw
+
+	// The successful read answers 200; the failing read that follows must not
+	// be answered from it.
+	if w := r.post(discoverFullPath, `{"email":"someone@oidc.example.com"}`); w.Code != http.StatusOK {
+		t.Fatalf("the discovery with a readable switch answered %d: %s", w.Code, w.Body.String())
+	}
+	sw.set(nil, errors.New("the settings store is unreachable"))
+
+	held := r.post(discoverFullPath, `{"email":"someone@oidc.example.com"}`)
+	unheld := r.post(discoverFullPath, `{"email":"someone@nobody.example.org"}`)
+	unreducible := r.post(discoverFullPath, `{"email":"someone@"}`)
+	for _, w := range []*httptest.ResponseRecorder{held, unheld, unreducible} {
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("the discovery answered %d, want 503: %s", w.Code, w.Body.String())
+		}
+	}
+	if held.Body.String() != unheld.Body.String() || held.Body.String() != unreducible.Body.String() {
+		t.Errorf("a failed switch read answered %q for a held domain, %q for an unknown one and %q for an address with no domain; want the same body",
+			held.Body.String(), unheld.Body.String(), unreducible.Body.String())
+	}
+	if want := "urn:speed:authn:" + mount.CodeUnavailable; problemType(t, held) != want {
+		t.Errorf("the 503's type = %q, want %q", problemType(t, held), want)
+	}
+	if got := sw.calls(); got != 4 {
+		t.Errorf("the switch was read %d times over 4 requests, want one read per request", got)
+	}
+}
+
+// TestTheDiscoveryReadsTheRunTimeSwitchOncePerRequest holds the read count: one
+// read answers one request, however many providers the register holds. The
+// request naming no provider is what holds the read out of the filter loop,
+// which runs over the answer rather than the register: a read per iteration
+// would leave that request with no read at all, and a read per provider with
+// more than one.
+//
+// A verified domain is globally unique, so one domain cannot carry two
+// providers; the last case is a register of two providers, with the request
+// naming one of their domains.
+func TestTheDiscoveryReadsTheRunTimeSwitchOncePerRequest(t *testing.T) {
+	r := routed(t)
+	sw := &standInSwitch{}
+	r.p.loginSwitch = sw
+
+	steps := []struct {
+		name    string
+		email   string
+		listing int
+		add     func()
+	}{
+		{"no provider", "someone@nobody.example.org", 0, nil},
+		{"one provider", "someone@oidc.example.com", 1, func() {
+			r.verified("tenant-a", "oidc-idp", "oidc.example.com")
+		}},
+		{"two in the register", "someone@saml.example.com", 1, func() {
+			r.verifiedSAML("tenant-b", "saml-idp", "saml.example.com")
+		}},
+	}
+	for i, step := range steps {
+		if step.add != nil {
+			step.add()
+		}
+		w := r.post(discoverFullPath, `{"email":"`+step.email+`"}`)
+		if w.Code != http.StatusOK {
+			t.Fatalf("the discovery of %s answered %d: %s", step.email, w.Code, w.Body.String())
+		}
+		var body discoverResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("the body %q is not the answer shape: %v", w.Body.String(), err)
+		}
+		if len(body.Providers) != step.listing {
+			t.Fatalf("the discovery of %s listed %+v, want %d", step.email, body.Providers, step.listing)
+		}
+		if got := sw.calls(); got != i+1 {
+			t.Errorf("after the request with %s the switch had been read %d times, want %d (one per request)",
+				step.name, got, i+1)
+		}
 	}
 }
 

@@ -111,7 +111,7 @@
                 }
               }
             },
-            "description": "The providers that have verified the domain, an empty list when none match"
+            "description": "The providers that have verified the domain and are enabled, leaving out those whose login method the run-time switch has turned off; an empty list when none match"
           },
           "400": {
             "content": {
@@ -151,7 +151,7 @@
                 }
               }
             },
-            "description": "The provider register could not be reached"
+            "description": "The provider register could not be reached, or the run-time login-method switch could not be read"
           }
         },
         "security": [],

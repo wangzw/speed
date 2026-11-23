@@ -101,9 +101,14 @@ The API is the package's godoc. Read the `SSOProviders` comments in
   is registered public. A domain that cannot be reduced is a 400 `bad-request`;
   a body the capability's decoder refuses is a 400 `bad-request` and a body of
   another media type a 415 `unsupported-media-type`, both before any lookup. The
-  answer leaves out a provider whose protocol is not delivered in
-  this run; `Discover` itself does not filter, because the domain ownership
-  decision uses it too.
+  answer leaves out a provider whose protocol is not delivered in this run, and
+  one whose login method the run-time switch has turned off. The switch
+  (`authn.LoginMethodSwitch`, delivered by `authn.login`, taken up as optional in
+  `wire`) is read once per request before the query, so a change takes effect
+  without a restart; a failed read answers 503 `unavailable` whether or not the
+  domain matches, and an absent switch filters nothing because no method can
+  start a flow then. `Discover` itself does not filter, because the domain
+  ownership decision uses it too.
 - **The change event is a hint, never the authority.** `Put` and `Delete` publish
   `authn.idp.changed` after the commit, and a domain verification, withdrawal or
   removal publishes its own change; a publication that fails is a `Warn` and never
