@@ -158,7 +158,7 @@ func oneMetric() *metricdata.ResourceMetrics {
 // so that a destination the exporter cannot reach fails the call rather than
 // the test binary.
 func exportOnce(exporters *observability.Exporters) (spanErr, metricErr error) {
-	return exportWithin(exporters, 3*time.Second)
+	return exportWithin(exporters, coretest.Scale(3*time.Second))
 }
 
 // exportWithin is exportOnce under a bound of the caller's choosing. Each

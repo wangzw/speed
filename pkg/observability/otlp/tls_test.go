@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"io"
 	stdlog "log"
 	"net/http/httptest"
 	"os"
@@ -12,32 +13,46 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/core/coretest"
 )
 
-// handshakes collects the lines a TLS receiver's server writes about the
-// connections it refused, which is how a case tells a refused handshake from
-// any other reason an export failed.
+// handshakes is the log sink of a TLS receiver's server, which writes there
+// about the connections it refused, which is how a case tells a refused
+// handshake from any other reason an export failed. Its refusal channel is
+// closed once the first refusal line is written, so a case waits for that
+// event rather than polling what has arrived by the time the export returns.
 type handshakes struct {
-	mu    sync.Mutex
-	lines []string
+	refusal chan struct{}
+	once    sync.Once
+}
+
+func newHandshakes() *handshakes {
+	return &handshakes{refusal: make(chan struct{})}
 }
 
 func (h *handshakes) Write(p []byte) (int, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.lines = append(h.lines, string(p))
+	if strings.Contains(string(p), "TLS handshake error") {
+		h.once.Do(func() { close(h.refusal) })
+	}
 	return len(p), nil
 }
 
-func (h *handshakes) refused() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for _, line := range h.lines {
-		if strings.Contains(line, "TLS handshake error") {
-			return true
-		}
+// lateWriter delays the first refusal line a server writes, so a case can
+// reproduce the line arriving after the export has already returned: net/http
+// writes it from the connection's own goroutine, with no ordering against the
+// client's error.
+type lateWriter struct {
+	w     io.Writer
+	delay time.Duration
+	once  sync.Once
+}
+
+func (l *lateWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), "TLS handshake error") {
+		l.once.Do(func() { time.Sleep(l.delay) })
 	}
-	return false
+	return l.w.Write(p)
 }
 
 // tlsReceiver is a receiver for the wire's protocol behind TLS. It presents a
@@ -46,11 +61,22 @@ func (h *handshakes) refused() bool {
 // without one.
 func tlsReceiver(t *testing.T, w wire, ca *authority, clientAuth bool) (*receiver, *handshakes) {
 	t.Helper()
+	return tlsReceiverAfter(t, w, ca, clientAuth, 0)
+}
+
+// tlsReceiverAfter is tlsReceiver with its first refusal line written delay
+// late; a non-positive delay writes at once.
+func tlsReceiverAfter(t *testing.T, w wire, ca *authority, clientAuth bool, delay time.Duration) (*receiver, *handshakes) {
+	t.Helper()
 	rec := &receiver{}
-	refused := &handshakes{}
+	refused := newHandshakes()
 	srv := httptest.NewUnstartedServer(w.handler(rec))
 	srv.EnableHTTP2 = true
-	srv.Config.ErrorLog = stdlog.New(refused, "", 0)
+	var logw io.Writer = refused
+	if delay > 0 {
+		logw = &lateWriter{w: refused, delay: delay}
+	}
+	srv.Config.ErrorLog = stdlog.New(logw, "", 0)
 	srv.TLS = &tls.Config{
 		MinVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{ca.issue(t, "server", x509.ExtKeyUsageServerAuth).pair},
@@ -101,15 +127,45 @@ func expectRefused(t *testing.T, cfg Config, rec *receiver, refused *handshakes)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	spanErr, metricErr := exportWithin(exporters, time.Second)
+	spanErr, metricErr := exportWithin(exporters, coretest.Scale(time.Second))
 	if spanErr == nil || metricErr == nil {
 		t.Errorf("an export succeeded: spans %v, metrics %v; want both to fail at the handshake", spanErr, metricErr)
 	}
 	if got := rec.requests(); len(got) != 0 {
 		t.Errorf("the receiver was asked for %v, want nothing past the handshake", paths(got))
 	}
-	if !refused.refused() {
+	// The server writes the refusal from the connection's own goroutine, with
+	// no ordering against the export's return, so wait for the line to be
+	// written rather than reading it once.
+	timer := time.NewTimer(coretest.Scale(time.Second))
+	defer timer.Stop()
+	select {
+	case <-refused.refusal:
+	case <-timer.C:
 		t.Error("the receiver's server refused no handshake, so the exports failed for some other reason")
+	}
+}
+
+// TestRefusedHandshakeLogArrivesLate reproduces the race expectRefused guards
+// against: the server writes its refusal line from the connection's own
+// goroutine, so it can arrive after the export has returned. The line is held
+// back on purpose here, and the judgment still has to be "refused".
+//
+// Only the HTTP wire runs: its export returns as soon as the handshake fails,
+// so the line held back by 250ms lands after it and the race is visible. A gRPC
+// export waits out its deadline when the handshake is refused, far longer than
+// that delay, so the line is already written by the time it returns and the
+// case cannot tell the fix from the bug.
+func TestRefusedHandshakeLogArrivesLate(t *testing.T) {
+	for _, w := range wires {
+		if w.protocol != ProtocolHTTP {
+			continue
+		}
+		t.Run(w.protocol, func(t *testing.T) {
+			ca := newAuthority(t)
+			rec, refused := tlsReceiverAfter(t, w, ca, false, coretest.Scale(250*time.Millisecond))
+			expectRefused(t, tlsConfig(w, rec), rec, refused)
+		})
 	}
 }
 
