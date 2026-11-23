@@ -939,7 +939,9 @@ describe('AccountsPage', () => {
     const close = within(panel).getByRole('button', {
       name: PANEL_CLOSE_LABEL,
     })
-    await waitFor(() => expect(close).toBeDisabled())
+    await waitFor(() =>
+      expect(close).toHaveAttribute('aria-disabled', 'true'),
+    )
     fireEvent.keyDown(panel, { key: 'Escape' })
     expect(
       screen.getByRole('dialog', { name: CREATE_PANEL_NAME }),
@@ -2490,7 +2492,7 @@ describe('AccountsPage', () => {
     await waitFor(() =>
       expect(
         within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
-      ).toBeDisabled(),
+      ).toHaveAttribute('aria-disabled', 'true'),
     )
     fireEvent.keyDown(panel, { key: 'Escape' })
     expect(
@@ -2503,7 +2505,7 @@ describe('AccountsPage', () => {
     await waitFor(() =>
       expect(
         within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
-      ).toBeEnabled(),
+      ).not.toHaveAttribute('aria-disabled', 'true'),
     )
     fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
     await waitFor(() => {

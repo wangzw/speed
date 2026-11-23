@@ -620,6 +620,29 @@ describe('DataTable', () => {
     expect(onSelectionChange).toHaveBeenLastCalledWith([])
   })
 
+  it('keeps the header checkbox focusable but unavailable when the page is empty', () => {
+    const onSelectionChange = vi.fn()
+    const utils = renderWithProviders(
+      <DataTable
+        rows={[]}
+        columns={BASE_COLUMNS}
+        rowKey={keyOf}
+        selectedRowKeys={[]}
+        onSelectionChange={onSelectionChange}
+      />,
+    )
+    const selectAll = utils.getByLabelText(zhCN.dataTable.selectAllRows)
+    // The header checkbox may hold focus when a batch delete empties the
+    // page, so it stays reachable and reports unavailable instead of being
+    // natively disabled.
+    expect(selectAll).toHaveAttribute('aria-disabled', 'true')
+    expect(selectAll).not.toBeDisabled()
+    selectAll.focus()
+    expect(selectAll).toBe(document.activeElement)
+    fireEvent.click(selectAll)
+    expect(onSelectionChange).not.toHaveBeenCalled()
+  })
+
   it('marks the header checkbox indeterminate for a partial page selection', () => {
     const utils = renderWithProviders(
       <DataTable

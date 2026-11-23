@@ -872,7 +872,9 @@ describe('SettingsPage', () => {
     await user.type(first, 'x')
     await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: zhCN.common.refresh })).toBeDisabled(),
+      expect(
+        screen.getByRole('button', { name: zhCN.common.refresh }),
+      ).toHaveAttribute('aria-disabled', 'true'),
     )
 
     // Paging is part of the save's context: the next page does not open.

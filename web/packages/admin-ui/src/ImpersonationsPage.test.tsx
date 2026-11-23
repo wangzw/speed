@@ -200,7 +200,7 @@ async function expectRefreshInert(
 ): Promise<void> {
   const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
   await waitForCondition(() => {
-    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
   })
   expect(refresh).not.toHaveAttribute('aria-describedby')
   fireEvent.click(refresh)

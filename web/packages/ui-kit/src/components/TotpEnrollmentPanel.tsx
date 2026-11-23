@@ -68,7 +68,7 @@ export type TotpEnrollmentPanelProps = {
   readonly code: string
   /** Reports every change of the code field. */
   readonly onCodeChange: (code: string) => void
-  /** True while an answer is in flight; the code field is disabled. */
+  /** True while an answer is in flight; the code field is read-only. */
   readonly busy?: boolean
   /** A secondary control rendered ahead of the primary action in the panel's action row. */
   readonly secondaryAction?: ReactNode
@@ -223,9 +223,13 @@ export function TotpEnrollmentPanel({
           id={codeId}
           value={code}
           onChange={(event) => onCodeChange(event.target.value)}
-          disabled={busy}
           slotProps={{
             htmlInput: {
+              // A write in flight locks the value without taking focus
+              // away: a natively disabled field drops a focused input's
+              // focus to the body, while a read-only one stays reachable
+              // and selectable.
+              readOnly: busy,
               inputMode: 'numeric',
               autoComplete: 'one-time-code',
               maxLength: 6,

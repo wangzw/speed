@@ -216,6 +216,7 @@ import { useUiKitTranslation } from '../internal/translation.js'
 import { CopyButton } from './CopyButton.js'
 import { POINTER_FINE_HOVER_QUERY } from '../internal/pointer.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
+import { useActivationGuard } from '../activation-guard.js'
 
 /**
  * Opt-in column visibility priority (see the header note for the full
@@ -736,6 +737,14 @@ export function DataTable<T>({
       : [...current, ...pageKeys.filter((key) => !selected.has(key))]
     onSelectionChange(next)
   }
+  // An empty page cannot select anything. The header checkbox may hold
+  // focus when the page empties (a batch delete clears it), so it stays
+  // focusable, reports `aria-disabled` and refuses the change instead of
+  // turning natively disabled and dropping focus to the body.
+  const handleToggleAll = useActivationGuard(toggleAll, {
+    busy: false,
+    unavailable: pageKeys.length === 0,
+  })
 
   const toggleRow = (key: string | number) => {
     if (!selectable) return
@@ -830,11 +839,12 @@ export function DataTable<T>({
                   <Checkbox
                     checked={allSelected}
                     indeterminate={someSelected}
-                    onChange={toggleAll}
-                    disabled={pageKeys.length === 0}
+                    onChange={handleToggleAll}
                     slotProps={{
                       input: {
                         'aria-label': t('dataTable.selectAllRows'),
+                        'aria-disabled':
+                          pageKeys.length === 0 ? true : undefined,
                         ref: headerInputRef,
                       },
                     }}

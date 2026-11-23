@@ -191,7 +191,7 @@ async function expectRefreshInert(
 ): Promise<void> {
   const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
   await waitForCondition(() => {
-    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
   })
   expect(refresh).not.toHaveAttribute('aria-describedby')
   fireEvent.click(refresh)
@@ -261,7 +261,7 @@ describe('PermissionsPage', () => {
     // The roles read is disabled while no tenant is chosen; the refresh
     // control follows it instead of issuing the read with an empty tenant.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
     // The disabled control is described by the page's own "choose a tenant
     // first" text.
     const describedBy = refresh.getAttribute('aria-describedby')
@@ -269,8 +269,8 @@ describe('PermissionsPage', () => {
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
       zhCN.permissions.needTenant.description,
     )
-    // A programmatic click, because user-event refuses a disabled target:
-    // the control must stay inert even when reached from a script.
+    // A programmatic click exercises the guard directly: the control must
+    // stay inert even when reached from a script.
     fireEvent.click(refresh)
     await act(async () => {
       await Promise.resolve()
@@ -299,7 +299,9 @@ describe('PermissionsPage', () => {
       pending.resolve()
     })
     await waitForCondition(() => {
-      expect(screen.getByRole('button', { name: zhCN.common.refresh })).not.toBeDisabled()
+      expect(
+        screen.getByRole('button', { name: zhCN.common.refresh }),
+      ).not.toHaveAttribute('aria-disabled', 'true')
     })
   })
 

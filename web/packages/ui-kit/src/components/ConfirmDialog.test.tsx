@@ -208,9 +208,9 @@ describe('ConfirmDialog', () => {
       fireEvent.click(confirm)
       expect(onConfirm).not.toHaveBeenCalled()
 
-      // The confirm stays inert for the whole lockout window, up to and
-      // including the instant before it ends.
-      expect(again()).toBeDisabled()
+      // The confirm stays unavailable for the whole lockout window, up to
+      // and including the instant before it ends.
+      expect(again()).toHaveAttribute('aria-disabled', 'true')
       await act(async () => {
         await vi.advanceTimersByTimeAsync(CONFIRM_ARM_LOCKOUT_MS - 1)
       })
@@ -221,7 +221,7 @@ describe('ConfirmDialog', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1)
       })
-      expect(again()).toBeEnabled()
+      expect(again()).not.toHaveAttribute('aria-disabled', 'true')
       fireEvent.click(again())
       expect(onConfirm).toHaveBeenCalledTimes(1)
     } finally {
@@ -243,7 +243,7 @@ describe('ConfirmDialog', () => {
     vi.useFakeTimers()
     try {
       fireEvent.click(confirm)
-      expect(again()).toBeDisabled()
+      expect(again()).toHaveAttribute('aria-disabled', 'true')
       // The window covers only the confirm button: the cancel exit (and
       // with it Escape/backdrop, which share its handler) stays live.
       fireEvent.click(cancel)
@@ -275,7 +275,7 @@ describe('ConfirmDialog', () => {
         await vi.advanceTimersByTimeAsync(CONFIRM_ARM_LOCKOUT_MS)
       })
       const reopened = getByRole('button', { name: zhCN.confirmDialog.confirmLabel })
-      expect(reopened).toBeEnabled()
+      expect(reopened).not.toHaveAttribute('aria-disabled', 'true')
       fireEvent.click(reopened)
       expect(onConfirm).not.toHaveBeenCalled()
     } finally {
@@ -420,18 +420,17 @@ describe('ConfirmDialog', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('confirmLoading: both exits are inert and the confirm button shows the busy state', () => {
+  it('confirmLoading: both exits are inert, focusable and report unavailable', () => {
     const { onConfirm, onCancel, getByRole } = setup({ confirmLoading: true })
     const confirm = getByRole('button', { name: zhCN.confirmDialog.confirmLabel })
-    expect(confirm).toBeDisabled()
-    // fireEvent bypasses the pointer-events check user-event enforces on
-    // disabled controls -- the disabled attribute is the inertness guard
-    // under test, and it is asserted above.
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    // The button is not natively disabled -- it keeps focus -- so the
+    // guard inside ActionButton is the inertness measure under test.
     fireEvent.click(confirm)
     expect(onConfirm).not.toHaveBeenCalled()
 
     const cancel = getByRole('button', { name: zhCN.confirmDialog.cancelLabel })
-    expect(cancel).toBeDisabled()
+    expect(cancel).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(cancel)
     expect(onCancel).not.toHaveBeenCalled()
   })
@@ -442,17 +441,29 @@ describe('ConfirmDialog', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('confirmDisabled: disables only the confirm button, leaving cancel live', () => {
+  it('confirmDisabled: makes only the confirm button unavailable, leaving cancel live', () => {
     const { onConfirm, onCancel, getByRole } = setup({ confirmDisabled: true })
     const confirm = getByRole('button', { name: zhCN.confirmDialog.confirmLabel })
-    expect(confirm).toBeDisabled()
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(confirm)
     expect(onConfirm).not.toHaveBeenCalled()
 
     const cancel = getByRole('button', { name: zhCN.confirmDialog.cancelLabel })
-    expect(cancel).not.toBeDisabled()
+    expect(cancel).not.toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(cancel)
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirmDisabled: carries the host-supplied reason as its accessible description', () => {
+    const REASON = 'Accept the terms first.'
+    const { getByRole } = setup({
+      confirmDisabled: true,
+      confirmDisabledReason: REASON,
+    })
+    const confirm = getByRole('button', {
+      name: zhCN.confirmDialog.confirmLabel,
+    })
+    expect(confirm).toHaveAccessibleDescription(REASON)
   })
 
   it('confirmDisabled: clearing it starts the doubleConfirm guard untouched', async () => {
@@ -481,7 +492,7 @@ describe('ConfirmDialog', () => {
     const confirm = screen.getByRole('button', {
       name: zhCN.confirmDialog.confirmLabel,
     })
-    expect(confirm).toBeDisabled()
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
 
     await user.click(screen.getByRole('button', { name: 'enable' }))
     const enabled = screen.getByRole('button', {

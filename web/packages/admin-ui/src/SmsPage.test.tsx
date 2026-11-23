@@ -172,14 +172,16 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    expect(refresh).not.toBeDisabled()
+    expect(refresh).not.toHaveAttribute('aria-disabled', 'true')
 
     await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
     await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
-    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
 
     pending.resolve()
-    await waitForCondition(() => expect(refresh).not.toBeDisabled())
+    await waitForCondition(() =>
+      expect(refresh).not.toHaveAttribute('aria-disabled', 'true'),
+    )
   })
 
   it('disables the refresh while the offer scope is in flight', async () => {
@@ -197,10 +199,12 @@ describe('SmsPage', () => {
     await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
     await user.type(screen.getByLabelText(zhCN.sms.offer.localeLabel), 'zh-CN')
     await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
-    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
 
     pending.resolve()
-    await waitForCondition(() => expect(refresh).not.toBeDisabled())
+    await waitForCondition(() =>
+      expect(refresh).not.toHaveAttribute('aria-disabled', 'true'),
+    )
   })
 
   it('disables the refresh while a table scope write is in flight', async () => {
@@ -216,10 +220,12 @@ describe('SmsPage', () => {
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
 
     await user.click(toggle)
-    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
 
     pending.resolve()
-    await waitForCondition(() => expect(refresh).not.toBeDisabled())
+    await waitForCondition(() =>
+      expect(refresh).not.toHaveAttribute('aria-disabled', 'true'),
+    )
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {

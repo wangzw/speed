@@ -420,17 +420,19 @@ describe('TenantDetailPage', () => {
     await screen.findByText(zhCN.tenants.status.active)
 
     const refresh = () => screen.getByRole('button', { name: zhCN.common.refresh })
-    expect(refresh()).toBeEnabled()
+    expect(refresh()).not.toHaveAttribute('aria-disabled', 'true')
 
     await user.click(screen.getByRole('switch', { name: zhCN.tenantDetail.actions.disable }))
-    expect(refresh()).toBeDisabled()
+    expect(refresh()).toHaveAttribute('aria-disabled', 'true')
     // A write-pending disable carries no "choose a scope first" description.
     expect(refresh()).not.toHaveAttribute('aria-describedby')
 
     await act(async () => {
       settle?.()
     })
-    expect(await screen.findByRole('button', { name: zhCN.common.refresh })).toBeEnabled()
+    expect(
+      await screen.findByRole('button', { name: zhCN.common.refresh }),
+    ).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('links back to the roster when given the roster path', async () => {

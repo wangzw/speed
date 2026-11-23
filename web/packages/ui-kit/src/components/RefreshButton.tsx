@@ -7,31 +7,29 @@
  * selector renders it beside that selector, every other surface keeps it
  * in the page header.
  *
- * It is disabled while it cannot do its job: the scope the surface is
+ * It is unavailable while it cannot do its job: the scope the surface is
  * addressed by is still empty, or a write in the surface's scopes is in
- * flight. The two disabling reasons are kept apart, because they explain
+ * flight. The two unavailable reasons are kept apart, because they explain
  * different things. An empty scope explains itself: the tooltip repeats
  * the surface's existing "choose a tenant/account first" text (the
  * caller passes that same translation), and `aria-describedby` points at
  * the one copy the surface already renders. A write in flight does not:
  * the operator already chose the scope, and a control claiming otherwise
  * would be wrong. Only `disabled` applies the description and the
- * tooltip; `writePending` renders the control natively disabled without
- * either.
+ * tooltip; `writePending` renders the control unavailable without either.
  *
- * While the read itself is in flight the control stays enabled and
- * focusable and reports `aria-busy`, with the spinner in place of an
- * icon: MUI's `loading` would make the button native disabled, and a
- * disabled button drops keyboard focus to the document body -- an
- * operator who pressed Enter would lose their place until the read
- * settles, and the read would not put it back. The click handler is
- * guarded, so a second activation while the read is in flight issues no
- * second request and queues none.
+ * While the read itself is in flight the control stays focusable and
+ * reports `aria-busy`, with the spinner in place of an icon. None of these
+ * states renders the control natively disabled: a disabled button drops
+ * keyboard focus to the document body, and an operator who pressed Enter
+ * would lose their place until the read settles, and the read would not
+ * put it back. Every such state keeps the control focusable, carries
+ * `aria-disabled` where appropriate, and swallows activation through a
+ * guard, so a second activation issues no second request and queues none.
  *
- * MUI's Tooltip listens on the child element, and a native disabled
- * button receives no pointer events, so the empty-scope face is wrapped
- * in an inline span. An enabled control carries neither the tooltip nor
- * the description.
+ * Because the control is never natively disabled, the tooltip attaches to
+ * the button directly instead of a wrapper span. An enabled control
+ * carries neither the tooltip nor the description.
  *
  * A surface whose refresh re-reads a named object passes `ariaLabel`:
  * the visible text stays the shared label, while the accessible name
@@ -48,12 +46,12 @@
 
 import { forwardRef, useId } from 'react'
 import type { Ref } from 'react'
-import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Tooltip from '@mui/material/Tooltip'
 import { useUiKitTranslation } from '../internal/translation.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
+import { useActivationGuard } from '../activation-guard.js'
 
 export interface RefreshButtonProps extends RootStyleProps {
   /** Whether the read it re-reads is in flight. */
@@ -65,11 +63,11 @@ export interface RefreshButtonProps extends RootStyleProps {
   readonly disabled?: boolean
   /**
    * Whether a write in the surface's scopes is in flight. It renders the
-   * control natively disabled, without the empty-scope description: the
-   * scope is chosen, and re-reading mid-write would race the write.
+   * control unavailable, without the empty-scope description: the scope is
+   * chosen, and re-reading mid-write would race the write.
    */
   readonly writePending?: boolean
-  /** Starts the read. Not called while busy. */
+  /** Starts the read. Not called while busy or unavailable. */
   readonly onClick: () => void
   /** The id of the surface's "choose a scope first" text; applied when disabled. */
   readonly describedBy?: string
@@ -109,6 +107,10 @@ function RefreshButtonInner(
   // wiring MUI's own loading indicator uses).
   const loadingId = useId()
   const text = label ?? t('refreshButton.label')
+  const unavailable = disabled || writePending
+  // Activation is swallowed while the read is in flight or the control is
+  // unavailable, without turning the button natively disabled.
+  const handleClick = useActivationGuard(onClick, { busy, unavailable })
   const button = (
     <Button
       ref={ref}
@@ -119,7 +121,7 @@ function RefreshButtonInner(
       size="small"
       id={busy ? loadingId : undefined}
       aria-label={ariaLabel}
-      disabled={disabled || writePending}
+      aria-disabled={unavailable || undefined}
       aria-busy={busy || undefined}
       aria-describedby={disabled ? describedBy : undefined}
       startIcon={
@@ -131,23 +133,24 @@ function RefreshButtonInner(
           />
         ) : undefined
       }
-      onClick={() => {
-        if (!busy) {
-          onClick()
-        }
-      }}
+      onClick={handleClick}
     >
       {text}
     </Button>
   )
-  if (!disabled || disabledReason === undefined) {
-    return button
-  }
+  // Every state returns the tooltip wrapper: an enabled control or a
+  // write-pending one passes an empty title, which MUI never opens, while
+  // the button stays a child of the same wrapper in every state and React
+  // reconciles it in place. Returning the bare button in some states and a
+  // wrapped one in others changes the root element's type, unmounts the
+  // button, and drops a focused control's focus exactly when its
+  // availability changes.
   return (
-    <Tooltip title={disabledReason} describeChild>
-      <Box component="span" sx={{ display: 'inline-flex' }}>
-        {button}
-      </Box>
+    <Tooltip
+      title={disabled && disabledReason !== undefined ? disabledReason : ''}
+      describeChild
+    >
+      {button}
     </Tooltip>
   )
 }
@@ -155,7 +158,7 @@ function RefreshButtonInner(
 /**
  * The shared refresh control (see the file header), rendered by the
  * console's pages. `sx`, `className` and the ref apply to the button
- * itself in both of its renderings, including the empty-scope one whose
- * tooltip wrapper exists only to receive pointer events.
+ * itself in both of its renderings; the tooltip attaches to the button
+ * directly.
  */
 export const RefreshButton = forwardRef(RefreshButtonInner)

@@ -597,12 +597,12 @@ describe('platform tenant deletion', () => {
     // The empty field and a near miss both keep the guard closed; only the
     // exact name opens it.
     expect(field).toHaveValue('')
-    expect(confirm).toBeDisabled()
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
     await user.type(field, 'acm')
-    expect(confirm).toBeDisabled()
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
     await user.clear(field)
     await user.type(field, 'acme')
-    expect(confirm).toBeEnabled()
+    expect(confirm).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('renders the tombstone refusal as the delete copy, not the registration conflict', async () => {

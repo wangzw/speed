@@ -9,7 +9,11 @@
  * flips `open` itself, so the host may refuse a close (unsaved content,
  * a confirmation first) simply by calling onClose and doing nothing.
  * While `busy` is true all three close paths are inert: the close button
- * is disabled and Escape and backdrop clicks do not call onClose.
+ * is unavailable -- focusable, `aria-disabled`, its activation swallowed
+ * -- and Escape and backdrop clicks do not call onClose. The close button
+ * keeps its focus while the panel turns busy rather than dropping it to
+ * the document body, where the panel's focus trap would pull focus back
+ * to the paper.
  *
  * MUI's temporary Drawer supplies the dialog semantics on its paper:
  * `role="dialog"`, `aria-modal` and `tabIndex={-1}`. This component adds
@@ -45,6 +49,7 @@ import { CloseIcon } from '../internal/icons.js'
 import { useUiKitTranslation } from '../internal/translation.js'
 import { layerSx } from '../internal/root-style-props.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
+import { useActivationGuard } from '../activation-guard.js'
 import { ActionRow } from './ActionRow.js'
 
 /** The panel's width tier: 36rem (medium) or 52rem (wide) from `sm` up. */
@@ -64,7 +69,8 @@ export type SidePanelProps = RootStyleProps & {
   readonly size?: SidePanelSize
   /**
    * Busy state of the task inside the panel. While true the close button
-   * is disabled and Escape and backdrop clicks do not call onClose.
+   * is unavailable (focusable, `aria-disabled`) and Escape and backdrop
+   * clicks do not call onClose.
    */
   readonly busy?: boolean
   /** Accessible name of the close control; defaults to the namespace label. */
@@ -125,6 +131,10 @@ function SidePanelInner(
     }
     onClose()
   }
+  // The close button refuses activation while busy without becoming
+  // natively disabled: a focused button that turns disabled drops focus to
+  // the body, and the panel's focus trap then pulls it back to the paper.
+  const handleCloseClick = useActivationGuard(requestClose, { busy })
 
   return (
     <Drawer
@@ -187,8 +197,8 @@ function SidePanelInner(
           <IconButton
             type="button"
             aria-label={closeLabel ?? t('sidePanel.closeLabel')}
-            onClick={requestClose}
-            disabled={busy}
+            onClick={handleCloseClick}
+            aria-disabled={busy || undefined}
           >
             <CloseIcon />
           </IconButton>

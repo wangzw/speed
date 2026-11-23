@@ -299,11 +299,11 @@ describe('TenantRosterPage', () => {
     await user.click(screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { name: 'acme' }) }))
 
     // The row's scope is in flight, so the page-level refresh is
-    // natively disabled. The scope is chosen, so the disabled control
+    // unavailable. The scope is chosen, so the unavailable control
     // carries no "choose a scope first" description.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await waitForCondition(() => {
-      expect(refresh).toBeDisabled()
+      expect(refresh).toHaveAttribute('aria-disabled', 'true')
     })
     expect(refresh).not.toHaveAttribute('aria-describedby')
     // A forced activation issues no read while the write it would race
@@ -318,7 +318,7 @@ describe('TenantRosterPage', () => {
       pending.resolve()
     })
     await waitForCondition(() => {
-      expect(refresh).not.toBeDisabled()
+      expect(refresh).not.toHaveAttribute('aria-disabled', 'true')
     })
   })
 
@@ -349,7 +349,7 @@ describe('TenantRosterPage', () => {
 
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await waitForCondition(() => {
-      expect(refresh).toBeDisabled()
+      expect(refresh).toHaveAttribute('aria-disabled', 'true')
     })
     expect(refresh).not.toHaveAttribute('aria-describedby')
     fireEvent.click(refresh)
@@ -362,7 +362,7 @@ describe('TenantRosterPage', () => {
       pending.resolve()
     })
     await waitForCondition(() => {
-      expect(refresh).not.toBeDisabled()
+      expect(refresh).not.toHaveAttribute('aria-disabled', 'true')
     })
   })
 

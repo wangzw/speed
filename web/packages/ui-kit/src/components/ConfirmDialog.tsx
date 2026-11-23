@@ -11,14 +11,15 @@
  * the danger variant pairs with `doubleConfirm`: the first click on the
  * confirm button does not confirm anything -- the button re-labels with
  * the "click again" text (built-in, ui-kit namespace) and only a second
- * click fires onConfirm. Arming also holds the confirm button inert for
- * a short lockout (CONFIRM_ARM_LOCKOUT_MS): a double click is two
+ * click fires onConfirm. Arming also holds the confirm button unavailable
+ * for a short lockout (CONFIRM_ARM_LOCKOUT_MS): a double click is two
  * clicks ~100-200ms apart, and without that window the second event
  * would land on the armed button and fire onConfirm, skipping the
  * deliberate second step the guard exists to force. The window outlasts
  * the platform double-click threshold, so a true double click's second
- * event always lands on a disabled button while a user who read the
- * re-labelled button -- the deliberate path -- clicks after it by
+ * event always lands on an unavailable button -- focusable, with
+ * activation swallowed -- while a user who read the re-labelled button
+ * (the deliberate path) clicks after it by
  * construction; it auto-clears, covers the confirm button alone, and
  * leaves Cancel, Escape and the backdrop live throughout. The two-step
  * guard is interaction state only (like a tooltip's own open state);
@@ -99,13 +100,20 @@ export interface ConfirmDialogProps extends RootStyleProps {
   /** Busy state of the confirmation; both exits are inert while true. */
   readonly confirmLoading?: boolean
   /**
-   * Disables the confirm button on its own -- for a confirmation whose
-   * precondition the host owns (a required acknowledgement still
-   * unchecked), independent of the busy state. The double-confirm
-   * arming and lockout logic is untouched: a disabled button cannot arm,
-   * and an arm already in progress resumes when the flag clears.
+   * Makes the confirm button unavailable on its own -- for a confirmation
+   * whose precondition the host owns (a required acknowledgement still
+   * unchecked), independent of the busy state. The button stays focusable
+   * and activation is swallowed; the double-confirm arming and lockout
+   * logic is untouched: an unavailable button cannot arm, and an arm
+   * already in progress resumes when the flag clears.
    */
   readonly confirmDisabled?: boolean
+  /**
+   * Translated reason shown for the confirm button while `confirmDisabled`
+   * holds. It is linked through `aria-describedby` and shown in a tooltip,
+   * so a keyboard user can hear why the confirmation is not yet possible.
+   */
+  readonly confirmDisabledReason?: string
   /**
    * Extra content rendered inside the dialog below the message -- a
    * checkbox, a form field, a detail list. It is NOT part of
@@ -143,6 +151,7 @@ function ConfirmDialogInner(
     cancelLabel,
     confirmLoading = false,
     confirmDisabled = false,
+    confirmDisabledReason,
     children,
     onConfirm,
     onCancel,
@@ -156,7 +165,7 @@ function ConfirmDialogInner(
   const messageId = useId()
   const [armed, setArmed] = useState(false)
   // The double-click lockout the arming click enters: while true the
-  // confirm button is disabled (see the file header). A state of its
+  // confirm button is unavailable (see the file header). A state of its
   // own, not folded into `armed`, because the two reset on different
   // schedules -- the lockout auto-clears after CONFIRM_ARM_LOCKOUT_MS,
   // while `armed` waits for the user's second click.
@@ -278,19 +287,23 @@ function ConfirmDialogInner(
           right. The padding is DialogActions' own, so the row sits exactly
           where the dialog's action band used to. */}
       <ActionRow sx={{ p: 1, flex: '0 0 auto' }}>
-        <ActionButton onClick={handleRequestClose} disabled={busy}>
+        <ActionButton onClick={handleRequestClose} unavailable={busy}>
           {cancelLabel ?? t('confirmDialog.cancelLabel')}
         </ActionButton>
         <ActionButton
           onClick={handleConfirmClick}
           // armLockout is the double-click window the arming click
-          // entered: disabled here means the second event of a double
+          // entered: unavailable here means the second event of a double
           // click cannot activate the armed guard (the handler guard
           // above backs the same window for any event that still
           // arrives). Cancel stays live -- the window covers the confirm
-          // button alone.
-          disabled={busy || armLockout || confirmDisabled}
-          loading={busy}
+          // button alone. Both unavailable states stay focusable, so the
+          // keyboard user never loses their place.
+          busy={busy}
+          unavailable={armLockout || confirmDisabled}
+          unavailableReason={
+            confirmDisabled ? confirmDisabledReason : undefined
+          }
           emphasis="primary"
           tone={variant === 'danger' ? 'danger' : 'default'}
         >

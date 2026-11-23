@@ -73,6 +73,31 @@ function setup(overrides: Partial<SidePanelProps> = {}) {
   return { onClose, onExited, ...utils }
 }
 
+/** A host whose busy flag the test flips without going through a focus-taking control. */
+const busyControls: {
+  setBusy: (busy: boolean) => void
+  onClose: () => void
+} = {
+  setBusy: () => undefined,
+  onClose: () => undefined,
+}
+
+function BusyHarness() {
+  const [busy, setBusy] = useState(false)
+  busyControls.setBusy = setBusy
+  return (
+    <SidePanel
+      open
+      title={TITLE}
+      busy={busy}
+      onClose={busyControls.onClose}
+      onExited={() => undefined}
+    >
+      <p>{BODY}</p>
+    </SidePanel>
+  )
+}
+
 /** A host that opens the panel from a button, so focus restoration has an opener. */
 function FocusHarness() {
   const [open, setOpen] = useState(false)
@@ -291,16 +316,37 @@ describe('SidePanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('disables the close button and ignores its click while busy', () => {
-    const { onClose, getByRole } = setup({ busy: true })
-    const close = getByRole('button', { name: zhCN.sidePanel.closeLabel })
-    expect(close).toBeDisabled()
-    // fireEvent bypasses the pointer-events check user-event enforces on a
-    // disabled control, so this proves the disabled attribute alone stops
-    // the click. The handler's busy gate is exercised by the Escape and
-    // backdrop cases above, which reach requestClose on an enabled root.
+  it('keeps the close button focusable and refuses activation while busy', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    busyControls.onClose = onClose
+    const { getByRole } = renderWithProviders(<BusyHarness />)
+    const dialog = getByRole('dialog')
+    await waitFor(() => expect(dialog).toHaveFocus())
+
+    const close = within(dialog).getByRole('button', {
+      name: zhCN.sidePanel.closeLabel,
+    })
+    close.focus()
+    expect(close).toHaveFocus()
+
+    // The panel turns busy while its close button holds focus. The button
+    // must stay focusable, report unavailable instead of turning natively
+    // disabled, and keep the focus it had.
+    act(() => {
+      busyControls.setBusy(true)
+    })
+
+    expect(close).toHaveAttribute('aria-disabled', 'true')
+    expect(close).not.toBeDisabled()
+    expect(close).toHaveFocus()
+
+    // Click, Enter and Space all reach the guard and are swallowed.
     fireEvent.click(close)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
     expect(onClose).not.toHaveBeenCalled()
+    expect(close).toHaveFocus()
   })
 
   it('fires onExited only after the exit transition, never synchronously with the open change', async () => {

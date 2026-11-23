@@ -182,10 +182,16 @@ describe('TotpEnrollmentPanel', () => {
     expect(input).toHaveValue('123456')
   })
 
-  it('disables the code field while busy', () => {
+  it('locks the code field read-only while busy', () => {
     renderWithProviders(<Harness busy />)
 
-    expect(screen.getByLabelText(CODE_LABEL)).toBeDisabled()
+    const input = screen.getByLabelText(CODE_LABEL)
+    expect(input).toHaveAttribute('readonly')
+    // Read-only keeps the field focusable and selectable; the value cannot
+    // change while the answer is in flight.
+    input.focus()
+    expect(input).toBe(document.activeElement)
+    expect(input).not.toBeDisabled()
   })
 
   it('renders the secondary action before the primary action', () => {

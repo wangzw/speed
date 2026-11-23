@@ -441,7 +441,7 @@ async function armAndConfirm(
   const again = await within(dialog).findByRole('button', {
     name: CONFIRM_AGAIN_LABEL,
   })
-  await waitFor(() => expect(again).toBeEnabled())
+  await waitFor(() => expect(again).not.toHaveAttribute('aria-disabled', 'true'))
   await user.click(again)
 }
 
@@ -973,7 +973,7 @@ describe('TenantProfilePage ownership', () => {
     const confirm = within(dialog).getByRole('button', {
       name: zhCN.tenantProfile.ownership.delete.confirmLabel,
     })
-    expect(confirm).toBeDisabled()
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
 
     await user.type(
       within(dialog).getByLabelText(

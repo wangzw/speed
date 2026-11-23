@@ -124,7 +124,7 @@ describe('SessionsPage', () => {
     // The read is disabled while no account is chosen; the refresh control
     // follows it instead of issuing the read with an empty id.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    expect(refresh).toBeDisabled()
+    expect(refresh).toHaveAttribute('aria-disabled', 'true')
     // The disabled control is described by the page's own "choose an
     // account first" text, not by a second copy of it.
     const describedBy = refresh.getAttribute('aria-describedby')
@@ -132,11 +132,11 @@ describe('SessionsPage', () => {
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
       zhCN.sessions.needAccount.description,
     )
-    // MUI's Tooltip listens on its child element; a native disabled button
-    // receives no pointer events, so the control gets a span wrapper.
-    expect(refresh.parentElement?.tagName).toBe('SPAN')
-    // A programmatic click, because user-event refuses a disabled target:
-    // the control must stay inert even when reached from a script.
+    // The control is never natively disabled, so the tooltip attaches to the
+    // button itself and no pointer-blocking wrapper is needed.
+    expect(refresh.parentElement?.tagName).not.toBe('SPAN')
+    // A programmatic click exercises the guard directly: the control must
+    // stay inert even when reached from a script.
     fireEvent.click(refresh)
     expect(queried).toEqual([])
   })
@@ -148,17 +148,19 @@ describe('SessionsPage', () => {
     })
     renderWithProviders(<SessionsPage />, { operations })
     const disabled = screen.getByRole('button', { name: zhCN.common.refresh })
-    expect(disabled).toBeDisabled()
+    expect(disabled).toHaveAttribute('aria-disabled', 'true')
 
     // The tooltip names the same text the page already renders.
-    await user.hover(disabled.parentElement as HTMLElement)
+    await user.hover(disabled)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
       zhCN.sessions.needAccount.description,
     )
 
     await loadAccount(user)
     await waitForCondition(() => {
-      expect(screen.getByRole('button', { name: zhCN.common.refresh })).not.toBeDisabled()
+      expect(
+        screen.getByRole('button', { name: zhCN.common.refresh }),
+      ).not.toHaveAttribute('aria-disabled', 'true')
     })
     const enabled = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(enabled).not.toHaveAttribute('aria-describedby')
@@ -241,7 +243,7 @@ describe('SessionsPage', () => {
 
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await waitForCondition(() => {
-      expect(refresh).toBeDisabled()
+      expect(refresh).toHaveAttribute('aria-disabled', 'true')
     })
     // The scope is chosen, so the disabled control does not claim it is
     // empty; it is disabled because the revoke it would race is in flight.
@@ -256,7 +258,7 @@ describe('SessionsPage', () => {
       pending.resolve()
     })
     await waitForCondition(() => {
-      expect(refresh).not.toBeDisabled()
+      expect(refresh).not.toHaveAttribute('aria-disabled', 'true')
     })
   })
 
