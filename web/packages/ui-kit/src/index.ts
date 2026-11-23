@@ -17,7 +17,9 @@
  * whole-attempt failure banner), InlineSuccess (its success twin, the
  * mount-empty-then-fill role="status" notice), useWriteFeedback +
  * WriteFeedbackRegion (one feedback scope's slot and the region that
- * renders it), ListSkeleton and AsyncSection (the pending/error/empty/
+ * renders it), useActivationGuard (swallows a focusable control's
+ * activation while its write is in flight or its precondition is unmet),
+ * ListSkeleton and AsyncSection (the pending/error/empty/
  * content branches of an async read, with `staleState` marking a failed
  * refresh that kept its data) and
  * visuallyHiddenSx (the clip recipe for hidden live regions and file
@@ -215,6 +217,10 @@ export {
   type WriteFeedback,
   type WriteOutcome,
 } from './write-feedback.js'
+export {
+  useActivationGuard,
+  type ActivationGuardState,
+} from './activation-guard.js'
 export {
   WriteFeedbackPageProvider,
   useWriteFeedbackPageCoordination,

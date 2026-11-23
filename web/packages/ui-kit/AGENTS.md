@@ -166,7 +166,10 @@ plumbing and deliberately not exported.
   `PhoneNumberField.preferredCountries`, and the two contexts
   (`DisplayTimeZoneProvider`, `PhoneCountryDefaultProvider`, both
   defaulting to `undefined`) all leave the rendered output
-  byte-identical when omitted. `RefreshButton.label` and `CopyButton.label` / `copiedLabel` are the
+  byte-identical when omitted. `useActivationGuard` follows the same
+  template: its `busy` and `unavailable` default to false, so the
+  returned handler passes every activation through unchanged.
+  `RefreshButton.label` and `CopyButton.label` / `copiedLabel` are the
   same shape: the caller's string replaces a namespace default that no
   existing call site passes. `CopyButton.visibleLabel` is different:
   it switches the control from the icon face to a text-button face, so
