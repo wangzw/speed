@@ -60,12 +60,14 @@ const failedAnnouncement = (name: string): string =>
 /**
  * Mount the component through a stateful host that owns `rows` — the way
  * a host owning the queue would — and expose `setRows` for later
- * commits. The host mounts exactly once and never re-renders from
- * outside: RTL's own `rerender` cannot be used here, because
- * `renderWithProviders` inlines the provider tree into the ui it mounts
- * (it takes no wrapper option), so a rerender would replace the whole
- * tree and remount FileUploader, losing the announcement effect's
- * previous-rows ref along with the rest of its state.
+ * commits. The host stands in for a real parent whose own state change
+ * re-renders the uploader: it mounts once, and each `setRows` commits a
+ * new rows prop on that same instance, so the announcement effect's
+ * previous-rows ref and the rest of the component state survive the
+ * update. RTL's `rerender` now keeps the providers mounted too
+ * (renderWithProviders passes them as the wrapper), but the rows belong
+ * to the host here, and its state update is the shape this harness
+ * exercises.
  */
 function renderHarness(
   initial: FileUploaderProps,

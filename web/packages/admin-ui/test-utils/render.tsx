@@ -32,11 +32,34 @@
  * the whole page, not the fail-closed surface a provider-less render gets
  * in production. A gating test supplies its own predicate, and `null`
  * mounts no provider at all (the fail-closed default itself).
+ *
+ * The provider tree -- including whichever of the optional
+ * AdminOperationsProvider, AdminSessionProvider and AdminFeatureProvider
+ * the options mount, in the same nesting order -- is passed as the RTL
+ * `wrapper` option, not wrapped around `ui` by hand: RTL re-wraps a
+ * `rerender(ui)` call in the very same wrapper it rendered with, so a
+ * rerendered unit stays inside the providers and React reconciles it in
+ * place. A hand-wrapped tree instead gets REPLACED by the bare
+ * rerendered `ui` (the wrapper was applied outside RTL's knowledge),
+ * which unmounts the providers and remounts the unit -- a fresh instance
+ * whose refs and state reset, and whose query, theme, operations, session
+ * and feature context are rebuilt, on the first rerender.
+ *
+ * A test that really needs a fresh mount changes the unit's `key`: the
+ * element type and position stay the same, so only the keyed unit
+ * remounts, while the provider tree, its query client and its i18n
+ * instance all survive -- the query cache keeps its entries. Unmounting
+ * the tree with the result's `unmount` and calling renderWithProviders
+ * again is the other way to start over, and it does start over: the new
+ * call builds a fresh query client (the old cache is gone) and, when the
+ * test passes no instance of its own, a fresh i18n instance. Pick the
+ * first when only the unit should reset, the second when the whole
+ * provider stack should.
  */
 
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import type { AuthSession } from '@speed/auth-core'
 import type { FeatureName } from '@speed/api-sdk/features'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
@@ -134,31 +157,34 @@ export function renderWithProviders(
     options.hasFeature === undefined ? () => true : options.hasFeature
   const instance = i18n ?? createAdminUiI18n(language)
   const queryClient = createTestQueryClient()
-  let tree: ReactElement =
-    operations === undefined ? (
-      ui
-    ) : (
-      <AdminOperationsProvider operations={operations}>{ui}</AdminOperationsProvider>
+
+  function Wrapper({ children }: { readonly children: ReactNode }): ReactElement {
+    let tree: ReactNode = children
+    if (operations !== undefined) {
+      tree = <AdminOperationsProvider operations={operations}>{tree}</AdminOperationsProvider>
+    }
+    if (session !== undefined) {
+      tree = <AdminSessionProvider session={session}>{tree}</AdminSessionProvider>
+    }
+    if (hasFeature !== null) {
+      tree = <AdminFeatureProvider hasFeature={hasFeature}>{tree}</AdminFeatureProvider>
+    }
+    return (
+      <I18nextProvider i18n={instance}>
+        <AppThemeProvider
+          i18n={instance}
+          presets={presets}
+          defaultPreset={defaultPreset}
+          defaultMode={defaultMode}
+        >
+          <TestTimeZoneProvider timeZone={timeZone}>
+            <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
+          </TestTimeZoneProvider>
+        </AppThemeProvider>
+      </I18nextProvider>
     )
-  if (session !== undefined) {
-    tree = <AdminSessionProvider session={session}>{tree}</AdminSessionProvider>
   }
-  if (hasFeature !== null) {
-    tree = <AdminFeatureProvider hasFeature={hasFeature}>{tree}</AdminFeatureProvider>
-  }
-  const result = render(
-    <I18nextProvider i18n={instance}>
-      <AppThemeProvider
-        i18n={instance}
-        presets={presets}
-        defaultPreset={defaultPreset}
-        defaultMode={defaultMode}
-      >
-        <TestTimeZoneProvider timeZone={timeZone}>
-          <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
-        </TestTimeZoneProvider>
-      </AppThemeProvider>
-    </I18nextProvider>,
-  )
+
+  const result = render(ui, { wrapper: Wrapper })
   return { ...result, i18n: instance, queryClient }
 }

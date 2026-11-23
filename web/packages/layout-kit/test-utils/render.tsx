@@ -26,6 +26,15 @@
  * The i18n instance is created per call through the shared
  * createTestI18n (see @speed/test-utils/render's header), with both
  * namespaces registered.
+ *
+ * A test that really needs a fresh mount changes the unit's `key`: the
+ * element type and position stay the same, so only the keyed unit
+ * remounts, while the provider tree and its i18n instance both survive.
+ * Unmounting the tree with the result's `unmount` and calling
+ * renderWithProviders again is the other way to start over, and it does
+ * start over: the new call builds a fresh i18n instance unless the test
+ * passes its own. Pick the first when only the unit should reset, the
+ * second when the whole provider stack should.
  */
 
 import { render } from '@testing-library/react'
