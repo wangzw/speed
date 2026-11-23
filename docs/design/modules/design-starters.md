@@ -16,7 +16,7 @@
 - **不是第二个 `pkg/`。** 示范不交付任何可被依赖的接口，不被任何模块 import，也不登记自己的模块边界；方向是它 import `pkg/`，`pkg/` 不认识它。
 - **不承载模块机制。** 模块描述符、注册、查询、生命周期驱动与零依赖公共基础设施归 [core](design-core.md)；示范不改这些契约，只调用它们。
 - **不内建业务域。** 示范的业务目录是空位，装使用者自己的业务模块；示范自身不带一个具体的业务域。
-- **页面为空是设计使然，不是未完成。** 示范的基线不种任何业务数据，所以它在浏览器里以空态呈现：管理后台概览只有租户的统计（那几项读的是平台自己的名册）；通知的收件箱没有可展示的消息（基线不派发任何通知；审查装配打开通知夹具的开关，由它声明 `review.notice` 并派发，见“审查装配”）；偏好矩阵在基线里恒为空集。看到一个页面是空的，读到的不是“这条没做完”，而是“这份基线不带业务域，数据由产品与它的用户产生”。空态与特性缺席是两回事：一个页面因装配而不存在时，它的[特性](../../glossary.md)缺席，前端不以空态呈现它，而按不存在的路径处理（见“平台基线”与“前端的组合次序”）。
+- **页面为空是设计使然，不是未完成。** 示范的基线不种任何业务数据，所以它在浏览器里以空态呈现：管理后台概览只有租户的统计（那几项读的是平台自己的名册）；通知的收件箱没有可展示的消息（基线不派发任何通知；审查装配打开通知夹具的开关，由它声明 `demo.notice` 并派发，见“审查装配”）；偏好矩阵在基线里恒为空集。看到一个页面是空的，读到的不是“这条没做完”，而是“这份基线不带业务域，数据由产品与它的用户产生”。空态与特性缺席是两回事：一个页面因装配而不存在时，它的[特性](../../glossary.md)缺席，前端不以空态呈现它，而按不存在的路径处理（见“平台基线”与“前端的组合次序”）。
 
 ## 外部接口契约
 
@@ -135,7 +135,7 @@ starters/demo/
 
 **审查装配只在回环地址上监听。** `server/review.go` 的 `reviewGuardModule` 在 `Prepare` 里、任何套接字绑定之前，读 `http.listeners` 每一项的地址，主机不是回环就拒绝启动：`localhost` 与 IP 回环地址算回环；空主机（所有网卡）、`0.0.0.0`、`::` 与其它不能判定为回环的写法都拒绝，误拒落在安全一侧。监听地址只能来自主配置文件，环境变量与命令行不能设置它，守卫与 http 模块读同一份配置，没有第二条通道绕过它。理由是审查装配带着公开的种子管理员口令与开放注册，能被网络访问的进程把这两样交给任何人。守卫只限定监听地址，不限定日志的去向：验证码写进进程日志，日志被收集或导出到别处时，验证码随之出机。
 
-**审查装配的两条控制路由是测试控制，不是产品 API。** `review.sms.control` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上落一个语言的审核判定，`review.notification` 在 `api` 端的 `/api/v1/notifications/review/notice` 上为调用方派发一次通知。两条路由都只在 `review` 构建标签下编译、只由审查装配登记，任何部署或基线二进制都不含它们。它们由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是审查装配为只监听回环地址的测试进程，而不是它们对产品调用方安全。前端对应的两个控制仍由特性门控：特性 `review.sms.control` 与 `review.notification.control` 不在场时不渲染控件、不发请求（[ADR-starters-skeleton](../../adr/adr-starters-skeleton.md)）。
+**审查装配的两条控制路由是测试控制，不是产品 API。** `review.sms.control` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上落一个语言的审核判定，`demo.notification` 在 `api` 端的 `/api/v1/notifications/review/notice` 上为调用方派发一次通知。两条路由都只在 `review` 构建标签下编译、只由审查装配登记，任何部署或基线二进制都不含它们。它们由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是审查装配为只监听回环地址的测试进程，而不是它们对产品调用方安全。前端对应的两个控制仍由特性门控：特性 `review.sms.control` 与 `demo.notification.control` 不在场时不渲染控件、不发请求（[ADR-starters-skeleton](../../adr/adr-starters-skeleton.md)）。
 
 **构建与运行**：从仓库根执行 `go -C starters/demo/server build -tags review -o demo-review .`，产物是 `starters/demo/server/demo-review`（由 `.gitignore` 挡在树外）；随后在 `starters/demo/server` 下以 `./demo-review --config file:review/sqlite.yaml sqlite seed` 与 `... sqlite serve` 先种入一次、再启动。`seed` 幂等。根 `Makefile` 的 `vet-review` 任务在每次提交以 `go vet -tags=review ./...` 编译这个变体、不运行它，与 `vet-integration` 同理，也是 `check_test_tiers.py` 对树中每个构建标签要求的任务；`make check` 包含它。只在 `review` 标签下编译的用例（回环守卫的用例）不能只被编译：它们在提交门禁里被执行，守卫被删或改坏时门禁变红。
 
@@ -149,7 +149,7 @@ starters/demo/
 
 端点是产品自己划的流量边界：`api`、`account`、`admin`、`ops`、`web`。哪个端装哪些层是配置，示范在这里说的是哪类流量属于哪个端。基线在这些端上装好网关、租户解析与准入、鉴权、限流、审计、平台管理面与特性文档，逐端的固定装法写在编译进二进制的平台默认文档 `server/defaults.go` 里，配置文件只写部署差异。分离部署下拉起前端的那条通配路由独占 `web` 端（[webui](design-webui.md)）。
 
-**通知接口的授权是宿主侧的。** 通知能力（`notification.inbox`、`notification.stream`、`notification.preferences`）按设计不声明任何权限点（[notification](notification/design-notification.md)）：它的路由不带权限闸，谁可读由宿主决定。示范作为宿主把这个决定写下来：`server/notification.go` 的 `notification.access` 模块在 `Init` 里把 `/api/v1/notifications` 下的收件箱、偏好与推送路由在 `authz.guard` 的声明接口上登记为开放：网关照常认证、授权层放行、handler 按调用方身份作答；不登记时它们落在缺省关闭的授权层下答 403。登记为开放而非挂权限点，是因为这些路由按调用方身份划界而不是按谁的权限划界：收件箱与推送读的是调用方自己的账户，偏好矩阵读的是宿主身份与授权侧给出的收件人（`preferences.WithRecipient`）。基线的示范不接线那个收件人，通知夹具的开关在基线配置里关闭，偏好矩阵因此在基线里恒为空集，收件人这一步在基线里不出现；启用了通知类型的宿主需另把调用方账户写进偏好路由的请求上下文。审查装配正是这样的宿主：`server/notification_fixture.go` 声明通知类型 `review.notice`（默认渠道为收件箱、邮件与短信），审查配置打开 `review.notification.enabled`，由定时任务按租户为可寻址的成员派发，`wireReviewRecipient` 在认证网关的记录阶段把调用方的有效账户写进 `preferences.WithRecipient`，偏好矩阵因此有内容可读。
+**通知接口的授权是宿主侧的。** 通知能力（`notification.inbox`、`notification.stream`、`notification.preferences`）按设计不声明任何权限点（[notification](notification/design-notification.md)）：它的路由不带权限闸，谁可读由宿主决定。示范作为宿主把这个决定写下来：`server/notification.go` 的 `notification.access` 模块在 `Init` 里把 `/api/v1/notifications` 下的收件箱、偏好与推送路由在 `authz.guard` 的声明接口上登记为开放：网关照常认证、授权层放行、handler 按调用方身份作答；不登记时它们落在缺省关闭的授权层下答 403。登记为开放而非挂权限点，是因为这些路由按调用方身份划界而不是按谁的权限划界：收件箱与推送读的是调用方自己的账户，偏好矩阵读的是宿主身份与授权侧给出的收件人（`preferences.WithRecipient`）。基线的示范不接线那个收件人，通知夹具的开关在基线配置里关闭，偏好矩阵因此在基线里恒为空集，收件人这一步在基线里不出现；启用了通知类型的宿主需另把调用方账户写进偏好路由的请求上下文。审查装配正是这样的宿主：`server/notification_fixture.go` 声明通知类型 `demo.notice`（默认渠道为收件箱、邮件与短信），审查配置打开 `demo.notification.enabled`，由定时任务按租户为可寻址的成员派发，`wireDemoRecipient` 在认证网关的记录阶段把调用方的有效账户写进 `preferences.WithRecipient`，偏好矩阵因此有内容可读。
 
 **这些端点由一条监听承载。** 端点挂在监听上，一条监听是一个监听套接字，`pkg/http` 据此把多个端点并在一个地址上（[http](http/design-http.md)）。示范的平台默认文档把这几个端都挂在 `backend` 监听上，监听本身与它的地址由每份配置声明；部署可以把端点重新拆到多条监听上，差分用例的 split 拓扑就把 `web` 与 `ops` 拆到各自的监听。前端与 API 因而同源，浏览器直接访问 `web` 与 `api` 无需 CORS（[REF-whatwg-fetch](../../references.md)）。
 

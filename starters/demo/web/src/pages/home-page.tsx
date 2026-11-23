@@ -110,7 +110,7 @@ export function HomePage(): ReactElement {
   // declares its review-only feature. A baseline deployment never does, so the
   // control is absent there; the gate fails closed while the feature document
   // is unsettled.
-  const reviewNoticeServed = useFeature('review.notification.control')
+  const reviewNoticeServed = useFeature('demo.notification.control')
   return (
     <PageLayout title={t('home.heading')} description={t('home.intro')}>
       {notice.visible ? (

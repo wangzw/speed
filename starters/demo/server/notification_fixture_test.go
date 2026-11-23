@@ -36,7 +36,7 @@ func fixtureReader(t *testing.T, body string) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "SPEEDFIXTURETEST", DefaultLocator: "file://" + path}},
 	})
-	reg.Register(reviewNotificationModule())
+	reg.Register(demoNotificationModule())
 	reader, err := config.Load(t.Context(), reg, nil)
 	if err != nil {
 		t.Fatalf("loading the configuration: %v", err)
@@ -48,10 +48,10 @@ func fixtureReader(t *testing.T, body string) config.Reader {
 func prepareFixture(t *testing.T, reader config.Reader) (core.Enablement, error) {
 	t.Helper()
 	reg := core.New()
-	reg.Register(reviewNotificationModule())
+	reg.Register(demoNotificationModule())
 	reg.Register(config.Module())
 	reg.Supply(reader, config.ModuleName)
-	return reviewNotificationModule().Prepare(t.Context(), reg)
+	return demoNotificationModule().Prepare(t.Context(), reg)
 }
 
 // TestTheNotificationFixtureStandsDownWhenNotEnabled holds the unconfigured
@@ -64,7 +64,7 @@ func TestTheNotificationFixtureStandsDownWhenNotEnabled(t *testing.T) {
 		body string
 	}{
 		{"no section", ""},
-		{"switch off", `{"review":{"notification":{"enabled":false}}}`},
+		{"switch off", `{"demo":{"notification":{"enabled":false}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := prepareFixture(t, fixtureReader(t, tc.body))
@@ -84,7 +84,7 @@ func TestTheNotificationFixtureStandsDownWhenNotEnabled(t *testing.T) {
 // TestTheNotificationFixtureRunsWhenEnabled holds the configured case.
 func TestTheNotificationFixtureRunsWhenEnabled(t *testing.T) {
 	t.Parallel()
-	got, err := prepareFixture(t, fixtureReader(t, `{"review":{"notification":{"enabled":true}}}`))
+	got, err := prepareFixture(t, fixtureReader(t, `{"demo":{"notification":{"enabled":true}}}`))
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -99,8 +99,8 @@ func TestTheNotificationFixtureRunsWhenEnabled(t *testing.T) {
 func TestTheNotificationFixtureRefusesAHostWithNoReader(t *testing.T) {
 	t.Parallel()
 	reg := core.New()
-	reg.Register(reviewNotificationModule())
-	if _, err := reviewNotificationModule().Prepare(t.Context(), reg); err == nil {
+	reg.Register(demoNotificationModule())
+	if _, err := demoNotificationModule().Prepare(t.Context(), reg); err == nil {
 		t.Fatal("Prepare with no configuration reader succeeded, want an error naming the omission")
 	}
 }

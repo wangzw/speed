@@ -369,7 +369,7 @@ seed:
 # REVIEW: the notification fixture is compiled into every build and stands
 # itself down unless a run names it. The review assembly dispatches the notice,
 # so the switch is on; the baseline and a deployment leave it off.
-review:
+demo:
   notification:
     enabled: true
 

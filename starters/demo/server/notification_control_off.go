@@ -11,4 +11,4 @@ func reviewControlResources() []any { return nil }
 
 // mountReviewControl is a no-op in a default build: the dispatch control route
 // is compiled only under the review tag, so there is nothing to mount.
-func mountReviewControl(*core.Registry, *reviewNotifier) error { return nil }
+func mountReviewControl(*core.Registry, *demoNotifier) error { return nil }

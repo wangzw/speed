@@ -30,14 +30,14 @@ func TestDefaultBuildDeclaresTheNotificationType(t *testing.T) {
 	for _, resource := range core.Resources[notification.TypeSpec](core.ProcessRegistry) {
 		declared[resource.Value.Key] = resource.Module
 	}
-	module, ok := declared[reviewNotificationTypeKey]
+	module, ok := declared[demoNotificationTypeKey]
 	if !ok {
 		t.Fatalf("the default build declares no %q notification type; the fixture is part of the "+
-			"capability ceiling every build carries", reviewNotificationTypeKey)
+			"capability ceiling every build carries", demoNotificationTypeKey)
 	}
-	if module != reviewNotificationModuleName {
-		t.Errorf("the type %q is declared by %q, want %q", reviewNotificationTypeKey, module,
-			reviewNotificationModuleName)
+	if module != demoNotificationModuleName {
+		t.Errorf("the type %q is declared by %q, want %q", demoNotificationTypeKey, module,
+			demoNotificationModuleName)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestDefaultBuildDeclaresTheNotificationType(t *testing.T) {
 func TestDefaultBuildDeclaresNoNotificationControl(t *testing.T) {
 	t.Parallel()
 	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
-		if resource.Value.Name == "review.notification.control" {
+		if resource.Value.Name == "demo.notification.control" {
 			t.Fatalf("the default build declares %q; the dispatch control is test-only and must "+
 				"stay behind the review tag", resource.Value.Name)
 		}

@@ -41,14 +41,14 @@ func TestReviewNotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 	t.Parallel()
 	var declared *notification.TypeSpec
 	for _, resource := range core.Resources[notification.TypeSpec](core.ProcessRegistry) {
-		if resource.Value.Key != reviewNotificationTypeKey {
+		if resource.Value.Key != demoNotificationTypeKey {
 			continue
 		}
 		spec := resource.Value
 		declared = &spec
 	}
 	if declared == nil {
-		t.Fatalf("the available set declares no %q type", reviewNotificationTypeKey)
+		t.Fatalf("the available set declares no %q type", demoNotificationTypeKey)
 	}
 
 	var haveSMS bool
@@ -69,10 +69,10 @@ func TestReviewNotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 	}
 
 	for _, locale := range []string{reviewDefaultLocale, reviewChineseLocale} {
-		got := reviewCatalogEntry(t, locale, reviewNotificationTypeKey+".sms.template")
-		if got != reviewNotificationSMSTemplate {
+		got := reviewCatalogEntry(t, locale, demoNotificationTypeKey+".sms.template")
+		if got != demoNotificationSMSTemplate {
 			t.Errorf("the %s catalog names the sms template %q, want %q",
-				locale, got, reviewNotificationSMSTemplate)
+				locale, got, demoNotificationSMSTemplate)
 		}
 	}
 }
@@ -85,7 +85,7 @@ func TestReviewNotificationControlFeatureIsDeclared(t *testing.T) {
 	t.Parallel()
 	declared := false
 	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
-		if resource.Module != reviewNotificationModuleName ||
+		if resource.Module != demoNotificationModuleName ||
 			resource.Value.Name != reviewNotificationControlFeature {
 			continue
 		}
@@ -178,9 +178,9 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			plan, ok := planReviewNotice(c.identifiers, c.smsAddressable)
+			plan, ok := planDemoNotice(c.identifiers, c.smsAddressable)
 			if ok != c.wantOK {
-				t.Fatalf("planReviewNotice answered ok=%t, want %t", ok, c.wantOK)
+				t.Fatalf("planDemoNotice answered ok=%t, want %t", ok, c.wantOK)
 			}
 			if !ok {
 				return
@@ -210,7 +210,7 @@ func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 		},
 	}
 	dispatcher := &stubReviewDispatcher{}
-	notifier := &reviewNotifier{
+	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs:      prefs,
 		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
@@ -245,9 +245,9 @@ func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 	if got := dispatcher.dispatch.Params["to"]; got != reviewSMSTestEmail {
 		t.Errorf("the dispatch's destination is %v, want the email fallback %q", got, reviewSMSTestEmail)
 	}
-	if templates.message.Template != reviewNotificationSMSTemplate {
+	if templates.message.Template != demoNotificationSMSTemplate {
 		t.Errorf("the registry was asked for the template %q, want %q",
-			templates.message.Template, reviewNotificationSMSTemplate)
+			templates.message.Template, demoNotificationSMSTemplate)
 	}
 	if templates.message.Locale != reviewChineseLocale {
 		t.Errorf("the registry was asked for the locale %q, want the recipient's %q",
@@ -275,7 +275,7 @@ func TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
 		},
 	}
 	dispatcher := &stubReviewDispatcher{}
-	notifier := &reviewNotifier{
+	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs:      prefs,
 		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
@@ -319,7 +319,7 @@ func TestReviewNoticeSendsSMSWithASendableTemplate(t *testing.T) {
 		},
 	}
 	dispatcher := &stubReviewDispatcher{}
-	notifier := &reviewNotifier{
+	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs:      prefs,
 		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
@@ -447,7 +447,7 @@ func (failingReviewProfile) TimeZoneFor(context.Context, string) (string, bool, 
 func TestReviewNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
-	notifier := &reviewNotifier{
+	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs: &stubReviewPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
@@ -481,7 +481,7 @@ func TestReviewNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 func TestReviewNoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *testing.T) {
 	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
-	notifier := &reviewNotifier{
+	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs: &stubReviewPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
@@ -534,7 +534,7 @@ func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.
 	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
 	logs := &recordingLogs{}
-	notifier := &reviewNotifier{
+	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs: &stubReviewPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
@@ -584,8 +584,8 @@ func TestReviewNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.
 		})
 		return value, found
 	}
-	if got, _ := attrValue(warned[0], "type"); got != reviewNotificationTypeKey {
-		t.Errorf("the warning names type %q, want %q", got, reviewNotificationTypeKey)
+	if got, _ := attrValue(warned[0], "type"); got != demoNotificationTypeKey {
+		t.Errorf("the warning names type %q, want %q", got, demoNotificationTypeKey)
 	}
 	// The tenant the call was made for is the one the line names, and it never
 	// falls back to the recipient.
@@ -614,7 +614,7 @@ func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	t.Parallel()
 	dispatcher := &stubReviewDispatcher{}
 	logs := &recordingLogs{}
-	notifier := &reviewNotifier{
+	notifier := &demoNotifier{
 		dispatcher: dispatcher,
 		prefs: &stubReviewPrefs{
 			effective: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
@@ -669,18 +669,18 @@ func TestReviewNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 // every window.
 func TestReviewNoticePrunesOnlyUnaddressableChannels(t *testing.T) {
 	t.Parallel()
-	noPhone := reviewNoticePlan{
+	noPhone := demoNoticePlan{
 		To:       reviewSMSTestEmail,
 		Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 	}
-	withPhone := reviewNoticePlan{
+	withPhone := demoNoticePlan{
 		To:       reviewSMSTestPhone,
 		Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
 	}
 	cases := []struct {
 		name      string
 		effective []notification.Channel
-		plan      reviewNoticePlan
+		plan      demoNoticePlan
 		want      []notification.Channel
 	}{
 		{
@@ -710,7 +710,7 @@ func TestReviewNoticePrunesOnlyUnaddressableChannels(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := pruneReviewChannels(c.effective, c.plan); !sameChannels(got, c.want) {
+			if got := pruneDemoChannels(c.effective, c.plan); !sameChannels(got, c.want) {
 				t.Errorf("the pruned set is %v, want %v", got, c.want)
 			}
 		})

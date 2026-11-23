@@ -248,7 +248,7 @@ func TestReviewCarrierNamesTheMessageKindItSent(t *testing.T) {
 	t.Parallel()
 	notice := sms.Resolved{
 		To:       reviewSMSTestPhone,
-		Template: reviewNotificationSMSTemplate,
+		Template: demoNotificationSMSTemplate,
 		Locale:   reviewDefaultLocale,
 		Kind:     sms.KindNotification,
 		Params:   map[string]string{"to": reviewSMSTestPhone},

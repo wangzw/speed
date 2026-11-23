@@ -243,18 +243,18 @@ review journeys are built on. The program-level case is
 `capabilityModules`, and gives the member-notification and SMS-template journeys
 a running counterpart. It adds four things the baseline deliberately lacks.
 Whether a run dispatches it is the fixture's own `Prepare` decision, stated by
-the explicit switch `review.notification.enabled`: there is no state to infer it
+the explicit switch `demo.notification.enabled`: there is no state to infer it
 from, because the type is present in every build and the tenancy roster is data.
 With the switch absent or false the fixture states `StateDisabled` and takes no
 part; with it true the worker, its schedule and the recipient wiring run. There
 is no half-configured state: the switch is the whole of the fixture's own
 configuration.
 
-- **A type.** It declares `review.notice` — group `review`, default channels
+- **A type.** It declares `demo.notice` — group `demo`, default channels
   `in_app`, `email` and `sms`, unsubscribable — with its text in
-  `server/review_notification_locales/en-US.json` and `zh-CN.json`. The
-  catalog's `review.notice.sms.template` entry names the runtime SMS template
-  the template-rollout journey registers (`review-notice`), and the type's
+  `server/demo_notification_locales/en-US.json` and `zh-CN.json`. The
+  catalog's `demo.notice.sms.template` entry names the runtime SMS template
+  the template-rollout journey registers (`demo-notice`), and the type's
   parameter whitelist admits `to`, which is both the dispatch's destination and
   the template's only declared parameter. The declaration lives on the module
   rather than on the enabled run on purpose: `notification.preferences` and
@@ -294,7 +294,7 @@ configuration.
 
 - **The review-only tenant control.** The module mounts
   `POST /api/v1/notifications/review/notice` on the `api` endpoint and declares
-  the static feature `review.notification.control`. A signed-in member of the
+  the static feature `demo.notification.control`. A signed-in member of the
   tenant clicks the tenant home page's control, and the handler dispatches one
   notice to the caller through the same recipient-aware path. The route and the
   feature are compiled only under the review tag, so neither exists in a default

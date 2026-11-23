@@ -85,35 +85,35 @@ import (
 // journey registers a runtime template under exactly this name, with "to" as
 // its declared parameter (the dispatch carries no other).
 const (
-	reviewNotificationModuleName  = "review.notification"
-	reviewNotificationJobType     = "review.notification.dispatch"
-	reviewNotificationTypeKey     = "review.notice"
-	reviewNotificationGroup       = "review"
-	reviewNotificationSMSTemplate = "review-notice"
+	demoNotificationModuleName  = "demo.notification"
+	demoNotificationJobType     = "demo.notification.dispatch"
+	demoNotificationTypeKey     = "demo.notice"
+	demoNotificationGroup       = "demo"
+	demoNotificationSMSTemplate = "demo-notice"
 )
 
-// reviewNotificationEnabledItem is the switch that states whether this run
+// demoNotificationEnabledItem is the switch that states whether this run
 // dispatches the fixture's notice. There is nothing in the fixture's own state
 // to infer it from — the type is part of the compile-time ceiling in every
 // build, and the tenancy roster is data — so the run states it explicitly.
-const reviewNotificationEnabledItem = "enabled"
+const demoNotificationEnabledItem = "enabled"
 
-// reviewNotificationConfig is the fixture's configuration.
-type reviewNotificationConfig struct {
+// demoNotificationConfig is the fixture's configuration.
+type demoNotificationConfig struct {
 	// Enabled states whether the fixture publishes and dispatches its notice in
 	// this run. Off, the module stands itself down before it is constructed.
 	Enabled bool `config:"enabled"`
 }
 
-// reviewNotificationSchema declares the fixture's one input item. It is a host
+// demoNotificationSchema declares the fixture's one input item. It is a host
 // module, so the namespace is its own name.
-func reviewNotificationSchema() config.Schema {
+func demoNotificationSchema() config.Schema {
 	return config.Schema{
-		Namespace: reviewNotificationModuleName,
-		Mounts:    []config.Mount{{Value: &reviewNotificationConfig{}}},
+		Namespace: demoNotificationModuleName,
+		Mounts:    []config.Mount{{Value: &demoNotificationConfig{}}},
 		Items: map[string]config.Item{
-			reviewNotificationEnabledItem: {
-				Description: "whether this run dispatches the review notification fixture's notice " +
+			demoNotificationEnabledItem: {
+				Description: "whether this run dispatches the demo notification fixture's notice " +
 					"to each tenant's members; off, the worker, its schedule and its recipient wiring " +
 					"are absent",
 			},
@@ -121,52 +121,52 @@ func reviewNotificationSchema() config.Schema {
 	}
 }
 
-// reviewNotificationEnabled reads the switch. The configuration reader's absence
+// demoNotificationEnabled reads the switch. The configuration reader's absence
 // is the host's omission and is carried out as it stands: reading it as "the
 // fixture is off" would let a host that forgot the reader lose the fixture in
 // silence.
-func reviewNotificationEnabled(reg *core.Registry) (bool, error) {
+func demoNotificationEnabled(reg *core.Registry) (bool, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		return false, fmt.Errorf("%s: the enable switch is read from configuration, and no reader was "+
-			"handed to the registry before the assembly began: %w", reviewNotificationModuleName, err)
+			"handed to the registry before the assembly began: %w", demoNotificationModuleName, err)
 	}
-	var cfg reviewNotificationConfig
-	if err := reader.Decode(reviewNotificationModuleName, &cfg); err != nil {
-		return false, fmt.Errorf("%s: reading %s.%s: %w", reviewNotificationModuleName,
-			reviewNotificationModuleName, reviewNotificationEnabledItem, err)
+	var cfg demoNotificationConfig
+	if err := reader.Decode(demoNotificationModuleName, &cfg); err != nil {
+		return false, fmt.Errorf("%s: reading %s.%s: %w", demoNotificationModuleName,
+			demoNotificationModuleName, demoNotificationEnabledItem, err)
 	}
 	return cfg.Enabled, nil
 }
 
-// reviewNotificationEndpoint is the endpoint carrying the notification surface.
+// demoNotificationEndpoint is the endpoint carrying the notification surface.
 // The name is the platform defaults document's; the preference routes mount
 // there and so does the recipient middleware.
-const reviewNotificationEndpoint = "api"
+const demoNotificationEndpoint = "api"
 
-// reviewNotificationInterval is the dispatch window. The scheduler enqueues one
+// demoNotificationInterval is the dispatch window. The scheduler enqueues one
 // job per tenant per window, so a tenant's members receive a notice at most
 // once per interval. It is short enough for a walkthrough to observe a notice
 // arrive, and long enough that a person marking the inbox read is not raced by
 // the next one.
-const reviewNotificationInterval = 10 * time.Second
+const demoNotificationInterval = 10 * time.Second
 
-// reviewRecipientLayerName is the middleware layer's name on the api endpoint.
+// demoRecipientLayerName is the middleware layer's name on the api endpoint.
 // It appears in the chain listing, so it says which fixture added it.
-const reviewRecipientLayerName = "review.notification.recipient"
+const demoRecipientLayerName = "demo.notification.recipient"
 
-//go:embed review_notification_locales/*.json
-var reviewNotificationLocales embed.FS
+//go:embed demo_notification_locales/*.json
+var demoNotificationLocales embed.FS
 
-// reviewNotificationCatalog is the message catalog of the type. The keys are
+// demoNotificationCatalog is the message catalog of the type. The keys are
 // "<type_key>.<channel>.<part>", which is where the delivery pipeline renders
 // an in-app message and an email from; the declaring module owns the text.
-var reviewNotificationCatalog = i18n.Catalog{
-	FS:      reviewNotificationLocales,
-	Pattern: "review_notification_locales/*.json",
+var demoNotificationCatalog = i18n.Catalog{
+	FS:      demoNotificationLocales,
+	Pattern: "demo_notification_locales/*.json",
 }
 
-// reviewNotificationType is the type a business module would declare for a
+// demoNotificationType is the type a business module would declare for a
 // system notice a recipient may turn off. Its default channels are the in-app
 // inbox, email and sms: the rollout journey needs sms among them, while the
 // member-organization journey reaches the other two. It is unsubscribable — the
@@ -175,9 +175,9 @@ var reviewNotificationCatalog = i18n.Catalog{
 // recipient's own phone number or address. The catalog names the sms template
 // the journey registers; the template declares "to" as its only parameter
 // because the destination is also a template parameter.
-var reviewNotificationType = notification.TypeSpec{
-	Key:   reviewNotificationTypeKey,
-	Group: reviewNotificationGroup,
+var demoNotificationType = notification.TypeSpec{
+	Key:   demoNotificationTypeKey,
+	Group: demoNotificationGroup,
 	DefaultChannels: []notification.Channel{
 		notification.ChannelInApp,
 		notification.ChannelEmail,
@@ -187,23 +187,23 @@ var reviewNotificationType = notification.TypeSpec{
 	RecipientVisibleParams: []string{"to"},
 }
 
-// reviewNotificationSchedule is the periodic dispatch declaration. The
+// demoNotificationSchedule is the periodic dispatch declaration. The
 // scheduler expands it per tenant in the roster, so a tenant created while the
 // process runs starts receiving notices on the next window.
-var reviewNotificationSchedule = jobs.Schedule{
-	Key:      reviewNotificationModuleName + ".periodic",
-	Type:     reviewNotificationJobType,
-	Interval: reviewNotificationInterval,
+var demoNotificationSchedule = jobs.Schedule{
+	Key:      demoNotificationModuleName + ".periodic",
+	Type:     demoNotificationJobType,
+	Interval: demoNotificationInterval,
 }
 
 // init registers the module. The import is the wiring; capabilityModules is
 // what names it for a run.
-func init() { core.ProcessRegistry.Register(reviewNotificationModule()) }
+func init() { core.ProcessRegistry.Register(demoNotificationModule()) }
 
 // The product must deliver the job handler and report its type.
-var _ jobs.Handler = (*reviewNotifier)(nil)
+var _ jobs.Handler = (*demoNotifier)(nil)
 
-// reviewNotificationModule is the fixture's descriptor.
+// demoNotificationModule is the fixture's descriptor.
 //
 // The dispatcher, the account store, the membership store, the preference
 // matrix, the SMS template registry, the account profile seam, the locale
@@ -218,22 +218,22 @@ var _ jobs.Handler = (*reviewNotifier)(nil)
 // The review-only dispatch control's feature is contributed by
 // reviewControlResources, which answers nothing in a default build. The module
 // itself is compiled into every build; whether it runs is stated in Prepare by
-// the explicit review.notification.enabled switch, off when absent. An absent
+// the explicit demo.notification.enabled switch, off when absent. An absent
 // switch means the run does not dispatch the fixture, so it stands down with
 // that reason; there is no half-configured state, because the switch is the
 // whole of the fixture's own configuration. A run with no configuration reader
 // at all fails the start instead, because that is a host omission and not a
 // deployment that left the fixture off.
-func reviewNotificationModule() core.Module {
+func demoNotificationModule() core.Module {
 	resources := []any{
-		reviewNotificationSchema(),
-		reviewNotificationType,
-		reviewNotificationCatalog,
-		reviewNotificationSchedule,
+		demoNotificationSchema(),
+		demoNotificationType,
+		demoNotificationCatalog,
+		demoNotificationSchedule,
 	}
 	resources = append(resources, reviewControlResources()...)
 	return core.Module{
-		Name: reviewNotificationModuleName,
+		Name: demoNotificationModuleName,
 		Requires: []core.Requirement{
 			{Token: (*notification.Dispatcher)(nil)},
 			{Token: (*notification.Preferences)(nil)},
@@ -247,37 +247,37 @@ func reviewNotificationModule() core.Module {
 		},
 		Resources: resources,
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
-			enabled, err := reviewNotificationEnabled(reg)
+			enabled, err := demoNotificationEnabled(reg)
 			if err != nil {
 				return core.Enablement{}, err
 			}
 			if !enabled {
 				return core.Enablement{
 					State: core.StateDisabled,
-					Reason: "review.notification.enabled is off, so this run dispatches no review " +
+					Reason: "demo.notification.enabled is off, so this run dispatches no demo " +
 						"notice and the fixture takes no part",
 				}, nil
 			}
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
-			return newReviewNotifier(reg)
+			return newDemoNotifier(reg)
 		},
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {
-			notifier, ok := instance.(*reviewNotifier)
+			notifier, ok := instance.(*demoNotifier)
 			if !ok || notifier == nil {
 				return nil
 			}
 			handlers, err := core.Resolve[jobs.Handlers](reg)
 			if err != nil {
 				return fmt.Errorf("%s: taking up the handler registration face: %w",
-					reviewNotificationModuleName, err)
+					demoNotificationModuleName, err)
 			}
 			if err := handlers.Register(notifier); err != nil {
 				return fmt.Errorf("%s: registering the dispatch handler: %w",
-					reviewNotificationModuleName, err)
+					demoNotificationModuleName, err)
 			}
-			if err := wireReviewRecipient(reg); err != nil {
+			if err := wireDemoRecipient(reg); err != nil {
 				return err
 			}
 			return mountReviewControl(reg, notifier)
@@ -285,65 +285,65 @@ func reviewNotificationModule() core.Module {
 	}
 }
 
-// reviewSMSTemplates is the part of the SMS template registry this fixture
+// demoSMSTemplates is the part of the SMS template registry this fixture
 // reads before it chooses the sms channel: one resolution, which answers
 // whether the registry holds a template for a language and can carry a message
 // in it. The narrow shape keeps the decision testable without the registry's
 // management surface.
-type reviewSMSTemplates interface {
+type demoSMSTemplates interface {
 	Resolve(sms.Message) (sms.Resolved, error)
 }
 
-// reviewNotifier is the worker's product: the seams one dispatch needs, and the
+// demoNotifier is the worker's product: the seams one dispatch needs, and the
 // logger its skipped members are reported on.
-type reviewNotifier struct {
+type demoNotifier struct {
 	dispatcher notification.Dispatcher
 	prefs      notification.Preferences
 	accounts   authn.Accounts
 	members    authn.Memberships
-	templates  reviewSMSTemplates
+	templates  demoSMSTemplates
 	profiles   []i18n.Profile
 	resolver   i18n.Resolver
 	logger     *slog.Logger
 }
 
-// newReviewNotifier takes up what the descriptor requires.
-func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
+// newDemoNotifier takes up what the descriptor requires.
+func newDemoNotifier(reg *core.Registry) (*demoNotifier, error) {
 	dispatcher, err := core.Resolve[notification.Dispatcher](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the submission seam: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
 	accounts, err := core.Resolve[authn.Accounts](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the account store: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
 	prefs, err := core.Resolve[notification.Preferences](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the preference matrix: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
 	members, err := core.Resolve[authn.Memberships](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the membership store: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
 	templates, err := core.Resolve[sms.Registry](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the SMS template registry: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
 	resolver, err := core.Resolve[i18n.Resolver](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the locale resolver: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
 	logger := log.Default()
 	if delivered, logErr := core.Resolve[log.Logger](reg); logErr == nil {
-		logger = delivered.Named(reviewNotificationModuleName)
+		logger = delivered.Named(demoNotificationModuleName)
 	}
-	return &reviewNotifier{
+	return &demoNotifier{
 		dispatcher: dispatcher,
 		prefs:      prefs,
 		accounts:   accounts,
@@ -356,7 +356,7 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 }
 
 // Type reports the job type the scheduler enqueues; see jobs.Handler.
-func (*reviewNotifier) Type() string { return reviewNotificationJobType }
+func (*demoNotifier) Type() string { return demoNotificationJobType }
 
 // Handle turns one periodic job into one dispatch per active member of the
 // tenant the job belongs to. The scheduler entered the tenant before handing
@@ -375,10 +375,10 @@ func (*reviewNotifier) Type() string { return reviewNotificationJobType }
 // error, so the job retries; the per-recipient dedupe key of the dispatch makes
 // the members already submitted converge on one delivery job, so a retry adds
 // no second message once the language is stable.
-func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn) (jobs.Result, error) {
+func (n *demoNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn) (jobs.Result, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
-		return jobs.Result{}, fmt.Errorf("%s: %w", reviewNotificationModuleName, tenant.ErrNoTenantInContext)
+		return jobs.Result{}, fmt.Errorf("%s: %w", demoNotificationModuleName, tenant.ErrNoTenantInContext)
 	}
 	// The system tenant is the platform's policy domain, not an organization: the
 	// notice this fixture dispatches is not addressed to its administrators.
@@ -389,7 +389,7 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 	members, err := n.membersOf(ctx, string(id))
 	if err != nil {
 		return jobs.Result{}, fmt.Errorf("%s: listing the members of tenant %q: %w",
-			reviewNotificationModuleName, id, err)
+			demoNotificationModuleName, id, err)
 	}
 	var failures []error
 	for _, member := range members {
@@ -402,16 +402,16 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 			continue
 		}
 		if !ok {
-			n.logger.Info(reviewNotificationModuleName+": a member has no proved phone and no email address, "+
+			n.logger.Info(demoNotificationModuleName+": a member has no proved phone and no email address, "+
 				"so the notice is skipped",
 				"tenant", string(id), "account", string(member.Account))
 			continue
 		}
-		n.logger.Debug(reviewNotificationModuleName+": a notice was dispatched",
+		n.logger.Debug(demoNotificationModuleName+": a notice was dispatched",
 			"tenant", string(id), "account", string(member.Account), "channels", plan.Channels)
 	}
 	if len(failures) > 0 {
-		return jobs.Result{}, fmt.Errorf("%s: %w", reviewNotificationModuleName, errors.Join(failures...))
+		return jobs.Result{}, fmt.Errorf("%s: %w", demoNotificationModuleName, errors.Join(failures...))
 	}
 	return jobs.Result{}, nil
 }
@@ -436,27 +436,27 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 // email address; the caller reports that as a skip, not a failure. The tenant is
 // the caller's to name: both callers read it before calling, and the warning a
 // failed language read leaves names it.
-func (n *reviewNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.AccountID, occurrenceID string) (reviewNoticePlan, bool, error) {
+func (n *demoNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.AccountID, occurrenceID string) (demoNoticePlan, bool, error) {
 	identifiers, err := n.accounts.Identifiers(ctx, id)
 	if err != nil {
-		return reviewNoticePlan{}, false, fmt.Errorf("listing the identifiers of %q: %w", id, err)
+		return demoNoticePlan{}, false, fmt.Errorf("listing the identifiers of %q: %w", id, err)
 	}
 	locale := string(n.localeFor(ctx, tenantID, id))
-	plan, ok := planReviewNotice(identifiers, n.smsAddressable(locale, identifiers))
+	plan, ok := planDemoNotice(identifiers, n.smsAddressable(locale, identifiers))
 	if !ok {
-		return reviewNoticePlan{}, false, nil
+		return demoNoticePlan{}, false, nil
 	}
-	effective, err := n.prefs.Effective(ctx, string(id), reviewNotificationTypeKey)
+	effective, err := n.prefs.Effective(ctx, string(id), demoNotificationTypeKey)
 	if err != nil {
-		return reviewNoticePlan{}, true, fmt.Errorf("reading the effective channels of %q: %w", id, err)
+		return demoNoticePlan{}, true, fmt.Errorf("reading the effective channels of %q: %w", id, err)
 	}
-	if wanted := pruneReviewChannels(effective, plan); len(wanted) != len(effective) {
-		if _, setErr := n.prefs.Set(ctx, string(id), reviewNotificationTypeKey, wanted); setErr != nil {
-			return reviewNoticePlan{}, true, fmt.Errorf("writing the addressable channels of %q: %w", id, setErr)
+	if wanted := pruneDemoChannels(effective, plan); len(wanted) != len(effective) {
+		if _, setErr := n.prefs.Set(ctx, string(id), demoNotificationTypeKey, wanted); setErr != nil {
+			return demoNoticePlan{}, true, fmt.Errorf("writing the addressable channels of %q: %w", id, setErr)
 		}
 	}
 	_, err = n.dispatcher.Dispatch(ctx, notification.Dispatch{
-		TypeKey: reviewNotificationTypeKey,
+		TypeKey: demoNotificationTypeKey,
 		Recipient: notification.Recipient{
 			Class:  notification.RecipientUser,
 			UserID: string(id),
@@ -466,7 +466,7 @@ func (n *reviewNotifier) notify(ctx context.Context, tenantID tenant.ID, id auth
 		OccurrenceID: occurrenceID,
 	})
 	if err != nil {
-		return reviewNoticePlan{}, true, fmt.Errorf("dispatching the notice of %q: %w", id, err)
+		return demoNoticePlan{}, true, fmt.Errorf("dispatching the notice of %q: %w", id, err)
 	}
 	return plan, true, nil
 }
@@ -480,17 +480,17 @@ func (n *reviewNotifier) notify(ctx context.Context, tenantID tenant.ID, id auth
 // not end the search: the remaining profiles are asked, because one seam's
 // failed read says nothing about another's answer. The warning names the
 // notice's type and tenant, never the recipient.
-func (n *reviewNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id authn.AccountID) i18n.Locale {
+func (n *demoNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id authn.AccountID) i18n.Locale {
 	readFailed := false
 	for _, profile := range n.profiles {
 		locale, ok, err := profile.LocaleFor(ctx, string(id))
 		if err != nil {
 			if !readFailed {
 				readFailed = true
-				n.logger.Warn(reviewNotificationModuleName+": the recipient's language preference could not be "+
+				n.logger.Warn(demoNotificationModuleName+": the recipient's language preference could not be "+
 					"read through one profile; the notice takes the next answer, or the default language when "+
 					"none answers",
-					"type", reviewNotificationTypeKey, "tenant", string(tenantID), "cause", err.Error())
+					"type", demoNotificationTypeKey, "tenant", string(tenantID), "cause", err.Error())
 			}
 			continue
 		}
@@ -517,14 +517,14 @@ func (n *reviewNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id a
 // must not hide it by choosing another channel.
 //
 // An account with no proved phone has no sms destination and answers false.
-func (n *reviewNotifier) smsAddressable(locale string, identifiers []authn.Identifier) bool {
-	phone, _ := reviewNoticeDestinations(identifiers)
+func (n *demoNotifier) smsAddressable(locale string, identifiers []authn.Identifier) bool {
+	phone, _ := demoNoticeDestinations(identifiers)
 	if phone == "" {
 		return false
 	}
 	_, err := n.templates.Resolve(sms.Message{
 		To:       phone,
-		Template: reviewNotificationSMSTemplate,
+		Template: demoNotificationSMSTemplate,
 		Params:   map[string]string{"to": phone},
 		Locale:   locale,
 	})
@@ -533,7 +533,7 @@ func (n *reviewNotifier) smsAddressable(locale string, identifiers []authn.Ident
 
 // membersOf lists every membership of a tenant, following the paging cursor the
 // membership seam exposes.
-func (n *reviewNotifier) membersOf(ctx context.Context, tenantID string) ([]authn.Membership, error) {
+func (n *demoNotifier) membersOf(ctx context.Context, tenantID string) ([]authn.Membership, error) {
 	const pageSize = 200
 	var all []authn.Membership
 	after := ""
@@ -550,7 +550,7 @@ func (n *reviewNotifier) membersOf(ctx context.Context, tenantID string) ([]auth
 	}
 }
 
-// wireReviewRecipient adds the layer that names the preference routes'
+// wireDemoRecipient adds the layer that names the preference routes'
 // recipient: the caller's effective account, which is what an impersonation
 // reads as the impersonated one.
 //
@@ -560,31 +560,31 @@ func (n *reviewNotifier) membersOf(ctx context.Context, tenantID string) ([]auth
 // The layer sets nothing when no identity is present, so a run without the
 // gateway, or a request that reached the handler before authentication did,
 // keeps the capability's own answer: a write with no recipient is refused.
-func wireReviewRecipient(reg *core.Registry) error {
+func wireDemoRecipient(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if errors.Is(err, core.ErrMissingProvider) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("%s: taking up the HTTP entry point: %w", reviewNotificationModuleName, err)
+		return fmt.Errorf("%s: taking up the HTTP entry point: %w", demoNotificationModuleName, err)
 	}
-	endpoint, err := router.Endpoint(reviewNotificationEndpoint)
+	endpoint, err := router.Endpoint(demoNotificationEndpoint)
 	if err != nil {
 		return fmt.Errorf("%s: looking up the %q endpoint: %w",
-			reviewNotificationModuleName, reviewNotificationEndpoint, err)
+			demoNotificationModuleName, demoNotificationEndpoint, err)
 	}
 	endpoint.Use(speedhttp.Middleware{
-		Name:    reviewRecipientLayerName,
+		Name:    demoRecipientLayerName,
 		Stage:   speedhttp.StageRecord,
-		Handler: reviewRecipientHandler,
+		Handler: demoRecipientHandler,
 	})
 	return nil
 }
 
-// reviewRecipientHandler copies the authenticated caller's effective account
+// demoRecipientHandler copies the authenticated caller's effective account
 // onto the request context under preferences.WithRecipient. A request with no
 // identity leaves the context untouched.
-func reviewRecipientHandler(c *gin.Context) {
+func demoRecipientHandler(c *gin.Context) {
 	if id, ok := authn.FromContext(c.Request.Context()); ok {
 		c.Request = c.Request.WithContext(
 			preferences.WithRecipient(c.Request.Context(), string(id.Account())))
@@ -592,12 +592,12 @@ func reviewRecipientHandler(c *gin.Context) {
 	c.Next()
 }
 
-// reviewNoticePlan is how one recipient is addressed by one dispatch: the
+// demoNoticePlan is how one recipient is addressed by one dispatch: the
 // single external destination the dispatch carries and the channels the
 // recipient can receive on. The capability carries one destination parameter
 // for every external channel, so a recipient is addressed on at most one of
 // them per dispatch.
-type reviewNoticePlan struct {
+type demoNoticePlan struct {
 	// To is the destination the dispatch carries under "to". For sms it is the
 	// recipient's proved phone number and for email the address the account
 	// holds.
@@ -607,12 +607,12 @@ type reviewNoticePlan struct {
 	Channels []notification.Channel
 }
 
-// reviewNoticeDestinations resolves an account's identifiers into the two
+// demoNoticeDestinations resolves an account's identifiers into the two
 // destinations a dispatch can address: the proved phone number, which is the
 // sms destination, and the email address, which is the email destination. An
 // unproved phone is not a destination the product would send a notice to, so it
 // is ignored.
-func reviewNoticeDestinations(identifiers []authn.Identifier) (phone, email string) {
+func demoNoticeDestinations(identifiers []authn.Identifier) (phone, email string) {
 	for _, identifier := range identifiers {
 		if identifier.Value == "" {
 			continue
@@ -631,7 +631,7 @@ func reviewNoticeDestinations(identifiers []authn.Identifier) (phone, email stri
 	return phone, email
 }
 
-// planReviewNotice resolves one account's identifiers into a delivery plan.
+// planDemoNotice resolves one account's identifiers into a delivery plan.
 //
 // A proved phone number is the sms destination when the registry holds the
 // type's template for the recipient's language; otherwise the account falls
@@ -644,30 +644,30 @@ func reviewNoticeDestinations(identifiers []authn.Identifier) (phone, email stri
 // proved phone with neither a held template nor an email address is still
 // addressable in-app; the dispatch carries the phone as its "to" parameter,
 // which the in-app channel does not read.
-func planReviewNotice(identifiers []authn.Identifier, smsAddressable bool) (reviewNoticePlan, bool) {
-	phone, email := reviewNoticeDestinations(identifiers)
+func planDemoNotice(identifiers []authn.Identifier, smsAddressable bool) (demoNoticePlan, bool) {
+	phone, email := demoNoticeDestinations(identifiers)
 	switch {
 	case phone != "" && smsAddressable:
-		return reviewNoticePlan{
+		return demoNoticePlan{
 			To:       phone,
 			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
 		}, true
 	case email != "":
-		return reviewNoticePlan{
+		return demoNoticePlan{
 			To:       email,
 			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
 		}, true
 	case phone != "":
-		return reviewNoticePlan{
+		return demoNoticePlan{
 			To:       phone,
 			Channels: []notification.Channel{notification.ChannelInApp},
 		}, true
 	default:
-		return reviewNoticePlan{}, false
+		return demoNoticePlan{}, false
 	}
 }
 
-// pruneReviewChannels removes the channels a plan cannot address from the
+// pruneDemoChannels removes the channels a plan cannot address from the
 // recipient's effective set. It is deliberately monotonic: it only drops a
 // channel, never adds one back, so a channel the recipient turned off stays off
 // across every dispatch window.
@@ -678,7 +678,7 @@ func planReviewNotice(identifiers []authn.Identifier, smsAddressable bool) (revi
 // destination, so leaving email in the set would send the email to a phone
 // number; a plan that falls back to email must drop sms, or the sms channel
 // would be attempted with the email address as its destination.
-func pruneReviewChannels(effective []notification.Channel, plan reviewNoticePlan) []notification.Channel {
+func pruneDemoChannels(effective []notification.Channel, plan demoNoticePlan) []notification.Channel {
 	addressable := make(map[notification.Channel]struct{}, len(plan.Channels))
 	for _, channel := range plan.Channels {
 		addressable[channel] = struct{}{}

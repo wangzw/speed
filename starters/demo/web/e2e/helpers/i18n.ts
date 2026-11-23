@@ -31,7 +31,7 @@ export type CopyBundle =
   | 'uiKit'
   | 'adminUi'
   | 'orgCreateUi'
-  | 'reviewNotice'
+  | 'demoNotice'
   | 'invitemail'
   | 'ownershipNotice'
   | 'authzPermissions'
@@ -56,7 +56,7 @@ const BUNDLES: Record<CopyBundle, string> = {
   // catalog, and the review build is where a type exists, so its text is a
   // shipped product string like any other. Its keys carry dots as literal
   // characters; `copyKey` reads them that way.
-  reviewNotice: '../../../server/review_notification_locales',
+  demoNotice: '../../../server/demo_notification_locales',
   // The invitation notice the backend renders and the review mail carrier
   // writes to the process log. Its keys carry dots as literal characters; read
   // them through `copyKey`.

@@ -21,7 +21,7 @@ import (
 var reviewOnlyModuleNames = []string{"review.sms.control", "review.guard"}
 
 // reviewOnlyFeatureNames are the features only the review controls declare.
-var reviewOnlyFeatureNames = []string{"review.sms.control", "review.notification.control"}
+var reviewOnlyFeatureNames = []string{"review.sms.control", "demo.notification.control"}
 
 // TestDefaultBuildCompilesEveryCapability holds the ceiling: each name in
 // capabilityModules is registered in a binary built without any tag. Before the
@@ -139,7 +139,7 @@ func TestDefaultBuildNamesTheDeployAndReviewCapabilities(t *testing.T) {
 		"mail.log",
 		"authn.emailcode",
 		"sms.log",
-		"review.notification",
+		"demo.notification",
 	} {
 		if !named[name] {
 			t.Errorf("capabilityModules does not name %q; the default build no longer carries "+

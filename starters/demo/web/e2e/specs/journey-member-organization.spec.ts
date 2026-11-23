@@ -90,7 +90,7 @@ test.use({ seedMember: true })
 
 /** The notification type the review build declares. Its key is the matrix
  * row's label: the demo composes the matrix without a type-label override. */
-const TYPE_KEY = 'review.notice'
+const TYPE_KEY = 'demo.notice'
 
 /** The seeded tenant's name, as its organization row renders it. */
 const TENANT_NAME = reviewMember.tenant
@@ -151,13 +151,13 @@ const NOTICE_LOCALE: CopyLocale = 'en-US'
  * the dispatch resolved for this member.
  */
 const NOTICE_TITLE = copyKey(
-  'reviewNotice',
-  'review.notice.in_app.title',
+  'demoNotice',
+  'demo.notice.in_app.title',
   NOTICE_LOCALE,
 )
 const NOTICE_BODY = copyKey(
-  'reviewNotice',
-  'review.notice.in_app.body',
+  'demoNotice',
+  'demo.notice.in_app.body',
   NOTICE_LOCALE,
 )
 

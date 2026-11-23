@@ -4,7 +4,7 @@
  * This is a review-assembly-only control: the route it posts to is mounted by a
  * module compiled only under the review build tag, and the home page renders
  * this component only while the feature document carries
- * `review.notification.control`, which that module alone declares. A baseline
+ * `demo.notification.control`, which that module alone declares. A baseline
  * binary carries neither the route nor the feature, so the component is never
  * shown and its request is never made there.
  *

@@ -7,7 +7,7 @@
 // document, so a baseline binary serves no such name and shows nothing.
 declare module '@speed/api-sdk/features' {
   interface FeatureNameRegistry {
-    'review.notification.control': true
+    'demo.notification.control': true
     'review.sms.control': true
   }
 }

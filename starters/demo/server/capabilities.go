@@ -106,5 +106,5 @@ var capabilityModules = []string{
 	// dispatches it to a tenant's members, and the preference-recipient wiring.
 	// The fixture's review-only dispatch control is compiled separately under
 	// the review tag; see notification_control_review.go.
-	reviewNotificationModuleName,
+	demoNotificationModuleName,
 }

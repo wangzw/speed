@@ -92,19 +92,19 @@ type messagePage struct {
 // core.Resources, and its schedule names the handler this module registers.
 func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 	t.Parallel()
-	if !slices.Contains(capabilityModules, reviewNotificationModuleName) {
+	if !slices.Contains(capabilityModules, demoNotificationModuleName) {
 		t.Fatalf("the capability ceiling names no %q module, so the review binary would run neither "+
-			"the type nor the worker", reviewNotificationModuleName)
+			"the type nor the worker", demoNotificationModuleName)
 	}
 
 	var declared *notification.TypeSpec
 	for _, resource := range core.Resources[notification.TypeSpec](core.ProcessRegistry) {
-		if resource.Value.Key != reviewNotificationTypeKey {
+		if resource.Value.Key != demoNotificationTypeKey {
 			continue
 		}
-		if resource.Module != reviewNotificationModuleName {
-			t.Fatalf("the type %q is declared by %q, want %q", reviewNotificationTypeKey,
-				resource.Module, reviewNotificationModuleName)
+		if resource.Module != demoNotificationModuleName {
+			t.Fatalf("the type %q is declared by %q, want %q", demoNotificationTypeKey,
+				resource.Module, demoNotificationModuleName)
 		}
 		spec := resource.Value
 		declared = &spec
@@ -112,7 +112,7 @@ func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 	if declared == nil {
 		t.Fatalf("the available set declares no %q type; both taxonomy consumers read "+
 			"this query, so the type would be absent from the matrix and refused at dispatch",
-			reviewNotificationTypeKey)
+			demoNotificationTypeKey)
 	}
 	if !declared.Unsubscribable {
 		t.Errorf("the type is not unsubscribable, so the journey's preference write would be refused")
@@ -132,7 +132,7 @@ func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 
 	var schedule *jobs.Schedule
 	for _, resource := range core.Resources[jobs.Schedule](core.ProcessRegistry) {
-		if resource.Module == reviewNotificationModuleName {
+		if resource.Module == demoNotificationModuleName {
 			s := resource.Value
 			schedule = &s
 		}
@@ -140,8 +140,8 @@ func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 	if schedule == nil {
 		t.Fatalf("the module declares no jobs.Schedule, so no worker window ever dispatches the type")
 	}
-	if schedule.Type != reviewNotificationJobType {
-		t.Errorf("the schedule enqueues %q, want the handler's type %q", schedule.Type, reviewNotificationJobType)
+	if schedule.Type != demoNotificationJobType {
+		t.Errorf("the schedule enqueues %q, want the handler's type %q", schedule.Type, demoNotificationJobType)
 	}
 	if schedule.Interval <= 0 {
 		t.Errorf("the schedule's interval is %s, want a positive window", schedule.Interval)
@@ -196,12 +196,12 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	readJSON(t, client, base+"/api/v1/notifications/types", headers, &types)
 	var typeView *notificationTypeView
 	for i := range types.Types {
-		if types.Types[i].Key == reviewNotificationTypeKey {
+		if types.Types[i].Key == demoNotificationTypeKey {
 			typeView = &types.Types[i]
 		}
 	}
 	if typeView == nil {
-		t.Fatalf("GET /notifications/types lists no %q:\n%+v", reviewNotificationTypeKey, types)
+		t.Fatalf("GET /notifications/types lists no %q:\n%+v", demoNotificationTypeKey, types)
 	}
 	if want := []string{"in_app", "email", "sms"}; !slices.Equal(typeView.DefaultChannels, want) {
 		t.Errorf("the type's listed default channels are %v, want %v", typeView.DefaultChannels, want)
@@ -209,16 +209,16 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 
 	// The worker dispatches once per window. Wait for the first message; the
 	// delivery consumer accepting the type is what proves it collected it.
-	page := waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+reviewNotificationGroup,
+	page := waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+demoNotificationGroup,
 		headers, 1, serve)
 	first := page.Messages[0]
-	if first.TypeKey != reviewNotificationTypeKey {
-		t.Fatalf("the first message is %q, want %q:\n%+v", first.TypeKey, reviewNotificationTypeKey, first)
+	if first.TypeKey != demoNotificationTypeKey {
+		t.Fatalf("the first message is %q, want %q:\n%+v", first.TypeKey, demoNotificationTypeKey, first)
 	}
-	if want := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.in_app.title"); first.Title != want {
+	if want := reviewCatalogEntry(t, reviewDefaultLocale, "demo.notice.in_app.title"); first.Title != want {
 		t.Errorf("the in-app title is %q, want the catalog's %q", first.Title, want)
 	}
-	if want := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.in_app.body"); first.Body != want {
+	if want := reviewCatalogEntry(t, reviewDefaultLocale, "demo.notice.in_app.body"); first.Body != want {
 		t.Errorf("the in-app body is %q, want the catalog's %q", first.Body, want)
 	}
 
@@ -240,10 +240,10 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	// The email channel renders the same message from the catalog. The review
 	// mail carrier writes the rendered subject and body to the process log; a
 	// fallback to the raw key would leave the key in the line instead.
-	subject := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.email.subject")
-	body := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.email.body_text")
+	subject := reviewCatalogEntry(t, reviewDefaultLocale, "demo.notice.email.subject")
+	body := reviewCatalogEntry(t, reviewDefaultLocale, "demo.notice.email.body_text")
 	waitForLogLine(t, serve, subject)
-	if strings.Contains(serve.output(), reviewNotificationTypeKey+".email.subject") {
+	if strings.Contains(serve.output(), demoNotificationTypeKey+".email.subject") {
 		t.Fatalf("the review mail line carries the raw catalog key instead of the rendered subject:\n%s",
 			serve.output())
 	}
@@ -255,7 +255,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	// recipient on the request context. Without that wiring the capability
 	// refuses a write with no recipient as a 400.
 	written := send(t, client, http.MethodPut,
-		base+"/api/v1/notifications/preferences/"+reviewNotificationTypeKey+"/email",
+		base+"/api/v1/notifications/preferences/"+demoNotificationTypeKey+"/email",
 		map[string]any{"enabled": false}, headers)
 	if written.status != http.StatusOK {
 		t.Fatalf("turning the email channel off answered %d:\n%s", written.status, written.body)
@@ -267,9 +267,9 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	if err := json.Unmarshal(written.body, &applied); err != nil {
 		t.Fatalf("the preference write's answer is not JSON: %v\n%s", err, written.body)
 	}
-	if applied.TypeKey != reviewNotificationTypeKey || !slices.Equal(applied.Channels, []string{"in_app"}) {
+	if applied.TypeKey != demoNotificationTypeKey || !slices.Equal(applied.Channels, []string{"in_app"}) {
 		t.Errorf("the preference write answered %+v, want %q with in_app alone",
-			applied, reviewNotificationTypeKey)
+			applied, demoNotificationTypeKey)
 	}
 	readJSON(t, client, base+"/api/v1/notifications/preferences", headers, &prefs)
 	row = preferenceRow(t, prefs.Preferences)
@@ -281,7 +281,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	// open on the authorization guard, not anonymous: the gateway answers a
 	// request carrying no credential before the preference handler runs.
 	anonymous := send(t, client, http.MethodPut,
-		base+"/api/v1/notifications/preferences/"+reviewNotificationTypeKey+"/email",
+		base+"/api/v1/notifications/preferences/"+demoNotificationTypeKey+"/email",
 		map[string]any{"enabled": true}, map[string]string{"X-Tenant": headers["X-Tenant"]})
 	if anonymous.status != http.StatusUnauthorized {
 		t.Fatalf("an anonymous preference write answered %d, want 401:\n%s",
@@ -306,10 +306,10 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 		}
 		return count
 	}
-	waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+reviewNotificationGroup,
+	waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+demoNotificationGroup,
 		headers, 2, serve)
 	afterFirst := emailLines()
-	waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+reviewNotificationGroup,
+	waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+demoNotificationGroup,
 		headers, 3, serve)
 	if afterSecond := emailLines(); afterSecond != afterFirst {
 		t.Errorf("the inbox grew after the email channel was turned off, but the notice's email "+
@@ -356,23 +356,23 @@ func TestReviewNotificationRendersInTheRecipientsLanguage(t *testing.T) {
 
 	// The worker's first window for this tenant renders the notice — and the
 	// email the same dispatch carries — in the recipient's language.
-	page := waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+reviewNotificationGroup,
+	page := waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+demoNotificationGroup,
 		headers, 1, serve)
 	first := page.Messages[0]
-	if first.TypeKey != reviewNotificationTypeKey {
-		t.Fatalf("the first message is %q, want %q:\n%+v", first.TypeKey, reviewNotificationTypeKey, first)
+	if first.TypeKey != demoNotificationTypeKey {
+		t.Fatalf("the first message is %q, want %q:\n%+v", first.TypeKey, demoNotificationTypeKey, first)
 	}
-	if want := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.in_app.title"); first.Title != want {
+	if want := reviewCatalogEntry(t, reviewChineseLocale, "demo.notice.in_app.title"); first.Title != want {
 		t.Errorf("the %s recipient's in-app title is %q, want the %s catalog's %q",
 			reviewChineseLocale, first.Title, reviewChineseLocale, want)
 	}
-	if want := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.in_app.body"); first.Body != want {
+	if want := reviewCatalogEntry(t, reviewChineseLocale, "demo.notice.in_app.body"); first.Body != want {
 		t.Errorf("the %s recipient's in-app body is %q, want the %s catalog's %q",
 			reviewChineseLocale, first.Body, reviewChineseLocale, want)
 	}
 
-	subject := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.email.subject")
-	emailBody := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.email.body_text")
+	subject := reviewCatalogEntry(t, reviewChineseLocale, "demo.notice.email.subject")
+	emailBody := reviewCatalogEntry(t, reviewChineseLocale, "demo.notice.email.body_text")
 	waitForLogLine(t, serve, subject)
 	if !strings.Contains(serve.output(), emailBody) {
 		t.Errorf("the review mail line carries no %s body %q", reviewChineseLocale, emailBody)
@@ -458,11 +458,11 @@ func readJSON(t *testing.T, client *http.Client, url string, headers map[string]
 func preferenceRow(t *testing.T, rows []preferenceView) preferenceView {
 	t.Helper()
 	for _, row := range rows {
-		if row.TypeKey == reviewNotificationTypeKey {
+		if row.TypeKey == demoNotificationTypeKey {
 			return row
 		}
 	}
-	t.Fatalf("the preference matrix has no %q row: %+v", reviewNotificationTypeKey, rows)
+	t.Fatalf("the preference matrix has no %q row: %+v", demoNotificationTypeKey, rows)
 	return preferenceView{}
 }
 
@@ -519,7 +519,7 @@ func waitForLogLine(t *testing.T, serve *process, needle string) {
 // language, so the cases expect the shipped text rather than a hardcoded copy.
 func reviewCatalogEntry(t *testing.T, locale, key string) string {
 	t.Helper()
-	raw, err := fs.ReadFile(reviewNotificationLocales, "review_notification_locales/"+locale+".json")
+	raw, err := fs.ReadFile(demoNotificationLocales, "demo_notification_locales/"+locale+".json")
 	if err != nil {
 		t.Fatalf("reading the fixture catalog: %v", err)
 	}

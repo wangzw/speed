@@ -45,7 +45,7 @@ function controlHeading(): HTMLElement | null {
 
 describe('the review-only notice control', () => {
   it('is offered when the review assembly publishes its feature', async () => {
-    renderDemoApp({ session: sessionWith('review.notification.control') })
+    renderDemoApp({ session: sessionWith('demo.notification.control') })
 
     expect(
       await screen.findByRole('heading', {
@@ -80,7 +80,7 @@ describe('the review-only notice control', () => {
       }
       return Promise.resolve(undefined as T)
     })
-    renderDemoApp({ session: sessionWith('review.notification.control') })
+    renderDemoApp({ session: sessionWith('demo.notification.control') })
 
     await userEvent.click(
       await screen.findByRole('button', {

@@ -106,16 +106,16 @@ test.use({ schedulerTick: '0s' })
 const TENANT = smsRolloutOperator.tenant
 
 /** The runtime template the review notice type's catalog names. */
-const TEMPLATE = 'review-notice'
+const TEMPLATE = 'demo-notice'
 
 /** The vendor codes the template is registered with, one per language. */
 const EN_LOCALE = 'en-US'
 const ZH_LOCALE = 'zh-CN'
-const EN_CODE = 'review-notice-en'
-const ZH_CODE = 'review-notice-zh'
+const EN_CODE = 'demo-notice-en'
+const ZH_CODE = 'demo-notice-zh'
 
 /** The notification type the review build declares. */
-const TYPE_KEY = 'review.notice'
+const TYPE_KEY = 'demo.notice'
 
 /** The phone the operator proves; its region is admitted by the review config. */
 const PHONE_NATIONAL = '13800138000'

@@ -38,9 +38,9 @@ import (
 // catalog names for the type's sms template, so the fixture's channel choice
 // resolves it and the delivery pipeline attempts the sms channel.
 const (
-	reviewLedgerTemplate = reviewNotificationSMSTemplate
-	reviewLedgerENCode   = "review-notice-en"
-	reviewLedgerZHCode   = "review-notice-zh"
+	reviewLedgerTemplate = demoNotificationSMSTemplate
+	reviewLedgerENCode   = "demo-notice-en"
+	reviewLedgerZHCode   = "demo-notice-zh"
 )
 
 // reviewLedgerRow is one row of notification_sends as this case reads it.
@@ -190,7 +190,7 @@ func waitForReviewLedgerRows(t *testing.T, dsn string, after int64) []reviewLedg
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("the ledger held no sms row for %q after rowid %d within the bound"+
-				"(last error: %v)", reviewNotificationTypeKey, after, lastErr)
+				"(last error: %v)", demoNotificationTypeKey, after, lastErr)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -213,7 +213,7 @@ func readReviewLedger(dsn string, after int64) ([]reviewLedgerRow, error) {
 	rows, err := database.QueryContext(ctx,
 		`SELECT rowid, status, error, provider_receipt_id FROM notification_sends `+
 			`WHERE type_key = ? AND channel = ? AND rowid > ? ORDER BY rowid ASC`,
-		reviewNotificationTypeKey, "sms", after)
+		demoNotificationTypeKey, "sms", after)
 	if err != nil {
 		return nil, fmt.Errorf("querying the ledger: %w", err)
 	}

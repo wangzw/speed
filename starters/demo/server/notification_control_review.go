@@ -11,7 +11,7 @@ package main
 // open on the authorization guard because it is an ordinary member's action,
 // not a permission; the handler answers for the signed-in caller and the review
 // build binds loopback addresses only (see review.go). The frontend still gates
-// the control on the review.notification.control feature, which this file
+// the control on the demo.notification.control feature, which this file
 // declares and the default build does not.
 
 import (
@@ -33,7 +33,7 @@ import (
 // reviewNotificationControlFeature is the review-only feature the console's
 // notice control reads. It is present exactly while this build's fixture is in
 // force, so a baseline deployment offers no such control.
-const reviewNotificationControlFeature = "review.notification.control"
+const reviewNotificationControlFeature = "demo.notification.control"
 
 // reviewNotificationControlPath is the control's route on the api endpoint. The
 // tenant control posts to it to dispatch one notice for the calling member; no
@@ -50,7 +50,7 @@ func reviewControlResources() []any {
 
 // mountReviewControl mounts the dispatch control for the fixture instance. A
 // default build's counterpart is a no-op.
-func mountReviewControl(reg *core.Registry, notifier *reviewNotifier) error {
+func mountReviewControl(reg *core.Registry, notifier *demoNotifier) error {
 	return wireReviewControl(reg, notifier)
 }
 
@@ -62,21 +62,21 @@ func mountReviewControl(reg *core.Registry, notifier *reviewNotifier) error {
 // neither the route nor this function. It is registered open because the tenant
 // control is an ordinary member's action, not a permission; the handler answers
 // for the signed-in caller. Both surfaces are optional in the same way
-// wireReviewRecipient's are: a run without the HTTP entry point has no route to
+// wireDemoRecipient's are: a run without the HTTP entry point has no route to
 // mount, and one without the guard has no declaration table to write.
-func wireReviewControl(reg *core.Registry, notifier *reviewNotifier) error {
+func wireReviewControl(reg *core.Registry, notifier *demoNotifier) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if errors.Is(err, core.ErrMissingProvider) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("%s: taking up the HTTP entry point for the control: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
-	endpoint, err := router.Endpoint(reviewNotificationEndpoint)
+	endpoint, err := router.Endpoint(demoNotificationEndpoint)
 	if err != nil {
 		return fmt.Errorf("%s: looking up the %q endpoint for the control: %w",
-			reviewNotificationModuleName, reviewNotificationEndpoint, err)
+			demoNotificationModuleName, demoNotificationEndpoint, err)
 	}
 	gate, err := core.Resolve[authz.Gate](reg)
 	switch {
@@ -84,7 +84,7 @@ func wireReviewControl(reg *core.Registry, notifier *reviewNotifier) error {
 		gate.Open(http.MethodPost, reviewNotificationControlPath)
 	case !errors.Is(err, core.ErrMissingProvider):
 		return fmt.Errorf("%s: taking up the route-declaration surface: %w",
-			reviewNotificationModuleName, err)
+			demoNotificationModuleName, err)
 	}
 	endpoint.Route(http.MethodPost, reviewNotificationControlPath, notifier.handleControl)
 	return nil
@@ -99,7 +99,7 @@ func wireReviewControl(reg *core.Registry, notifier *reviewNotifier) error {
 // permission guard, so nothing else would stop an account that does not belong
 // to the tenant from asking for a tenant-scoped dispatch. The response is 204:
 // the dispatch is enqueued, and the delivery is the pipeline's to settle.
-func (n *reviewNotifier) handleControl(c *gin.Context) {
+func (n *demoNotifier) handleControl(c *gin.Context) {
 	ctx := c.Request.Context()
 	identity, ok := authn.FromContext(ctx)
 	if !ok {
@@ -113,7 +113,7 @@ func (n *reviewNotifier) handleControl(c *gin.Context) {
 	}
 	member, err := n.members.IsMember(ctx, identity.Account(), string(tenantID))
 	if err != nil {
-		n.logger.Error(reviewNotificationModuleName+": the control could not read the membership",
+		n.logger.Error(demoNotificationModuleName+": the control could not read the membership",
 			"tenant", string(tenantID), "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "the membership could not be read"})
 		return
@@ -124,7 +124,7 @@ func (n *reviewNotifier) handleControl(c *gin.Context) {
 	}
 	plan, ok, err := n.notify(ctx, tenantID, identity.Account(), uuid.NewString())
 	if err != nil {
-		n.logger.Error(reviewNotificationModuleName+": the control could not dispatch the notice",
+		n.logger.Error(demoNotificationModuleName+": the control could not dispatch the notice",
 			"tenant", string(tenantID), "account", string(identity.Account()), "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "the review notice could not be dispatched"})
 		return
@@ -135,7 +135,7 @@ func (n *reviewNotifier) handleControl(c *gin.Context) {
 		})
 		return
 	}
-	n.logger.Info(reviewNotificationModuleName+": the review notice control dispatched a notice",
+	n.logger.Info(demoNotificationModuleName+": the review notice control dispatched a notice",
 		"tenant", string(tenantID), "account", string(identity.Account()), "channels", plan.Channels)
 	c.Status(http.StatusNoContent)
 }

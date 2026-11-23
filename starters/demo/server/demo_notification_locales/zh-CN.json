@@ -1,0 +1,7 @@
+{
+  "demo.notice.in_app.title": "组织新通知",
+  "demo.notice.in_app.body": "你的组织有新的活动。",
+  "demo.notice.email.subject": "组织新通知",
+  "demo.notice.email.body_text": "你的组织有新的活动。",
+  "demo.notice.sms.template": "demo-notice"
+}
