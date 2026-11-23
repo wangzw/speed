@@ -1108,6 +1108,9 @@
   },
   "sessions": {
     "title": "会话",
+    "section": {
+      "title": "会话列表"
+    },
     "accountLabel": "账户",
     "needAccount": {
       "title": "请指定账户",

@@ -1108,6 +1108,9 @@
   },
   "sessions": {
     "title": "Sessions",
+    "section": {
+      "title": "Session list"
+    },
     "accountLabel": "Account",
     "needAccount": {
       "title": "Name an account",

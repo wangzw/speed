@@ -19,17 +19,22 @@
  * refresh action both reset it, so a result never describes a context the
  * page has left. The account picker is held for the whole attempt -- the
  * revoke names the account it was issued for, and a change while it settled
- * would leave its result under another account's list. The page opens with
+ * would leave its result under another account's list. The row's revoke
+ * control keeps focus through the write: it is busy while its own revoke is
+ * in flight, and the rows it would race are unavailable for that time. The
+ * landed revoke drops the row on the re-read, so focus moves in the same
+ * commit to the next row's revoke control, else the previous row's, else the
+ * list section's heading -- never to the document body. The page opens with
  * ui-kit's PageHeader.
  */
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   DataTable,
   EmptyState,
   ListSkeleton,
@@ -44,6 +49,7 @@ import { AccountSelector } from './internal/account-selector.js'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { identifierPrefix } from './internal/identifier-prefix.js'
+import { useSectionHeadingFocus } from './internal/section-heading-focus.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { SelectorRow } from './internal/selector-row.js'
 import { useAdminUiTranslation } from './internal/translation.js'
@@ -82,6 +88,9 @@ export function SessionsPage() {
   const [selectedAccount, setSelectedAccount] = useState<AdminAccount | null>(
     null,
   )
+  // The session whose revoke is in flight, so its row reports busy while
+  // the other rows report unavailable.
+  const [revokingId, setRevokingId] = useState<string | null>(null)
   const account = selectedAccount?.id ?? ''
   const confirm = usePendingConfirm()
   // The list's one write scope: the revoke row action reports here, and the
@@ -95,6 +104,60 @@ export function SessionsPage() {
     id: account === '' ? undefined : account,
   })
   const revokeSession = operations.useRevokeSession()
+
+  // Where a landed revoke sends focus. The row leaves the list on the
+  // re-read the write invalidates, so the target is resolved against the
+  // list the write ran over once that list is replaced.
+  const landingAfterRemoval = useRef<{
+    readonly id: string
+    readonly data: readonly AdminAccountSession[] | undefined
+  } | null>(null)
+  const previousIds = useRef<readonly string[]>([])
+  const revokeButtons = useRef(new Map<string, HTMLButtonElement>())
+  const registerRevokeButton = (
+    id: string,
+    node: HTMLButtonElement | null,
+  ): void => {
+    if (node === null) {
+      revokeButtons.current.delete(id)
+    } else {
+      revokeButtons.current.set(id, node)
+    }
+  }
+  const { sectionRef: listSectionRef, focusHeading: focusListHeading } =
+    useSectionHeadingFocus()
+
+  // A landed revoke leaves the list on the re-read that follows it. The
+  // control that started the write is gone with the row, so focus moves to
+  // the next row's revoke control, else the previous row's, else the list
+  // section's heading, in the same commit that drops the row. Focus is only
+  // placed when the removal left it on the document body; a reader who has
+  // chosen another resting place keeps it.
+  useLayoutEffect(() => {
+    const ids = sessions.data?.map((row) => row.id) ?? []
+    const landing = landingAfterRemoval.current
+    if (landing !== null && sessions.data !== landing.data) {
+      landingAfterRemoval.current = null
+      const active = document.activeElement
+      if (
+        (active === null || active === document.body) &&
+        !ids.includes(landing.id)
+      ) {
+        const index = previousIds.current.indexOf(landing.id)
+        const targetId = ids[index] ?? ids[index - 1]
+        const target =
+          targetId === undefined
+            ? undefined
+            : revokeButtons.current.get(targetId)
+        if (target !== undefined) {
+          target.focus()
+        } else {
+          focusListHeading()
+        }
+      }
+    }
+    previousIds.current = ids
+  }, [sessions.data, focusListHeading])
 
   // The account is an argument of the revoke: choosing another one clears
   // the slot, because a result from the previous account would read as
@@ -205,40 +268,57 @@ export function SessionsPage() {
       align: 'right',
       header: t('sessions.column.actions'),
       cellWrap: 'nowrap',
-      cell: (session) => (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
-          aria-label={t('sessions.revokeAriaWithId', { id: session.id })}
-          disabled={session.revoked || feedback.pending}
-          loading={feedback.pending}
-          onClick={() =>
-            confirm.ask({
-              title: t('sessions.revokeTitle'),
-              message: t(
-                session.current === true
-                  ? 'sessions.revokeMessageCurrent'
-                  : 'sessions.revokeMessage',
-                { id: session.id },
-              ),
-              confirmLabel: t('common.confirm'),
-              run: () => {
-                void feedback.run(async () => {
-                  await revokeSession.mutateAsync({
-                    accountId: account,
-                    sessionId: session.id,
+      cell: (session) => {
+        const revoking = feedback.pending && revokingId === session.id
+        // A row whose write would share this one scope is held back while
+        // another row's revoke is in flight.
+        const unavailable = feedback.pending && revokingId !== session.id
+        return (
+          <ActionButton
+            ref={(node) => registerRevokeButton(session.id, node)}
+            type="button"
+            size="small"
+            tone="danger"
+            aria-label={t('sessions.revokeAriaWithId', { id: session.id })}
+            busy={revoking}
+            unavailable={unavailable}
+            onClick={() =>
+              confirm.ask({
+                title: t('sessions.revokeTitle'),
+                message: t(
+                  session.current === true
+                    ? 'sessions.revokeMessageCurrent'
+                    : 'sessions.revokeMessage',
+                  { id: session.id },
+                ),
+                confirmLabel: t('common.confirm'),
+                run: () => {
+                  setRevokingId(session.id)
+                  void feedback.run(async () => {
+                    try {
+                      await revokeSession.mutateAsync({
+                        accountId: account,
+                        sessionId: session.id,
+                      })
+                      landingAfterRemoval.current = {
+                        id: session.id,
+                        data: sessions.data,
+                      }
+                      return t('sessions.revokedNotice')
+                    } finally {
+                      // The row's own write has settled: a landed revoke
+                      // has already dropped the row on the re-read.
+                      setRevokingId(null)
+                    }
                   })
-                  return t('sessions.revokedNotice')
-                })
-              },
-            })
-          }
-        >
-          {t('sessions.revoke')}
-        </Button>
-      ),
+                },
+              })
+            }
+          >
+            {t('sessions.revoke')}
+          </ActionButton>
+        )
+      },
     },
   ]
 
@@ -293,14 +373,18 @@ export function SessionsPage() {
         />
       ) : (
         <>
-          <SectionCard flushContent>
+          <SectionCard
+            ref={listSectionRef}
+            title={t('sessions.section.title')}
+            flushContent
+          >
             <AdminAsyncSection
               pending={pending}
               payload={rows}
               error={sessions.error}
               refreshing={sessions.isFetching}
               empty={rows !== undefined && rows.length === 0}
-              headingLevel="h2"
+              headingLevel="h3"
               loading={
                 <ListSkeleton
                   label={t('sessions.loading')}
