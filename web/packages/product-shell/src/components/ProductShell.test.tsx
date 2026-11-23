@@ -21,6 +21,7 @@
  * back to a fresh-visitor sign-in.
  */
 
+import { useEffect, useRef } from 'react'
 import { act, fireEvent, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { attachSession } from '@speed/auth-core'
@@ -34,7 +35,7 @@ import {
   LAYOUT_KIT_NAMESPACE,
   layoutKitResources,
 } from '@speed/layout-kit'
-import { UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
+import { PageLayout, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
 import { TEST_LANGUAGES } from '@speed/test-utils/render'
 import authUiZhCN from '../../../auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import layoutKitZhCN from '../../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
@@ -108,6 +109,18 @@ async function signOutOf(session: AuthSession): Promise<void> {
   await act(async () => {
     await session.logout()
   })
+}
+
+/** A host child that focuses its own control on mount, the way the
+ * account page's verification section focuses the code input right
+ * after a registration navigate. Its effect runs before ProductShell's
+ * flip effect, so the flip sees focus already inside the new branch. */
+function SelfFocusingChild({ label }: { readonly label: string }) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    ref.current?.focus()
+  }, [])
+  return <input ref={ref} aria-label={label} />
 }
 
 describe('ProductShell view machine', () => {
@@ -369,7 +382,43 @@ describe('ProductShell view machine', () => {
     expect(utils.getByText('app content')).toBeInTheDocument()
   })
 
-  it('moves focus into the ended branch and announces the transition into it', async () => {
+  it('leaves focus untouched on the first render', () => {
+    // A fresh page load's focus belongs to the host: the first commit is
+    // not a branch flip, so the landing rule must not claim it. With
+    // nothing focused the document's active element stays the body ...
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    expect(document.activeElement).toBe(document.body)
+    const utils = renderWithProviders(
+      <ProductShell navItems={NAV_ITEMS} header="My App" signIn={<p>sign-in view</p>}>
+        <p>app content</p>
+      </ProductShell>,
+    )
+    expect(utils.getByText('sign-in view')).toBeInTheDocument()
+    expect(document.activeElement).toBe(document.body)
+
+    // ... and a host control focused before the mount keeps focus through
+    // it, even though the control sits outside the branch the shell
+    // mounted (the case the flip hand-off exists for, one commit later).
+    const hostControl = document.createElement('button')
+    hostControl.textContent = 'host control'
+    document.body.append(hostControl)
+    try {
+      hostControl.focus()
+      expect(document.activeElement).toBe(hostControl)
+      const second = renderWithProviders(
+        <ProductShell navItems={NAV_ITEMS} header="My App" signIn={<p>second sign-in view</p>}>
+          <p>app content</p>
+        </ProductShell>,
+      )
+      expect(second.getByText('second sign-in view')).toBeInTheDocument()
+      expect(document.activeElement).toBe(hostControl)
+    } finally {
+      hostControl.remove()
+    }
+  })
+
+  it('lands focus on the ended branch heading and announces the transition into it', async () => {
     const rig = makeJourneyRig()
     attachSession(rig.session)
     const utils = renderWithProviders(
@@ -381,18 +430,19 @@ describe('ProductShell view machine', () => {
     expect(utils.getByText('app content')).toBeInTheDocument()
     // The session ends mid-use (an explicit sign-out here; a server-side
     // death is the same snapshot flip, driven by the gated-journey
-    // suite): the machine transfers focus into the ended branch's own
-    // container -- focus never falls back to the body -- and a
+    // suite): the machine hands focus to the ended branch's page heading
+    // -- focus never falls back to the body -- and a
     // role="status" element announces the transition from the
     // product-shell namespace (the family convention, registered by this
     // suite's harness).
     await signOutOf(rig.session)
     expect(utils.getByText(authUiZhCN.sessionEnded.title)).toBeInTheDocument()
-    const active = document.activeElement
-    expect(active).not.toBeNull()
-    expect(active).not.toBe(document.body)
-    expect(utils.container.contains(active)).toBe(true)
-    expect(active?.textContent).toContain(authUiZhCN.sessionEnded.title)
+    expect(document.activeElement).toBe(
+      utils.getByRole('heading', {
+        level: 1,
+        name: authUiZhCN.sessionEnded.title,
+      }),
+    )
     const status = utils.getByRole('status')
     // The region is inserted empty and fills on a later frame.
     expect(status).toHaveTextContent('')
@@ -401,7 +451,6 @@ describe('ProductShell view machine', () => {
         productShellZhCN.announcements.sessionEnded,
       ),
     )
-    expect(active?.textContent).toContain(productShellZhCN.announcements.sessionEnded)
     // The shell-owned parts of the ended branch (the focusable container
     // and the sr-only live region) carry no axe violations of their own;
     // the branch is a whole-page placeholder by design, so the `region`
@@ -410,13 +459,14 @@ describe('ProductShell view machine', () => {
     await expectNoAxeViolations({ disabledRules: ['region'] })
   })
 
-  it('still transfers focus into the ended branch when its namespace is not registered, and renders no announcement text', async () => {
+  it('still lands focus on the ended branch heading when its namespace is not registered, and renders no announcement text', async () => {
     // The machine's announcement renders from the product-shell
     // namespace; a host that has not registered it must get
     // neither raw key text nor missing-key warnings: the flip still
-    // moves focus, the ended screen renders, and no status element
-    // exists. The pre-registration harness below registers exactly the
-    // three sibling namespaces every shell host registers anyway.
+    // lands focus on the page heading, the ended screen renders, and no
+    // status element exists. The pre-registration harness below registers
+    // exactly the three sibling namespaces every shell host registers
+    // anyway.
     const trio = createI18n({
       supportedLanguages: TEST_LANGUAGES,
       defaultLanguage: 'zh-CN',
@@ -438,16 +488,17 @@ describe('ProductShell view machine', () => {
     await signInTo(rig.session)
     await signOutOf(rig.session)
     expect(utils.getByText(authUiZhCN.sessionEnded.title)).toBeInTheDocument()
-    const active = document.activeElement
-    expect(active).not.toBeNull()
-    expect(active).not.toBe(document.body)
-    expect(utils.container.contains(active)).toBe(true)
-    expect(active?.textContent).toContain(authUiZhCN.sessionEnded.title)
+    expect(document.activeElement).toBe(
+      utils.getByRole('heading', {
+        level: 1,
+        name: authUiZhCN.sessionEnded.title,
+      }),
+    )
     expect(utils.queryByRole('status')).not.toBeInTheDocument()
     expect(utils.queryByText(productShellZhCN.announcements.sessionEnded)).not.toBeInTheDocument()
   })
 
-  it('moves focus into the branch every flip lands on, along the whole journey', async () => {
+  it('lands focus on the branch container when a branch has no page heading to land on', async () => {
     const rig = makeJourneyRig()
     attachSession(rig.session)
     const utils = renderWithProviders(
@@ -457,29 +508,89 @@ describe('ProductShell view machine', () => {
     )
     // Mounting into the sign-in branch never moves focus (a fresh page
     // load keeps the host's own focus); the first flip -- the login --
-    // moves focus into the authenticated frame's container.
+    // has no level-one heading to land on, so focus falls back to the
+    // authenticated frame's main landmark.
     expect(utils.getByText('sign-in view')).toBeInTheDocument()
     await signInTo(rig.session)
     expect(utils.getByText('app content')).toBeInTheDocument()
-    const inFrame = document.activeElement
-    expect(inFrame).not.toBe(document.body)
-    expect(inFrame?.textContent).toContain('app content')
-    // The ended action's reset is a flip too: focus lands inside the
-    // sign-in branch.
+    expect(document.activeElement).toBe(utils.getByRole('main'))
+    // The ended action's reset is a flip too, and the sign-in slot has
+    // neither a main landmark nor a heading: focus falls back to the
+    // branch's own focusable wrapper rather than the body.
     await signOutOf(rig.session)
     expect(utils.getByText(authUiZhCN.sessionEnded.title)).toBeInTheDocument()
     fireEvent.click(
       utils.getByRole('button', { name: authUiZhCN.sessionEnded.signInAction }),
     )
     expect(utils.getByText('sign-in view')).toBeInTheDocument()
-    const inSignIn = document.activeElement
-    expect(inSignIn).not.toBe(document.body)
-    expect(inSignIn?.textContent).toContain('sign-in view')
-    // A re-login lands focus back inside the frame.
+    expect(document.activeElement).toBe(utils.container.firstElementChild)
+    expect(document.activeElement?.textContent).toBe('sign-in view')
+    // A re-login lands focus back on the frame's main landmark.
     await signInTo(rig.session)
     expect(utils.getByText('app content')).toBeInTheDocument()
-    expect(document.activeElement?.textContent).toContain('app content')
+    expect(document.activeElement).toBe(utils.getByRole('main'))
     expect(utils.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('lands focus on the new page heading when the session authenticates', async () => {
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const utils = renderWithProviders(
+      <ProductShell
+        navItems={NAV_ITEMS}
+        header="My App"
+        signIn={<button type="button">sign in</button>}
+      >
+        <PageLayout title="Workspace home">
+          <p>app content</p>
+        </PageLayout>
+      </ProductShell>,
+    )
+    // The sign-in control holds focus when the snapshot flips; that
+    // button unmounts with the branch, so the hand-off is the shell's
+    // to make.
+    utils.getByRole('button', { name: 'sign in' }).focus()
+    await signInTo(rig.session)
+    expect(utils.getByText('app content')).toBeInTheDocument()
+    expect(document.activeElement).toBe(
+      utils.getByRole('heading', { level: 1, name: 'Workspace home' }),
+    )
+  })
+
+  it('lands focus on the session-ended heading when the session ends', async () => {
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const utils = renderWithProviders(
+      <ProductShell navItems={NAV_ITEMS} header="My App" signIn={<p>sign-in view</p>}>
+        <PageLayout title="Workspace home">
+          <p>app content</p>
+        </PageLayout>
+      </ProductShell>,
+    )
+    await signInTo(rig.session)
+    await signOutOf(rig.session)
+    expect(utils.getByText(authUiZhCN.sessionEnded.title)).toBeInTheDocument()
+    expect(document.activeElement).toBe(
+      utils.getByRole('heading', {
+        level: 1,
+        name: authUiZhCN.sessionEnded.title,
+      }),
+    )
+  })
+
+  it('leaves focus alone when the new branch already placed it inside itself', async () => {
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const utils = renderWithProviders(
+      <ProductShell navItems={NAV_ITEMS} header="My App" signIn={<p>sign-in view</p>}>
+        <SelfFocusingChild label="verification code" />
+      </ProductShell>,
+    )
+    await signInTo(rig.session)
+    // The child's own effect focuses its input in the same commit as the
+    // branch flip; the shell's hand-off must not pull focus away.
+    const input = utils.getByRole('textbox', { name: 'verification code' })
+    expect(document.activeElement).toBe(input)
   })
 
   it('passes navLabel, navHeader and navFooter through to the frame', async () => {

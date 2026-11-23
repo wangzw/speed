@@ -48,16 +48,21 @@
  *
  * The machine is a whole-page switch, so it owns the two a11y duties a
  * page swap carries, in the sibling family's shape: every branch flip
- * moves focus into the branch's own container (the branches render
- * inside a focusable, non-tab-stop wrapper -- never into a slot the
- * host may not be able to reach), and every flip into the session-ended
- * view -- the one destination the shell cannot distinguish by cause, a
- * server-side session death and an explicit sign-out being the same
- * snapshot flip -- additionally announces itself through a role="status"
- * region (the family convention; the flips the user's own action aimed
- * at, whose destinations announce themselves, move focus only). The
- * announcement renders only where the product-shell namespace is
- * registered: an unregistered host gets the focus transfer and no raw
+ * hands focus to the new page -- the branch's first level-one heading
+ * inside its main landmark, else that main landmark, else the branch's
+ * own focusable, non-tab-stop wrapper (ui-kit's focusPageLanding, the
+ * same rule route-kit applies after an in-app navigation) -- and every
+ * flip into the session-ended view -- the one destination the shell
+ * cannot distinguish by cause, a server-side session death and an
+ * explicit sign-out being the same snapshot flip -- additionally
+ * announces itself through a role="status" region (the family
+ * convention; the flips the user's own action aimed at, whose
+ * destinations announce themselves, move focus only). The hand-off
+ * leaves focus alone when the new branch has already placed it somewhere
+ * inside itself (the account page's verification input, focused in the
+ * same commit as the flip). The announcement renders only where the
+ * product-shell namespace is registered: an unregistered host gets the
+ * focus transfer and no raw
  * key text -- the missing-key noise of an unregistered namespace must
  * never regress into view (the focus half is namespace-independent and
  * always on).
@@ -78,7 +83,11 @@ import { SessionEndedScreen } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { AppShell } from '@speed/layout-kit'
 import type { AppShellProps } from '@speed/layout-kit'
-import { AnnouncementRegion, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  AnnouncementRegion,
+  focusPageLanding,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import { PRODUCT_SHELL_NAMESPACE } from '../resources.js'
 
 /** The AppShell chrome props the authenticated frame is built from,
@@ -201,22 +210,41 @@ export function ProductShell({
         : 'signIn'
 
   // The branch-flip effect: on a real change of branch -- never on the
-  // first render, whose focus belongs to the host's page load -- move
-  // focus into the new branch's container. The ended view's polite
-  // announcement is the branch's own live region: a flip into it mounts
-  // AnnouncementRegion, which inserts the region empty and writes the
-  // session-ended text a frame later. A flip that leaves the ended view
-  // unmounts both, so the next arrival starts from an empty birth frame
-  // again (session death and an explicit sign-out are the same snapshot
-  // flip; the destination screen the shell itself placed there is the
-  // flip worth a polite word).
+  // first render, whose focus belongs to the host's page load -- hand
+  // focus to the new page: ui-kit's landing rule finds the first level-one
+  // heading inside the branch's main landmark, else that main landmark,
+  // else nothing, in which case the branch's own focusable wrapper takes
+  // focus. The hand-off is skipped when the new branch already put focus
+  // somewhere inside itself in this same commit (the account page's
+  // verification input, focused right after a registration navigate), so
+  // the page's own choice wins. The ended view's polite announcement is
+  // the branch's own live region: a flip into it mounts AnnouncementRegion,
+  // which inserts the region empty and writes the session-ended text a
+  // frame later. A flip that leaves the ended view unmounts both, so the
+  // next arrival starts from an empty birth frame again (session death and
+  // an explicit sign-out are the same snapshot flip; the destination
+  // screen the shell itself placed there is the flip worth a polite word).
   useEffect(() => {
     const previous = previousBranchRef.current
     previousBranchRef.current = branch
     if (previous === null || previous === branch) {
       return
     }
-    branchContainerRef.current?.focus()
+    const container = branchContainerRef.current
+    if (container === null) {
+      return
+    }
+    const active = document.activeElement
+    if (
+      active !== null &&
+      active !== container &&
+      container.contains(active)
+    ) {
+      return
+    }
+    if (focusPageLanding(container) === null) {
+      container.focus()
+    }
   }, [branch])
 
   // The shell's own text needs its own namespace registration, exactly

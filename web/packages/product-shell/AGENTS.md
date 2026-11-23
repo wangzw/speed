@@ -141,7 +141,7 @@ authenticated fire nothing.
 
 Why a subpath and not the main entry: the main entry's import graph
 stays exactly what the dependency rules below promise (auth-core,
-auth-ui, layout-kit, i18n) — a platform-staff sibling shell reuses
+auth-ui, layout-kit, i18n, ui-kit) — a platform-staff sibling shell reuses
 that floor untouched — while the assembly, whose job is driving the
 session and the client exactly as a host's main module does, imports
 what that job needs. Every package it adds is already a regular
@@ -154,9 +154,14 @@ the app entry.
 
 The machine is a whole-page switch, so it owns the two a11y duties a page
 swap carries, in the sibling family's shape: every branch
-flip moves focus into the branch's own container — the branches render
-inside one focusable, non-tab-stop wrapper each, never into a slot the
-host may not be able to reach — and every flip into the session-ended
+flip hands focus to the new page — the first level-one heading inside the
+branch's main landmark, else that main landmark, else the branch's first
+level-one heading when it has no main, else its own focusable,
+non-tab-stop wrapper (ui-kit's `focusPageLanding`, the same
+rule route-kit applies after an in-app navigation) — unless the new branch
+has already put focus somewhere inside itself in the same commit (the
+account page's verification input, focused right after a registration
+navigate), and every flip into the session-ended
 view announces itself through the sr-only `role="status"` region the
 ended branch carries (the shell cannot tell a server-side death from an
 explicit sign-out — the same snapshot flip — and both land the viewer on
@@ -196,22 +201,23 @@ the branch unchanged.
   ever render the sign-in branch (or nothing): that fail-closed
   behaviour is contract and is pinned by the suite.
 - **The main entry's dependencies stop at `auth-core`, `auth-ui`,
-  `layout-kit` and `i18n`.**
-  Everything the shell renders arrives through those four: `AppShell`
-  and its frame strings through layout-kit, the ended screen through
-  auth-ui, the snapshot through auth-core, and the one sentence the
+  `layout-kit`, `i18n` and `ui-kit`.**
+  Everything the shell renders arrives through those packages:
+  `AppShell` and its frame strings through layout-kit, the ended screen
+  through auth-ui, the snapshot through auth-core, the one sentence the
   shell speaks itself — the session-ended announcement — through `i18n`,
-  the single exception to the dependency floor, earned by the a11y
-  duty the announcement performs: no other package edge is
-  permitted in the main entry's import graph, and `ui-kit`,
-  `api-client` and `api-sdk` stay out of it — an extra edge beyond
-  i18n is how a shell quietly starts depending on
+  and the a11y contract through `ui-kit` (`focusPageLanding` for the
+  branch flip's landing, `AnnouncementRegion` and `visuallyHiddenSx` for
+  the ended view's polite region): no other package edge is permitted in
+  the main entry's import graph, and `api-client` and `api-sdk` stay out
+  of it — an extra edge is how a shell quietly starts depending on
   machinery it must stay agnostic to — a platform-staff sibling shell on
   this same tier must be able to reuse this package's dependency floor.
   The `./bootstrap` entry imports `api-client`, `api-sdk` and `ui-kit`
-  (the assembly's own wiring), each already a regular dependency of
-  the main entry's deps, so the floor a sibling reuses — and every
-  consumer's install — is unchanged by them (see the assembly
+  (the assembly's own wiring; `ui-kit` is also the main entry's
+  dependency), and `api-client` and `api-sdk` are already regular
+  dependencies of the main entry's deps, so the floor a sibling reuses —
+  and every consumer's install — is unchanged by them (see the assembly
   section). Test-only needs go in
   `devDependencies` — the suites' `@speed/tenancy-ui` (the switcher)
   and `@speed/route-kit` (the routing registry) are exactly that:
@@ -290,8 +296,10 @@ layout-kit and tenancy-ui equivalents, and this package's own
   unattached shape, the dead-end regressions (a host without a `signIn`
   view keeps the ended screen when its action is activated — never a
   whitescreen — and the frame still returns on the next sign-in), the
-  flip a11y contract (every branch flip moves focus into the new
-  branch's container; the session-ended flip additionally announces
+  flip a11y contract (every branch flip hands focus to the new branch's
+  page heading — first level-one heading in its main landmark, else the
+  main landmark, else its wrapper — and leaves focus alone when the new
+  branch already placed it; the session-ended flip additionally announces
   through the `role="status"` region; a host that has not registered the
   product-shell namespace gets focus and no raw key text), and axe (the
   `region` rule left enabled for the authenticated frame — layout-kit's
