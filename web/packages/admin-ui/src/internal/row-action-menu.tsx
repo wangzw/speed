@@ -7,10 +7,11 @@
  * keyboard user reaches every write through one stop in the row.
  */
 
-import { useState, type ReactElement } from 'react'
+import { useState, type MouseEvent, type ReactElement } from 'react'
 import Button from '@mui/material/Button'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import { useActivationGuard } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './translation.js'
 
 export interface RowAction {
@@ -24,7 +25,7 @@ export interface RowActionMenuProps {
   /** Accessible name of the trigger, naming the row it belongs to. */
   readonly label: string
   readonly actions: readonly RowAction[]
-  /** Whether the whole menu is unavailable, such as while a write is in flight. */
+  /** Whether the whole menu is unavailable, such as while a write is in flight. The trigger stays focusable and activating it opens nothing. */
   readonly disabled?: boolean
   /** Marks the trigger when one of its actions was refused. */
   readonly invalid?: boolean
@@ -41,6 +42,10 @@ export function RowActionMenu({
 }: RowActionMenuProps): ReactElement {
   const { t } = useAdminUiTranslation()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const openMenu = useActivationGuard(
+    (event: MouseEvent<HTMLButtonElement>) => setAnchor(event.currentTarget),
+    { busy: false, unavailable: disabled },
+  )
   return (
     <>
       <Button
@@ -52,8 +57,8 @@ export function RowActionMenu({
         aria-expanded={anchor !== null}
         aria-invalid={invalid}
         aria-describedby={describedBy}
-        disabled={disabled}
-        onClick={(event) => setAnchor(event.currentTarget)}
+        aria-disabled={disabled ? true : undefined}
+        onClick={openMenu}
       >
         {t('common.actions')}
       </Button>
