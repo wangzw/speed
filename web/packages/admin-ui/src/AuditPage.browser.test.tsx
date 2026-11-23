@@ -6,7 +6,13 @@
  * must be shed while the actor and the outcome stay.
  */
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import {
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { AuditPage } from './AuditPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -19,6 +25,7 @@ import {
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { adminUiResources } from './resources.js'
 import type { AdminAuditRecord } from './operations.js'
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
@@ -114,5 +121,132 @@ describe('AuditPage column priorities in Chromium', () => {
     // The result value of the denied record stays readable, not only its
     // header: the outcome is the column triage starts from.
     expect(screen.getByText('denied')).toBeVisible()
+  })
+})
+
+/** One animation frame: the state change has reached the DOM and the
+ * browser has had its chance to react to it. */
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
+describe('AuditPage focus in Chromium', () => {
+  it('keeps focus on the export control while an export runs and after it settles', async () => {
+    await page.viewport(1200, 900)
+    let resolveExport!: (blob: Blob) => void
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: () =>
+          Promise.resolve({ entries: [...RECORDS], next: '' }),
+        getAccount: () =>
+          Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' })),
+        exportRecords: () =>
+          new Promise<Blob>((resolve) => {
+            resolveExport = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations, language: 'en-US' })
+    await screen.findAllByText('Ada Lovelace')
+
+    const control = screen.getByRole('button', {
+      name: enUS.audit.export.label,
+    })
+    const user = userEvent.setup()
+    await user.click(control)
+    await waitFor(() => {
+      expect(within(control).getByRole('progressbar')).toBeInTheDocument()
+    })
+    expect(control).toHaveAttribute('aria-disabled', 'true')
+    await nextFrame()
+    expect(control).toHaveFocus()
+
+    resolveExport(new Blob([]))
+    await waitFor(() => {
+      expect(control).not.toHaveAttribute('aria-busy')
+    })
+    expect(control).toHaveFocus()
+  })
+
+  it('keeps the export control reachable and unavailable while drafts are unapplied', async () => {
+    await page.viewport(1200, 900)
+    let calls = 0
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: () =>
+          Promise.resolve({ entries: [...RECORDS], next: '' }),
+        getAccount: () =>
+          Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' })),
+        exportRecords: () => {
+          calls += 1
+          return Promise.resolve(new Blob([]))
+        },
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations, language: 'en-US' })
+    await screen.findAllByText('Ada Lovelace')
+
+    const control = screen.getByRole('button', {
+      name: enUS.audit.export.label,
+    })
+    fireEvent.change(screen.getByLabelText(enUS.audit.filters.since), {
+      target: { value: '2026-10-15T09:30' },
+    })
+    await waitFor(() => {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+    })
+    control.focus()
+    expect(control).toHaveFocus()
+
+    // Every activation path reaches the guard and issues nothing.
+    const user = userEvent.setup()
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    await user.click(control)
+    await nextFrame()
+    expect(calls).toBe(0)
+    expect(control).toHaveFocus()
+  })
+
+  it('keeps the previous control reachable on the first page and focus on the next control at the last', async () => {
+    await page.viewport(1200, 900)
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listRecords: (params) =>
+          Promise.resolve(
+            params?.cursor === 'c1'
+              ? { entries: [RECORDS[1]!], next: '' }
+              : { entries: [RECORDS[0]!], next: 'c1' },
+          ),
+        getAccount: () =>
+          Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' })),
+      }),
+    )
+    renderWithProviders(<AuditPage />, { operations, language: 'en-US' })
+    await screen.findAllByText('Ada Lovelace')
+
+    const prev = screen.getByRole('button', {
+      name: enUS.audit.prevPage,
+    })
+    const next = screen.getByRole('button', {
+      name: enUS.audit.nextPage,
+    })
+    // The first page has nothing behind it; the control says so through
+    // its state alone and still takes focus.
+    expect(prev).toHaveAttribute('aria-disabled', 'true')
+    expect(prev).not.toHaveAttribute('aria-describedby')
+    prev.focus()
+    expect(prev).toHaveFocus()
+
+    const user = userEvent.setup()
+    await user.click(next)
+    await waitFor(() => {
+      expect(next).toHaveAttribute('aria-disabled', 'true')
+    })
+    await nextFrame()
+    expect(next).toHaveFocus()
+    expect(prev).not.toHaveAttribute('aria-disabled', 'true')
   })
 })
