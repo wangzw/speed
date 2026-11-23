@@ -41,7 +41,7 @@
 | `pkg/authn/sso/saml` | `authn.sso.saml` | `LoginMethod`（名 `saml`）、`SSOMetadataRefresher` | 否 | `SSOProviders`、`Accounts`、`mount.Mounter` | `settings.Store`、`event.Bus`、`audit.Audit`、`observability.MeterProvider`、`log.Logger` | 无 |
 | `pkg/authn/sso/oidc` | `authn.sso.oidc` | `LoginMethod`（名 `oidc`） | 否 | `SSOProviders`、`Accounts` | `settings.Store`、`event.Bus`、`audit.Audit`、`observability.MeterProvider`、`log.Logger` | 无 |
 
-`SSOProviders`、`SSOMetadataRefresher` 与 `LoginMethod` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。这些模块的 `Prepare` 只表态 `StateEnabled`，从不表态 `StateAuto`：是否运行是命令树上的决定。
+`SSOProviders`、`SSOMetadataRefresher` 与 `LoginMethod` 的接口定义在 `pkg/authn` 根包，根包自身不登记模块。每个登记模块的包导出 `ModuleName`，配置命名空间取同一个取值。`authn.sso` 的 `Prepare` 只表态 `StateEnabled`。两个协议模块各读自己的启用开关（`authn.sso.saml.enabled`、`authn.sso.oidc.enabled`，缺省都关闭）：关闭时 `Prepare` 表态 `StateDisabled`，方法不交付；开启时 `Prepare` 校验本模块其余的配置，不合法即启动失败，合法则表态 `StateEnabled`。三个模块都不表态 `StateAuto`。
 
 - **排他与并立。** `SSOProviders` 排他：宿主点名 `authn.sso.saml` 或 `authn.sso.oidc` 而漏点名 `authn.sso`，在 `Requires` 消解阶段以 `core.ErrMissingProvider` 失败。`LoginMethod` 与 `SSOMetadataRefresher` 并立，由使用方 `ResolveAll` 取用，从不写进 `Requires`（[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。
 - **一个模块一个方法名。** `authn.sso.saml` 的 `LoginMethod.Name()` 恒为 `saml`，`authn.sso.oidc` 的恒为 `oidc`；全局重名即 `ErrMethodConflict`。
@@ -139,6 +139,7 @@ type SSOMetadataRefresher interface {
 
 输入项的键、类型、缺省值、取值范围与来源限制只在 [design-authn-config](design-authn-config.md) 给全，本节只写语义，所列的是与本功能有关的输入项，不是全部输入项的清单。
 
+- **`authn.sso.saml.enabled`、`authn.sso.oidc.enabled`**：两个协议模块各自的启用开关，缺省关闭，只决定本次运行是否交付该协议的方法；语义见“SAML：SP 元数据与发起”与“企业 OIDC”。
 - **`authn.sso.allow-private-egress`**：放开受限出站客户端对回环地址的拒绝，只用于开发。只取主配置源，环境变量与命令行都改不了；开启时启动诊断写一行 `Warn`。
 - **`authn.sso.dns-resolver`**：域所有权证明查 TXT 记录所用的解析器地址（`host:port`），只取主配置源。缺省为空，用系统解析器；配置后由这个解析器作答，TXT 记录的内容与比对不随之改变。
 - **`authn.sso.oidc-ca-file`**：企业 OIDC 出站客户端在系统根证书之外额外信任的 PEM（[REF-rfc7468](../../../references.md)）根证书文件，只取主配置源。缺省为空，只用系统根证书；配置后文件里的证书追加到系统根证书，证书校验本身不关闭。
@@ -446,6 +447,8 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 ### SAML：SP 元数据与发起
 
+**是否交付由 `authn.sso.saml.enabled` 决定，缺省关闭。** 提供方是运行期的行，注册表为空不表示部署不要 SAML 登录，所以判据只能来自显式开关。关闭时方法、元数据路由与 `SSOMetadataRefresher` 都不交付，登录发现里不出现 `saml`；开启后 SP 密钥与证书文件在 `Prepare` 里读取并校验，不合法即启动失败。增删提供方不改变这项开关。
+
 **SP 元数据** `GET B/sso/saml/:provider/metadata`（Open）由 `authn.sso.saml` 挂载：
 
 - `entityID` 即该元数据地址（`public-url + B/sso/saml/<id>/metadata`），每个提供方独立，IdP 一侧因此是不同的 SP。
@@ -671,6 +674,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | 提供方行不存在的哨兵 `ErrProviderNotFound` | 已实现 | `pkg/authn/errors.go` `ErrProviderNotFound`；`pkg/authn/sso/providers.go` |
 | `authn.sso.saml`：`SSOMetadataRefresher.Refresh` 与元数据解析 | 已实现 | `pkg/authn/sso/saml/refresh.go` `Protocol`、`Refresh`、`fetchMetadata`、`mergeMetadata`；`pkg/authn/sso/saml/metadata.go` `parseIDPMetadata` |
 | `authn.sso.oidc`：`LoginMethod` 与提供方缓存 | 已实现 | `pkg/authn/sso/oidc/method.go` `Begin`、`Answer`、`exchange`；`pkg/authn/sso/oidc/cache.go` `providerCache` `get`、`drop` |
+| 企业登录方式的启用开关：`authn.sso.saml.enabled`、`authn.sso.oidc.enabled` | 已实现 | `pkg/authn/sso/saml/saml.go` `prepare`；`pkg/authn/sso/saml/config.go` `readEnabled`；`pkg/authn/sso/oidc/oidc.go` `prepare`；`pkg/authn/sso/oidc/config.go` `readEnabled` |
 | `authn.idp.changed` 的发布与缓存失效订阅 | 已实现 | `pkg/authn/sso/providers.go` `publishChange`、`events.go`；`pkg/authn/sso/oidc/subscribe.go` `subscribe`、`onIDPChanged`；`pkg/authn/sso/saml/events.go` `subscribe`、`onIDPChanged`、`spCache.flush` |
 | 指标 `authn.sso.assertions` 与审计动作 `authn.sso.reject` 的写入点 | 已实现 | `pkg/authn/sso/saml/reject.go` `newMeters`、`actionSSOReject`；`pkg/authn/sso/oidc/metrics.go` `assertionsName`；`pkg/authn/sso/oidc/method.go` `reject`、`logRefusal`、`actionReject` |
 | goxmldsig 版本下限与依赖的 `pkg/go.mod` 条目 | 已实现 | `pkg/go.mod`（gosaml2、goxmldsig、go-oidc、x/oauth2）；`pkg/authn/deps_test.go` `goxmldsigFloor`、`pinnedLibraries` |
