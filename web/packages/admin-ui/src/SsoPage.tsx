@@ -33,7 +33,8 @@
  * and lists no factor. The tenant seeds every
  * write, so changing it resets all three scopes and disables the tenant
  * selector while any of them is in flight; the provider selectors follow
- * the scope they drive and are disabled only while that one is pending.
+ * the scope they drive and are natively disabled only while that one is
+ * pending.
  *
  * A claimed domain's verification token is handed out once, together with
  * the DNS record name and value to publish. Its display panel is the
@@ -63,21 +64,26 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+  ActionButton,
   DataTable,
   EmptyState,
   ListSkeleton,
   OneTimeValuePanel,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
+  useActivationGuard,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
+import type {
+  ActionButtonUnavailableExplanation,
+  DataTableColumn,
+  WriteFeedback,
+} from '@speed/ui-kit'
 import type { AuthnAdminProviderWrite } from '@speed/api-sdk'
 import { AdminAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -103,6 +109,14 @@ import { RowActionMenu } from './internal/row-action-menu.js'
  * refresh is described by it, so the explanation has one copy on the page.
  */
 const TENANT_HINT_ID = 'sso-tenant-hint'
+
+/**
+ * The provider form's configuration field and its hint. The submit control
+ * describes itself by that hint while the typed configuration does not parse
+ * as a JSON object, so the explanation has one copy on the page.
+ */
+const CONFIG_FIELD_ID = 'sso-provider-config'
+const CONFIG_HINT_ID = `${CONFIG_FIELD_ID}-helper-text`
 
 /** The provider-row action a row's inline failure marker belongs to. */
 type ProviderAction = 'refresh' | 'reverify' | 'delete'
@@ -546,6 +560,12 @@ export function SsoPage({
             icon={<SsoIcon size={24} />}
             sx={{ mb: 3 }}
           >
+            {/* A selection-shaped context control: switching it resets the
+                form scope's result, so the coding standard keeps it natively
+                disabled while that scope writes. The write starts from a
+                control in the form, so focus is not on the selector. The
+                button-shaped-control lint rule does not judge a TextField
+                select. */}
             <TextField
               select
               size="small"
@@ -585,6 +605,8 @@ export function SsoPage({
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {t('sso.domains.note')}
             </Typography>
+            {/* Selection-shaped context control, natively disabled while the
+                domain scope writes (see the edit selector above). */}
             <TextField
               select
               size="small"
@@ -721,15 +743,18 @@ export function SsoPage({
                 onChange={(event) => setDomain(event.target.value)}
                 label={t('sso.domains.domainLabel')}
               />
-              <Button
+              <ActionButton
                 type="button"
-                variant="contained"
-                disabled={domainsFeedback.pending || !domainReady}
-                loading={busyDomainAction?.action === 'claim'}
+                emphasis="primary"
+                busy={busyDomainAction?.action === 'claim'}
+                unavailable={domainsFeedback.pending || !domainReady}
+                unavailableReason={
+                  !domainReady ? t('sso.domains.claimUnavailable') : undefined
+                }
                 onClick={requestClaimDomain}
               >
                 {t('sso.domains.claim')}
-              </Button>
+              </ActionButton>
             </Box>
             {claimToken !== null && (
               <ClaimTokenNotice
@@ -996,6 +1021,68 @@ function SsoProviderWriteForm({
     provisioning.trim() === '' ||
     usernameMissing
 
+  const submitProviderWrite = () => {
+    const body = ssoProviderWriteBody(
+      {
+        protocol,
+        name,
+        provisioning,
+        usernameStrategy,
+        usernameClaim,
+        enabled,
+        trustIdpMfa,
+        allowIdpInitiated,
+        allowSha1,
+        mergeExisting,
+        config,
+        clientSecret,
+      },
+      provider !== undefined,
+    )
+    if (provider === undefined) {
+      const created = name
+      void feedback.run(async () => {
+        await createProvider.mutateAsync({ tenant, ...body })
+        // A landed create returns the form to its initial state, the
+        // write-only client secret included: the provider now exists,
+        // and none of what was typed belongs to the next one. A
+        // refusal keeps every value for correction.
+        setProtocol('')
+        setName('')
+        setProvisioning('')
+        setUsernameStrategy('user-confirm')
+        setUsernameClaim('')
+        setEnabled('unchanged')
+        setTrustIdpMfa('unchanged')
+        setAllowIdpInitiated('unchanged')
+        setAllowSha1('unchanged')
+        setMergeExisting('unchanged')
+        setConfig('')
+        setClientSecret('')
+        return t('sso.provider.created', { name: created })
+      })
+    } else {
+      const saved = name
+      void feedback.run(async () => {
+        await updateProvider.mutateAsync({ id: provider.id, tenant, ...body })
+        return t('sso.provider.updated', { name: saved })
+      })
+    }
+  }
+
+  // The form submit follows the same busy/unavailable state the submit
+  // control carries, so Enter from a field and a click on the control are
+  // refused identically.
+  const submitWrite = useActivationGuard(submitProviderWrite, {
+    busy: feedback.pending,
+    unavailable: configInvalid || requiredMissing,
+  })
+  const submitExplanation: ActionButtonUnavailableExplanation = requiredMissing
+    ? { unavailableReason: t('sso.provider.requiredMissing') }
+    : configInvalid
+      ? { unavailableDescribedBy: CONFIG_HINT_ID }
+      : {}
+
   const triStateSelect = (
     value: TriState,
     onChange: (next: TriState) => void,
@@ -1090,6 +1177,7 @@ function SsoProviderWriteForm({
           t('sso.provider.mergeExistingLabel'),
         )}
         <TextField
+          id={CONFIG_FIELD_ID}
           size="small"
           value={config}
           onChange={(event) => setConfig(event.target.value)}
@@ -1107,62 +1195,16 @@ function SsoProviderWriteForm({
           onChange={(event) => setClientSecret(event.target.value)}
           label={t('sso.provider.clientSecretLabel')}
         />
-        <Button
+        <ActionButton
           type="button"
-          variant="contained"
-          disabled={feedback.pending || configInvalid || requiredMissing}
-          loading={feedback.pending}
-          onClick={() => {
-            const body = ssoProviderWriteBody(
-              {
-                protocol,
-                name,
-                provisioning,
-                usernameStrategy,
-                usernameClaim,
-                enabled,
-                trustIdpMfa,
-                allowIdpInitiated,
-                allowSha1,
-                mergeExisting,
-                config,
-                clientSecret,
-              },
-              provider !== undefined,
-            )
-            if (provider === undefined) {
-              const created = name
-              void feedback.run(async () => {
-                await createProvider.mutateAsync({ tenant, ...body })
-                // A landed create returns the form to its initial state, the
-                // write-only client secret included: the provider now exists,
-                // and none of what was typed belongs to the next one. A
-                // refusal keeps every value for correction.
-                setProtocol('')
-                setName('')
-                setProvisioning('')
-                setUsernameStrategy('user-confirm')
-                setUsernameClaim('')
-                setEnabled('unchanged')
-                setTrustIdpMfa('unchanged')
-                setAllowIdpInitiated('unchanged')
-                setAllowSha1('unchanged')
-                setMergeExisting('unchanged')
-                setConfig('')
-                setClientSecret('')
-                return t('sso.provider.created', { name: created })
-              })
-            } else {
-              const saved = name
-              void feedback.run(async () => {
-                await updateProvider.mutateAsync({ id: provider.id, tenant, ...body })
-                return t('sso.provider.updated', { name: saved })
-              })
-            }
-          }}
+          emphasis="primary"
+          busy={feedback.pending}
+          unavailable={configInvalid || requiredMissing}
+          {...submitExplanation}
+          onClick={submitWrite}
         >
           {provider === undefined ? t('sso.provider.createSubmit') : t('sso.provider.updateSubmit')}
-        </Button>
+        </ActionButton>
       </Box>
     </Box>
   )
