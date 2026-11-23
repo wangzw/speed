@@ -65,9 +65,12 @@ export interface TenantScopeProps {
   /** Reports the chosen tenant name ('' clears the selection). */
   readonly onSelect: (tenant: string) => void
   /**
-   * Whether the selector is disabled. A page disables it while any scope
-   * its tenant feeds has a write in flight: a change would reset those
-   * scopes and leave a settling attempt describing the tenant left behind.
+   * Whether the selector is disabled. This is a selection-shaped context
+   * control, so it stays natively disabled while a write into any scope the
+   * chosen tenant addresses is in flight: a change would reset those scopes
+   * and leave a settling attempt describing the tenant left behind. The
+   * write is started from another control, so focus is not on the selector
+   * while it is disabled.
    */
   readonly disabled?: boolean
   /**
