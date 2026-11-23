@@ -6,8 +6,9 @@
  * the flow's redirect URL upward through onAuthorizeUrl; the section
  * itself never navigates. A refused start renders the answer's code text
  * in one alert and reports nothing; while one request is in flight its
- * button disables and the others stay live. The en-US bundle renders on an
- * English-starting instance and the tree passes axe. Text expectations
+ * button is busy -- focusable, announced unavailable and busy, with no
+ * native disable -- and the others stay live. The en-US bundle renders on
+ * an English-starting instance and the tree passes axe. Text expectations
  * read the bundle values, never inline language.
  */
 
@@ -41,6 +42,25 @@ function redirectFlow(url: string) {
   return openFlow({
     next: { kind: 'redirect', url, method: 'GET' },
   })
+}
+
+/** The clicked provider's flight is in flight: the button stays focusable
+ * and announces its state instead of taking a native disable. */
+function expectBusy(button: HTMLElement): void {
+  expect(button).toHaveAttribute('aria-disabled', 'true')
+  expect(button).toHaveAttribute('aria-busy', 'true')
+  expect(button).not.toHaveAttribute('disabled')
+  // Busy states give no reason: the flight is the button's own.
+  expect(button).toHaveAccessibleDescription('')
+}
+
+/** A provider with no flight of its own stays live: another provider's
+ * write never marks it unavailable. */
+function expectLive(button: HTMLElement): void {
+  expect(button).not.toHaveAttribute('aria-disabled', 'true')
+  expect(button).not.toHaveAttribute('aria-busy', 'true')
+  expect(button).not.toHaveAttribute('disabled')
+  expect(button).toHaveAccessibleDescription('')
 }
 
 describe('SocialSignInSection', () => {
@@ -157,7 +177,7 @@ describe('SocialSignInSection', () => {
     expect(onAuthorizeUrl).not.toHaveBeenCalled()
   })
 
-  it('disable only the clicked provider button while its flow is in flight', async () => {
+  it('mark only the clicked provider button busy while its flow is in flight', async () => {
     let resolveStart: (value: unknown) => void = () => {}
     const harness = makeHarness({
       [LOGIN_START]: () =>
@@ -176,10 +196,58 @@ describe('SocialSignInSection', () => {
       name: zhCN.social.provider.github,
     })
     await user.click(google)
-    await waitFor(() => expect(google).toBeDisabled())
-    expect(github).toBeEnabled()
+    await waitFor(() => expectBusy(google))
+    expectLive(github)
     resolveStart(redirectFlow(GOOGLE_AUTH_URL))
-    await waitFor(() => expect(google).toBeEnabled())
+    await waitFor(() => expectLive(google))
+  })
+
+  it('keep focus on the clicked provider button while its flow is in flight and swallow a repeat activation', async () => {
+    let rejectStart: (error: unknown) => void = () => {}
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        new Promise((_resolve, reject) => {
+          rejectStart = reject
+        }),
+    })
+    renderWithProviders(
+      <SocialSignInSection session={harness.session} providers={PROVIDERS} />,
+    )
+    const user = userEvent.setup()
+    const google = screen.getByRole('button', {
+      name: zhCN.social.provider.google,
+    })
+    await user.click(google)
+    // Wait for the flight to be in flight -- whichever state the button
+    // uses for it -- so the focus assertion runs against the in-flight
+    // control, not the idle one.
+    await waitFor(() => {
+      expect(
+        google.hasAttribute('disabled') ||
+          google.getAttribute('aria-disabled') === 'true',
+      ).toBe(true)
+    })
+    // The initiating control keeps the keyboard user's place for the whole
+    // flight instead of dropping it when the button becomes unavailable.
+    expect(google).toHaveFocus()
+    // A second activation of the busy button -- pointer or Enter -- sends
+    // nothing: the flight already running owns this provider.
+    await user.click(google)
+    await user.keyboard('{Enter}')
+    expect(harness.calls).toHaveLength(1)
+    await act(async () => {
+      rejectStart(apiError(403, 'authn.method_disabled'))
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.method_disabled,
+      ),
+    )
+    // The refusal settles in place: the banner appears, the button returns
+    // live, and the viewer's focus never left the control they started it
+    // from.
+    expect(google).toHaveFocus()
+    expectLive(google)
   })
 
   it('render the section title and the en-US provider names on an English-starting instance', async () => {
@@ -269,19 +337,19 @@ describe('SocialSignInSection', () => {
       name: zhCN.social.provider.github,
     })
     await user.click(google)
-    await waitFor(() => expect(google).toBeDisabled())
+    await waitFor(() => expectBusy(google))
     await user.click(github)
-    // Both in flight: both buttons locked.
-    await waitFor(() => expect(github).toBeDisabled())
-    expect(google).toBeDisabled()
-    // The earlier attempt settles first: its own button re-enables,
-    // the still-pending later one stays locked.
+    // Both in flight: both buttons busy.
+    await waitFor(() => expectBusy(github))
+    expectBusy(google)
+    // The earlier attempt settles first: its own button returns live,
+    // the still-pending later one stays busy.
     resolveGoogle(redirectFlow(GOOGLE_AUTH_URL))
-    await waitFor(() => expect(google).toBeEnabled())
-    expect(github).toBeDisabled()
-    // The later attempt settles: its button re-enables too.
+    await waitFor(() => expectLive(google))
+    expectBusy(github)
+    // The later attempt settles: its button returns live too.
     resolveGithub(redirectFlow(GITHUB_AUTH_URL))
-    await waitFor(() => expect(github).toBeEnabled())
+    await waitFor(() => expectLive(github))
     expect(harness.calls).toHaveLength(2)
   })
 
@@ -358,7 +426,7 @@ describe('SocialSignInSection', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('keep the provider button disabled while an async start gate is pending', async () => {
+  it('keep the provider button busy while an async start gate is pending', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () => redirectFlow(GOOGLE_AUTH_URL),
     })
@@ -386,7 +454,7 @@ describe('SocialSignInSection', () => {
     await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
     // The gate has not answered yet: its own provider button is busy, so
     // a second click cannot pass the same gate and start another flow.
-    expect(button).toBeDisabled()
+    expectBusy(button)
     expect(harness.calls).toHaveLength(0)
     await act(async () => {
       release(true)
