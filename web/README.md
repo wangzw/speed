@@ -40,12 +40,16 @@ directories, npm checks run from `web/`.
 | What | Single source of truth | Consumers |
 |---|---|---|
 | Node version | `web/.nvmrc` (content: `26`) | any `node-version-file` consumer; local `nvm`/`mise` if you use one |
-| pnpm version | `"packageManager": "pnpm@11.1.2"` in `web/package.json` | `corepack` installs exactly that version |
+| pnpm version | `"packageManager": "pnpm@12.21.0"` in `web/package.json` | `mise` installs it for local runs and CI; the demo Dockerfile runs `npm install --global` at the same version |
 
 The Node major is pinned to 26;
 `web/package.json`'s `engines` accepts `>=26` so local development on a newer
 Node keeps working. Never add a second version source; when either
 version moves, update the source row above together with every consumer.
+
+Use the pnpm that `mise` installs. Running any command with an older pnpm
+(11.x) makes it switch automatically to the version `packageManager` names
+and write `@pnpm/exe` entries into the lockfile.
 
 ## Layout
 

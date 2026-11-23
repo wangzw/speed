@@ -36,7 +36,7 @@ MISE = """\
 [tools]
 go = "1.27.4"
 node = "26"
-pnpm = "11.1.2"
+pnpm = "12.21.0"
 golangci-lint = "2.15.0"
 python = "3.14.7"
 """
@@ -59,7 +59,7 @@ def write_fixture(root: pathlib.Path) -> None:
     web.mkdir()
     (web / ".nvmrc").write_text("26\n", encoding="utf-8")
     (web / "package.json").write_text(
-        '{"packageManager": "pnpm@11.1.2"}\n', encoding="utf-8"
+        '{"packageManager": "pnpm@12.21.0"}\n', encoding="utf-8"
     )
     demo = root / "starters" / "demo"
     demo.mkdir(parents=True)
@@ -135,7 +135,7 @@ class ToolchainGateTests(unittest.TestCase):
     def test_pnpm_drift_exits_1(self) -> None:
         # pnpm mirrors web/package.json's packageManager.
         (self.root / ".mise.toml").write_text(
-            MISE.replace('pnpm = "11.1.2"', 'pnpm = "9.9.9"'), encoding="utf-8"
+            MISE.replace('pnpm = "12.21.0"', 'pnpm = "9.9.9"'), encoding="utf-8"
         )
         code, out = self._run()
         self.assertEqual(code, 1)
@@ -152,7 +152,7 @@ class ToolchainGateTests(unittest.TestCase):
     def test_package_manager_may_carry_a_hash(self) -> None:
         # corepack allows `+<hash>` after the version; the pin is plain.
         (self.root / "web" / "package.json").write_text(
-            '{"packageManager": "pnpm@11.1.2+sha512.deadbeef"}\n', encoding="utf-8"
+            '{"packageManager": "pnpm@12.21.0+sha512.deadbeef"}\n', encoding="utf-8"
         )
         code, out = self._run()
         self.assertEqual(code, 0)
