@@ -163,7 +163,9 @@ plumbing and deliberately not exported.
   `AsyncSection.refusedState`, `DataTable.ariaLabel` /
   `ariaLabelledBy`, `DataTableFilter.label` / `placeholder`,
   `ConfirmDialog.children` / `confirmDisabled`,
-  `PhoneNumberField.preferredCountries`, and the two contexts
+  `PhoneNumberField.preferredCountries` /
+  `readOnly` (`readOnly` defaults to false and leaves both inputs
+  editable), and the two contexts
   (`DisplayTimeZoneProvider`, `PhoneCountryDefaultProvider`, both
   defaulting to `undefined`) all leave the rendered output
   byte-identical when omitted. `useActivationGuard` follows the same

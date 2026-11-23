@@ -7,7 +7,7 @@
  */
 
 import { createRef, useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { autocompleteClasses } from '@mui/material/Autocomplete'
@@ -28,6 +28,8 @@ type HarnessProps = {
   readonly initialNational?: string
   readonly showValidationError?: boolean
   readonly numberHelperText?: string
+  readonly readOnly?: boolean
+  readonly disabled?: boolean
 }
 
 function Harness({
@@ -35,6 +37,8 @@ function Harness({
   initialNational = '',
   showValidationError = false,
   numberHelperText,
+  readOnly,
+  disabled,
 }: HarnessProps) {
   const [country, setCountry] = useState(initialCountry)
   const [nationalNumber, setNationalNumber] = useState(initialNational)
@@ -48,6 +52,8 @@ function Harness({
       numberLabel={NUMBER_LABEL}
       {...(numberHelperText === undefined ? {} : { numberHelperText })}
       showValidationError={showValidationError}
+      {...(readOnly === true ? { readOnly } : {})}
+      {...(disabled === true ? { disabled } : {})}
     />
   )
 }
@@ -270,6 +276,86 @@ describe('PhoneNumberField', () => {
       `.${inputLabelClasses.root}.${inputLabelClasses.shrink}`,
     )
     expect(css).toContain('max-width:none')
+  })
+
+  it('keeps both parts focusable but frozen while read-only', async () => {
+    const user = userEvent.setup()
+    const countryChange = vi.fn()
+    const numberChange = vi.fn()
+    renderWithProviders(
+      <PhoneNumberField
+        country="US"
+        nationalNumber="4155552671"
+        onCountryChange={countryChange}
+        onNationalNumberChange={numberChange}
+        countryLabel={COUNTRY_LABEL}
+        numberLabel={NUMBER_LABEL}
+        readOnly
+      />,
+    )
+    const selector = screen.getByRole('combobox', { name: COUNTRY_LABEL })
+    const number = screen.getByLabelText(NUMBER_LABEL)
+    // Both parts stay in the tab sequence and take focus.
+    selector.focus()
+    expect(selector).toHaveFocus()
+    number.focus()
+    expect(number).toHaveFocus()
+    expect(selector).toHaveAttribute('readonly')
+    expect(number).toHaveAttribute('readonly')
+    // Neither part changes its value or reports an edit.
+    await user.type(number, '999')
+    expect(number).toHaveValue('415 555 2671')
+    expect(numberChange).not.toHaveBeenCalled()
+    await user.click(selector)
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    await user.type(selector, 'CN')
+    expect(countryChange).not.toHaveBeenCalled()
+  })
+
+  it('treats disabled as taking precedence over read-only', async () => {
+    const user = userEvent.setup()
+    const countryChange = vi.fn()
+    const numberChange = vi.fn()
+    renderWithProviders(
+      <PhoneNumberField
+        country="US"
+        nationalNumber="4155552671"
+        onCountryChange={countryChange}
+        onNationalNumberChange={numberChange}
+        countryLabel={COUNTRY_LABEL}
+        numberLabel={NUMBER_LABEL}
+        disabled
+        readOnly
+      />,
+    )
+    // With both set the field is the disabled field: both parts natively
+    // disabled, so neither can take focus or report an edit.
+    const selector = screen.getByRole('combobox', { name: COUNTRY_LABEL })
+    const number = screen.getByLabelText(NUMBER_LABEL)
+    expect(selector).toBeDisabled()
+    expect(number).toBeDisabled()
+    await user.click(selector)
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    expect(countryChange).not.toHaveBeenCalled()
+    expect(numberChange).not.toHaveBeenCalled()
+  })
+
+  it('keeps the validation message while read-only', () => {
+    renderWithProviders(
+      <Harness
+        initialCountry="US"
+        initialNational="0000000000"
+        showValidationError
+        readOnly
+      />,
+    )
+    expect(
+      screen.getByText(zhCN.phoneNumber.invalid.replace('{{code}}', '1')),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(NUMBER_LABEL)).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
   })
 
   it('forwards sx, className and ref to the row box', () => {

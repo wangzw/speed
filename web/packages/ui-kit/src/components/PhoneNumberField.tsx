@@ -87,6 +87,11 @@ export type PhoneNumberFieldProps = RootStyleProps & {
   readonly numberHelperText?: string
   /** Disables both controls. */
   readonly disabled?: boolean
+  /**
+   * Keeps both parts focusable but unchangeable -- the state a host uses
+   * while a write that includes this number is in flight.
+   */
+  readonly readOnly?: boolean
   /** The number field's autocomplete token. */
   readonly autoComplete?: string
   /**
@@ -128,6 +133,7 @@ function PhoneNumberFieldInner(
     numberLabel,
     numberHelperText,
     disabled = false,
+    readOnly = false,
     autoComplete = 'tel',
     showValidationError = false,
     preferredCountries,
@@ -137,6 +143,9 @@ function PhoneNumberFieldInner(
   ref: Ref<HTMLDivElement>,
 ) {
   const { t, i18n } = useUiKitTranslation()
+  // A disabled control is natively unchangeable already; read-only only adds
+  // the focusable-but-frozen state, so disabled wins when both are set.
+  const readOnlyEffective = readOnly && !disabled
   const countryFieldId = useId()
   const numberFieldId = useId()
   const numberHelpId = `${numberFieldId}-help`
@@ -341,6 +350,7 @@ function PhoneNumberFieldInner(
         )}
         disableClearable
         disabled={disabled}
+        readOnly={readOnlyEffective}
         slotProps={{
           popper: {
             // The field is deliberately narrow; the list widens to the
@@ -365,6 +375,7 @@ function PhoneNumberFieldInner(
           slotProps={{
             htmlInput: {
               inputMode: 'tel',
+              readOnly: readOnlyEffective,
               ...(errorText === null && numberHelperText !== undefined
                 ? { 'aria-describedby': numberHelpId }
                 : {}),
