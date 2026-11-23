@@ -202,11 +202,56 @@ with the same rule — for example, a console's page declarations handed to a
 second shell — keeping the console's sidebar and this package's navigation on
 one set.
 
+## Focus after navigation
+
+`RouteProvider` hands keyboard focus to the new page when an in-app
+navigation changes the path. The hand-off is on by default: the landing is
+the new page's first level-one heading inside its `main` landmark, falling
+back to that landmark when there is no heading. It is the rule
+`@speed/ui-kit` exposes as `focusPageLanding`, kept here as an independent
+implementation because this package imports no sibling; the two follow the
+same clauses, including the scope boundary — the heading lookup and its
+hidden-subtree test stop at `main`, so a `[hidden]`,
+`[aria-hidden="true"]` or `[inert]` ancestor above the landmark does not
+suppress what is inside it.
+
+This default is a behavior change for a host assembled before the prop
+existed, where focus stayed wherever a navigation left it;
+`navigationFocus="none"` restores that for a host that places focus itself.
+
+Focus stays where it is in these cases:
+
+- **The first location.** A page load keeps the reader at the document
+  start, with the skip link and the landmarks ahead.
+- **A `REPLACE` before the document has received a trusted `pointerdown`,
+  `keydown` or `click`.** A load-time alias or tenant redirect is part of
+  loading, not a navigation the user asked for. Trusted means the browser
+  dispatched the event (`isTrusted` is true); a synthetic event a script
+  dispatches is not an interaction, which is why the jsdom suite can only
+  assert the negative half and the positive one runs in the browser tier.
+- **A location change that keeps the pathname.** A query string or hash
+  change is not a page change.
+- **The page already placed focus inside the new page's `main`**, or a
+  modal dialog holds it. A page focusing its own control in the same commit
+  therefore wins.
+
+A target that is not focusable gets `tabindex="-1"` while it holds focus and
+loses it on blur, so a heading does not become a tab stop after a mouse
+click. When the focus call does not land (a target inside a `display: none`
+subtree, say), the temporary `tabindex` is removed again and focus stays
+where it was.
+
+A host that places focus itself turns the hand-off off:
+
+```tsx
+<RouteProvider table={routes} fallback={...} navigationFocus="none">
+```
+
 ## Components and hooks
 
 | Export | Purpose |
 |---|---|
-| `RouteProvider` | Installs the router and hands the table down. Props: `table`, `fallback` (required), `presence`, `pending`, `failed`, `basename`, `children`. |
+| `RouteProvider` | Installs the router and hands the table down. Props: `table`, `fallback` (required), `presence`, `pending`, `failed`, `basename`, `navigationFocus` (default `'page-heading'`), `children`. |
 | `RouteView` | Renders the declaration the current URL matches, the `fallback`, or a gated path's pending/failed view. |
 | `useNavItems` | The narrowed surface's `label`-bearing entries, with the selected one marked and a click handler attached; each entry's `href` includes the router's `basename`. |
 | `useMatch` | The declaration the current URL matches exactly on the narrowed surface, plus its context, or `undefined`. |
@@ -327,7 +372,7 @@ The package imports **no** `@speed` sibling package, and no shell imports it.
 
 `RouteDeclaration` (including `requires`), `RouteTable`, `RouteContext`,
 `RouteParams`, `RoutePresence`, the `RouteProvider` props (including
-`basename`), the
+`basename` and `navigationFocus`), `RouteNavigationFocus`, the
 `RouteView`/`RouteLink`/`RouteLinkProps`/`useRouteLinkProps`/`RouteLinkTarget`/
 `useNavItems`/`useNavigate`/`useRedirect`/`useLocationPath`/
 `RouteLocationPath`/`presentDeclarations`/`useMatch`/`useHasRoute`

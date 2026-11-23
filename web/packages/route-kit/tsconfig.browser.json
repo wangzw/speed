@@ -1,0 +1,19 @@
+{
+  // The typecheck program of the package's browser-tier cases
+  // (`*.browser.test.tsx`, run by `make web-browser`). The base config
+  // excludes them so the ordinary program stays free of the browser
+  // tier's types; typechecking needs no Chromium, so this second program
+  // checks them under the same compiler options and path map. It is a
+  // program of its own because one program holding both the unit and the
+  // browser cases sees two conflicting declarations of the same jest-dom
+  // matcher types.
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*.browser.test.tsx", "test-utils"],
+  "exclude": [],
+  "compilerOptions": {
+    // These cases run in a real browser and reach no Node global or
+    // `node:` built-in, so the program does not inherit the base config's
+    // node types.
+    "types": []
+  }
+}
