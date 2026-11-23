@@ -380,7 +380,8 @@ tree, so it is not
 a second mask; it covers the workspace's test wiring and the shared floors.
 The custom rules under `web/eslint-rules/` are a separate set, walking the
 TypeScript syntax tree for their own subjects (i18n text, direct HTTP, HTML
-sinks, e2e bypass, feedback regions). The Python gate is the only
+sinks, e2e bypass, feedback regions, native disabled on button-shaped
+controls). The Python gate is the only
 whole-repository reader that does not need Node, so the budget and
 core-count checks stay here. Its known blind spots are a reviewer's
 obligation, not the gate's, and a clean run does not stand for them: a dot

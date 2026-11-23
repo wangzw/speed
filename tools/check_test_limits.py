@@ -110,7 +110,8 @@ which needs Node) holds the workspace's test wiring and shared floors with
 a parse of every test source by the TypeScript compiler, not a mask. The
 custom rules under `web/eslint-rules/` are a separate set: they walk the
 TypeScript syntax tree for the subjects they own (i18n text, direct HTTP,
-HTML sinks, e2e bypass, feedback regions). The Python gate is the
+HTML sinks, e2e bypass, feedback regions, native disabled on button-shaped
+controls). The Python gate is the
 whole-repository reader that runs without Node, so the budget and
 core-count checks stay here.
 
