@@ -1491,16 +1491,16 @@ describe('SsoPage', () => {
         'true',
       )
     })
-    // The form's own selector follows its scope; the domain bar's selector is
-    // a sibling scope and stays operable.
+    // The form's own selector follows its scope and is natively disabled; the
+    // domain bar's selector is a sibling scope and stays operable. A native
+    // disable renders as `aria-disabled` on the select's combobox.
     expect(screen.getByLabelText(zhCN.sso.provider.editLabel)).toHaveAttribute(
       'aria-disabled',
       'true',
     )
-    expect(screen.getByLabelText(zhCN.sso.domains.providerLabel)).not.toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
+    expect(
+      screen.getByLabelText(zhCN.sso.domains.providerLabel),
+    ).not.toHaveAttribute('aria-disabled', 'true')
 
     await act(async () => {
       finish(providerFixture({ name: 'New IdP' }))
@@ -1511,10 +1511,116 @@ describe('SsoPage', () => {
         'true',
       )
     })
-    expect(screen.getByLabelText(zhCN.sso.provider.editLabel)).not.toHaveAttribute(
-      'aria-disabled',
-      'true',
+    expect(
+      screen.getByLabelText(zhCN.sso.provider.editLabel),
+    ).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keeps the claim control unavailable with its reason until a provider and a domain are chosen', async () => {
+    const user = userEvent.setup()
+    const claimSsoDomain = vi.fn(() => Promise.resolve({ verify_token: 'tok-1' }))
+    const operations = withProviders({ claimSsoDomain })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+
+    const claim = screen.getByRole('button', { name: zhCN.sso.domains.claim })
+    // No provider and no domain chosen: the precondition is unmet, and the
+    // control stays focusable with the reason as its accessible description.
+    expect(claim).toHaveAttribute('aria-disabled', 'true')
+    expect(claim).not.toBeDisabled()
+    expect(claim).toHaveAccessibleDescription(
+      zhCN.sso.domains.claimUnavailable,
     )
+
+    await user.click(claim)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(claimSsoDomain).not.toHaveBeenCalled()
+
+    // A provider alone is not enough; the domain is still empty.
+    await pickProvider(user)
+    expect(claim).toHaveAttribute('aria-disabled', 'true')
+
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      'acme.com',
+    )
+    expect(claim).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keeps the provider form submit unavailable with a reason until its required fields are filled', async () => {
+    const user = userEvent.setup()
+    const createSsoProvider = vi.fn(() => Promise.resolve(providerFixture()))
+    const operations = withProviders({ createSsoProvider })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+
+    const submit = screen.getByRole('button', {
+      name: zhCN.sso.provider.createSubmit,
+    })
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toBeDisabled()
+    expect(submit).toHaveAccessibleDescription(
+      zhCN.sso.provider.requiredMissing,
+    )
+
+    for (const [label, value] of [
+      [zhCN.sso.provider.protocolLabel, 'oidc'],
+      [zhCN.sso.provider.nameLabel, 'New IdP'],
+      [zhCN.sso.provider.provisioningLabel, 'preprovisioned'],
+    ] as const) {
+      await user.type(screen.getByLabelText(label), value)
+    }
+    expect(submit).not.toHaveAttribute('aria-disabled', 'true')
+
+    // An unparsable configuration marks the field and points the submit at
+    // the hint the field already renders.
+    await user.type(
+      screen.getByLabelText(zhCN.sso.provider.configLabel),
+      '{{',
+    )
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).toHaveAccessibleDescription(zhCN.sso.provider.configHelper)
+    await user.click(submit)
+    expect(createSsoProvider).not.toHaveBeenCalled()
+  })
+
+  it('reports the claim control busy while its write is in flight and ignores further activation', async () => {
+    const user = userEvent.setup()
+    let finish!: (answer: { verify_token: string }) => void
+    const claimSsoDomain = vi.fn(
+      () =>
+        new Promise<{ verify_token: string }>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const operations = withProviders({ claimSsoDomain })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      'acme.com',
+    )
+
+    const claim = screen.getByRole('button', { name: zhCN.sso.domains.claim })
+    await user.click(claim)
+    await waitForCondition(() => {
+      expect(claim).toHaveAttribute('aria-busy', 'true')
+    })
+    expect(claim).toHaveAttribute('aria-disabled', 'true')
+    expect(claim).not.toBeDisabled()
+
+    await user.click(claim)
+    await user.keyboard('{Enter}')
+    expect(claimSsoDomain).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      finish({ verify_token: 'tok-1' })
+    })
   })
 
   it('locks the scope to a controlled tenant and hides the selector', async () => {
