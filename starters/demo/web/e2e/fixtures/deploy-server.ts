@@ -19,12 +19,16 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { get as httpGet } from 'node:http'
-import { createServer } from 'node:net'
 import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { writeDeployConfig, type DeployConfig } from './config'
+import {
+  freePorts,
+  shouldRetryStart,
+  waitForProbe,
+} from './loopback'
 import { ProcessLog, waitForReady } from './log'
 import { readHarnessManifest } from './server'
 import { scaledTimeout } from './time-scale'
@@ -43,9 +47,6 @@ const START_TIMEOUT_MS = scaledTimeout(30_000)
 
 /** How long SIGTERM may take before SIGKILL follows. */
 const STOP_TIMEOUT_MS = scaledTimeout(25_000)
-
-/** How long a probe may take to answer. */
-const PROBE_TIMEOUT_MS = scaledTimeout(15_000)
 
 /** How long one probe request may take to answer. */
 const PROBE_REQUEST_TIMEOUT_MS = scaledTimeout(5_000)
@@ -91,47 +92,6 @@ export interface DeployServer {
   beforeStop(hook: () => Promise<void> | void): void
   /** Request shutdown, wait for exit, and clean up unless kept. */
   stop(options?: { readonly keep?: boolean }): Promise<void>
-}
-
-/** Ask the kernel for ports that are free at this moment. */
-async function freePorts(count: number): Promise<number[]> {
-  const opened: import('node:net').Server[] = []
-  const closeAll = async (): Promise<void> => {
-    await Promise.all(
-      opened.map(
-        (listener) =>
-          new Promise<void>((resolve) => {
-            if (!listener.listening) {
-              resolve()
-              return
-            }
-            listener.close(() => resolve())
-          }),
-      ),
-    )
-  }
-
-  try {
-    for (let index = 0; index < count; index += 1) {
-      const listener = await new Promise<import('node:net').Server>(
-        (resolve, reject) => {
-          const server = createServer()
-          server.once('error', reject)
-          server.listen(0, '127.0.0.1', () => resolve(server))
-        },
-      )
-      opened.push(listener)
-    }
-    return opened.map((listener) => {
-      const address = listener.address()
-      if (address === null || typeof address === 'string') {
-        throw new Error('a free-port listener answered without a TCP address')
-      }
-      return address.port
-    })
-  } finally {
-    await closeAll()
-  }
 }
 
 /** The environment the child starts with: this process's, less host and OTel. */
@@ -220,26 +180,6 @@ function fetchAnswer(url: string): Promise<HttpAnswer> {
       )
     })
   })
-}
-
-/** Poll the answer until it is 200, or fail after the bound. */
-async function waitForProbe(url: string, log: ProcessLog): Promise<void> {
-  const deadline = Date.now() + PROBE_TIMEOUT_MS
-  let last = ''
-  while (Date.now() < deadline) {
-    try {
-      const answer = await fetchAnswer(url)
-      if (answer.status === 200) return
-      last = `HTTP ${answer.status}`
-    } catch (error) {
-      last = String(error)
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  throw new Error(
-    `the operations probe ${url} did not answer 200 within ${PROBE_TIMEOUT_MS}ms ` +
-      `(last answer: ${last})\n--- process log (last lines) ---\n${log.tail()}`,
-  )
 }
 
 /**
@@ -381,6 +321,12 @@ export async function startDeployServer(): Promise<DeployServer> {
 
       try {
         await waitForReady(log, START_TIMEOUT_MS, from)
+        // The browser reaches the backend listener, so the browser's own
+        // address family must answer there too. The web endpoint owns "/" on
+        // that listener and answers the entry document for a client-side
+        // route, so /health is a reachability check, not the operations
+        // surface (which this deployment moves to its own listener below).
+        await waitForProbe(`${config.origin}/health`, log)
         await waitForProbe(`${config.opsOrigin}/health`, log)
         await waitForProbe(`${config.opsOrigin}/ready`, log)
         break
@@ -390,8 +336,12 @@ export async function startDeployServer(): Promise<DeployServer> {
           spawned.exitCode !== null ||
           spawned.signalCode !== null
         const bindFailure = exited && looksLikeBindFailure(log, stderrLines)
+        // A connection accepted on ::1 that does not answer like this server
+        // means another process holds the port there. shouldRetryStart
+        // retries it with fresh ports exactly like a bind failure, even
+        // though the child is running.
         await terminate()
-        if (bindFailure && attempt < MAX_BIND_ATTEMPTS) {
+        if (shouldRetryStart(error, bindFailure, attempt, MAX_BIND_ATTEMPTS)) {
           continue
         }
         if (spawnError !== undefined) {

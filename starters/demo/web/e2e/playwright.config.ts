@@ -16,8 +16,9 @@
  * accounts in, so journeys share no state. Files therefore run side by side,
  * while the tests inside one file stay serial (fullyParallel is off) because
  * they drive one page against one server. Probing for free ports can still
- * hand two workers the same port; the fixture retries a failed bind with fresh
- * ports, so the width costs a retry rather than a journey. A width near the
+ * hand two workers the same port; the fixture requires every port to be free
+ * on both loopback address families and retries a bind failure or a ::1
+ * occupant with fresh ports, so the width costs a retry rather than a journey. A width near the
  * number of files keeps the run near the length of its longest journey, which
  * no width shortens.
  *

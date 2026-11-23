@@ -89,11 +89,19 @@ keeps. One project is run on its own with `--project webkit`.
   the temporary directory as the working directory, waits for the `msg=ready`
   record and for the operations probes (`GET /health`, `GET /ready`), and only
   then hands the server to the test. Ports are allocated after the seed (which
-  does not listen), and a bind failure — another process took the port in the
-  short window before `serve` bound it — is retried with a fresh pair, bounded
-  at three attempts. The fixture's own bounds (seed 30s, start 30s, probes 15s,
-  stop 25s) sit inside Playwright's 180s test timeout, so a slow start reports
-  the process log and standard error instead of being killed by the test
+  does not listen), and every candidate must be free on both loopback address
+  families: a port that is free on 127.0.0.1 but held on ::1 is discarded,
+  because a browser resolving `localhost` prefers ::1 and would reach the
+  process holding it. A machine with no IPv6 loopback is judged on 127.0.0.1
+  alone. The readiness probes ask the literal 127.0.0.1 and ::1 addresses
+  rather than resolving the hostname: on ::1 a refused connection or a missing
+  address family passes, and an accepted connection must answer 200 on the
+  same path or the port counts as taken. A bind failure — another process took
+  the port in the short window before `serve` bound it — and a taken ::1 port
+  are both retried with a fresh pair, bounded at three attempts. The fixture's
+  own bounds (seed 30s, start 30s, probes 15s, stop 25s) sit inside
+  Playwright's 180s test timeout, so a slow start reports the process log and
+  standard error instead of being killed by the test
   timeout first. They are waits — each returns as soon as the thing it waits
   for happens — so they are generous, and the caller's `GATE_TIME_SCALE`
   multiplies them together with the test timeout and the 30s `expect.timeout`

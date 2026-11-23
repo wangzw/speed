@@ -17,8 +17,7 @@
  */
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
-import { get as httpGet, request as httpRequest } from 'node:http'
-import { createServer } from 'node:net'
+import { request as httpRequest } from 'node:http'
 import { createInterface } from 'node:readline'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -43,6 +42,11 @@ import {
   type CarrierMessage,
   type OutboundRecord,
 } from './log'
+import {
+  freePorts,
+  shouldRetryStart,
+  waitForProbe,
+} from './loopback'
 import { MANIFEST_PATH } from './paths'
 import {
   startSamlIdentityProvider,
@@ -67,12 +71,6 @@ const START_TIMEOUT_MS = scaledTimeout(30_000)
 
 /** How long SIGTERM may take before SIGKILL follows. */
 const STOP_TIMEOUT_MS = scaledTimeout(25_000)
-
-/** How long the readiness probes may take to answer after the ready record. */
-const PROBE_TIMEOUT_MS = scaledTimeout(15_000)
-
-/** How long one readiness probe request may take to answer. */
-const PROBE_REQUEST_TIMEOUT_MS = scaledTimeout(5_000)
 
 /** How long one API request the fixture makes may take to answer. */
 const API_REQUEST_TIMEOUT_MS = scaledTimeout(10_000)
@@ -117,50 +115,6 @@ export async function readHarnessManifest(): Promise<HarnessManifest> {
   return parsed as HarnessManifest
 }
 
-/** Ask the kernel for ports that are free at this moment. */
-async function freePorts(count: number): Promise<number[]> {
-  const opened: import('node:net').Server[] = []
-  const closeAll = async (): Promise<void> => {
-    await Promise.all(
-      opened.map(
-        (listener) =>
-          new Promise<void>((resolve) => {
-            if (!listener.listening) {
-              resolve()
-              return
-            }
-            listener.close(() => resolve())
-          }),
-      ),
-    )
-  }
-
-  try {
-    for (let index = 0; index < count; index += 1) {
-      const listener = await new Promise<import('node:net').Server>(
-        (resolve, reject) => {
-          const server = createServer()
-          server.once('error', reject)
-          server.listen(0, '127.0.0.1', () => resolve(server))
-        },
-      )
-      opened.push(listener)
-    }
-    const ports = opened.map((listener) => {
-      const address = listener.address()
-      if (address === null || typeof address === 'string') {
-        throw new Error('a free-port listener answered without a TCP address')
-      }
-      return address.port
-    })
-    return ports
-  } finally {
-    // A listener that failed leaves its siblings open unless they are all
-    // closed here; a leaked listener holds a port for the rest of the worker.
-    await closeAll()
-  }
-}
-
 /** The environment the child starts with: this process's, less host and OTel. */
 function childEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
@@ -200,42 +154,6 @@ function runCommand(
       },
     )
   })
-}
-
-/** One unauthenticated GET; the answer is the status code. */
-function probe(url: string): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probeRequest = httpGet(url, (response) => {
-      response.resume()
-      resolve(response.statusCode ?? 0)
-    })
-    probeRequest.on('error', reject)
-    probeRequest.setTimeout(PROBE_REQUEST_TIMEOUT_MS, () => {
-      probeRequest.destroy(
-        new Error(`${url} did not answer within ${PROBE_REQUEST_TIMEOUT_MS}ms`),
-      )
-    })
-  })
-}
-
-/** Poll a probe until it answers 200, or fail after the bound. */
-async function waitForProbe(url: string, log: ProcessLog): Promise<void> {
-  const deadline = Date.now() + PROBE_TIMEOUT_MS
-  let last = ''
-  while (Date.now() < deadline) {
-    try {
-      const status = await probe(url)
-      if (status === 200) return
-      last = `HTTP ${status}`
-    } catch (error) {
-      last = String(error)
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  throw new Error(
-    `the operations probe ${url} did not answer 200 within ${PROBE_TIMEOUT_MS}ms ` +
-      `(last answer: ${last})\n--- process log (last lines) ---\n${log.tail()}`,
-  )
 }
 
 /**
@@ -752,9 +670,12 @@ export interface ReviewServer {
  *
  * The port is allocated after the seed command (which does not listen), so the
  * window between asking the kernel for a port and binding it is just the
- * config write. A bind failure is still possible -- another process can take
- * the port in that window -- so it is retried with a fresh port, bounded by
- * MAX_BIND_ATTEMPTS.
+ * config write. The allocator requires the port to be free on both loopback
+ * address families: a browser resolving `localhost` prefers ::1, so a port
+ * held there is unreachable even while 127.0.0.1 is free. The readiness probe
+ * checks the literal addresses too, and a ::1 connection that is accepted but
+ * does not answer 200 is treated as a taken port. A bind failure and a taken
+ * ::1 port are both retried with a fresh port, bounded by MAX_BIND_ATTEMPTS.
  *
  * `seedMember`, `seedImpersonation`, `seedInvitee`, `invitationMail`,
  * `seedSocialAccount`, `seedTenantAdmin`, `seedUnprovedTenantAdmin`, `seedSystemTenantAdmin`,
@@ -1006,8 +927,13 @@ export async function startReviewServer(
           spawned.exitCode !== null ||
           spawned.signalCode !== null
         const bindFailure = exited && looksLikeBindFailure(log, stderrLines)
+        // A connection accepted on ::1 that does not answer like this server
+        // means another process holds the port there; the browser would reach
+        // that process instead. shouldRetryStart retries it with fresh ports
+        // exactly like a bind failure, even though the child itself is
+        // running.
         await terminate()
-        if (bindFailure && attempt < MAX_BIND_ATTEMPTS) {
+        if (shouldRetryStart(error, bindFailure, attempt, MAX_BIND_ATTEMPTS)) {
           // The port was taken between allocation and bind. The log keeps
           // both attempts, and `from` keeps the ready wait from matching a
           // record written by the failed attempt.
