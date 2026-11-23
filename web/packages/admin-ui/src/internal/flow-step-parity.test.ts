@@ -63,7 +63,8 @@ interface Contract {
   readonly kinds: readonly string[]
   /** The answer properties the copy reports upward (`factor`, `kind`, ...). */
   readonly answerFields: readonly string[]
-  /** The `@mui/material` primitives a rendered step is built from. */
+  /** The `@mui/material` primitives a rendered step is built from, apart
+   * from the button primitive the shared ActionButton replaces. */
   readonly primitives: readonly string[]
   /** The `@speed/auth-core/webauthn` helpers the passkey arm drives. */
   readonly webauthnHelpers: readonly string[]
@@ -314,12 +315,19 @@ function answerFieldsOf(source: string): string[] {
   return [...fields].sort()
 }
 
+/** The button primitive a step's button-shaped actions render through. It
+ * is not part of the shared contract: those actions use the ui-kit
+ * ActionButton, which lives outside `@mui/material`, and each copy moves
+ * to it in its own change, so one copy still importing it says nothing
+ * about the others. */
+const ACTION_PRIMITIVE = 'Button'
+
 /** The `@mui/material` components a copy renders a step with. */
 function primitivesOf(source: string): string[] {
   const primitives = new Set<string>()
   for (const match of source.matchAll(/import \w+ from '@mui\/material\/(\w+)'/g)) {
     const component = match[1]
-    if (component !== undefined) {
+    if (component !== undefined && component !== ACTION_PRIMITIVE) {
       primitives.add(component)
     }
   }

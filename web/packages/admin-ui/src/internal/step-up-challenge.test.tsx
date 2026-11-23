@@ -386,7 +386,7 @@ describe('StepUpChallenge', () => {
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
       expect(
         screen.getByRole('button', { name: zhCN.stepUp.factorKind.sms }),
-      ).toBeDisabled()
+      ).toHaveAttribute('aria-disabled', 'true')
       expect(requests).toHaveLength(0)
 
       act(() => {
@@ -614,20 +614,25 @@ describe('StepUpChallenge', () => {
 
       const submit = screen.getByRole('button', {
         name: zhCN.stepUp.submit,
-      }) as HTMLButtonElement
-      expect(submit.disabled).toBe(true)
+      })
+      expect(submit).toHaveAttribute('aria-disabled', 'true')
+      // The held control points at the countdown text already on the page
+      // instead of repeating the reason.
+      expect(submit).toHaveAccessibleDescription(
+        new RegExp(
+          zhCN.throttle.countdown.replace('{{seconds}}', '29'),
+        ),
+      )
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(30_000)
       })
       await waitFor(() => {
         expect(
-          (
-            screen.getByRole('button', {
-              name: zhCN.stepUp.submit,
-            }) as HTMLButtonElement
-          ).disabled,
-        ).toBe(false)
+          screen.getByRole('button', {
+            name: zhCN.stepUp.submit,
+          }),
+        ).not.toHaveAttribute('aria-disabled', 'true')
       })
       // The wait is spent, so the non-live countdown is gone and the banner
       // stays the code's static sentence.

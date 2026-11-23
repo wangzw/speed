@@ -223,6 +223,7 @@
     "factorOptionOrdinal": "{{kind}}（{{position}}）",
     "cannotElevate": "这次会话无法用你已登记的验证方式完成这次确认：这些方式可能是在本次登录之后才登记的，或本站没有能进一步加强本次登录的验证方式。请重新登录一次。",
     "relogin": "重新登录",
+    "codeRequired": "请先输入 6 位验证码。",
     "codeLabel": "6 位验证码",
     "enrollTotpHelp": "用验证器应用扫描下方二维码，然后输入应用显示的 6 位验证码完成设置。",
     "totpQrLabel": "用验证器应用扫描二维码",
