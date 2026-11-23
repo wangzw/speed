@@ -23,6 +23,39 @@ func (r *rig) verified(tenant, name, domain string) authn.SSOProvider {
 	return idp
 }
 
+// verifiedSAML registers a SAML provider and verifies a domain for it.
+func (r *rig) verifiedSAML(tenant, name, domain string) authn.SSOProvider {
+	r.t.Helper()
+	idp := r.putSAML(tenant, name)
+	token, err := r.p.ClaimDomain(context.Background(), idp.ID, domain)
+	if err != nil {
+		r.t.Fatalf("ClaimDomain: %v", err)
+	}
+	r.publishTXT(domain, token)
+	if err := r.p.VerifyDomain(context.Background(), idp.ID, domain); err != nil {
+		r.t.Fatalf("VerifyDomain: %v", err)
+	}
+	return idp
+}
+
+// TestDiscoverIgnoresTheDeliveredProtocols holds that Discover itself does not
+// filter by what the run delivers: the same call decides which provider owns a
+// domain, so a provider whose protocol is not delivered still answers for the
+// domain it holds, and the answer layer alone leaves it out of the discovery.
+func TestDiscoverIgnoresTheDeliveredProtocols(t *testing.T) {
+	r := newRigSQLite(t)
+	idp := r.verified("tenant-a", "live", "example.com")
+	r.deliverProtocols()
+
+	got, err := r.p.Discover(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != idp.ID {
+		t.Errorf("Discover(example.com) = %+v, want the provider even though its protocol is not delivered", got)
+	}
+}
+
 // TestDiscoverReturnsOnlyVerifiedAndEnabledRows holds the discovery's filter: a
 // verified domain of an enabled provider, and nothing else.
 func TestDiscoverReturnsOnlyVerifiedAndEnabledRows(t *testing.T) {

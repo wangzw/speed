@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -88,6 +89,104 @@ func TestTheDiscoveryAnswersTheShape(t *testing.T) {
 	if len(body.Providers) != 1 || body.Providers[0].ID != idp.ID ||
 		body.Providers[0].Name != "acme" || body.Providers[0].Protocol != "oidc" {
 		t.Errorf("the discovery answered %+v, want the one provider", body.Providers)
+	}
+}
+
+// TestTheDiscoveryListsOnlyDeliveredProtocols holds that the answer names a
+// provider only when its protocol is delivered in this run: with the OIDC
+// method taken in the OIDC provider is named and the SAML one is not, with the
+// SAML method the other way, and with neither nothing is named.
+//
+// The two providers sit under separate verified domains. A verified domain is
+// globally unique (the partial index admits one verified provider per domain),
+// so one domain cannot carry a provider of each protocol; the filter is held
+// per protocol instead.
+func TestTheDiscoveryListsOnlyDeliveredProtocols(t *testing.T) {
+	r := routed(t)
+	oidc := r.verified("tenant-a", "oidc-idp", "oidc.example.com")
+	saml := r.verifiedSAML("tenant-b", "saml-idp", "saml.example.com")
+
+	cases := []struct {
+		name      string
+		delivered []string
+		want      map[string]string // domain to the one provider it should name
+	}{
+		{"only oidc", []string{authn.SSOProtocolOIDC}, map[string]string{"oidc.example.com": oidc.ID}},
+		{"only saml", []string{authn.SSOProtocolSAML}, map[string]string{"saml.example.com": saml.ID}},
+		{"neither", nil, map[string]string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r.deliverProtocols(tc.delivered...)
+			for _, domain := range []string{"oidc.example.com", "saml.example.com"} {
+				w := r.post(discoverFullPath, `{"email":"someone@`+domain+`"}`)
+				if w.Code != http.StatusOK {
+					t.Fatalf("the discovery of %s answered %d: %s", domain, w.Code, w.Body.String())
+				}
+				var body discoverResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+					t.Fatalf("the body %q is not the answer shape: %v", w.Body.String(), err)
+				}
+				wantID, listed := tc.want[domain]
+				if listed {
+					if len(body.Providers) != 1 || body.Providers[0].ID != wantID {
+						t.Errorf("the discovery of %s listed %+v, want only provider %s", domain, body.Providers, wantID)
+					}
+					continue
+				}
+				if len(body.Providers) != 0 {
+					t.Errorf("the discovery of %s listed %+v, want none: its protocol is not delivered", domain, body.Providers)
+				}
+			}
+		})
+	}
+}
+
+// TestTheDiscoveryWithNoDeliveredSetListsNothing holds that an absent delivered
+// set means nothing is delivered rather than everything: a product whose set is
+// nil lists no provider, so a run that took up no login method cannot leak a
+// provider into the answer.
+func TestTheDiscoveryWithNoDeliveredSetListsNothing(t *testing.T) {
+	r := routed(t)
+	r.verified("tenant-a", "oidc-idp", "oidc.example.com")
+	r.p.delivered = nil
+
+	w := r.post(discoverFullPath, `{"email":"someone@oidc.example.com"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the discovery answered %d: %s", w.Code, w.Body.String())
+	}
+	var body discoverResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("the body %q is not the answer shape: %v", w.Body.String(), err)
+	}
+	if len(body.Providers) != 0 {
+		t.Errorf("the discovery with no delivered set listed %+v, want none", body.Providers)
+	}
+}
+
+// TestTheDiscoveryWithNothingDeliveredMatchesNoMatch holds the shape: a verified
+// domain whose protocol is not delivered answers exactly what an unknown domain
+// answers, down to the body.
+func TestTheDiscoveryWithNothingDeliveredMatchesNoMatch(t *testing.T) {
+	r := routed(t)
+	r.verified("tenant-a", "oidc-idp", "oidc.example.com")
+	r.deliverProtocols()
+
+	held := r.post(discoverFullPath, `{"email":"someone@oidc.example.com"}`)
+	unheld := r.post(discoverFullPath, `{"email":"someone@nobody.example.org"}`)
+	if held.Code != http.StatusOK || unheld.Code != http.StatusOK {
+		t.Fatalf("the discovery answered %d and %d, want 200 both", held.Code, unheld.Code)
+	}
+	if held.Body.String() != unheld.Body.String() {
+		t.Errorf("a held domain with nothing delivered answered %q, an unknown domain %q; want the same body",
+			held.Body.String(), unheld.Body.String())
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(held.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("the body %q is not a JSON object: %v", held.Body.String(), err)
+	}
+	if got := string(raw["providers"]); got != "[]" {
+		t.Errorf("the answer's providers = %s, want an empty array", got)
 	}
 }
 

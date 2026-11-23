@@ -195,7 +195,7 @@ func TestARealRegistryDeliversTheOIDCMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drive: %v", err)
 	}
-	if len(methods) != 1 || methods[0].Name() != "oidc" {
+	if len(methods) != 1 || methods[0].Name() != authn.SSOProtocolOIDC {
 		t.Fatalf("delivered %v, want one login method named oidc", methods)
 	}
 	p, ok := methods[0].(*product)

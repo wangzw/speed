@@ -3,9 +3,11 @@ package sso
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -71,6 +73,9 @@ type assembly struct {
 	withAdmission bool
 	// logging, when non-nil, is supplied to a stand-in for the logging module.
 	logging log.Logger
+	// methods are login methods the drive delivers from stand-in modules of
+	// their own, so that the module's Init sees exactly these protocols.
+	methods []authn.LoginMethod
 }
 
 // drive advances the assembly to Start, runs action there, and returns what the
@@ -112,6 +117,11 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	if a.logging != nil {
 		reg.Register(standIn("stand-in.log", a.logging, false, (*log.Logger)(nil)))
 		names = append(names, "stand-in.log")
+	}
+	for i, method := range a.methods {
+		name := fmt.Sprintf("stand-in.method.%d", i)
+		reg.Register(standIn(name, method, false, (*authn.LoginMethod)(nil)))
+		names = append(names, name)
 	}
 
 	return reg.Drive(t.Context(), core.Drive{
@@ -234,5 +244,152 @@ func TestStartWarnsWhenTheAdmissionLayerTakesNoPart(t *testing.T) {
 	}
 	if got := logs.lines("WARN", admission, "single sign-on"); len(got) == 0 {
 		t.Errorf("Start wrote no Warn that %s is not taking part; the log was:\n%s", admission, logs.String())
+	}
+}
+
+// standInMethod is a login method of a name a case chooses. It delivers
+// authn.LoginMethod so that the module's Init sees its protocol as delivered;
+// its steps are never driven.
+type standInMethod struct{ name string }
+
+func (m standInMethod) Name() string { return m.name }
+
+func (m standInMethod) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{Name: m.name}
+}
+
+func (m standInMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
+	return authn.Step{}, errors.New("the stand-in method is never driven")
+}
+
+func (m standInMethod) Answer(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+	return authn.Step{}, errors.New("the stand-in method is never driven")
+}
+
+// discoveryUnder drives an assembly whose run delivers methods, verifies one
+// OIDC provider and one SAML provider on a domain of their own, and returns the
+// providers the discovery names for each domain.
+func discoveryUnder(t *testing.T, methods []authn.LoginMethod) map[string][]AuthnSsoProvider {
+	t.Helper()
+	answers := map[string][]AuthnSsoProvider{}
+	err := (assembly{migrate: true, methods: methods}).drive(t, func(ctx context.Context, reg *core.Registry) error {
+		delivered, err := core.Resolve[authn.SSOProviders](reg)
+		if err != nil {
+			return err
+		}
+		p, ok := delivered.(*product)
+		if !ok {
+			return fmt.Errorf("the registry delivered %T, want the module's own product", delivered)
+		}
+		// The product built by New has no clock or resolver of a case's own; a
+		// writing case supplies them, as the rig does.
+		p.clock = func() time.Time { return base }
+		tokens := map[string]string{}
+		p.lookup = func(_ context.Context, name string) ([]string, error) {
+			if token, ok := tokens[name]; ok {
+				return []string{"speed-authn=" + token}, nil
+			}
+			return nil, nil
+		}
+		verify := func(protocol, name, domain string) {
+			t.Helper()
+			cfg := oidcConfig()
+			if protocol == authn.SSOProtocolSAML {
+				cfg = samlConfig()
+			}
+			idp, err := p.Put(ctx, authn.SSOProvider{
+				Tenant: "tenant-a", Protocol: protocol, Name: name, Enabled: true,
+				Provisioning: "jit", UsernameStrategy: "user-confirm", Config: cfg,
+			}, nil)
+			if err != nil {
+				t.Fatalf("Put (%s): %v", protocol, err)
+			}
+			token, err := p.ClaimDomain(ctx, idp.ID, domain)
+			if err != nil {
+				t.Fatalf("ClaimDomain (%s): %v", protocol, err)
+			}
+			tokens[txtName(domain)] = token
+			if err := p.VerifyDomain(ctx, idp.ID, domain); err != nil {
+				t.Fatalf("VerifyDomain (%s): %v", protocol, err)
+			}
+		}
+		verify(authn.SSOProtocolOIDC, "oidc-idp", "oidc.example.com")
+		verify(authn.SSOProtocolSAML, "saml-idp", "saml.example.com")
+
+		for _, domain := range []string{"oidc.example.com", "saml.example.com"} {
+			answer, err := p.handleDiscover(ctx, discoverRequest{Email: "someone@" + domain})
+			if err != nil {
+				t.Fatalf("handleDiscover(%s): %v", domain, err)
+			}
+			answers[domain] = answer.Providers
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+	return answers
+}
+
+// TestTheDiscoveryNamesOnlyTheProtocolTheAssemblyDelivers holds the wiring: in
+// Init the module takes up from the registry which enterprise protocols this run
+// delivers, and the answer names a provider only when its protocol is among
+// them. The provider whose protocol is not delivered is left out.
+func TestTheDiscoveryNamesOnlyTheProtocolTheAssemblyDelivers(t *testing.T) {
+	for _, protocol := range []string{authn.SSOProtocolOIDC, authn.SSOProtocolSAML} {
+		t.Run(protocol, func(t *testing.T) {
+			answers := discoveryUnder(t, []authn.LoginMethod{standInMethod{name: protocol}})
+			for _, held := range []struct{ domain, protocol string }{
+				{"oidc.example.com", authn.SSOProtocolOIDC},
+				{"saml.example.com", authn.SSOProtocolSAML},
+			} {
+				got := answers[held.domain]
+				if held.protocol == protocol {
+					if len(got) != 1 || got[0].Protocol != protocol {
+						t.Errorf("the discovery of %s listed %+v, want the one %s provider",
+							held.domain, got, protocol)
+					}
+					continue
+				}
+				if len(got) != 0 {
+					t.Errorf("the discovery of %s listed %+v, want none: the protocol is not delivered",
+						held.domain, got)
+				}
+			}
+		})
+	}
+}
+
+// TestTheDiscoveryListsEveryDeliveredProtocol holds an assembly that delivers
+// more than one login method side by side: both enterprise protocols are in the
+// delivered set, so each verified domain names its own provider, and the
+// password method beside them neither hides a protocol nor adds one.
+func TestTheDiscoveryListsEveryDeliveredProtocol(t *testing.T) {
+	answers := discoveryUnder(t, []authn.LoginMethod{
+		standInMethod{name: authn.SSOProtocolOIDC},
+		standInMethod{name: authn.SSOProtocolSAML},
+		standInMethod{name: "password"},
+	})
+	for _, held := range []struct{ domain, protocol string }{
+		{"oidc.example.com", authn.SSOProtocolOIDC},
+		{"saml.example.com", authn.SSOProtocolSAML},
+	} {
+		got := answers[held.domain]
+		if len(got) != 1 || got[0].Protocol != held.protocol {
+			t.Errorf("the discovery of %s listed %+v, want the one %s provider",
+				held.domain, got, held.protocol)
+		}
+	}
+}
+
+// TestTheDiscoveryListsNothingWhenNoMethodIsDelivered holds the other end: a run
+// that delivers no login method lists no provider, though both providers and
+// their verified domains are in the table.
+func TestTheDiscoveryListsNothingWhenNoMethodIsDelivered(t *testing.T) {
+	answers := discoveryUnder(t, nil)
+	for _, domain := range []string{"oidc.example.com", "saml.example.com"} {
+		if got := answers[domain]; len(got) != 0 {
+			t.Errorf("the discovery of %s listed %+v, want none", domain, got)
+		}
 	}
 }

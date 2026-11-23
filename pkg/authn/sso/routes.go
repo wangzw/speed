@@ -116,6 +116,13 @@ func isJSONObject(body []byte) bool {
 // exists; a request whose domain cannot be reduced to a domain is a 400, and one
 // whose domain no provider has verified is the same empty list as one that has
 // providers disabled.
+//
+// A provider is named only when its protocol is delivered in this run. The
+// filter sits here and not in Discover, because Discover also decides which
+// provider owns a domain: dropping a protocol there would make another
+// protocol's sign-in of the same tenant a domain mismatch. The query runs
+// unfiltered and the delivered set is applied to its result, so a match and a
+// non-match cost the same.
 func (p *product) handleDiscover(ctx context.Context, in discoverRequest) (discoverResponse, error) {
 	providers, err := p.Discover(ctx, emailDomain(in.Email))
 	if err != nil {
@@ -126,6 +133,9 @@ func (p *product) handleDiscover(ctx context.Context, in discoverRequest) (disco
 	}
 	out := discoverResponse{Providers: make([]AuthnSsoProvider, 0, len(providers))}
 	for _, prov := range providers {
+		if !p.delivered[prov.Protocol] {
+			continue
+		}
 		out.Providers = append(out.Providers, AuthnSsoProvider{ID: prov.ID, Name: prov.Name, Protocol: prov.Protocol})
 	}
 	return out, nil

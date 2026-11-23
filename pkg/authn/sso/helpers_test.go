@@ -179,7 +179,21 @@ func newRigAtBase(t *testing.T, database db.Database, basePath string) *rig {
 	p.bus = r.bus
 	p.clock = r.clock.read
 	p.lookup = r.lookup
+	// The rig starts as a deployment that takes both enterprise methods in, so
+	// an existing case keeps the answer it had before the delivered set existed;
+	// a case that holds the filter sets it through deliverProtocols.
+	p.delivered = map[string]bool{authn.SSOProtocolOIDC: true, authn.SSOProtocolSAML: true}
 	return r
+}
+
+// deliverProtocols sets the enterprise protocols the product treats as
+// delivered, as Init takes them up from the registry. With no names, nothing is
+// delivered.
+func (r *rig) deliverProtocols(names ...string) {
+	r.p.delivered = make(map[string]bool, len(names))
+	for _, name := range names {
+		r.p.delivered[name] = true
+	}
 }
 
 // lookup is the resolver a case scripts. It answers the named set, or the error
@@ -331,6 +345,24 @@ func oidcConfig() json.RawMessage {
 // samlConfig is a minimal valid SAML config.
 func samlConfig() json.RawMessage {
 	return json.RawMessage(`{"idp_entity_id":"https://idp.example.com/entity","idp_sso_url":"https://idp.example.com/sso","idp_certs":["-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"]}`)
+}
+
+// putSAML creates an enabled SAML provider and returns it.
+func (r *rig) putSAML(tenant, name string) authn.SSOProvider {
+	r.t.Helper()
+	p, err := r.p.Put(context.Background(), authn.SSOProvider{
+		Tenant:           tenant,
+		Protocol:         authn.SSOProtocolSAML,
+		Name:             name,
+		Enabled:          true,
+		Provisioning:     "jit",
+		UsernameStrategy: "user-confirm",
+		Config:           samlConfig(),
+	}, nil)
+	if err != nil {
+		r.t.Fatalf("Put (create saml): %v", err)
+	}
+	return p
 }
 
 // putOIDC creates an enabled OIDC provider and returns it.

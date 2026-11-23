@@ -34,6 +34,7 @@ import (
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
+	"github.com/vislake/speed/pkg/authn/internal/model"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -239,6 +240,12 @@ type product struct {
 	// resolver and is replaced by a test.
 	lookup func(ctx context.Context, name string) ([]string, error)
 
+	// delivered is the set of enterprise protocols this run delivers, taken up
+	// in Init from the login methods the registry holds. A protocol absent here
+	// has no discoverable provider: the answer layer lists a provider only when
+	// its protocol is in this set, and an empty set lists none.
+	delivered map[string]bool
+
 	// allowPrivateEgress is the developer relaxation of the restricted egress
 	// client. It is read here only so that the startup diagnostics can name it;
 	// the egress client itself is built by the protocol modules.
@@ -350,9 +357,32 @@ func (p *product) wire(reg *core.Registry) error {
 	}
 	p.subscribe()
 
+	// The discovery names only a provider whose protocol this run delivers. The
+	// login methods are parallel, so the set comes from ResolveAll and not from
+	// Requires; a protocol whose method stood down is absent here, and its
+	// providers drop out of the answer.
+	p.delivered = deliveredProtocols(core.ResolveAll[authn.LoginMethod](reg))
+
 	p.diagnose()
 	p.mountRoutes()
 	return nil
+}
+
+// deliveredProtocols is the set of enterprise protocols this run delivers, from
+// the login methods the registry holds. A method's name is the protocol its
+// providers record, and only oidc and saml name a provider the register can
+// hold; every other method is ignored, so a social or password method never
+// makes a provider discoverable. A method the run did not construct is absent,
+// which is how a protocol whose enable switch is off leaves the set.
+func deliveredProtocols(methods []authn.LoginMethod) map[string]bool {
+	out := make(map[string]bool, len(methods))
+	for _, method := range methods {
+		switch name := method.Name(); name {
+		case model.SSOProtocolOIDC, model.SSOProtocolSAML:
+			out[name] = true
+		}
+	}
+	return out
 }
 
 // optional takes up a capability whose absence is a legal assembly: the zero

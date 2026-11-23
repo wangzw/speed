@@ -265,7 +265,7 @@ func TestTheRegistryDeliversTheMethodAndTheRefresher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drive: %v", err)
 	}
-	if len(methods) != 1 || methods[0].Name() != methodName {
+	if len(methods) != 1 || methods[0].Name() != authn.SSOProtocolSAML {
 		t.Fatalf("delivered %v, want one login method named saml", methods)
 	}
 	if len(refreshers) != 1 || refreshers[0].Protocol() != providerProtocol {
