@@ -13,6 +13,7 @@ import { render } from '@testing-library/react'
 import type { RenderResult } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { RouteProvider } from '../src/RouteProvider.js'
+import type { RouteNavigationFocus } from '../src/RouteProvider.js'
 import type { RouteContext, RoutePresence, RouteTable } from '../src/types.js'
 
 /** Move jsdom's address to `path` before a render reads it. */
@@ -33,6 +34,8 @@ export interface RenderRouteOptions {
   readonly failed?: (context: RouteContext) => ReactNode
   /** The path prefix the provider installs its router under. */
   readonly basename?: string
+  /** The provider's navigation focus hand-off; defaults to 'page-heading'. */
+  readonly navigationFocus?: RouteNavigationFocus
 }
 
 /** Mount `ui` inside a RouteProvider over `table`, at `path`. */
@@ -41,7 +44,15 @@ export function renderRouteTable(
   ui: ReactNode,
   options: RenderRouteOptions = {},
 ): RenderResult {
-  const { path = '/', fallback, presence, pending, failed, basename } = options
+  const {
+    path = '/',
+    fallback,
+    presence,
+    pending,
+    failed,
+    basename,
+    navigationFocus,
+  } = options
   const fallbackView =
     fallback ??
     ((context: RouteContext): ReactNode => `no route matched: ${context.path}`)
@@ -54,6 +65,7 @@ export function renderRouteTable(
       pending={pending}
       failed={failed}
       basename={basename}
+      navigationFocus={navigationFocus}
     >
       {ui}
     </RouteProvider>,

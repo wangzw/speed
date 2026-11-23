@@ -15,7 +15,11 @@
  * Everything not listed here is internal.
  */
 
-export { RouteProvider, type RouteProviderProps } from './RouteProvider.js'
+export {
+  RouteProvider,
+  type RouteNavigationFocus,
+  type RouteProviderProps,
+} from './RouteProvider.js'
 export { RouteView } from './RouteView.js'
 export { RouteLink, type RouteLinkProps } from './RouteLink.js'
 export {

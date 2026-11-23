@@ -112,6 +112,25 @@ not exported.
   are peer (required) dependencies — one copy in the host tree is what makes
   router context identity work; this package never depends on them directly.
   There are no regular dependencies.
+- **Navigation focus is on by default, and its rule is private.** After an
+  in-app navigation changes the path, `RouteProvider` hands focus to the new
+  page's first level-one heading inside its `main` landmark, or to that
+  landmark when there is none. The heading lookup and its hidden-subtree
+  test stop at `main` (the scope), so a suppressed ancestor above the
+  landmark does not suppress its content. The first location never moves
+  focus; a `REPLACE` before the document has received a *trusted*
+  `pointerdown`, `keydown` or `click` does not either (a synthetic event a
+  script dispatches has `isTrusted` false and is not an interaction); nor
+  does a page that already placed focus inside its `main`, a modal dialog
+  holding it, except that a persistent `main` landmark holding focus itself
+  is moved off on the next navigation. The rule lives in
+  `src/navigation-focus.tsx` because the no-sibling rule forbids importing
+  it from `@speed/ui-kit`, whose `focusPageLanding` is the same rule clause
+  for clause as an independent implementation (the click judgement shared
+  with layout-kit is the precedent): a change to one must be reviewed
+  against the other in the same change. `navigationFocus="none"` turns the
+  hand-off off for a host that owns it. The hand-off renders no text, so
+  the rule above is unchanged by it.
 - **The public API is frozen by convention.** Lockstep versioning makes a
   breaking change a breaking release; extend the surface only intentionally.
   Adding an optional prop or field is source-compatible; removing or
@@ -153,7 +172,22 @@ never `fallback` (an unregistered path still reaches it);
 navigation, `useMatch` and `useHasRoute` agree on the same narrowed set;
 `useMatch` has no prefix inheritance. The consistency check is asserted both
 directly (`table.test.ts`) and through the provider
-(`RouteProvider.test.tsx`), where the throw is the assertion.
+(`RouteProvider.test.tsx`), where the throw is the assertion. The
+navigation-focus suite pins the hand-off: a link inside the page, a nav
+entry outside it, an imperative `useNavigate` and the browser's back button
+each land on the new page's heading, while the first screen, a load-time
+replace, a query-string-only change, focus the page placed itself, a modal
+dialog and `navigationFocus="none"` each leave focus where it was. The rule
+cases pin the landing itself: a temporary `tabindex` on the heading removed
+when focus moves away, the landmark as the fallback when it holds no
+level-one heading, a heading in a hidden subtree skipped, the hidden walk
+stopping at `main`, a focus call that cannot land clearing its temporary
+attribute, and a persistent `main` that holds focus being left on the next
+navigation. The suite runs under jsdom, where every event is synthetic, so
+it asserts only that a synthetic click is not an interaction; the trusted
+half -- a `REPLACE` after a real click moves focus -- is
+`src/navigation-focus.browser.test.tsx`, run by `make web-browser`, with
+Vitest's browser-mode `userEvent` delivering the input through Chromium.
 `src/usage-example.test.tsx` compiles and executes the README's Quick start,
 so the documented composition cannot drift from the API; when that
 composition changes, this file changes with it.
