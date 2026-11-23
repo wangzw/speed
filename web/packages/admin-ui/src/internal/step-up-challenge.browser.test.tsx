@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { ApiError } from '@speed/api-client'
@@ -22,6 +22,7 @@ import { bindAdminRequest } from '../../test-utils/request-rig.js'
 import { createStepUpSession } from '../../test-utils/session.js'
 import { StepUpChallenge } from './step-up-challenge.js'
 import enUS from '../locales/en-US.json' with { type: 'json' }
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
 /** The one spacing token an action row puts between adjacent controls. */
 const ACTION_GAP = 8
@@ -150,5 +151,132 @@ describe('StepUpChallenge actions in Chromium', () => {
     expect(alertBox.height).toBeGreaterThan(0)
     expect(alertBox.top - descriptionBox.bottom).toBeGreaterThanOrEqual(16)
     expect(fieldBox.top - alertBox.bottom).toBeGreaterThanOrEqual(16)
+  })
+})
+
+/** Whether the control is unavailable in either the natively disabled
+ * form or the focusable aria-disabled form. The focus cases wait on this so
+ * the state change is observed whichever way the control renders it. */
+function isUnavailable(control: HTMLElement): boolean {
+  return (
+    control.hasAttribute('disabled') ||
+    control.getAttribute('aria-disabled') === 'true'
+  )
+}
+
+describe('StepUpChallenge focus in Chromium', () => {
+  it('keeps focus on the chosen factor while its answer is in flight', async () => {
+    // Clicking a factor starts the answer. Before the answer settles the
+    // option group must stop accepting another answer; the control that was
+    // clicked keeps the focus the click gave it, so the operator's place is
+    // not lost while the write runs.
+    await page.viewport(900, 900)
+    bindAdminRequest((call) => {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+        return { factors: [ACTIVE_FACTOR] }
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    let answering = false
+    const session: AuthSession = {
+      ...createStepUpSession(),
+      startAuthenticatedFlow: () =>
+        Promise.resolve<AuthnFlowState>({
+          seq: 1,
+          state: 'second',
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      answerFlow: () => {
+        answering = true
+        return new Promise<AuthnFlowState>(() => {})
+      },
+    }
+    const user = userEvent.setup()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+      { language: 'zh-CN' },
+    )
+
+    const totp = await screen.findByRole('button', {
+      name: zhCN.stepUp.factorKind.totp,
+    })
+    await user.click(totp)
+    await waitFor(() => expect(answering).toBe(true))
+    await waitFor(() => expect(isUnavailable(totp)).toBe(true))
+
+    expect(document.activeElement).toBe(totp)
+  })
+
+  it('keeps focus on the submit while a throttled answer’s wait runs', async () => {
+    // A throttled answer keeps the step form and holds its submit until the
+    // wait elapses. The control that sent the answer keeps the focus the
+    // click gave it, so the operator does not have to find it again.
+    await page.viewport(900, 900)
+    bindAdminRequest((call) => {
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+        return { factors: [ACTIVE_FACTOR] }
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    let answered = 0
+    const session: AuthSession = {
+      ...createStepUpSession(),
+      startAuthenticatedFlow: () =>
+        Promise.resolve<AuthnFlowState>({
+          seq: 1,
+          state: 'second',
+          next: { kind: 'factor', factors: [{ id: 'f1', kind: 'totp' }] },
+        }),
+      answerFlow: () => {
+        answered += 1
+        if (answered === 1) {
+          return Promise.resolve<AuthnFlowState>({
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'code', required: true }],
+            },
+          })
+        }
+        return Promise.reject(
+          new ApiError({
+            status: 429,
+            code: 'ratelimit.throttled',
+            attempts: 1,
+            retryAfterMs: 30_000,
+          }),
+        )
+      },
+    }
+    const user = userEvent.setup()
+    renderWithProviders(
+      <StepUpChallenge
+        open
+        session={session}
+        onSuccess={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+      { language: 'zh-CN' },
+    )
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
+    )
+    await user.type(await screen.findByLabelText(/code/i), '123456')
+    const submit = screen.getByRole('button', { name: zhCN.stepUp.submit })
+    await user.click(submit)
+    // The refusal's countdown is on screen and the submit is held.
+    await screen.findByText(
+      zhCN.throttle.countdown.replace('{{seconds}}', '30'),
+    )
+    await waitFor(() => expect(isUnavailable(submit)).toBe(true))
+
+    expect(document.activeElement).toBe(submit)
   })
 })
