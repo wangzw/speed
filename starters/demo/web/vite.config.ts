@@ -120,6 +120,12 @@ export default defineConfig({
               name: 'speed-runtime',
               test: /[\\/]web[\\/]packages[\\/](api-client|api-sdk|auth-core|i18n|route-kit|tokens)[\\/]src[\\/]/,
             },
+            // The admin locale data is a role of its own: it changes with
+            // the copy rather than with the components that read it.
+            {
+              name: 'speed-admin-locales',
+              test: /[\\/]web[\\/]packages[\\/]admin-ui[\\/]src[\\/]locales[\\/]/,
+            },
             {
               name: 'speed-admin',
               test: /[\\/]web[\\/]packages[\\/]admin-ui[\\/]src[\\/]/,
