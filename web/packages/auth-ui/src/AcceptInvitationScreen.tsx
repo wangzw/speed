@@ -65,12 +65,17 @@
  * device zone.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
-import { errorCodeOf, useFormatInstant, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  ActionButton,
+  errorCodeOf,
+  useFormatInstant,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { RetryAction } from './internal/retry-action.js'
@@ -373,6 +378,32 @@ export function AcceptInvitationScreen({
     }
   }, [token, attempt, invitations, signedIn])
 
+  // Whether this screen's own acceptance has landed. The completion block
+  // replaces the action area, so the control that started the acceptance
+  // leaves the document with it.
+  const accepted = state.status === 'loaded' && state.accepted
+
+  // The completion heading is the landing when the action area unmounts.
+  // Focus is handed over only when the removal took it: the focused control
+  // is gone, focus already rested on the body, or it points at a node no
+  // longer in the document. Focus on a control that is still here is where
+  // the operator moved it during the acceptance, and that choice stands.
+  const completionHeading = useRef<HTMLHeadingElement>(null)
+  useLayoutEffect(() => {
+    if (!accepted) {
+      return
+    }
+    const active = document.activeElement
+    if (
+      active !== null &&
+      active !== document.body &&
+      (!(active instanceof HTMLElement) || active.isConnected)
+    ) {
+      return
+    }
+    completionHeading.current?.focus()
+  }, [accepted])
+
   const accept = (): void => {
     // Every attempt starts from a clean result: the previous attempt's
     // refusal or proof step does not stand beside this attempt.
@@ -490,7 +521,7 @@ export function AcceptInvitationScreen({
     )
   }
 
-  const { invitation, eligibility, accepted } = state
+  const { invitation, eligibility } = state
   // The public read supplies the organization names; the eligibility read
   // can only move a pending link to a terminal state, because the two calls
   // are separate instants. A public read that already reached a terminal
@@ -627,7 +658,14 @@ export function AcceptInvitationScreen({
       >
         {accepted ? (
           <>
-            <Typography component={nextHeadingLevel(headingLevel)} variant="h6">
+            {/* The landing for the unmounted action area: focusable without
+                entering the tab order, named by its own text. */}
+            <Typography
+              ref={completionHeading}
+              component={nextHeadingLevel(headingLevel)}
+              variant="h6"
+              tabIndex={-1}
+            >
               {t('acceptInvitation.accepted.title')}
             </Typography>
             <Typography color="text.secondary">
@@ -717,25 +755,24 @@ export function AcceptInvitationScreen({
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             {onProveEmail !== undefined ? (
-              <Button
+              <ActionButton
                 type="button"
-                variant="outlined"
-                disabled={accepting}
+                unavailable={accepting}
                 onClick={onProveEmail}
                 sx={{ alignSelf: 'flex-start' }}
               >
                 {t('acceptInvitation.unproved.manageAccount')}
-              </Button>
+              </ActionButton>
             ) : null}
-            <Button
+            <ActionButton
               type="button"
-              variant="contained"
-              disabled={accepting}
+              emphasis="primary"
+              busy={accepting}
               onClick={accept}
               sx={{ alignSelf: 'flex-start' }}
             >
               {t('acceptInvitation.unproved.retry')}
-            </Button>
+            </ActionButton>
           </Box>
           {/* The proof step's "accept again" is an acceptance like any
               other, so its whole-attempt failures render here too. */}
@@ -756,14 +793,14 @@ export function AcceptInvitationScreen({
               </Typography>
             </Box>
           ) : null}
-          <Button
-            variant="contained"
-            disabled={accepting}
+          <ActionButton
+            emphasis="primary"
+            busy={accepting}
             onClick={accept}
             sx={{ alignSelf: 'flex-start' }}
           >
             {t('acceptInvitation.accept')}
-          </Button>
+          </ActionButton>
           <InlineError code={acceptError} />
         </Box>
       )}

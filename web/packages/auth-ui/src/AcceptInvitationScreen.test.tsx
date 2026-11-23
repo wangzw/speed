@@ -57,6 +57,15 @@ const anonymousActions = {
   onRegister: vi.fn(),
 }
 
+/** A promise the test settles by hand, for observing an in-flight write. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 /** The bundle's invitation sentence with the fixture's values, for the
  * default (no inviter, no role) case. */
 function invitedSentence(
@@ -479,6 +488,42 @@ describe('AcceptInvitationScreen', () => {
     expect(onAccepted).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the accept control focused and marked busy while the acceptance runs', async () => {
+    // Acceptance is a write whose reply can take a while. A natively
+    // disabled button drops a keyboard user's focus to the document body;
+    // the control stays focusable and announces that its own action is in
+    // flight instead.
+    const pending = deferred<void>()
+    const acceptInvitation = vi.fn(() => pending.promise)
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+        signedIn={true}
+      />,
+    )
+    const accept = await screen.findByRole('button', {
+      name: zhCN.acceptInvitation.accept,
+    })
+    await user.click(accept)
+    expect(accept).toHaveFocus()
+    expect(accept).toHaveAttribute('aria-disabled', 'true')
+    expect(accept).toHaveAttribute('aria-busy', 'true')
+    expect(acceptInvitation).toHaveBeenCalledTimes(1)
+    // Every activation path is swallowed while the acceptance runs.
+    await user.click(accept)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(acceptInvitation).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      pending.resolve()
+    })
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.accepted.title),
+    ).toBeInTheDocument()
+  })
+
   it('fills a status region that stood empty with the acceptance confirmation', async () => {
     // The confirmation's role="status" region must already exist and be
     // empty when the acceptance lands: a live region announces only
@@ -509,6 +554,72 @@ describe('AcceptInvitationScreen', () => {
     // The same node carried both frames: it was not replaced by one that
     // mounted together with the text.
     expect(screen.getByRole('status')).toBe(region)
+  })
+
+  it('moves focus to the completion heading when the acceptance lands', async () => {
+    // The acceptance removes the action area, taking the control that
+    // started it out of the document. Without a landing a keyboard user
+    // starts tabbing from the top of the page; the confirmation heading,
+    // focusable without entering the tab order, is where the new content
+    // begins.
+    const pending = deferred<void>()
+    const acceptInvitation = vi.fn(() => pending.promise)
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+        signedIn={true}
+      />,
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
+    )
+    await act(async () => {
+      pending.resolve()
+    })
+    const heading = await screen.findByRole('heading', {
+      name: zhCN.acceptInvitation.accepted.title,
+    })
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(heading).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('leaves focus where the operator moved it when the acceptance lands', async () => {
+    // Focus is handed over only when the removed action had it. An operator
+    // who moved to a control that is still in the document keeps that
+    // resting place; the completion heading must not pull it away.
+    const pending = deferred<void>()
+    const acceptInvitation = vi.fn(() => pending.promise)
+    const user = userEvent.setup()
+    renderWithProviders(
+      <>
+        <AcceptInvitationScreen
+          token="tok-1"
+          invitations={operations({ acceptInvitation })}
+          signedIn={true}
+        />
+        <button type="button">Elsewhere</button>
+      </>,
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
+    )
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    elsewhere.focus()
+    expect(elsewhere).toHaveFocus()
+    await act(async () => {
+      pending.resolve()
+    })
+    const heading = await screen.findByRole('heading', {
+      name: zhCN.acceptInvitation.accepted.title,
+    })
+    expect(elsewhere).toHaveFocus()
+    expect(heading).not.toHaveFocus()
   })
 
   it('re-reads a 409 refusal and renders the terminal state instead of the refusal sentence', async () => {
@@ -587,7 +698,7 @@ describe('AcceptInvitationScreen', () => {
     expect(readInvitation).toHaveBeenCalledTimes(1)
     expect(
       screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-    ).toBeEnabled()
+    ).not.toHaveAttribute('aria-disabled', 'true')
     // The moved-link sentence is not this refusal's answer.
     expect(
       screen.queryByText(zhCN.errors.authn.invitation_terminal),
@@ -713,10 +824,14 @@ describe('AcceptInvitationScreen', () => {
     expect(
       await screen.findByText(zhCN.errors.authn.unavailable),
     ).toBeInTheDocument()
-    // The accept action remains: a refused acceptance is retryable.
-    expect(
-      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
-    ).toBeEnabled()
+    // The accept action remains: a refused acceptance is retryable. The
+    // refusal settled onto the control that started it, which keeps focus
+    // and is available again.
+    const accept = screen.getByRole('button', {
+      name: zhCN.acceptInvitation.accept,
+    })
+    expect(accept).toHaveFocus()
+    expect(accept).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('shows the proof step when the caller has not proved the invited email', async () => {
@@ -759,6 +874,32 @@ describe('AcceptInvitationScreen', () => {
     ).not.toBeInTheDocument()
     // The refusal is not a whole-attempt error banner.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('moves focus to the proof step’s first control when it replaces the accept action', async () => {
+    // The proof step replaces the surface the viewer was working in, so the
+    // control that started the acceptance unmounts; focus lands on the new
+    // step's first control rather than the document body.
+    const acceptInvitation = vi.fn(() => Promise.reject(UNPROVED))
+    const onProveEmail = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+        signedIn={true}
+        onProveEmail={onProveEmail}
+      />,
+    )
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.acceptInvitation.accept,
+      }),
+    )
+    const manage = await screen.findByRole('button', {
+      name: zhCN.acceptInvitation.unproved.manageAccount,
+    })
+    await waitFor(() => expect(manage).toHaveFocus())
   })
 
   it('points at the host account surface from the proof step', async () => {
@@ -816,6 +957,56 @@ describe('AcceptInvitationScreen', () => {
       await screen.findByText(zhCN.acceptInvitation.accepted.title),
     ).toBeInTheDocument()
     expect(onAccepted).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the manage-account action back without a reason while an acceptance runs', async () => {
+    // The proof step's retry and its account link share one surface. The
+    // in-flight one carries the busy state; the other is only held back, so
+    // it stays focusable and gives no reason it does not have.
+    const pending = deferred<void>()
+    const acceptInvitation = vi.fn(() => pending.promise)
+    const onProveEmail = vi.fn()
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({
+          readEligibility: () =>
+            Promise.resolve({ state: 'pending', emailProved: false }),
+          acceptInvitation,
+        })}
+        signedIn={true}
+        onProveEmail={onProveEmail}
+      />,
+    )
+    const retry = await screen.findByRole('button', {
+      name: zhCN.acceptInvitation.unproved.retry,
+    })
+    const manage = screen.getByRole('button', {
+      name: zhCN.acceptInvitation.unproved.manageAccount,
+    })
+    await user.click(retry)
+    expect(retry).toHaveFocus()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(retry).toHaveAttribute('aria-busy', 'true')
+
+    expect(manage).toHaveAttribute('aria-disabled', 'true')
+    expect(manage).not.toHaveAttribute('aria-busy', 'true')
+    expect(manage).not.toHaveAccessibleDescription()
+
+    manage.focus()
+    expect(manage).toHaveFocus()
+    await user.click(manage)
+    await user.keyboard('{Enter}')
+    await user.keyboard(' ')
+    expect(onProveEmail).not.toHaveBeenCalled()
+
+    await act(async () => {
+      pending.resolve()
+    })
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.accepted.title),
+    ).toBeInTheDocument()
   })
 
   it('reports a failed retry from the proof step instead of staying silent', async () => {
