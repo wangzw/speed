@@ -14,12 +14,20 @@
  * Both actions report through one write-feedback scope: the header action
  * and every row action share one result slot under the list, so a success
  * and a failure never stand together and the attempt that settles last is
- * the one shown. While one attempt is in flight every write control in the
- * scope -- the header action, every row action and the pager -- disables
- * and reads as busy, so attempts never overlap. Marking one message read
- * confirms with that message's title, not only by flipping the row; marking
- * all confirms the answer's count. A page, group or page-size change is a
- * new context and clears the slot.
+ * the one shown. While one attempt is in flight the control that started
+ * it reports busy and every other write control in the scope -- the header
+ * action, the other rows' actions, the titles that activate a message and
+ * the pager -- stays focusable and unavailable without a reason, so
+ * attempts never overlap. Marking one message read confirms with that
+ * message's title, not only by flipping the row; marking all confirms the
+ * answer's count. A page, group or page-size change is a new context and
+ * clears the slot.
+ *
+ * A landed row action takes its own button out with the row turning read,
+ * so focus moves in the same commit to the same button on the next unread
+ * row, else the previous one, else the list container. The move happens
+ * only when focus was on the removed button (the browser drops it to the
+ * body); a reader who moved focus elsewhere keeps it.
  *
  * A host may narrow and shape the surface through optional props: a group
  * filter and a page size (with previous/next paging driven by the
@@ -39,10 +47,9 @@
  * it with the error placeholder.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import ButtonBase from '@mui/material/ButtonBase'
 import Chip from '@mui/material/Chip'
 import List from '@mui/material/List'
@@ -52,10 +59,12 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import type { NotificationMessage } from '@speed/api-sdk'
 import {
+  ActionButton,
   ListSkeleton,
   PageLayout,
   SectionCard,
   WriteFeedbackRegion,
+  useActivationGuard,
   useFormatInstant,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -105,6 +114,45 @@ export type NotificationInboxProps = {
 function isUnread(message: NotificationMessage): boolean {
   const readAt: string | null | undefined = message.read_at
   return readAt === undefined || readAt === null || readAt === ''
+}
+
+/** The write the inbox scope has in flight, and which control started it.
+ * One scope interlocks its writes, so at most one of these stands. A title
+ * that opens an unread message starts the same row write as that row's own
+ * action, which is what the origin tells apart. */
+type PendingWrite =
+  | { readonly kind: 'all' }
+  | {
+      readonly kind: 'row'
+      readonly messageId: string
+      readonly origin: 'row' | 'title'
+    }
+
+/** The id of the row whose mark-read action takes focus when the action of
+ * `removedId`'s row is gone from the rendered rows: the next row that still
+ * has one, else the previous row, else none (the caller falls back to the
+ * list container). */
+function rowLandingId(
+  rows: readonly NotificationMessage[],
+  removedId: string,
+): string | null {
+  const index = rows.findIndex((message) => message.id === removedId)
+  if (index === -1) {
+    return null
+  }
+  for (let next = index + 1; next < rows.length; next += 1) {
+    const candidate = rows[next]
+    if (candidate !== undefined && isUnread(candidate)) {
+      return candidate.id
+    }
+  }
+  for (let previous = index - 1; previous >= 0; previous -= 1) {
+    const candidate = rows[previous]
+    if (candidate !== undefined && isUnread(candidate)) {
+      return candidate.id
+    }
+  }
+  return null
 }
 
 /** The identity of a list context: one group filter and page size. A
@@ -160,11 +208,21 @@ export function NotificationInbox({
   // confirmation never repeats a marker the row already resolved.
   const formatInstant = useFormatInstant()
   const resetFeedback = feedback.reset
-  // One write in flight interlocks the scope's writes: the header action,
-  // every row's action and the pager disable together, so two attempts
-  // never overlap and one result never describes another attempt's
-  // context. Every write control reads as busy for the same reason.
-  const writePending = feedback.pending
+  // The write in flight and the control that started it. The scope's other
+  // write controls stay unavailable without a reason while it runs, so two
+  // attempts never overlap and one result never describes another attempt's
+  // context.
+  const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
+  // The last total a settled page of the current list reported. It keeps the
+  // pager mounted while the next page's read is in flight.
+  const [pagerTotal, setPagerTotal] = useState(0)
+  // The rendered row actions by message id, and the list container: the two
+  // landing places when a landed write takes the action that started it out
+  // of the document. The removal a write in flight belongs to sits beside
+  // them.
+  const rowActions = useRef(new Map<string, HTMLButtonElement>())
+  const listContainer = useRef<HTMLUListElement | null>(null)
+  const pendingRowRemoval = useRef<{ readonly messageId: string } | null>(null)
 
   // A new filter or page size is a new list: drop the previous list's
   // standing result, which would otherwise describe another context. The
@@ -177,32 +235,97 @@ export function NotificationInbox({
     }
     previousContext.current = listContext
     setPages({ context: listContext, index: 0 })
+    setPagerTotal(0)
+    setPendingWrite(null)
+    // A write started on the old list must not move focus to a landing place
+    // that belongs to the new one.
+    pendingRowRemoval.current = null
     resetFeedback()
   }, [listContext, resetFeedback])
 
   const page = messages.data
+
+  // A landed row write turns its row read, so the action that started it
+  // leaves the document and the browser drops focus to the body. Focus moves
+  // in the same commit to the same action on the next unread row, else on
+  // the previous one, else to the list container -- but only when the
+  // removal is what dropped it: focus the reader moved elsewhere stays put.
+  useLayoutEffect(() => {
+    const pending = pendingRowRemoval.current
+    if (pending === null || rowActions.current.has(pending.messageId)) {
+      return
+    }
+    pendingRowRemoval.current = null
+    const active = document.activeElement
+    if (active !== null && active !== document.body) {
+      return
+    }
+    const rows = page?.messages ?? []
+    const landing = rowLandingId(rows, pending.messageId)
+    const target =
+      (landing === null ? undefined : rowActions.current.get(landing)) ??
+      listContainer.current
+    target?.focus()
+  }, [page])
   const list = page?.messages ?? []
-  const total = page?.total ?? 0
+  // A page change reads a new window, and until that answer lands there is
+  // no page to take a total from. The pager keeps the last settled total for
+  // its own list so it stays mounted across the read: unmounting it would
+  // take the control the operator just activated out of the document and
+  // drop their focus to the page body. A new list context resets it.
+  useEffect(() => {
+    if (page !== undefined) {
+      setPagerTotal(page.total)
+    }
+  }, [page])
+  const total = page?.total ?? pagerTotal
   const pending = messages.isPending && page === undefined
 
   const runMarkAll = (): void => {
-    void feedback.run(async () => {
-      const result = await markAllRead.mutateAsync()
-      return t('inbox.markAllReadDone', { n: result?.read_count ?? 0 })
-    })
+    setPendingWrite({ kind: 'all' })
+    void feedback
+      .run(async () => {
+        const result = await markAllRead.mutateAsync()
+        return t('inbox.markAllReadDone', { n: result?.read_count ?? 0 })
+      })
+      .finally(() => setPendingWrite(null))
   }
 
   // Marking one message read confirms the message it changed; `after` runs
   // only once the write has landed, which is how opening a linked message
-  // never navigates on a read that did not reach the server.
-  const markOneRead = (message: NotificationMessage, after?: () => void): void => {
-    void feedback.run(async () => {
-      await markRead.mutateAsync({ messageId: message.id })
-      after?.()
-      return t('inbox.markReadDone', {
-        title: resolveMessageText(message.title, message.params, formatInstant),
-      })
+  // never navigates on a read that did not reach the server. A row action's
+  // own success removes it with the row, so its landing place is recorded
+  // before the attempt starts; a title that opens the message keeps its own
+  // place because it stays in the document.
+  const markOneRead = (
+    message: NotificationMessage,
+    options: {
+      readonly origin: 'row' | 'title'
+      readonly after?: () => void
+    } = { origin: 'row' },
+  ): void => {
+    setPendingWrite({
+      kind: 'row',
+      messageId: message.id,
+      origin: options.origin,
     })
+    if (options.origin === 'row') {
+      pendingRowRemoval.current = { messageId: message.id }
+    }
+    void feedback
+      .run(async () => {
+        try {
+          await markRead.mutateAsync({ messageId: message.id })
+        } catch (error) {
+          pendingRowRemoval.current = null
+          throw error
+        }
+        options.after?.()
+        return t('inbox.markReadDone', {
+          title: resolveMessageText(message.title, message.params, formatInstant),
+        })
+      })
+      .finally(() => setPendingWrite(null))
   }
 
   // A page change is a context change: the previous page's write result no
@@ -221,20 +344,28 @@ export function NotificationInbox({
       onOpen(message)
       return
     }
-    markOneRead(message, () => onOpen(message))
+    markOneRead(message, { origin: 'title', after: () => onOpen(message) })
   }
 
+  // "Mark all as read" starts its own write or reports the scope's other one.
+  // Its precondition -- something is unread -- is the one state it explains;
+  // a write in flight elsewhere in the scope makes it unavailable with no
+  // reason, like any other sibling write control.
+  const markAllInitiated = pendingWrite?.kind === 'all'
+  const markAllBlocked = (unreadTotal ?? 0) === 0
   const markAllAction = (
-    <Button
+    <ActionButton
       type="button"
-      variant="outlined"
       size="small"
-      disabled={writePending || (unreadTotal ?? 0) === 0}
-      loading={writePending}
+      busy={markAllInitiated}
+      unavailable={!markAllInitiated && (feedback.pending || markAllBlocked)}
+      unavailableReason={
+        markAllBlocked ? t('inbox.markAllReadUnavailable') : undefined
+      }
       onClick={runMarkAll}
     >
       {t('inbox.markAllRead')}
-    </Button>
+    </ActionButton>
   )
 
   const paged = pageSize !== undefined && pageSize > 0 && total > pageSize
@@ -278,21 +409,51 @@ export function NotificationInbox({
         }}
       >
         {(settled) => (
-          <List aria-label={t('inbox.title')} sx={{ p: 0 }}>
-            {settled.messages.map((message) => (
-              <NotificationRow
-                key={message.id}
-                message={message}
-                markReadDisabled={writePending}
-                onMarkRead={() => markOneRead(message)}
-                onOpen={
-                  onOpen === undefined || message.link === ''
-                    ? undefined
-                    : () => openMessage(message)
-                }
-                renderDetail={renderDetail}
-              />
-            ))}
+          // The list is the control group's container: a landed row action
+          // that leaves no unread row behind lands focus here. It is named
+          // and programmatically focusable, so it is announced as the group
+          // the result belongs to.
+          <List
+            ref={listContainer}
+            tabIndex={-1}
+            aria-label={t('inbox.title')}
+            sx={{ p: 0 }}
+          >
+            {settled.messages.map((message) => {
+              const rowWrite =
+                pendingWrite?.kind === 'row' &&
+                pendingWrite.messageId === message.id
+                  ? pendingWrite
+                  : null
+              return (
+                <NotificationRow
+                  key={message.id}
+                  message={message}
+                  markReadBusy={rowWrite?.origin === 'row'}
+                  markReadUnavailable={
+                    feedback.pending && rowWrite?.origin !== 'row'
+                  }
+                  markReadRef={(element) => {
+                    if (element === null) {
+                      rowActions.current.delete(message.id)
+                    } else {
+                      rowActions.current.set(message.id, element)
+                    }
+                  }}
+                  titleBusy={rowWrite?.origin === 'title'}
+                  titleUnavailable={
+                    feedback.pending && rowWrite?.origin !== 'title'
+                  }
+                  onMarkRead={() => markOneRead(message)}
+                  onOpen={
+                    onOpen === undefined || message.link === ''
+                      ? undefined
+                      : () => openMessage(message)
+                  }
+                  renderDetail={renderDetail}
+                />
+              )
+            })}
           </List>
         )}
       </TenantAsyncSection>
@@ -301,22 +462,22 @@ export function NotificationInbox({
         <Box
           sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 2 }}
         >
-          <Button
+          <ActionButton
             type="button"
             size="small"
-            disabled={previousDisabled || writePending}
+            unavailable={previousDisabled || feedback.pending}
             onClick={() => goToPage(pageIndex - 1)}
           >
             {t('inbox.previous')}
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
             type="button"
             size="small"
-            disabled={nextDisabled || writePending}
+            unavailable={nextDisabled || feedback.pending}
             onClick={() => goToPage(pageIndex + 1)}
           >
             {t('inbox.next')}
-          </Button>
+          </ActionButton>
         </Box>
       )}
 
@@ -351,19 +512,38 @@ export function NotificationInbox({
  * row's activation control. */
 function NotificationRow({
   message,
-  markReadDisabled,
+  markReadBusy,
+  markReadUnavailable,
+  markReadRef,
+  titleBusy,
+  titleUnavailable,
   onMarkRead,
   onOpen,
   renderDetail,
 }: {
   readonly message: NotificationMessage
-  readonly markReadDisabled: boolean
+  readonly markReadBusy: boolean
+  readonly markReadUnavailable: boolean
+  readonly markReadRef: (element: HTMLButtonElement | null) => void
+  readonly titleBusy: boolean
+  readonly titleUnavailable: boolean
   readonly onMarkRead: () => void
   readonly onOpen: (() => void) | undefined
   readonly renderDetail: ((message: NotificationMessage) => ReactNode) | undefined
 }) {
   const { t } = useNotificationUiTranslation()
   const formatInstant = useFormatInstant()
+  // The title cannot be an ActionButton: it is a text control inside the
+  // row's typography. It takes the guard directly, so a swallowed activation
+  // never marks the message read or hands it to the host mid-write. A title
+  // that starts the row's read reports busy like any other initiating
+  // control; a title reached while another write runs is unavailable.
+  const activateTitle = useActivationGuard(
+    () => {
+      onOpen?.()
+    },
+    { busy: titleBusy, unavailable: titleUnavailable },
+  )
   const unread = isUnread(message)
   // The server writes a time segment as a marker naming the parameter; both
   // the visible text and the action's accessible name carry the resolved
@@ -377,16 +557,17 @@ function NotificationRow({
       sx={{ px: 0 }}
       secondaryAction={
         unread ? (
-          <Button
+          <ActionButton
+            ref={markReadRef}
             type="button"
             size="small"
-            disabled={markReadDisabled}
-            loading={markReadDisabled}
+            busy={markReadBusy}
+            unavailable={markReadUnavailable}
             aria-label={t('inbox.markReadAria', { title })}
             onClick={onMarkRead}
           >
             {t('inbox.markRead')}
-          </Button>
+          </ActionButton>
         ) : undefined
       }
     >
@@ -420,9 +601,23 @@ function NotificationRow({
                 </Typography>
               ) : (
                 <ButtonBase
-                  disabled={markReadDisabled}
-                  onClick={onOpen}
-                  sx={{ textAlign: 'start', borderRadius: 1, p: 0 }}
+                  aria-busy={titleBusy ? true : undefined}
+                  aria-disabled={
+                    titleBusy || titleUnavailable ? true : undefined
+                  }
+                  onClick={activateTitle}
+                  sx={{
+                    textAlign: 'start',
+                    borderRadius: 1,
+                    p: 0,
+                    // The title keeps its own look, but an unavailable one
+                    // gives no pointer feedback: the write behind it is what
+                    // is running, and the row already reports it.
+                    '&[aria-disabled="true"]': {
+                      cursor: 'default',
+                      '&:hover': { backgroundColor: 'transparent' },
+                    },
+                  }}
                 >
                   <Typography
                     component="span"
