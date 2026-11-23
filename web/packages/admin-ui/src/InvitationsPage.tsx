@@ -1277,7 +1277,8 @@ export function InvitationsPage({
               <CursorPager
                 page={invitationPage}
                 hasNext={invitationHasNext}
-                busy={invitationFeedback.pending || invitations.isFetching}
+                busy={invitationFeedback.pending}
+                reading={invitations.isFetching}
                 onPrevious={previousInvitationPage}
                 onNext={nextInvitationPage}
               />
@@ -1336,7 +1337,8 @@ export function InvitationsPage({
               <CursorPager
                 page={memberPage}
                 hasNext={memberHasNext}
-                busy={membersFeedback.pending || members.isFetching}
+                busy={membersFeedback.pending}
+                reading={members.isFetching}
                 onPrevious={previousMemberPage}
                 onNext={nextMemberPage}
               />

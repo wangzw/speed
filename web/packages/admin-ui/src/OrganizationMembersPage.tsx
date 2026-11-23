@@ -1139,7 +1139,8 @@ export function OrganizationMembersPage({
           <CursorPager
             page={memberPage}
             hasNext={memberNextCursor !== ''}
-            busy={membersFeedback.pending || members.isFetching}
+            busy={membersFeedback.pending}
+            reading={members.isFetching}
             onPrevious={previousMemberPage}
             onNext={nextMemberPage}
           />

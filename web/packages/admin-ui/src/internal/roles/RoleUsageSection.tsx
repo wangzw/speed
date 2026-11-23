@@ -186,7 +186,8 @@ export function RoleUsageSection({
           <CursorPager
             page={page}
             hasNext={nextCursor !== ''}
-            busy={busy || bindings.isFetching}
+            busy={busy}
+            reading={bindings.isFetching}
             onPrevious={onPrevious}
             onNext={onNext}
           />
