@@ -14,7 +14,9 @@
  * request, never a navigation: the URL is reported upward through
  * `onAuthorizeUrl` and the host decides what it is for (a redirect in the
  * host's router, a popup, a new tab). While one request is in flight its
- * own button disables and the others stay live, each flight tracked per
+ * own button is busy -- focusable, `aria-disabled` and `aria-busy`, with
+ * no native disable, so the viewer who started it keeps their place --
+ * and the others stay live, each flight tracked per
  * provider: an earlier attempt's return can never re-enable a later
  * provider's button mid-flight. A failed answer (an unknown or disabled
  * method, an account-unavailable refusal) renders through the block's one
@@ -47,12 +49,11 @@
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
 import type { AuthSession } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { methodLabel } from './internal/labels.js'
-import { errorCodeOf } from '@speed/ui-kit'
+import { ActionButton, errorCodeOf } from '@speed/ui-kit'
 import {
   ChannelFeedbackRegion,
   useChannelFeedback,
@@ -217,16 +218,15 @@ export function SocialSignInSection({
       {providers.map((config) => {
         const icon = config.icon ?? providerIcon?.(config.provider)
         return (
-          <Button
+          <ActionButton
             key={config.provider}
-            variant="outlined"
             fullWidth
             startIcon={icon}
-            disabled={busyProviders.has(config.provider)}
+            busy={busyProviders.has(config.provider)}
             onClick={() => void authorize(config)}
           >
             {methodLabel({ name: config.provider, label: config.label }, t)}
-          </Button>
+          </ActionButton>
         )
       })}
       <ChannelFeedbackRegion feedback={feedback} />
