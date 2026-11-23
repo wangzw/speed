@@ -180,6 +180,7 @@
   "organization": {
     "personal": "组织",
     "create": "创建组织",
+    "accessPending": "正在检查组织访问权限",
     "accessFailed": {
       "title": "无法核实组织访问权限",
       "description": "打开这个组织所需的信息没能加载，请重试。",

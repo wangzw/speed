@@ -180,6 +180,7 @@
   "organization": {
     "personal": "Organization",
     "create": "Create an organization",
+    "accessPending": "Checking organization access",
     "accessFailed": {
       "title": "Could not check organization access",
       "description": "We could not load what we need to open this organization. Please try again.",

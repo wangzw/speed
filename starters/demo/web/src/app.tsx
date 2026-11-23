@@ -36,7 +36,14 @@
  * feature document is unreadable to an anonymous caller.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -69,6 +76,7 @@ import {
 } from '@speed/admin-ui'
 import { ProductShell } from '@speed/product-shell'
 import {
+  ActionButton,
   DisplayTimeZoneProvider,
   useAppThemeMode,
   WriteFeedbackPageProvider,
@@ -349,6 +357,57 @@ function AppFrame({
   // "which organization", and leaving the surface is the sidebar's and the
   // account menu's business.
   const selfTenants = useSelfTenantState()
+  // The organization failure page's retry. The session publishes `pending`
+  // synchronously when a retry starts, so the failure page gives way to the
+  // waiting view before the reads settle; the retry state lives here, above
+  // that swap, so the waiting view can take the focus and hand it back to the
+  // control that started the retry if the reads fail again.
+  const permissionRead = usePermissionRead()
+  const [organizationRetryInFlight, setOrganizationRetryInFlight] =
+    useState(false)
+  // Set when a retry starts and an outcome may still need the focus handed
+  // back: consumed by the failure page's retry control, or by the page that
+  // replaces the waiting view.
+  const organizationRetryReturn = useRef(false)
+  // Whether the failure page (and so its retry control) is on screen. When
+  // the retry settles with the page still mounted, focus never fell with a
+  // swap and there is nothing to hand back.
+  const organizationRetryControlMounted = useRef(false)
+  const retryOrganizationAccess = useCallback((): void => {
+    if (organizationRetryInFlight) {
+      return
+    }
+    organizationRetryReturn.current = true
+    setOrganizationRetryInFlight(true)
+    // The three reads the admission consumes, each reporting its own outcome
+    // to the state that rendered the failure page.
+    void Promise.allSettled([
+      loadSelfTenants(),
+      session.retryFeatures(),
+      Promise.resolve(permissionRead.retry()),
+    ]).finally(() => {
+      setOrganizationRetryInFlight(false)
+      if (organizationRetryControlMounted.current) {
+        organizationRetryReturn.current = false
+      }
+    })
+  }, [organizationRetryInFlight, permissionRead, session])
+  // The retry's waiting view took the focus. When the retry admits the page,
+  // that view unmounts and the new page gets the landing a whole-page swap
+  // gets; a focus the operator moved in the meantime keeps its place.
+  useLayoutEffect(() => {
+    if (
+      organizationAdmission.status !== 'allowed' ||
+      !organizationRetryReturn.current
+    ) {
+      return
+    }
+    organizationRetryReturn.current = false
+    if (document.activeElement !== document.body) {
+      return
+    }
+    focusPageEntry(document.body)
+  }, [organizationAdmission.status])
 
   // The invitation landing renders outside both shells: an invitee arrives
   // before any session exists. The declaration is ungated, so an anonymous
@@ -525,13 +584,28 @@ function AppFrame({
           // A fact the decision needs is still in flight (the tenant, its
           // kind, the feature document or the tenant permission read). Wait
           // inside the tenant frame rather than admitting a surface the
-          // viewer may not have, or bouncing a viewer who does.
-          <RouteGuard status="pending" />
+          // viewer may not have, or bouncing a viewer who does. A retry
+          // started from the failure page lands here: the view takes the
+          // focus the retry control held, rather than dropping it on the
+          // body.
+          <RouteGuard
+            status="pending"
+            pendingFallback={
+              <OrganizationAccessPending
+                takeFocus={organizationRetryInFlight}
+              />
+            }
+          />
         ) : organizationAdmission.status === 'failed' ? (
           // A read the decision needs failed: the answer is unknown, not a
           // denial. The retryable page replaces the redirect, so a viewer
           // who may manage the tenant is not sent home as if they could not.
-          <OrganizationAccessFailed />
+          <OrganizationAccessFailed
+            busy={organizationRetryInFlight}
+            onRetry={retryOrganizationAccess}
+            returnFocus={organizationRetryReturn}
+            controlMounted={organizationRetryControlMounted}
+          />
         ) : (
           // A settled fact rules the surface out -- impersonating, the
           // system or a personal tenant, no served page, or no tenant
@@ -1536,31 +1610,45 @@ function AdminAccessFailed({
  *
  * The retry re-issues every read the admission consumes: the caller tenant
  * list, the feature document and the tenant permission set. Absent any one
- * of them, the admission would simply settle back into this state.
+ * of them, the admission would simply settle back into this state. The retry
+ * itself is owned by AppFrame, above the swap it causes; this page only
+ * reports the click and takes the focus back when the reads fail again -- see
+ * `organizationRetryReturn` there.
  */
-function OrganizationAccessFailed(): ReactElement {
+function OrganizationAccessFailed({
+  busy,
+  onRetry,
+  returnFocus,
+  controlMounted,
+}: {
+  readonly busy: boolean
+  readonly onRetry: () => void
+  /** Consumed once: set when a retry is in flight and its outcome may need the focus back. */
+  readonly returnFocus: { current: boolean }
+  /** Reports whether this page (and so its retry control) is on screen. */
+  readonly controlMounted: { current: boolean }
+}): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const read = usePermissionRead()
-  const { session } = useAppServices()
-  // One retry in flight at a time: a second click while the first reads are
-  // still settling would start a competing caller-tenant read, and the page
-  // must not depend on which one happens to land last.
-  const [retrying, setRetrying] = useState(false)
-  const retry = () => {
-    if (retrying) {
+  const retryControl = useRef<HTMLButtonElement | null>(null)
+  useLayoutEffect(() => {
+    controlMounted.current = true
+    return () => {
+      controlMounted.current = false
+    }
+  }, [controlMounted])
+  useLayoutEffect(() => {
+    if (!returnFocus.current) {
       return
     }
-    setRetrying(true)
-    // The three reads the admission consumes, each of which reports its own
-    // outcome to the state that rendered this page. The feature read's
-    // rejection is caught here because the retry is an action, not a read the
-    // page awaits: its outcome lands in the feature state either way.
-    void Promise.allSettled([
-      loadSelfTenants(),
-      session.retryFeatures(),
-      Promise.resolve(read.retry()),
-    ]).finally(() => setRetrying(false))
-  }
+    returnFocus.current = false
+    // The waiting view took the focus when it replaced this page; once it is
+    // removed, the body is what is left. If the operator moved elsewhere,
+    // that place keeps the focus.
+    if (document.activeElement !== document.body) {
+      return
+    }
+    retryControl.current?.focus()
+  }, [returnFocus])
   return (
     <Box
       component="section"
@@ -1579,9 +1667,47 @@ function OrganizationAccessFailed(): ReactElement {
       <Typography variant="body1">
         {t('organization.accessFailed.description')}
       </Typography>
-      <Button onClick={retry} disabled={retrying}>
+      <ActionButton ref={retryControl} onClick={onRetry} busy={busy}>
         {t('organization.accessFailed.retry')}
-      </Button>
+      </ActionButton>
+    </Box>
+  )
+}
+
+/**
+ * The organization surface's waiting view, rendered inside the tenant frame
+ * while the admission is undecided. It is the landing a retry started from
+ * the failure page hands its focus to: the retry control unmounts with that
+ * page, and without a landing the focus would fall to the body. The region
+ * is programmatically focusable and carries the loading label as its
+ * accessible name; it takes focus only when a retry put it there.
+ */
+function OrganizationAccessPending({
+  takeFocus,
+}: {
+  readonly takeFocus: boolean
+}): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
+  const landing = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    if (takeFocus) {
+      landing.current?.focus()
+    }
+  }, [takeFocus])
+  return (
+    <Box
+      ref={landing}
+      tabIndex={-1}
+      role="status"
+      aria-label={t('organization.accessPending')}
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingY: 6,
+      }}
+    >
+      <CircularProgress aria-hidden="true" />
     </Box>
   )
 }
