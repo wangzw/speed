@@ -46,9 +46,10 @@
  *
  * **Delete is terminal.** It asks through the shared danger confirmation
  * with the two-step guard and a typed-name guard: the confirming button
- * stays disabled until the operator types the organization's name, and its
- * copy states the impact: memberships, bindings, roles and grants are
- * removed, and the name can never be reused.
+ * stays unavailable, stating the mismatch as its reason, until the operator
+ * types the organization's name, and its copy states the impact:
+ * memberships, bindings, roles and grants are removed, and the name can
+ * never be reused.
  *
  * **Failure text is the dialog's own.** Both the transfer endpoint and the
  * delete endpoint answer 409 for several distinct refusals under the same
@@ -60,11 +61,10 @@
  * organization is already a tombstone.
  */
 
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -75,6 +75,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { usePermission } from '@speed/auth-core'
 import {
+  ActionButton,
   ConfirmDialog,
   errorCodeOf,
   httpStatusOf,
@@ -85,6 +86,7 @@ import { useAdminUiErrorText } from './error-text.js'
 import { accountUsername, identityLabel } from './account-identity.js'
 import { useAdminUiTranslation } from './translation.js'
 import { WriteFeedbackRegion } from './write-feedback.js'
+import { removedControlHeldFocus } from './section-heading-focus.js'
 import { useAdminOperations } from '../operations.js'
 import { displayNameOf } from '../TenantProfileFields.js'
 import type {
@@ -195,17 +197,24 @@ function deleteFailureText(
  * rather than shown as "no members", and a read that left a next page
  * unread asks the operator to narrow the text instead of presenting the
  * first page as the whole membership.
+ *
+ * The field is a form input of the transfer dialog, not a context selector:
+ * while the dialog's write is in flight it is `readOnly` rather than
+ * natively disabled, so a focused field keeps its focus and its value. The
+ * member read itself never locks the field -- the read follows the typing,
+ * MUI shows its own loading state, and a native disable here would drop the
+ * focus of the field being typed into.
  */
 function TenantMemberSelector({
   tenant,
   value,
   onChange,
-  disabled,
+  readOnly,
 }: {
   readonly tenant: string
   readonly value: AdminMember | null
   readonly onChange: (member: AdminMember | null) => void
-  readonly disabled: boolean
+  readonly readOnly: boolean
 }) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
@@ -230,14 +239,30 @@ function TenantMemberSelector({
   )
   const truncated =
     members.data !== undefined && members.data.next_cursor !== ''
-  const failed = members.isError
+  // A retry begins as a fresh fetch of a query that has no data, which puts
+  // it back into the pending state; the failure below would unmount with
+  // it and the retry would lose the button its re-read is reported on. The
+  // failure therefore stands until a read succeeds.
+  const [readFailed, setReadFailed] = useState(false)
+  useEffect(() => {
+    if (members.isError) {
+      setReadFailed(true)
+    } else if (members.data !== undefined) {
+      setReadFailed(false)
+    }
+  }, [members.isError, members.data])
+  const failed = readFailed || members.isError
 
   return (
     <Box>
+      {/* The member read follows the typing and never disables this field:
+          a native disable would drop the focus of the operator typing into
+          it. Only the dialog's write locks it, and it takes readOnly so a
+          focused field keeps its focus too. */}
       <Autocomplete<AdminMember>
         size="small"
         value={value}
-        disabled={disabled}
+        readOnly={readOnly}
         onChange={(_event, next) => onChange(next)}
         inputValue={input}
         onInputChange={(_event, nextValue) => setInput(nextValue)}
@@ -266,6 +291,7 @@ function TenantMemberSelector({
               ...params.slotProps,
               input: {
                 ...params.slotProps.input,
+                readOnly,
                 endAdornment: (
                   <>
                     {members.isFetching ? (
@@ -304,15 +330,15 @@ function TenantMemberSelector({
           >
             {t('tenantLifecycle.transfer.membersFailed')}
           </Typography>
-          <Button
+          <ActionButton
             type="button"
             size="small"
-            variant="outlined"
-            disabled={disabled}
+            busy={members.isFetching}
+            unavailable={readOnly}
             onClick={() => void members.refetch()}
           >
             {t('tenantLifecycle.transfer.membersRetry')}
-          </Button>
+          </ActionButton>
         </Box>
       )}
     </Box>
@@ -333,6 +359,13 @@ export interface TenantLifecycleActionsProps {
    * omitted, the component renders its own.
    */
   readonly onSuccess?: (message: string) => void
+  /**
+   * Reports a landed deletion to the host. The deletion withdraws this
+   * control group entirely (the roster row becomes a tombstone, the detail
+   * page loses its lifecycle card), so the host owns the focus landing for
+   * the control that started it.
+   */
+  readonly onDeleted?: (name: string) => void
 }
 
 /**
@@ -443,7 +476,7 @@ function TransferOwnerDialog({
                 tenant={tenant.name}
                 value={member}
                 onChange={setMember}
-                disabled={pending}
+                readOnly={pending}
               />
             ) : (
               <>
@@ -472,21 +505,22 @@ function TransferOwnerDialog({
           )}
         </DialogContent>
         <DialogActions>
-          <Button type="button" onClick={onClose} disabled={pending}>
+          <ActionButton type="button" unavailable={pending} onClick={onClose}>
             {t('common.cancel')}
-          </Button>
-          <Button
+          </ActionButton>
+          <ActionButton
             type="button"
-            variant="contained"
-            disabled={targetAccount === null || pending}
-            loading={pending}
+            emphasis="primary"
+            busy={pending}
+            unavailable={targetAccount === null}
+            unavailableReason={t('tenantLifecycle.transfer.targetRequired')}
             onClick={() => {
               setFailure(null)
               setConfirming(true)
             }}
           >
             {t('tenantLifecycle.transfer.submit')}
-          </Button>
+          </ActionButton>
         </DialogActions>
       </Dialog>
 
@@ -541,6 +575,7 @@ function DeleteTenantDialog({
       cancelLabel={t('common.cancel')}
       confirmLoading={busy}
       confirmDisabled={typed !== name}
+      confirmDisabledReason={t('tenantLifecycle.deleteConfirm.nameMismatch')}
       onCancel={onCancel}
       onConfirm={onConfirm}
     >
@@ -570,6 +605,7 @@ function DeleteTenantDialog({
 export function TenantLifecycleActions({
   tenant,
   onSuccess,
+  onDeleted,
 }: TenantLifecycleActionsProps) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
@@ -583,6 +619,14 @@ export function TenantLifecycleActions({
   const [cancelOpen, setCancelOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [outcome, setOutcome] = useState<LifecycleOutcome | null>(null)
+  const pendingTitleId = useId()
+  // The group's own container: the landing target when a cancelled request
+  // takes its panel -- and the cancel control inside it -- out of the
+  // document.
+  const groupRef = useRef<HTMLDivElement | null>(null)
+  // Whether the last landed write was a cancel, so the pending panel's
+  // withdrawal hands focus on exactly once.
+  const cancelLanded = useRef(false)
 
   const deleted = tenant.status === 'deleted'
   const personal = isPersonalTenant(tenant.kind)
@@ -599,6 +643,22 @@ export function TenantLifecycleActions({
   useEffect(() => {
     setOutcome(null)
   }, [tenant.name])
+
+  // A settled cancel withdraws the pending panel, taking the cancel control
+  // that started the write with it. Focus lands on the group container that
+  // stays; a reader who moved focus elsewhere keeps it.
+  useEffect(() => {
+    if (!cancelLanded.current) {
+      return
+    }
+    if (pending !== null) {
+      return
+    }
+    cancelLanded.current = false
+    if (removedControlHeldFocus()) {
+      groupRef.current?.focus()
+    }
+  }, [pending])
 
   if (!canManage || deleted || personal) {
     return null
@@ -622,6 +682,7 @@ export function TenantLifecycleActions({
     void (async () => {
       try {
         await remove.mutateAsync({ name: tenant.name })
+        onDeleted?.(tenant.name)
         settleSuccess(
           t('tenantLifecycle.deleteConfirm.success', {
             name: tenant.name,
@@ -644,6 +705,7 @@ export function TenantLifecycleActions({
     void (async () => {
       try {
         await cancel.mutateAsync({ name: tenant.name, request: pending.id })
+        cancelLanded.current = true
         settleSuccess(t('tenantLifecycle.transfer.pendingCancelled'))
       } catch (error) {
         setOutcome({
@@ -666,7 +728,12 @@ export function TenantLifecycleActions({
         t('common.accountUnavailable'))
 
   return (
-    <Box>
+    <Box
+      ref={groupRef}
+      role="group"
+      aria-label={t('tenantLifecycle.sectionTitle')}
+      tabIndex={-1}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -676,31 +743,33 @@ export function TenantLifecycleActions({
           rowGap: 1,
         }}
       >
-        <Button
+        <ActionButton
           type="button"
           size="small"
-          variant="outlined"
           aria-label={t('tenantLifecycle.transferAria', { name: tenant.name })}
-          disabled={remove.isPending || pending !== null}
+          unavailable={remove.isPending || cancel.isPending || pending !== null}
+          unavailableDescribedBy={
+            pending !== null ? pendingTitleId : undefined
+          }
           onClick={() => {
             setOutcome(null)
             setTransferOpen(true)
           }}
         >
           {t('tenantLifecycle.transferLabel')}
-        </Button>
-        <Button
+        </ActionButton>
+        <ActionButton
           type="button"
           size="small"
-          variant="outlined"
-          color="error"
+          tone="danger"
           aria-label={t('tenantLifecycle.deleteAria', { name: tenant.name })}
-          disabled={remove.isPending}
-          loading={remove.isPending}
+          data-tenant-delete={tenant.name}
+          busy={remove.isPending}
+          unavailable={cancel.isPending}
           onClick={requestDelete}
         >
           {t('tenantLifecycle.deleteLabel')}
-        </Button>
+        </ActionButton>
       </Box>
       {pending !== null ? (
         <Box
@@ -714,7 +783,11 @@ export function TenantLifecycleActions({
             borderRadius: 1,
           }}
         >
-          <Typography variant="subtitle1" component="h3">
+          <Typography
+            id={pendingTitleId}
+            variant="subtitle1"
+            component="h3"
+          >
             {t('tenantLifecycle.transfer.pendingTitle')}
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 3, rowGap: 0.5, mt: 0.5 }}>
@@ -729,19 +802,19 @@ export function TenantLifecycleActions({
               })}
             </Typography>
           </Box>
-          <Button
+          <ActionButton
             type="button"
             size="small"
-            variant="outlined"
             sx={{ mt: 1 }}
-            disabled={cancel.isPending}
+            busy={cancel.isPending}
+            unavailable={remove.isPending}
             onClick={() => {
               setOutcome(null)
               setCancelOpen(true)
             }}
           >
             {t('tenantLifecycle.transfer.pendingCancel')}
-          </Button>
+          </ActionButton>
         </Box>
       ) : null}
 
