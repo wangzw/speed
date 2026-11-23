@@ -31,8 +31,12 @@ in `@speed/auth-core`, unattached to any view.
 
 Because the shell is a whole-page switch it also owns the page-swap
 accessibility duties, in the sibling family's shape: every branch flip
-moves focus into the branch's own container (the branches render inside a
-focusable, non-tab-stop wrapper), and every flip into the session-ended
+hands focus to the new page — the first level-one heading inside the
+branch's main landmark, else that main landmark, else the branch's first
+level-one heading when it has no main, else its own focusable,
+non-tab-stop wrapper (ui-kit's `focusPageLanding`) — unless
+the new branch has already put focus somewhere inside itself in the same
+commit; and every flip into the session-ended
 view — the destination the shell cannot tell apart by cause, a server-side
 session death and an explicit sign-out being the same snapshot flip —
 announces itself through a `role="status"` region. That announcement is
@@ -389,11 +393,14 @@ package whose strings render in the frame.
   default screen's action runs, a no-op when no `signIn` view exists — so
   a custom ended view can offer that way back without re-deriving the
   machine's rule.
-- Don't fight the focus contract: every branch flip moves focus into the
-  branch's own container (a focusable, non-tab-stop wrapper around the
-  rendered view), and the session-ended flip announces itself through the
-  sr-only `role="status"` region. A host that manages focus itself can
-  still pass content in — the container is the boundary the machine owns.
+- Don't fight the focus contract: every branch flip hands focus to the
+  new page's first level-one heading, falling back to its main landmark,
+  then to the branch's first level-one heading when it has no main, and
+  then to the branch's own focusable, non-tab-stop wrapper, and the
+  session-ended flip announces itself through the sr-only `role="status"`
+  region. A host that manages focus itself can still pass content in —
+  and a child that focuses a control in the same commit wins: the flip
+  leaves focus alone when the new branch already placed it inside itself.
 
 ## Text and i18n
 
@@ -416,7 +423,7 @@ any package.
 | `@speed/i18n` | The translation hook that reads the shell's own namespace |
 | `@speed/api-client` | The `./bootstrap` entry's credential store and HTTP client |
 | `@speed/api-sdk` | The `./bootstrap` entry binds the runtime seam (`./runtime`) every generated call travels through |
-| `@speed/ui-kit` | The `./bootstrap` entry's theme provider (`AppThemeProvider`); the main entry renders it only through layout-kit |
+| `@speed/ui-kit` | The branch flip's landing rule (`focusPageLanding`), the session-ended announcement region (`AnnouncementRegion`) and the clip recipe (`visuallyHiddenSx`); the `./bootstrap` entry's theme provider (`AppThemeProvider`) |
 
 `@speed/tenancy-ui` is deliberately absent: the switcher composition in the
 quick start is host work in the `userMenu` slot, so tenancy-ui is a dev-only
@@ -432,9 +439,9 @@ sees the requirement at every level of the chain) — plus
 from, a peer for the same reason `@speed/api-sdk` declares it: the host
 supplies the instance. The `./bootstrap` entry's own imports —
 `api-client`, `api-sdk` and `ui-kit` — are already regular dependencies
-of the main entry's deps (auth-core pulls the first two; layout-kit and
-auth-ui pull ui-kit), so no consumer installs anything new for them; the
-main entry itself adds nothing beyond its four. Routing and client-state
+of the main entry (auth-core pulls the first two; `ui-kit` is one of the
+main entry's five), so no consumer installs anything new for them; the
+main entry itself adds nothing beyond its five. Routing and client-state
 libraries stay out — your `children` bring their own.
 
 ## What this shell does not do
