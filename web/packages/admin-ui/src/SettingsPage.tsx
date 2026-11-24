@@ -781,8 +781,9 @@ function SettingsPageBody({
                       rowsPerPage,
                       count: settled.length,
                       // Paging and sizing change the slice the batch's
-                      // result is read against, so they are inert while it
-                      // is in flight (the footer carries no disabled prop).
+                      // result is read against. The handler checks stay as
+                      // the layer under the pager's unavailable state.
+                      unavailable: feedback.pending,
                       onPageChange: (value) => {
                         if (feedback.pending) return
                         setPage(value)

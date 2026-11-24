@@ -926,7 +926,7 @@ describe('SettingsPage', () => {
 
   it('keeps paging, the page size and the header refresh inert while a batch save is in flight', async () => {
     const user = userEvent.setup()
-    const items: AdminSetting[] = Array.from({ length: 12 }, (_, index) => ({
+    const items: AdminSetting[] = Array.from({ length: 30 }, (_, index) => ({
       ...item,
       key: `mail.key-${index}`,
       value: `${index}`,
@@ -944,7 +944,11 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
 
-    const first = await screen.findByRole('textbox', { name: 'mail.key-0' })
+    // A middle page: after the save settles, neither direction is at a
+    // boundary, so each one's recovery is the save's alone.
+    await screen.findByRole('textbox', { name: 'mail.key-0' })
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    const first = await screen.findByRole('textbox', { name: 'mail.key-10' })
     await user.clear(first)
     await user.type(first, 'x')
     await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
@@ -957,19 +961,102 @@ describe('SettingsPage', () => {
     // Paging is part of the save's context: the next page does not open.
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     expect(
-      screen.getByRole('textbox', { name: 'mail.key-0' }),
+      screen.getByRole('textbox', { name: 'mail.key-10' }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'mail.key-10' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'mail.key-20' })).toBeNull()
 
-    // Nor does the page-size selector change the slice under the save.
-    await user.click(screen.getByRole('combobox'))
-    await user.click(await screen.findByRole('option', { name: '25' }))
+    // Nor can the page-size selector change the slice under the save: the
+    // write disables it outright.
+    const sizeSelect = screen.getByRole('combobox')
+    expect(sizeSelect).toHaveAttribute('aria-disabled', 'true')
+    expect(sizeSelect).toHaveClass('Mui-disabled')
     expect(screen.getAllByRole('textbox')).toHaveLength(10)
-    expect(screen.queryByRole('textbox', { name: 'mail.key-10' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'mail.key-20' })).toBeNull()
 
     await act(async () => {
       release?.()
     })
+
+    // The save no longer owns the pager: both directions and the size
+    // selector are usable again.
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    await waitFor(() => {
+      expect(previous).not.toHaveAttribute('aria-disabled')
+      expect(next).not.toHaveAttribute('aria-disabled')
+    })
+    expect(sizeSelect).not.toHaveAttribute('aria-disabled')
+    expect(sizeSelect).not.toHaveClass('Mui-disabled')
+    await user.click(sizeSelect)
+    expect(await screen.findByRole('listbox')).toBeInTheDocument()
+  })
+
+  it('marks the pager directions unavailable and keeps them focusable while a batch save is in flight', async () => {
+    const user = userEvent.setup()
+    const items: AdminSetting[] = Array.from({ length: 30 }, (_, index) => ({
+      ...item,
+      key: `mail.key-${index}`,
+      value: `${index}`,
+      written: `${index}`,
+    }))
+    let release: (() => void) | undefined
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listSettings: () => Promise.resolve(items),
+        setSetting: () =>
+          new Promise<void>((resolve) => {
+            release = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+
+    await screen.findByRole('textbox', { name: 'mail.key-0' })
+    // A middle page: the save alone, not a boundary, makes both unavailable.
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    const current = await screen.findByRole('textbox', { name: 'mail.key-10' })
+
+    await user.clear(current)
+    await user.type(current, 'x')
+
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    // A pointer click would move focus to the save action, so activate it
+    // without one and keep the direction focused.
+    next.focus()
+    fireEvent.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
+    await waitFor(() =>
+      expect(next).toHaveAttribute('aria-disabled', 'true'),
+    )
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).toHaveFocus()
+    // Both stay in the tab order: the attribute, not a native disable.
+    expect(next).not.toBeDisabled()
+    expect(previous).not.toBeDisabled()
+    const sizeSelect = screen.getByRole('combobox')
+    expect(sizeSelect).toHaveAttribute('aria-disabled', 'true')
+    expect(sizeSelect).toHaveClass('Mui-disabled')
+    await user.click(sizeSelect)
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    await user.click(next)
+    expect(screen.getByRole('textbox', { name: 'mail.key-10' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'mail.key-20' })).toBeNull()
+
+    await act(async () => {
+      release?.()
+    })
+
+    // The write no longer owns the pager: both directions are usable again
+    // and the size selector opens.
+    await waitFor(() => {
+      expect(previous).not.toHaveAttribute('aria-disabled')
+      expect(next).not.toHaveAttribute('aria-disabled')
+    })
+    expect(sizeSelect).not.toHaveAttribute('aria-disabled')
+    expect(sizeSelect).not.toHaveClass('Mui-disabled')
+    await user.click(sizeSelect)
+    expect(await screen.findByRole('listbox')).toBeInTheDocument()
   })
 
   it('keeps the namespace navigation focusable and inert while a batch save is in flight', async () => {
