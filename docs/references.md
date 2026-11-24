@@ -87,7 +87,7 @@
 | REF-wcag21 | Web Content Accessibility Guidelines (WCAG) 2.1 | W3C 推荐标准，定义网页内容无障碍的成功准则，含对比度要求 | <https://www.w3.org/TR/WCAG21/> | 2.1 |
 | REF-webauthn | Web Authentication: An API for accessing Public Key Credentials | W3C 推荐标准，定义浏览器以公钥凭据登记与断言用户的 WebAuthn API 及依赖方处理 | <https://www.w3.org/TR/webauthn-2/> | Level 2 |
 | REF-whatwg-fetch | Fetch Standard | WHATWG 标准，定义浏览器的请求获取模型，含 CORS 协议与预检请求 | <https://fetch.spec.whatwg.org/> | — |
-| REF-whatwg-html | HTML Living Standard | WHATWG 标准，定义 HTML 元素与浏览器行为，含焦点修正规则与表单的隐式提交 | <https://html.spec.whatwg.org/> | — |
+| REF-whatwg-html | HTML Living Standard | WHATWG 标准，定义 HTML 元素与浏览器行为，含 `inert` 属性、焦点修正规则与表单的隐式提交 | <https://html.spec.whatwg.org/> | — |
 | REF-xmldsig-core | XML Signature Syntax and Processing Version 1.1 | W3C 推荐标准，定义 XML 数字签名的语法与验签处理 | <https://www.w3.org/TR/xmldsig-core1/> | 1.1 |
 
 ## 开源组件
