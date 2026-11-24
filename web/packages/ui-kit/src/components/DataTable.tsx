@@ -14,7 +14,6 @@ import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
-import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
@@ -23,6 +22,7 @@ import { EmptyState } from './EmptyState.js'
 import type { EmptyStateHeadingLevel } from './EmptyState.js'
 import { useUiKitTranslation } from '../internal/translation.js'
 import { CopyButton } from './CopyButton.js'
+import { TablePager } from './TablePager.js'
 import { POINTER_FINE_HOVER_QUERY } from '../internal/pointer.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 import { useActivationGuard } from '../activation-guard.js'
@@ -134,6 +134,16 @@ export interface DataTablePagination {
   readonly onPageChange: (page: number) => void
   /** Fired with the new rows-per-page value (page reset is the host's). */
   readonly onRowsPerPageChange: (rowsPerPage: number) => void
+  /**
+   * A write in flight owns the list's context: both directions are
+   * unavailable and the size selector is disabled.
+   */
+  readonly unavailable?: boolean
+  /**
+   * A page read is in flight: the direction that started it is busy, the
+   * other unavailable; a read started elsewhere makes both unavailable.
+   */
+  readonly reading?: boolean
 }
 
 export interface DataTableProps<T> {
@@ -165,7 +175,7 @@ export interface DataTableProps<T> {
   readonly selectedRowKeys?: readonly (string | number)[]
   /** Presence of this callback turns row selection on. */
   readonly onSelectionChange?: (keys: readonly (string | number)[]) => void
-  /** Renders the MUI TablePagination footer with these controlled values. */
+  /** Renders the table footer through `TablePager` with these controlled values. */
   readonly pagination?: DataTablePagination
   /** The table's accessible name; ignored when `ariaLabelledBy` is given. */
   readonly ariaLabel?: string
@@ -689,25 +699,7 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </TableContainer>
-      {pagination !== undefined && (
-        <TablePagination
-          component="div"
-          count={pagination.count}
-          page={pagination.page}
-          rowsPerPage={pagination.rowsPerPage}
-          rowsPerPageOptions={pagination.rowsPerPageOptions}
-          onPageChange={(_event, page) => pagination.onPageChange(page)}
-          onRowsPerPageChange={(event) =>
-            pagination.onRowsPerPageChange(Number(event.target.value))
-          }
-          labelRowsPerPage={t('dataTable.rowsPerPage')}
-          labelDisplayedRows={({ from, to, count: total }) =>
-            total === -1
-              ? t('dataTable.displayedRowsUnknown', { from, to })
-              : t('dataTable.displayedRows', { from, to, count: total })
-          }
-        />
-      )}
+      {pagination !== undefined && <TablePager {...pagination} />}
     </Box>
   )
 }

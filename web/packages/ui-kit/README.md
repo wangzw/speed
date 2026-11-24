@@ -60,6 +60,7 @@ reads no bundle of its own.
 | `email-address.ts` | `parseEmailAddress`, `EMAIL_ADDRESS_MAX_BYTES` |
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `LONG_TEXT_COLUMN_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
+| `components/TablePager.tsx` | `TablePager`, `TablePagerProps` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf`, `httpStatusOf` |
 | `components/AnnouncementRegion.tsx` | `AnnouncementRegion`, `AnnouncementRegionProps` |
 | `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
@@ -987,9 +988,16 @@ Selection is enabled by passing `onSelectionChange`; `selectedRowKeys`
 then holds `rowKey` results (index-keyed by default -- pass an id-based
 `rowKey` once a table can reorder). The header checkbox toggles exactly
 the currently rendered rows and leaves other pages' keys untouched.
-`pagination: DataTablePagination` renders the MUI TablePagination
-footer with namespace labels; `count: -1` (unknown total, infinite
-scroll) switches the counter to the no-total wording. A `loading` table
+`pagination: DataTablePagination` renders the table footer through
+`TablePager` with namespace labels; `count: -1` (unknown total, infinite
+scroll) switches the counter to the no-total wording. The pager's two
+directions are never natively disabled: they stay in the Tab order and
+carry `aria-disabled` when they cannot be used. `unavailable` owns the
+list's context while a write runs, making both directions unavailable and
+natively disabling the rows-per-page selector; `reading` names a page read
+in flight, making the direction that started it busy and the other
+unavailable, and both unavailable when the read started elsewhere. A list
+boundary makes that direction unavailable. A `loading` table
 shows a status row only while `rows` is empty (never blanks content
 mid-read); an empty table renders the stock EmptyState placeholder,
 overridable via `emptyTitle`/`emptyDescription`/`emptyAction`, whose

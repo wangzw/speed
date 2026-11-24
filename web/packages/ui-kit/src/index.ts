@@ -129,6 +129,10 @@ export {
   type DataTableSortDirection,
 } from './components/DataTable.js'
 export {
+  TablePager,
+  type TablePagerProps,
+} from './components/TablePager.js'
+export {
   FileUploader,
   type FileUploaderProps,
   type FileUploaderRow,

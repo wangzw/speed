@@ -164,6 +164,8 @@ plumbing and deliberately not exported.
 - **New display/preference props default to their previous behaviour.**
   `AsyncSection.refusedState`, `DataTable.ariaLabel` /
   `ariaLabelledBy`, `DataTableFilter.label` / `placeholder`,
+  `DataTablePagination.unavailable` / `reading` (both default to false,
+  the value meaning no write or page read in flight),
   `ConfirmDialog.children` / `confirmDisabled` /
   `confirmDisabledReason`, `PhoneNumberField.preferredCountries` /
   `readOnly` (`readOnly` defaults to false and leaves both inputs
