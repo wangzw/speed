@@ -1525,6 +1525,20 @@ describe('InvitationsPage', () => {
     })
   })
 
+  it('marks the page behind an open invitation menu inert', async () => {
+    const user = userEvent.setup()
+    const operations = withTenant()
+    const { container } = renderWithProviders(<InvitationsPage />, {
+      operations,
+    })
+    await pickTenant(user)
+    await user.click(screen.getByLabelText(zhCN.invitations.issue.quickLabel))
+    await screen.findByRole('option', {
+      name: zhCN.invitations.issue.oneDay,
+    })
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('offers fixed invitation lifetimes and sends the chosen one', async () => {
     const user = userEvent.setup()
     const expiresSent: (string | undefined)[] = []

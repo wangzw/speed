@@ -50,6 +50,20 @@ describe('TenantScope', () => {
     expect(await screen.findByRole('option', { name: 'Acme' })).toBeInTheDocument()
   })
 
+  it('marks the page behind the open tenant menu inert', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({ listTenants: () => Promise.resolve([TENANT]) }),
+    )
+    const { container } = renderWithProviders(<Scope />, { operations })
+    await waitForCondition(() => {
+      expect(screen.queryByText(zhCN.common.tenantLoading)).toBeNull()
+    })
+    await user.click(screen.getByLabelText(TENANT_LABEL))
+    expect(await screen.findByRole('option', { name: 'Acme' })).toBeInTheDocument()
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('says a 403 refused the roster and offers no retry', async () => {
     const listTenants = vi.fn(() =>
       Promise.reject({ status: 403, code: 'client.http.403' }),

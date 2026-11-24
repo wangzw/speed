@@ -31,6 +31,7 @@ import {
   primaryColumnMaxWidthSx,
   useFormatInstant,
   useActivationGuard,
+  useInertSelectMenu,
   usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -169,6 +170,9 @@ export function AccountsPage({
     (error) => session !== null && session.isStepUpShortfall(error),
   )
 
+  const identifierKindMenu = useInertSelectMenu()
+  const statusFilterMenu = useInertSelectMenu()
+  const accountKindFilterMenu = useInertSelectMenu()
   const [identifierDraft, setIdentifierDraft] = useState('')
   const [identifier, setIdentifier] = useState('')
   const [kindDraft, setKindDraft] = useState<IdentifierKind>('username')
@@ -882,6 +886,7 @@ export function AccountsPage({
         >
           <TextField
             select
+            slotProps={{ select: identifierKindMenu }}
             size="small"
             value={kindDraft}
             onChange={(event) => setKindDraft(event.target.value as IdentifierKind)}
@@ -908,6 +913,7 @@ export function AccountsPage({
           />
           <TextField
             select
+            slotProps={{ select: statusFilterMenu }}
             size="small"
             value={statusDraft}
             onChange={(event) => setStatusDraft(event.target.value)}
@@ -923,6 +929,7 @@ export function AccountsPage({
           </TextField>
           <TextField
             select
+            slotProps={{ select: accountKindFilterMenu }}
             size="small"
             value={accountKindDraft}
             onChange={(event) => setAccountKindDraft(event.target.value)}
@@ -1609,6 +1616,9 @@ function AccountCreateForm({
 }) {
   const { t } = useAdminUiTranslation()
   const usernameInput = useRef<HTMLInputElement | null>(null)
+  const kindMenu = useInertSelectMenu()
+  const emailViaMenu = useInertSelectMenu()
+  const phoneViaMenu = useInertSelectMenu()
 
   // An array, not a fragment: MUI's Select walks its children to build the
   // options and warns when one of them is a Fragment.
@@ -1713,6 +1723,7 @@ function AccountCreateForm({
             <TextField
               {...field}
               select
+              slotProps={{ select: kindMenu }}
               size="small"
               fullWidth
               label={t('accounts.create.kindLabel')}
@@ -1765,6 +1776,7 @@ function AccountCreateForm({
             <TextField
               {...field}
               select
+              slotProps={{ select: emailViaMenu }}
               size="small"
               fullWidth
               label={t('accounts.create.emailViaLabel')}
@@ -1790,6 +1802,7 @@ function AccountCreateForm({
             <TextField
               {...field}
               select
+              slotProps={{ select: phoneViaMenu }}
               size="small"
               fullWidth
               label={t('accounts.create.phoneViaLabel')}
@@ -2021,6 +2034,10 @@ function AccountDetailWrites({
     (error) => session !== null && session.isStepUpShortfall(error),
   )
   const patchAccount = operations.usePatchAccount()
+  const statusMenu = useInertSelectMenu()
+  const mfaMenu = useInertSelectMenu()
+  const protectedMenu = useInertSelectMenu()
+  const identifierKindMenu = useInertSelectMenu()
   const setStatus = operations.useSetAccountStatus()
   const setMfaRequired = operations.useSetMFARequired()
   const resetPassword = operations.useResetPassword()
@@ -2230,6 +2247,7 @@ function AccountDetailWrites({
       <Box sx={rowSx}>
         <TextField
           select
+          slotProps={{ select: statusMenu }}
           size="small"
           value={statusDraft}
           onChange={(event) =>
@@ -2258,6 +2276,7 @@ function AccountDetailWrites({
           <Box sx={{ ...rowSx, mt: 1 }}>
             <TextField
               select
+              slotProps={{ select: mfaMenu }}
               size="small"
               value={mfaDraft}
               onChange={(event) =>
@@ -2325,6 +2344,7 @@ function AccountDetailWrites({
         )}
         <TextField
           select
+          slotProps={{ select: protectedMenu }}
           size="small"
           value={protectedDraft}
           onChange={(event) =>
@@ -2380,6 +2400,7 @@ function AccountDetailWrites({
       <Box sx={{ ...rowSx, mt: 1 }}>
         <TextField
           select
+          slotProps={{ select: identifierKindMenu }}
           size="small"
           value={identifierKind}
           onChange={(event) =>

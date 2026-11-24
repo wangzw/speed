@@ -19,6 +19,7 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   useActivationGuard,
+  useInertSelectMenu,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type {
@@ -96,6 +97,8 @@ export function SsoPage({
   const hasFeature = useAdminHasFeature()
   // Without this capability the row keeps its other actions.
   const metadataRefresh = hasFeature('authn.admin.sso.metadata')
+  const editProviderMenu = useInertSelectMenu()
+  const domainProviderMenu = useInertSelectMenu()
 
   const [innerTenant, setInnerTenant] = useState(
     () => defaultTenant ?? tenantFromLocation(),
@@ -475,6 +478,7 @@ export function SsoPage({
                 the button-shaped-control lint rule does not judge a TextField select. */}
             <TextField
               select
+              slotProps={{ select: editProviderMenu }}
               size="small"
               value={editProvider}
               disabled={formFeedback.pending}
@@ -514,6 +518,7 @@ export function SsoPage({
             </Typography>
             <TextField
               select
+              slotProps={{ select: domainProviderMenu }}
               size="small"
               value={domainProvider}
               disabled={domainsFeedback.pending}
@@ -828,6 +833,35 @@ export function ssoProviderWriteBody(
   }
 }
 
+/** One provider flag's three-state select; each instance owns its menu. */
+function TriStateSelect({
+  value,
+  onChange,
+  label,
+}: {
+  readonly value: TriState
+  readonly onChange: (next: TriState) => void
+  readonly label: string
+}) {
+  const { t } = useAdminUiTranslation()
+  const menu = useInertSelectMenu()
+  return (
+    <TextField
+      select
+      slotProps={{ select: menu }}
+      size="small"
+      value={value}
+      onChange={(event) => onChange(event.target.value as TriState)}
+      label={label}
+      sx={{ minWidth: 180 }}
+    >
+      <MenuItem value="unchanged">{t('sso.provider.tri.unchanged')}</MenuItem>
+      <MenuItem value="true">{t('sso.provider.tri.true')}</MenuItem>
+      <MenuItem value="false">{t('sso.provider.tri.false')}</MenuItem>
+    </TextField>
+  )
+}
+
 // The provider create and update control: on a create the fields start empty and
 // an unset boolean takes the module's false default; on an update they start from
 // the provider and an unset boolean leaves the stored flag.
@@ -844,6 +878,8 @@ function SsoProviderWriteForm({
   const operations = useAdminOperations()
   const createProvider = operations.useCreateSsoProvider()
   const updateProvider = operations.useUpdateSsoProvider()
+  const usernameStrategyMenu = useInertSelectMenu()
+  const usernameClaimMenu = useInertSelectMenu()
 
   const [protocol, setProtocol] = useState(provider?.protocol ?? '')
   const [name, setName] = useState(provider?.name ?? '')
@@ -933,25 +969,6 @@ function SsoProviderWriteForm({
       ? { unavailableDescribedBy: CONFIG_HINT_ID }
       : {}
 
-  const triStateSelect = (
-    value: TriState,
-    onChange: (next: TriState) => void,
-    label: string,
-  ) => (
-    <TextField
-      select
-      size="small"
-      value={value}
-      onChange={(event) => onChange(event.target.value as TriState)}
-      label={label}
-      sx={{ minWidth: 180 }}
-    >
-      <MenuItem value="unchanged">{t('sso.provider.tri.unchanged')}</MenuItem>
-      <MenuItem value="true">{t('sso.provider.tri.true')}</MenuItem>
-      <MenuItem value="false">{t('sso.provider.tri.false')}</MenuItem>
-    </TextField>
-  )
-
   return (
     <Box>
       <Box
@@ -985,6 +1002,7 @@ function SsoProviderWriteForm({
           <TextField
             select
             size="small"
+            slotProps={{ select: usernameStrategyMenu }}
             value={usernameStrategy}
             onChange={(event) => setUsernameStrategy(event.target.value)}
             label={t('sso.provider.usernameStrategyLabel')}
@@ -1000,6 +1018,7 @@ function SsoProviderWriteForm({
           <TextField
             select
             size="small"
+            slotProps={{ select: usernameClaimMenu }}
             value={usernameClaim}
             onChange={(event) => setUsernameClaim(event.target.value)}
             label={t('sso.provider.usernameClaimLabel')}
@@ -1013,19 +1032,31 @@ function SsoProviderWriteForm({
             </MenuItem>
           </TextField>
         )}
-        {triStateSelect(enabled, setEnabled, t('sso.provider.enabledLabel'))}
-        {triStateSelect(trustIdpMfa, setTrustIdpMfa, t('sso.provider.trustIdpMfaLabel'))}
-        {triStateSelect(
-          allowIdpInitiated,
-          setAllowIdpInitiated,
-          t('sso.provider.allowIdpInitiatedLabel'),
-        )}
-        {triStateSelect(allowSha1, setAllowSha1, t('sso.provider.allowSha1Label'))}
-        {triStateSelect(
-          mergeExisting,
-          setMergeExisting,
-          t('sso.provider.mergeExistingLabel'),
-        )}
+        <TriStateSelect
+          value={enabled}
+          onChange={setEnabled}
+          label={t('sso.provider.enabledLabel')}
+        />
+        <TriStateSelect
+          value={trustIdpMfa}
+          onChange={setTrustIdpMfa}
+          label={t('sso.provider.trustIdpMfaLabel')}
+        />
+        <TriStateSelect
+          value={allowIdpInitiated}
+          onChange={setAllowIdpInitiated}
+          label={t('sso.provider.allowIdpInitiatedLabel')}
+        />
+        <TriStateSelect
+          value={allowSha1}
+          onChange={setAllowSha1}
+          label={t('sso.provider.allowSha1Label')}
+        />
+        <TriStateSelect
+          value={mergeExisting}
+          onChange={setMergeExisting}
+          label={t('sso.provider.mergeExistingLabel')}
+        />
         <TextField
           id={CONFIG_FIELD_ID}
           size="small"

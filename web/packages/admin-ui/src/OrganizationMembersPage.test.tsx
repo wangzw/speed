@@ -968,6 +968,20 @@ describe('the role filter', () => {
     expect(window.location.search).toBe('')
   })
 
+  it('marks the page behind an open role menu inert', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted()
+    const { container } = renderPage(backend)
+    await screen.findAllByText(ADA.display_name)
+    await user.click(
+      screen.getByRole('combobox', { name: zhCN.members.filter.roleLabel }),
+    )
+    await screen.findByRole('option', {
+      name: zhCN.members.filter.anyRole,
+    })
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('offers a retry when the role list cannot be read and invents no options', async () => {
     const user = userEvent.setup()
     const listTenantRoles = vi.fn(() =>
@@ -1110,6 +1124,23 @@ describe('the role filter', () => {
 })
 
 describe('the member management panel', () => {
+  it('marks the member panel behind its open role menu inert', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted({
+      listTenantAccountBindings: () => Promise.resolve([SUPER_BINDING]),
+    })
+    const { container } = renderPage(backend)
+    const panel = await openPanel(user, ADA)
+    const select = within(panel).getByRole('combobox', {
+      name: zhCN.members.panel.roleLabel,
+    })
+    await waitFor(() => expect(select).toBeEnabled())
+    await user.click(select)
+    await screen.findByRole('option', { name: ROLE_OPERATOR.role })
+    expect(panel.closest('[inert]')).not.toBeNull()
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('binds a role and unbinds one only after confirmation', async () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted({

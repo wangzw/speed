@@ -36,6 +36,22 @@ import {
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 describe('AccountsPage', () => {
+  it('marks the detail panel behind its open status menu inert', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { operations: withAccounts() })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', {
+      name: DETAIL_PANEL_NAME,
+    })
+    await user.click(
+      within(panel).getByLabelText(zhCN.accounts.status.label),
+    )
+    await screen.findByRole('option', {
+      name: zhCN.accounts.status.disabled,
+    })
+    expect(panel.closest('[inert]')).not.toBeNull()
+  })
+
   it('describes each unmet precondition on its write control', async () => {
     const user = userEvent.setup()
     renderWithProviders(<AccountsPage />, { operations: withAccounts() })

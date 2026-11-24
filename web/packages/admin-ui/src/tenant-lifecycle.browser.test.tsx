@@ -81,6 +81,36 @@ function describeActiveElement(): string {
     .join(' ')
 }
 
+const WALK_CONTROL_SELECTOR =
+  'a[href], button, input, select, textarea, [tabindex]'
+
+/** Presses `keys` through one full cycle of `root`'s controls, failing at
+ * the first step that lands focus outside `root`. */
+async function walkFocusTrap(root: HTMLElement, keys: string): Promise<void> {
+  const controls = [
+    ...root.querySelectorAll<HTMLElement>(WALK_CONTROL_SELECTOR),
+  ].filter(
+    (control) =>
+      control.tabIndex >= 0 &&
+      !control.hasAttribute('disabled') &&
+      control.getClientRects().length > 0,
+  )
+  expect(controls.length).toBeGreaterThan(0)
+  expect(
+    document.activeElement instanceof HTMLElement
+      && root.contains(document.activeElement),
+    `focus should start inside the dialog; document.activeElement is ${describeActiveElement()}`,
+  ).toBe(true)
+  for (let step = 0; step <= controls.length; step += 1) {
+    await userEvent.keyboard(keys)
+    const active = document.activeElement
+    expect(
+      active instanceof HTMLElement && root.contains(active),
+      `step ${step} of the ${keys} walk left the dialog; document.activeElement is ${describeActiveElement()}`,
+    ).toBe(true)
+  }
+}
+
 /** The two-step danger confirmation: arm, wait out the lockout, confirm. */
 async function confirmTwice(
   user: ReturnType<typeof userEvent.setup>,
@@ -260,6 +290,104 @@ describe('tenant lifecycle write focus in Chromium', () => {
 
     written.resolve(transferFixture())
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('returns focus to the transfer trigger after the dialog closes with Escape', async () => {
+    await page.viewport(1200, 900)
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([TENANT]),
+        listMembers: () =>
+          Promise.resolve({
+            members: [
+              {
+                tenant: 'acme',
+                account: 'acc-2',
+                display_name: 'Ada Lovelace',
+                username: 'ada',
+                active: true,
+                joined_at: '2026-01-01T00:00:00Z',
+                roles: [],
+                source: 'admin',
+                sso_exempt: false,
+              },
+            ],
+            next_cursor: '',
+          }),
+      }),
+    )
+    const { container } = renderWithProviders(<TenantRosterPage />, {
+      operations,
+      language: 'zh-CN',
+    })
+    const user = userEvent.setup()
+    await screen.findByText('Acme Corporation')
+
+    const trigger = screen.getByRole('button', {
+      name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+    })
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    await screen.findByRole('dialog')
+    expect(container).toHaveAttribute('inert')
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(container).not.toHaveAttribute('inert')
+  })
+
+  it('marks the page inert and holds the Tab cycle inside the transfer dialog', async () => {
+    await page.viewport(1200, 900)
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve([TENANT]),
+        listMembers: () =>
+          Promise.resolve({
+            members: [
+              {
+                tenant: 'acme',
+                account: 'acc-2',
+                display_name: 'Ada Lovelace',
+                username: 'ada',
+                active: true,
+                joined_at: '2026-01-01T00:00:00Z',
+                roles: [],
+                source: 'admin',
+                sso_exempt: false,
+              },
+            ],
+            next_cursor: '',
+          }),
+      }),
+    )
+    const { container } = renderWithProviders(<TenantRosterPage />, {
+      operations,
+      language: 'zh-CN',
+    })
+    const user = userEvent.setup()
+    await screen.findByText('Acme Corporation')
+
+    const trigger = screen.getByRole('button', {
+      name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+    })
+    trigger.focus()
+    await user.keyboard('{Enter}')
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByRole('combobox', {
+      name: zhCN.tenantLifecycle.transfer.memberLabel,
+    })
+
+    await waitFor(() => expect(container).toHaveAttribute('inert'))
+    const root = dialog.closest('.MuiModal-root')
+    expect(root).not.toBeNull()
+    expect(root).not.toHaveAttribute('inert')
+    await waitFor(() =>
+      expect(dialog.contains(document.activeElement)).toBe(true),
+    )
+
+    await walkFocusTrap(dialog, '{Tab}')
+    await walkFocusTrap(dialog, '{Shift>}{Tab}{/Shift}')
   })
 
   it('lands focus on the next row\'s delete control when a row is deleted', async () => {

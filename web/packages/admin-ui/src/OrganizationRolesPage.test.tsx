@@ -753,6 +753,20 @@ describe('the role catalog', () => {
 })
 
 describe('the selected role grants', () => {
+  it('marks the page behind the grant permission menu inert', async () => {
+    const user = userEvent.setup()
+    const { backend } = scripted()
+    const { container } = renderRolesPage(backend)
+    await selectRole(user, ROLE_AUDITOR.role)
+    await user.click(
+      await screen.findByRole('combobox', {
+        name: zhCN.permissions.grants.permissionLabel,
+      }),
+    )
+    await screen.findByRole('option', { name: /Read roles/ })
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('grants a grantable permission and reports the outcome', async () => {
     const user = userEvent.setup()
     const { backend, recorder } = scripted()

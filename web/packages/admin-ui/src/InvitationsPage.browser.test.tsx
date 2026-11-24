@@ -1,5 +1,6 @@
-import { afterEach, describe, it } from 'vitest'
-import { screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { InvitationsPage } from './InvitationsPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -11,6 +12,7 @@ import {
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { clearTenant, seedTenant } from '../test-utils/tenant-url.js'
 import type { AdminInvitation, AdminMember } from './operations.js'
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
@@ -72,4 +74,32 @@ describe('InvitationsPage horizontal overflow in Chromium', () => {
       await expectNoHorizontalOverflow()
     })
   }
+})
+
+describe('InvitationsPage select focus in Chromium', () => {
+  it('returns focus to the lifetime select after an option is chosen', async () => {
+    await page.viewport(1200, 900)
+    seedTenant('acme')
+
+    const operations = createAdminOperations(
+      makeAdminBackend({
+        listTenants: () => Promise.resolve(TENANTS),
+        listInvitations: () =>
+          Promise.resolve({
+            invitations: [...INVITATIONS],
+            next_cursor: '',
+          }),
+        listMembers: () => Promise.resolve(MEMBERS),
+      }),
+    )
+    renderWithProviders(<InvitationsPage />, { operations, language: 'en-US' })
+
+    await screen.findByText('ada.lovelace@example.com')
+    const lifetime = screen.getByLabelText(enUS.invitations.issue.quickLabel)
+    lifetime.focus()
+    await userEvent.keyboard('{Enter}')
+    await screen.findByRole('option', { name: enUS.invitations.issue.oneDay })
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(lifetime).toHaveFocus())
+  })
 })

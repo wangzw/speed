@@ -163,6 +163,26 @@ describe('platform tenant lifecycle entries', () => {
     ).toBeInTheDocument()
   })
 
+  it('marks the page behind the transfer dialog inert', async () => {
+    const user = userEvent.setup()
+    const operations = createAdminOperations(
+      makeAdminBackend({ listTenants: () => Promise.resolve([acme]) }),
+    )
+    attachPermissions({ system: ['tenant.manage'] })
+    const { container } = renderWithProviders(<TenantRosterPage />, {
+      operations,
+    })
+    await screen.findByText('Acme')
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(container).toHaveAttribute('inert')
+    expect(dialog).not.toHaveAttribute('inert')
+  })
+
   it('shows no entry on a personal organization or a tombstone', async () => {
     const tenants: AdminTenant[] = [
       tenantFixture({ name: 'personal-alice', display_name: 'Alice', kind: 'personal', status: 'active' }),

@@ -16,6 +16,7 @@ import {
   httpStatusOf,
   SectionCard,
   useFormatInstant,
+  useInertSelectMenu,
   useWriteFeedback,
   WriteFeedbackRegion,
 } from '@speed/ui-kit'
@@ -483,6 +484,7 @@ function TransferOwnershipDialog({
 }: TransferOwnershipDialogProps): ReactElement {
   const { t } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
+  const targetMenu = useInertSelectMenu()
   const [search, setSearch] = useState('')
   const [target, setTarget] = useState('')
   const query = search.trim()
@@ -558,7 +560,7 @@ function TransferOwnershipDialog({
         // The member read keeps the native disable (focus is elsewhere when it
         // starts); the dialog's own write turns it read-only to keep focus.
         disabled={loading}
-        slotProps={{ input: { readOnly: busy } }}
+        slotProps={{ input: { readOnly: busy }, select: targetMenu }}
         helperText={helperText}
         sx={{ mt: 2 }}
       >

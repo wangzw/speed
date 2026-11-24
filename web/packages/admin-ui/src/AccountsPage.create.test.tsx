@@ -52,6 +52,22 @@ import {
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 describe('AccountsPage', () => {
+  it('marks the create panel behind its open kind menu inert', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { operations: withAccounts() })
+    await openCreate(user)
+    const panel = await screen.findByRole('dialog', {
+      name: CREATE_PANEL_NAME,
+    })
+    await user.click(
+      within(panel).getByLabelText(zhCN.accounts.create.kindLabel),
+    )
+    await screen.findByRole('option', {
+      name: zhCN.accounts.create.kind.user,
+    })
+    expect(panel.closest('[inert]')).not.toBeNull()
+  })
+
   it('renders a creation failure under the form inside the create panel', async () => {
     const user = userEvent.setup()
     const operations = withAccounts({

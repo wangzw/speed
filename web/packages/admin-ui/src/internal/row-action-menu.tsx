@@ -4,11 +4,11 @@
  * label.
  */
 
-import { useState, type MouseEvent, type ReactElement } from 'react'
+import { useRef, useState, type MouseEvent, type ReactElement } from 'react'
 import Button from '@mui/material/Button'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import { useActivationGuard } from '@speed/ui-kit'
+import { useActivationGuard, useInertBackground } from '@speed/ui-kit'
 import { useAdminUiTranslation } from './translation.js'
 
 export interface RowAction {
@@ -39,6 +39,8 @@ export function RowActionMenu({
 }: RowActionMenuProps): ReactElement {
   const { t } = useAdminUiTranslation()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useInertBackground(anchor !== null, menuRef)
   const openMenu = useActivationGuard(
     (event: MouseEvent<HTMLButtonElement>) => setAnchor(event.currentTarget),
     { busy: false, unavailable: disabled },
@@ -60,6 +62,7 @@ export function RowActionMenu({
         {t('common.actions')}
       </Button>
       <Menu
+        ref={menuRef}
         anchorEl={anchor}
         open={anchor !== null}
         onClose={() => setAnchor(null)}

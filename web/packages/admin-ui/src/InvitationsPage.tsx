@@ -28,6 +28,7 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   useFormatInstant,
+  useInertSelectMenu,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type {
@@ -140,6 +141,9 @@ export function InvitationsPage({
   const invitationLink = useAdminInvitationLink()
   const hasFeature = useAdminHasFeature()
   const ssoExemption = hasFeature('authn.admin.sso')
+  const expiryMenu = useInertSelectMenu()
+  const roleMenu = useInertSelectMenu()
+  const statusFilterMenu = useInertSelectMenu()
 
   const [innerTenant, setInnerTenant] = useState(
     () => defaultTenant ?? tenantFromLocation(),
@@ -996,6 +1000,7 @@ export function InvitationsPage({
               <TextField
                 select
                 size="small"
+                slotProps={{ select: expiryMenu }}
                 value={String(expiryDays)}
                 onChange={(event) => setExpiryDays(Number(event.target.value))}
                 label={t('invitations.issue.quickLabel')}
@@ -1015,6 +1020,7 @@ export function InvitationsPage({
                 <TextField
                   select
                   size="small"
+                  slotProps={{ select: roleMenu }}
                   value={role}
                   onChange={(event) => setRole(event.target.value)}
                   label={t('invitations.issue.roleLabel')}
@@ -1066,6 +1072,7 @@ export function InvitationsPage({
               <TextField
                 select
                 size="small"
+                slotProps={{ select: statusFilterMenu }}
                 value={statusFilter}
                 onChange={(event) =>
                   changeInvitationStatusFilter(

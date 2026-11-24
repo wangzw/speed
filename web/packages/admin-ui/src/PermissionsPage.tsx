@@ -20,6 +20,7 @@ import {
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
   primaryColumnMaxWidthSx,
+  useInertSelectMenu,
   useWriteFeedback,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -278,6 +279,7 @@ function PermissionsPageBody({
   readonly operations: AdminOperations
 }) {
   const { t } = useAdminUiTranslation()
+  const grantMenu = useInertSelectMenu()
 
   const [innerTenant, setInnerTenant] = useState(
     () => defaultTenant ?? tenantFromLocation(),
@@ -1341,6 +1343,7 @@ function PermissionsPageBody({
                       sx={{ minWidth: 240 }}
                       slotProps={{
                         select: {
+                          ...grantMenu,
                           // Without this the closed control renders the selected
                           // PermissionLabel and wraps; render the code alone.
                           renderValue: (value) => value as string,
