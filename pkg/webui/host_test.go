@@ -22,55 +22,24 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases in module_test.go run against a real assembly: the entry point
-// module itself, listening on a port the operating system picks, with this
-// module registered through New and driven by the lifecycle. What the module
-// answers is read off a socket, so the routing, the answer to a method that
-// matches no route and the shape of an error response are the entry point's and
-// not a stand-in's.
-
-// waitLimit bounds every wait in these cases, so that a startup which never
-// reaches Serve fails the case with a message instead of the whole binary at
-// the global timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// endpointName is the one endpoint the assembly declares and this module serves
-// on. The frontend is alone on it: a catch-all route and any concrete route on
-// one method tree are mutually exclusive, so this endpoint carries no other
-// route.
 const endpointName = "public"
 
-// standInLoggerName is the name the stand-in logger is registered under. A
-// command that names the entry point names this one beside it, because the
-// bound address it records is the only way a client outside the process learns
-// the port the system picked.
 const standInLoggerName = "stand-in.logger"
 
-// host is one assembly that is serving.
 type host struct {
 	addr string
 	reg  *core.Registry
 }
 
-// startHost builds an assembly that serves fsys through this module, and runs
-// it until the entry point is listening. Every registered module takes part.
-// The run is ended when the case is, and a run that ends with an error fails
-// the case.
 func startHost(t *testing.T, fsys fs.FS) *host {
 	t.Helper()
 	return startAssembly(t, fsys, loadReader(t), nil)
 }
 
-// startAssembly builds the assembly and runs it until the entry point is
-// listening. participants is what the command tree names: nil lets every
-// registered module take part, and a list drives only those modules, leaving
-// the rest registered and unnamed, as a command that does not take a module in
-// leaves it. extra modules are registered in addition to this package's own.
-//
-// The run is ended when the case is, and a run that ends with an error fails
-// the case.
 func startAssembly(t *testing.T, fsys fs.FS, reader config.Reader, participants []string, extra ...core.Module) *host {
 	t.Helper()
 	logs := &entryRecorder{}
@@ -113,9 +82,6 @@ func startAssembly(t *testing.T, fsys fs.FS, reader config.Reader, participants 
 		}
 	})
 
-	// The entry point writes the address of its bound socket once it is
-	// listening; that is the only way a client outside the process learns the
-	// port the system picked.
 	deadline := time.Now().Add(limit)
 	for {
 		if addr := logs.address(); addr != "" {
@@ -133,15 +99,12 @@ func startAssembly(t *testing.T, fsys fs.FS, reader config.Reader, participants 
 	}
 }
 
-// response is what a client got back.
 type response struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// send issues one request over a connection of its own and reads the response
-// to its end.
 func (h *host) send(t *testing.T, method, path string) response {
 	t.Helper()
 	req, err := nethttp.NewRequestWithContext(t.Context(), method, "http://"+h.addr+path, nil)
@@ -164,15 +127,11 @@ func (h *host) send(t *testing.T, method, path string) response {
 	return response{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// get is send for a GET.
 func (h *host) get(t *testing.T, path string) response {
 	t.Helper()
 	return h.send(t, nethttp.MethodGet, path)
 }
 
-// loadReader loads the configuration this assembly runs on through the real
-// loader: the entry point declares one endpoint on a port of the system's
-// choosing, and this module serves on it.
 func loadReader(t *testing.T) config.Reader {
 	t.Helper()
 	document, err := json.Marshal(map[string]any{
@@ -192,11 +151,6 @@ func loadReader(t *testing.T) config.Reader {
 	return loadDocument(t, document)
 }
 
-// loadDocument loads one configuration document through the real loader, with
-// the entry point's and this module's declarations registered as a host's run
-// would register them. It is how a case holds a document to what the modules
-// declare: an item the schema does not declare, or a field whose tag names
-// another key, comes out here.
 func loadDocument(t *testing.T, document []byte) config.Reader {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -210,9 +164,6 @@ func loadDocument(t *testing.T, document []byte) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "WEBUITEST", DefaultLocator: "file:" + path}},
 	})
-	// The declarations reach the load as the resources of registered modules,
-	// which is the only way one ever reaches it. New(nil) is how this module's
-	// schema is reached without an assembly to serve.
 	reg.Register(core.Module{Name: speedhttp.ModuleName, Resources: speedhttp.Module().Resources})
 	reg.Register(core.Module{Name: ModuleName, Resources: New(nil).Resources})
 
@@ -223,9 +174,6 @@ func loadDocument(t *testing.T, document []byte) config.Reader {
 	return reader
 }
 
-// entryRecorder is a slog handler that keeps the address of the entry point's
-// bound socket, which is the only way a client outside the process learns the
-// port the system picked.
 type entryRecorder struct {
 	mu   sync.Mutex
 	addr string
@@ -258,7 +206,6 @@ func (r *entryRecorder) address() string {
 	return r.addr
 }
 
-// standInLogger delivers the Logger capability over an entryRecorder.
 type standInLogger struct{ logs *entryRecorder }
 
 func (l standInLogger) Named(string) *slog.Logger { return slog.New(l.logs) }
@@ -266,8 +213,6 @@ func (standInLogger) Redaction() log.Redaction    { return noRedaction{} }
 
 var _ log.Logger = standInLogger{}
 
-// noRedaction takes registrations and masks nothing: what these cases observe
-// of the Logger capability is only the address the entry point reports.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)              {}
