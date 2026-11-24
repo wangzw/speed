@@ -1,3 +1,5 @@
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'eslint/config'
 import tseslint from 'typescript-eslint'
 import { noDangerousHtmlRule } from './eslint-rules/no-dangerous-html.js'
@@ -6,12 +8,22 @@ import { noDoubleFeedbackRegionRule } from './eslint-rules/no-double-feedback-re
 import { noE2eBypassRule } from './eslint-rules/no-e2e-bypass.js'
 import { noLiteralTextRule } from './eslint-rules/no-literal-text.js'
 import { noNativeDisabledControlRule } from './eslint-rules/no-native-disabled-control.js'
+import { eslintCacheVersion } from './scripts/eslint-cache-version.mjs'
+
+const configDir = dirname(fileURLToPath(import.meta.url))
 
 // Flat config has no "local rule" slot, so every local rule lives behind
 // this plugin namespace.
 const localPlugin = {
   plugins: {
     speed: {
+      meta: {
+        name: 'speed-local',
+        version: eslintCacheVersion(
+          join(configDir, 'eslint-rules'),
+          join(configDir, 'pnpm-lock.yaml'),
+        ),
+      },
       rules: {
         'no-dangerous-html': noDangerousHtmlRule,
         'no-direct-http': noDirectHttpRule,
