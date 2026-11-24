@@ -1,50 +1,16 @@
-/**
- * ResizeObserver stub for tests that exercise AppShell's measured-header
- * mechanism.
- *
- * jsdom implements no ResizeObserver (and the browsers AppShell runs in
- * do, so the guard in AppShell's own effect skips the mechanism only
- * where the API is genuinely absent). The stub installs a constructor
- * that records, per observer instance, which elements that instance was
- * told to observe and whether it has been disconnected -- so a test can
- * report a box height exactly the way a real observer entry would, and
- * can also prove the effect's lifecycle: a re-run disconnects the old
- * observer, mounts a new one, and unmount leaves none connected. The
- * per-instance record is what makes the lifecycle observable; a shared
- * set cannot tell a disconnected observer from a live one.
- *
- * Several elements may be observed through one observer (AppShell
- * measures its header and its banner slot together); `emitHeightFor`
- * addresses one of them, `emitHeight` the most recently observed.
- * Install with `vi.unstubAllGlobals()` (or the test file's afterEach)
- * so the stub never leaks into tests that want the no-ResizeObserver
- * path.
- */
-
 import { act } from '@testing-library/react'
 import { vi } from 'vitest'
 
-/** One observer instance the stub constructor created. */
 export interface ResizeObserverInstance {
-  /** Every element this instance was told to observe, in order. */
   readonly observed: readonly Element[]
-  /** Whether `disconnect()` has been called on this instance. */
   readonly disconnected: boolean
 }
 
 export interface ResizeObserverHandle {
-  /** The most recently observed element of a connected instance. */
   observedElement(): Element | null
-  /**
-   * The union of the observed elements of the connected instances, in
-   * observation order. A disconnected instance contributes nothing.
-   */
   observedElements(): readonly Element[]
-  /** Every instance created, connected or not, in creation order. */
   instances(): readonly ResizeObserverInstance[]
-  /** Report a new content-box height for the last observed element. */
   emitHeight(height: number): void
-  /** Report a new content-box height for one observed element. */
   emitHeightFor(element: Element, height: number): void
 }
 

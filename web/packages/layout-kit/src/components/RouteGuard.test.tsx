@@ -1,24 +1,3 @@
-/**
- * RouteGuard contract: a fully controlled gate over an injected
- * `status` value, never a callback RouteGuard invokes itself.
- *
- * Covers: `'allowed'` renders children and nothing else; `'pending'`
- * renders the default labelled spinner or a host override;
- * `'denied'` renders the default `@speed/ui-kit` `noPermission`
- * EmptyState (asserted against ui-kit's own shipped bundle strings,
- * never a re-typed literal) or a host override, the default
- * composition's title a page-level `h1` unless the host forwards a
- * `headingLevel` of its own; `onDenied` fires exactly once per
- * transition INTO `'denied'` -- re-rendering with the same `'denied'`
- * status twice fires it only once, and leaving and re-entering
- * `'denied'` fires it again; and a zero-violation axe scan on each
- * status's rendered subtree, with `region` disabled -- unlike
- * AppShell, RouteGuard is a per-widget gate around host content, not
- * page-level chrome with its own landmarks, so it falls under the same
- * "component tests, not page tests" carve-out ui-kit's own axe helper
- * documents.
- */
-
 import { act } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { switchLanguage } from '@speed/i18n'
@@ -42,13 +21,6 @@ describe('RouteGuard', () => {
     })
 
     it('has no axe violations', async () => {
-      // The scan mounts the guard inside the page skeleton a real host
-      // supplies -- the main landmark and the page's h1 above the
-      // gated content -- because page-has-heading-one and
-      // landmark-one-main are determinate in jsdom (see the axe helper
-      // header): a scan without that context fails instead of passing
-      // by indeterminacy. region stays disabled: the gate is a
-      // per-widget fragment whose host content it does not structure.
       renderWithProviders(
         <main>
           <h1>Protected page</h1>
@@ -120,11 +92,6 @@ describe('RouteGuard', () => {
     })
 
     it('renders the default denied fallback title as the page-level h1', () => {
-      // The denied gate replaces the page content it guards, so the
-      // default composition's title is the page's own heading -- an
-      // h1, the same page-level default the sibling whole-page
-      // placeholder (auth-ui's SessionEndedScreen) chose. The stock h6
-      // would render a heading level no page can start at.
       const { getByRole } = renderWithProviders(<RouteGuard status="denied" />)
       expect(
         getByRole('heading', { level: 1, name: uiKitZhCN.emptyState.noPermission.title }),
@@ -132,10 +99,6 @@ describe('RouteGuard', () => {
     })
 
     it('renders the default denied fallback title at the host-forwarded headingLevel', () => {
-      // A host mounting the gate under a heading of its own passes the
-      // level that continues the page's order; without a forwarded
-      // headingLevel the default composition stays at ui-kit's stock
-      // h6 whatever the page above.
       const { getByRole } = renderWithProviders(
         <main>
           <h1>Protected page</h1>
@@ -157,7 +120,6 @@ describe('RouteGuard', () => {
       rerender(<RouteGuard status="denied" onDenied={onDenied} />)
       expect(onDenied).toHaveBeenCalledTimes(1)
 
-      // Re-rendering with the SAME denied status must not re-fire.
       rerender(<RouteGuard status="denied" onDenied={onDenied} />)
       expect(onDenied).toHaveBeenCalledTimes(1)
     })
@@ -177,15 +139,6 @@ describe('RouteGuard', () => {
     })
 
     it('has no axe violations', async () => {
-      // The default denied fallback composes ui-kit's EmptyState at the
-      // page-level h1 (the headingLevel default): the denied gate
-      // replaces the page content it guards, so the fallback's title IS
-      // the page's own heading and the scan document needs no host
-      // heading of its own -- page-has-heading-one stays enabled (a
-      // stock h6 without the headingLevel default would leave the page
-      // heading-less and this rule would fail the scan). A host
-      // mounting the gate under a heading of its own forwards
-      // headingLevel, proven by the scan below.
       renderWithProviders(
         <main>
           <RouteGuard status="denied" />
@@ -195,11 +148,6 @@ describe('RouteGuard', () => {
     })
 
     it('has no axe violations when the host forwards headingLevel under its own page heading', async () => {
-      // The host-forwarding leg: a page h1 of the host's own, and the
-      // gate's default denied composition below it at the level that
-      // continues the page's order. Without the forwarded headingLevel,
-      // the stock h6 would fall out of the page's h1 -- a heading-order
-      // skip this scan flags.
       renderWithProviders(
         <main>
           <h1>Protected page</h1>

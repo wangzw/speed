@@ -1,15 +1,3 @@
-/**
- * isPlainPrimaryClick -- the plain-primary-click judgement for in-app
- * navigation links.
- *
- * Every criterion a dispatch can produce is asserted on an event that
- * really went through one (a native click dispatched on a target, or a
- * React click fired through the DOM), so the fields the function reads
- * are the ones the platform actually sets. The one exception is the
- * absent `button` value: a dispatched click always carries `button: 0`,
- * so that criterion is asserted on a hand-written event-like object.
- */
-
 import { createElement } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
@@ -17,10 +5,6 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { isPlainPrimaryClick } from './isPlainPrimaryClick.js'
 
-/**
- * Dispatches a native click on `target` (which sets the event's target
- * the way a real activation does) and returns the event the listener saw.
- */
 function clickOn(target: Element, init: MouseEventInit = {}): MouseEvent {
   const event = new MouseEvent('click', {
     button: 0,
@@ -32,9 +16,6 @@ function clickOn(target: Element, init: MouseEventInit = {}): MouseEvent {
   return event
 }
 
-/** Creates an element, attached only to the given parent (detached by
- * default: dispatch sets the target without the element being in the
- * document). */
 function elementAround(tagName: string, parent?: Element): HTMLElement {
   const element = document.createElement(tagName)
   parent?.appendChild(element)
@@ -49,9 +30,6 @@ describe('isPlainPrimaryClick', () => {
   })
 
   it('accepts an event that carries no button value', () => {
-    // A dispatched click always carries `button: 0`, so the absent value
-    // is asserted on a hand-written event-like object: an absent value
-    // must read as the primary button, not as a non-primary one.
     const event = {
       defaultPrevented: false,
       ctrlKey: false,
@@ -96,8 +74,6 @@ describe('isPlainPrimaryClick', () => {
   })
 
   it('rejects a download anchor, whose activation saves a file instead of navigating', () => {
-    // An empty value is still a download attribute: the file name then
-    // comes from the URL.
     const anchor = elementAround('a')
     anchor.setAttribute('download', '')
     expect(isPlainPrimaryClick(clickOn(anchor))).toBe(false)

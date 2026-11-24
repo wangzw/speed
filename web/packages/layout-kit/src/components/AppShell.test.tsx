@@ -1,31 +1,3 @@
-/**
- * AppShell contract: a fully controlled, props-driven app-chrome shell.
- *
- * Covers: nav item wiring (selected/href/onClick, host-computed only --
- * AppShell never path-matches), the desktop/mobile drawer split driven
- * by useMediaQuery (permanent at md+, temporary below, uncontrolled by
- * default and promotable to controlled via mobileOpen/onMobileOpenChange),
- * that header/headerActions/userMenu/children render only host content,
- * the header/nav/main landmarks in both languages via the shipped
- * bundles, a zero-violation axe scan with `region` left enabled
- * (AppShell is page-level chrome, unlike ui-kit's per-widget components),
- * and the narrow-viewport CSS protections (the capped mobile
- * drawer width, the nav content filling its paper rather than
- * re-declaring the width itself, the wrapping AppBar row) -- see the
- * "responsive protections" describe block for what each assertion does
- * and does not prove. The a11y- and state-hardening guarantees live
- * alongside: the skip link activating without touching the host hash
- * (a hash-routed host would lose the route to fragment navigation),
- * the uncontrolled temporary drawer closing itself on nav-item
- * activation with the scrim cleared and focus released (controlled
- * contract untouched), the open state resetting when the drawer leaves
- * the temporary variant for the permanent one -- the uncontrolled state
- * cleared, a controlled host told through onMobileOpenChange on the
- * same crossing -- and the header-spacer placeholders deriving from
- * the measured header height ("measured header spacer" describe block
- * states what jsdom can and cannot prove about the wrap case).
- */
-
 import { useCallback, useState } from 'react'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -52,14 +24,10 @@ import { renderWithProviders } from '../../test-utils/render.js'
 import { stubResizeObserver } from '../../test-utils/resize-observer.js'
 import { AppShell, type AppShellNavEntry, type AppShellNavItem } from './AppShell.js'
 
-// Some harnesses below put an app route into location.hash the way a
-// hash-routed host would; nothing else in this file reads the hash, but
-// restore it after every test so no test inherits another's route.
 afterEach(() => {
   window.location.hash = ''
 })
 
-/** The declarations emotion emitted for every `css-*` class on `element`. */
 function emittedDeclarations(element: Element): string {
   const css = emittedStyleText()
   return Array.from(element.classList)
@@ -78,11 +46,6 @@ const NAV_ITEMS: readonly AppShellNavItem[] = [
   { id: 'reports', label: 'Reports', href: '/reports' },
 ]
 
-// The controlled drawer's host, the shape a real controlled consumer
-// renders: the open state lives in the host component, AppShell reports
-// every change through onMobileOpenChange, and nothing else writes it.
-// The widen-and-narrow regression below must be driven by that callback
-// alone -- a host that closed itself at the crossing would test nothing.
 function ControlledDrawerHost({
   initialOpen,
   onMobileOpenChange,
@@ -109,9 +72,6 @@ function ControlledDrawerHost({
   )
 }
 
-// The controlled-collapse host: the collapse state lives here, AppShell
-// reports every flip through onSidebarCollapsedChange, and nothing else
-// writes it -- the shape a real controlled consumer renders.
 function ControlledCollapseHost({
   initialCollapsed,
   onCollapseChange,
@@ -161,8 +121,6 @@ describe('AppShell', () => {
         <AppShell navItems={NAV_ITEMS}>content</AppShell>,
       )
       const css = emittedStyleText()
-      // Hover, selection and selected-hover each read the accent; the
-      // default primary is #2563EB, so the three alphas are explicit.
       expect(css).toContain('rgba(37, 99, 235, 0.08)')
       expect(css).toContain('rgba(37, 99, 235, 0.14)')
       expect(css).toContain('rgba(37, 99, 235, 0.18)')
@@ -205,13 +163,6 @@ describe('AppShell', () => {
       expect(toggle).toHaveAttribute('aria-expanded', 'false')
 
       await user.click(toggle)
-      // Once open, the temporary drawer is a real modal: MUI aria-hides
-      // the rest of the page (this same header button included) from
-      // assistive tech while it traps focus inside the drawer, exactly
-      // as a modal should. `hidden: true` looks past that to assert the
-      // toggle state a mouse click still reaches -- screen-reader users
-      // close through Escape or the backdrop instead, both of which stay
-      // inside the modal's own accessible subtree.
       const closeToggle = getByRole('button', {
         name: zhCN.appShell.closeNav,
         hidden: true,
@@ -219,10 +170,6 @@ describe('AppShell', () => {
       expect(closeToggle).toHaveAttribute('aria-expanded', 'true')
 
       await user.click(closeToggle)
-      // The background's aria-hidden marker lifts only once the drawer's
-      // exit transition finishes (react-transition-group's onExited),
-      // which runs on a real timer even under jsdom -- waitFor polls
-      // past that instead of asserting on an animation still in flight.
       await waitFor(() => {
         expect(getByRole('button', { name: zhCN.appShell.openNav })).toHaveAttribute(
           'aria-expanded',
@@ -249,8 +196,6 @@ describe('AppShell', () => {
 
       expect(onMobileOpenChange).toHaveBeenCalledTimes(1)
       expect(onMobileOpenChange).toHaveBeenCalledWith(true)
-      // Controlled: the prop did not change, so the shell stays closed
-      // until the host re-renders it with mobileOpen={true}.
       expect(getByRole('button', { name: zhCN.appShell.openNav })).toHaveAttribute(
         'aria-expanded',
         'false',
@@ -258,11 +203,6 @@ describe('AppShell', () => {
     })
 
     it('closes the uncontrolled temporary drawer itself when a nav item is activated, scrim cleared and focus released', async () => {
-      // Activating a nav item in the mobile drawer must close it: the
-      // temporary variant owns its open state in uncontrolled mode, so
-      // it owns the close-on-navigation transition too (the scrim
-      // clearing and the focus returning to the document are part of
-      // that close, not separate mechanisms).
       mockMatchMedia(false)
       const user = userEvent.setup()
       const { getByRole } = renderWithProviders(
@@ -279,36 +219,22 @@ describe('AppShell', () => {
       const homeLink = getByRole('link', { name: 'Home' })
       await user.click(homeLink)
 
-      // The drawer closes by itself (the toggle is back to openNav and
-      // aria-expanded false -- the suite's established close marker) ...
       await waitFor(() => {
         expect(getByRole('button', { name: zhCN.appShell.openNav })).toHaveAttribute(
           'aria-expanded',
           'false',
         )
       })
-      // ... and the scrim is cleared: MUI keeps the closed modal's
-      // backdrop mounted (keepMounted) but invisible, so "cleared" is a
-      // visibility assertion, not an absence one.
       const backdrop = document.querySelector(`.${backdropClasses.root}`)
       expect(backdrop).not.toBeNull()
       expect(backdrop).not.toBeVisible()
-      // ... the host navigation still ran (jsdom performs the anchor's
-      // fragment navigation; AppShell never blocks a nav item) ...
       expect(window.location.hash).toBe('#/home')
-      // ... and focus is back in the document instead of stranded
-      // inside the closed drawer's aria-hidden region.
       const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
       expect(paper?.contains(document.activeElement)).toBe(false)
     })
 
     it('keeps the controlled contract on nav activation: reports nothing and stays open until the host closes', async () => {
-      // The close-on-navigation transition is AppShell's own only while
-      // AppShell owns the open state. A controlled host keeps the
-      // existing contract untouched: no callback fires from a nav-item
-      // click and the drawer stays open until the host's own next
-      // render closes it.
       mockMatchMedia(false)
       const onMobileOpenChange = vi.fn()
       const user = userEvent.setup()
@@ -330,28 +256,17 @@ describe('AppShell', () => {
     })
 
     it('does not bring a portrait-open drawer back open after a widen-and-narrow round trip', async () => {
-      // The uncontrolled open state must not survive a breakpoint
-      // crossing: a drawer opened in portrait stays true while the
-      // layout grows into the permanent (always-open) variant and would
-      // re-pop open when the viewport narrows back. The open state
-      // belongs to the temporary variant alone; leaving temporary
-      // resets it.
       const media = mockMatchMedia(false)
       const user = userEvent.setup()
       const { getByRole, queryByRole } = renderWithProviders(
         <AppShell navItems={NAV_ITEMS}>content</AppShell>,
       )
 
-      // Portrait: open the temporary drawer.
       await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
       expect(
         getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
       ).toHaveAttribute('aria-expanded', 'true')
 
-      // Widen past md: the toggle leaves and the permanent drawer takes
-      // over. (queryByRole, not getByRole: an absence assertion must not
-      // throw while the element is still disappearing -- waitFor would
-      // retry the thrown query until timeout.)
       act(() => {
         media.changeMatches(true)
       })
@@ -362,9 +277,6 @@ describe('AppShell', () => {
       })
       expect(getByRole('navigation', { name: zhCN.appShell.navLabel })).toBeInTheDocument()
 
-      // Narrow back below md: the temporary drawer must come back
-      // closed -- the portrait-open state must not ride through the
-      // permanent spell and re-pop it open.
       act(() => {
         media.changeMatches(false)
       })
@@ -377,41 +289,22 @@ describe('AppShell', () => {
     })
 
     it('tells a controlled host that a portrait-open drawer must close when the viewport widens, so narrowing back finds it closed', async () => {
-      // Regression: the widen-and-narrow reset above only cleared the
-      // uncontrolled state. The controlled half of the same
-      // configuration was never told that the variant had left
-      // temporary -- the reset effect was gated off by !isControlled and
-      // no other path fires on a breakpoint crossing -- so a host
-      // holding mobileOpen=true rode through the permanent spell
-      // untouched and its drawer re-popped open (scrim and all) when the
-      // viewport narrowed back. The breakpoint is AppShell's own
-      // useMediaQuery knowledge, so onMobileOpenChange is the only
-      // channel the host can reset through; the host below stores the
-      // prop and is driven by that callback alone.
       const media = mockMatchMedia(false)
       const onMobileOpenChange = vi.fn()
       const { getByRole } = renderWithProviders(
         <ControlledDrawerHost initialOpen onMobileOpenChange={onMobileOpenChange} />,
       )
 
-      // Portrait: the host's drawer starts open.
       expect(
         getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
       ).toHaveAttribute('aria-expanded', 'true')
 
-      // Widen past md: leaving temporary means open should become false,
-      // reported exactly once -- the host applies it, and no re-fire
-      // follows on the renders the reset itself causes.
       act(() => {
         media.changeMatches(true)
       })
       expect(onMobileOpenChange).toHaveBeenCalledTimes(1)
       expect(onMobileOpenChange).toHaveBeenCalledWith(false)
 
-      // Narrow back below md: the temporary drawer comes back closed,
-      // because the host's state followed the notification -- without
-      // the crossing notification the host's state would leave it
-      // open.
       act(() => {
         media.changeMatches(false)
       })
@@ -424,11 +317,6 @@ describe('AppShell', () => {
     })
 
     it('does not hand a controlled host a meaningless close when the viewport widens past a drawer that is already closed', () => {
-      // The reset notification is gated on the drawer actually being
-      // open: a host already at false crossing into the permanent
-      // variant has nothing to learn from the crossing, so no callback
-      // fires -- the gate keeps the crossing silent for the closed case
-      // while still reporting it for the open one.
       const media = mockMatchMedia(false)
       const onMobileOpenChange = vi.fn()
       renderWithProviders(
@@ -445,9 +333,6 @@ describe('AppShell', () => {
   })
 
   describe('collapsible sidebar', () => {
-    // Entries that carry an icon: the design's icon-only rail is built
-    // from these, so the rail tests use icons to exercise the real shape
-    // (the collapsed label is clipped, the icon speaks).
     const NAV_WITH_ICONS: readonly AppShellNavItem[] = [
       {
         id: 'home',
@@ -464,7 +349,6 @@ describe('AppShell', () => {
       },
     ]
 
-    /** The ListItemText root holding an entry's label. */
     const labelRootOf = (element: HTMLElement): Element | null =>
       element.closest(`.${listItemTextClasses.root}`)
 
@@ -479,8 +363,6 @@ describe('AppShell', () => {
       expect(
         queryByRole('button', { name: zhCN.appShell.expandNav }),
       ).not.toBeInTheDocument()
-      // The always-open permanent drawer is unchanged, and its label is
-      // ordinary visible text (not clipped by any rail).
       expect(
         getByRole('navigation', { name: zhCN.appShell.navLabel }),
       ).toBeInTheDocument()
@@ -507,31 +389,20 @@ describe('AppShell', () => {
       expect(onCollapseChange).toHaveBeenCalledTimes(1)
       expect(onCollapseChange).toHaveBeenCalledWith(true)
 
-      // Collapsed NARROWS the drawer to the rail; it does not unmount it.
-      // The nav landmark and every entry survive, each still reachable by
-      // its accessible name (the label is clipped, not removed from the
-      // accessibility tree), and the icons remain rendered.
       expect(
         getByRole('navigation', { name: zhCN.appShell.navLabel }),
       ).toBeInTheDocument()
       expect(getByRole('link', { name: 'Home' })).toBeInTheDocument()
       expect(getByTestId('icon-home')).toBeInTheDocument()
       expect(getByTestId('icon-reports')).toBeInTheDocument()
-      // The label is visibly hidden (clipped to preserve the accessible
-      // name) once collapsed ...
       expect(labelRootOf(getByText('Home'))).toHaveStyle({
         position: 'absolute',
       })
-      // ... and the rail is the fixed narrow width derived from the theme
-      // spacing base (7 x 8px = 56px), NOT the old zero-width hide. The
-      // width stays a CSS max() so a function-form spacing option keeps
-      // its own unit instead of being coerced to px.
       expect(emittedStyleText()).toMatch(
         new RegExp(
           `\\.${drawerClasses.paper}\\{[^}]*width:max\\(56px,\\s*53px\\)`,
         ),
       )
-      // The toggle now offers to expand.
       expect(
         getByRole('button', { name: zhCN.appShell.expandNav }),
       ).toHaveAttribute('aria-expanded', 'false')
@@ -547,8 +418,6 @@ describe('AppShell', () => {
           onCollapseChange={() => undefined}
         />,
       )
-      // With the label clipped, the tooltip is how a sighted pointer user
-      // reads the entry.
       await user.hover(getByRole('link', { name: 'Home' }))
       expect(await findByRole('tooltip')).toHaveTextContent('Home')
     })
@@ -561,9 +430,6 @@ describe('AppShell', () => {
           onCollapseChange={() => undefined}
         />,
       )
-      // NAV_ITEMS carries no icons: the rail falls back to the visible
-      // (clipped) label rather than rendering nothing, so a host that
-      // collapses an icon-less navigation still gets readable rows.
       expect(getByRole('link', { name: 'Home' })).toBeInTheDocument()
       expect(labelRootOf(getByText('Home'))).not.toHaveStyle({
         position: 'absolute',
@@ -597,13 +463,6 @@ describe('AppShell', () => {
         return primary
       }
 
-      // jsdom performs no layout, so what this proves is where the
-      // declarations land, not the rendered ellipsis. On the label's own
-      // text element they engage as a real one-line ellipsis; on the
-      // button -- whose label is a descendant block -- `text-overflow`
-      // never applies and the button's `overflow: hidden` cuts the text
-      // mid-glyph. Moving these three declarations back onto the button
-      // turns this assertion red.
       for (const control of [
         getByRole('link', { name: 'Reports' }),
         getByRole('button', { name: 'Platform configuration' }),
@@ -611,9 +470,6 @@ describe('AppShell', () => {
         expect(primaryOf(control)).toHaveStyle({
           minWidth: '0px',
           overflow: 'hidden',
-          // `nowrap` is what keeps the label on one line; without it the
-          // text wraps and the row grows tall -- the other half of the
-          // defect this case exists for.
           whiteSpace: 'nowrap',
           textOverflow: 'ellipsis',
         })
@@ -644,8 +500,6 @@ describe('AppShell', () => {
           onCollapseChange={() => undefined}
         />,
       )
-      // The heading keeps its accessible name (and its tooltip), but the
-      // rail shows the group's icon rather than half of the heading text.
       expect(getByRole('button', { name: 'Overview' })).toBeInTheDocument()
       expect(getByTestId('icon-overview')).toBeInTheDocument()
       expect(labelRootOf(getByText('Overview'))).toHaveStyle({
@@ -663,15 +517,12 @@ describe('AppShell', () => {
           onCollapseChange={() => undefined}
         />,
       )
-      // Collapsed: the label is clipped (kept for the accessible name).
       expect(labelRootOf(getByText('Home'))).toHaveStyle({
         position: 'absolute',
       })
 
       await user.click(getByRole('button', { name: zhCN.appShell.expandNav }))
 
-      // Expanded again: the label is ordinary visible text and the nav
-      // landmark is still one.
       expect(labelRootOf(getByText('Home'))).not.toHaveStyle({
         position: 'absolute',
       })
@@ -688,8 +539,6 @@ describe('AppShell', () => {
           onCollapseChange={() => undefined}
         />,
       )
-      // Below md the collapse affordance is absent; the mobile nav toggle
-      // is the one that renders.
       expect(
         queryByRole('button', { name: zhCN.appShell.collapseNav }),
       ).not.toBeInTheDocument()
@@ -730,7 +579,6 @@ describe('AppShell', () => {
       expect(getByRole('button', { name: 'Search' })).toBeInTheDocument()
       expect(getByText('Jane Doe')).toBeInTheDocument()
       expect(getByText('Main content')).toBeInTheDocument()
-      // No stand-in placeholder text ever renders for an absent slot.
       expect(queryByText(/placeholder/i)).not.toBeInTheDocument()
     })
 
@@ -748,18 +596,12 @@ describe('AppShell', () => {
       mockMatchMedia(true)
       const { tokens } = createAppTheme()
       renderWithProviders(<AppShell navItems={NAV_ITEMS}>content</AppShell>)
-      // The brand role is for controls; the header itself is a surface,
-      // separated from the content by the divider rather than by a
-      // saturated fill or an elevation shadow.
       const banner = screen.getByRole('banner')
       expect(banner).toHaveStyle({
         backgroundColor: tokens.color.background.paper,
         color: tokens.color.text.primary,
         borderBottom: `1px solid ${tokens.color.divider}`,
       })
-      // The divider, not a shadow, separates the header from the page:
-      // MUI resolves elevation to a CSS variable jsdom cannot read, so
-      // the elevation-0 class pins it instead.
       expect(banner).toHaveClass(paperClasses.elevation0)
     })
   })
@@ -776,8 +618,6 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // The landmark keeps its name; the slots are its siblings, not its
-      // content, so they add no entries to the navigation and no name.
       const nav = getByRole('navigation', { name: zhCN.appShell.navLabel })
       const header = getByTestId('nav-header')
       const footer = getByTestId('nav-footer')
@@ -856,8 +696,6 @@ describe('AppShell', () => {
       expect(nav.nextElementSibling).toBe(getByTestId('nav-footer'))
 
       await user.click(getByTestId('nav-footer'))
-      // The uncontrolled temporary drawer closes itself, the same
-      // transition a nav-item activation performs.
       await waitFor(() => {
         expect(
           getByRole('button', { name: zhCN.appShell.openNav }),
@@ -887,7 +725,6 @@ describe('AppShell', () => {
       await user.click(getByTestId('nav-footer'))
       expect(onMobileOpenChange).toHaveBeenCalledTimes(1)
       expect(onMobileOpenChange).toHaveBeenCalledWith(false)
-      // Controlled: the prop did not change, so the shell stays open.
       expect(
         getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
       ).toHaveAttribute('aria-expanded', 'true')
@@ -910,8 +747,6 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // The slot must actually render and receive the state, or this case
-      // would pass with the slot removed entirely.
       expect(getByTestId('nav-footer')).toBeInTheDocument()
       expect(captured).toBeTypeOf('function')
       act(() => {
@@ -926,8 +761,6 @@ describe('AppShell', () => {
         <AppShell navItems={NAV_ITEMS}>content</AppShell>,
       )
       const nav = getByRole('navigation', { name: zhCN.appShell.navLabel })
-      // Before the landmark there is only the head spacer; after it
-      // nothing at all -- an absent slot adds no container and no height.
       expect(nav.previousElementSibling).toHaveClass(toolbarClasses.root)
       expect(nav.nextElementSibling).toBeNull()
     })
@@ -938,14 +771,7 @@ describe('AppShell', () => {
       vi.unstubAllGlobals()
     })
 
-    // The sidebar layout's region mapping: at md+ there is no app bar
-    // (hence no banner landmark), the brand and the collapse toggle sit
-    // in the drawer paper's top row, and headerActions/userMenu in its
-    // bottom row -- the brand and the rows stay siblings of the nav
-    // landmark. Below md a minimal top bar carries the drawer trigger and
-    // the brand only, so the brand appears exactly once.
 
-    /** The mounted drawer paper. */
     const paper = (): HTMLElement => {
       const element = document.querySelector<HTMLElement>(
         `.${drawerClasses.paper}`,
@@ -968,9 +794,6 @@ describe('AppShell', () => {
         </AppShell>,
       )
 
-      // The sidebar shape separates the brand row from the column with its
-      // own rule, so the list carries no top inset of its own: a second inset
-      // under that rule reads as a brand row that sits too high.
       const list = getByRole('navigation', {
         name: zhCN.appShell.navLabel,
       }).querySelector('ul')
@@ -1007,9 +830,6 @@ describe('AppShell', () => {
         </AppShell>,
       )
 
-      // The desktop sidebar shell has no app bar, so no `banner`
-      // landmark exists -- the documented difference from the topbar
-      // layout.
       expect(queryByRole('banner')).toBeNull()
       expect(
         getByRole('navigation', { name: zhCN.appShell.navLabel }),
@@ -1021,12 +841,6 @@ describe('AppShell', () => {
       const search = getByRole('button', { name: 'Search' })
       const account = getByRole('button', { name: 'Account' })
 
-      // The whole chrome column is one named complementary landmark, so
-      // the brand and the bottom-row controls are reachable through the
-      // landmark list instead of floating outside every landmark (which a
-      // page-level axe scan rejects). The nav landmark stays a separate
-      // nested landmark: the brand is before it, the actions after it,
-      // and all of them are its siblings, not its content.
       const region = getByRole('complementary', {
         name: zhCN.appShell.sidebarRegionLabel,
       })
@@ -1056,15 +870,9 @@ describe('AppShell', () => {
         </AppShell>,
       )
 
-      // No head container: the shell root holds the skip link, the
-      // sidebar column and main, and nothing pinned on top.
       const root = container.firstElementChild
       expect(root?.children).toHaveLength(3)
 
-      // With no head there is nothing to clear, so neither the drawer
-      // paper nor main carries a spacer. The jsdom fallback (no
-      // ResizeObserver) would otherwise leave the theme toolbar height
-      // (56/64px) as a permanent gap.
       expect(paper().querySelector(`.${toolbarClasses.root}`)).toBeNull()
       expect(
         getByRole('main').querySelector(`.${toolbarClasses.root}`),
@@ -1086,15 +894,10 @@ describe('AppShell', () => {
       const notice = getByTestId('notice')
       const head = notice.parentElement?.parentElement ?? null
       expect(head).not.toBeNull()
-      // The banner is the head's only child -- no app bar above it -- and
-      // the head is the one pinned container; the slot still adds no
-      // landmark of its own, and no app bar means no banner landmark.
       expect((head as HTMLElement).children[0]).toBe(notice.parentElement)
       expect(getComputedStyle(head as Element).position).toBe('fixed')
       expect(queryByRole('banner')).toBeNull()
 
-      // Both spacers exist (and, in jsdom, keep the theme toolbar
-      // fallback until a real measurement arrives).
       expect(
         getByRole('main').querySelector(`.${toolbarClasses.root}`),
       ).not.toBeNull()
@@ -1117,8 +920,6 @@ describe('AppShell', () => {
       )
       const notice = getByTestId('notice')
       const bar = getByRole('banner')
-      // The minimal bar is the head's first child and the banner follows
-      // it in normal flow; both live in the one fixed head.
       expect(
         bar.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
@@ -1143,20 +944,14 @@ describe('AppShell', () => {
         </AppShell>,
       )
 
-      // The minimal bar is the banner landmark and carries the trigger.
       expect(getByRole('banner')).toBeInTheDocument()
       expect(getByRole('button', { name: zhCN.appShell.openNav })).toBeInTheDocument()
-      // The brand appears exactly once before the drawer opens.
       expect(getAllByText('Speed Admin')).toHaveLength(1)
-      // The actions are not in the minimal bar: they live in the
-      // (closed, aria-hidden) temporary drawer, so the bar offers only
-      // the trigger.
       expect(queryByRole('button', { name: 'Search' })).toBeNull()
       expect(queryByRole('button', { name: 'Account' })).toBeNull()
 
       await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
 
-      // The open temporary drawer carries the bottom row ...
       const drawerPaper = paper()
       expect(drawerPaper).toContainElement(
         getByRole('button', { name: 'Search' }),
@@ -1164,8 +959,6 @@ describe('AppShell', () => {
       expect(drawerPaper).toContainElement(
         getByRole('button', { name: 'Account' }),
       )
-      // ... and no top row: the brand is not rendered a second time in
-      // the drawer (the minimal bar already shows it).
       expect(getAllByText('Speed Admin')).toHaveLength(1)
       expect(
         getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
@@ -1186,13 +979,9 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // The toggle moved from the app bar to the paper's top row; its
-      // state-derived accessible name is the same.
       expect(
         getByRole('button', { name: zhCN.appShell.expandNav }),
       ).toBeInTheDocument()
-      // Clipped or not, the bottom-row controls keep their accessible
-      // names.
       expect(getByRole('button', { name: 'Search' })).toBeInTheDocument()
       expect(getByRole('button', { name: 'Account' })).toBeInTheDocument()
     })
@@ -1214,8 +1003,6 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // Both slots resolve against the rail they render in, so a host
-      // control wider than the rail can hand over its icon form.
       expect(collapsed.getAllByRole('button', { name: 'icon form' })).toHaveLength(2)
       collapsed.unmount()
 
@@ -1245,11 +1032,6 @@ describe('AppShell', () => {
         >
           content
         </AppShell>,
-        // A dense preset's spacing base: 7 x 6 = 42px, below the floor.
-        // The declaration keeps both operands: jsdom cannot evaluate the
-        // CSS max(), and a browser resolves it to the floor -- a control
-        // at the touch-target minimum, the focus ring's clearance on both
-        // sides of it, and the paper's divider.
         { projectTokens: { spacing: { unit: 6 } } },
       )
       expect(emittedStyleText()).toMatch(
@@ -1275,9 +1057,6 @@ describe('AppShell', () => {
         getByRole('main').querySelector(`.${toolbarClasses.root}`),
       ).toHaveStyle({ minHeight: '160px' })
 
-      // Switching to the sidebar layout (with the banner, so a head
-      // still mounts) discards the topbar-layout measurement instead of
-      // letting it become a permanent gap ...
       rerender(
         <AppShell shellLayout="sidebar" navItems={NAV_ITEMS} banner={banner}>
           content
@@ -1289,8 +1068,6 @@ describe('AppShell', () => {
       expect(mainSpacer).not.toBeNull()
       expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
 
-      // ... and the observer re-attaches to the same mounted head, so
-      // the next measurement lands again.
       resizeObserver.emitHeightFor(head as Element, 96)
       expect(
         (
@@ -1302,12 +1079,6 @@ describe('AppShell', () => {
     })
 
     it('resets the measured head height when the viewport crosses the desktop breakpoint', () => {
-      // The head's contents change with the breakpoint (the mobile branch
-      // loses the header actions, say), so a height measured on one side
-      // must not survive to the other. This drives the mounted shell
-      // across `md` through the same matchMedia subscription a real
-      // viewport resize uses; the ResizeObserver stub does not re-emit on
-      // re-observe, so only the reset can clear the stale height.
       const media = mockMatchMedia(true)
       const resizeObserver = stubResizeObserver()
       const banner = <p data-testid="notice">Impersonating</p>
@@ -1347,10 +1118,6 @@ describe('AppShell', () => {
           <h1>Main content</h1>
         </AppShell>,
       )
-      // The desktop form is the one the narrow-viewport scan below never
-      // reaches: the brand row and the bottom action row are not the nav
-      // landmark nor main, so without a landmark around them the page tier
-      // fails `region`.
       await expectNoAxeViolations()
     })
 
@@ -1369,8 +1136,6 @@ describe('AppShell', () => {
         </AppShell>,
       )
       await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
-      // The open drawer's focus trap needs a real Tab, which jsdom lacks; the
-      // named browser case exercises it and decides aria-hidden-focus.
       await expectNoAxeViolations({
         decidedInBrowser: 'appShellSidebarDrawer',
       })
@@ -1378,17 +1143,6 @@ describe('AppShell', () => {
   })
 
   describe('drawer column and pinned footer', () => {
-    // The footer must stick to the paper's bottom edge: in the topbar
-    // layout the fixed app bar already carries the header, the actions
-    // and the user menu, so the drawer paper's bottom edge is the account
-    // entry's only home. Every drawer paper is therefore a fixed flex
-    // column -- the paper itself never scrolls (`overflow: hidden`), the
-    // nav between the paper's chrome takes `flex: 1 1 auto` with
-    // `minHeight: 0` and is the one scrolling region, and the footer slot
-    // follows it at the bottom of the column. jsdom performs no layout,
-    // so these cases assert the declarations and the DOM chain that
-    // produce that edge; the Chromium suite ("the drawer footer sticks to
-    // the bottom") measures the edge itself.
     const drawerPaper = (): HTMLElement => {
       const element = document.querySelector<HTMLElement>(
         `.${drawerClasses.paper}`,
@@ -1399,8 +1153,6 @@ describe('AppShell', () => {
       return element
     }
 
-    // The paper's flex column: the named complementary landmark that
-    // carries the paper's chrome and the nav.
     const drawerColumn = (paper: HTMLElement): HTMLElement => {
       const column = paper.querySelector<HTMLElement>('aside')
       if (column === null) {
@@ -1414,19 +1166,13 @@ describe('AppShell', () => {
       nav: HTMLElement,
       footer: HTMLElement,
     ): void => {
-      // The paper is the fixed column, not a scrolling layer. Drawer's
-      // paper rule is scoped by the Drawer root (`& .MuiDrawer-paper`),
-      // so the declaration is read through the computed style rather than
-      // from the paper's own emotion classes.
       expect(getComputedStyle(paper).overflow).toBe('hidden')
 
-      // The nav is the column's one growing, scrolling region.
       const navDeclarations = emittedDeclarations(nav)
       expect(navDeclarations).toMatch(/flex:1 1 auto/)
       expect(navDeclarations).toMatch(/min-height:0(?:px)?/)
       expect(navDeclarations).toMatch(/overflow-y:auto/)
 
-      // The column fills the paper and stacks its children.
       expect(drawerColumn(paper)).toHaveStyle({
         display: 'flex',
         flexDirection: 'column',
@@ -1434,19 +1180,12 @@ describe('AppShell', () => {
         minHeight: '0px',
       })
 
-      // The footer follows the nav directly and closes the column, so a
-      // nav that takes every free pixel leaves the footer's bottom edge on
-      // the paper's bottom edge.
       expect(nav.nextElementSibling).toBe(footer)
       expect(drawerColumn(paper).lastElementChild).toBe(footer)
     }
 
     for (const layout of ['topbar', 'sidebar'] as const) {
       it(`keeps the ${layout} permanent paper a fixed column whose nav scrolls and whose footer sits at the bottom`, () => {
-        // In the topbar layout the footer is the account entry's only
-        // home (the app bar carries everything else); the sidebar layout
-        // builds its bottom chrome row on the same pinned column, so both
-        // must keep the footer on the paper's bottom edge.
         mockMatchMedia(true)
         const { getByRole, getByTestId } = renderWithProviders(
           <AppShell
@@ -1466,9 +1205,6 @@ describe('AppShell', () => {
     }
 
     it('gives the mobile temporary drawer the same fixed column and pinned footer', async () => {
-      // Below md the temporary drawer is the only navigation surface, so
-      // its footer must stay pinned there too, not just in the permanent
-      // paper.
       mockMatchMedia(false)
       const user = userEvent.setup()
       const { getByRole, getByTestId } = renderWithProviders(
@@ -1509,8 +1245,6 @@ describe('AppShell', () => {
       expect(
         getByRole('navigation', { name: 'Console navigation' }),
       ).toBeInTheDocument()
-      // The package default no longer names this landmark once the host
-      // supplies its own.
       expect(
         queryByRole('navigation', { name: zhCN.appShell.navLabel }),
       ).not.toBeInTheDocument()
@@ -1523,29 +1257,12 @@ describe('AppShell', () => {
       )
       const skipLink = getByRole('link', { name: zhCN.appShell.skipToContent })
       const main = getByRole('main')
-      // The skip link keeps an anchor identity (and, with it, an href) ...
       expect(skipLink.getAttribute('href')).toBe(`#${main.id}`)
-      // ... and the target must be programmatically focusable
-      // (tabIndex={-1}) for the skip mechanism's own programmatic focus
-      // to land, or a browser's fragment-navigation focusing algorithm
-      // only scrolls to it without ever moving the assistive-tech focus
-      // cursor. jsdom enforces the same focusability rule as browsers,
-      // so calling .focus() directly on the target is a faithful check
-      // of the mechanism the skip link relies on.
       main.focus()
       expect(document.activeElement).toBe(main)
     })
 
     it('activates the skip link without touching the host hash and moves focus into main', async () => {
-      // The skip link is not a plain `href="#target"` anchor: activating
-      // such an anchor runs real fragment navigation, which REWRITES
-      // location.hash. For a host that routes through the fragment (its
-      // own router parses location.hash into its
-      // surfaces), that would replace the app route with the generated
-      // target id and the route would be lost. The harness below mimics
-      // such a host: the hash carries an app route, and the skip link
-      // must leave it alone while still moving focus -- driven the way a
-      // real keyboard user would (Tab to it, Enter to activate).
       mockMatchMedia(true)
       window.location.hash = '/notes'
       const user = userEvent.setup()
@@ -1559,23 +1276,11 @@ describe('AppShell', () => {
       expect(skipLink).toHaveFocus()
       await user.keyboard('{Enter}')
 
-      // The app route survives the activation ...
       expect(window.location.hash).toBe('#/notes')
-      // ... and focus moved into the main landmark. jsdom performs the
-      // fragment navigation itself (it rewrites the hash and never
-      // moves focus), so this half passes only when the app's own
-      // activation handler moved focus into the landmark -- with the
-      // native mechanism, the hash lands on the target id and focus
-      // stays on the link.
       expect(document.activeElement).toBe(main)
     })
 
     it('keeps the skip link first in tab order even when the banner slot holds a focusable control', async () => {
-      // The skip link is the first focusable element in the shell; a
-      // focusable control inside the banner slot (the impersonation
-      // banner's own end control is one) must follow it in DOM order, or
-      // the first Tab press lands in the banner and skips the way past
-      // the whole repeated region instead of leading to main.
       mockMatchMedia(true)
       const user = userEvent.setup()
       const { getByRole } = renderWithProviders(
@@ -1600,13 +1305,6 @@ describe('AppShell', () => {
       await act(async () => {
         await switchLanguage(i18n, 'en-US')
       })
-      // The temporary drawer starts closed, and MUI keeps a closed (but
-      // keepMounted) modal's own root aria-hidden -- an aria-hidden
-      // subtree contributes no accessible name at all (by the accname
-      // spec), so `hidden: true` finds the node but a `name` filter on
-      // it never matches. Assert the built-in text landed on the
-      // attribute directly instead; open/close accessibility is covered
-      // separately in the "responsive drawer" tests above.
       expect(getByRole('navigation', { hidden: true })).toHaveAttribute(
         'aria-label',
         enUS.appShell.navLabel,
@@ -1616,11 +1314,6 @@ describe('AppShell', () => {
   })
 
   describe('responsive protections', () => {
-    // jsdom evaluates neither real layout nor `@media` conditions, so
-    // these are property/snapshot assertions on the generated CSS text
-    // or on a plain (non-breakpoint-gated) computed style value -- they
-    // prove the intended declaration was wired into the render, not
-    // that it looks correct at a real narrow viewport.
     it('caps the mobile (temporary) drawer paper width to a CSS min() of sidebarWidth and a viewport fraction', () => {
       mockMatchMedia(false)
       renderWithProviders(
@@ -1638,13 +1331,6 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // A precise rule-text match (not a "no 85vw anywhere" assertion,
-      // since emotion's injected <style> accumulates every rule any
-      // test in this file has rendered so far and never removes one on
-      // unmount) -- this is the permanent Drawer's own docked-paper
-      // rule: plain box-sizing/width with no CSS min() wrapping it, plus
-      // the fixed-column overflow that keeps the paper itself from
-      // scrolling.
       expect(emittedStyleText()).toMatch(
         new RegExp(
           `\\.${drawerClasses.paper}\\{box-sizing:border-box;width:280px;overflow:hidden;\\}`,
@@ -1653,17 +1339,6 @@ describe('AppShell', () => {
     })
 
     it('fills its Drawer paper with the nav content instead of re-declaring sidebarWidth, so the content can never outgrow the mobile paper\'s capped width', () => {
-      // The nav Box inside both Drawer variants must not carry its own
-      // fixed `width: sidebarWidth`, independent of the paper's width.
-      // The desktop (permanent) Drawer's paper is the plain
-      // sidebarWidth too, but the mobile (temporary) Drawer's paper is
-      // capped to `min(sidebarWidth, 85vw)` -- a second, independent
-      // sidebarWidth on the content would silently outgrow that cap and
-      // bleed past the paper's fixed-position edge (Drawer's paper sets
-      // no overflow-x). Asserting `width: 100%` on the nav element
-      // itself (fills whichever paper it is mounted into) makes that
-      // impossible by construction, in both the closed-mobile and
-      // desktop cases.
       mockMatchMedia(false)
       const { getByRole } = renderWithProviders(
         <AppShell navItems={NAV_ITEMS} sidebarWidth={280}>
@@ -1722,13 +1397,6 @@ describe('AppShell', () => {
     })
 
     it('raises the shell toggles and the nav entries to the 44px touch-target floor under a coarse pointer', () => {
-      // The touch-target gate is a media feature, not a breakpoint (see
-      // the layout design): a coarse pointer gets the floor on the shell's
-      // own toggle buttons and on every navigation entry, a precise
-      // pointer the stock sizes. jsdom evaluates no real media condition,
-      // so the emitted CSS is matched against the real controls (see
-      // @speed/test-utils/emitted-css): a coarse rule elsewhere on the
-      // page cannot satisfy these assertions for them.
       mockMatchMedia(true)
       renderWithProviders(
         <AppShell
@@ -1738,9 +1406,6 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // The samples are the shell's real controls, not the media block in
-      // the abstract: the navigation entry (a ListItemButton rendered as
-      // an anchor) and the collapse toggle both carry the floor.
       expect(
         hasCoarsePointerTouchTarget(
           screen.getByRole('link', { name: 'Home' }),
@@ -1760,20 +1425,6 @@ describe('AppShell', () => {
     })
 
     it('derives every spacer from the measured header height, so a wrapped header cannot cover content below it', async () => {
-      // The AppBar row wraps under real overflow pressure (the flexWrap
-      // protection), which makes its height taller than the theme
-      // toolbar default -- a taller fixed header would cover the top of
-      // main and the drawer's first item. jsdom evaluates no real
-      // layout, so this test cannot observe an actual wrap or measure
-      // actual coverage; what it can and does prove is the mechanism
-      // that keeps the two in lockstep:
-      // the header's rendered height is measured (ResizeObserver on the
-      // banner) and every spacer placeholder (one in the drawer paper,
-      // one in main) derives its min-height from that measurement, and
-      // the drawer's nav follows its spacer in document order. In a
-      // real browser that height equality is what keeps the fixed
-      // AppBar from covering main and the drawer when the toolbar
-      // wraps onto a second row.
       mockMatchMedia(true)
       const resizeObserver = stubResizeObserver()
       const { getByRole } = renderWithProviders(
@@ -1786,26 +1437,18 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // The observer watches the one fixed head container (the AppBar's
-      // parent), whose height is the AppBar plus anything below it.
       expect(resizeObserver.observedElement()).toBe(
         getByRole('banner').parentElement,
       )
 
-      // ... and reports a wrapped, two-row header height.
       resizeObserver.emitHeight(112)
 
-      // The main landmark's spacer carries the measured height ...
       const main = getByRole('main')
       const mainSpacer = main.querySelector(`.${toolbarClasses.root}`)
       expect(mainSpacer).not.toBeNull()
       expect(mainSpacer).toHaveStyle({ minHeight: '112px' })
-      // The height is carried inline, so the theme toolbar's `sm`
-      // breakpoint rule cannot restore the single-row height at 600px
-      // and above -- the same protection the banner case needs.
       expect((mainSpacer as HTMLElement).style.minHeight).toBe('112px')
 
-      // ... and so does the drawer paper's spacer ...
       const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
       const drawerSpacer = paper?.querySelector(`.${toolbarClasses.root}`) ?? null
@@ -1813,9 +1456,6 @@ describe('AppShell', () => {
       expect(drawerSpacer).toHaveStyle({ minHeight: '112px' })
       expect((drawerSpacer as HTMLElement).style.minHeight).toBe('112px')
 
-      // ... so the first drawer item sits below the spacer in the
-      // paper, exactly where the fixed header's overlay ends when the
-      // spacer matches the header's height.
       const nav = paper?.querySelector('nav') ?? null
       expect(nav).not.toBeNull()
       expect(
@@ -1830,8 +1470,6 @@ describe('AppShell', () => {
       vi.unstubAllGlobals()
     })
 
-    /** The one fixed head container: the banner slot's parent, holding
-     * the AppBar first and the banner after it. */
     const headOf = (notice: Element): HTMLElement => {
       const slot = notice.parentElement
       const head = slot?.parentElement ?? null
@@ -1853,8 +1491,6 @@ describe('AppShell', () => {
       )
       const notice = getByTestId('notice')
       const appBar = getByRole('banner')
-      // Below the app bar: the AppBar precedes the banner in document
-      // order, and the two are children of the same fixed head.
       expect(
         appBar.compareDocumentPosition(notice) &
           Node.DOCUMENT_POSITION_FOLLOWING,
@@ -1865,8 +1501,6 @@ describe('AppShell', () => {
       expect(head.children[0]).toBe(appBar)
       expect(head.children[1]).toBe(notice.parentElement)
 
-      // The head is the fixed, full-width, pinned container; the AppBar
-      // itself stays in normal flow inside it.
       const headStyle = getComputedStyle(head)
       expect(headStyle.position).toBe('fixed')
       expect(headStyle.top).toBe('0px')
@@ -1876,15 +1510,11 @@ describe('AppShell', () => {
       expect(headStyle.flexDirection).toBe('column')
       expect(appBar).toHaveClass(appBarClasses.positionStatic)
 
-      // The slot adds no padding, border or minimum height of its own:
-      // its height is exactly the host node's.
       const slot = getComputedStyle(notice.parentElement as Element)
       expect(slot.padding).toMatch(/^0(px)?$/)
       expect(slot.borderWidth).toMatch(/^0(px)?$/)
       expect(slot.minHeight).toBe('auto')
 
-      // Same layer the AppBar carried before: above the permanent drawer
-      // paper and page content, below modal panels and dialogs.
       const { theme } = createAppTheme()
       const zIndex = Number(headStyle.zIndex)
       expect(zIndex).toBe(theme.zIndex.drawer + 1)
@@ -1908,31 +1538,22 @@ describe('AppShell', () => {
         </AppShell>,
       )
       const head = headOf(getByTestId('notice'))
-      // Exactly one observed box: the head. Its height already contains
-      // the AppBar and the banner, so no child's measurement is needed.
       expect(resizeObserver.observedElements()).toEqual([head])
       expect(resizeObserver.instances()).toHaveLength(1)
 
-      // The AppBar keeps no independent top offset.
       expect((getByRole('banner') as HTMLElement).style.top).toBe('')
 
       resizeObserver.emitHeightFor(head, 160)
 
-      // The main landmark's spacer carries the head's measured height ...
       const mainSpacer = getByRole('main').querySelector(`.${toolbarClasses.root}`)
       expect(mainSpacer).not.toBeNull()
       expect(mainSpacer).toHaveStyle({ minHeight: '160px' })
-      // ... and so does the drawer paper's spacer ...
       const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
       const drawerSpacer = paper?.querySelector(`.${toolbarClasses.root}`) ?? null
       expect(drawerSpacer).not.toBeNull()
       expect(drawerSpacer).toHaveStyle({ minHeight: '160px' })
-      // ... and the paper itself carries no top offset: the fixed head
-      // covers its first strip, and the spacer inside it reserves the
-      // same head height.
       expect(getComputedStyle(paper as Element).top).not.toBe('160px')
-      // The first drawer item sits below the spacer.
       const nav = paper?.querySelector('nav') ?? null
       expect(nav).not.toBeNull()
       expect(
@@ -1942,14 +1563,6 @@ describe('AppShell', () => {
     })
 
     it('writes the measured head height as an inline style, out of reach of the theme toolbar breakpoint rule', () => {
-      // The theme toolbar mixin contributes `min-height: 56` at the base
-      // and `64` under `sm`, and that breakpoint rule lands after an
-      // equal-specificity `sx` class -- an sx-written height is
-      // overridden from 600px up, where the head then covers the top of
-      // content again. jsdom evaluates no media conditions, so this test
-      // proves where the height is carried (the style attribute, which no
-      // class rule outranks), not how a real viewport paints; the
-      // declaration that survives there is the one asserted here.
       mockMatchMedia(true)
       const resizeObserver = stubResizeObserver()
       const { getByTestId, getByRole } = renderWithProviders(
@@ -1986,8 +1599,6 @@ describe('AppShell', () => {
         </AppShell>,
       )
       const head = headOf(getByTestId('notice'))
-      // The temporary drawer is keepMounted, so its paper and spacer are
-      // reachable even while the drawer is closed.
       const drawerSpacer =
         document.querySelector(`.${drawerClasses.paper} .${toolbarClasses.root}`)
       expect(drawerSpacer).not.toBeNull()
@@ -2011,8 +1622,6 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // Unmeasured means the theme's single-row toolbar: the banner still
-      // follows the AppBar in document order, so it cannot overlap it.
       const head = headOf(getByTestId('notice'))
       expect(head.children[0]).toBe(getByRole('banner'))
       expect(head.children[1]).not.toBeUndefined()
@@ -2043,8 +1652,6 @@ describe('AppShell', () => {
 
       rerender(<AppShell navItems={NAV_ITEMS}>content</AppShell>)
       expect(queryByTestId('notice')).not.toBeInTheDocument()
-      // The head itself stays mounted (it holds the AppBar); only the
-      // banner slot is gone, and the observer reports the new height.
       expect(getByRole('banner').parentElement).toBe(head)
       expect(head.children).toHaveLength(1)
       resizeObserver.emitHeightFor(head, 112)
@@ -2068,8 +1675,6 @@ describe('AppShell', () => {
       expect(resizeObserver.observedElements()).toEqual([head])
       expect(resizeObserver.instances()).toHaveLength(1)
 
-      // A different banner node reuses the same head and the same
-      // observer: the measured box did not change.
       const other = <p data-testid="other">Other notice</p>
       rerender(
         <AppShell navItems={NAV_ITEMS} banner={other}>
@@ -2095,8 +1700,6 @@ describe('AppShell', () => {
         </AppShell>,
       )
       const head = headOf(getByTestId('empty'))
-      // The empty host node contributes no slot height; the head's own
-      // measured height is the AppBar alone.
       resizeObserver.emitHeightFor(head, 112)
       expect(
         getByRole('main').querySelector(`.${toolbarClasses.root}`),
@@ -2117,8 +1720,6 @@ describe('AppShell', () => {
           <p>route b</p>
         </AppShell>,
       )
-      // The same host node survives the content swap: the slot belongs to
-      // the shell, not to the routed children.
       expect(getByTestId('notice')).toBe(notice)
       expect(screen.getByText('route b')).toBeInTheDocument()
       expect(screen.queryByText('route a')).not.toBeInTheDocument()
@@ -2132,11 +1733,9 @@ describe('AppShell', () => {
             content
           </AppShell>,
         )
-        // The skip link, the fixed head, the sidebar column and main.
         const root = container.firstElementChild
         expect(root?.children).toHaveLength(4)
         expect(root?.firstElementChild?.tagName).toBe('A')
-        // The head holds only the AppBar.
         const head = root?.children[1]
         expect(head?.children).toHaveLength(1)
         unmount()
@@ -2157,8 +1756,6 @@ describe('AppShell', () => {
       expect(slot?.hasAttribute('role')).toBe(false)
       expect(slot?.hasAttribute('aria-label')).toBe(false)
       expect(slot?.hasAttribute('aria-live')).toBe(false)
-      // The shell's own landmark set is unchanged, and the slot created
-      // none of the roles the host node is expected to carry.
       expect(queryAllByRole('region')).toHaveLength(0)
       expect(queryAllByRole('status')).toHaveLength(0)
     })
@@ -2183,8 +1780,6 @@ describe('AppShell', () => {
     })
 
     it('keeps the skip link first and puts header controls before banner controls in tab order', async () => {
-      // The design's order: skip link, the AppBar's controls, then the
-      // banner slot's own controls, then main.
       mockMatchMedia(false)
       const user = userEvent.setup()
       const { getByRole } = renderWithProviders(
@@ -2207,15 +1802,10 @@ describe('AppShell', () => {
       expect(
         getByRole('button', { name: 'End impersonation' }),
       ).toHaveFocus()
-      // Main itself is not a Tab stop (tabIndex -1); the skip link is the
-      // keyboard path into it, which the first assertion above covers.
     })
   })
 
   describe('navigation groups', () => {
-    // A grouped navigation: two titled, collapsible sections whose entries are
-    // ordinary links. Backward compatibility is the point of the flat test at
-    // the end -- an existing AppShellNavItem[] host renders exactly as before.
     const GROUPED: readonly AppShellNavEntry[] = [
       {
         id: 'overview',
@@ -2237,12 +1827,10 @@ describe('AppShell', () => {
       const { getByRole } = renderWithProviders(
         <AppShell navItems={GROUPED}>content</AppShell>,
       )
-      // The heading is the expand control, open by default.
       expect(getByRole('button', { name: 'Overview' })).toHaveAttribute(
         'aria-expanded',
         'true',
       )
-      // The entries beneath it are real links, selection preserved.
       const home = getByRole('link', { name: 'Home' })
       expect(home).toHaveAttribute('href', '/home')
       expect(home).toHaveAttribute('aria-current', 'page')
@@ -2262,10 +1850,8 @@ describe('AppShell', () => {
         'aria-expanded',
         'false',
       )
-      // Collapsed: the group's own entries are gone from the a11y tree ...
       expect(queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
       expect(queryByRole('link', { name: 'Roles' })).not.toBeInTheDocument()
-      // ... while another group's entries are untouched.
       expect(getByRole('link', { name: 'Home' })).toBeInTheDocument()
 
       await user.click(getByRole('button', { name: 'Administration' }))
@@ -2317,12 +1903,10 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      // The parent is a disclosure (not a link), open by default.
       expect(getByRole('button', { name: 'Identity' })).toHaveAttribute(
         'aria-expanded',
         'true',
       )
-      // Each child is a real link, indented one level (theme spacing 4 = 32px).
       const users = getByRole('link', { name: 'Users' })
       expect(users).toHaveAttribute('href', '/users')
       expect(users).toHaveStyle({ paddingLeft: '32px' })
@@ -2362,8 +1946,6 @@ describe('AppShell', () => {
       const { getByRole, queryAllByRole } = renderWithProviders(
         <AppShell navItems={NAV_ITEMS}>content</AppShell>,
       )
-      // Backward compatibility: the original AppShellNavItem[] shape renders
-      // the same links and introduces no disclosure controls.
       expect(getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/home')
       expect(getByRole('link', { name: 'Reports' })).toHaveAttribute('href', '/reports')
       expect(queryAllByRole('button')).toHaveLength(0)
@@ -2398,13 +1980,6 @@ describe('AppShell', () => {
   })
 
   describe('accessibility', () => {
-    // Both closed-layout scans render the shell with the page content a
-    // real host puts inside `main` -- including the page's h1, which
-    // chrome deliberately does not render itself: page-has-heading-one
-    // is determinate in jsdom (see the axe helper header), so a scan
-    // document without an h1 fails instead of passing by indeterminacy.
-    // The shell's own landmark structure (a real main) answers
-    // landmark-one-main; region stays enabled.
     it('has no axe violations on the desktop layout, with region enabled', async () => {
       mockMatchMedia(true)
       renderWithProviders(
@@ -2420,12 +1995,6 @@ describe('AppShell', () => {
     })
 
     it('has no axe violations with a focusable banner slot, with region enabled', async () => {
-      // The skip link now renders outside the shell's landmarks, ahead
-      // of the banner slot. axe's region rule exempts a skip link whose
-      // fragment target resolves (here, `main`), which this scan proves
-      // for a banner carrying a focusable control, the shape the host
-      // impersonation banner has. The banner fixture carries its own
-      // region role, as the host's does.
       mockMatchMedia(true)
       renderWithProviders(
         <AppShell
@@ -2453,14 +2022,6 @@ describe('AppShell', () => {
     })
 
     it('has no axe violations on the mobile layout with the drawer OPEN, with region enabled', async () => {
-      // The temporary drawer is a real modal (role=dialog aria-modal)
-      // while open -- the only usable state of mobile navigation -- so
-      // the closed-layout scans above never measure it. The drawer's
-      // paper carries the nav label as its dialog name (see
-      // AppShell.tsx); without an accessible name, axe's
-      // aria-dialog-name rule fails the paper. This scan runs over the
-      // open state. Page-context rules are exempted while the modal is
-      // open, the same passForModal semantics a browser applies.
       mockMatchMedia(false)
       const user = userEvent.setup()
       const { getByRole } = renderWithProviders(
@@ -2474,8 +2035,6 @@ describe('AppShell', () => {
           .querySelector(`.${drawerClasses.paper}`)
           ?.getAttribute('aria-modal'),
       ).toBe('true')
-      // The open drawer's focus trap needs a real Tab, which jsdom lacks; the
-      // named browser case exercises it and decides aria-hidden-focus.
       await expectNoAxeViolations({
         decidedInBrowser: 'appShellMobileDrawer',
       })
