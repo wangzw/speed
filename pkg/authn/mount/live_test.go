@@ -35,7 +35,9 @@ import (
 const listeningMsg = "an HTTP listener is listening"
 
 // waitBound bounds every request these cases send.
-var waitBound = coretest.Scale(5 * time.Second)
+func waitBound() time.Duration {
+	return coretest.Scale(5 * time.Second)
+}
 
 // fakeVerifier is a credential-verifying backend that answers from a function.
 type fakeVerifier struct {
@@ -329,7 +331,7 @@ func (s liveStack) run(t *testing.T, use func(l *live)) error {
 			use(&live{
 				t: t, ctx: ctx, addresses: addresses, mounter: mounted,
 				client: &nethttp.Client{
-					Timeout: waitBound,
+					Timeout: waitBound(),
 					// A connection of its own per request, so that what the
 					// server does to one is seen by that request alone.
 					Transport: &nethttp.Transport{DisableKeepAlives: true},

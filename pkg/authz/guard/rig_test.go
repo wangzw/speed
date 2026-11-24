@@ -1058,7 +1058,9 @@ func TestStartupWritesTheGuardedEndpointsAndWarnsWhenOpen(t *testing.T) {
 // waitLimit bounds every wait in the live case, so a startup that never reaches
 // Serve fails the case with a message rather than the binary at the global
 // timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // liveBody is the configuration the live assembly loads: one endpoint, the
 // resolution layer guarding it with the header extractor, and this module
@@ -1205,12 +1207,13 @@ func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 		defer close(done)
 		runErr = reg.Run(ctx)
 	}()
+	limit := waitLimit()
 	stop := func() {
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(waitLimit):
-			t.Errorf("the assembly did not stop within %s", waitLimit)
+		case <-time.After(limit):
+			t.Errorf("the assembly did not stop within %s", limit)
 		}
 		if runErr != nil {
 			t.Errorf("the assembly ended with %v", runErr)
@@ -1222,8 +1225,8 @@ func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 	case <-servedCh:
 	case <-done:
 		t.Fatalf("the run ended before it served: %v", runErr)
-	case <-time.After(waitLimit):
-		t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
+	case <-time.After(limit):
+		t.Fatalf("the assembly did not reach Serve within %s", limit)
 	}
 
 	var address string
@@ -1241,7 +1244,7 @@ func TestTheQueryNamesTheTenantIdentifierOnTheChain(t *testing.T) {
 		t.Fatalf("building the request: %v", err)
 	}
 	req.Header.Set("X-Tenant", "acme-name")
-	client := &nethttp.Client{Timeout: waitLimit, Transport: &nethttp.Transport{DisableKeepAlives: true}}
+	client := &nethttp.Client{Timeout: limit, Transport: &nethttp.Transport{DisableKeepAlives: true}}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("sending the request: %v", err)

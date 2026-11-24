@@ -95,7 +95,7 @@ func TestATLSEndpointOffersHTTP2(t *testing.T) {
 			TLSClientConfig:   &tls.Config{RootCAs: roots, NextProtos: c.protocols, MinVersion: tls.VersionTLS12},
 			ForceAttemptHTTP2: len(c.protocols) > 1,
 		}
-		client := &nethttp.Client{Transport: transport, Timeout: waitDeadline}
+		client := &nethttp.Client{Transport: transport, Timeout: waitDeadline()}
 		resp, err := getOverTLS(client, addr)
 		if err != nil {
 			t.Fatalf("%s: the request failed: %v", c.name, err)
@@ -126,7 +126,7 @@ func TestAnHTTP2RequestIsDrained(t *testing.T) {
 		select {
 		case <-Draining(r.Context()):
 			signalled <- true
-		case <-time.After(waitDeadline):
+		case <-time.After(waitDeadline()):
 			signalled <- false
 		}
 		w.WriteHeader(nethttp.StatusNoContent)
@@ -137,7 +137,7 @@ func TestAnHTTP2RequestIsDrained(t *testing.T) {
 		ForceAttemptHTTP2: true,
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	client := &nethttp.Client{Transport: transport, Timeout: 2 * waitDeadline}
+	client := &nethttp.Client{Transport: transport, Timeout: 2 * waitDeadline()}
 	answered := make(chan *nethttp.Response, 1)
 	go func() {
 		resp, err := getOverTLS(client, addr)

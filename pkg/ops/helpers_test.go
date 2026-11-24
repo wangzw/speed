@@ -36,7 +36,9 @@ const listeningMsg = "an HTTP listener is listening"
 // waitLimit bounds every wait in these cases, so a startup that never reaches
 // Serve fails the case with a message instead of the whole binary at the
 // global timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // host is one assembly that is serving.
 type host struct {
@@ -86,6 +88,7 @@ func startHost(t *testing.T, opts hostOptions) *host {
 		defer close(done)
 		runErr = reg.Run(ctx)
 	}()
+	limit := waitLimit()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -93,8 +96,8 @@ func startHost(t *testing.T, opts hostOptions) *host {
 			if runErr != nil {
 				t.Errorf("the assembly did not stop cleanly: %v", runErr)
 			}
-		case <-time.After(waitLimit):
-			t.Errorf("the assembly did not stop within %s", waitLimit)
+		case <-time.After(limit):
+			t.Errorf("the assembly did not stop within %s", limit)
 		}
 	})
 
@@ -142,7 +145,7 @@ func (h *host) get(t *testing.T, path string) response {
 	if err != nil {
 		t.Fatalf("building the request: %v", err)
 	}
-	client := &nethttp.Client{Timeout: waitLimit, Transport: &nethttp.Transport{DisableKeepAlives: true}}
+	client := &nethttp.Client{Timeout: waitLimit(), Transport: &nethttp.Transport{DisableKeepAlives: true}}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", path, err)
@@ -220,7 +223,8 @@ func (r *recorder) withMessage(prefix string) []record {
 // waitListening returns the address the entry point bound, or fails the case.
 func (r *recorder) waitListening(t *testing.T, done <-chan struct{}, runErr *error) string {
 	t.Helper()
-	deadline := time.Now().Add(waitLimit)
+	limit := waitLimit()
+	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
 		if recs := r.withMessage(listeningMsg); len(recs) > 0 {
 			return recs[0].attrs["address"]
@@ -232,7 +236,7 @@ func (r *recorder) waitListening(t *testing.T, done <-chan struct{}, runErr *err
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	t.Fatalf("the assembly did not bind an endpoint within %s", waitLimit)
+	t.Fatalf("the assembly did not bind an endpoint within %s", limit)
 	return ""
 }
 

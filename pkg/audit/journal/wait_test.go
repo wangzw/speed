@@ -34,11 +34,15 @@ const deliveredBusyTimeout = 1500 * time.Millisecond
 // selfWaitTimer is how long a case lets a write run before it counts the write
 // as waiting on itself: past the delivered connections' busy timeout and past
 // openedRowWait, with room for a loaded machine.
-var selfWaitTimer = deliveredBusyTimeout + coretest.Scale(3*time.Second)
+func selfWaitTimer() time.Duration {
+	return deliveredBusyTimeout + coretest.Scale(3*time.Second)
+}
 
 // connectionTimer is the same for a row this module writes itself, which waits
 // for a connection within connectionWait.
-var connectionTimer = connectionWait + coretest.Scale(3*time.Second)
+func connectionTimer() time.Duration {
+	return connectionWait + coretest.Scale(3*time.Second)
+}
 
 // within runs write on a goroutine of its own and reports what it returned, or
 // that it had not returned when the limit ran out. None of the writes carries a
@@ -195,7 +199,8 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T
 				defer func() { _ = db.Close(opened) }()
 
 				var took time.Duration
-				returned, err := within(selfWaitTimer, func() error {
+				limit := selfWaitTimer()
+				returned, err := within(limit, func() error {
 					return quietly(handle).Transaction(func(tx *gorm.DB) error {
 						if heldErr := tx.Create(&order{ID: "d1", Note: "delivered"}).Error; heldErr != nil {
 							return heldErr
@@ -208,7 +213,7 @@ func TestAWriteOnAnOpenedConnectionInsideTheCallersTransactionFails(t *testing.T
 				})
 				if !returned {
 					t.Errorf("a write on a connection built with Open inside a transaction on the delivered "+
-						"handle was still waiting after %v", selfWaitTimer)
+						"handle was still waiting after %v", limit)
 					return errCaseFailed
 				}
 				if shape.lock {
@@ -289,14 +294,15 @@ func TestAWriteOnAnOpenedConnectionWhileTheDeliveredDatabaseIsHeldFailsOnceTheBu
 		}
 
 		started := time.Now()
-		returned, err := within(selfWaitTimer, func() error {
+		limit := selfWaitTimer()
+		returned, err := within(limit, func() error {
 			return quietly(opened).WithContext(context.Background()).Create(&order{ID: "o1", Note: "elsewhere"}).Error
 		})
 		took := time.Since(started)
 		release()
 		if !returned {
 			t.Errorf("a write on a connection built with Open while the delivered database was held was "+
-				"still waiting after %v", selfWaitTimer)
+				"still waiting after %v", limit)
 			return errCaseFailed
 		}
 		// The same bound as the call site above: the delivered busy timeout plus
@@ -335,14 +341,15 @@ func TestAConnectionOpenedOntoTheDeliveredDatabaseRecordsWhileItsTransactionHold
 		}
 		defer func() { _ = db.Close(again) }()
 
-		returned, err := within(selfWaitTimer, func() error {
+		limit := selfWaitTimer()
+		returned, err := within(limit, func() error {
 			return quietly(again).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 				return tx.Create(&order{ID: "o1", Note: "held"}).Error
 			})
 		})
 		if !returned {
 			t.Errorf("a write in a transaction holding the delivered database, on a connection opened onto "+
-				"it, was still waiting after %v", selfWaitTimer)
+				"it, was still waiting after %v", limit)
 			return errCaseFailed
 		}
 		if err != nil {
@@ -460,7 +467,8 @@ func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t
 	t.Run("the seam", func(t *testing.T) {
 		handle := openSingle(t)
 		j := newTestJournal(handle, settings{})
-		returned, err := within(connectionTimer, func() error {
+		limit := connectionTimer()
+		returned, err := within(limit, func() error {
 			return handle.Transaction(func(tx *gorm.DB) error {
 				if err := tx.Create(&order{ID: "o1", Note: "held"}).Error; err != nil {
 					return err
@@ -469,7 +477,7 @@ func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t
 			})
 		})
 		if !returned {
-			t.Fatalf("Record inside the caller's transaction was still waiting after %v", connectionTimer)
+			t.Fatalf("Record inside the caller's transaction was still waiting after %v", limit)
 		}
 		if !errors.Is(err, audit.ErrWriteFailed) {
 			t.Errorf("Record inside the caller's transaction gave %v, want ErrWriteFailed", err)
@@ -482,7 +490,8 @@ func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t
 		var reported bytes.Buffer
 		j.signal = &signal{out: &reported}
 		j.subscribe(bus)
-		returned, err := within(connectionTimer, func() error {
+		limit := connectionTimer()
+		returned, err := within(limit, func() error {
 			return handle.Transaction(func(tx *gorm.DB) error {
 				if err := tx.Create(&order{ID: "o1", Note: "held"}).Error; err != nil {
 					return err
@@ -493,7 +502,7 @@ func TestARowWrittenInsideTheCallersTransactionOnOneConnectionDoesNotWaitForIt(t
 			})
 		})
 		if !returned {
-			t.Fatalf("publishing inside the caller's transaction was still waiting after %v", connectionTimer)
+			t.Fatalf("publishing inside the caller's transaction was still waiting after %v", limit)
 		}
 		if err != nil {
 			t.Errorf("the publisher's transaction gave %v, want the event's row to fail without failing it", err)
@@ -541,11 +550,12 @@ func TestARowWrittenWhileTheDeliveredDatabaseIsHeldFailsOnceTheBusyTimeoutPasses
 	}()
 
 	started := time.Now()
-	returned, err := within(connectionTimer, func() error {
+	limit := connectionTimer()
+	returned, err := within(limit, func() error {
 		return j.Record(context.Background(), audit.Entry{Action: "export", Object: "orders"})
 	})
 	if !returned {
-		t.Fatalf("Record while the delivered database was held was still waiting after %v", connectionTimer)
+		t.Fatalf("Record while the delivered database was held was still waiting after %v", limit)
 	}
 	requireRefusedForTheLock(t, err, time.Since(started), time.Hour)
 }
@@ -612,13 +622,14 @@ func TestAPanicWhileARowIsWrittenHandsTheConnectionBack(t *testing.T) {
 		defer func() { came <- recover() }()
 		_ = j.Record(context.Background(), audit.Entry{Action: "export", Object: "orders"})
 	}()
+	limit := connectionTimer()
 	select {
 	case got := <-came:
 		if err, ok := got.(error); !ok || !errors.Is(err, errRowPanicked) {
 			t.Fatalf("Record gave %v, want the callback's panic carried up", got)
 		}
-	case <-time.After(connectionTimer):
-		t.Fatalf("Record was still handing its connection back %v after the callback panicked", connectionTimer)
+	case <-time.After(limit):
+		t.Fatalf("Record was still handing its connection back %v after the callback panicked", limit)
 	}
 	armed.Store(false)
 	if got := len(auditRows(t, handle)); got != 0 {

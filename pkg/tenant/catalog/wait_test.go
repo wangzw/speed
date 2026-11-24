@@ -30,7 +30,9 @@ import (
 
 // connectionTimer is how long a case waits for a call bounded by
 // connectionWait before it reports the call as still waiting.
-var connectionTimer = connectionWait + coretest.Scale(3*time.Second)
+func connectionTimer() time.Duration {
+	return connectionWait + coretest.Scale(3*time.Second)
+}
 
 // heldToOneConnection is enteringRoster over a pool of one connection, the
 // shape pkg/db delivers an in-memory database in.
@@ -73,12 +75,13 @@ func insideTheCallersTransaction(t *testing.T, r *roster, call func() error) (ti
 		}
 		done <- got
 	}()
+	limit := connectionTimer()
 	select {
 	case got := <-done:
 		return got.took, got.err
-	case <-time.After(connectionTimer):
+	case <-time.After(limit):
 		t.Fatalf("the call inside the caller's transaction on a database held to one connection was "+
-			"still waiting after %v", connectionTimer)
+			"still waiting after %v", limit)
 		return 0, nil
 	}
 }
@@ -307,6 +310,7 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 			done := make(chan error, 1)
 			started := time.Now()
 			go func() { done <- c.call(r) }()
+			bound := connectionTimer()
 			select {
 			case err := <-done:
 				requireNoAnswer(t, name, err)
@@ -324,8 +328,8 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 					t.Fatalf("%s gave up after %v, past a busy timeout of %v for each of its %d statements",
 						name, took, lockBusyTimeout, c.waitsFor)
 				}
-			case <-time.After(most + connectionTimer):
-				t.Fatalf("%s was still waiting for the lock after %v", name, most+connectionTimer)
+			case <-time.After(most + bound):
+				t.Fatalf("%s was still waiting for the lock after %v", name, most+bound)
 			}
 		})
 	}

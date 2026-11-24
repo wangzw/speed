@@ -109,7 +109,7 @@ func TestE2EPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing.T)
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 
 	// The e2e configuration advertises the register entry the baseline does not.
 	methods := get(t, base+"/api/v1/auth/methods")
@@ -268,7 +268,8 @@ func readVerification(t *testing.T, client *http.Client, base string, auth map[s
 func e2eMailCode(t *testing.T, p *process) string {
 	t.Helper()
 	const field = "verification_code="
-	deadline := time.Now().Add(startLimit)
+	limit := startLimit()
+	deadline := time.Now().Add(limit)
 	for {
 		for _, line := range strings.Split(p.output(), "\n") {
 			if !strings.Contains(line, e2eMailLogMarker) {
@@ -286,7 +287,7 @@ func e2eMailCode(t *testing.T, p *process) string {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("no mail log record carrying a verification code within %s:\n%s",
-				startLimit, p.output())
+				limit, p.output())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

@@ -78,7 +78,7 @@ func TestRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 	operator := signIn(t, base, e2eOperatorUsername, e2eOperatorPassword)
 	auth := map[string]string{"Authorization": "Bearer " + operator}
 
@@ -145,7 +145,7 @@ func proofE2EPhone(t *testing.T, base string, serve *process) {
 	if err != nil {
 		t.Fatalf("building a cookie jar: %v", err)
 	}
-	flowClient := &http.Client{Timeout: probeTimeout, Jar: jar}
+	flowClient := &http.Client{Timeout: probeTimeout(), Jar: jar}
 	start := send(t, flowClient, http.MethodPost, base+"/api/v1/auth/flows", map[string]any{
 		"method":   "sms",
 		"delivery": "token",
@@ -211,7 +211,8 @@ func e2eSMSCode(t *testing.T, p *process) string {
 		marker = "log sms: a verification code was sent"
 		field  = "verification_code="
 	)
-	deadline := time.Now().Add(startLimit)
+	limit := startLimit()
+	deadline := time.Now().Add(limit)
 	for {
 		for _, line := range strings.Split(p.output(), "\n") {
 			if !strings.Contains(line, marker) {
@@ -229,7 +230,7 @@ func e2eSMSCode(t *testing.T, p *process) string {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("no log SMS record carrying a verification code within %s:\n%s",
-				startLimit, p.output())
+				limit, p.output())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

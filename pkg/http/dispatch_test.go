@@ -942,7 +942,7 @@ func exchange(ctx context.Context, method, addr, path string, header nethttp.Hea
 		}
 	}
 	client := &nethttp.Client{
-		Timeout:   waitDeadline,
+		Timeout:   waitDeadline(),
 		Transport: &nethttp.Transport{DisableKeepAlives: true, DisableCompression: true},
 	}
 	resp, err := client.Do(req)

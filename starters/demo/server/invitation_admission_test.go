@@ -51,7 +51,7 @@ func TestAnInvitationWriteUnderRequiredSSOIsRefusedForALocalPasswordSession(t *t
 		"X-Tenant":      demoTenant,
 	}
 
-	issued := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
+	issued := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodPost,
 		base+"/api/v1/tenants/"+demoTenant+"/invitations",
 		map[string]any{"email": "invitee@demo.test"}, auth)
 	if issued.status != http.StatusUnauthorized {

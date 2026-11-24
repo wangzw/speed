@@ -165,7 +165,7 @@ func TestAMissingEndpointFailsTheStartup(t *testing.T) {
 	reg.Register(speedhttp.Module())
 	reg.Register(New(bundle()))
 
-	ctx, cancel := context.WithTimeout(t.Context(), waitLimit)
+	ctx, cancel := context.WithTimeout(t.Context(), waitLimit())
 	defer cancel()
 	err = reg.Run(ctx)
 	if !errors.Is(err, config.ErrMissingRequired) {
@@ -209,7 +209,7 @@ func TestAnEndpointThatDoesNotClaimTheRootFailsTheStartup(t *testing.T) {
 	reg.Register(speedhttp.Module())
 	reg.Register(New(bundle()))
 
-	ctx, cancel := context.WithTimeout(t.Context(), waitLimit)
+	ctx, cancel := context.WithTimeout(t.Context(), waitLimit())
 	defer cancel()
 	err = reg.Run(ctx)
 	if !errors.Is(err, speedhttp.ErrUnclaimedRoute) {

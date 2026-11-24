@@ -34,7 +34,9 @@ import (
 // waitLimit bounds every wait in these cases, so that a startup which never
 // reaches Serve fails the case with a message instead of the whole binary at the
 // global timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // guardedEndpoint is the one endpoint every assembly declares and the layer
 // guards.
@@ -116,6 +118,7 @@ func startHost(t *testing.T, corsPolicy string, register func(speedhttp.Endpoint
 		defer close(done)
 		runErr = reg.Run(ctx)
 	}()
+	limit := waitLimit()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -123,8 +126,8 @@ func startHost(t *testing.T, corsPolicy string, register func(speedhttp.Endpoint
 			if runErr != nil {
 				t.Errorf("the assembly did not stop cleanly: %v", runErr)
 			}
-		case <-time.After(waitLimit):
-			t.Errorf("the assembly did not stop within %s", waitLimit)
+		case <-time.After(limit):
+			t.Errorf("the assembly did not stop within %s", limit)
 		}
 	})
 
@@ -132,8 +135,8 @@ func startHost(t *testing.T, corsPolicy string, register func(speedhttp.Endpoint
 	case <-served:
 	case <-done:
 		t.Fatalf("the assembly ended before it served: %v", runErr)
-	case <-time.After(waitLimit):
-		t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
+	case <-time.After(limit):
+		t.Fatalf("the assembly did not reach Serve within %s", limit)
 	}
 
 	h.addr, h.chain = logs.listed()
@@ -196,7 +199,7 @@ func (h *host) send(t *testing.T, method, path string, header map[string]string)
 		req.Header.Set(k, v)
 	}
 	client := &nethttp.Client{
-		Timeout:   waitLimit,
+		Timeout:   waitLimit(),
 		Transport: &nethttp.Transport{DisableKeepAlives: true},
 	}
 	resp, err := client.Do(req)

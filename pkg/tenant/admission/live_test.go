@@ -50,7 +50,9 @@ const (
 
 // waitLimit bounds every wait, so that a startup that never reaches Serve fails
 // the case with a message and not the binary at the global timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // record is a log record a case reads back.
 type record struct {
@@ -349,6 +351,7 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 		defer close(done)
 		runErr = reg.Run(ctx)
 	}()
+	limit := waitLimit()
 	stopped := false
 	stop := func() error {
 		if stopped {
@@ -358,8 +361,8 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(waitLimit):
-			t.Errorf("the assembly did not stop within %s", waitLimit)
+		case <-time.After(limit):
+			t.Errorf("the assembly did not stop within %s", limit)
 		}
 		return runErr
 	}
@@ -369,8 +372,8 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 	case <-servedCh:
 	case <-done:
 		return runErr
-	case <-time.After(waitLimit):
-		t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
+	case <-time.After(limit):
+		t.Fatalf("the assembly did not reach Serve within %s", limit)
 	}
 	addresses := map[string]string{}
 	for _, rec := range logs.withMessage("an HTTP listener is listening") {
@@ -421,7 +424,7 @@ func (s *served) get(t *testing.T, endpoint, path, token, tenantName string) rep
 	if tenantName != "" {
 		req.Header.Set("X-Tenant", tenantName)
 	}
-	client := &nethttp.Client{Timeout: waitLimit, Transport: &nethttp.Transport{DisableKeepAlives: true}}
+	client := &nethttp.Client{Timeout: waitLimit(), Transport: &nethttp.Transport{DisableKeepAlives: true}}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("sending the request: %v", err)

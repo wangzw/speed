@@ -44,7 +44,7 @@ func TestTheStepUpAfterTOTPSignInOffersSMSWithoutTOTP(t *testing.T) {
 	t.Parallel()
 	base, token := e2eRecordsServer(t)
 
-	start := send(t, &http.Client{Timeout: probeTimeout}, http.MethodPost,
+	start := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodPost,
 		base+"/api/v1/auth/flows/authenticated",
 		map[string]any{"purpose": "step-up"},
 		map[string]string{"Authorization": "Bearer " + token})

@@ -59,7 +59,9 @@ import (
 const summaryListening = "an HTTP listener is listening"
 
 // summaryRequestBound bounds each request a case sends.
-var summaryRequestBound = coretest.Scale(5 * time.Second)
+func summaryRequestBound() time.Duration {
+	return coretest.Scale(5 * time.Second)
+}
 
 // unknownSessionToken is a value shaped like a session token that no session
 // carries. It is short enough that the session backend looks it up rather than
@@ -363,12 +365,13 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 			if jerr != nil {
 				return jerr
 			}
+			limit := summaryRequestBound()
 			h := &summaryHost{
 				t:       t,
 				ctx:     ctx,
 				address: address,
-				client:  &http.Client{Jar: jar, Timeout: summaryRequestBound},
-				bare:    &http.Client{Timeout: summaryRequestBound},
+				client:  &http.Client{Jar: jar, Timeout: limit},
+				bare:    &http.Client{Timeout: limit},
 				reg:     reg,
 				kv:      kvStore,
 			}

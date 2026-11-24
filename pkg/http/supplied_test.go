@@ -222,7 +222,7 @@ func TestASuppliedInstanceThatIsNotTheProductIsLeftToItsOwner(t *testing.T) {
 			t.Errorf("the request held on the owner's endpoint was answered %d, not the %d "+
 				"its handler writes", status, nethttp.StatusNoContent)
 		}
-	case <-time.After(waitDeadline):
+	case <-time.After(waitDeadline()):
 		t.Fatal("the request held on the owner's endpoint was never answered")
 	}
 	status, err := getStatus(ctx, addr, "/held")

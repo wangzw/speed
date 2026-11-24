@@ -245,7 +245,7 @@ func TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull(t *testing.T) {
 		go func() { held <- l.send("public", "GET", "/orders", asAlice) }()
 		select {
 		case <-admitted:
-		case <-time.After(waitBound):
+		case <-time.After(waitBound()):
 			t.Error("no request reached the backend, so the gate was never full")
 			close(release)
 			<-held

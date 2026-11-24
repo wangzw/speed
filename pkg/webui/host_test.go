@@ -32,7 +32,9 @@ import (
 // waitLimit bounds every wait in these cases, so that a startup which never
 // reaches Serve fails the case with a message instead of the whole binary at
 // the global timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // endpointName is the one endpoint the assembly declares and this module serves
 // on. The frontend is alone on it: a catch-all route and any concrete route on
@@ -98,6 +100,7 @@ func startAssembly(t *testing.T, fsys fs.FS, reader config.Reader, participants 
 		}
 		runErr = reg.Drive(ctx, core.Drive{Depth: core.StageServe, Participants: participants})
 	}()
+	limit := waitLimit()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -105,15 +108,15 @@ func startAssembly(t *testing.T, fsys fs.FS, reader config.Reader, participants 
 			if runErr != nil {
 				t.Errorf("the assembly did not stop cleanly: %v", runErr)
 			}
-		case <-time.After(waitLimit):
-			t.Errorf("the assembly did not stop within %s", waitLimit)
+		case <-time.After(limit):
+			t.Errorf("the assembly did not stop within %s", limit)
 		}
 	})
 
 	// The entry point writes the address of its bound socket once it is
 	// listening; that is the only way a client outside the process learns the
 	// port the system picked.
-	deadline := time.Now().Add(waitLimit)
+	deadline := time.Now().Add(limit)
 	for {
 		if addr := logs.address(); addr != "" {
 			return &host{addr: addr, reg: reg}
@@ -124,7 +127,7 @@ func startAssembly(t *testing.T, fsys fs.FS, reader config.Reader, participants 
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the assembly did not reach Serve within %s", waitLimit)
+			t.Fatalf("the assembly did not reach Serve within %s", limit)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -146,7 +149,7 @@ func (h *host) send(t *testing.T, method, path string) response {
 		t.Fatalf("building the request: %v", err)
 	}
 	client := &nethttp.Client{
-		Timeout:   waitLimit,
+		Timeout:   waitLimit(),
 		Transport: &nethttp.Transport{DisableKeepAlives: true},
 	}
 	resp, err := client.Do(req)

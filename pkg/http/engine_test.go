@@ -334,13 +334,14 @@ func TestTheChainKeepsTheWritersOptionalInterfaces(t *testing.T) {
 		}
 	})
 
+	limit := waitDeadline()
 	for way := range flushers {
 		request, err := nethttp.NewRequestWithContext(context.Background(), nethttp.MethodGet,
 			"http://"+addr+"/stream-"+paths[way], nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		client := &nethttp.Client{Timeout: waitDeadline, Transport: &nethttp.Transport{DisableKeepAlives: true}}
+		client := &nethttp.Client{Timeout: limit, Transport: &nethttp.Transport{DisableKeepAlives: true}}
 		resp, err := client.Do(request)
 		if err != nil {
 			t.Fatalf("flushing %s: the streaming request failed: %v", way, err)
@@ -391,10 +392,11 @@ func TestTheChainKeepsTheRestOfTheWritersInterfaces(t *testing.T) {
 		e.Route("GET", "/watch", func(c *gin.Context) {
 			notified := c.Writer.CloseNotify()
 			waiting <- struct{}{}
+			limit := waitDeadline()
 			select {
 			case <-notified:
 				gone <- true
-			case <-time.After(waitDeadline):
+			case <-time.After(limit):
 				gone <- false
 			}
 		})
@@ -409,7 +411,7 @@ func TestTheChainKeepsTheRestOfTheWritersInterfaces(t *testing.T) {
 			"want no error for both: the writers around the connection hide it", got.body)
 	}
 
-	conn, err := net.DialTimeout("tcp", addr, waitDeadline)
+	conn, err := net.DialTimeout("tcp", addr, waitDeadline())
 	if err != nil {
 		t.Fatalf("dialling the endpoint: %v", err)
 	}
@@ -424,7 +426,7 @@ func TestTheChainKeepsTheRestOfTheWritersInterfaces(t *testing.T) {
 		if !notified {
 			t.Error("the handler was never told that the client went away")
 		}
-	case <-time.After(2 * waitDeadline):
+	case <-time.After(2 * waitDeadline()):
 		t.Fatal("the handler neither learnt that the client went away nor gave up")
 	}
 }
@@ -473,7 +475,7 @@ func TestThePusherOfAnHTTP2WriterReachesTheHandler(t *testing.T) {
 		ForceAttemptHTTP2: true,
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	resp, err := getOverTLS(&nethttp.Client{Transport: transport, Timeout: waitDeadline}, addr)
+	resp, err := getOverTLS(&nethttp.Client{Transport: transport, Timeout: waitDeadline()}, addr)
 	if err != nil {
 		t.Fatalf("the request failed: %v", err)
 	}
@@ -545,7 +547,7 @@ func TestAFailedHijackOverHTTP2LeavesTheResponseUnanswered(t *testing.T) {
 		ForceAttemptHTTP2: true,
 	}
 	t.Cleanup(transport.CloseIdleConnections)
-	client := &nethttp.Client{Transport: transport, Timeout: waitDeadline}
+	client := &nethttp.Client{Transport: transport, Timeout: waitDeadline()}
 
 	type outcome struct {
 		proto, mediaType, body string

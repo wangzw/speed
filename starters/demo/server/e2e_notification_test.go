@@ -165,7 +165,7 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 
 	// The member registers, signs in, proves an email address and ensures a
 	// tenant. The account needs an email identifier for the email channel's
@@ -321,7 +321,7 @@ func TestE2ENotificationRendersInTheRecipientsLanguage(t *testing.T) {
 	})
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	client := &http.Client{Timeout: probeTimeout}
+	client := &http.Client{Timeout: probeTimeout()}
 
 	token := registerE2EMember(t, client, base, serve,
 		e2eNotifyChineseUsername, e2eNotifyChineseEmail, e2eNotifyChinesePassword)

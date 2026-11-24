@@ -234,10 +234,11 @@ func (g *gateHandler) letGo() {
 // turns a specific assertion into a whole-binary panic ten minutes later.
 func waitFor(t *testing.T, ch <-chan struct{}, what string) {
 	t.Helper()
+	limit := waitDeadline()
 	select {
 	case <-ch:
-	case <-time.After(waitDeadline):
-		t.Fatalf("timed out after %s waiting for %s", waitDeadline, what)
+	case <-time.After(limit):
+		t.Fatalf("timed out after %s waiting for %s", limit, what)
 	}
 }
 
@@ -245,18 +246,21 @@ func waitFor(t *testing.T, ch <-chan struct{}, what string) {
 // reached without a channel to wait on.
 func waitUntil(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(waitDeadline)
+	limit := waitDeadline()
+	deadline := time.Now().Add(limit)
 	for time.Now().Before(deadline) {
 		if ok() {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("timed out after %s waiting for %s", waitDeadline, what)
+	t.Fatalf("timed out after %s waiting for %s", limit, what)
 }
 
 // waitDeadline bounds every wait in this package's tests.
-var waitDeadline = coretest.Scale(30 * time.Second)
+func waitDeadline() time.Duration {
+	return coretest.Scale(30 * time.Second)
+}
 
 // testSettings is one endpoint's settings: the claims that select it, the body
 // limit and the proxy settings that belong to an endpoint's chain rather than
@@ -530,12 +534,13 @@ func (a *assembly) wait(t *testing.T) error {
 	if a.finished {
 		return a.err
 	}
+	limit := waitDeadline()
 	select {
 	case err := <-a.result:
 		a.finished, a.err = true, err
 		return err
-	case <-time.After(waitDeadline):
-		t.Fatalf("timed out after %s waiting for Run to return", waitDeadline)
+	case <-time.After(limit):
+		t.Fatalf("timed out after %s waiting for Run to return", limit)
 		return nil
 	}
 }
@@ -546,6 +551,7 @@ func (a *assembly) wait(t *testing.T) error {
 // wait keeps it.
 func (a *assembly) waitForOrEnd(t *testing.T, ch <-chan struct{}, what string) {
 	t.Helper()
+	limit := waitDeadline()
 	select {
 	case <-ch:
 	case err := <-a.result:
@@ -553,8 +559,8 @@ func (a *assembly) waitForOrEnd(t *testing.T, ch <-chan struct{}, what string) {
 		a.finished, a.err = true, err
 		a.mu.Unlock()
 		t.Fatalf("Run came back with %v before %s", err, what)
-	case <-time.After(waitDeadline):
-		t.Fatalf("timed out after %s waiting for %s", waitDeadline, what)
+	case <-time.After(limit):
+		t.Fatalf("timed out after %s waiting for %s", limit, what)
 	}
 }
 
@@ -644,7 +650,7 @@ func getResponse(ctx context.Context, addr, path string) (answer, error) {
 		return answer{}, err
 	}
 	client := &nethttp.Client{
-		Timeout:   waitDeadline,
+		Timeout:   waitDeadline(),
 		Transport: &nethttp.Transport{DisableKeepAlives: true, DisableCompression: true},
 	}
 	resp, err := client.Do(req)
@@ -672,7 +678,7 @@ func getTracingInterim(t *testing.T, addr, path string) ([]int, answer) {
 		t.Fatal(err)
 	}
 	client := &nethttp.Client{
-		Timeout:   waitDeadline,
+		Timeout:   waitDeadline(),
 		Transport: &nethttp.Transport{DisableKeepAlives: true, DisableCompression: true},
 	}
 	resp, err := client.Do(request)

@@ -73,7 +73,9 @@ const listeningMsg = "an HTTP listener is listening"
 // waitLimit bounds every request and every wait, so that a request or a startup
 // that never answers fails the case with a message and not the binary at the
 // global timeout.
-var waitLimit = coretest.Scale(60 * time.Second)
+func waitLimit() time.Duration {
+	return coretest.Scale(60 * time.Second)
+}
 
 // reply is what a client got back.
 type reply struct {
@@ -521,7 +523,7 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 				ctx:       ctx,
 				addresses: addresses,
 				client: &nethttp.Client{
-					Timeout: waitLimit,
+					Timeout: waitLimit(),
 					// A connection of its own per request, so no idle
 					// connection holds the drain when the assembly stops.
 					Transport: &nethttp.Transport{DisableKeepAlives: true},
