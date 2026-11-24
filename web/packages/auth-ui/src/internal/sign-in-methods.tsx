@@ -10,13 +10,12 @@
  *    parked step through the shared step renderer. The two known form
  *    methods (password, sms) keep their bespoke components; everything
  *    else a deployment adds is driven by its descriptor. A deployment that
- *    requires a human-verification proof renders its control only once the
- *    viewer asks to start and the gate turns out to want one: the start is
- *    held until the proof arrives, the submit control gives way to the
- *    block meanwhile, and editing a field abandons the wait. The start
- *    presents the proof the control holds. Once the held start leaves, the
- *    submit is back on screen and stays busy while that request is in
- *    flight, so it cannot begin a second flow.
+ *    requires a human-verification proof holds the start until the proof
+ *    arrives; the submit control stays mounted and reports that wait as
+ *    busy, so it keeps the focus it had, and editing a field abandons the
+ *    wait. The start presents the proof the control holds. Once the held
+ *    start leaves, the submit stays busy while that request is in flight,
+ *    so it cannot begin a second flow.
  *  - `EnterpriseSignIn` is an `enterprise` method's email-first entry: the
  *    viewer gives an email, the session discovers the identity providers
  *    its domain maps to (`session.discoverSso`), and picking one starts
@@ -224,6 +223,8 @@ export function DescriptorSignInForm({
   // known and the proof it wants is in hand: the viewer's one request is
   // not turned into a click followed by a second one. A gate still being
   // read keeps the start waiting; a gate that wants nothing starts at once.
+  // A write already in flight keeps it waiting too, so the start never runs
+  // beside another attempt in this form.
   useEffect(() => {
     if (pendingStart === null || human.pending || gateDocument === null) {
       return
@@ -231,10 +232,20 @@ export function DescriptorSignInForm({
     if (needsProof && human.proof === null) {
       return
     }
+    if (driver.busy) {
+      return
+    }
     const values = pendingStart
     setPendingStart(null)
     void startRef.current(values)
-  }, [pendingStart, human.pending, gateDocument, needsProof, human.proof])
+  }, [
+    pendingStart,
+    human.pending,
+    gateDocument,
+    needsProof,
+    human.proof,
+    driver.busy,
+  ])
 
   const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
     await askToStart(values)
@@ -288,15 +299,19 @@ export function DescriptorSignInForm({
       form={form}
       onSubmit={guardedSubmit}
       actions={
-        pendingStart === null ? (
-          <ActionButton
-            type="submit"
-            emphasis="primary"
-            busy={form.formState.isSubmitting || driver.busy}
-          >
-            {t('signInFlow.submit')}
-          </ActionButton>
-        ) : undefined
+        <ActionButton
+          type="submit"
+          emphasis="primary"
+          // The submit that asked stays mounted and reports the wait on its
+          // own proof as busy, so it keeps the focus it had.
+          busy={
+            form.formState.isSubmitting ||
+            driver.busy ||
+            pendingStart !== null
+          }
+        >
+          {t('signInFlow.submit')}
+        </ActionButton>
       }
     >
       {fields.map((field) => (

@@ -395,7 +395,7 @@ describe('DescriptorSignInForm human-verification surface', () => {
     )
   })
 
-  it('keeps the submit disabled while the deferred start is in flight', async () => {
+  it('keeps the submit busy while the deferred start is in flight', async () => {
     const fake = installFakeTurnstile()
     try {
       let releaseStart: ((reply: AuthnFlowState) => void) | null = null
@@ -418,8 +418,12 @@ describe('DescriptorSignInForm human-verification surface', () => {
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.submit }),
       )
-      // The start waits on its proof: the submit gives way to the block.
+      // The start waits on its proof: the submit stays mounted, reports the
+      // wait as busy, and the block stands beside it.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      ).toHaveAttribute('aria-busy', 'true')
       act(() => {
         fake.token('token-1')
       })

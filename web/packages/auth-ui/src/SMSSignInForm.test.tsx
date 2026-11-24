@@ -55,8 +55,8 @@ const US_NATIONAL = '4155552671'
 const US_E164 = '+14155552671'
 
 /** A gate that asks for no proof, so a send leaves without the human block
- * taking the initiating control off the surface (the give-way structure is
- * not what the focus cases measure). */
+ * standing over the initiating control (the block is not what the focus
+ * cases measure). */
 const NO_HUMAN_GATE = {
   phone: { required: false, provider: 'off' },
   other: { required: false, provider: 'off' },
@@ -120,6 +120,16 @@ async function sendCode(national: string = CN_NATIONAL): Promise<void> {
   await selectCountry(user, 'CN', '86')
   await user.type(screen.getByLabelText(zhCN.smsSignIn.phoneLabel), national)
   await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+}
+
+/** Let every queued microtask turn run out, so an assertion about what did
+ * *not* happen is made after the deferred send had every chance to leave. */
+async function settleMicrotasks(turns = 20): Promise<void> {
+  await act(async () => {
+    for (let turn = 0; turn < turns; turn += 1) {
+      await Promise.resolve()
+    }
+  })
 }
 
 /** A navigator.language override for the duration of one render. */
@@ -1634,12 +1644,16 @@ describe('SMSSignInForm', () => {
       const form = send.closest('form')!
       await user.click(send)
       // The gate requires a proof and the widget holds no token yet. The
-      // control that asked gives way to the block.
+      // control that asked stays mounted and reports the wait as busy, so
+      // it keeps the focus it had.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
-      expect(
-        screen.queryByRole('button', { name: zhCN.smsSignIn.sendCode }),
-      ).toBeNull()
+      const held = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
+      expect(held).toHaveAttribute('aria-busy', 'true')
+      expect(held).toHaveAttribute('aria-disabled', 'true')
+      // Held, not natively disabled: the control keeps its place in the tab
+      // order and the focus it had.
+      expect(held).not.toHaveAttribute('disabled')
       expect(sends(harness)).toHaveLength(0)
       // A submit that bypasses the hidden control is still refused: the
       // outstanding send owns the step and starts no second flow.
@@ -1708,11 +1722,13 @@ describe('SMSSignInForm', () => {
       expect(sends(harness)).toHaveLength(1)
       await user.click(cancel)
       // Cancelling drops the held resend: the code step and its controls are
-      // back, none of them waiting, and no request left on the way out.
+      // back, none of them waiting, no request left on the way out, and the
+      // control that asked takes its focus back.
       const code = screen.getByLabelText(zhCN.smsSignIn.codeLabel)
       const resend = screen.getByRole('button', {
         name: zhCN.smsSignIn.resendCode,
       })
+      expect(resend).toHaveFocus()
       expect(resend).not.toHaveAttribute('aria-disabled')
       expect(resend).not.toHaveAttribute('aria-busy')
       const submit = screen.getByRole('button', {
@@ -1731,6 +1747,212 @@ describe('SMSSignInForm', () => {
           ),
         ).toHaveLength(1),
       )
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('abandon a held resend when the code in hand is submitted and keep the parked step it reaches', async () => {
+    // Submitting the code the viewer holds gives up the resend still
+    // waiting on its proof: the next code would invalidate the one being
+    // submitted. Without that, a proof arriving while the answer is in
+    // flight lets the held resend leave once the answer settles, starting
+    // a second SMS flow that replaces the second factor the answer parked.
+    const fake = installFakeTurnstile()
+    try {
+      let starts = 0
+      let resolveAnswer: (value: ReturnType<typeof openFlow>) => void = () => {}
+      const harness = makeHarness({
+        [LOGIN_METHODS]: () =>
+          methodList(['sms'], {
+            humanRequired: true,
+            humanProvider: 'turnstile',
+            humanSiteKey: 'site-1',
+          }),
+        [LOGIN_START]: () => {
+          starts += 1
+          return codeChallenge()
+        },
+        [LOGIN_ANSWER]: () =>
+          new Promise<ReturnType<typeof openFlow>>((resolve) => {
+            resolveAnswer = resolve
+          }),
+      })
+      renderWithProviders(<SMSSignInForm session={harness.session} />)
+      const user = userEvent.setup()
+      await selectCountry(user, 'CN', '86')
+      await user.type(
+        screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+        CN_NATIONAL,
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(starts).toBe(1))
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+
+      // The resend waits on a fresh proof.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+
+      // The code already in hand answers; submitting it abandons the held
+      // resend.
+      await user.type(
+        screen.getByLabelText(zhCN.smsSignIn.codeLabel),
+        '123456',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.smsSignIn.submit }),
+      )
+      await waitFor(() =>
+        expect(
+          harness.calls.filter(
+            (call) => call.path === '/api/v1/auth/flows/answer',
+          ),
+        ).toHaveLength(1),
+      )
+
+      // The proof arrives while that answer is still in flight.
+      act(() => {
+        fake.token('token-2')
+      })
+      await settleMicrotasks()
+      expect(starts).toBe(1)
+
+      // The answer settles at a second factor: no second SMS flow leaves
+      // to replace the parked step.
+      await act(async () => {
+        resolveAnswer(
+          openFlow({
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'code', required: true }],
+            },
+          }),
+        )
+        for (let turn = 0; turn < 20; turn += 1) {
+          await Promise.resolve()
+        }
+      })
+      await settleMicrotasks()
+      expect(starts).toBe(1)
+      expect(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: zhCN.smsSignIn.resendCode }),
+      ).toBeNull()
+      expect(
+        harness.calls.filter((call) => call.path === '/api/v1/auth/flows'),
+      ).toHaveLength(1)
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('abandon a held resend when the code in hand is submitted and start nothing when the answer is refused', async () => {
+    // The refusal branch of the same path: submitting the code gives up
+    // the held resend, so a refused answer starts nothing by itself. The
+    // code step stays on screen and its resend is the viewer's to ask
+    // again -- the way out when the code in hand was wrong.
+    const fake = installFakeTurnstile()
+    try {
+      let starts = 0
+      let rejectAnswer: (error: unknown) => void = () => {}
+      const harness = makeHarness({
+        [LOGIN_METHODS]: () =>
+          methodList(['sms'], {
+            humanRequired: true,
+            humanProvider: 'turnstile',
+            humanSiteKey: 'site-1',
+          }),
+        [LOGIN_START]: () => {
+          starts += 1
+          return codeChallenge()
+        },
+        [LOGIN_ANSWER]: () =>
+          new Promise((_resolve, reject) => {
+            rejectAnswer = reject
+          }),
+      })
+      renderWithProviders(<SMSSignInForm session={harness.session} />)
+      const user = userEvent.setup()
+      await selectCountry(user, 'CN', '86')
+      await user.type(
+        screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+        CN_NATIONAL,
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(starts).toBe(1))
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+
+      await user.click(
+        screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }),
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(2))
+      await user.type(
+        screen.getByLabelText(zhCN.smsSignIn.codeLabel),
+        '123456',
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.smsSignIn.submit }),
+      )
+      await waitFor(() =>
+        expect(
+          harness.calls.filter(
+            (call) => call.path === '/api/v1/auth/flows/answer',
+          ),
+        ).toHaveLength(1),
+      )
+      act(() => {
+        fake.token('token-2')
+      })
+      await settleMicrotasks()
+      expect(starts).toBe(1)
+
+      await act(async () => {
+        rejectAnswer(apiError(401, 'authn.login_failed'))
+        for (let turn = 0; turn < 20; turn += 1) {
+          await Promise.resolve()
+        }
+      })
+      await settleMicrotasks()
+      // The refused answer starts nothing; the code step keeps its resend.
+      expect(starts).toBe(1)
+      const resend = screen.getByRole('button', {
+        name: zhCN.smsSignIn.resendCode,
+      })
+      expect(resend).not.toHaveAttribute('aria-disabled')
+      // Asking again is the viewer's click, which opens the block anew.
+      await user.click(resend)
+      await waitFor(() => expect(fake.widgets).toHaveLength(3))
+      expect(starts).toBe(1)
+      act(() => {
+        fake.token('token-3')
+      })
+      await waitFor(() => expect(starts).toBe(2))
+      const startCalls = harness.calls.filter(
+        (call) => call.path === '/api/v1/auth/flows',
+      )
+      expect(startCalls[1]?.options?.body).toMatchObject({
+        method: 'sms',
+        input: { phone: CN_E164 },
+        human_proof: 'token-3',
+      })
     } finally {
       fake.restore()
     }
