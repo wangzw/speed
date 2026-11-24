@@ -16,6 +16,8 @@ func TestARawTargetPostgresReadsAsTheTenantColumnIsJudged(t *testing.T) {
 		[]string{" tenant_id", "TeNaNt_Id", `"tenant_id"`, "tenant_id = 'globex', note"})
 }
 
+// TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWritesOnPostgres checks that an
+// update from another type is judged by the column it writes on PostgreSQL.
 func TestAnUpdateFromAnotherTypeIsJudgedByTheColumnItWritesOnPostgres(t *testing.T) {
 	requirePatchesRefused(t, openFilteredPostgres, []string{`"tenant_id"`, "tenant_id"})
 }

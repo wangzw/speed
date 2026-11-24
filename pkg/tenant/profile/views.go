@@ -7,31 +7,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The views this module answers with. Each is built field by field from a
-// root-package value and never handed through as it stands, so that a field
-// added to the record later does not reach a client by being there.
-
-// TenantProfileView is one tenant's organization profile as the tenant profile
-// routes show it. It carries the read-only name, the kind and the state beside
-// the four descriptive fields. The owner is shown by display name and username
-// together, because a display name alone is ambiguous when two members share
-// one; the owning account travels beside them as the internal key the ownership
-// decision and the transfer-target exclusion use, and a client compares it to
-// identify the owner. It carries no tenant identifier: the identifier is
-// internal, and the request surface addresses the tenant by the name. It is
-// deliberately not the platform management surface's view: that one renders the
-// disable source, which belongs to the platform surface and not to a tenant
-// administrator's own profile page.
-//
-// The kind is the one value a client branches on: a personal organization has
-// no ownership controls, and its name is the owner's username, which says
-// nothing about the kind.
-//
-// The owner is exposed here, behind tenant.profile.read, and nowhere an ordinary
-// member can read: the member list carries the membership and its roles, never
-// the organization's owner. The read route asks tenant.profile.read in the
-// tenant's own policy domain, so a member without it is refused before the view
-// is built.
+// TenantProfileView is one tenant's organization profile as the tenant profile routes show it: the
+// read-only name, kind and state beside the four descriptive fields, with the owner shown by
+// display name and username. It carries no tenant identifier.
 type TenantProfileView struct {
 	_ struct{} `description:"One tenant's organization profile: the read-only name, the kind, the owner shown by display name and username, the state and the four descriptive fields, behind tenant.profile.read."`
 
@@ -48,7 +26,6 @@ type TenantProfileView struct {
 	CreatedAt        time.Time `json:"created_at" required:"true" description:"When the tenant was registered, as an RFC 3339 instant in UTC."`
 }
 
-// profileViewOf builds the view field by field from a root-package value.
 func profileViewOf(t tenant.Tenant, kind tenant.Kind) TenantProfileView {
 	return TenantProfileView{
 		Name:         t.Name,
@@ -63,8 +40,6 @@ func profileViewOf(t tenant.Tenant, kind tenant.Kind) TenantProfileView {
 	}
 }
 
-// kindOf answers one tenant's kind. With no resolver assembled every tenant is
-// a business tenant, the same rule the caller tenant read applies.
 func (p *product) kindOf(ctx context.Context, id tenant.ID) (tenant.Kind, error) {
 	if p.kind == nil {
 		return tenant.KindBusiness, nil

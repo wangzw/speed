@@ -1,10 +1,5 @@
 package ownership_test
 
-// The acceptance evidence for the organization lifecycle: the transfer's
-// ownership change, the deletion's rollback at each cleanup step, and the
-// account protection's boundaries. Each case names one property the requirement
-// owner asked to see held on its own.
-
 import (
 	"errors"
 	"testing"
@@ -16,9 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant/personal"
 )
 
-// A target that is an active member but holds no tenant-admin binding is
-// granted the role by the transfer. The case pins the target's pre-state, so
-// the assertion cannot pass on a binding that was already there.
+// TestTransferOwnerGrantsTenantAdminToAMemberThatDidNotHoldIt checks that a
+// transfer grants tenant-admin to an active member that did not hold it.
 func TestTransferOwnerGrantsTenantAdminToAMemberThatDidNotHoldIt(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -65,10 +59,8 @@ func TestTransferOwnerKeepsThePreviousOwnerAnActiveMemberHoldingTenantAdmin(t *t
 	})
 }
 
-// Every binding the previous owner held survives the transfer, not only the
-// tenant-admin binding the roster's owner column implies. The extra role is
-// created and bound before the transfer, so the assertion cannot pass on a
-// binding the transfer never had a chance to remove.
+// TestTransferOwnerKeepsThePreviousOwnersOtherBindings checks that every binding
+// the previous owner held survives the transfer.
 func TestTransferOwnerKeepsThePreviousOwnersOtherBindings(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -101,12 +93,8 @@ func TestTransferOwnerKeepsThePreviousOwnersOtherBindings(t *testing.T) {
 	})
 }
 
-// A failure at any of the three cleanup steps rolls the whole deletion back:
-// the tenant stays active and every relation the deletion would have removed is
-// still there. The three steps are the roster tombstone, the policy rows
-// (grants, bindings and roles) and the memberships; the last two fail after
-// earlier steps already wrote inside the transaction, which is what makes the
-// rollback observable.
+// TestDeleteOrganizationRollsBackAFailureAtEachCleanupStep checks that a failure
+// at the tombstone, the policy rows or the memberships rolls the deletion back.
 func TestDeleteOrganizationRollsBackAFailureAtEachCleanupStep(t *testing.T) {
 	cases := map[string]string{
 		"the tombstone": `CREATE TRIGGER refuse_roster_tombstone BEFORE UPDATE ON tenants
@@ -150,9 +138,8 @@ func TestDeleteOrganizationRollsBackAFailureAtEachCleanupStep(t *testing.T) {
 	}
 }
 
-// A tombstone keeps the identifier and the name, and the roster refuses to
-// register either again. A registration under new values proves the refusals
-// are specific to the tombstone rather than a roster that refuses every write.
+// TestADeletedTenantIsNotRecreatedWithItsIdentifierOrName checks that a
+// tombstone's identifier and name cannot be registered again.
 func TestADeletedTenantIsNotRecreatedWithItsIdentifierOrName(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -179,9 +166,8 @@ func TestADeletedTenantIsNotRecreatedWithItsIdentifierOrName(t *testing.T) {
 	})
 }
 
-// A personal organization is not a business organization: it does not protect
-// its account from suspension or deletion, because it is ended with the
-// account.
+// TestAPersonalOrganizationDoesNotProtectItsAccount checks that a personal
+// organization does not protect its account from suspension or deletion.
 func TestAPersonalOrganizationDoesNotProtectItsAccount(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		suspended := a.user(t, "alice")
@@ -205,9 +191,8 @@ func TestAPersonalOrganizationDoesNotProtectItsAccount(t *testing.T) {
 	})
 }
 
-// An account that owns no tenant at all is unaffected: it owns no active
-// business organization and can be suspended and deleted. A service account
-// has no personal tenant, so it is the case with no owner rows whatsoever.
+// TestAnAccountThatOwnsNothingIsUnaffected checks that an account owning no
+// tenant can be suspended and deleted.
 func TestAnAccountThatOwnsNothingIsUnaffected(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		created, err := a.admin.Create(t.Context(), authn.CreateAccount{

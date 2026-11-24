@@ -1,29 +1,6 @@
-// Package selfcreate is the tenancy capability's self-service organization
-// module: an eligible account opens a business organization of its own.
-//
-// The route is POST /api/v1/orgs on the account endpoint. That endpoint resolves
-// no tenant and is where a caller who has not chosen one yet stands, so the
-// creation is decided by the caller's own account and nothing else. The tenant
-// itself is opened through tenant.Provisioner, the same seam the platform
-// management surface uses: the creator becomes the tenant-admin, the role is
-// marked builtin and carries the governed permission set, and the membership's
-// source is the creator's.
-//
-// The eligibility rules and upper bounds are the product's: an unproved email
-// address is refused, five active business organizations per account, three
-// creations an hour per account, a thirty-second creation lock so one account's
-// concurrent requests do not race each other, and a mandatory audit row. The two
-// numeric limits are runtime settings (org.create.max-organizations and
-// org.create.max-per-hour); the switch and the bounds' shape are configuration.
-//
-// The route is an exact route on the account endpoint, whose /api/v1/orgs
-// claim is configuration and stays claimed either way: with this module's
-// switch off the path reaches the endpoint's own 404. The personal tenant is
-// written in the account's transaction and has no route of its own.
-//
-// The module owns no table. The roster row, the tenant-admin role and its
-// grants, the creator's membership and binding, and the audit rows belong to
-// the modules that declare them.
+// Package selfcreate is the tenancy capability's self-service organization module: an eligible account
+// opens a business organization of its own through POST /api/v1/orgs, using tenant.Provisioner. Its
+// eligibility rules and two numeric limits are product policy and runtime settings.
 package selfcreate
 
 import (
@@ -46,75 +23,49 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command that assembles self-service creation. It is org.create, the name the
-// host module used before the logic moved here: the feature document requires a
-// feature's first segment to equal the declaring module's, and the feature name
-// org.create is the one a frontend gates entry points on, so the registry name
-// keeps that segment rather than the package path's tenant.
+// ModuleName is this module's name in the registry. It is org.create, the
+// feature's name, which the feature document requires to equal the declaring
+// module's segment.
 const ModuleName = "org.create"
 
-// FeatureName is the feature this module serves while its configuration switch
-// is on. It is kept as org.create, the name the host module declared before the
-// logic moved here, so a frontend gating entry points on it keeps working.
+// FeatureName is the feature this module serves while its switch is on.
 const FeatureName = featureCompatibilityName
 
-// featureCompatibilityName is the feature's name. It is spelled apart from
-// ModuleName only so the compatibility rule is documented in one place; the two
-// are the same string today and the feature document requires the segment to
-// match.
 const featureCompatibilityName = "org.create"
 
-// ConfigNamespace is the section the switch is read from. It is the product's
-// name for the capability rather than the module's, and it stays org.create for
-// the same compatibility reason.
+// ConfigNamespace is the section the switch is read from.
 const ConfigNamespace = "org.create"
 
-// SettingsNamespace is the namespace of the two numeric limits. They are
-// platform settings: the schema does not declare itself tenant-facing, and no
-// item carries a tenant access.
+// SettingsNamespace is the namespace of the two numeric limits, which are
+// platform settings and not tenant-facing.
 const SettingsNamespace = "org.create"
 
-// The configuration item this module accepts, relative to its namespace.
 const enabledItem = "enabled"
 
-// The runtime-setting items the module declares. The keys are relative to the
-// settings namespace.
 const (
 	maxOrganizationsItem = "max-organizations"
 	maxPerHourItem       = "max-per-hour"
 )
 
-// The full paths of the two runtime settings, as the settings store names them.
 const (
 	maxOrganizationsPath = SettingsNamespace + "." + maxOrganizationsItem
 	maxPerHourPath       = SettingsNamespace + "." + maxPerHourItem
 )
 
-// The declared defaults of the two limits.
 const (
 	maxOrganizationsStart = 5
 	maxPerHourStart       = 3
 )
 
-// The listening endpoint the route is mounted on. It is fixed: the route is
-// deliberately on the endpoint that resolves no tenant.
 const endpointName = "account"
 
-// init registers this module. The import is the wiring; the serve command's
-// Include list is what puts it in a run.
 func init() {
 	core.ProcessRegistry.Register(Module())
 }
 
-// Module is the descriptor a host registers.
-//
-// The roster, the memberships, the signup-verification read, the reserved-name
-// answer, the provisioner, the key-value store, the settings store and the
-// audit capability are required: every decision the route makes reads one of
-// them, and an assembly that names this module without one cannot answer
-// correctly. The HTTP entry point, the feature board, the gateway's registration
-// surface and the logger are optional.
+// Module is the descriptor a host registers. The roster, memberships, signup-verification,
+// reserved-name, provisioner, key-value, settings and audit seams are required; the HTTP entry
+// point, feature board, gateway registration surface and logger are optional.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -168,16 +119,12 @@ func Module() core.Module {
 	}
 }
 
-// moduleConfig is the module's configuration.
 type moduleConfig struct {
-	// Enabled is the switch. Off, the route is not mounted and the feature is
-	// not in force; the claimed /api/v1/orgs prefix then answers the account
-	// endpoint's own 404.
+	// Enabled is the switch. Off, the route is not mounted and the feature is not
+	// in force.
 	Enabled bool `config:"enabled"`
 }
 
-// configSchema declares the module's switch. The defaults document turns it on
-// for a bare run; a deployment that turns it off mounts nothing.
 func configSchema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -192,19 +139,11 @@ func configSchema() config.Schema {
 	}
 }
 
-// limitDefaults is the carrier of the two runtime settings. Its field values are
-// the declared defaults.
 type limitDefaults struct {
 	MaxOrganizations int
 	MaxPerHour       int
 }
 
-// settingsSchema declares the two runtime settings. Both are global items: the
-// schema leaves TenantFacing at its zero value and each item leaves TenantAccess
-// at TenantNone, so the tenant settings surface neither lists nor writes them
-// and a tenant administrator cannot read or write any org.create key. Control,
-// Danger and Effect stay at their zero values too: these are numbers a
-// platform administrator edits, not a tenant-facing control.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: SettingsNamespace,
@@ -228,8 +167,6 @@ func settingsSchema() settings.Schema {
 	}
 }
 
-// readConfig decodes the switch. Prepare and New both go through it so the two
-// see one configuration.
 func readConfig(reg *core.Registry) (moduleConfig, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -242,33 +179,26 @@ func readConfig(reg *core.Registry) (moduleConfig, error) {
 	return cfg, nil
 }
 
-// product is the module's instance: the seams each decision reads.
 type product struct {
-	config       moduleConfig
-	roster       tenant.Catalog
-	memberships  authn.Memberships
-	verification authn.SignupVerification
-	reservations authn.UsernameReservation
-	settings     settings.Store
-	kv           kv.KV
-	provisioner  tenant.Provisioner
-	audit        audit.Audit
-	logger       *slog.Logger
-	// now is the clock the hourly window and Retry-After are read from. It is a
-	// field so a case can move the window without sleeping.
-	now func() time.Time
-	// newIdentifier mints one candidate identifier. It is a field for the same
-	// reason: a case can force a collision the random generator would not.
+	config        moduleConfig
+	roster        tenant.Catalog
+	memberships   authn.Memberships
+	verification  authn.SignupVerification
+	reservations  authn.UsernameReservation
+	settings      settings.Store
+	kv            kv.KV
+	provisioner   tenant.Provisioner
+	audit         audit.Audit
+	logger        *slog.Logger
+	now           func() time.Time
 	newIdentifier func() string
 }
 
-// productOf narrows an instance to this module's product.
 func productOf(instance any) (*product, bool) {
 	product, ok := instance.(*product)
 	return product, ok && product != nil
 }
 
-// newProduct takes up what the descriptor requires.
 func newProduct(reg *core.Registry) (*product, error) {
 	cfg, err := readConfig(reg)
 	if err != nil {
@@ -328,7 +258,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	return product, nil
 }
 
-// optional takes up a capability whose absence is a legal assembly.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	var zero T
 	value, err := core.Resolve[T](reg)
@@ -342,7 +271,6 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// wire mounts the route and posts the feature when the switch is on.
 func (p *product) wire(reg *core.Registry) error {
 	if !p.config.Enabled {
 		p.logger.Info(ModuleName + ": the self-service creation is off; the route is not mounted")
@@ -361,10 +289,6 @@ func (p *product) wire(reg *core.Registry) error {
 		return fmt.Errorf("%s: %w: %q: %w", ModuleName, speedhttp.ErrUnknownEndpoint, endpointName, err)
 	}
 	endpoint.Route(createOperation.Method, RoutePath, createOperation.Handle(p.handleCreate))
-	// The route is registered for an impersonating identity so the handler can
-	// refuse it with a 403 rather than let the gateway answer its own 401. The
-	// refusal is the product's: an impersonating operator does not open an
-	// organization in the impersonated account's name.
 	if gate, gateFound, gateErr := optional[authn.Gate](reg, "the authentication gateway"); gateErr != nil {
 		return gateErr
 	} else if gateFound {

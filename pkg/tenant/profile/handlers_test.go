@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// writeBody is the write request as a case builds it. The names are the JSON
-// names the API declares: snake_case, as every management write body uses.
 type writeBody struct {
 	DisplayName  string `json:"display_name"`
 	Description  string `json:"description"`
@@ -22,7 +20,6 @@ type writeBody struct {
 	Website      string `json:"website"`
 }
 
-// validWrite is a body every field of which is admitted.
 func validWrite() writeBody {
 	return writeBody{
 		DisplayName:  "New Name",
@@ -32,9 +29,8 @@ func validWrite() writeBody {
 	}
 }
 
-// TestTheReadAnswersTheProfileWithoutTheDisableSource holds the read's view:
-// every profile field beside the read-only identity and state, and no disable
-// source, which belongs to the platform management surface.
+// TestTheReadAnswersTheProfileWithoutTheDisableSource checks the read's view and
+// that it carries no disable source.
 func TestTheReadAnswersTheProfileWithoutTheDisableSource(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -123,9 +119,8 @@ func TestTheReadNeedsTheReadPermission(t *testing.T) {
 	}
 }
 
-// TestTheProfileViewCarriesTheOwner holds the owner exposure the requirement
-// owner ruled: the profile view names the account that owns the organization,
-// read from the roster row's owner column.
+// TestTheProfileViewCarriesTheOwner checks that the view names the account that
+// owns the organization.
 func TestTheProfileViewCarriesTheOwner(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -143,9 +138,8 @@ func TestTheProfileViewCarriesTheOwner(t *testing.T) {
 	}
 }
 
-// TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner holds the boundary on
-// the owner exposure: a caller without tenant.profile.read is refused with a 403
-// before the roster is read, so the answer names no owner.
+// TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner checks that a caller
+// without tenant.profile.read is refused before the roster is read.
 func TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -165,9 +159,8 @@ func TestAnOrdinaryMemberWithoutTheReadPermissionSeesNoOwner(t *testing.T) {
 	}
 }
 
-// TestTheWriteStoresTheProfileAndAuditsIt holds the write's action, the view it
-// answers, and the order of its two steps: the mandatory audit row lands before
-// the roster write.
+// TestTheWriteStoresTheProfileAndAuditsIt checks the written view and that the
+// mandatory audit row lands before the roster write.
 func TestTheWriteStoresTheProfileAndAuditsIt(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()
@@ -261,9 +254,8 @@ func TestTheWriteStoresTheProfileAndAuditsIt(t *testing.T) {
 	}
 }
 
-// TestTheWriteRequiresAProvedEmailAddress holds the registration gate: an
-// account whose self-registration has not proved an email address is refused
-// before the guard, the audit or the roster.
+// TestTheWriteRequiresAProvedEmailAddress checks that an unproved account is
+// refused before the guard, the audit or the roster.
 func TestTheWriteRequiresAProvedEmailAddress(t *testing.T) {
 	r := newRig(t)
 	r.signup.answer(authn.SignupPending, nil)
@@ -353,9 +345,8 @@ func TestTheMandatoryAuditRowComesBeforeTheWrite(t *testing.T) {
 	}
 }
 
-// TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit holds the shape check: a
-// profile the root package refuses is a 400 with this surface's problem type,
-// and neither the roster nor the audit is reached.
+// TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit checks that a refused
+// profile is a 400 before the roster or the audit is reached.
 func TestAProfileOutsideTheDomainIsRefusedBeforeTheAudit(t *testing.T) {
 	cases := map[string]writeBody{
 		"a website with a non-http scheme":  {Website: "ftp://acme.test"},
@@ -491,9 +482,8 @@ func TestTheViewAlwaysCarriesTheCreationTime(t *testing.T) {
 	}
 }
 
-// TestTheReadCarriesTheTenantKind holds the value a client branches on: the
-// kind comes from the host's resolver, not from the name, so a personal
-// tenant whose name is an ordinary username still reads as personal.
+// TestTheReadCarriesTheTenantKind checks that the kind comes from the resolver,
+// so a personal tenant whose name is an ordinary username reads as personal.
 func TestTheReadCarriesTheTenantKind(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = sampleTenant()

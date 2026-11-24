@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// The endpoint list is required and takes concrete names only: a list that
-// mounted the read nowhere, an empty name, the every-endpoint name and a
-// repeated name are each refused, naming the key.
+// The endpoint list is required and refuses a list that mounts nothing, an empty
+// name, the every-endpoint name and a repeated name.
 func TestTheEndpointListRefusesEveryShapeItCannotRunOn(t *testing.T) {
 	cases := map[string][]string{
 		"empty":            nil,

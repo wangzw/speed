@@ -11,18 +11,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// DeleteOrganization implements tenant.OrganizationWriter.
-//
-// The roster row becomes a tombstone and the tenant's core relations are
-// removed in the same transaction: its memberships, its bindings, its roles and
-// their grants. The identifier and the name stay with the tombstone, so the
-// roster refuses to register either again. Data other modules hold for the
-// tenant is not touched here; those modules clean it up under the tombstone.
-//
-// expectedOwner is the owner the caller observed, or empty for platform staff.
-// A non-empty value that no longer matches the row is ErrOwnerChanged: a
-// transfer that won the race leaves the old owner's deletion refused, and a
-// deletion that won leaves the transfer's own tombstone refusal.
+// DeleteOrganization implements tenant.OrganizationWriter: the roster row becomes a tombstone and
+// the tenant's memberships, bindings, roles and grants are removed in the same transaction, while
+// the identifier and name stay. A stale expectedOwner is ErrOwnerChanged.
 func (p *product) DeleteOrganization(ctx context.Context, id tenant.ID, expectedOwner string) error {
 	if err := checkTenant(id); err != nil {
 		return err
@@ -67,19 +58,12 @@ func (p *product) DeleteOrganization(ctx context.Context, id tenant.ID, expected
 		}
 		after = append(after, memberships)
 
-		// A deletion is terminal, so a pending request has nothing left to
-		// confirm. It is cancelled in the same transaction as the tombstone: a
-		// failure here rolls the whole deletion back.
 		now := time.Now().UTC()
 		if writeErr := tx.WithContext(ctx).Model(&transferRow{}).
 			Where("tenant_id = ? AND status = ?", string(id), statusPending).
 			Updates(map[string]any{"status": statusCancelled, "resolved_at": now}).Error; writeErr != nil {
 			return fmt.Errorf("cancelling the organization's pending owner-transfer requests: %w", writeErr)
 		}
-		// A deleted organization has no grant left to hand out. The invitation
-		// module owns its rows, so it is asked to withdraw the pending ones once
-		// the deletion has committed; a failure is a warning and acceptance still
-		// refuses the tenant because it is gone.
 		if p.invitations != nil {
 			after = append(after, func(ctx context.Context) error {
 				return p.invitations.RevokeTenantInvitations(ctx, string(id))

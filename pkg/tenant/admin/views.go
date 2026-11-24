@@ -12,18 +12,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The views the management routes answer with. Each is built field by field from
-// a root-package value and never handed through as it stands, so that a field
-// added to a record later does not reach a client by being there.
-
-// TenantAdminTenant is one tenant as the management routes show it. It carries
-// the name the request surface addresses it by, the kind, the account that
-// owns the organization, and its state, spelled the way tenant.Status spells
-// it: active, disabled or deleted. A disabled tenant also carries who disabled
-// it, spelled the way tenant.DisabledBy spells the source: operator or account.
-//
-// It carries no identifier: the identifier is internal, and a client addresses
-// the tenant by the name alone.
+// TenantAdminTenant is one tenant as the management routes show it: the name, the
+// kind, the organization profile, the owner account, the state, the creation time
+// and, while disabled, who disabled it. It carries no identifier.
 type TenantAdminTenant struct {
 	_ struct{} `description:"One tenant as the management routes render it: the name, the kind, the organization profile, the owner account, the state, the creation time and who disabled it while it is disabled."`
 
@@ -44,20 +35,8 @@ type TenantAdminTenant struct {
 	DisabledBy string `json:"disabled_by,omitempty" enum:"operator,account" description:"Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled."`
 }
 
-// tenantView is the name the handlers and their tests use for the view. It is an
-// name, so the fragment publishes the component under the name the hand-written
-// fragment used: TenantAdminTenant.
 type tenantView = TenantAdminTenant
 
-// tenantViewOf builds the view field by field from a root-package value. The
-// owner is the roster row's own owner column, rendered as the account
-// identifier it stores; a tenant with no owner renders it empty, so the field is
-// always present. The disable source is rendered whenever the view spells the
-// state as disabled,
-// which includes a value this build does not know: that value reads as disabled
-// everywhere else, so the source it carries belongs with it. Rendering it only
-// for the literal StatusDisabled would leave such a row showing a disabled state
-// and no reason, which is the contradiction the view exists to avoid.
 func tenantViewOf(t tenant.Tenant, kind tenant.Kind) TenantAdminTenant {
 	view := TenantAdminTenant{
 		Name:         t.Name,
@@ -76,10 +55,9 @@ func tenantViewOf(t tenant.Tenant, kind tenant.Kind) TenantAdminTenant {
 	return view
 }
 
-// TenantTransferView is one owner-transfer request as the requester's surfaces
-// show it. It names the target by display name and username, never by the
-// internal account identifier: a target the account store does not resolve
-// leaves both fields empty.
+// TenantTransferView is one owner-transfer request as the requester's
+// surfaces show it; the target is named by display name and username, never
+// by identifier.
 type TenantTransferView struct {
 	_ struct{} `description:"One pending or finished owner-transfer request on the organization's own surface."`
 
@@ -104,10 +82,6 @@ type MyTransferView struct {
 	Status      string    `json:"status" required:"true" enum:"pending,confirmed,declined,cancelled,expired" description:"The request's state. Only pending requests can be confirmed or declined."`
 }
 
-// transferViewOf builds the requester's view and resolves the target's two
-// names. The account identifier is never a fallback: an absent account, one
-// that does not parse and a static-table subject leave both fields empty. A
-// read that fails otherwise is a 503 with no cause on the wire.
 func (p *product) transferViewOf(ctx context.Context, request tenant.TransferRequest) (TenantTransferView, error) {
 	view := TenantTransferView{
 		ID:          request.ID,
@@ -147,7 +121,6 @@ func (p *product) transferViewOf(ctx context.Context, request tenant.TransferReq
 	return view, nil
 }
 
-// myTransferViewOf builds the target's view, resolving the organization's name.
 func (p *product) myTransferViewOf(ctx context.Context, request tenant.TransferRequest) (MyTransferView, error) {
 	name, err := p.nameOf(ctx, request.Tenant)
 	if err != nil {

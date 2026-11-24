@@ -137,9 +137,8 @@ func TestEnsureClosesALostRaceWithAFailedAuditRow(t *testing.T) {
 	}
 }
 
-// The kind names a personal tenant's identifier, whoever asks: the platform
-// roster lists every account's spaces, so another account's personal tenant
-// must read personal too.
+// TestKindOfNamesAPersonalTenantsIdentifier checks that a personal tenant reads
+// personal whoever asks.
 func TestKindOfNamesAPersonalTenantsIdentifier(t *testing.T) {
 	p := &product{}
 	for _, id := range []tenant.ID{TenantID(unitAccount), TenantID("another-account")} {
@@ -227,8 +226,8 @@ func TestEnsureCatchesTheRosterSnapshotUp(t *testing.T) {
 	}
 }
 
-// The ensure converges the tenant-admin role's grants to the allowlist: every
-// grant outside it is revoked. The skeleton's allowlist is empty, so all are.
+// TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist checks that every grant
+// outside the allowlist is revoked.
 func TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist(t *testing.T) {
 	p, _, _, manager, seeder := unitProduct()
 	ctx := context.Background()

@@ -7,10 +7,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The owner-transfer routes as the fragments write them. The platform routes
-// are relative to the platform API root and the tenant routes to the
-// tenants-scope root; the account-level routes are relative to the ordinary
-// root, because the target acts by its own identity and no tenant context.
 const (
 	pathTenantOwnerRequestsFragment = "/tenants/:tenant/owner/requests"
 	pathTenantPendingFragment       = "/tenants/:tenant/owner/requests/pending"
@@ -26,79 +22,60 @@ const (
 	pathMyDeclineFragment  = "/auth/me/owner-transfer-requests/:request/decline"
 )
 
-// The success bodies. Each names the field it carries so the generated client
-// has one shape per answer.
 type (
-	// transferRequestBody is the 201 answer of a request.
 	transferRequestBody = struct {
 		_       struct{}           `description:"The owner-transfer request as recorded, pending."`
 		Request TenantTransferView `json:"request" required:"true" description:"The pending request. Ownership has not changed."`
 	}
 
-	// pendingTransferBody is the 200 answer of the pending read. A null request
-	// means the organization has none.
 	pendingTransferBody = struct {
 		_       struct{}            `description:"The organization's pending owner-transfer request, or null."`
 		Request *TenantTransferView `json:"request" nullable:"true" required:"true" description:"The pending request, or null when the organization has none."`
 	}
 
-	// myTransferListBody is the 200 answer of the target's listing.
 	myTransferListBody = struct {
 		_        struct{}         `description:"Every pending owner-transfer request addressed to the caller."`
 		Requests []MyTransferView `json:"requests" required:"true" description:"The caller's pending requests, ordered by request time."`
 	}
 
-	// myTransferBody is the 200 answer of one request addressed to the caller.
 	myTransferBody = struct {
 		_       struct{}       `description:"One owner-transfer request addressed to the caller, in whatever state it is."`
 		Request MyTransferView `json:"request" required:"true" description:"The request, with the organization's name and its state."`
 	}
 )
 
-// The request inputs.
-
-// requestTransferInput is the platform surface's request: the tenant in the path
-// and the account that becomes its owner in the body.
 type requestTransferInput struct {
 	ID      string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 	Account string `json:"account" required:"true" description:"The account identifier of the active member the request names as the next owner."`
 }
 
-// pendingTransferInput is the platform surface's pending read.
 type pendingTransferInput struct {
 	ID string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 }
 
-// cancelTransferInput is the platform surface's cancellation.
 type cancelTransferInput struct {
 	ID      string `path:"tenant" description:"The tenant's name. The platform name layer resolves it to the internal identifier before the handler runs; a name no tenant carries is a 404."`
 	Request string `path:"request" description:"The owner-transfer request identifier."`
 }
 
-// ownerRequestTransferInput is the tenant surface's request.
 type ownerRequestTransferInput struct {
 	Tenant  string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 	Account string `json:"account" required:"true" description:"The account identifier of the active member the request names as the next owner."`
 }
 
-// ownerPendingTransferInput is the tenant surface's pending read.
 type ownerPendingTransferInput struct {
 	Tenant string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 }
 
-// ownerCancelTransferInput is the tenant surface's cancellation.
 type ownerCancelTransferInput struct {
 	Tenant  string `path:"tenant" description:"The tenant's name. The path-tenant layer resolves it to the internal identifier before the handler runs, holds it to the tenant the request resolved to, and refuses the platform domain; a name no tenant carries is a 404."`
 	Request string `path:"request" description:"The owner-transfer request identifier."`
 }
 
-// myTransferInput is one account-level route addressed by request identifier.
 type myTransferInput struct {
 	Request string `path:"request" description:"The owner-transfer request identifier."`
 }
 
-// requestTransferOperation declares POST /tenants/:tenant/owner/requests on the
-// platform surface.
 var requestTransferOperation = speedhttp.NewReplyOperation[requestTransferInput](
 	"tenant.admin.tenants.requestTransfer",
 	http.MethodPost,
@@ -136,8 +113,6 @@ var requestTransferOperation = speedhttp.NewReplyOperation[requestTransferInput]
 	},
 )
 
-// pendingTransferOperation declares GET /tenants/:tenant/owner/requests/pending
-// on the platform surface.
 var pendingTransferOperation = speedhttp.NewReplyOperation[pendingTransferInput](
 	"tenant.admin.tenants.pendingTransfer",
 	http.MethodGet,
@@ -163,8 +138,6 @@ var pendingTransferOperation = speedhttp.NewReplyOperation[pendingTransferInput]
 	},
 )
 
-// cancelTransferOperation declares DELETE /tenants/:tenant/owner/requests/:request
-// on the platform surface.
 var cancelTransferOperation = speedhttp.NewReplyOperation[cancelTransferInput](
 	"tenant.admin.tenants.cancelTransfer",
 	http.MethodDelete,
@@ -192,8 +165,6 @@ var cancelTransferOperation = speedhttp.NewReplyOperation[cancelTransferInput](
 	},
 )
 
-// tenantRequestTransferOperation declares POST /:tenant/owner/requests on the
-// tenant surface.
 var tenantRequestTransferOperation = speedhttp.NewReplyOperation[ownerRequestTransferInput](
 	"tenant.admin.owner.requestTransfer",
 	http.MethodPost,
@@ -233,8 +204,6 @@ var tenantRequestTransferOperation = speedhttp.NewReplyOperation[ownerRequestTra
 	},
 )
 
-// tenantPendingTransferOperation declares GET /:tenant/owner/requests/pending on
-// the tenant surface.
 var tenantPendingTransferOperation = speedhttp.NewReplyOperation[ownerPendingTransferInput](
 	"tenant.admin.owner.pendingTransfer",
 	http.MethodGet,
@@ -260,8 +229,6 @@ var tenantPendingTransferOperation = speedhttp.NewReplyOperation[ownerPendingTra
 	},
 )
 
-// tenantCancelTransferOperation declares DELETE /:tenant/owner/requests/:request
-// on the tenant surface.
 var tenantCancelTransferOperation = speedhttp.NewReplyOperation[ownerCancelTransferInput](
 	"tenant.admin.owner.cancelTransfer",
 	http.MethodDelete,
@@ -289,7 +256,6 @@ var tenantCancelTransferOperation = speedhttp.NewReplyOperation[ownerCancelTrans
 	},
 )
 
-// myTransferRequestsOperation declares GET /auth/me/owner-transfer-requests.
 var myTransferRequestsOperation = speedhttp.NewReplyOperation[struct{}](
 	"tenant.admin.me.transferRequests",
 	http.MethodGet,
@@ -310,7 +276,6 @@ var myTransferRequestsOperation = speedhttp.NewReplyOperation[struct{}](
 	},
 )
 
-// myTransferRequestOperation declares GET /auth/me/owner-transfer-requests/:request.
 var myTransferRequestOperation = speedhttp.NewReplyOperation[myTransferInput](
 	"tenant.admin.me.transferRequest",
 	http.MethodGet,
@@ -335,7 +300,6 @@ var myTransferRequestOperation = speedhttp.NewReplyOperation[myTransferInput](
 	},
 )
 
-// myTransferConfirmOperation declares POST /auth/me/owner-transfer-requests/:request/confirm.
 var myTransferConfirmOperation = speedhttp.NewReplyOperation[myTransferInput](
 	"tenant.admin.me.confirmTransfer",
 	http.MethodPost,
@@ -366,7 +330,6 @@ var myTransferConfirmOperation = speedhttp.NewReplyOperation[myTransferInput](
 	},
 )
 
-// myTransferDeclineOperation declares POST /auth/me/owner-transfer-requests/:request/decline.
 var myTransferDeclineOperation = speedhttp.NewReplyOperation[myTransferInput](
 	"tenant.admin.me.declineTransfer",
 	http.MethodPost,

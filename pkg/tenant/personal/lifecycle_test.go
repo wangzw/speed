@@ -180,10 +180,8 @@ func TestAccountDeletedIsIdempotentOnATombstone(t *testing.T) {
 	}
 }
 
-// The transaction seam writes the tombstone before the deletion hook runs, so
-// the hook must still remove the memberships the seam could not reach: the rows
-// an administrator added are not the account's own row, which the account
-// transaction erased.
+// TestAccountDeletedClearsTheMembershipsOfATombstonedTenant checks that the hook
+// still removes the memberships a tombstone leaves behind.
 func TestAccountDeletedClearsTheMembershipsOfATombstonedTenant(t *testing.T) {
 	p, roster, memberships, _, _ := unitProduct()
 	id := TenantID(unitAccount)
@@ -240,8 +238,8 @@ func TestServiceSecretRevokedLeavesThePersonalTenantAlone(t *testing.T) {
 	}
 }
 
-// The lifecycle, provisioning and kind surfaces are the ones the descriptor
-// provides.
+// TestTheProductDeliversTheThreePromisedCapabilities checks the lifecycle,
+// provisioning and kind surfaces against the descriptor's promises.
 func TestTheProductDeliversTheThreePromisedCapabilities(t *testing.T) {
 	p := &product{}
 	if _, ok := any(p).(authn.AccountLifecycle); !ok {

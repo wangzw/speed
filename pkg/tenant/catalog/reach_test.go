@@ -15,11 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The cases in this file are about which statements the filter reaches: a
-// statement GORM runs through a processor other than the query one, a table
-// reached through an association join rather than through the model, and a
-// subquery rendered inside another statement.
-
 // A scan reads through GORM's row processor rather than its query processor,
 // and a filter registered on the query processor alone never sees it.
 func TestScanIsScopedToTheContext(t *testing.T) {
@@ -35,6 +30,7 @@ func TestScanIsScopedToTheContext(t *testing.T) {
 	}
 }
 
+// TestScanWithoutATenantIsRefused checks that a Scan without a tenant is refused.
 func TestScanWithoutATenantIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -46,6 +42,8 @@ func TestScanWithoutATenantIsRefused(t *testing.T) {
 	}
 }
 
+// TestRowAndRowsAreScopedToTheContext checks that Row and Rows are scoped to the
+// context's tenant.
 func TestRowAndRowsAreScopedToTheContext(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -80,17 +78,14 @@ func TestRowAndRowsAreScopedToTheContext(t *testing.T) {
 	}
 }
 
-// Row has no error of its own to report through: the row it hands back is the
-// one place a refusal can reach its caller. A refused Row hands back a row whose
-// Scan fails with the refusal, rather than no row at all for the caller's Scan
-// to dereference.
+// Row has no error of its own to report through: the row it hands back is the one
+// place a refusal can reach its caller.
 func TestARowWithoutATenantReportsTheRefusalThroughItsScan(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
 	requireRowRefusal(t, handle)
 }
 
-// refusedRows are the two shapes a Row with no tenant is refused in.
 var refusedRows = map[string]func(tx *gorm.DB) *sql.Row{
 	"a read of the model": func(tx *gorm.DB) *sql.Row {
 		return tx.Model(&order{}).Select("count(*)").Row()
@@ -116,10 +111,8 @@ func requireRowRefusal(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// A refused Row reaches no table, and it takes no connection of the pool
-// either: on a pool whose one connection is held, the refusal is answered at
-// once rather than when the caller's deadline ends, as a timeout. That holds for
-// a Row refused for its model as for one refused for its context.
+// A refused Row reaches no table and takes no connection, so it is answered at
+// once rather than at the caller's deadline.
 func TestARefusedRowTakesNoConnection(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -149,12 +142,6 @@ func requireRowRefusedWithoutAConnection(t *testing.T, handle *gorm.DB) {
 		rows[name] = row
 	}
 
-	// A refused Row that took a connection would wait for the one the
-	// transaction holds and only answer once the context ran out, so the clock
-	// stays: the error type alone does not tell the two apart, because the
-	// refusal is written on the statement either way. The deadline and the half
-	// of it the answer is allowed are both widened, so a loaded machine cannot
-	// decide the case.
 	deadline := coretest.Scale(30 * time.Second)
 	for name, row := range rows {
 		t.Run(name, func(t *testing.T) {
@@ -175,8 +162,6 @@ func requireRowRefusedWithoutAConnection(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// customer, country and purchase are joined by associations: two scoped
-// models, and a global one between them.
 type country struct {
 	ID   string `gorm:"column:id;primaryKey"`
 	Name string `gorm:"column:name"`
@@ -203,7 +188,6 @@ type purchase struct {
 
 func (purchase) TableName() string { return "purchases" }
 
-// countryStats is a global model whose association reaches a scoped one.
 type countryStats struct {
 	ID        string   `gorm:"column:id;primaryKey"`
 	CountryID string   `gorm:"column:country_id"`
@@ -212,8 +196,6 @@ type countryStats struct {
 
 func (countryStats) TableName() string { return "countries" }
 
-// seedJoined gives two tenants one customer identifier each, under a shared
-// country, and acme one purchase of it.
 func seedJoined(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	for _, ddl := range []string{
@@ -239,9 +221,7 @@ func seedJoined(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// An association join renders its own ON clause from the relationship. Two
-// tenants may reuse one customer identifier under the composite key, so the
-// joined side has to be held to the context's tenant as well.
+// An association join renders its own ON clause from the relationship.
 func TestAnAssociationJoinIsScopedOnBothSides(t *testing.T) {
 	handle := open(t)
 	seedJoined(t, handle)
@@ -272,9 +252,8 @@ func TestANestedJoinThroughAGlobalTableIsScopedWhereItIsScoped(t *testing.T) {
 	}
 }
 
-// A nested join given alone renders every level of its path, the scoped one
-// in the middle included, from that one join entry; the middle level is held
-// to the tenant as the last would be.
+// A nested join given alone is scoped at every level of its path, the middle
+// level included.
 func TestANestedJoinGivenAloneIsScopedAtEveryScopedLevel(t *testing.T) {
 	handle := open(t)
 	seedJoined(t, handle)
@@ -290,7 +269,6 @@ func TestANestedJoinGivenAloneIsScopedAtEveryScopedLevel(t *testing.T) {
 	}
 }
 
-// delivery reaches two scoped rows through two associations of one model.
 type delivery struct {
 	tenant.Model
 	ID         string   `gorm:"column:id;primaryKey"`

@@ -18,43 +18,22 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// callbackName identifies the callbacks this plugin registers, in GORM's own
-// registry.
 const callbackName = "tenant:scope"
 
-// conventionField is the Go field tenant.Model contributes. GORM flattens an
-// embedded struct, so the field appears among the model's own fields under this
-// Go name, on whatever column the embedding gives it.
 const conventionField = "TenantID"
 
-// conventionType is the embedded type that marks a model as scoped. Comparing
-// against it is what distinguishes a model that embedded the convention from
-// one that happens to carry a field of the same name.
 var conventionType = reflect.TypeOf(tenant.Model{})
 
-// whereKey is the clause this plugin reads and replaces. It is written out
-// rather than taken from clause.Where{}.Name() so that a reader sees the one
-// key this package touches.
 const whereKey = "WHERE"
 
 // filter scopes statements to the tenant their context carries.
 //
-// It is deliberately without state. The instance is frozen with the descriptor
-// at init time, database hands that one instance to every handle it builds, and
-// a process driving two commands builds two registries that share it — so
-// anything learned per run would be the other registry's value on the second
-// run. Everything this plugin judges comes from the statement's model — the
-// schema GORM has already parsed and the model's type — and from the
-// statement's context, and it keeps none of them.
-//
-// It also does not consult the roster, so it cannot tell a tenant that does not
-// exist from one that was disabled from one that was simply never put in the
-// context. Those three arrive as one thing: no identifier. Refusing statements
-// without one is the whole of what this side enforces, and disabling a tenant
-// takes effect on the request face because that is where the roster is read.
+// It is deliberately without state: one instance is shared by every handle and
+// by two registries in a process driving two commands, so it keeps nothing. It
+// also does not consult the roster, so an unknown tenant, a disabled one and a
+// missing one all arrive as no identifier, which is all this side refuses.
 type filter struct{}
 
-// newFilter builds the plugin the descriptor declares.
 func newFilter() *filter { return &filter{} }
 
 // Name identifies this plugin in GORM's own registry of plugins, which is what
@@ -62,22 +41,9 @@ func newFilter() *filter { return &filter{} }
 // package path.
 func (f *filter) Name() string { return "github.com/vislake/speed/pkg/tenant/catalog" }
 
-// Initialize registers the callbacks on one handle.
-//
-// The handle is used and not kept. GORM calls this once per handle, and
-// database hands the same plugin instance to the handles it builds later too —
-// a plugin that captured the first handle would be silent on the second, which
-// is the repeated-initialisation advice database states and this plugin keeps.
-//
-// Reads, updates and deletes all carry a condition; an insert carries a value
-// instead. Registering before each processor's own step is what puts the
-// condition into the clause the step renders, and the value into the row it
-// binds.
-//
-// A read goes through one of two processors. Find, First, Count and Pluck run
-// the query processor; Scan, Row and Rows run the row processor, and a filter
-// registered on the query processor alone leaves every one of them reading
-// across tenants with no tenant in the context and no error.
+// Initialize registers the callbacks on one handle, which is used and not kept because GORM calls
+// it once per handle. Reads, updates and deletes carry a condition and an insert a value, so each
+// is registered before its processor's own step; a read goes through both processors.
 func (f *filter) Initialize(handle *gorm.DB) error {
 	registered := []func(*gorm.DB) error{
 		func(h *gorm.DB) error {
@@ -104,16 +70,10 @@ func (f *filter) Initialize(handle *gorm.DB) error {
 	return nil
 }
 
-// scope is what the plugin makes of one statement.
 type scope int
 
 const (
-	// unscoped is a statement against a model that does not embed the
-	// convention. The plugin leaves it alone.
 	unscoped scope = iota
-	// crossing is a scoped statement whose context crosses tenants. It is
-	// neither conditioned nor filled, and what it writes into the tenant
-	// column is still judged.
 	crossing
 	// refused is a scoped statement whose context carries no tenant, or a
 	// statement through a model that embeds the convention where no one
@@ -121,50 +81,26 @@ const (
 	// for the caller to put on the statement in the form that statement can
 	// report.
 	refused
-	// tenanted is a scoped statement whose context carries a tenant.
 	tenanted
 )
 
-// reached is what a read reaches beyond its own model: the association joins
-// reaching a scoped model, and the joins of its FROM clause into a table
-// carrying tenants. A write reaches nothing beyond its model.
 type reached struct {
 	joins []scopedJoin
 	from  []fromJoin
 }
 
-// any reports whether the read reaches anything scoped beyond its model.
 func (r reached) any() bool { return len(r.joins) > 0 || len(r.from) > 0 }
 
-// release takes this plugin's conditions back out of every join of a read that
-// is no longer to be filtered.
 func (r reached) release(st *gorm.Statement) {
 	releaseJoins(st, r.joins)
 	releaseFromJoins(st)
 }
 
-// scopeOf settles whether this statement is this plugin's business, given the
-// field its model binds the tenant column to (tenantFieldOf) or the refusal of
-// a model no one tenant column can be taken from, and what a read reaches
-// beyond its model. It returns the tenant the statement belongs to when it has
-// one, or the refusal when it has none.
-//
-// The answers are ordered, and the order is load-bearing. Recognising the model
-// comes first, so a statement that is not scoped is left alone whatever its
-// context says, and one through a model no tenant column can be taken from is
-// refused whatever its context says. The cross-tenant mark comes next, so a
-// statement that means to cross is not refused for lacking the very thing it
-// means to lack. Only then is the identifier looked for.
-//
-// A statement that is scoped but not to be filtered gives up any condition an
-// earlier execution of it left behind: a chain first run under one tenant and
-// then carried to a crossing context, or to none, is judged by the context it
-// runs under now.
-//
-// A read of a model that is not scoped is still scoped when one of its joins
-// reaches a scoped model or a table carrying tenants: it reads that table's
-// rows. The field is nil for such a read, which carries no condition of its
-// own.
+// scopeOf settles whether this statement is this plugin's business. The order is
+// load-bearing: recognising the model first, then the cross-tenant mark, then
+// the identifier. A scoped statement not to be filtered gives up a condition an
+// earlier execution left behind. A read of an unscoped model is still scoped
+// when a join reaches a scoped model or a table carrying tenants.
 func scopeOf(st *gorm.Statement, field *gormschema.Field, unjudged error, r reached) (string, scope, error) {
 	if unjudged != nil {
 		releaseCondition(st)
@@ -188,32 +124,20 @@ func scopeOf(st *gorm.Statement, field *gormschema.Field, unjudged error, r reac
 	return id, tenanted, nil
 }
 
-// scopeRead adds the tenant condition to a read the query processor runs, and
-// to every join of it that reaches a scoped model.
 func (f *filter) scopeRead(tx *gorm.DB) { f.read(tx, false) }
 
-// scopeRow is scopeRead for the row processor, which Row, Rows and Scan run.
 func (f *filter) scopeRow(tx *gorm.DB) { f.read(tx, handsBackOneRow(tx)) }
 
-// handsBackOneRow reports whether a statement on the row processor is a Row.
-// GORM's own row step tells Row from Rows and Scan by the setting they leave on
-// the statement: false for the one, true for the others.
 func handsBackOneRow(tx *gorm.DB) bool {
 	setting, ok := tx.Get("rows")
 	many, isBool := setting.(bool)
 	return ok && isBool && !many
 }
 
-// read scopes one read, or refuses it in the form it can report. A read
-// joined to a model or a table no tenant column can be taken from is refused as
-// a read of that model would be.
-//
-// The tenant half of a key in the shape GORM's association mode writes is
-// filled from the context — in the read's WHERE and in the ON of a join of its
-// FROM clause (keyHalves) — whoever wrote the tuple; every other condition of
-// the caller's on the tenant column is left as written. A value naming another
-// tenant is left as it stands: the read then reaches nothing, as a read
-// conditioned on another tenant does.
+// read scopes one read, or refuses it in the form it can report. The tenant half
+// of a key in the association mode's shape is filled from the context, in the
+// WHERE and in a FROM join's ON, whoever wrote the tuple; every other condition
+// on the tenant column is left as written.
 func (f *filter) read(tx *gorm.DB, oneRow bool) {
 	st := tx.Statement
 	field, unjudged := tenantFieldOf(st.Schema)
@@ -240,29 +164,11 @@ func (f *filter) read(tx *gorm.DB, oneRow bool) {
 	applyFromJoins(st, r.from, id)
 }
 
-// refuseRead fails a read that has no tenant to be scoped to.
-//
-// Two reads cannot report a refusal put on the statement, and each is given a
-// form of its own that reaches the caller.
-//
-// A read refused while being rendered rather than run is a subquery: GORM
-// renders one into the statement it is part of and drops its error on the way,
-// so the refusal would reach nobody and the subquery would render as nothing —
-// an empty set on one dialect, a syntax error unrelated to the cause on the
-// other. It is rendered instead as a select of one value whose binding fails
-// with the refusal, so that the refusal travels with the statement that does
-// run, and fails it when that statement binds its arguments.
-//
-// A Row has no error of its own to return: it hands back the row GORM's row
-// step leaves on the statement, and that step leaves none once the statement
-// has failed, so the caller's Scan would dereference nil. A refused Row fails
-// the statement and leaves a row of its own there instead, one whose Scan and
-// Err report the refusal (refusedRow). That row reaches no database and takes
-// no connection of the pool, so the refusal is answered at once even where the
-// pool has no connection to spare — a statement rendered to fail at binding
-// would first wait for one, and report the caller's deadline rather than the
-// refusal. A Row that has already failed for some other reason is left to
-// GORM's own answer.
+// refuseRead fails a read that has no tenant to be scoped to. Two reads cannot
+// report a refusal put on the statement: a subquery has its error dropped by
+// GORM, so it renders a select of one value whose binding fails; a Row has no
+// error to return, so it is given a row whose Scan and Err report the refusal,
+// which reaches no database and takes no connection.
 func refuseRead(tx *gorm.DB, refusal error, oneRow bool) {
 	st := tx.Statement
 	switch {
@@ -270,8 +176,6 @@ func refuseRead(tx *gorm.DB, refusal error, oneRow bool) {
 		_ = tx.AddError(refusal)
 		st.Dest = refusedRow(refusal)
 	case tx.DryRun && st.SQL.Len() == 0:
-		// The return value is the statement's accumulated error, which the
-		// statement now holds; the subquery carries all of it.
 		_ = tx.AddError(refusal)
 		renderRefusal(st, tx.Error)
 	default:
@@ -279,14 +183,11 @@ func refuseRead(tx *gorm.DB, refusal error, oneRow bool) {
 	}
 }
 
-// renderRefusal writes a refused subquery as a select of one value that refuses
-// to be bound.
 func renderRefusal(st *gorm.Statement, err error) {
 	st.SQL.WriteString("SELECT ")
 	st.AddVar(&st.SQL, refusal{err: err})
 }
 
-// refusal is a value whose binding fails with the error it carries.
 type refusal struct{ err error }
 
 // Value implements driver.Valuer.
@@ -306,7 +207,6 @@ func refusedRow(err error) *sql.Row {
 	return pool.QueryRowContext(context.Background(), "")
 }
 
-// refusingConnector answers every connection it is asked for with one error.
 type refusingConnector struct{ err error }
 
 // Connect refuses the connection with the connector's error.
@@ -315,24 +215,15 @@ func (c refusingConnector) Connect(context.Context) (driver.Conn, error) { retur
 // Driver is the connector's driver, which opens nothing either.
 func (c refusingConnector) Driver() driver.Driver { return refusingDriver(c) }
 
-// refusingDriver is the driver behind refusingConnector.
 type refusingDriver struct{ err error }
 
 // Open refuses the connection with the driver's error.
 func (d refusingDriver) Open(string) (driver.Conn, error) { return nil, d.err }
 
-// scopedJoin is one association join of a read that reaches a scoped model,
-// with what its ON clause needs to render the condition at each level of the
-// join.
-//
-// A nested join renders one ON clause per level from the same join entry, and
-// the levels need not all be scoped: a purchase joined to its customer and on to
-// a global country is two levels, one of each. The condition is rendered per
-// level, keyed by the alias GORM gives that level's table; a level whose model
-// is not scoped renders a condition that holds for every row. An alias this
-// plugin did not foresee renders the tenant condition, so that a table the
-// plugin did not recognise fails the statement rather than reading across
-// tenants.
+// scopedJoin is one association join of a read that reaches a scoped model. A
+// nested join renders one ON clause per level, keyed by the alias GORM gives that
+// level's table; an unscoped level renders a condition that holds for every row,
+// and an unforeseen alias renders the tenant condition.
 type scopedJoin struct {
 	index    int
 	model    string
@@ -392,9 +283,6 @@ func scopedJoins(st *gorm.Statement) ([]scopedJoin, error) {
 	return out, nil
 }
 
-// relationChain resolves a join's name to the relationships it follows, the way
-// GORM resolves it: a relationship of the model by that name, or a dotted path
-// of them. A name that resolves to neither is SQL text.
 func relationChain(s *gormschema.Schema, name string) []*gormschema.Relationship {
 	if rel, ok := s.Relationships.Relations[name]; ok {
 		return []*gormschema.Relationship{rel}
@@ -416,7 +304,6 @@ func relationChain(s *gormschema.Schema, name string) []*gormschema.Relationship
 	return chain
 }
 
-// joinTerm is the tenant condition this plugin puts into a join's ON clause.
 type joinTerm struct {
 	id       string
 	columns  map[string]string
@@ -446,8 +333,6 @@ func (t joinTerm) Build(builder clause.Builder) {
 	}.Build(builder)
 }
 
-// applyJoins puts the tenant condition into the ON clause of every scoped join,
-// replacing the one an earlier execution left there.
 func applyJoins(st *gorm.Statement, joins []scopedJoin, id string) {
 	for _, sj := range joins {
 		j := &st.Joins[sj.index]
@@ -457,8 +342,6 @@ func applyJoins(st *gorm.Statement, joins []scopedJoin, id string) {
 	}
 }
 
-// releaseJoins takes this plugin's condition back out of the joins of a read
-// that is no longer to be filtered.
 func releaseJoins(st *gorm.Statement, joins []scopedJoin) {
 	for _, sj := range joins {
 		j := &st.Joins[sj.index]
@@ -473,7 +356,6 @@ func releaseJoins(st *gorm.Statement, joins []scopedJoin) {
 	}
 }
 
-// withoutJoinTerm is a join's own ON conditions, with this plugin's taken out.
 func withoutJoinTerm(on *clause.Where) []clause.Expression {
 	if on == nil {
 		return nil
@@ -570,22 +452,11 @@ func (f *filter) scopeUpdate(tx *gorm.DB) {
 	}
 }
 
-// keyNaming is the refusal of a write whose conditions address it by a key
-// naming another tenant.
 func keyNaming(st *gorm.Statement, named string) error {
 	return fmt.Errorf("%w: %s is addressed by a key naming tenant %q", tenant.ErrExplicitTenantMismatch,
 		st.Schema.Name, named)
 }
 
-// fillColumn writes the tenant into the rows an insert is about to bind, and
-// judges what the rows and an upsert's assignments already carry there.
-//
-// A condition cannot do this job: it decides which rows a statement reaches,
-// and an insert reaches none. Without this the column would be left to the
-// caller, and a caller that forgot would bind an empty identifier, which the
-// identifier refuses: the statement would fail rather than land in the tenant
-// its context carries. An insert crossing tenants is not filled, and each of
-// its rows has to name its tenant itself.
 func (f *filter) fillColumn(tx *gorm.DB) {
 	st := tx.Statement
 	field, unjudged := tenantFieldOf(st.Schema)
@@ -611,32 +482,14 @@ func (f *filter) fillColumn(tx *gorm.DB) {
 	}
 }
 
-// scopeTerm is the tenant equality this plugin puts into a statement's WHERE.
-//
-// It is a type of its own rather than a clause.Eq, for two reasons. The first
-// is that it has to be recognisable. A statement executed a second time — a
-// chain that counted and then read, a clone carried to another context — still
-// holds the term its first execution left, and the plugin replaces its own term
-// rather than stacking a second one or leaving a stale tenant in force. The term
-// carries the caller's expression list as it stood before it was grouped, so
-// replacing it restores exactly what the caller wrote.
-//
-// The second is that it renders after GORM has added the conditions of its
-// own — the key of a struct a delete or an update is addressed by, the
-// soft-delete predicate — which is the only moment at which the question GORM
-// asks of such a write, whether anything narrows it, can be asked with this
-// plugin's condition set aside. GORM asks it after the statement is built and
-// would find this term there; asking it here, the way GORM asks it, keeps
-// GORM's refusal of an unconditioned write a refusal rather than letting the
-// tenant condition turn it into a write over the whole tenant.
+// scopeTerm is the tenant equality this plugin puts into a statement's WHERE. It
+// is its own type so it can be recognised and replaced when a statement is
+// executed again, and so it renders after GORM's own conditions — letting GORM's
+// refusal of an unconditioned write stay a refusal.
 type scopeTerm struct {
-	column string
-	id     string
-	// written is the caller's expression list as it stood before the term
-	// was put beside it.
-	written []clause.Expression
-	// requireCondition is set on an update or a delete that did not ask for a
-	// global write.
+	column           string
+	id               string
+	written          []clause.Expression
 	requireCondition bool
 }
 
@@ -657,13 +510,9 @@ func (t scopeTerm) Build(builder clause.Builder) {
 // narrowed.
 const softDeleteKey = "soft_delete_enabled"
 
-// narrowed reports whether the statement being rendered carries a condition
-// besides this plugin's, counted the way GORM counts one.
 func narrowed(builder clause.Builder) bool {
 	st, ok := builder.(*gorm.Statement)
 	if !ok {
-		// Only a statement is ever handed in; anything else is not a write
-		// this can judge, and it is not refused on a guess.
 		return true
 	}
 	where, _ := st.Clauses[whereKey].Expression.(clause.Where)
@@ -679,24 +528,12 @@ func narrowed(builder clause.Builder) bool {
 	return others > 0
 }
 
-// applyCondition puts the tenant equality into the statement's WHERE, with
-// everything the caller already wrote kept whole beside it.
-//
-// Appending the equality to the expression list is not enough, and the
-// difference is a cross-tenant read rather than a question of style. GORM
-// renders that list joined by AND, except that an OR the caller wrote stays a
-// connector — so appending produces `a OR b AND tenant = ?`, and AND binds
-// tighter, which leaves the whole `a` branch unscoped. Grouping what the caller
-// wrote first makes the rendering `(a OR b) AND tenant = ?` whatever shape that
-// expression takes.
-//
-// What is rendered has the tenant half of every key-shaped tuple on the
-// statement's own tenant column — the shape GORM's association mode writes,
-// whoever wrote it — filled from the context (keyHalves); every other
-// condition of the caller's on that column is rendered as written. The term
-// keeps the list as written, so a later execution fills it again from its own
-// context. The tenants other than the context's the conditions name on that
-// column are returned, for a write to refuse.
+// applyCondition puts the tenant equality into the statement's WHERE, with the
+// caller's expression list grouped whole beside it: appending produces
+// `a OR b AND tenant = ?`, which leaves the `a` branch unscoped. Key-shaped
+// tuples on the tenant column are filled from the context; other conditions are
+// rendered as written, and the other tenants they name are returned for a write
+// to refuse.
 func applyCondition(st *gorm.Statement, field *gormschema.Field, id string, requireCondition bool) []string {
 	written := writtenConditions(st)
 	halves := keyHalves{at: ownColumn(st, field), key: wholeKey(st), id: id}
@@ -755,7 +592,6 @@ func releaseCondition(st *gorm.Statement) {
 	st.Clauses[whereKey] = c
 }
 
-// carriesTerm reports whether this plugin's term is in the expression list.
 func carriesTerm(where clause.Where) bool {
 	for _, e := range where.Exprs {
 		if _, ours := e.(scopeTerm); ours {
@@ -765,27 +601,11 @@ func carriesTerm(where clause.Where) bool {
 	return false
 }
 
-// grouped renders the caller's expression list as one expression that means
-// what GORM's own rendering of that list as a WHERE means, inside parentheses.
-//
-// Two steps of GORM's rendering are repeated here, because rendering the list
-// as anything but a WHERE skips them. A list holding one AND group is that
-// group's contents. And a list whose first expression is a lone OR is rendered
-// with the first expression that is not one moved in front of it, so that
-// `Or(a).Where(b)` reads `b OR a`; without the move the same list reads
-// `a AND b`, which is a different question.
-//
-// The group stays an AND group wherever it can, because GORM reads the
-// conditions of a WHERE back — FirstOrCreate and FirstOrInit copy its
-// equalities onto the value they return — and it looks inside an AND group and
-// nowhere else. An AND group of more than one expression renders its own
-// parentheses. A single expression gets explicit ones, unless it is an
-// equality on a column, which cannot carry an OR and is the one shape those
-// callers read back. The parentheses are put around the expression's own
-// rendering (parenthesized): handed to GORM as the value of an expression, a
-// WHERE nested in the list — the form GORM's association mode writes a
-// deletion's conditions in — is rendered as a clause of its own, keyword
-// included.
+// grouped renders the caller's expression list as GORM's own WHERE rendering
+// would, inside parentheses. It repeats two of GORM's steps: a list holding one
+// AND group is that group's contents, and a leading lone OR moves behind the
+// first other expression. The group stays an AND group wherever possible,
+// because GORM reads a WHERE's conditions back only inside one.
 func grouped(written []clause.Expression) clause.Expression {
 	exprs := append([]clause.Expression(nil), written...)
 	if len(exprs) == 1 {
@@ -814,7 +634,6 @@ func grouped(written []clause.Expression) clause.Expression {
 	}
 }
 
-// parenthesized renders an expression inside parentheses.
 type parenthesized struct{ expr clause.Expression }
 
 // Build renders the expression as it renders itself, between parentheses.
@@ -824,8 +643,6 @@ func (p parenthesized) Build(builder clause.Builder) {
 	_ = builder.WriteByte(')')
 }
 
-// rawColumn reports whether a column is written into the SQL as it stands,
-// which is the one way an equality's left side could carry an OR.
 func rawColumn(column interface{}) bool {
 	c, ok := column.(clause.Column)
 	return ok && c.Raw
@@ -880,7 +697,6 @@ func fillKey(st *gorm.Statement, field *gormschema.Field, id string, values ...r
 	return nil
 }
 
-// inKey reports whether a field is one of the model's primary fields.
 func inKey(s *gormschema.Schema, field *gormschema.Field) bool {
 	for _, key := range s.PrimaryFields {
 		if key == field {
@@ -890,8 +706,6 @@ func inKey(s *gormschema.Schema, field *gormschema.Field) bool {
 	return false
 }
 
-// otherKeyWritten reports whether any primary field besides the tenant's holds
-// a value.
 func otherKeyWritten(st *gorm.Statement, field *gormschema.Field, v reflect.Value) bool {
 	for _, key := range st.Schema.PrimaryFields {
 		if key == field {
@@ -904,8 +718,6 @@ func otherKeyWritten(st *gorm.Statement, field *gormschema.Field, v reflect.Valu
 	return false
 }
 
-// structValues lists the values of the model's type a reflected value holds: the
-// value itself, or each element of a slice or an array, through any pointers.
 func structValues(rv reflect.Value, model reflect.Type) []reflect.Value {
 	rv = indirect(rv)
 	switch rv.Kind() {
@@ -925,8 +737,6 @@ func structValues(rv reflect.Value, model reflect.Type) []reflect.Value {
 	return nil
 }
 
-// indirect follows pointers and interfaces to the value they hold, returning
-// the zero Value where one of them is nil.
 func indirect(v reflect.Value) reflect.Value {
 	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
 		if v.IsNil() {
@@ -970,19 +780,6 @@ func samePointer(a, b any) bool {
 		va.Type() == vb.Type() && va.Pointer() == vb.Pointer()
 }
 
-// ownTenant judges a value written under a tenant: it has to be that tenant's
-// identifier.
-//
-// Crossing tenants is a context fact with one way in. Letting a statement name
-// a second tenant would be a second way in, and one that carries no mark of
-// intent: a write copied from elsewhere and edited would land in another tenant
-// with nothing said. A value equal to the context's is not refused — it is the
-// same statement written twice. Anything this cannot read as a string — an
-// expression, a subquery, a null — is refused rather than trusted, because the
-// question is whether it is the context's tenant, and nothing here can answer
-// that for it. An assignment whose target cannot be read as one column is
-// refused for the same reason: whether it reaches the tenant column, and with
-// what, is not something the filter can answer.
 func ownTenant(st *gorm.Statement, id string) func(any) error {
 	return func(v any) error {
 		if u, ok := v.(unreadTarget); ok {
@@ -1000,16 +797,6 @@ func ownTenant(st *gorm.Statement, id string) func(any) error {
 	}
 }
 
-// someTenant judges a value written across tenants: whatever tenant it names,
-// it has to name one.
-//
-// A row whose tenant column is empty, or null, belongs to no tenant, and no
-// scoped statement can reach it again. A literal outside the identifier's
-// domain is no tenant either. An expression is the caller's own statement of
-// what the column becomes, which crossing tenants allows. A target that cannot
-// be read as one column is refused here as it is under a tenant: what crossing
-// allows is an expression the caller wrote for the tenant column, and nothing
-// says this one is for that column or which value lands in it.
 func someTenant(st *gorm.Statement) func(any) error {
 	return func(v any) error {
 		if u, ok := v.(unreadTarget); ok {
@@ -1034,7 +821,6 @@ func someTenant(st *gorm.Statement) func(any) error {
 	}
 }
 
-// judgeEach applies a judgement to every value, stopping at the first refusal.
 func judgeEach(values []any, judge func(any) error) error {
 	for _, v := range values {
 		if err := judge(v); err != nil {
@@ -1110,8 +896,6 @@ func writeRows(st *gorm.Statement, field *gormschema.Field, id string, fill bool
 	return nil
 }
 
-// otherSpellings lists the fields an insert writes, besides the tenant column's
-// own, to a column the database may read as the tenant column.
 func otherSpellings(st *gorm.Statement, field *gormschema.Field) []*gormschema.Field {
 	var out []*gormschema.Field
 	for _, f := range st.Schema.Fields {
@@ -1184,8 +968,6 @@ func insertSelects(f *gormschema.Field, selected map[string]bool, restricted boo
 	return (explicit && sel) || (!explicit && (!restricted || stamped))
 }
 
-// leftOut is the refusal of an insert whose row GORM builds without the tenant
-// column.
 func leftOut(st *gorm.Statement) error {
 	return fmt.Errorf("%w: %s is inserted with its tenant column left out of the row — by the "+
 		"statement's selection or omission, or because the field bound to it is not written on "+
@@ -1232,15 +1014,11 @@ func writeMap(st *gorm.Statement, field *gormschema.Field, m map[string]interfac
 	return nil
 }
 
-// unnamedAcross is the refusal of a row inserted across tenants that names no
-// tenant at all.
 func unnamedAcross(st *gorm.Statement) error {
 	return fmt.Errorf("%w: %s is inserted across tenants with no tenant in its tenant column",
 		tenant.ErrNoTenantInContext, st.Schema.Name)
 }
 
-// insertedMaps returns the maps an insert reads its rows from, for the four
-// destination types GORM reads as maps.
 func insertedMaps(dest any) ([]map[string]interface{}, bool) {
 	switch v := dest.(type) {
 	case map[string]interface{}:
@@ -1360,8 +1138,6 @@ func destinationValues(st *gorm.Statement, field *gormschema.Field) []any {
 		}
 		v, isZero := own.ValueOf(st.Context, updating)
 		if stamped {
-			// GORM assigns the update time in place of whatever the
-			// field holds.
 			v, isZero = st.NowFunc(), false
 		}
 		if (explicit || !isZero) && own.Updatable {
@@ -1409,21 +1185,13 @@ func upsertValues(st *gorm.Statement, field *gormschema.Field) []any {
 	return out
 }
 
-// excludedTable is the name a conflict clause reads the row it was about to
-// insert under, which is how GORM writes an assignment from that row.
 const excludedTable = "excluded"
 
-// reach is where the database takes an assignment's target to be.
 type reach int
 
 const (
-	// elsewhere is a target the database reads as some other column.
 	elsewhere reach = iota
-	// tenantColumn is a target the database may read as the tenant column.
 	tenantColumn
-	// unread is a target that cannot be read as one column at all. It may
-	// name the tenant column among others, so it is refused rather than
-	// guessed at.
 	unread
 )
 
@@ -1511,9 +1279,6 @@ func primaryColumn(s *gormschema.Schema) string {
 	return ""
 }
 
-// sameIdentifier reports whether a written name may resolve to the column: its
-// surrounding blanks and one pair of quotes of any of the three kinds taken
-// off, and compared without regard to case.
 func sameIdentifier(written, column string) bool {
 	s := strings.TrimSpace(written)
 	if len(s) >= 2 {
@@ -1524,7 +1289,6 @@ func sameIdentifier(written, column string) bool {
 	return strings.EqualFold(s, column)
 }
 
-// quoteClosing returns the character that closes a quoted name opened by c.
 func quoteClosing(c byte) (byte, bool) {
 	switch c {
 	case '"', '`':
@@ -1559,7 +1323,6 @@ func columnParts(s string) ([]string, bool) {
 	}
 }
 
-// columnPart reads one part of a column reference off the front of s.
 func columnPart(s string) (part, rest string, ok bool) {
 	if s == "" {
 		return "", "", false
@@ -1590,9 +1353,6 @@ func columnPart(s string) (part, rest string, ok bool) {
 	return s[:end], s[end:], true
 }
 
-// isNameByte reports whether a byte may stand in a bare name at this position:
-// a letter, an underscore or any byte of a character outside ASCII anywhere,
-// and a digit or a dollar sign after the first.
 func isNameByte(c byte, first bool) bool {
 	switch {
 	case c == '_' || c >= 0x80 || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'):
@@ -1603,24 +1363,18 @@ func isNameByte(c byte, first bool) bool {
 	return false
 }
 
-// unreadTarget stands, among the values a write gives the tenant column, for
-// an assignment whose target cannot be read as one column. Both judgements
-// refuse it: it may be the tenant column, and what lands there cannot be told.
 type unreadTarget struct{ name string }
 
-// refusal is the error a write carrying this target is refused with.
 func (u unreadTarget) refusal(st *gorm.Statement) error {
 	return fmt.Errorf("%w: %s assigns to %q, which cannot be read as one column and may be its "+
 		"tenant column; name the column alone", tenant.ErrExplicitTenantMismatch, st.Schema.Name, u.name)
 }
 
-// assigned reports whether selection and omission leave a column assigned.
 func assigned(selected map[string]bool, restricted bool, column string) bool {
 	sel, explicit := selected[column]
 	return (explicit && sel) || (!explicit && !restricted)
 }
 
-// isNull reports whether a value binds as a null.
 func isNull(v any) bool {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
@@ -1632,7 +1386,6 @@ func isNull(v any) bool {
 	return false
 }
 
-// describe names what a value is for a refusal's message, without its content.
 func describe(v any) string {
 	if isNull(v) {
 		return "a null"
@@ -1640,7 +1393,6 @@ func describe(v any) string {
 	return fmt.Sprintf("a %T", v)
 }
 
-// stringValue unwraps a value to a string, reporting whether it was one.
 func stringValue(v reflect.Value) (string, bool) {
 	for v.Kind() == reflect.Interface || v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -1718,7 +1470,6 @@ func conventionFieldOf(s *gormschema.Schema) (*gormschema.Field, error) {
 	return nil, nil
 }
 
-// isConvention reports whether a field of the model is the convention's own.
 func isConvention(modelType reflect.Type, f *gormschema.Field) bool {
 	return f.StructField.Name == conventionField && embedsConvention(modelType, f.StructField.Index)
 }
@@ -1799,12 +1550,8 @@ func unreadConvention(t reflect.Type, visiting []reflect.Type) (string, bool) {
 	return "", false
 }
 
-// embeddedSetting is the key GORM reads the embedded setting of a field under.
 const embeddedSetting = "EMBEDDED"
 
-// taggedEmbedded reports whether a field's gorm tag carries the embedded
-// setting, read as GORM reads its settings. A tag that does not mention the
-// word at all, in any case, is passed over without being parsed.
 func taggedEmbedded(tag string) bool {
 	if !containsFold(tag, embeddedSetting) {
 		return false
@@ -1813,7 +1560,6 @@ func taggedEmbedded(tag string) bool {
 	return ok
 }
 
-// containsFold reports whether sub occurs in s without regard to case.
 func containsFold(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if strings.EqualFold(s[i:i+len(sub)], sub) {

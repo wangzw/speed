@@ -10,8 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The request route is platform staff's: it reads the tenant for its two
-// existence answers, lands the mandatory audit row and asks the organization
+// The request route is platform staff's: it audits and asks the organization
 // writer to record the pending request.
 func TestTheOwnerTransferRequestGoesThroughTheOrganizationWriter(t *testing.T) {
 	r := newRig(t)
@@ -140,8 +139,7 @@ func TestPlatformStaffDeleteWithoutAnOwnerExpectation(t *testing.T) {
 }
 
 // The organization's owner deletes through the tenant surface without platform
-// permission, and the deletion carries the owner it observed so a racing
-// transfer refuses it.
+// permission, carrying the owner it observed so a racing transfer refuses it.
 func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -166,8 +164,7 @@ func TestTheOwnerDeletesWithTheObservedOwner(t *testing.T) {
 }
 
 // The owner cannot delete through the platform surface: the platform route asks
-// tenant.manage in the platform domain and has no ownership branch. An owner
-// without that permission is refused there and must use the tenant surface.
+// tenant.manage in the platform domain and has no ownership branch.
 func TestTheOwnerCannotDeleteThroughThePlatformSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -186,9 +183,8 @@ func TestTheOwnerCannotDeleteThroughThePlatformSurface(t *testing.T) {
 	}
 }
 
-// The owner cannot transfer through the platform surface either: the platform
-// route asks tenant.manage in the platform domain and has no ownership branch.
-// An owner without that permission must use the tenant surface.
+// The owner cannot transfer through the platform surface either: the platform route
+// asks tenant.manage in the platform domain and has no ownership branch.
 func TestTheOwnerCannotTransferThroughThePlatformSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -207,9 +203,8 @@ func TestTheOwnerCannotTransferThroughThePlatformSurface(t *testing.T) {
 	}
 }
 
-// The owner requests a transfer through the tenant surface; the same
-// organization writer the platform route calls performs it, and the audit row
-// names the tenant surface.
+// The owner requests a transfer through the tenant surface, which the same
+// organization writer performs and audits under the tenant surface.
 func TestTheOwnerRequestsATransferThroughTheTenantSurface(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -259,8 +254,6 @@ func TestThePendingTransferRead(t *testing.T) {
 			got.Request.Status != "pending" {
 			t.Errorf("the answer is %+v, want the pending request", got.Request)
 		}
-		// The target's names are wire fields in the underscore spelling; the
-		// view carries no camelCase spelling.
 		var raw struct {
 			Request map[string]any `json:"request"`
 		}
@@ -345,9 +338,8 @@ func TestCancellingAResolvedRequestIsAConflict(t *testing.T) {
 	}
 }
 
-// A platform staff member who is not the organization's owner cannot use the
-// tenant surface: the tenant route decides by owner identity, not by the
-// platform permission the same account may hold.
+// A platform staff member who is not the owner cannot use the tenant surface:
+// the tenant route decides by owner identity, not platform permission.
 func TestPlatformStaffCannotUseTheTenantSurfaceWithoutBeingTheOwner(t *testing.T) {
 	for name, call := range map[string]func(*rig) int{
 		"request": func(r *rig) int {
@@ -379,8 +371,7 @@ func TestPlatformStaffCannotUseTheTenantSurfaceWithoutBeingTheOwner(t *testing.T
 }
 
 // A transfer that commits between the guard's read and the handler's read does
-// not hand the deletion the new owner as its own expectation: the caller is the
-// expected owner, so the writer refuses with ErrOwnerChanged.
+// not change the expected owner: the writer refuses with ErrOwnerChanged.
 func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -394,7 +385,6 @@ func TestTheOwnerDeletionExpectsTheCallerNotTheRowItReadsAgain(t *testing.T) {
 	r.catalog.getHook = func() {
 		reads++
 		if reads > 1 {
-			// A transfer committed after the guard saw the caller as owner.
 			r.catalog.held.OwnerAccount = "acc-new-owner"
 		}
 	}

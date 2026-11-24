@@ -12,11 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases in this file are about registering a tenant that must not
-// overwrite one, and about what a write owes its caller once it has committed.
-
-// secondReplica is another process's roster over the same table: it read the
-// table when it started and has not read it since.
 func secondReplica(t *testing.T, over *roster) *roster {
 	t.Helper()
 	replica := newRoster(settings{}, databaseOver{handle: over.handle})
@@ -26,6 +21,8 @@ func secondReplica(t *testing.T, over *roster) *roster {
 	return replica
 }
 
+// TestCreateRegistersATenantTheWriterSeesAtOnce checks that Create registers a tenant
+// the writer sees at once.
 func TestCreateRegistersATenantTheWriterSeesAtOnce(t *testing.T) {
 	r := rosterOver(t)
 	if err := r.read(context.Background()); err != nil {
@@ -48,10 +45,8 @@ func TestCreateRegistersATenantTheWriterSeesAtOnce(t *testing.T) {
 	}
 }
 
-// A replica whose snapshot predates another replica's registration is asked
-// to register the same identifier. The table holds it, so the creation is
-// refused and the tenant keeps the name and the status it has — a disabled
-// tenant stays disabled, which is what a registration by Put would undo.
+// A replica whose snapshot predates another replica's registration is asked to
+// register the same identifier.
 func TestCreateRefusesAnIdentifierTheTableHoldsWhateverTheSnapshotSays(t *testing.T) {
 	first := rosterOver(t)
 	if err := first.read(context.Background()); err != nil {
@@ -92,9 +87,8 @@ func TestCreateRefusesANameAnotherTenantHolds(t *testing.T) {
 	}
 }
 
-// Registering an identifier twice is refused even when the second creation
-// repeats the first word for word: a creation that must not overwrite cannot
-// tell a retry from a second registrant, and says which it met.
+// Registering a tenant twice is refused even when the second creation repeats
+// the first word for word.
 func TestCreateRefusesTheSameTenantTwice(t *testing.T) {
 	r := rosterOver(t)
 	same := tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}
@@ -106,6 +100,8 @@ func TestCreateRefusesTheSameTenantTwice(t *testing.T) {
 	}
 }
 
+// TestCreateRefusesATenantOutsideTheIdentifierDomain checks that Create refuses a
+// tenant whose identifier is outside the domain.
 func TestCreateRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 	r := rosterOver(t)
 	for _, bad := range []tenant.Tenant{
@@ -119,9 +115,6 @@ func TestCreateRefusesATenantOutsideTheIdentifierDomain(t *testing.T) {
 	}
 }
 
-// cancelOnReread cancels the caller's context the moment a write, having
-// committed, starts rereading the roster — the one read of the table that
-// names no row.
 func cancelOnReread(t *testing.T, r *roster, cancel context.CancelFunc) {
 	t.Helper()
 	err := r.handle.Callback().Query().Before("gorm:query").Register("test:cancel-on-reread",
@@ -135,9 +128,7 @@ func cancelOnReread(t *testing.T, r *roster, cancel context.CancelFunc) {
 	}
 }
 
-// A caller that goes away once its write has committed has nothing left to
-// stop. The reread that serves the writer its own write carries on, so the
-// write is reported as the success it was and this replica serves it at once.
+// A caller that goes away once its write has committed has nothing left to stop.
 func TestAWriteIsServedWhenItsCallerGoesAwayAfterTheCommit(t *testing.T) {
 	for name, write := range map[string]func(ctx context.Context, r *roster) error{
 		"Put": func(ctx context.Context, r *roster) error {
@@ -176,9 +167,6 @@ func TestAWriteIsServedWhenItsCallerGoesAwayAfterTheCommit(t *testing.T) {
 	}
 }
 
-// holdFirstFullRead holds the first read of the whole roster table from here
-// on, once it has the table's rows and before it publishes them, until release
-// is closed. The channel it returns is closed once that read is being held.
 func holdFirstFullRead(t *testing.T, r *roster, release <-chan struct{}) <-chan struct{} {
 	t.Helper()
 	held := make(chan struct{})
@@ -199,10 +187,8 @@ func holdFirstFullRead(t *testing.T, r *roster, release <-chan struct{}) <-chan 
 	return held
 }
 
-// A refresh that read the table before a write committed, and publishes only
-// after the write's own reread has, would put the roster without the write back
-// in force on the writer's replica — a tenant just disabled served again until
-// the next refresh. The reads of the roster publish in the order they read.
+// A refresh that read the table before a write committed does not undo that
+// write's effect on the writer's replica.
 func TestARefreshThatReadBeforeAWriteDoesNotUndoIt(t *testing.T) {
 	r := rosterOver(t, insert("t_old", "old"))
 	if err := r.read(context.Background()); err != nil {

@@ -8,13 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// handleGet answers GET /api/v1/tenants/{tenant}/profile: one tenant's
-// organization profile.
-//
-// The tenant is the identifier the request resolved to, never the path segment
-// as written: the path-tenant layer has already held the segment to that
-// tenant, and the name it carries may differ from the identifier. An
-// identifier the roster does not carry is a bare 404.
 func (p *product) handleGet(ctx context.Context, _ profileInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
@@ -41,13 +34,6 @@ func (p *product) handleGet(ctx context.Context, _ profileInput, _ *speedhttp.Me
 	return speedhttp.JSONReply(http.StatusOK, profileBody{Profile: view}), nil
 }
 
-// handleSet answers PATCH /api/v1/tenants/{tenant}/profile: it writes one
-// tenant's organization profile and nothing else.
-//
-// The shape is checked before the roster is read, so an invalid profile costs
-// no read and writes no audit row. The existence check precedes the audit, so a
-// tenant no row carries is a 404 with no row written. The mandatory audit row
-// lands before SetProfile; a roster refusal closes it with a linked failed row.
 func (p *product) handleSet(ctx context.Context, in profileWriteInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	profile := tenant.Profile{
 		DisplayName:  in.DisplayName,
@@ -84,9 +70,6 @@ func (p *product) handleSet(ctx context.Context, in profileWriteInput, _ *speedh
 		return p.replyFailure("writing a tenant's profile", err)
 	}
 
-	// The read-only fields are the row's as this request read them; the profile
-	// is what the write just stored. Building the answer from the two avoids a
-	// second read that could fail after a committed write.
 	kind, kindErr := p.kindOf(ctx, got.ID)
 	if kindErr != nil {
 		return p.replyFailure("reading a tenant's kind", kindErr)

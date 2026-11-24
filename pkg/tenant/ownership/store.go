@@ -12,18 +12,10 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// transferTable is the table the pending requests live in. It belongs to this
-// module alone; no other module writes it.
 const transferTable = "tenant_owner_transfers"
 
-// transferRequestTTL is the fixed confirmation window. It is a constant rather
-// than a configuration item: this module holds no configuration of its own, and
-// a window that cannot be configured cannot be set to a value that outlives the
-// lifecycle it describes.
 const transferRequestTTL = 7 * 24 * time.Hour
 
-// The stored status values. They are the column's closed set, written here once
-// so the SQL predicates and the Go statuses cannot drift apart.
 const (
 	statusPending   int16 = 0
 	statusConfirmed int16 = 1
@@ -32,10 +24,6 @@ const (
 	statusExpired   int16 = 4
 )
 
-// transferRow is one row of tenant_owner_transfers. The table is global rather
-// than tenant-scoped on purpose: the target's confirmation carries no tenant
-// context, so the row cannot depend on one. Every store method takes the tenant
-// or the target explicitly.
 type transferRow struct {
 	ID          string    `gorm:"column:id;primaryKey"`
 	TenantID    string    `gorm:"column:tenant_id"`
@@ -50,9 +38,6 @@ type transferRow struct {
 // TableName implements gorm's namer.
 func (transferRow) TableName() string { return transferTable }
 
-// statusOf maps a stored value to the exported status. A value outside the
-// closed set is reported as expired: it can never be confirmed, and a caller
-// that branches on the status must not read an unknown value as pending.
 func statusOf(value int16) tenant.TransferStatus {
 	switch value {
 	case statusPending:
@@ -68,7 +53,6 @@ func statusOf(value int16) tenant.TransferStatus {
 	}
 }
 
-// requestOf builds the exported value from one row.
 func requestOf(row transferRow) tenant.TransferRequest {
 	return tenant.TransferRequest{
 		ID:          row.ID,
@@ -82,8 +66,6 @@ func requestOf(row transferRow) tenant.TransferRequest {
 	}
 }
 
-// utcPointer converts a stored instant to UTC without changing the row it came
-// from.
 func utcPointer(in *time.Time) *time.Time {
 	if in == nil {
 		return nil
@@ -92,7 +74,6 @@ func utcPointer(in *time.Time) *time.Time {
 	return &out
 }
 
-// getRequest reads one row by identifier through the given handle.
 func (p *product) getRequest(ctx context.Context, handle *gorm.DB, requestID string) (transferRow, bool, error) {
 	var row transferRow
 	err := handle.WithContext(ctx).Where("id = ?", requestID).Take(&row).Error
@@ -105,27 +86,18 @@ func (p *product) getRequest(ctx context.Context, handle *gorm.DB, requestID str
 	return row, true, nil
 }
 
-// settleExpiredRequest marks one pending row expired when its window has
-// passed. The conditional write is the arbiter: a row another writer already
-// resolved matches nothing, so exactly one resolution wins.
 func (p *product) settleExpiredRequest(ctx context.Context, requestID string, now time.Time) error {
 	return p.settleExpiredWhere(ctx, "id = ?", requestID, now)
 }
 
-// settleExpiredForTenant settles every expired request of one organization.
 func (p *product) settleExpiredForTenant(ctx context.Context, id tenant.ID, now time.Time) error {
 	return p.settleExpiredWhere(ctx, "tenant_id = ?", string(id), now)
 }
 
-// settleExpiredForTarget settles every expired request addressed to one
-// account.
 func (p *product) settleExpiredForTarget(ctx context.Context, target string, now time.Time) error {
 	return p.settleExpiredWhere(ctx, "to_account = ?", target, now)
 }
 
-// settleExpiredWhere is the lazy expiry every read and action runs first. It
-// needs no tenant lock: it changes no ownership, and the conditional update
-// serialises with the confirm's own conditional update.
 func (p *product) settleExpiredWhere(ctx context.Context, where string, value any, now time.Time) error {
 	err := p.database.DB().WithContext(ctx).Model(&transferRow{}).
 		Where("status = ? AND expires_at <= ?", statusPending, now.UTC()).
@@ -137,8 +109,6 @@ func (p *product) settleExpiredWhere(ctx context.Context, where string, value an
 	return nil
 }
 
-// pendingRowForTenant reads the organization's pending request through the
-// given handle, after the caller settled expired rows.
 func (p *product) pendingRowForTenant(ctx context.Context, handle *gorm.DB, id tenant.ID) (transferRow, bool, error) {
 	var rows []transferRow
 	err := handle.WithContext(ctx).
@@ -154,7 +124,6 @@ func (p *product) pendingRowForTenant(ctx context.Context, handle *gorm.DB, id t
 	return rows[0], true, nil
 }
 
-// pendingRowsForTarget reads every pending request addressed to one account.
 func (p *product) pendingRowsForTarget(ctx context.Context, target string) ([]transferRow, error) {
 	var rows []transferRow
 	err := p.database.DB().WithContext(ctx).
@@ -167,9 +136,6 @@ func (p *product) pendingRowsForTarget(ctx context.Context, target string) ([]tr
 	return rows, nil
 }
 
-// resolveRequest writes one terminal state onto a pending row, through the
-// given handle. It reports whether the row was pending; a row another writer
-// resolved first matches nothing.
 func resolveRequest(ctx context.Context, handle *gorm.DB, requestID string, status int16, now time.Time) (bool, error) {
 	written := handle.WithContext(ctx).Model(&transferRow{}).
 		Where("id = ? AND status = ?", requestID, statusPending).
@@ -180,10 +146,6 @@ func resolveRequest(ctx context.Context, handle *gorm.DB, requestID string, stat
 	return written.RowsAffected == 1, nil
 }
 
-// isUniqueViolation reports whether a write failed because a unique index
-// refused it. Both dialects this repository runs on are recognised by their
-// message; the pending index is the only unique constraint the table carries
-// besides its key, so a collision here is the second-request refusal.
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false

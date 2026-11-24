@@ -9,10 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here hold both strength requirements to the moment their value was
-// written: turning a policy on applies to members at their next sign-in, and a
-// session authenticated before that moment keeps working. require-mfa and
-// require-sso follow the same rule and the same failure direction.
+// TestStrengthRequirementsBindFromTheNextSignIn checks that a strength requirement
+// turned on applies at the next sign-in while an existing session keeps working.
 func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 	written := time.Date(2026, time.November, 1, 12, 0, 0, 0, time.UTC)
 	before := written.Add(-time.Minute)
@@ -82,9 +80,8 @@ func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 		store.setAt(settings.Global(), requireMFAKey, true, written)
 		store.setAt(settings.ForTenant(acme), requireMFAKey, true, tenantWritten)
 
-		// The platform requirement was already on, so a session established
-		// between the two writes is held to it: the tenant write cannot lift a
-		// requirement that predates the session.
+		// A session stamped at the boundary's own second is not older than the
+		// write, so it must be held to the requirement.
 		stepUp(t, "a session after the platform write but before the tenant write",
 			r.serve(r.as(acme, authntest.WithAuthTime(written.Add(5*time.Minute)))), acrMultiFactor)
 		if rp := r.serve(r.as(acme, authntest.WithAuthTime(written.Add(-time.Minute)))); !rp.reached() {
@@ -156,8 +153,6 @@ func TestStrengthRequirementsBindFromTheNextSignIn(t *testing.T) {
 		r.withSettings().setAt(settings.ForTenant(acme), requireSSOKey, true, written)
 		r.members.setRow(authn.Membership{Account: alice, Tenant: acme, Active: true, SSOExempt: true})
 
-		// The pass lifts the sign-in requirement and keeps the factor one: the
-		// session's age moves it past the revision rule, not past the factor.
 		stepUp(t, "an exempt single-factor session after the write",
 			r.serve(r.as(acme, authntest.WithAuthTime(after))), acrMultiFactor)
 

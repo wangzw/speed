@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// order is a scoped model: it embeds the convention, so the filter must reach
-// every statement against it.
 type order struct {
 	tenant.Model
 	ID   string `gorm:"column:id;primaryKey"`
@@ -22,9 +20,6 @@ type order struct {
 
 func (order) TableName() string { return "orders" }
 
-// memo carries a column named like the convention's without embedding it. The
-// filter must leave it alone: what makes a model scoped is the embedded type,
-// not the name of a field it happens to have.
 type memo struct {
 	ID       string `gorm:"column:id;primaryKey"`
 	TenantID string `gorm:"column:tenant_id;not null"`
@@ -33,12 +28,6 @@ type memo struct {
 
 func (memo) TableName() string { return "memos" }
 
-// open builds a handle with the filter installed and the two tables created.
-//
-// The pool is closed when the case ends. The handle is an in-memory database
-// shared by name, and a pool left open keeps that database alive past the case
-// — into the next run under -count, where the same name then finds the tables
-// already there and the case dies at the fixture.
 func open(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle, err := gorm.Open(sqlitedriver.Open("file:"+t.Name()+"?mode=memory&cache=shared"),
@@ -66,8 +55,6 @@ func open(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// seed writes rows for two tenants. It crosses tenants deliberately, which is
-// also the only way to write a tenant column by hand.
 func seed(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	ctx := tenant.CrossTenant(context.Background())
@@ -78,12 +65,11 @@ func seed(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// scopedContext returns a context carrying one tenant, as the resolving layer writes
-// it.
 func scopedContext(id string) context.Context {
 	return tenantctx.WithID(context.Background(), id)
 }
 
+// TestReadIsScopedToTheContext checks that a read is scoped to the context's tenant.
 func TestReadIsScopedToTheContext(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -97,6 +83,7 @@ func TestReadIsScopedToTheContext(t *testing.T) {
 	}
 }
 
+// TestReadWithoutATenantIsRefused checks that a read with no tenant is refused.
 func TestReadWithoutATenantIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -111,6 +98,8 @@ func TestReadWithoutATenantIsRefused(t *testing.T) {
 	}
 }
 
+// TestCrossTenantReadsEverything checks that a cross-tenant read reaches every
+// tenant.
 func TestCrossTenantReadsEverything(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -125,6 +114,8 @@ func TestCrossTenantReadsEverything(t *testing.T) {
 	}
 }
 
+// TestUnscopedModelIsUntouched checks that a model without the convention is left
+// untouched.
 func TestUnscopedModelIsUntouched(t *testing.T) {
 	handle := open(t)
 	if err := handle.Exec(
@@ -133,8 +124,6 @@ func TestUnscopedModelIsUntouched(t *testing.T) {
 		t.Fatalf("seeding: %v", err)
 	}
 
-	// No tenant in the context at all. A model that did not embed the
-	// convention must be read the same way it was written.
 	var got []memo
 	if err := handle.WithContext(context.Background()).Find(&got).Error; err != nil {
 		t.Fatalf("reading an unscoped model: %v", err)
@@ -144,6 +133,8 @@ func TestUnscopedModelIsUntouched(t *testing.T) {
 	}
 }
 
+// TestWriteFillsTheColumnFromTheContext checks that a write fills the tenant column
+// from the context.
 func TestWriteFillsTheColumnFromTheContext(t *testing.T) {
 	handle := open(t)
 
@@ -162,6 +153,8 @@ func TestWriteFillsTheColumnFromTheContext(t *testing.T) {
 	}
 }
 
+// TestWriteNamingAnotherTenantIsRefused checks that a write naming another tenant is
+// refused.
 func TestWriteNamingAnotherTenantIsRefused(t *testing.T) {
 	handle := open(t)
 
@@ -172,16 +165,18 @@ func TestWriteNamingAnotherTenantIsRefused(t *testing.T) {
 	}
 }
 
+// TestWriteNamingTheSameTenantIsAllowed checks that a write naming the context's own
+// tenant is allowed.
 func TestWriteNamingTheSameTenantIsAllowed(t *testing.T) {
 	handle := open(t)
 
-	// The same statement written twice is not a way across.
 	if err := handle.WithContext(scopedContext("acme")).
 		Create(&order{Model: tenant.Model{TenantID: "acme"}, ID: "e"}).Error; err != nil {
 		t.Fatalf("writing with a matching column: %v", err)
 	}
 }
 
+// TestWriteWithoutATenantIsRefused checks that a write with no tenant is refused.
 func TestWriteWithoutATenantIsRefused(t *testing.T) {
 	handle := open(t)
 
@@ -191,11 +186,8 @@ func TestWriteWithoutATenantIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnOrTheCallerWroteStaysInsideTheTenant is the case for how the condition
-// is attached. Appended to the caller's expression list rather than grouped
-// with it, GORM renders `note = 'globex' OR id = 'x' AND tenant_id = 'acme'`,
-// and AND binds tighter — so the whole first branch leaves the tenant behind,
-// and the read comes back with another tenant's row.
+// TestAnOrTheCallerWroteStaysInsideTheTenant is the case for how the condition is
+// attached.
 func TestAnOrTheCallerWroteStaysInsideTheTenant(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -213,10 +205,7 @@ func TestAnOrTheCallerWroteStaysInsideTheTenant(t *testing.T) {
 	}
 }
 
-// TestUpdateNamingAnotherTenantIsRefused is the case for the update path. The
-// condition still matches one tenant's row, and the value the row is given then
-// carries it away — which the insert-side check does not see, because an update
-// is not an insert.
+// TestUpdateNamingAnotherTenantIsRefused is the case for the update path.
 func TestUpdateNamingAnotherTenantIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -230,9 +219,8 @@ func TestUpdateNamingAnotherTenantIsRefused(t *testing.T) {
 	assertTenantOf(t, handle, "a", "acme")
 }
 
-// TestUpdatesWithAStructNamingAnotherTenantIsRefused is the same case through
-// the other shape an update's assignments arrive in. A check that read only the
-// map would leave this one open.
+// TestUpdatesWithAStructNamingAnotherTenantIsRefused is the same case through the
+// other shape an update's assignments arrive in.
 func TestUpdatesWithAStructNamingAnotherTenantIsRefused(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -246,6 +234,8 @@ func TestUpdatesWithAStructNamingAnotherTenantIsRefused(t *testing.T) {
 	assertTenantOf(t, handle, "a", "acme")
 }
 
+// TestUpdateReachesOnlyTheContextTenant checks that an update reaches only the
+// context's tenant.
 func TestUpdateReachesOnlyTheContextTenant(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -261,6 +251,8 @@ func TestUpdateReachesOnlyTheContextTenant(t *testing.T) {
 	assertTenantOf(t, handle, "b", "globex")
 }
 
+// TestDeleteReachesOnlyTheContextTenant checks that a delete reaches only the
+// context's tenant.
 func TestDeleteReachesOnlyTheContextTenant(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -282,17 +274,8 @@ func TestDeleteReachesOnlyTheContextTenant(t *testing.T) {
 	}
 }
 
-// TestAnUpsertCannotTakeOverAnotherTenantsRow is the case for the key the
-// convention declares, and it is the reason the tenant column is part of that
-// key rather than only indexed.
-//
-// Saving a row that carries this tenant's own identifier is not a statement
-// naming another tenant, so nothing in the filter refuses it. What keeps it
-// away from the other tenant's row is the conflict target: keyed by the
-// tenant column too, the insert conflicts with nothing and lands beside it.
-// Were the key the id alone — a globally generated one, a business key unique
-// on its own — the insert would conflict on the other tenant's row and update
-// that row into this tenant.
+// TestAnUpsertCannotTakeOverAnotherTenantsRow checks that an upsert keyed on the
+// tenant column cannot take over another tenant's row.
 func TestAnUpsertCannotTakeOverAnotherTenantsRow(t *testing.T) {
 	handle := open(t)
 	seed(t, handle)
@@ -307,9 +290,6 @@ func TestAnUpsertCannotTakeOverAnotherTenantsRow(t *testing.T) {
 		t.Fatalf("saving: %v", err)
 	}
 
-	// Both rows are there: globex's, untouched, and the one acme just
-	// wrote beside it. Under a key that was the identifier alone, the first
-	// would be gone and only acme would hold it.
 	var held []string
 	if err := handle.WithContext(tenant.CrossTenant(context.Background())).
 		Raw("SELECT tenant_id FROM orders WHERE id = ? ORDER BY tenant_id", "b").
@@ -321,11 +301,6 @@ func TestAnUpsertCannotTakeOverAnotherTenantsRow(t *testing.T) {
 	}
 }
 
-// assertTenantOf reads one row's tenant column past the filter, so that a case
-// can see what a refused write left behind. It asserts that exactly one row
-// carries the identifier and that it belongs to the tenant named: a second row
-// with the same identifier and a different tenant is what a takeover looks
-// like, and a check that read only the first match would miss it.
 func assertTenantOf(t *testing.T, handle *gorm.DB, id, want string) {
 	t.Helper()
 	var held []string

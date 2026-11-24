@@ -10,28 +10,12 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The tests in this file are about an instance a host supplies for this module,
-// to stand where the roster its New builds would stand. Prepare and New do not
-// run for it, and every callback from Migrate to Close is handed it. The
-// callbacks recognise only the roster this module builds, so what these tests
-// observe is what an instance of any other type is left to.
-
-// hostCatalog is an instance of the host's own that delivers the capability and
-// is not the roster this module builds. It has no behaviour of its own: its
-// methods are the nil interface's.
 type hostCatalog struct{ tenant.Catalog }
 
-// wrappedRoster is a Catalog a host wrote around the roster this module builds:
-// it delivers the capability and is not the type the callbacks act on. The
-// product is embedded, so its unexported methods are promoted along with the
-// capability's, and a callback that acted on whatever carries them would act on
-// the roster inside.
 type wrappedRoster struct{ *roster }
 
 var _ tenant.Catalog = wrappedRoster{}
 
-// quietRoster is rosterOverPeriod with the startup account sent nowhere, so that
-// a case that loads one does not write to the process's standard output.
 func quietRoster(t *testing.T, period time.Duration, rows ...string) *roster {
 	t.Helper()
 	r := rosterOverPeriod(t, period, rows...)
@@ -39,10 +23,8 @@ func quietRoster(t *testing.T, period time.Duration, rows ...string) *roster {
 	return r
 }
 
-// TestCallbacksActOnTheModulesOwnProduct is the control of the case below:
-// handed the roster this module builds, Init loads its snapshot, Start starts
-// its refresher and Stop ends it. Without it the observations made on a supplied
-// instance could not move.
+// TestCallbacksActOnTheModulesOwnProduct checks that Init, Start and Stop act on
+// the roster this module builds.
 func TestCallbacksActOnTheModulesOwnProduct(t *testing.T) {
 	m := Module()
 	ctx := context.Background()
@@ -71,15 +53,8 @@ func TestCallbacksActOnTheModulesOwnProduct(t *testing.T) {
 	}
 }
 
-// TestCallbacksLeaveASuppliedInstanceAlone pins that Init, Start and Stop do
-// nothing for an instance the host supplied: they load no snapshot, start no
-// refresher and end none, whatever the instance carries.
-//
-// The wrapper is the sharper of the two. It carries the roster's own methods, so
-// a callback that took any value having them for its product would pass over the
-// instance of a type of the host's own and still act here. Each observation is
-// made on a roster nobody else has touched, so a change in it can only have come
-// from the callback just called.
+// TestCallbacksLeaveASuppliedInstanceAlone checks that Init, Start and Stop do
+// nothing for an instance the host supplied.
 func TestCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 	m := Module()
 	ctx := context.Background()
@@ -115,8 +90,6 @@ func TestCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 			t.Error("Start started the refresher of the roster inside the wrapper")
 		}
 
-		// The owner runs the roster it built itself, and Stop has to leave what it
-		// started running.
 		inner.start()
 		running := inner.stopCh
 		if err := m.Stop(ctx, core.New(), wrapped); err != nil {

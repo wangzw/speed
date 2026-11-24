@@ -12,12 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here hold the visibility the design requires of a setting moved to a
-// more permissive value: one Warn naming the key and the direction and one
-// best-effort audit record, and nothing for a change that does not relax a
-// check.
-
-// recordingAudit keeps the rows the layer asked the audit seam to write.
 type recordingAudit struct {
 	rows []audit.Entry
 	err  error
@@ -28,8 +22,6 @@ func (a *recordingAudit) Record(_ context.Context, e audit.Entry) error {
 	return a.err
 }
 
-// relaxRig is the layer with a settings store and a recording audit seam, which
-// is the assembly a relaxation is watchable in.
 func relaxRig(t *testing.T) (*rig, *recordingAudit) {
 	t.Helper()
 	r := newRig(t)
@@ -39,8 +31,6 @@ func relaxRig(t *testing.T) (*rig, *recordingAudit) {
 	return r, audit
 }
 
-// deliverChange hands a settings.changed event to the module's subscription, the
-// way the bus delivers the payload the store published after a write.
 func (r *rig) deliverChange(change settings.Change) {
 	_ = r.l.onSettingsChanged(context.Background(), event.Event{
 		Type:    settings.ChangedEventType,
@@ -48,8 +38,6 @@ func (r *rig) deliverChange(change settings.Change) {
 	})
 }
 
-// warnsFor counts the Warn records naming the setting, and the ones that also
-// name the direction.
 func (r *rig) warnsFor(setting, direction string) (all, withDirection int) {
 	for _, rec := range r.logs.atLevel(levelWarn) {
 		if rec.attrs["setting"] != setting {
@@ -63,10 +51,8 @@ func (r *rig) warnsFor(setting, direction string) (all, withDirection int) {
 	return all, withDirection
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: for every
-// setting this module watches, a change in its relaxing direction writes one Warn
-// carrying the setting and the direction and one best-effort audit row naming the
-// key, the relaxed outcome and the direction.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow checks that a relaxing change to any
+// watched setting writes one Warn and one best-effort audit row.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -101,10 +87,8 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningOrEqualChangeWritesNothing holds the other direction: a move
-// that checks more, or one that changes nothing, is not a relaxation and is not
-// reported, so neither the direction test nor the strictness of the comparison
-// can be passed by a value that does not loosen.
+// TestATighteningOrEqualChangeWritesNothing checks that a change that tightens or
+// keeps a setting writes nothing.
 func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 	changes := []settings.Change{
 		{Key: requireMFAKey, Old: "false", New: "true"},
@@ -124,9 +108,8 @@ func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestASensitiveChangeIsSkippedEntirely holds the Sensitive filter against a
-// change whose values would relax: a withheld change is dropped before the
-// relaxation test, so it writes no Warn and no audit row.
+// TestASensitiveChangeIsSkippedEntirely holds that a sensitive change is dropped
+// before the relaxation test, writing no Warn and no audit row.
 func TestASensitiveChangeIsSkippedEntirely(t *testing.T) {
 	r, audit := relaxRig(t)
 	r.deliverChange(settings.Change{Key: checkTTLKey, Sensitive: true})
@@ -152,9 +135,8 @@ func TestAnUnwatchedChangeIsIgnored(t *testing.T) {
 	}
 }
 
-// TestTheHandlerIsInertAndSafeWithoutTheSeams holds the assembly with no event
-// bus and no settings store: there is no setting to watch, so the handler writes
-// nothing and does not panic when it is handed a change anyway.
+// TestTheHandlerIsInertAndSafeWithoutTheSeams holds that with no bus and no settings
+// store the handler writes nothing and does not panic.
 func TestTheHandlerIsInertAndSafeWithoutTheSeams(t *testing.T) {
 	r := newRig(t)
 	if r.l.store != nil || r.l.bus != nil || r.l.audit != nil {
@@ -171,9 +153,8 @@ func TestTheHandlerIsInertAndSafeWithoutTheSeams(t *testing.T) {
 	}
 }
 
-// TestAnAuditWriteFailureIsNotFatal holds the best-effort direction: the change
-// is still reported and a failed audit write is logged, and the handler carries
-// on and fails no event.
+// TestAnAuditWriteFailureIsNotFatal holds that a failed audit write is logged and the
+// change is still reported, failing no event.
 func TestAnAuditWriteFailureIsNotFatal(t *testing.T) {
 	r, audit := relaxRig(t)
 	audit.err = errors.New("the audit is down")
@@ -191,9 +172,8 @@ func TestAnAuditWriteFailureIsNotFatal(t *testing.T) {
 	}
 }
 
-// TestTheChangeSubscriptionNeedsBothTheBusAndTheStore holds the guard: the change
-// subscription is registered only when the assembly carries both the event bus
-// and the settings store, and leaving either out changes nothing else.
+// TestTheChangeSubscriptionNeedsBothTheBusAndTheStore holds that the change subscription
+// is registered only when both the event bus and the settings store are present.
 func TestTheChangeSubscriptionNeedsBothTheBusAndTheStore(t *testing.T) {
 	t.Run("a store without a bus subscribes to nothing", func(t *testing.T) {
 		if err := (fixture{supplied: []supply{withStore(newSettingsStub())}}).drive(t, core.StageInit, nil); err != nil {

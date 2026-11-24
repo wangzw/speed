@@ -1,18 +1,8 @@
 package personal
 
-// The personal tenant follows its account's lifecycle: the module implements
-// authn.AccountLifecycle, so the account module's status change and deletion do
-// the tenant-side work after their own transaction has committed.
-//
-// The in-transaction seam is the authority; these hooks are the retry path and
-// the compensation. The two status hooks move the tenant through the roster's
-// account-driven transition, which writes the disable source as the account's;
-// an operator's disable is therefore never lifted by an account's recovery. The
-// deletion removes the tenant's memberships; the seam has already cleared the
-// deleted account's bindings and removed its tenant-admin role in the account's
-// transaction, and a hook that finds no tombstone records the deletion and
-// writes it. Every hook is idempotent, and a repeated call on a tombstone still
-// clears the memberships the account's own transaction never reached.
+// The personal tenant follows its account's lifecycle through authn.AccountLifecycle; the in-transaction
+// seam is the authority and these idempotent hooks are the retry path. The status hooks use the
+// account-driven transition, so an operator's disable is never lifted by an account's recovery.
 
 import (
 	"context"
@@ -26,18 +16,11 @@ import (
 
 var _ authn.AccountLifecycle = (*product)(nil)
 
-// personalMemberPage is the page size the deletion reads a tenant's memberships
-// in.
 const personalMemberPage = 100
 
-// AccountCreated implements authn.AccountLifecycle: the account gets its
-// personal tenant, its membership and its tenant-admin binding as soon as the
-// account exists, so no account is ever without a tenant. The seam wrote them
-// in the account's transaction; this call completes anything it did not.
-//
-// A service account has no personal tenant, and an account already deleted is
-// no work: both answer nil. A retry that arrives after the tenant was deleted
-// finds the tombstone and is a no-op.
+// AccountCreated implements authn.AccountLifecycle. It completes anything the
+// seam left unfinished; a service account, a deleted account and a tombstone
+// are no work.
 func (p *product) AccountCreated(ctx context.Context, id authn.AccountID) error {
 	if p.accounts != nil {
 		account, err := p.accounts.Get(ctx, id)
@@ -65,22 +48,19 @@ func (p *product) AccountCreated(ctx context.Context, id authn.AccountID) error 
 	return nil
 }
 
-// AccountDisabled implements authn.AccountLifecycle: the tenant the account owns
-// is disabled through the roster's account path, so the disable source says
-// account state caused it.
+// AccountDisabled implements authn.AccountLifecycle: the tenant the account
+// owns is disabled through the roster's account path, so the disable source
+// says account state caused it.
 func (p *product) AccountDisabled(ctx context.Context, id authn.AccountID) error {
 	return p.setAccountStatus(ctx, id, tenant.StatusDisabled)
 }
 
-// AccountEnabled implements authn.AccountLifecycle: a disable the account made is
-// lifted through the same roster path. A tenant an operator disabled stays
-// disabled, because the roster's transition only reverses an account's own
-// disable.
+// AccountEnabled implements authn.AccountLifecycle. It only reverses an
+// account's own disable; an operator's disable stays.
 func (p *product) AccountEnabled(ctx context.Context, id authn.AccountID) error {
 	return p.setAccountStatus(ctx, id, tenant.StatusActive)
 }
 
-// setAccountStatus is both status hooks.
 func (p *product) setAccountStatus(ctx context.Context, id authn.AccountID, target tenant.Status) error {
 	personalID := TenantID(id)
 	held, found, err := p.lifecycleTenant(ctx, personalID)
@@ -99,21 +79,9 @@ func (p *product) setAccountStatus(ctx context.Context, id authn.AccountID, targ
 	return nil
 }
 
-// AccountDeleted implements authn.AccountLifecycle. The cleanup has a fixed
-// order:
-//
-//  1. every membership of the tenant is removed,
-//  2. the deleted account's bindings are cleared and then the tenant-admin role
-//     is removed, which takes its remaining bindings with it,
-//  3. the deletion's audit row is written,
-//  4. the tenant's tombstone is written.
-//
-// Each step is idempotent, and the tombstone is the completion marker. In an
-// assembly that carries the transaction seam, the seam has already cleared the
-// account's bindings, deleted the role and written the tombstone before this
-// hook runs. The memberships the account's own transaction never reached are
-// still this hook's work, so a tombstone shortens the cleanup to step 1 rather
-// than skipping it.
+// AccountDeleted implements authn.AccountLifecycle. The cleanup has a fixed order: remove every
+// membership, clear the account's bindings and the tenant-admin role, write the audit row, then
+// write the tombstone. Each step is idempotent, and a tombstone shortens it to the membership step.
 func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error {
 	personalID := TenantID(id)
 	held, found, err := p.lifecycleTenant(ctx, personalID)
@@ -124,10 +92,6 @@ func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error 
 		return nil
 	}
 	if held.Status == tenant.StatusDeleted {
-		// The transaction seam wrote the tombstone with the account, so the
-		// policy cleanup and the audit row are already done. The rows an
-		// administrator added are not: the seam has no transaction-aware
-		// membership listing, so the hook removes them here.
 		return p.clearMemberships(ctx, string(personalID))
 	}
 	tenantID := string(personalID)
@@ -152,10 +116,6 @@ func (p *product) ServiceSecretRevoked(context.Context, authn.AccountID, string)
 	return nil
 }
 
-// lifecycleTenant reads the personal tenant's row across statuses.
-// EnterRegistered forces one table read where this replica's snapshot does not
-// carry the row, so a snapshot that predates it cannot turn "a row exists" into
-// "no row" and silence a hook.
 func (p *product) lifecycleTenant(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
 	if _, err := p.roster.EnterRegistered(ctx, id); err != nil {
 		if errors.Is(err, tenant.ErrInvalidTenant) {
@@ -170,9 +130,6 @@ func (p *product) lifecycleTenant(ctx context.Context, id tenant.ID) (tenant.Ten
 	return held, found, nil
 }
 
-// clearMemberships removes every membership of the tenant, one page at a time.
-// The account's own row is already gone with its account in the account module's
-// transaction; this step collects the rows an administrator added.
 func (p *product) clearMemberships(ctx context.Context, tenantID string) error {
 	query := authn.MemberQuery{Page: authn.Page{Limit: personalMemberPage}}
 	for {
@@ -192,10 +149,6 @@ func (p *product) clearMemberships(ctx context.Context, tenantID string) error {
 	}
 }
 
-// clearPolicy clears the deleted account's bindings in the tenant and then
-// removes its tenant-admin role. The bindings go through the host's
-// account-deletion path, which the last-tenant-administrator rule does not
-// constrain.
 func (p *product) clearPolicy(ctx context.Context, tenantID, account string) error {
 	if err := p.manager.ClearAccountBindings(ctx, tenantID, account); err != nil {
 		return fmt.Errorf("clearing the deleted account's bindings in the personal tenant: %w", err)

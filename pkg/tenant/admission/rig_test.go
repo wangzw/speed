@@ -24,12 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The cases built on this file drive the layer's handler the way a request
-// reaches it: a context holding what the layers outside would have left in it,
-// a handler behind that answers 200 when the request gets through, and a reply
-// read off the recorder. Every collaborator is a stub whose answers the case
-// chooses and whose calls the case counts.
-
 const (
 	acme   = "acme"
 	globex = "globex"
@@ -37,30 +31,21 @@ const (
 	alice authn.AccountID = "alice"
 	bob   authn.AccountID = "bob"
 
-	// idpOfAcme and idpOfGlobex are provider identifiers in the canonical
-	// UUID form an identity holds.
 	idpOfAcme   = "11111111-1111-4111-8111-111111111111"
 	idpOfGlobex = "22222222-2222-4222-8222-222222222222"
 	idpUnknown  = "33333333-3333-4333-8333-333333333333"
 )
 
-// boundTenant is how the resolution layer binds a tenant onto a context: the
-// identifier and the log field both.
 var boundTenant = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAttrs}
 
-// inTenant returns ctx as the resolution layer leaves it for this tenant.
 func inTenant(ctx context.Context, id string) context.Context {
 	return tenantctx.Bind(ctx, id, boundTenant)
 }
 
-// base is a context carrying the rig's logger, the way the entry point injects
-// the request's logger before any layer runs.
 func (r *rig) base() context.Context {
 	return log.WithLogger(context.Background(), slog.New(r.logs))
 }
 
-// as returns a context holding an identity of alice unless an option names
-// another account, in the tenant, the way the layers outside this one leave it.
 func (r *rig) as(tenantID string, opts ...authntest.Option) context.Context {
 	r.t.Helper()
 	opts = append([]authntest.Option{authntest.WithAccount(alice)}, opts...)
@@ -71,8 +56,6 @@ func (r *rig) as(tenantID string, opts ...authntest.Option) context.Context {
 	return inTenant(ctx, tenantID)
 }
 
-// anon returns a context for a request with no identity on a route of the
-// access level, in the tenant when one is named.
 func (r *rig) anon(tenantID string, access authn.Access) context.Context {
 	r.t.Helper()
 	ctx := authntest.Anonymous(r.t, r.base(), access)
@@ -82,8 +65,6 @@ func (r *rig) anon(tenantID string, access authn.Access) context.Context {
 	return inTenant(ctx, tenantID)
 }
 
-// bare returns a context no gateway has touched, in the tenant when one is
-// named.
 func (r *rig) bare(tenantID string) context.Context {
 	if tenantID == "" {
 		return r.base()
@@ -91,7 +72,6 @@ func (r *rig) bare(tenantID string) context.Context {
 	return inTenant(r.base(), tenantID)
 }
 
-// memberStub is the account module's memberships.
 type memberStub struct {
 	authn.Memberships
 
@@ -104,8 +84,7 @@ type memberStub struct {
 	isMemberN   int
 	membershipN int
 	tenantsN    int
-	// during runs inside IsMember, before it answers.
-	during func()
+	during      func()
 }
 
 func newMemberStub() *memberStub {
@@ -142,15 +121,12 @@ func (m *memberStub) failRow(err error) {
 	m.rowErr = err
 }
 
-// failTenants arms a failure of the membership listing.
 func (m *memberStub) failTenants(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.tenantsErr = err
 }
 
-// Tenants lists every row a case wrote for the account, by tenant. It reads the
-// same rows Membership answers from, so a case that sets a row sees it here too.
 func (m *memberStub) Tenants(_ context.Context, id authn.AccountID) ([]authn.Membership, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -195,7 +171,6 @@ func (m *memberStub) reads() (isMember, membership int) {
 	return m.isMemberN, m.membershipN
 }
 
-// deciderStub is the permission model.
 type deciderStub struct {
 	mu     sync.Mutex
 	allow  bool
@@ -221,7 +196,6 @@ func (d *deciderStub) questions() []authn.Decision {
 	return append([]authn.Decision(nil), d.asked...)
 }
 
-// providersStub is the registry of identity providers. Only Tenant is answered.
 type providersStub struct {
 	authn.SSOProviders
 
@@ -248,8 +222,6 @@ func standardProviders() *providersStub {
 	return &providersStub{owners: map[string]string{idpOfAcme: acme, idpOfGlobex: globex}}
 }
 
-// settingsStub is the settings module's store, with the fallback it gives a
-// read: the tenant's own row, then the global row, then the declared default.
 type settingsStub struct {
 	settings.Store
 
@@ -278,16 +250,12 @@ func newSettingsStub() *settingsStub {
 	}
 }
 
-// set writes a row without a revision. A case that needs the revision a real
-// write carries uses setAt; a row with none is one the store cannot place a
-// session against, which is the pre-revision behaviour.
 func (s *settingsStub) set(layer settings.Layer, key string, value any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rows[settingRow{layer: layer, key: key}] = value
 }
 
-// setAt writes a row and the moment it was written.
 func (s *settingsStub) setAt(layer settings.Layer, key string, value any, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -342,9 +310,6 @@ func (s *settingsStub) WrittenAt(layer settings.Layer, key string) (time.Time, b
 	return s.revisions[row], true, nil
 }
 
-// Read answers each named layer from the stub's rows, as the real store reads
-// both layers from one snapshot. The boolean keys this module declares default
-// to false, which is what an absent layer answers.
 func (s *settingsStub) Read(key string, reads ...settings.LayerRead) ([]settings.LayerReadResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -382,7 +347,6 @@ func (s *settingsStub) readsOf(key string) int {
 	return n
 }
 
-// clock is the time the cache reads.
 type clock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -400,14 +364,12 @@ func (c *clock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// record is one log record a case reads back.
 type record struct {
 	level slog.Level
 	msg   string
 	attrs map[string]string
 }
 
-// recorder is a log handler that keeps what was written.
 type recorder struct {
 	mu      *sync.Mutex
 	records *[]record
@@ -448,7 +410,6 @@ func (r *recorder) all() []record {
 	return append([]record(nil), *r.records...)
 }
 
-// atLevel returns the records written at one level.
 func (r *recorder) atLevel(level slog.Level) []record {
 	var out []record
 	for _, rec := range r.all() {
@@ -459,7 +420,6 @@ func (r *recorder) atLevel(level slog.Level) []record {
 	return out
 }
 
-// rig is one layer with every collaborator a stub.
 type rig struct {
 	t         *testing.T
 	l         *layer
@@ -471,9 +431,6 @@ type rig struct {
 	store     *settingsStub
 }
 
-// newRig builds a layer guarding "public" over a membership stub in which
-// alice is a member of acme. It has no decider, no registry of providers and no
-// settings; a case adds what it needs.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	gin.SetMode(gin.ReleaseMode)
@@ -505,18 +462,14 @@ func (r *rig) withSettings() *settingsStub {
 	return r.store
 }
 
-// reply is what the client got back.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// reached reports whether the request got through to the handler behind the
-// layer.
 func (rp reply) reached() bool { return rp.status == nethttp.StatusOK && rp.body == "reached" }
 
-// serve sends one request carrying ctx through the layer and a handler behind it.
 func (r *rig) serve(ctx context.Context) reply {
 	r.t.Helper()
 	return serveThrough(r.t, r.l.middlewareFor("public").Handler, ctx)
@@ -537,7 +490,6 @@ func serveThrough(t *testing.T, layerHandler gin.HandlerFunc, ctx context.Contex
 	return reply{status: rec.Code, header: rec.Header().Clone(), body: string(body)}
 }
 
-// counts reads the decision counts by outcome name.
 func (l *layer) countsByName() map[string]int64 {
 	out := make(map[string]int64, outcomeCount)
 	for o := range l.counts {
@@ -546,8 +498,6 @@ func (l *layer) countsByName() map[string]int64 {
 	return out
 }
 
-// onlyCounted fails the case unless exactly one request was counted, under the
-// outcome named.
 func (r *rig) onlyCounted(want outcome) {
 	r.t.Helper()
 	got := r.l.countsByName()
@@ -560,7 +510,6 @@ func (r *rig) onlyCounted(want outcome) {
 	}
 }
 
-// levelError and levelInfo name the log levels the cases read back.
 const (
 	levelError = slog.LevelError
 	levelInfo  = slog.LevelInfo
@@ -571,9 +520,6 @@ var errBoom = errors.New("the dependency is down")
 
 func tenantIDOf(id string) tenant.ID { return tenant.ID(id) }
 
-// busStub is the event bus: a publish reaches every handler subscribed to the
-// type, in the publisher's goroutine, and nothing else about delivery is
-// modelled.
 type busStub struct {
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -605,12 +551,10 @@ func (b *busStub) subscribed(eventType string) int {
 	return len(b.handlers[eventType])
 }
 
-// members returns the membership stub a product built over one holds.
 func (l *layer) members() *memberStub { return l.memberships.(*memberStub) }
 
 func newDiscardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
-// authntestIdentity is an identity of alice, read back out of a context.
 func authntestIdentity(t *testing.T) authn.Identity {
 	t.Helper()
 	id, ok := authn.FromContext(authntest.Context(t, context.Background(), authntest.WithAccount(alice)))

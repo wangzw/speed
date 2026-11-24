@@ -1,12 +1,5 @@
 package personal
 
-// The stand-ins the unit cases drive: the roster and its transaction-aware
-// write, the membership read and cleanup, the transaction-aware membership
-// write, the policy manager and its transaction-aware surface, the seeding
-// surface, the permission catalog, the audit capability and the account read.
-// Each records what it was handed so a case can assert on it, and each has
-// failure fields a case sets.
-
 import (
 	"context"
 	"fmt"
@@ -27,11 +20,8 @@ import (
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// unitAccount is the account the unit cases provision for. It is not a UUID so
-// the derived identifier is easy to read in a failure message.
 const unitAccount = authn.AccountID("7c1e0f6a")
 
-// stepLog records the order writes reached the stand-ins.
 type stepLog struct {
 	mu    sync.Mutex
 	steps []string
@@ -55,7 +45,6 @@ func (l *stepLog) snapshot() []string {
 	return append([]string(nil), l.steps...)
 }
 
-// fakeRoster is the tenant.Catalog the unit cases use.
 type fakeRoster struct {
 	tenant.Catalog
 
@@ -180,7 +169,6 @@ func (r *fakeRoster) EnterRegistered(ctx context.Context, id tenant.ID) (context
 	return ctx, nil
 }
 
-// fakeMemberships is the membership read and cleanup the unit cases use.
 type fakeMemberships struct {
 	authn.Memberships
 
@@ -303,8 +291,6 @@ func (m *fakeMemberships) Membership(_ context.Context, tenantID string, id auth
 	return authn.Membership{}, false, nil
 }
 
-// fakeTxCatalog records the transaction handle and the tenant rows a case
-// writes through it.
 type fakeTxCatalog struct {
 	tenantcatalog.TxCatalog
 
@@ -318,9 +304,7 @@ type fakeTxCatalog struct {
 	after     []string
 }
 
-// GetTx answers the personal row the deletion's audit row names. The fake holds
-// no table, so it answers the row the account's username derives unless a case
-// says the read fails.
+// GetTx answers the personal row the deletion's audit row names.
 func (c *fakeTxCatalog) GetTx(_ context.Context, tx *gorm.DB, id tenant.ID) (tenant.Tenant, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -360,7 +344,6 @@ func afterClosure(sink *[]string, name string) func(context.Context) error {
 	}
 }
 
-// fakeTxManager records the transaction handle and every policy write.
 type fakeTxManager struct {
 	authzpolicy.TxManager
 
@@ -411,9 +394,6 @@ func (m *fakeTxManager) SeedGrantsTx(_ context.Context, tx *gorm.DB, _ string, _
 	if m.seedErr != nil {
 		return 0, nil, m.seedErr
 	}
-	// The production write answers a nil closure when it added no row, so a
-	// grant set that is empty — the personal tenant's is — registers no
-	// after-commit work. Mirroring that keeps the collector assertion honest.
 	added := 0
 	for _, grant := range grants {
 		if !slices.Contains(m.grants, grant) {
@@ -449,7 +429,6 @@ func (m *fakeTxManager) ClearAccountBindingsTx(_ context.Context, tx *gorm.DB, _
 	return afterClosure(&m.after, "clear-bindings"), nil
 }
 
-// fakeMembershipWriter records the transaction handle and the membership.
 type fakeMembershipWriter struct {
 	provisioning.MembershipWriter
 
@@ -473,7 +452,6 @@ func (w *fakeMembershipWriter) PutMembershipTx(_ context.Context, tx *gorm.DB,
 	return afterClosure(&w.after, "membership"), nil
 }
 
-// fakeGrants is the grant table the manager and the seeding surface share.
 type fakeGrants struct {
 	mu   sync.Mutex
 	sets map[string]map[authz.Role]map[authz.Grant]struct{}
@@ -493,7 +471,6 @@ func (g *fakeGrants) held(tenantID string, role authz.Role) []authz.Grant {
 	return out
 }
 
-// fakeManager is the authz.Manager the unit cases use.
 type fakeManager struct {
 	authz.Manager
 
@@ -695,7 +672,6 @@ func (m *fakeManager) DeleteRole(_ context.Context, tenantID string, role authz.
 	return nil
 }
 
-// fakeSeeder is the authz.Seeder the unit cases use.
 type fakeSeeder struct {
 	authz.Seeder
 
@@ -732,7 +708,6 @@ func (s *fakeSeeder) SeedGrants(_ context.Context, tenantID string, role authz.R
 	return added, nil
 }
 
-// fakeCatalog is the authz.Catalog the unit cases use.
 type fakeCatalog struct {
 	authz.Catalog
 
@@ -749,7 +724,6 @@ func (c fakeCatalog) Governed(permission authz.Permission) bool {
 
 func (fakeCatalog) ObjectAction(authz.Permission) (string, string, bool) { return "", "", false }
 
-// fakeAudit is the audit.Audit the unit cases use.
 type fakeAudit struct {
 	mu         sync.Mutex
 	entries    []audit.Entry
@@ -777,8 +751,6 @@ func (a *fakeAudit) rows() []audit.Entry {
 	return append([]audit.Entry(nil), a.entries...)
 }
 
-// fakeAccounts is the account read the module makes for the event compensation
-// and for the ensure's username.
 type fakeAccounts struct {
 	kind          authn.AccountKind
 	status        authn.AccountStatus
@@ -803,7 +775,6 @@ func (a *fakeAccounts) Identifiers(context.Context, authn.AccountID) ([]authn.Id
 	return append([]authn.Identifier(nil), a.identifiers...), nil
 }
 
-// unitProduct assembles a product over the fakes.
 func unitProduct() (*product, *fakeRoster, *fakeMemberships, *fakeManager, *fakeSeeder) {
 	steps := &stepLog{}
 	roster := newFakeRoster()
@@ -826,8 +797,6 @@ func unitProduct() (*product, *fakeRoster, *fakeMemberships, *fakeManager, *fake
 		audit:             auditor,
 		logger:            log.Default(),
 		seen:              newSeenEvents(seenEventsCapacity),
-		// A user account always carries a username, and the unit product models
-		// one so the ensure and the creation hook can name the tenant.
 		accounts: &fakeAccounts{
 			kind:        authn.KindUser,
 			status:      authn.StatusActive,
@@ -836,7 +805,6 @@ func unitProduct() (*product, *fakeRoster, *fakeMemberships, *fakeManager, *fake
 	}, roster, memberships, manager, seeder
 }
 
-// seededPersonal assembles a product and gives the account its personal tenant.
 func seededPersonal(t *testing.T) (*product, *fakeRoster, *fakeMemberships, *fakeManager, *fakeAudit) {
 	t.Helper()
 	p, roster, memberships, manager, _ := unitProduct()
@@ -846,7 +814,6 @@ func seededPersonal(t *testing.T) (*product, *fakeRoster, *fakeMemberships, *fak
 	return p, roster, memberships, manager, p.audit.(*fakeAudit)
 }
 
-// entriesOfAction answers the entries written for one action.
 func entriesOfAction(entries []audit.Entry, action string) []audit.Entry {
 	var out []audit.Entry
 	for _, entry := range entries {

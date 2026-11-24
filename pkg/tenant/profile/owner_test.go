@@ -13,13 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The account read is a stand-in for authn.Accounts. Only Get and
-// IdentifiersMany are read by this surface; the rest return an error naming
-// themselves, so a handler that reaches for another method fails loudly.
 var _ authn.Accounts = (*stubAccounts)(nil)
 
-// stubAccounts is the account store this surface's owner resolution reads. It
-// answers from what a case set and fails with the error a case set.
 type stubAccounts struct {
 	accounts       map[authn.AccountID]authn.Account
 	identifiers    map[authn.AccountID][]authn.Identifier
@@ -77,24 +72,18 @@ func (*stubAccounts) ListServiceSecrets(context.Context, authn.AccountID) ([]aut
 	return nil, errors.New("tenant.profile: the owner read does not list service secrets")
 }
 
-// The owner fixture keeps the account identifier, the display name and the
-// username different from one another, so a resolution that puts the wrong one
-// into either field fails the case.
 const (
 	ownerAccountID = "01a1b156-7c2e-7000-9000-00000000abcd"
 	ownerName      = "Alex Morgan"
 	ownerUser      = "alex.morgan"
 )
 
-// ownerTenant is a tenant whose owner is the fixture account.
 func ownerTenant() tenant.Tenant {
 	row := sampleTenant()
 	row.OwnerAccount = ownerAccountID
 	return row
 }
 
-// ownerAccounts answers the fixture owner with its display name and username,
-// plus an email address so the username is not the only identifier.
 func ownerAccounts() *stubAccounts {
 	return &stubAccounts{
 		accounts: map[authn.AccountID]authn.Account{
@@ -109,9 +98,6 @@ func ownerAccounts() *stubAccounts {
 	}
 }
 
-// newRigOver builds a rig over the product the module assembly built, so the
-// optional seams the assembly takes up are the ones a case supplies. The rig's
-// own stand-ins keep the rest of the case in control.
 func newRigOver(t *testing.T, accounts authn.Accounts) *rig {
 	t.Helper()
 	r := newRig(t)
@@ -136,7 +122,6 @@ func newRigOver(t *testing.T, accounts authn.Accounts) *rig {
 	return r
 }
 
-// ownerFields is the part of the profile view the owner cases read.
 type ownerFields struct {
 	OwnerAccount     string `json:"owner_account"`
 	OwnerDisplayName string `json:"owner_display_name"`
@@ -152,8 +137,6 @@ func ownerOf(t *testing.T, w *httptest.ResponseRecorder) ownerFields {
 	return body.Profile
 }
 
-// assertNoAccountID holds that neither owner field carries the account
-// identifier the fixture separates from the name and the username.
 func assertNoAccountID(t *testing.T, owner ownerFields) {
 	t.Helper()
 	if owner.OwnerDisplayName == ownerAccountID {
@@ -164,9 +147,8 @@ func assertNoAccountID(t *testing.T, owner ownerFields) {
 	}
 }
 
-// TestTheReadShowsTheOwnerByDisplayNameAndUsername holds the read's answer: the
-// owner's display name and username, resolved from the account the roster row
-// names, beside the account key the ownership decision uses.
+// TestTheReadShowsTheOwnerByDisplayNameAndUsername checks that the read reports the
+// owner's display name and username beside the ownership account key.
 func TestTheReadShowsTheOwnerByDisplayNameAndUsername(t *testing.T) {
 	r := newRigOver(t, ownerAccounts())
 	r.catalog.held = ownerTenant()
@@ -211,9 +193,8 @@ func TestTheWriteShowsTheOwnerByDisplayNameAndUsername(t *testing.T) {
 	assertNoAccountID(t, owner)
 }
 
-// TestWithNoAccountSeamTheOwnerNamesAreEmpty holds an assembly that delivers no
-// account read: the owner is unresolved but is never replaced by the account
-// identifier, on either route.
+// TestWithNoAccountSeamTheOwnerNamesAreEmpty checks that with no account read
+// the owner names are empty on both routes, never the identifier.
 func TestWithNoAccountSeamTheOwnerNamesAreEmpty(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -245,9 +226,8 @@ func TestWithNoAccountSeamTheOwnerNamesAreEmpty(t *testing.T) {
 	}
 }
 
-// TestAnUnknownOwnerAccountLeavesTheOwnerNamesEmpty holds an owner the account
-// store does not know, a tombstone included: both names are empty and neither
-// falls back to the identifier.
+// TestAnUnknownOwnerAccountLeavesTheOwnerNamesEmpty checks that an owner the account
+// store cannot resolve has empty names, with no fallback to the identifier.
 func TestAnUnknownOwnerAccountLeavesTheOwnerNamesEmpty(t *testing.T) {
 	r := newRigOver(t, &stubAccounts{})
 	r.catalog.held = ownerTenant()
@@ -264,9 +244,8 @@ func TestAnUnknownOwnerAccountLeavesTheOwnerNamesEmpty(t *testing.T) {
 	assertNoAccountID(t, owner)
 }
 
-// TestAStaticOwnerSubjectLeavesTheOwnerNamesEmpty holds a static credential
-// table subject, which has no account row: both names are empty and no account
-// read is made.
+// TestAStaticOwnerSubjectLeavesTheOwnerNamesEmpty checks that a static credential
+// subject has empty names and triggers no account read.
 func TestAStaticOwnerSubjectLeavesTheOwnerNamesEmpty(t *testing.T) {
 	accounts := ownerAccounts()
 	r := newRigOver(t, accounts)
@@ -354,9 +333,8 @@ func TestAnOwnerIdentifierReadFailureIsAServiceUnavailable(t *testing.T) {
 	}
 }
 
-// TestAnOwnerWithoutAUsernameHasOnlyTheDisplayName holds the one field that can
-// stand alone: an account with no username identifier still names the owner by
-// display name, and the username stays empty rather than borrowing anything.
+// TestAnOwnerWithoutAUsernameHasOnlyTheDisplayName checks that the display name
+// stands alone and the username stays empty.
 func TestAnOwnerWithoutAUsernameHasOnlyTheDisplayName(t *testing.T) {
 	accounts := &stubAccounts{
 		accounts: map[authn.AccountID]authn.Account{

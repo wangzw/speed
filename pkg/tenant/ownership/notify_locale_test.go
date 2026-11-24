@@ -1,14 +1,5 @@
 package ownership_test
 
-// The language the notices go out in. A notice is for its recipient, so the
-// dispatch's locale is the recipient's stored preference, and the deployment's
-// configured default when there is none to read. The requester's own request
-// context carries the requester's language and must not reach it: a transfer's
-// confirmation and decline are answered by one account and delivered to
-// another. A preference the seam cannot read is a separate state from an
-// absent one: it takes the same fallback and leaves a warning naming the
-// notice's type and tenant, without the recipient.
-
 import (
 	"context"
 	"errors"
@@ -23,8 +14,6 @@ import (
 	speedlog "github.com/vislake/speed/pkg/log"
 )
 
-// storedLocale writes the language an account carries as its stored
-// preference, through the account administration surface.
 func (a *assembly) storedLocale(t *testing.T, who authn.Account, tag string) {
 	t.Helper()
 	if err := a.admin.SetAttributes(t.Context(), who.ID, map[string]string{i18n.LocaleAttributeKey: tag}); err != nil {
@@ -32,12 +21,8 @@ func (a *assembly) storedLocale(t *testing.T, who authn.Account, tag string) {
 	}
 }
 
-// errUnreadableLocale is the failure the profile stand-in reports.
 var errUnreadableLocale = errors.New("the account store is unavailable")
 
-// unreadableProfile is a profile whose preference read fails. It reports the
-// failure through the seam's error, which is what tells this state apart from
-// an account that stores no preference.
 type unreadableProfile struct{}
 
 func (unreadableProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
@@ -48,8 +33,6 @@ func (unreadableProfile) TimeZoneFor(context.Context, string) (string, bool, err
 	return "", false, nil
 }
 
-// storedProfile is a profile that answers one stored preference for every
-// account.
 type storedProfile struct{ locale i18n.Locale }
 
 func (p storedProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
@@ -60,7 +43,6 @@ func (storedProfile) TimeZoneFor(context.Context, string) (string, bool, error) 
 	return "", false, nil
 }
 
-// logRecorder keeps every record a case's module writes.
 type logRecorder struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -80,7 +62,6 @@ func (r *logRecorder) Handle(_ context.Context, rec slog.Record) error {
 func (r *logRecorder) WithAttrs([]slog.Attr) slog.Handler { return r }
 func (r *logRecorder) WithGroup(string) slog.Handler      { return r }
 
-// atLevel returns the records written at one level.
 func (r *logRecorder) atLevel(level slog.Level) []slog.Record {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -93,9 +74,6 @@ func (r *logRecorder) atLevel(level slog.Level) []slog.Record {
 	return out
 }
 
-// recordingLogger is the assembly's logger capability, holding a recorder. Its
-// redaction rule set accepts every registration: this case holds the language a
-// notice goes out in, not what a log line masks.
 type recordingLogger struct {
 	handler *logRecorder
 }
@@ -103,13 +81,11 @@ type recordingLogger struct {
 func (l recordingLogger) Named(string) *slog.Logger   { return slog.New(l.handler) }
 func (recordingLogger) Redaction() speedlog.Redaction { return acceptingRedaction{} }
 
-// acceptingRedaction takes every rule the assembled modules register.
 type acceptingRedaction struct{}
 
 func (acceptingRedaction) AddKeys(...string)                   {}
 func (acceptingRedaction) AddPattern(string, speedlog.Matcher) {}
 
-// attr reads one attribute of a record.
 func attr(rec slog.Record, key string) (string, bool) {
 	var value string
 	var found bool
@@ -124,11 +100,8 @@ func attr(rec slog.Record, key string) (string, bool) {
 	return value, found
 }
 
-// A notice goes out in the recipient's stored language, not in the language of
-// the request context that triggered it. The request context carries the
-// requester's language throughout: the target asks nothing and is notified in
-// English, and the previous owner answers the confirmation in English while the
-// result notice reaches the previous owner, who reads Chinese.
+// TestTheNoticeGoesOutInTheRecipientsStoredLanguage checks that a notice follows
+// the recipient's stored language, not the request context's.
 func TestTheNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -165,9 +138,6 @@ func TestTheNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 				"the confirming account's own language must not decide it", got, "zh-CN")
 		}
 
-		// The decline answers the same question from the other side: the
-		// target declines under its own language, and the result notice reaches
-		// the account that made the request, in that account's stored language.
 		second, err := a.writer.RequestTransfer(i18n.WithLocale(t.Context(), "en-US"),
 			"acme", owner.ID.String(), "")
 		if err != nil {
@@ -191,11 +161,8 @@ func TestTheNoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 	})
 }
 
-// With no stored preference on the recipient, a notice falls back to the
-// deployment's configured default, and that fallback is not a failed read: no
-// warning is written. The requester's language is the other one on purpose, so
-// following the request context and falling back to the old hard-coded "en-US"
-// both fail this case.
+// TestTheNoticeFallsBackToTheDeploymentDefaultLocale checks the fallback to the
+// configured default, without a warning and not to the requester's language.
 func TestTheNoticeFallsBackToTheDeploymentDefaultLocale(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -222,7 +189,6 @@ func TestTheNoticeFallsBackToTheDeploymentDefaultLocale(t *testing.T) {
 			}
 		}
 
-		// The fallback never blocks the write it describes.
 		pending, found, err := a.writer.PendingTransfer(t.Context(), "acme")
 		if err != nil || !found || pending.ID != request.ID {
 			t.Errorf("the pending read answered %+v found=%t err=%v, want the request", pending, found, err)
@@ -230,10 +196,8 @@ func TestTheNoticeFallsBackToTheDeploymentDefaultLocale(t *testing.T) {
 	})
 }
 
-// A preference the seam cannot read is not the same state as one the account
-// does not store: the notice falls back to the deployment default, the write
-// stands, and a warning names the notice's type and tenant. The recipient's
-// identifier stays out of the line.
+// TestTheNoticeFallsBackToTheDefaultWhenThePreferenceReadFails checks the fallback
+// after a failed read, with a warning naming neither recipient nor value.
 func TestTheNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) {
 	withI18nProfile(t, standIn("stand-in.i18n-profile", unreadableProfile{}, (*i18n.Profile)(nil)),
 		func(t *testing.T, a *assembly) {
@@ -284,7 +248,6 @@ func TestTheNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) 
 				return true
 			})
 
-			// The notice is best effort and the preference read is part of it.
 			pending, found, err := a.writer.PendingTransfer(t.Context(), "acme")
 			if err != nil || !found || pending.ID != request.ID {
 				t.Errorf("the pending read answered %+v found=%t err=%v, want the request", pending, found, err)
@@ -292,9 +255,8 @@ func TestTheNoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) 
 		})
 }
 
-// A failed read in one profile does not end the search: every profile is asked,
-// a later one's stored preference decides the notice, and the failure leaves
-// exactly one warning naming the notice and not the recipient.
+// TestTheNoticeAsksEveryProfileAfterAFailedRead checks that every profile is
+// asked and a later stored preference decides.
 func TestTheNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	withI18nProfiles(t, []core.Module{
 		profileStandIn("stand-in.a-unreadable-profile", unreadableProfile{}),
@@ -349,9 +311,8 @@ func TestTheNoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	})
 }
 
-// Two profiles whose reads fail leave one warning between them: the warning is
-// about this notice, not about each seam, so the second failure writes nothing
-// and the notice still falls back to the deployment default.
+// TestTheNoticeWarnsOnceHoweverManyProfileReadsFail checks that failed reads
+// leave a single warning and the notice still falls back to the default.
 func TestTheNoticeWarnsOnceHoweverManyProfileReadsFail(t *testing.T) {
 	withI18nProfiles(t, []core.Module{
 		profileStandIn("stand-in.a-unreadable-profile", unreadableProfile{}),
@@ -400,8 +361,8 @@ func TestTheNoticeWarnsOnceHoweverManyProfileReadsFail(t *testing.T) {
 	})
 }
 
-// An answering profile ends the search: the later profile is never asked, so
-// its failed read leaves no warning and the first answer decides the notice.
+// TestTheNoticeStopsAtTheFirstAnswer checks that a later profile is never asked
+// once one answers.
 func TestTheNoticeStopsAtTheFirstAnswer(t *testing.T) {
 	withI18nProfiles(t, []core.Module{
 		profileStandIn("stand-in.a-stored-profile", storedProfile{locale: "ja-JP"}),
@@ -439,9 +400,8 @@ func TestTheNoticeStopsAtTheFirstAnswer(t *testing.T) {
 	})
 }
 
-// An assembly with no stored preference and no i18n engine has no language to
-// send in: the notice is skipped rather than sent in a fixed one, and the
-// request it describes stands.
+// TestTheNoticeIsSkippedWhenNoLanguageIsAvailable checks that the notice is
+// skipped, not sent in a fixed language, and the request stands.
 func TestTheNoticeIsSkippedWhenNoLanguageIsAvailable(t *testing.T) {
 	withNoI18nEngine(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -479,9 +439,8 @@ func TestTheNoticeIsSkippedWhenNoLanguageIsAvailable(t *testing.T) {
 	})
 }
 
-// A stored preference is a language on its own: an assembly with no i18n engine
-// still sends the notice in it, because the resolver is only the fallback and
-// not the source.
+// TestTheNoticeUsesAStoredPreferenceWithoutAnEngine checks that a stored
+// preference sends the notice even with no i18n engine.
 func TestTheNoticeUsesAStoredPreferenceWithoutAnEngine(t *testing.T) {
 	withNoI18nEngine(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
