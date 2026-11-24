@@ -31,8 +31,6 @@ const (
 	testCode       = "241907"
 )
 
-// recordingSender is a mail.Sender that keeps what it was handed and fails on
-// demand.
 type recordingSender struct {
 	mu       sync.Mutex
 	messages []mail.Message
@@ -59,8 +57,6 @@ func (s *recordingSender) sent() []mail.Message {
 	return append([]mail.Message(nil), s.messages...)
 }
 
-// standIn is a module that declares the token names and delivers instance from
-// its New, exclusively when told to.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -73,8 +69,6 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// driveEmailcode builds an assembly of this module, the i18n engine and the
-// mail stand-in, and answers the EmailCodeSender it delivered.
 func driveEmailcode(t *testing.T, sender mail.Sender) (authn.EmailCodeSender, error) {
 	t.Helper()
 	reader := authntest.ConfigReaderAll(t, "{}", Module(), catalog.Module())
@@ -100,9 +94,7 @@ func driveEmailcode(t *testing.T, sender mail.Sender) (authn.EmailCodeSender, er
 	return got, err
 }
 
-// TestASendLogsOneOutcomeLine holds the external-call rule: each send records
-// its success or failure, the carrier's receipt and its duration, and the line
-// carries neither the code nor the address.
+// TestASendLogsOneOutcomeLine checks that each send logs one outcome line carrying neither the code nor the address.
 func TestASendLogsOneOutcomeLine(t *testing.T) {
 	var out bytes.Buffer
 	ctx := log.WithLogger(context.Background(),
@@ -147,11 +139,7 @@ func TestASendLogsOneOutcomeLine(t *testing.T) {
 	}
 }
 
-// TestAnUncertainCarrierAnswerIsPublishedAsTheEmailSentinel holds the
-// classification the login module reads: a mail failure whose delivery is not
-// known is wrapped in authn.ErrEmailUncertain, while a definite refusal stays a
-// definite failure and is certified as one that left no message. The original
-// mail sentinel survives inside both, so the log's outcome still names it.
+// TestAnUncertainCarrierAnswerIsPublishedAsTheEmailSentinel checks that an uncertain carrier answer is wrapped in authn.ErrEmailUncertain while a definite refusal is certified as not sent.
 func TestAnUncertainCarrierAnswerIsPublishedAsTheEmailSentinel(t *testing.T) {
 	sender := &recordingSender{}
 	channel, err := driveEmailcode(t, sender)
@@ -185,10 +173,7 @@ func TestAnUncertainCarrierAnswerIsPublishedAsTheEmailSentinel(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorNamesWhatItDeliversAndRequires holds the shape a command
-// tree relies on: the module is authn.emailcode, it delivers the email channel
-// exclusively, it requires the mail sending capability, and it declares its
-// catalog with no configuration item of its own.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks that the descriptor delivers the email channel exclusively, requires the mail sender and declares no configuration item.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.emailcode" {
@@ -230,9 +215,7 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	}
 }
 
-// TestTheCatalogCarriesEveryMessageInBothLanguages holds the compiled-in
-// catalog: zh-CN and en-US, each with the subject and both bodies, each body
-// interpolating the code and its lifetime, and no message left empty.
+// TestTheCatalogCarriesEveryMessageInBothLanguages checks that the catalog carries every message in zh-CN and en-US with the code and lifetime interpolated.
 func TestTheCatalogCarriesEveryMessageInBothLanguages(t *testing.T) {
 	locales, err := catalogLocales()
 	if err != nil {
@@ -261,10 +244,7 @@ func TestTheCatalogCarriesEveryMessageInBothLanguages(t *testing.T) {
 	}
 }
 
-// TestSendCodeRendersInTheRequestedLanguage holds the whole send: the message
-// reaches the carrier addressed to the code's holder, its subject and both
-// bodies are the catalog's text with the code and the lifetime interpolated, and
-// the two languages differ so a case that always answered one could not pass.
+// TestSendCodeRendersInTheRequestedLanguage checks that a send reaches the carrier with the catalog's text in the requested language.
 func TestSendCodeRendersInTheRequestedLanguage(t *testing.T) {
 	sender := &recordingSender{}
 	product, err := driveEmailcode(t, sender)
@@ -302,10 +282,7 @@ func TestSendCodeRendersInTheRequestedLanguage(t *testing.T) {
 	}
 }
 
-// TestAnUnknownLocaleFallsBackToEnglish holds the fallback order: a language the
-// catalog does not carry, an English region it does not carry, a Chinese region
-// it does not carry, and no locale at all each render a message rather than the
-// key.
+// TestAnUnknownLocaleFallsBackToEnglish checks that an unknown locale falls back to English and still renders a message.
 func TestAnUnknownLocaleFallsBackToEnglish(t *testing.T) {
 	english := readCatalog(t, "en-US")
 	chinese := readCatalog(t, "zh-CN")
@@ -335,9 +312,7 @@ func TestAnUnknownLocaleFallsBackToEnglish(t *testing.T) {
 	}
 }
 
-// TestTheCarrierErrorPassesThrough holds that each of the mail capability's
-// three sentinels reaches the caller as it was classified, and that the error
-// text carries no code.
+// TestTheCarrierErrorPassesThrough checks that each carrier sentinel reaches the caller as classified and carries no code.
 func TestTheCarrierErrorPassesThrough(t *testing.T) {
 	for _, sentinel := range []error{mail.ErrThrottled, mail.ErrRejected, mail.ErrUncertain} {
 		t.Run(sentinel.Error(), func(t *testing.T) {
@@ -357,9 +332,7 @@ func TestTheCarrierErrorPassesThrough(t *testing.T) {
 	}
 }
 
-// TestACatalogMissingAMessageStopsTheStartup holds the guard: a localizer that
-// does not carry one of the messages fails the module's construction, naming the
-// key and locale and never a code.
+// TestACatalogMissingAMessageStopsTheStartup checks that a catalog missing a message fails the construction, naming the key and locale.
 func TestACatalogMissingAMessageStopsTheStartup(t *testing.T) {
 	partial := &partialLocalizer{have: map[i18n.Locale]map[i18n.Key]string{
 		"en-US": {subjectKey: "Your verification code"},
@@ -380,10 +353,7 @@ func TestACatalogMissingAMessageStopsTheStartup(t *testing.T) {
 	}
 }
 
-// TestAnAssemblyWithNoLocalizerStopsTheStartup holds the other startup failure:
-// an assembly that supplies no i18n.Localizer at all cannot render anything, so
-// the module's construction fails naming the localizer rather than reporting a
-// single missing message.
+// TestAnAssemblyWithNoLocalizerStopsTheStartup checks that an assembly with no localizer fails the construction naming the localizer.
 func TestAnAssemblyWithNoLocalizerStopsTheStartup(t *testing.T) {
 	reg := core.New()
 	reg.Register(Module())
@@ -405,7 +375,6 @@ func TestAnAssemblyWithNoLocalizerStopsTheStartup(t *testing.T) {
 	}
 }
 
-// partialLocalizer carries the messages a case gave it and nothing else.
 type partialLocalizer struct {
 	have map[i18n.Locale]map[i18n.Key]string
 }
@@ -424,8 +393,7 @@ func (l *partialLocalizer) Translate(locale i18n.Locale, key i18n.Key, _ i18n.Ar
 	return text, ok
 }
 
-// TestTheLifetimeIsRenderedInWholeMinutesRoundedUp holds the unit the messages
-// interpolate: a lifetime is whole minutes, rounded up, never below one.
+// TestTheLifetimeIsRenderedInWholeMinutesRoundedUp checks that the lifetime is rendered in whole minutes rounded up, never below one.
 func TestTheLifetimeIsRenderedInWholeMinutesRoundedUp(t *testing.T) {
 	for _, tc := range []struct {
 		ttl  time.Duration
@@ -443,7 +411,6 @@ func TestTheLifetimeIsRenderedInWholeMinutesRoundedUp(t *testing.T) {
 	}
 }
 
-// driveResetEmailcode is driveEmailcode answering the reset channel instead.
 func driveResetEmailcode(t *testing.T, sender mail.Sender) (authn.EmailResetCodeSender, error) {
 	t.Helper()
 	reader := authntest.ConfigReaderAll(t, "{}", Module(), catalog.Module())
@@ -469,10 +436,7 @@ func driveResetEmailcode(t *testing.T, sender mail.Sender) (authn.EmailResetCode
 	return got, err
 }
 
-// TestSendResetCodeRendersTheResetMessages holds the reset channel end to end:
-// the message reaches the carrier with the reset messages, not the verifying
-// ones, interpolated with the code and the lifetime, and the two languages
-// differ so a case that always answered one could not pass.
+// TestSendResetCodeRendersTheResetMessages checks that the reset channel sends the reset messages with the code and lifetime interpolated.
 func TestSendResetCodeRendersTheResetMessages(t *testing.T) {
 	sender := &recordingSender{}
 	channel, err := driveResetEmailcode(t, sender)
@@ -510,11 +474,7 @@ func TestSendResetCodeRendersTheResetMessages(t *testing.T) {
 	}
 }
 
-// TestTheResetSeamIsProvidedExactlyWhenTheCatalogCarriesIt holds the
-// registration-time decision: the built-in catalog carries the reset leaves, so
-// the descriptor offers the reset channel; a catalog missing a leaf in one
-// language, or with a malformed or empty file, does not, and the descriptor
-// builder offers only the verifying channel.
+// TestTheResetSeamIsProvidedExactlyWhenTheCatalogCarriesIt checks that the reset channel is offered exactly when the catalog carries its messages in every language.
 func TestTheResetSeamIsProvidedExactlyWhenTheCatalogCarriesIt(t *testing.T) {
 	if !catalogCarriesReset(localesFS, catalogPattern) {
 		t.Fatal("the built-in catalog does not carry the reset messages")
@@ -611,7 +571,6 @@ func TestTheResetSeamIsProvidedExactlyWhenTheCatalogCarriesIt(t *testing.T) {
 	}
 }
 
-// hasProvision reports whether provisions includes token.
 func hasProvision(provisions []core.Provision, token core.Token) bool {
 	for _, p := range provisions {
 		if p.Token == token {
@@ -621,8 +580,6 @@ func hasProvision(provisions []core.Provision, token core.Token) bool {
 	return false
 }
 
-// readCatalog reads one locale's message file out of the module's embedded
-// catalog.
 func readCatalog(t *testing.T, locale i18n.Locale) map[string]string {
 	t.Helper()
 	raw, err := os.ReadFile("locales/" + string(locale) + ".json")
@@ -636,7 +593,6 @@ func readCatalog(t *testing.T, locale i18n.Locale) map[string]string {
 	return entries
 }
 
-// interpolate substitutes the two placeholders the way the i18n engine does.
 func interpolate(text string, args map[string]string) string {
 	for name, value := range args {
 		text = strings.ReplaceAll(text, "{{"+name+"}}", value)
