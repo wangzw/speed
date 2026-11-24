@@ -1,6 +1,5 @@
 /**
- * PhoneSection: the phone-number surface of the account page, the two steps
- * that add or replace the account's number.
+ * PhoneSection: the two-step phone-number surface of the account page.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -48,16 +47,14 @@ type PhoneHostCallbacks =
       /** Closes the host's form instead of stepping back to the number field. */
       readonly onCancel: () => void
       /** Receives the bound number in E.164 after the verification lands and
-       * the profile invalidation's re-read has settled. Called only while the
-       * section is mounted; a throwing callback leaves the confirmation in
-       * place because the write already landed. */
+       * the profile invalidation's re-read has settled; a throwing callback
+       * leaves the confirmation in place because the write already landed. */
       readonly onAdded: (phone: string) => void
     }
 
 /**
  * The host supplies the session, the deployment's gate and an add form's
- * callbacks; the section sends and verifies one number and hands it back
- * once settled.
+ * callbacks.
  */
 export type PhoneSectionProps = {
   /** The session the human-verification proof is obtained for. */
@@ -79,10 +76,7 @@ export function PhoneSection({
   const startPhone = useAuthnLoginStartPhone()
   const verifyPhone = useAuthnLoginVerifyPhone()
   const defaultCountry = usePhoneCountryDefault()
-  // The number a send is waiting on because a proof is not in hand yet: the
-  // challenge appears only once a send is asked for.
   const [pendingSend, setPendingSend] = useState<string | null>(null)
-  // The send presents the proof; the verify step sends nothing, so it does not.
   const human = useHumanVerification(session, {
     scope: 'phone',
     enabled: pendingSend !== null,
@@ -94,17 +88,13 @@ export function PhoneSection({
 
   const [country, setCountry] = useState(defaultCountry)
   const [nationalNumber, setNationalNumber] = useState('')
-  // Shows the per-country message only once the viewer asked to send.
   const [phoneAttempted, setPhoneAttempted] = useState(false)
   const [code, setCode] = useState('')
-  // The sent-to number names the phase (entering a number vs. a code).
   const [sentTo, setSentTo] = useState<string | null>(null)
   // Held until the host dismisses the section, so the number-entry form does
   // not come back beside the confirmation while the profile re-read runs.
   const [verified, setVerified] = useState(false)
   const feedback = useWriteFeedback()
-  // A re-read that settles after the reader left must not fire the host
-  // callback on a page it already left.
   const mountedRef = useRef(true)
   useEffect(() => {
     mountedRef.current = true
@@ -112,25 +102,19 @@ export function PhoneSection({
       mountedRef.current = false
     }
   }, [])
-  // A won challenge replays the same code.
   const gate = useStepUpGate<string>((nextCode) => {
     void verifyCode(nextCode)
   })
 
-  // In flight through the refetches that follow, so the inputs stay
-  // focusable but unchangeable.
+  // The inputs stay focusable but unchangeable while a write runs.
   const busy =
     startPhone.isPending || verifyPhone.isPending || feedback.pending
-  // A send waiting on its proof is still one attempt: its control stays
-  // mounted and busy.
   const sendBusy = pendingSend !== null || startPhone.isPending
   const verifyBusy = verifyPhone.isPending || feedback.pending
-  // The focus landing when a landed verify removes the control that started it.
   const formRef = useRef<HTMLElement | null>(null)
   const verifyButton = useRef<HTMLButtonElement | null>(null)
   const verifyLanding = useRef<HTMLButtonElement | null>(null)
 
-  // Focus moves to the group only when the removal is what took it.
   useLayoutEffect(() => {
     const removed = verifyLanding.current
     if (removed === null) {
@@ -168,7 +152,7 @@ export function PhoneSection({
               : { phone: nextPhone, human_proof: presented },
         })
       } catch (error) {
-        // The single-use proof was spent on the way: obtain a fresh one.
+        // The proof is single-use: obtain a fresh one after a refusal.
         if (presented !== null) {
           human.consume()
         }
@@ -179,7 +163,6 @@ export function PhoneSection({
       }
       setSentTo(nextPhone)
       setCode('')
-      // The sent notice is the step's own state, so the slot stays empty.
       return null
     })
   }
@@ -187,8 +170,6 @@ export function PhoneSection({
   const sendCodeRef = useRef(sendCode)
   sendCodeRef.current = sendCode
 
-  /** Sends now when the gate wants no proof, else holds the send for the
-   * effect to release once the proof arrives. */
   function askToSend(phone: string): void {
     if (pendingSend !== null) {
       return
@@ -206,7 +187,6 @@ export function PhoneSection({
     setPendingSend(phone)
   }
 
-  // A held send leaves as soon as the gate is known and the proof is in hand.
   useEffect(() => {
     if (pendingSend === null || human.pending || gateDocument === null) {
       return
@@ -231,13 +211,10 @@ export function PhoneSection({
 
   function verifyCode(nextCode: string): Promise<void> {
     const number = sentTo
-    // Only a settled success sets it, so a step-up refusal hands nothing over.
     const landed: { number: string | null } = { number: null }
     return (async () => {
       await feedback.run(async () => {
         try {
-          // No window: the verify rotates no credential. A step-up refusal
-          // arms the dialog so a won challenge replays the same code.
           await verifyPhone.mutateAsync({ data: { code: nextCode } })
         } catch (error) {
           const reason = stepUpReasonOf(errorCodeOf(error))
@@ -247,43 +224,37 @@ export function PhoneSection({
           }
           throw error
         }
-        // Settle before the profile read so the slot is never blank.
         feedback.succeed(
           t('phone.added', {
             phone: number ?? '',
             interpolation: { escapeValue: false },
           }),
         )
-        // Name the control that leaves, so it hands focus to the group.
         verifyLanding.current = verifyButton.current
         setVerified(true)
         setSentTo(null)
         setNationalNumber('')
         setPhoneAttempted(false)
         setCode('')
-        // Refresh before the host is told; the invalidation settles once the
-        // host's own re-read does. A failed re-read is contained, since the
-        // write already landed.
+        // Refresh before the host is told; a failed re-read is contained.
         try {
           await queryClient.invalidateQueries(
             { queryKey: getAuthnProfileGetQueryKey() },
             { throwOnError: true },
           )
         } catch {
-          // Contained on purpose: the write already landed.
+          // The write already landed.
         }
         landed.number = number
         return null
       })
-      // A throw must not reclassify a landed write, so it is contained
-      // here; an unmounted section hands nothing over.
+      // An unmounted section hands nothing over; a throwing callback must not
+      // reclassify a landed write.
       if (landed.number !== null && mountedRef.current) {
         try {
           onAdded?.(landed.number)
         } catch {
-          // Swallowed on purpose: the write already landed. The
-          // confirmation and the Close action stay on screen, so the section
-          // remains recoverable.
+          // The write already landed; the confirmation and Close stay recoverable.
         }
       }
     })()
@@ -335,7 +306,6 @@ export function PhoneSection({
         >
         {sentTo === null ? (
           holdsSuccess ? (
-            // One Close action, so a hung profile re-read cannot trap the reader.
             onCancel === undefined ? null : (
               <ActionRow sx={{ width: '100%' }}>
                 <ActionButton type="button" onClick={onCancel}>

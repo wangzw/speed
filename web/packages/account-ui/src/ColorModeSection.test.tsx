@@ -1,6 +1,5 @@
 /**
- * ColorModeSection checks the three-valued color-mode select over the
- * profile self-write surface, pinning each PATCH body.
+ * ColorModeSection checks the three-valued color-mode select and its PATCH bodies.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -21,7 +20,6 @@ import { ColorModeSection } from './ColorModeSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** GET answers the stored mode; PATCH merges the partial body and answers 200. */
 function makeProfileResponder(initial: { color_mode?: string } = {}) {
   const stored: { color_mode?: string } = { ...initial }
   const respond: RealResponder = async (call: RealCall) => {

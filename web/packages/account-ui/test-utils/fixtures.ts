@@ -2,7 +2,6 @@
  * The wire-shaped test data the account suites share.
  */
 
-/** The GET /api/v1/auth/me body, every documented field present. */
 export function profileBody(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -23,9 +22,6 @@ export function profileBody(
   }
 }
 
-/** One identifier row; its defaults follow the kind: an email is proved
- * through `idp:google` and signs in, a phone is proved through `sms-code`
- * and starts on neither axis, a username proves no ownership (`self`). */
 export function identifier(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {

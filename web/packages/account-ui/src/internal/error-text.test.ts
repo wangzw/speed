@@ -1,6 +1,5 @@
 /**
- * Pins the error-text whitelist to the shipped bundles in both directions,
- * and pins the codes that must stay verbatim copies of the auth-ui texts.
+ * Pins the error-text whitelist to the shipped bundles in both directions.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -18,7 +17,6 @@ import enUS from '../locales/en-US.json' with { type: 'json' }
 // Test data only: JSON is no code dependency, so the same-tier rule holds.
 import authUiZhCN from '../../../auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import authUiEnUS from '../../../auth-ui/src/locales/en-US.json' with { type: 'json' }
-// The shipped source of the last-login-way sentence, pinned as test data.
 import platformErrorsZhCN from '../../../i18n/src/platform-errors/locales/zh-CN.json' with { type: 'json' }
 import platformErrorsEnUS from '../../../i18n/src/platform-errors/locales/en-US.json' with { type: 'json' }
 import { ERROR_TEXT_CODES, useAccountUiErrorText } from './error-text.js'
@@ -67,7 +65,6 @@ function newInstance(): ReturnType<typeof createI18n> {
   return i18n
 }
 
-/** The codes whose account-ui text must copy the auth-ui text verbatim. */
 const VERBATIM_CODES: readonly string[] = [
   'authn.bad_request',
   'authn.unsupported_region',
@@ -92,7 +89,6 @@ describe('error-text whitelist', () => {
   it('resolve every whitelisted code to its own text in both languages', async () => {
     const i18n = newInstance()
     for (const code of ERROR_TEXT_CODES) {
-      // fallbackLng is false, so a missing key renders as the key itself.
       const zh = i18n.t(`errors.${code}`, { ns: ACCOUNT_UI_NAMESPACE })
       expect(zh, code).not.toBe(zhCN.errors.unknown)
       expect(zh, code).not.toBe(`errors.${code}`)
@@ -108,7 +104,6 @@ describe('error-text whitelist', () => {
   })
 
   it('renders each bare-HTTP status distinctly, carrying its status code', () => {
-    // Without the parameterized family these would collapse onto errors.unknown.
     const i18n = newInstance()
     const { result } = renderHook(() => useAccountUiErrorText(), {
       wrapper: ({ children }: { readonly children: ReactNode }) =>
@@ -141,8 +136,6 @@ describe('error-text whitelist', () => {
   })
 
   it('compose the shared session-lifecycle family and resolve each code to its own text', async () => {
-    // Composed from @speed/i18n rather than re-listed, so this pin keeps the
-    // set from being trimmed.
     const whitelist = ERROR_TEXT_CODES as readonly string[]
     for (const code of SESSION_LIFECYCLE_ERROR_CODES) {
       expect(whitelist, `${code} must be whitelisted`).toContain(code)
@@ -175,8 +168,6 @@ describe('error-text whitelist', () => {
   })
 
   it('name both a username and an email address in the missing-login-identifier text', () => {
-    // Either kind is a login name, and proof does not decide that, so the text
-    // carries no verified qualifier.
     const zh = zhCN.errors.authn.login_identifier_required
     const en = enUS.errors.authn.login_identifier_required
     expect(zh).toContain(zhCN.identifiers.add.value.labelUsername)
@@ -189,7 +180,6 @@ describe('error-text whitelist', () => {
 
   it('keep every policy-named shared-answer text a verbatim copy of the auth-ui text for the same code', () => {
     for (const code of VERBATIM_CODES) {
-      // A missing or empty source fails rather than passing a vacuous equality.
       const authZh = bundleText(authUiZhCN, code)
       const authEn = bundleText(authUiEnUS, code)
       expect(authZh, code).not.toBe('')

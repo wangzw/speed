@@ -1,7 +1,5 @@
 /**
- * WriteFeedbackRegion: the account surface's binding of the shared region.
- * A failure code resolves through the account-ui namespace's whitelist;
- * anything else collapses to the shared unknown fallback, never a raw key.
+ * WriteFeedbackRegion checks the account binding of the shared region.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -12,10 +10,8 @@ import { WriteFeedbackRegion } from './write-feedback.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-/** The success message the scripted attempt settles; the caller owns this copy. */
 const SUCCESS = 'probe-success-message'
 
-/** A probe that settles the scope's slot with a scripted attempt. */
 function Probe({ attempt }: { readonly attempt: () => Promise<string | null> }) {
   const feedback = useWriteFeedback()
   return (
@@ -33,7 +29,6 @@ function Probe({ attempt }: { readonly attempt: () => Promise<string | null> }) 
   )
 }
 
-/** A probe whose two buttons settle the same slot, one per outcome. */
 function TwoWayProbe() {
   const feedback = useWriteFeedback()
   return (
@@ -81,9 +76,6 @@ describe('WriteFeedbackRegion', () => {
     await user.click(screen.getByRole('button', { name: 'write' }))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.unknown)
-    // `errorCodeOf` collapses the throw to client.unknown; the resolver
-    // carries no leaf for it, so the fallback stands in -- the raw code
-    // must never reach the banner.
     expect(alert).not.toHaveTextContent('client.unknown')
   })
 
@@ -91,15 +83,10 @@ describe('WriteFeedbackRegion', () => {
     const user = userEvent.setup()
     renderWithProviders(<TwoWayProbe />)
 
-    // A settled success fills the standing polite live region; no alert
-    // is mounted for the same slot.
     await user.click(screen.getByRole('button', { name: 'succeed' }))
     expect(await screen.findByText(SUCCESS)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
 
-    // A settled failure replaces it: the success region empties and the
-    // alert mounts as its sibling in the same container, so the two never
-    // stand beside each other.
     await user.click(screen.getByRole('button', { name: 'fail' }))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)

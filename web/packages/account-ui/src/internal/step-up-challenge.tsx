@@ -1,7 +1,6 @@
 /**
  * StepUpChallenge: the re-verification dialog of the step-up-gated account
- * surfaces. It drives one `purpose: 'step-up'` flow and never signs in or
- * navigates on its own.
+ * surfaces, driving one `purpose: 'step-up'` flow.
  */
 
 import {
@@ -54,9 +53,8 @@ type RefusalVerdict =
   | { readonly kind: 'unknown-method' }
 
 /**
- * The host supplies the session, the open state and the refusal that asked
- * for it; the dialog drives the flow to one settled outcome and reports
- * success, cancel or re-login exactly once.
+ * The host supplies the session, the open state and the refusal that asked for
+ * it.
  */
 export interface StepUpChallengeProps {
   /** Whether the dialog is showing. Opening resets its per-attempt state. */
@@ -85,8 +83,6 @@ export interface StepUpChallengeProps {
   readonly notice?: string
 }
 
-/** The shared implementation. Its forwarded ref reaches the dialog's root;
- * `StepUpChallenge` is the package's public face. */
 export const StepUpChallengeFrame = forwardRef<
   HTMLDivElement,
   StepUpChallengeProps
@@ -112,13 +108,10 @@ export const StepUpChallengeFrame = forwardRef<
   const checking = open && !sso && factors.isPending
   const noFactor =
     open && !sso && factors.isSuccess && activeFactorCount(factors.data) === 0
-  // Disabled on purpose: the cached view may predate a sign-in completed
-  // while the dialog was closed, so the verdict comes from the read this
-  // opening forces through `refetch`. An enabled query whose result is
-  // cached would let `refetch`'s default `cancelRefetch` replace the
-  // in-flight read with a second request for the same opening.
+  // Disabled on purpose: the verdict comes from the read this opening forces
+  // through `refetch`; an enabled cached query would let `refetch`'s
+  // cancelRefetch start a second request for the same opening.
   const { refetch: readSessionView } = useSessionViewQuery(false)
-  // Decided once per opening and frozen while the dialog stays open.
   const [verdict, setVerdict] = useState<RefusalVerdict | null>(null)
   const [previousOpen, setPreviousOpen] = useState(open)
   if (open !== previousOpen) {
@@ -224,8 +217,6 @@ export const StepUpChallengeFrame = forwardRef<
   )
 })
 
-/** The flow a challenge drives, split from the dialog so a restart can
- * remount it without repeating the factor and session reads. */
 function StepUpFlow({
   session,
   active,
@@ -284,11 +275,11 @@ function StepUpFlow({
       returnPath,
       excludeFactorId,
     )
-  // A challenge reply carries only the field the factor asks for, so the
-  // chosen factor is re-named beside the following step's field.
+  // A challenge reply carries only the field the factor asks for, so the chosen
+  // factor is re-named beside the following step's field.
   const chosenFactor = useRef<string | null>(null)
-  // Focus follows to the title when a settled answer replaces the control
-  // that had it; an operator who moved focus elsewhere keeps it.
+  // Focus follows to the title when a settled answer replaces the control that
+  // had it; an operator who moved focus elsewhere keeps it.
   const titleRef = useRef<HTMLHeadingElement>(null)
   const previousSeq = useRef(seq)
   useLayoutEffect(() => {
@@ -310,7 +301,6 @@ function StepUpFlow({
       titleRef.current?.focus()
     }
   }, [seq])
-  // The step's held controls describe themselves through this line's id.
   const throttleNoteId = useId()
 
   function handleAnswer(value: AuthnFlowAnswer): void {
@@ -330,15 +320,10 @@ function StepUpFlow({
 
   const starting = phase === 'starting' || checking || readingSession
   const stepBusy = pending || submitting
-  // The banner states the code's own sentence; the remaining seconds tick
-  // outside its live region while the submit stays unavailable.
   const waiting = retryAfterSeconds !== null
   const autoCompleting =
     step !== null && step.kind === 'complete' && phase === 'step'
-  // This deployment cannot raise the session at all, so no step will come.
   const unavailable = phase === 'unavailable'
-  // The flow record is gone: no step can be retried, so only the code's
-  // banner and the restart action remain.
   const flowInvalid =
     phase === 'failed' && step !== null && errorCode === 'authn.flow_invalid'
   // A challenge before any second factor is chosen travels under `answer`;
@@ -443,7 +428,6 @@ function StepUpFlow({
                       />
                     ) : null}
                     <FlowStep
-                      // Keying on step identity clears the renderer's per-answer state.
                       key={`${seq ?? 0}-${step.kind}`}
                       step={step}
                       sequence={seq ?? 0}
@@ -483,11 +467,9 @@ function StepUpFlow({
   )
 }
 
-/** The values a challenge renders locked: the account's own login name, and
- * its proved phone when it has exactly one. The phone is never locked while
- * the session is impersonating: a step-up proves the initiator's own factor,
- * so a locked snapshot number would be refused by the server.
- */
+// Locks the account's own login name and its proved phone when it has exactly
+// one. Never lock the phone while impersonating: the step-up proves the
+// initiator's own factor, so a locked snapshot number is refused.
 function lockedFieldsOf(
   step: AuthnStep,
   session: AuthSession,
@@ -544,12 +526,9 @@ function decideRefusal(view: AuthnSessionView): RefusalVerdict {
     : { kind: 'fresh-first-factor', method }
 }
 
-/** Whether the session already proves a first factor recent enough for the
- * FreshFirstFactor requirement. When it does, a 401 from a gated write asks
- * for multi-factor instead. The 401's challenge parameters are not surfaced,
- * so the session's own state answers the question. A timestamp ahead of this
- * clock is not read as fresh: an uncertain read re-proves.
- */
+// Whether the session proves a first factor recent enough for the
+// FreshFirstFactor requirement; when it does, a 401 from a gated write asks for
+// multi-factor instead. A timestamp ahead of this clock is not read as fresh.
 function freshFirstFactor(view: AuthnSessionView): boolean {
   if (view.authenticated !== true) {
     return false
@@ -570,14 +549,11 @@ function freshFirstFactor(view: AuthnSessionView): boolean {
   )
 }
 
-/** The challenge dialog, without a ref: consumers reach the dialog, not its
- * root element. */
+/** The challenge dialog without a ref. */
 export function StepUpChallenge(props: StepUpChallengeProps) {
   return <StepUpChallengeFrame {...props} />
 }
 
-/** The login method that established the session's first factor: `password`
- * for `pwd`, `sms` for `sms`. A social or enterprise sign-in names none. */
 function firstFactorMethod(view: AuthnSessionView): string | undefined {
   const methods = view.methods ?? []
   if (methods.includes('pwd')) {

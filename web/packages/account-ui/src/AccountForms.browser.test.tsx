@@ -1,6 +1,5 @@
 /**
- * The account-ui forms' shared action-row geometry, measured in a real
- * browser: jsdom lays nothing out, so only this tier tells arrangements apart.
+ * Account forms' shared action-row geometry, measured in a real browser.
  */
 
 import Button from '@mui/material/Button'
@@ -34,11 +33,8 @@ const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 const PHONE_PATH = '/api/v1/auth/phone'
 const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
 
-/** The one spacing token an action row puts between adjacent controls
- * (`theme.spacing(1)`). */
 const ACTION_GAP = 8
 
-/** Two boxes are on the same line when their top edges agree. */
 function sameTop(a: Element, b: Element): boolean {
   return Math.abs(a.getBoundingClientRect().top - b.getBoundingClientRect().top) <= 1
 }
@@ -53,7 +49,6 @@ function expectRightEdge(a: Element, b: Element): void {
   expect(Math.abs(aBox.right - bBox.right)).toBeLessThanOrEqual(1)
 }
 
-/** The row an action belongs to, found by the row's own marker. */
 function actionRowOf(action: Element): HTMLElement {
   const row = action.closest<HTMLElement>('[data-action-row]')
   if (row === null) {
@@ -62,12 +57,6 @@ function actionRowOf(action: Element): HTMLElement {
   return row
 }
 
-/**
- * The controls are one action group: same line, one spacing token apart,
- * with the primary closing the group at the row's content edge. A row
- * that pushed the primary to the far side with an automatic margin would
- * leave hundreds of pixels between the two.
- */
 function expectOneActionGroup(primary: Element, secondary: Element): void {
   const primaryBox = primary.getBoundingClientRect()
   const secondaryBox = secondary.getBoundingClientRect()
@@ -75,7 +64,6 @@ function expectOneActionGroup(primary: Element, secondary: Element): void {
   expect(rightOf(primary, secondary)).toBe(true)
   expect(primaryBox.left - secondaryBox.right).toBeCloseTo(ACTION_GAP, 0)
   const row = actionRowOf(primary)
-  // Both controls belong to the same row: the form renders one group.
   expect(actionRowOf(secondary)).toBe(row)
   const rowBox = row.getBoundingClientRect()
   const contentRight =
@@ -83,14 +71,6 @@ function expectOneActionGroup(primary: Element, secondary: Element): void {
   expect(Math.abs(primaryBox.right - contentRight)).toBeLessThanOrEqual(1)
 }
 
-/**
- * Records the text of every role="status" node in each batch of mutations,
- * keyed by the node, so a region's own birth frame and later fill can be
- * read back after the fact. Regions are inserted empty by
- * AnnouncementRegion and filled on a later frame; a batch that only sees
- * the insertion therefore records ''. Other long-lived status regions
- * (the feedback slots) simply keep their own histories.
- */
 function recordStatusHistories(): {
   readonly stop: () => void
   readonly historyOf: (node: Element) => readonly string[]
@@ -114,7 +94,6 @@ function recordStatusHistories(): {
   }
 }
 
-/** The first status node whose text is exactly `message`, once it appears. */
 async function statusWithText(message: string): Promise<Element> {
   await waitFor(() => {
     expect(
@@ -155,8 +134,6 @@ describe('account-ui form geometry', () => {
       await screen.findByRole('button', { name: zhCN.verification.change }),
     )
     const field = screen.getByLabelText(zhCN.verification.changeLabel)
-    // Scope to the change form: the resend control carries the same
-    // "send a code" wording elsewhere in the card.
     const changeForm = field.closest('form')
     expect(changeForm).not.toBeNull()
     const submit = within(changeForm as HTMLElement).getByRole('button', {
@@ -165,13 +142,9 @@ describe('account-ui form geometry', () => {
 
     const fieldBox = field.getBoundingClientRect()
     const submitBox = submit.getBoundingClientRect()
-    // The submit is on a later line and starts under the field, not at its
-    // top edge on the right.
     expect(submitBox.top).toBeGreaterThanOrEqual(fieldBox.bottom - 1)
     expect(submitBox.left).toBeGreaterThanOrEqual(fieldBox.left - 1)
     expect(submitBox.left).toBeLessThanOrEqual(fieldBox.right)
-    // It also closes its row on the field's right edge, the rule the add
-    // form's primary follows.
     expectRightEdge(submit, field)
   })
 
@@ -198,8 +171,6 @@ describe('account-ui form geometry', () => {
     })
     const fieldBox = field.getBoundingClientRect()
     const submitBox = submit.getBoundingClientRect()
-    // The submit sits beneath the field and closes the row on the field's
-    // right edge, the way the password form's lone primary does.
     expect(submitBox.top).toBeGreaterThanOrEqual(fieldBox.bottom - 1)
     expect(Math.abs(submitBox.right - fieldBox.right)).toBeLessThanOrEqual(1)
     expect(submit).toHaveClass('MuiButton-contained')
@@ -229,7 +200,6 @@ describe('account-ui form geometry', () => {
       await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
     )
 
-    // The list gives way to the form while it is open.
     expect(screen.queryByRole('table')).toBeNull()
     const submit = await screen.findByRole('button', {
       name: zhCN.identifiers.add.submitEmail,
@@ -263,7 +233,6 @@ describe('account-ui form geometry', () => {
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
-    // The merged view a host mounts: the add face offers both kinds here.
     renderWithProviders(<IdentifiersSection session={rig.session} />)
     const user = userEvent.setup()
 
@@ -271,7 +240,6 @@ describe('account-ui form geometry', () => {
       await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
     )
 
-    // Value step: cancel leads as a text action, the send closes the row.
     const send = screen.getByRole('button', {
       name: zhCN.identifiers.add.submitEmail,
     })
@@ -290,16 +258,12 @@ describe('account-ui form geometry', () => {
     await user.click(send)
     await screen.findByLabelText(zhCN.identifiers.add.code.label)
 
-    // Code step: the same arrangement, with the verify primary disabled
-    // until a code is entered.
     const verify = screen.getByRole('button', {
       name: zhCN.identifiers.add.verify,
     })
     const change = screen.getByRole('button', {
       name: zhCN.identifiers.add.change,
     })
-    // The empty code is a precondition: the verify control stays focusable
-    // and reports unavailable instead of turning natively disabled.
     expect(verify).toHaveAttribute('aria-disabled', 'true')
     expectOneActionGroup(verify, change)
     expect(verify).toHaveClass('MuiButton-contained')
@@ -350,9 +314,6 @@ describe('account-ui form geometry', () => {
 
     await user.click(await screen.findByTestId('mfa-add-totp'))
 
-    // The flow starts with the panel, and its single step keeps the cancel
-    // and confirm on one action row with the ordinary spacing: the confirm
-    // sits next to the cancel, not at the far end of the form.
     const codeField = await screen.findByLabelText(zhCN.flowStep.codeLabel)
     const confirm = screen.getByRole('button', {
       name: zhCN.mfa.enroll.confirmLabel,
@@ -368,8 +329,6 @@ describe('account-ui form geometry', () => {
     ).toBeLessThanOrEqual(32)
     expectOneActionGroup(confirm, cancel)
 
-    // The panel title is a sub-form heading, one step below the card title
-    // (subtitle1, not the larger h6), and names the factor kind enrolled.
     expect(
       screen.getByRole('heading', {
         level: 3,
@@ -380,7 +339,6 @@ describe('account-ui form geometry', () => {
       }),
     ).toHaveClass('MuiTypography-subtitle1')
 
-    // The panel's fields inherit the form width cap, not the card width.
     expect(codeField.getBoundingClientRect().width).toBeLessThanOrEqual(601)
   })
 
@@ -458,8 +416,6 @@ describe('account-ui form geometry', () => {
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
 
-    // The single authenticator entry is named by its kind; a passkey or a
-    // phone number is named by the label its holder gave it.
     const factorRow = (name: string): HTMLElement => {
       const row = screen
         .getAllByRole('listitem')
@@ -474,8 +430,6 @@ describe('account-ui form geometry', () => {
     await screen.findAllByText(zhCN.mfa.factor.kind.totp)
     const totpRemove = removeIn(zhCN.mfa.factor.kind.totp)
     const smsRemove = removeIn('Phone')
-    // One group offers an add action and the other does not, but both rows'
-    // removal actions sit on the same right edge.
     expect(screen.getByTestId('mfa-add-totp')).toBeTruthy()
     expect(screen.queryByTestId('mfa-add-sms')).toBeNull()
     expectRightEdge(totpRemove, smsRemove)
@@ -498,8 +452,6 @@ describe('account-ui form geometry', () => {
     const submit = screen.getByRole('button', { name: zhCN.profile.save })
     const fieldBox = field.getBoundingClientRect()
     const submitBox = submit.getBoundingClientRect()
-    // The save sits beneath the field and closes its row on the field's
-    // right edge, like every other form in the family.
     expect(submitBox.top).toBeGreaterThanOrEqual(fieldBox.bottom - 1)
     expectRightEdge(submit, field)
   })
@@ -520,7 +472,6 @@ describe('account-ui form geometry', () => {
     const submit = screen.getByRole('button', { name: zhCN.password.submit })
     const fieldBox = field.getBoundingClientRect()
     const submitBox = submit.getBoundingClientRect()
-    // The submit's right edge lands on the field's right edge, not its left.
     expect(Math.abs(submitBox.right - fieldBox.right)).toBeLessThanOrEqual(1)
     expect(submitBox.left).toBeGreaterThan(fieldBox.left)
   })
@@ -546,7 +497,6 @@ describe('account-ui form geometry', () => {
     )
     const user = userEvent.setup()
 
-    // Number step: the close control leads, the send primary closes the row.
     const send = await screen.findByRole('button', { name: zhCN.phone.send })
     const close = screen.getByRole('button', { name: zhCN.phone.close })
     expectOneActionGroup(send, close)
@@ -558,8 +508,6 @@ describe('account-ui form geometry', () => {
     await user.click(send)
     await screen.findByLabelText(zhCN.phone.code.label)
 
-    // Code step: the same arrangement, with the verify primary unavailable
-    // while the code field is empty.
     const verify = screen.getByRole('button', { name: zhCN.phone.verify })
     const back = screen.getByRole('button', { name: zhCN.phone.close })
     expect(verify).toHaveAttribute('aria-disabled', 'true')
@@ -618,8 +566,6 @@ describe('account-ui sent notices in Chromium', () => {
       const message = zhCN.phone.sent.replace('{{phone}}', '+14155552671')
       const region = await statusWithText(message)
       const history = recorded.historyOf(region)
-      // The batch that reported the region's insertion read it empty; the
-      // fill arrived in a later batch.
       expect(history[0]).toBe('')
       expect(history).toContain(message)
     } finally {

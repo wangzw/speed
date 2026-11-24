@@ -1,6 +1,5 @@
 /**
- * BindingCallbackHandler checks the link flow read back and completed on the
- * callback route, its terminal states, and that it never signs anyone in.
+ * BindingCallbackHandler checks the link flow read back and completed on the callback route.
  */
 
 import { useState } from 'react'
@@ -25,12 +24,6 @@ import { BindingCallbackHandler } from './BindingCallbackHandler.js'
 const FLOW_CURRENT = '/api/v1/auth/flows/current'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-/**
- * A host that re-renders on demand with fresh inline props, the way the app
- * shell does when an unrelated read lands (a profile refetch, a notification).
- * The handler is a child of this host, so the re-render hands it a new
- * `onBound` and a new `absent` element without remounting it.
- */
 function RerenderingHost({
   session,
   onBound,
@@ -76,9 +69,6 @@ describe('BindingCallbackHandler', () => {
     )
 
     await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
-    // The done stage reports the binding success, naming the bound object,
-    // in a polite status region -- a host that stays on the route is not
-    // left on the pending notice.
     const done = await screen.findByText(zhCN.bindingCallback.done)
     expect(done).toBeTruthy()
     expect(done.closest('[role="status"]')).not.toBeNull()
@@ -87,15 +77,10 @@ describe('BindingCallbackHandler', () => {
     const answer = rig.calls.find(
       (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
     )
-    // The ready flow is taken with the sequence number the server sent.
     expect(answer?.body).toEqual({ seq: 2, step: 'complete' })
   })
 
   it('fills the done region after it is mounted, so the confirmation is announced', async () => {
-    // The success region stands in the tree from the first render; the
-    // confirmation fills an already-mounted polite region rather than
-    // arriving in the commit that mounts it -- a region born with its text
-    // is not announced.
     let releaseRead: ((response: Response) => void) | undefined
     const read = new Promise<Response>((resolve) => {
       releaseRead = resolve
@@ -113,8 +98,6 @@ describe('BindingCallbackHandler', () => {
     rig.store.set('access-1')
     renderWithProviders(<BindingCallbackHandler session={rig.session} />)
 
-    // While the flow is still being read, the pending notice occupies its
-    // own status region and the done scope's region is already there, empty.
     await screen.findByText(zhCN.bindingCallback.pending)
     const emptyRegions = screen
       .getAllByRole('status')
@@ -132,14 +115,10 @@ describe('BindingCallbackHandler', () => {
       )
     })
     await screen.findByText(zhCN.bindingCallback.done)
-    // The same region now carries the confirmation: it was not born with it.
     expect(doneRegion).toHaveTextContent(zhCN.bindingCallback.done)
   })
 
   it('keeps the done confirmation across a language switch without re-reading the flow', async () => {
-    // The flow is taken once. `t` changing identity on a language switch
-    // must not re-arm the read effect: the flow is gone by then, and a
-    // second read would replace the confirmation with the failure banner.
     let reads = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === FLOW_CURRENT) {
@@ -169,18 +148,12 @@ describe('BindingCallbackHandler', () => {
       await switchLanguage(i18n, 'en-US')
     })
 
-    // The success message is the translation snapshot taken at settle time;
-    // the switch neither rewrites it nor re-reads the flow it already took.
     expect(screen.getByText(zhCN.bindingCallback.done)).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(reads).toBe(1)
   })
 
   it('takes the flow once when the host re-renders with a new callback', async () => {
-    // A host passes its callbacks inline, so any parent re-render hands the
-    // handler new `onBound` and `absent` props. That must not re-arm the read
-    // effect: the flow was taken once and is gone, and a second read would
-    // even try to complete it again.
     let reads = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === FLOW_CURRENT) {
@@ -209,10 +182,7 @@ describe('BindingCallbackHandler', () => {
 
     await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
 
-    // The unrelated re-render: the host re-renders itself with a fresh
-    // inline callback and a fresh absent element.
     await user.click(screen.getByRole('button', { name: /rerender/ }))
-    // Give a re-armed read effect time to issue its request.
     await new Promise((resolve) => setTimeout(resolve, 50))
 
     expect(reads).toBe(1)
@@ -264,8 +234,6 @@ describe('BindingCallbackHandler', () => {
     )
     const user = userEvent.setup()
 
-    // The parked challenge step is rendered and answered under the
-    // flow's own first-factor answer step.
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
     await user.click(
       screen.getByRole('button', { name: zhCN.bindingCallback.continueLabel }),
@@ -319,9 +287,6 @@ describe('BindingCallbackHandler', () => {
   })
 
   it('renders the terminal notice when no flow is read and the host offers a way back', async () => {
-    // The 401 read means the binding is definitively gone: a re-read would
-    // answer the same nothing. With the host's onDismiss the terminal notice
-    // replaces the generic retry banner and its one action leaves the route.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === FLOW_CURRENT) {
         return errorResponse(401, 'authn.flow_invalid')
@@ -350,7 +315,6 @@ describe('BindingCallbackHandler', () => {
         }),
       )
     expect(onDismiss).toHaveBeenCalledTimes(1)
-    // The one action leaves the route: it reads no flow again.
     expect(
       rig.calls.filter((call) => call.path === FLOW_CURRENT),
     ).toHaveLength(1)
@@ -358,9 +322,6 @@ describe('BindingCallbackHandler', () => {
   })
 
   it('renders the terminal notice when the complete exchange is refused as flow-invalid', async () => {
-    // The server answered the completion with authn.flow_invalid: the flow
-    // no longer exists, so re-reading it is a deterministic empty turn. With
-    // onDismiss the notice is terminal and offers no retry.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === FLOW_CURRENT) {
         return jsonResponse(200, {
@@ -400,9 +361,6 @@ describe('BindingCallbackHandler', () => {
   })
 
   it('keeps the retry when the complete exchange is refused for another reason', async () => {
-    // Only authn.flow_invalid proves the flow is gone. A transport or
-    // server failure leaves the completion retryable, so the failure banner
-    // keeps its re-read even though the host did supply an exit.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === FLOW_CURRENT) {
         return jsonResponse(200, {
@@ -436,8 +394,6 @@ describe('BindingCallbackHandler', () => {
   })
 
   describe('a refused callback', () => {
-    /** A rig whose responder fails the case if anything is read: a refused
-     * landing has no flow left to ask about. */
     function refusedRig() {
       const respond: RealResponder = (call: RealCall) => {
         throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -460,17 +416,12 @@ describe('BindingCallbackHandler', () => {
 
       const alert = await screen.findByRole('alert')
       expect(alert).toHaveTextContent(zhCN.bindingCallback.conflict)
-      // Not the account-changed sentence the same code carries elsewhere.
       expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
-      // The server already consumed the flow: nothing is read and nothing
-      // is re-tried.
       expect(rig.calls).toHaveLength(0)
       expect(
         screen.queryByRole('button', { name: zhCN.bindingCallback.retry }),
       ).toBeNull()
 
-      // The only way out of this state is the primary action, styled as one
-      // (the same contained treatment the flow-gone state gives it).
       const back = screen.getByRole('button', {
         name: zhCN.bindingCallback.backToAccount,
       })
@@ -527,7 +478,6 @@ describe('BindingCallbackHandler', () => {
   describe('the absent slot', () => {
     const METHODS_PATH = '/api/v1/auth/methods'
 
-    /** A GET /api/v1/auth/methods document carrying the given method kinds. */
     function methodsDoc(kinds: readonly string[]): Record<string, unknown> {
       return {
         methods: kinds.map((kind) => ({ name: kind, kind })),
@@ -560,11 +510,8 @@ describe('BindingCallbackHandler', () => {
         />,
       )
 
-      // Nothing can reach this callback: the deployment offers no redirect
-      // method, so the host's 404 answers instead of a flow-not-found banner.
       expect(await screen.findByText('No such page')).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      // The refused read's 401 is the expected refresh-failure diagnostic.
       expect(warn).toHaveBeenCalledWith(
         'access token refresh failed',
         expect.objectContaining({
@@ -573,8 +520,6 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
-      // One refused read, one refresh failure: a duplicated read would warn
-      // again.
       expect(warn).toHaveBeenCalledTimes(1)
     })
 
@@ -608,8 +553,6 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
-      // One refused read, one refresh failure: a duplicated read would warn
-      // again.
       expect(warn).toHaveBeenCalledTimes(1)
     })
 
@@ -633,8 +576,6 @@ describe('BindingCallbackHandler', () => {
         />,
       )
 
-      // An unreadable discovery document cannot settle "no binding exists";
-      // the retryable banner is the honest answer.
       expect(await screen.findByRole('alert')).toBeInTheDocument()
       expect(screen.queryByText('No such page')).not.toBeInTheDocument()
       expect(warn).toHaveBeenCalledWith(
@@ -645,8 +586,6 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
-      // One refused read, one refresh failure: a duplicated read would warn
-      // again.
       expect(warn).toHaveBeenCalledTimes(1)
     })
 
@@ -674,8 +613,6 @@ describe('BindingCallbackHandler', () => {
           trace_id: 'trace-1',
         }),
       )
-      // One refused read, one refresh failure: a duplicated read would warn
-      // again.
       expect(warn).toHaveBeenCalledTimes(1)
     })
   })

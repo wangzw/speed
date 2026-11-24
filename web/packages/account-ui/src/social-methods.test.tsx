@@ -1,6 +1,5 @@
 /**
- * useSocialMethodsAvailable: the deployment's social sign-in, as the host
- * asks before it renders the social card.
+ * useSocialMethodsAvailable checks the deployment's social sign-in availability.
  */
 
 import { renderHook, waitFor } from '@testing-library/react'

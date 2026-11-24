@@ -1,6 +1,5 @@
 /**
- * SessionsSection checks the session list, per-row and bulk revocation, and
- * the display time zone.
+ * SessionsSection checks the session list, per-row and bulk revocation, and the display time zone.
  */
 
 import { useState } from 'react'
@@ -28,10 +27,8 @@ import { SessionsSection } from './SessionsSection.js'
 const SESSIONS_PATH = '/api/v1/auth/sessions'
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** The profile read the timezone chain issues beside the list. */
 const PROFILE = jsonResponse(200, { time_zone: '' })
 
-/** One live session row, in the session fragment's own shape. */
 function session(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
     id: 'session-1',
@@ -46,10 +43,6 @@ function session(overrides: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
-/** The transient listener is not needed here; the rig is created fresh
- * per test and the token planted before render. The unit renders inside
- * the caller's own tree when one is given (the display-timezone cases
- * mount their host context above the section). */
 function mountSection(respond: RealResponder, ui = <SessionsSection />) {
   const rig = makeRealClientRigWithoutSession(respond)
   rig.store.set('access-1')
@@ -57,11 +50,6 @@ function mountSection(respond: RealResponder, ui = <SessionsSection />) {
   return { rig, ...rendered }
 }
 
-/**
- * A host that owns the surrounding block: it takes the section's bulk
- * action through the render slot and portals it into a header slot of its
- * own, the way a host lifts the action beside its block title.
- */
 function HostedSessionsSection(): ReactElement {
   const [target, setTarget] = useState<HTMLDivElement | null>(null)
   return (
@@ -80,13 +68,10 @@ function HostedSessionsSection(): ReactElement {
   )
 }
 
-/** The revoke aria-label the component builds for a row's device label. */
 function revokeAria(device: string): string {
   return zhCN.sessions.revokeAriaWithDevice.replace('{{device}}', device)
 }
 
-/** A DELETE answer the test resolves itself, so the write is observably in
- * flight while the assertions run. */
 function deferredResponse(): {
   readonly promise: Promise<Response>
   readonly resolve: (response: Response) => void
@@ -98,38 +83,30 @@ function deferredResponse(): {
   return { promise, resolve }
 }
 
-/** The row sign-out controls of the rendered page, in document order. */
 function revokeButtons(): HTMLElement[] {
   return screen.getAllByRole('button', {
     name: revokeAria(zhCN.sessions.deviceUnknown),
   })
 }
 
-/** The instant the default row helper carries. */
 const SESSION_INSTANT = '2026-08-01T02:05:00.000Z'
 
-/** A last-active instant later than the default row's sign-in instant. */
 const SESSION_LAST_SEEN = '2026-08-03T09:12:00.000Z'
 
-/** The session list's rows, one item per session. */
 function bodyRows(): HTMLElement[] {
   return within(screen.getByRole('list')).getAllByRole('listitem')
 }
 
-/** The second line of a row: the address and the last activity, as the
- * bundle composes them. */
 function rowDetail(address: string, time: string): string {
   return zhCN.sessions.rowDetail
     .replace('{{address}}', address)
     .replace('{{time}}', time)
 }
 
-/** The instant rendered in `zone`; the harness's fixed zone when absent. */
 function renderedInstant(instant: string, zone: string = TEST_TIME_ZONE): string {
   return formatInstant(instant, 'zh-CN', { timeZone: zone })
 }
 
-/** The default row's sign-in instant rendered in `zone`. */
 function renderedIn(zone?: string): string {
   return renderedInstant(SESSION_INSTANT, zone)
 }
@@ -180,10 +157,7 @@ describe('SessionsSection', () => {
       await screen.findByRole('heading', { name: zhCN.sessions.title }),
     ).toBeTruthy()
     expect(await screen.findByText(zhCN.sessions.current)).toBeTruthy()
-    // The row without a user agent falls back to the unknown-device label.
     expect(screen.getByText(zhCN.sessions.deviceUnknown)).toBeTruthy()
-    // The current row carries no revoke affordance; the other does, named
-    // after its own device label.
     expect(
       screen.queryByRole('button', { name: revokeAria(zhCN.sessions.current) }),
     ).toBeNull()
@@ -208,9 +182,6 @@ describe('SessionsSection', () => {
     }
     mountSection(respond)
 
-    // The listed session's activity column names its last activity -- here
-    // its sign-in instant, since the default row has not been touched since
-    // -- in the display zone.
     await waitFor(() => expect(bodyRows()).toHaveLength(1))
     expect(
       within(bodyRows()[0] as HTMLElement).getByText(
@@ -239,8 +210,6 @@ describe('SessionsSection', () => {
     }
     mountSection(respond)
 
-    // A coalesced touch moves the row's last activity past its creation, so
-    // the activity column names the later instant rather than the sign-in one.
     await waitFor(() => expect(bodyRows()).toHaveLength(1))
     const row = bodyRows()[0] as HTMLElement
     expect(
@@ -273,12 +242,9 @@ describe('SessionsSection', () => {
     mountSection(respond)
 
     await waitFor(() => expect(bodyRows()).toHaveLength(2))
-    // No table, no header rail: the section is one list of sessions.
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByRole('columnheader')).toBeNull()
     const [current, other] = bodyRows() as [HTMLElement, HTMLElement]
-    // The current session carries its chip and offers no sign-out; every
-    // other row's control names the device it signs out.
     expect(within(current).getByText(zhCN.sessions.current)).toBeTruthy()
     expect(within(current).queryByRole('button')).toBeNull()
     expect(
@@ -290,12 +256,6 @@ describe('SessionsSection', () => {
   })
 
   it('renders in the host display timezone, not the profile’s stored zone', async () => {
-    // The host owns the resolution: it reads the account's stored choice
-    // and supplies it through DisplayTimeZoneProvider. The section renders
-    // that value and keeps no second chain over the profile, so a stored
-    // zone the host did not provide has no effect here. The two zones are
-    // chosen by their rendering of this instant, so the expected text
-    // cannot coincide with the other's.
     const storedZone = zoneRenderingDifferentlyFrom(renderedIn())
     const hostZone = zoneRenderingDifferentlyFrom(renderedIn(storedZone))
     const respond: RealResponder = (call: RealCall) => {
@@ -319,16 +279,12 @@ describe('SessionsSection', () => {
     expect(
       await screen.findByText(rowDetail('198.51.100.4', renderedIn(hostZone))),
     ).toBeTruthy()
-    // The profile's stored zone is not a second source of truth.
     expect(
       screen.queryByText(rowDetail('198.51.100.4', renderedIn(storedZone))),
     ).toBeNull()
   })
 
   it('renders the harness’s fixed zone when the host supplies none', async () => {
-    // With no provider the tree renders in TestTimeZoneProvider's fixed
-    // zone, and the profile's stored zone still does not reach the row:
-    // the account surfaces read the host's resolved value only.
     const storedZone = zoneRenderingDifferentlyFrom(renderedIn())
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -352,10 +308,6 @@ describe('SessionsSection', () => {
   })
 
   it('renders in the browser zone when the account’s time zone is empty', async () => {
-    // The host forwards an unset account preference to the provider as an
-    // empty value, overriding the harness's fixed zone. The section must
-    // land on the browser's zone, not the terminal UTC tier. The suite's
-    // vitest config pins a non-UTC browser zone so the two differ.
     const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
     expect(browserZone).not.toBe('UTC')
     expect(renderedIn(browserZone)).not.toBe(renderedIn('UTC'))
@@ -388,11 +340,6 @@ describe('SessionsSection', () => {
   })
 
   it('raises the row revoke control to the 44px touch-target floor under a coarse pointer', async () => {
-    // The per-row revoke control is a compact labelled action; on a
-    // finger-driven device it gates up to the 44x44 floor (the layout
-    // design's pointer rule). jsdom evaluates no media condition, so the
-    // emitted CSS is matched against the control itself: a coarse rule
-    // elsewhere on the page cannot satisfy this assertion for it.
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -412,10 +359,6 @@ describe('SessionsSection', () => {
   })
 
   it('raises the session pager to the 44px floor under a coarse pointer', async () => {
-    // The pager buttons are compact action controls on the same surface
-    // as the row revoke: on a finger-driven device each one gates up to
-    // the 44x44 floor. Asserted per element, so the row control's own
-    // gate does not vouch for them.
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -458,8 +401,6 @@ describe('SessionsSection', () => {
     const user = userEvent.setup()
 
     await screen.findByRole('heading', { name: zhCN.sessions.title })
-    // Pages of eight: only the first page's rows render, so twelve sessions
-    // do not all land in the tree.
     await waitFor(() => expect(bodyRows()).toHaveLength(8))
     expect(
       screen.getByText(
@@ -473,7 +414,6 @@ describe('SessionsSection', () => {
     ).toHaveAttribute('aria-disabled', 'true')
 
     await user.click(screen.getByRole('button', { name: zhCN.sessions.nextPage }))
-    // The second page holds the remaining four rows.
     await waitFor(() => expect(bodyRows()).toHaveLength(4))
     expect(
       screen.getByRole('button', { name: zhCN.sessions.nextPage }),
@@ -481,10 +421,6 @@ describe('SessionsSection', () => {
   })
 
   it('keeps the last-page control focused and unavailable without a reason', async () => {
-    // A pager direction is a context control: on the last page the way
-    // forward cannot run, so it keeps focus and reports unavailable rather
-    // than disappearing from the tab order, and it carries no reason --
-    // nothing about the operator's input makes it so.
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -509,7 +445,6 @@ describe('SessionsSection', () => {
     const next = screen.getByRole('button', {
       name: zhCN.sessions.nextPage,
     })
-    // The clicked control keeps focus; it did not become natively disabled.
     expect(document.activeElement).toBe(next)
     expect(next).toHaveAttribute('aria-disabled', 'true')
     expect(next).not.toHaveAttribute('disabled')
@@ -520,10 +455,6 @@ describe('SessionsSection', () => {
   })
 
   it('shows a labelled row sign-out action that keeps focus while its revoke is in flight', async () => {
-    // The row action carries a visible word beside its device-naming
-    // accessible name (the name embeds the visible text), and it keeps
-    // focus while the write runs; when the row leaves, focus moves to the
-    // same action on the next row.
     const gate = deferredResponse()
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
@@ -569,7 +500,6 @@ describe('SessionsSection', () => {
     expect(initiating).toHaveAttribute('aria-disabled', 'true')
     expect(initiating).not.toHaveAttribute('disabled')
 
-    // A second activation of the busy control is swallowed.
     await user.click(initiating)
     expect(
       rig.calls.filter((call) => call.method === 'DELETE'),
@@ -579,17 +509,11 @@ describe('SessionsSection', () => {
       gate.resolve(new Response(null, { status: 204 }))
     })
     await waitFor(() => expect(revokeButtons()).toHaveLength(1))
-    // The revoked row left and focus moved on with it, to the same action
-    // on the next row rather than the document body.
     await waitFor(() => expect(document.activeElement).toBe(next))
     expect(document.activeElement).not.toBe(document.body)
   })
 
   it('holds the other rows and the pager unavailable without a reason while a row revoke runs', async () => {
-    // The busy state belongs to the control that started the write alone.
-    // Its sibling rows and the pager are caught by the write's scope, so
-    // they are unavailable -- focusable, aria-disabled, no busy state and
-    // no reason -- and neither a click nor Enter sends a second request.
     const gate = deferredResponse()
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -656,8 +580,6 @@ describe('SessionsSection', () => {
   })
 
   it('hands focus to the previous row when the last sign-out control leaves', async () => {
-    // No row follows the revoked one, so the same action on the previous
-    // row takes focus in the commit that removes the row.
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -693,10 +615,6 @@ describe('SessionsSection', () => {
   })
 
   it('lands on the row that slides up from the next page when the page’s last row is revoked', async () => {
-    // The page boundary is not a boundary for neighbours: revoking the last
-    // row of page one brings the first row of page two up into its place,
-    // and that row -- the next one in the read -- takes focus, not the
-    // previous row that happened to share the old page.
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -728,17 +646,12 @@ describe('SessionsSection', () => {
         ),
       ),
     ).toBeTruthy()
-    // Page one still holds eight rows: session-8 slid up into the vacated
-    // last place.
     const buttons = revokeButtons()
     expect(buttons).toHaveLength(8)
     await waitFor(() => expect(document.activeElement).toBe(buttons[7]))
   })
 
   it('lands on the previous page’s last row when the last page empties', async () => {
-    // Revoking the only row on the last page clamps the view back to the
-    // page before it; the removal's neighbour is that page's last row, so
-    // its control takes focus rather than the list.
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -780,8 +693,6 @@ describe('SessionsSection', () => {
   })
 
   it('lands focus on the list when no row action remains', async () => {
-    // The revoked row was the only one offering the action; the current
-    // session's row stays, so the list itself takes focus.
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -816,9 +727,6 @@ describe('SessionsSection', () => {
   })
 
   it('lands focus on the section when the revoked row leaves an empty list', async () => {
-    // The last session's row -- no current session in this answer -- takes
-    // the list away entirely; the section's named group is the fallback
-    // rather than the document body.
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -850,9 +758,6 @@ describe('SessionsSection', () => {
   })
 
   it('does not take focus back when the operator moved it during the revoke', async () => {
-    // Focus is only handed over when the removal is what dropped it. Here
-    // the operator moves to another row's control while the write runs; the
-    // landing place must not pull focus back.
     const gate = deferredResponse()
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
@@ -892,8 +797,6 @@ describe('SessionsSection', () => {
     await waitFor(() =>
       expect(initiating).toHaveAttribute('aria-busy', 'true'),
     )
-    // The operator moves to the section's other write control: a focusable
-    // place that is not where the removal would land focus.
     bulk.focus()
     expect(document.activeElement).toBe(bulk)
 
@@ -905,9 +808,6 @@ describe('SessionsSection', () => {
   })
 
   it('does not hand focus over for a row a later read removes', async () => {
-    // A revoke whose read still lists the row settles without a removal, so
-    // it leaves no landing record behind. A later, unrelated read that drops
-    // the row must not move focus on the operator's behalf.
     let reads = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -918,8 +818,6 @@ describe('SessionsSection', () => {
         return jsonResponse(200, {
           sessions: [
             session({ id: 'session-current', current: true }),
-            // The refetch that follows the revoke still carries the row;
-            // only the read after it drops it.
             ...(reads > 2 ? [] : [session({ id: 'session-2', user_agent: '' })]),
           ],
         })
@@ -946,20 +844,15 @@ describe('SessionsSection', () => {
         ),
       ),
     ).toBeTruthy()
-    // The row stayed and still carries focus; the write left no record to
-    // land from.
     expect(revokeButtons()).toHaveLength(1)
     expect(document.activeElement).toBe(triggering)
 
-    // A later, unrelated read now drops the row.
     await act(async () => {
       await queryClient.invalidateQueries({
         queryKey: ['/api/v1/auth/sessions'],
       })
     })
     await waitFor(() => expect(bodyRows()).toHaveLength(1))
-    // Focus fell with the removed row to the body rather than being handed
-    // to the list on the stale record's behalf.
     expect(document.activeElement).toBe(document.body)
   })
 
@@ -993,8 +886,6 @@ describe('SessionsSection', () => {
     await user.click(target() as HTMLElement)
 
     await waitFor(() => expect(target()).toBeNull())
-    // The single revoke no longer succeeds silently: its confirmation names
-    // the session it signed out.
     expect(
       await screen.findByText(
         zhCN.sessions.revokedOne.replace(
@@ -1009,14 +900,11 @@ describe('SessionsSection', () => {
         (call) => call.method === 'DELETE' && call.path === `${SESSIONS_PATH}/session-2`,
       ),
     ).toHaveLength(1)
-    // The list refetched after the revoke.
     expect(
       rig.calls.filter(
         (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
       ).length,
     ).toBeGreaterThanOrEqual(2)
-    // The confirmation sits below the table whose row action wrote it, not
-    // above it.
     const confirmation = screen.getByText(
       zhCN.sessions.revokedOne.replace(
         '{{device}}',
@@ -1032,8 +920,6 @@ describe('SessionsSection', () => {
   })
 
   it('clears a row result when the list pages', async () => {
-    // Paging changes what the list describes: a settled result naming a
-    // device must not stand over the next page's rows.
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -1078,14 +964,10 @@ describe('SessionsSection', () => {
         ),
       ).toBeTruthy(),
     )
-    // The previous page's result is gone with the context that produced it.
     expect(screen.queryByText(confirmation)).toBeNull()
   })
 
   it('holds the pager while a revoke attempt is pending', async () => {
-    // Paging is a context change for the section's feedback scope; while an
-    // attempt is in flight (and through the refetch that follows it) the
-    // pager is disabled, so no reset can drop a result still to land.
     let releaseDelete: ((response: Response) => void) | undefined
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -1110,7 +992,6 @@ describe('SessionsSection', () => {
 
     await screen.findByRole('heading', { name: zhCN.sessions.title })
     await waitFor(() => expect(bodyRows()).toHaveLength(8))
-    // Move to the second page, where the previous-page control is enabled.
     await user.click(
       screen.getByRole('button', { name: zhCN.sessions.nextPage }),
     )
@@ -1139,8 +1020,6 @@ describe('SessionsSection', () => {
   })
 
   it('renders its bulk action into the host header when the host supplies the slot', async () => {
-    // The slot is the additive contract: supplied, the section leaves the
-    // action's placement to the host, which portals it into a block header.
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -1160,10 +1039,7 @@ describe('SessionsSection', () => {
     const bulk = await screen.findByRole('button', {
       name: zhCN.sessions.revokeOthers.label,
     })
-    // The host's header holds the action ...
     expect(screen.getByTestId('host-block-header')).toContainElement(bulk)
-    // ... and the section's own content does not: no action row was
-    // rendered beside the list.
     expect(
       within(
         screen.getByRole('region', { name: zhCN.sessions.title }),
@@ -1172,8 +1048,6 @@ describe('SessionsSection', () => {
   })
 
   it('renders its bulk action inside the section when no slot is supplied', async () => {
-    // Without the slot the default placement is unchanged: the action is
-    // the section's own, rendered with its block.
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
         return PROFILE
@@ -1228,21 +1102,14 @@ describe('SessionsSection', () => {
     const bulk = await screen.findByRole('button', {
       name: zhCN.sessions.revokeOthers.label,
     })
-    // The bulk control is a block-level action like the other sections'
-    // header actions: small, and painted with the same danger color the
-    // row-level sign-out glyph carries.
     expect(bulk).toHaveClass('MuiButton-sizeSmall')
     const [rowRevoke] = revokeButtons()
     expect(rowRevoke).toBeDefined()
-    // MUI paints the outlined bulk control through a CSS variable chain;
-    // resolve it to compare the literal color the glyph carries.
     let bulkColor = getComputedStyle(bulk).color
     for (let depth = 0; depth < 5 && bulkColor.startsWith('var('); depth += 1) {
       const name = bulkColor.slice(4, -1).trim()
       bulkColor = getComputedStyle(bulk).getPropertyValue(name).trim()
     }
-    // The variable chain ends in a hex token while the glyph's computed
-    // color is rgb(...); compare the same color in one notation.
     const toRgb = (value: string): string => {
       const hex = /^#([0-9a-f]{6})$/i.exec(value.trim())
       if (hex === null) {
@@ -1255,9 +1122,6 @@ describe('SessionsSection', () => {
 
     await user.click(bulk)
     const dialog = await screen.findByRole('dialog')
-    // Signing out other devices is recoverable, so it carries the single
-    // confirming click -- not the heavier two-step arm an irreversible
-    // delete uses: one click here fires the revoke.
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.sessions.revokeOthers.confirmLabel,
@@ -1273,10 +1137,6 @@ describe('SessionsSection', () => {
   })
 
   it('keeps the bulk control busy and the row actions unavailable while the confirmed revoke runs', async () => {
-    // The confirmed bulk action is the control the operator started: it
-    // reports busy while the request runs. Each row's sign-out is a
-    // sibling write control in the same scope, so it is unavailable --
-    // focusable, no busy state, no reason -- rather than busy itself.
     const gate = deferredResponse()
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -1317,8 +1177,6 @@ describe('SessionsSection', () => {
         }),
       ).toHaveAttribute('aria-busy', 'true'),
     )
-    // The rows behind the modal are outside the accessibility tree while
-    // it is open, so they are queried with the hidden-elements option.
     const rowActions = screen.getAllByRole('button', {
       name: revokeAria(zhCN.sessions.deviceUnknown),
       hidden: true,
@@ -1328,10 +1186,6 @@ describe('SessionsSection', () => {
       expect(row).not.toHaveAttribute('aria-busy')
       expect(row).toHaveAccessibleDescription('')
     }
-    // Neither a click nor Enter on a held row action sends a second
-    // request while the bulk revoke runs.
-    // Every DELETE counts, not only the bulk route's: a row action that
-    // slipped through its held state would send its own request.
     const deletes = () =>
       rig.calls.filter((call) => call.method === 'DELETE').length
     const before = deletes()
@@ -1352,10 +1206,6 @@ describe('SessionsSection', () => {
   })
 
   it('returns focus to the bulk control when its confirmation closes while the refetch is in flight', async () => {
-    // The confirmed bulk action is the control the operator started. The
-    // answer closes the confirmation, but the refetch that follows still
-    // holds the section's write scope, so the control stays where it is --
-    // focused and busy -- until that refetch settles.
     let reads = 0
     let releaseRefetch: ((response: Response) => void) | undefined
     const respond: RealResponder = (call: RealCall) => {
@@ -1365,8 +1215,6 @@ describe('SessionsSection', () => {
       if (call.method === 'GET' && call.path === SESSIONS_PATH) {
         reads += 1
         if (reads > 1) {
-          // The refetch the bulk revoke triggered: held open so the
-          // control's focused busy state is observable.
           return new Promise<Response>((resolve) => {
             releaseRefetch = resolve
           })
@@ -1400,9 +1248,6 @@ describe('SessionsSection', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(releaseRefetch).toBeDefined())
-    // Focus came back to the control that opened the confirmation and
-    // stays there: it reports itself busy instead of going natively
-    // disabled while the refetch it is waiting on runs.
     await waitFor(() => expect(bulk).toHaveFocus())
     expect(bulk).toHaveAttribute('aria-busy', 'true')
     expect(bulk).toHaveAttribute('aria-disabled', 'true')
@@ -1424,9 +1269,6 @@ describe('SessionsSection', () => {
   })
 
   it('does not take focus back when the operator moved it while the bulk revoke lands', async () => {
-    // The bulk control leaves when the refetched list no longer holds
-    // another live session. The landing only runs for a focus the removal
-    // took: a place the operator chose before it lands stays theirs.
     let reads = 0
     let releaseRefetch: ((response: Response) => void) | undefined
     const respond: RealResponder = (call: RealCall) => {
@@ -1469,9 +1311,6 @@ describe('SessionsSection', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(releaseRefetch).toBeDefined())
 
-    // The operator moves to the section's named container before the refetch
-    // removes the bulk control: a focusable place that is not the list the
-    // removal would land on.
     const section = screen.getByRole('group', { name: zhCN.sessions.title })
     section.focus()
     expect(section).toHaveFocus()
@@ -1494,9 +1333,6 @@ describe('SessionsSection', () => {
   })
 
   it('lands focus on the list when the bulk action leaves after revoking the other sessions', async () => {
-    // The success removes every other session, so the bulk control that
-    // opened the confirmation is no longer rendered; focus goes to the
-    // list rather than the document body.
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -1543,10 +1379,6 @@ describe('SessionsSection', () => {
   })
 
   it('lands focus on the list although another role=dialog node stays in the document', async () => {
-    // The host's shell can keep a drawer mounted below the md breakpoint,
-    // and its paper carries role="dialog" for the whole page's life. The
-    // landing must wait for this section's own confirmation, not for the
-    // document to hold no dialog at all.
     let revoked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -1627,11 +1459,6 @@ describe('SessionsSection', () => {
   })
 
   it('splits the empty, error and retry states', async () => {
-    // The settled states: an answer listing zero sessions renders the
-    // empty variant (header hidden, its title standing in at the same
-    // heading level); a load that failed -- and an answer that omitted
-    // the sessions key, as unreadable as a failure -- render the error
-    // variant, whose retry refetches.
     let mode: 'empty' | 'fail' | 'omitted' | 'ok' = 'empty'
     const respond: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -1656,22 +1483,17 @@ describe('SessionsSection', () => {
     const user = userEvent.setup()
     const { queryClient } = mountSection(respond)
 
-    // An answer listing zero sessions is the empty state, header hidden.
     expect(await screen.findByText(zhCN.sessions.empty.title)).toBeTruthy()
     expect(
       screen.queryByRole('heading', { name: zhCN.sessions.title }),
     ).toBeNull()
 
-    // A settled answer that omitted the sessions key is as unreadable as
-    // a failure: refetching into it renders the error variant, never a
-    // "no sessions" claim.
     mode = 'omitted'
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: ['/api/v1/auth/sessions'] })
     })
     expect(await screen.findByText(zhCN.sessions.error.title)).toBeTruthy()
 
-    // The retry refetches; an answer that lists a session renders it.
     mode = 'ok'
     await user.click(screen.getByRole('button', { name: zhCN.sessions.retry }))
     expect(
@@ -1687,8 +1509,6 @@ describe('SessionsSection', () => {
         return PROFILE
       }
       if (call.method === 'GET' && call.path === SESSIONS_PATH) {
-        // The first read settles the list; the refetch after the revoke
-        // fails, so the section keeps the rows it already had.
         return revoked
           ? errorResponse(500, 'authn.unavailable')
           : jsonResponse(200, {
@@ -1714,14 +1534,11 @@ describe('SessionsSection', () => {
     await waitFor(() => expect(target()).not.toBeNull())
     await user.click(target() as HTMLElement)
 
-    // The refresh failed, but the old row stays on screen under the stale
-    // notice rather than being replaced by the error placeholder.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
     expect(target()).not.toBeNull()
     expect(screen.queryByText(zhCN.sessions.error.title)).toBeNull()
 
-    // The retry is the section's own retry: it re-reads the list.
     const readsBeforeRetry = rig.calls.filter(
       (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
     ).length

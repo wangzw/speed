@@ -1,9 +1,5 @@
 /**
- * FlowStep in a real browser: axe's Label in Name over the manual-entry
- * disclosure, and the focus a step keeps while an answer is in flight.
- *
- * jsdom keeps a natively disabled button focused, so only this tier catches
- * a regression back to `disabled`.
+ * FlowStep in a real browser: Label in Name and the focus a step keeps while answering.
  */
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -96,7 +92,6 @@ describe('FlowStep focus in Chromium', () => {
     await user.click(submit)
 
     await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
-    // A native disable would have moved focus to the body.
     expect(document.activeElement).toBe(submit)
     expect(submit).toHaveAttribute('aria-disabled', 'true')
 
@@ -149,10 +144,8 @@ describe('FlowStep focus in Chromium', () => {
     await user.click(totp)
     await waitFor(() => expect(answering).toBe(true))
     await waitFor(() => expect(totp).toHaveAttribute('aria-busy', 'true'))
-    // Its progress state must not take the operator's place away.
     expect(document.activeElement).toBe(totp)
 
-    // Cancel stays the way out while the answer is in flight.
     const cancel = screen.getByRole('button', {
       name: zhCN.mfa.stepUp.cancelLabel,
     })

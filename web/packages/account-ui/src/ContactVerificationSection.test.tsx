@@ -1,6 +1,5 @@
 /**
- * ContactVerificationSection checks the profile's `verification` states and
- * the identifier writes that move them.
+ * ContactVerificationSection checks the profile's `verification` states and the identifier writes that move them.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -38,7 +37,6 @@ const VERIFY_PATH = '/api/v1/auth/identifiers/verify'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-/** A profile whose self-registration is one of the three states. */
 function profileVerification(
   state: string,
   email: string,
@@ -75,16 +73,11 @@ function mount(
   return { rig, ...rendered }
 }
 
-/** Matches the section's resend note: the wait a successful send's
- * `resend_after` holds the control for. A throttled failure starts no note --
- * its shared banner counts the same wait down. */
 function resendNote(before: string, after: string) {
   return (content: string): boolean =>
     content.startsWith(before) && content.endsWith(after)
 }
 
-/** One answer held open, so a case can assert the control's in-flight state
- * before the write settles. */
 function deferredResponse(): {
   readonly response: Promise<Response>
   readonly release: (response: Response) => void
@@ -147,9 +140,6 @@ describe('ContactVerificationSection', () => {
   it('moves a pending account with no target from the add form to the code step', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        // The add answers `pending`; the profile keeps reporting no target
-        // (the address is only a pending contact server-side), so the step
-        // the section shows comes from the send's own answer.
         return jsonResponse(200, profileVerification('pending', ''))
       }
       if (call.method === 'POST' && call.path === ADD_PATH) {
@@ -207,9 +197,6 @@ describe('ContactVerificationSection', () => {
     const field = await screen.findByLabelText(zhCN.verification.addLabel)
     await user.type(field, 'new@x.test')
     const form = field.closest('form') as HTMLFormElement
-    // The form's own submit event stands in for the implicit submission an
-    // Enter press makes; the guard, not a disabled control, is what keeps a
-    // second request from leaving while the first is in flight.
     fireEvent.submit(form)
     await waitFor(() =>
       expect(
@@ -280,9 +267,6 @@ describe('ContactVerificationSection', () => {
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
-    // The session section observes the session list; proving the address
-    // revokes no other session, so that query is not invalidated and the
-    // observer's mount read stays the only one.
     renderWithProviders(
       <>
         <ContactVerificationSection session={rig.session} />
@@ -312,7 +296,6 @@ describe('ContactVerificationSection', () => {
         ),
       ),
     ).toBeTruthy()
-    // The entry state is gone with the state it belonged to.
     expect(
       screen.queryByLabelText(zhCN.verification.codeLabel),
     ).toBeNull()
@@ -356,9 +339,6 @@ describe('ContactVerificationSection', () => {
     let fail = true
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        // A 500 rather than a transient status: the client's own retry
-        // budget covers 502/503/504, and a transient answer would make the
-        // call count an observation about that budget rather than the retry.
         return fail
           ? errorResponse(500, 'authn.unavailable')
           : jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -420,9 +400,6 @@ describe('ContactVerificationSection', () => {
         zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
       ),
     ).toBeTruthy()
-    // The confirmation names the address the code went to and lives in the
-    // code step's own status region -- the destination notice, not the send
-    // scope's outcome slot.
     expect(zhCN.verification.sent).toContain('{{email}}')
     expect(
       screen
@@ -441,8 +418,6 @@ describe('ContactVerificationSection', () => {
 
   it('keeps the sent notice when the verify scope fails', async () => {
     captureRefreshWarning({ expected: true })
-    // The destination notice is the code step's own state, not the send
-    // scope's slot: the other control group's failure must not clear it.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -478,14 +453,10 @@ describe('ContactVerificationSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.verification.codeInvalid)
-    // The sent notice survives the verify group's failure.
     expect(screen.getByText(sentText)).toBeTruthy()
   })
 
   it('holds one result slot for the send and verify writes', async () => {
-    // One code step, one scope: a refused resend and a refused verification
-    // report through the same slot, so they never stand side by side -- the
-    // attempt that settles last replaces the one before it.
     let firstSend = true
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -513,8 +484,6 @@ describe('ContactVerificationSection', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.verification.send }),
     )
-    // The send waits on the deployment's gate read before it leaves; wait for
-    // the code step it lands on (the resend control) before answering it.
     await screen.findByRole('button', { name: zhCN.verification.resend })
     await user.type(
       screen.getByLabelText(zhCN.verification.codeLabel),
@@ -525,20 +494,14 @@ describe('ContactVerificationSection', () => {
     )
     expect(await screen.findByText(zhCN.errors.authn.bad_request)).toBeTruthy()
 
-    // The resend settles the same scope to a failure.
     await user.click(
       screen.getByRole('button', { name: zhCN.verification.resend }),
     )
     expect(await screen.findByText(zhCN.errors.authn.unavailable)).toBeTruthy()
-    // The later result is the slot's one result: the earlier failure does
-    // not stand beside it.
     expect(screen.queryByText(zhCN.errors.authn.bad_request)).toBeNull()
   })
 
   it('renders a refused change in the action row’s one result region', async () => {
-    // The change form writes into the code step's shared scope; the group's
-    // one result sits directly under the action row, ahead of the change
-    // entry it fired from rather than at the card's bottom.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -568,8 +531,6 @@ describe('ContactVerificationSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
-    // The form stays open on failure, and the result sits before it in the
-    // document: under the action row, not at the card's bottom.
     expect(screen.getByLabelText(zhCN.verification.changeLabel)).toBeTruthy()
     expect(
       alert.compareDocumentPosition(changeForm) &
@@ -579,9 +540,6 @@ describe('ContactVerificationSection', () => {
 
   it('drops the code step’s result when the target address changes', async () => {
     captureRefreshWarning({ expected: true })
-    // Replacing the target is a change of context: the wrong-code answer
-    // describes the address being replaced and must not stand beside the
-    // new one.
     let target = 'ada@x.test'
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -607,10 +565,6 @@ describe('ContactVerificationSection', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.verification.send }),
     )
-    // The gate is read only once the send is asked for; the resend control
-    // appearing and becoming usable is the send settling, so the
-    // verification starts from the code step's own state rather than under
-    // the send's pending scope.
     const resend = await screen.findByRole('button', {
       name: zhCN.verification.resend,
     })
@@ -629,7 +583,6 @@ describe('ContactVerificationSection', () => {
       await screen.findByText(zhCN.verification.codeInvalid),
     ).toBeTruthy()
 
-    // Move the target to another address.
     await user.click(
       screen.getByRole('button', { name: zhCN.verification.change }),
     )
@@ -646,7 +599,6 @@ describe('ContactVerificationSection', () => {
       }),
     )
 
-    // The replaced address's wrong-code answer is gone.
     await waitFor(() =>
       expect(screen.queryByText(zhCN.verification.codeInvalid)).toBeNull(),
     )
@@ -673,8 +625,6 @@ describe('ContactVerificationSection', () => {
         zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
       ),
     ).toBeTruthy()
-    // The landed write refetches the profile; the re-read must not send a
-    // second code.
     await waitFor(() =>
       expect(
         rig.calls.filter(
@@ -732,9 +682,6 @@ describe('ContactVerificationSection', () => {
   })
 
   it('never auto-sends for a mount landed with the change form open, even after closing it', async () => {
-    // `?change=email` lands here: the visitor came to replace the address,
-    // so closing the form must not fall back to sending a code to the old
-    // one.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -834,18 +781,11 @@ describe('ContactVerificationSection', () => {
     mount(respond, { autoSend: true })
 
     const alert = await screen.findByRole('alert')
-    // The 429 stated how long to wait, so the sentence names it instead of
-    // the bare "try again later".
     expect(alert).toHaveTextContent(
       zhCN.throttle.retryAfter.replace('{{seconds}}', '30'),
     )
-    // The Retry-After a 429 carried starts the same countdown a send answer
-    // does. The control stays focusable and reports itself unavailable.
     const send = screen.getByRole('button', { name: zhCN.verification.send })
     expect(send).toHaveAttribute('aria-disabled', 'true')
-    // The banner is the one *visible* wait indicator: the section's own
-    // note is not rendered beside it. The control names the same wait
-    // through its hidden reason, which is not a second on-screen note.
     expect(
       document.getElementById('contact-verification-resend-note'),
     ).toBeNull()
@@ -856,10 +796,6 @@ describe('ContactVerificationSection', () => {
 
   it('states the automatic step-up refusal instead of opening the dialog, then retries the send on the visitor click', async () => {
     captureRefreshWarning({ expected: true })
-    // The automatic attempt cannot open a dialog the visitor did not ask
-    // for, so it states why it could not send and leaves the manual action.
-    // The send is not a gated write: the visitor's click retries it like any
-    // other send, and no challenge replays it.
     let attempts = 0
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -881,8 +817,6 @@ describe('ContactVerificationSection', () => {
     const { rig } = mount(respond, { autoSend: true })
     const user = userEvent.setup()
 
-    // The automatic attempt's 401 leaves the manual action and its
-    // explanation, and opens no dialog.
     expect(
       await screen.findByText(zhCN.verification.autoStepUp),
     ).toBeTruthy()
@@ -892,8 +826,6 @@ describe('ContactVerificationSection', () => {
     })
     expect(manual).toBeEnabled()
     expect(manual).not.toHaveAttribute('aria-disabled', 'true')
-    // The explanation is an info alert beside the manual action; it must
-    // not introduce an accessibility violation of its own.
     await expectNoAxeViolations()
 
     await user.click(manual)
@@ -903,7 +835,6 @@ describe('ContactVerificationSection', () => {
         zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
       ),
     ).toBeTruthy()
-    // The automatic attempt and the visitor's retry: two sends, no replay.
     expect(
       rig.calls.filter(
         (call) => call.method === 'POST' && call.path === ADD_PATH,
@@ -913,9 +844,6 @@ describe('ContactVerificationSection', () => {
 
   it('clears the automatic step-up explanation when a verification starts', async () => {
     captureRefreshWarning({ expected: true })
-    // The explanation describes the automatic send's refusal, not a standing
-    // state: a verification is a new attempt in the shared result position,
-    // so it must not stand beside the attempt's answer.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -946,16 +874,11 @@ describe('ContactVerificationSection', () => {
     expect(
       await screen.findByText(zhCN.verification.codeInvalid),
     ).toBeTruthy()
-    // The failed verification's own wording is the one result: the automatic
-    // send's explanation left with the attempt that replaced it.
     expect(screen.queryByText(zhCN.verification.autoStepUp)).toBeNull()
   })
 
   it('changes the pending target by sending a code to the new address', async () => {
     let current = 'ada@x.test'
-    // A stale profile answer after the change: the display and the resend
-    // must both follow the address this mount sent to, not the old target a
-    // failed or lagging refetch still carries.
     let stale = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -1004,16 +927,11 @@ describe('ContactVerificationSection', () => {
     )
     expect(posts).toHaveLength(1)
     expect(posts[0]?.body).toEqual({ kind: 'email', value: 'new@x.test' })
-    // The target label follows the replacement, from the send answer first
-    // and the profile refetch after.
     expect(
       screen.getByText(
         zhCN.verification.target.replace('{{email}}', 'new@x.test'),
       ),
     ).toBeTruthy()
-    // The resend follows the address this mount displayed, not the stale
-    // profile target: sending to the old address would silently undo the
-    // change.
     await user.click(
       screen.getByRole('button', { name: zhCN.verification.resend }),
     )
@@ -1058,8 +976,6 @@ describe('ContactVerificationSection', () => {
       name: zhCN.verification.resend,
     })
     expect(resend).toHaveAttribute('aria-disabled', 'true')
-    // A successful send leaves no banner, so the note is the wait's only
-    // visible explanation, and the control points at it.
     const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
     const note = await screen.findByText(
       resendNote(before ?? '', after ?? ''),
@@ -1081,8 +997,6 @@ describe('ContactVerificationSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    // The gate is stated up front: this case is about the countdown, and a
-    // gate that wants nothing sends as soon as the viewer asks.
     const { rig } = mount(respond, {
       humanGate: {
         phone: { required: false, provider: 'off' },
@@ -1092,8 +1006,6 @@ describe('ContactVerificationSection', () => {
     const send = await screen.findByRole('button', {
       name: zhCN.verification.send,
     })
-    // The mount's reads settled on the real clock; the send and its
-    // countdown run on the fake one so the five seconds pass instantly.
     vi.useFakeTimers()
     try {
       const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
@@ -1106,7 +1018,6 @@ describe('ContactVerificationSection', () => {
       expect(
         screen.getByRole('button', { name: zhCN.verification.resend }),
       ).toHaveAttribute('aria-disabled', 'true')
-      // The successful send states its hold in the section's own note.
       const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
       expect(
         screen.getByText(resendNote(before ?? '', after ?? '')),
@@ -1119,8 +1030,6 @@ describe('ContactVerificationSection', () => {
         vi.advanceTimersByTime(5000)
       })
 
-      // The timer is gone at its own expiry, not left ticking for the rest
-      // of the mount, and the note leaves with the hold it stated.
       expect(clearIntervalSpy).toHaveBeenCalledWith(timerId)
       expect(
         screen.queryByText(resendNote(before ?? '', after ?? '')),
@@ -1160,8 +1069,6 @@ describe('ContactVerificationSection', () => {
     expect(alert).toHaveTextContent(zhCN.verification.codeInvalid)
     expect(code).toHaveValue('')
     expect(code).toHaveAttribute('aria-invalid', 'true')
-    // The verify group's failure renders below the verify controls: the code
-    // field and its verify action.
     expect(
       screen
         .getByRole('button', { name: zhCN.verification.verify })
@@ -1222,12 +1129,9 @@ describe('ContactVerificationSection', () => {
     )
 
     const alert = await screen.findByRole('alert')
-    // The 429 stated how long to wait, so the sentence names it instead of
-    // the bare "try again later".
     expect(alert).toHaveTextContent(
       zhCN.throttle.retryAfter.replace('{{seconds}}', '1'),
     )
-    // The Retry-After starts the same countdown the send answer does.
     expect(
       screen.getByRole('button', { name: zhCN.verification.send }),
     ).toHaveAttribute('aria-disabled', 'true')
@@ -1256,9 +1160,6 @@ describe('ContactVerificationSection', () => {
 
   it('renders a step-up refusal of the send as an ordinary failure, with no dialog', async () => {
     captureRefreshWarning({ expected: true })
-    // Registering the address is not a change of what proves the account; the
-    // route asks for no fresh authentication. A step-up refusal renders its
-    // code text instead of opening the dialog, and the send is not replayed.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
@@ -1288,10 +1189,6 @@ describe('ContactVerificationSection', () => {
   })
 
   it('arms the step-up dialog on a refused verify and replays the same code', async () => {
-    // A proof that makes the address the account's only address changes how
-    // the account signs in, so the server may refuse it for a fresh
-    // authentication. The verify arms the dialog with the same code, and the
-    // won challenge replays it exactly once.
     captureRefreshWarning()
     let elevated = false
     let proven = false
@@ -1362,7 +1259,6 @@ describe('ContactVerificationSection', () => {
       screen.getByRole('button', { name: zhCN.verification.verify }),
     )
 
-    // The 401 opens the dialog; winning it replays the same code.
     await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })
     await user.click(screen.getByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
@@ -1380,9 +1276,6 @@ describe('ContactVerificationSection', () => {
   })
 
   it('proves the address without opening an identity-transition window', async () => {
-    // Proving a contact address rotates no credential and revokes no other
-    // session, so the surface opens no window; the profile refetch that
-    // follows the verify stays authenticated and flips to the verified state.
     let proven = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -1429,8 +1322,6 @@ describe('ContactVerificationSection', () => {
 
   it('opens no identity-transition window for a refused verification', async () => {
     captureRefreshWarning({ expected: true })
-    // The wrong-code refusal is an ordinary failure: no window is opened, so
-    // a later genuine anonymous read still ends the session with one edge.
     let refused = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -1469,7 +1360,6 @@ describe('ContactVerificationSection', () => {
     await screen.findByText(zhCN.verification.codeInvalid)
     expect(rig.transitionBegins()).toBe(0)
 
-    // A fresh 401 read now settles the true state.
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
     expect(rig.endedEdges()).toBe(1)
@@ -1502,15 +1392,11 @@ describe('ContactVerificationSection', () => {
       const send = await screen.findByRole('button', {
         name: zhCN.verification.send,
       })
-      // The step shows no challenge until its send is asked for, and the
-      // control stays usable while no proof is outstanding.
       expect(fake.widgets).toHaveLength(0)
       expect(send).toBeEnabled()
       expect(send).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(send)
 
-      // The send waits on the proof: the block renders and the control that
-      // asked reports that its own attempt is in flight.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
       const waiting = screen.getByRole('button', {
@@ -1524,7 +1410,6 @@ describe('ContactVerificationSection', () => {
         ),
       ).toHaveLength(0)
 
-      // The proof arrives and the send leaves by itself.
       act(() => {
         fake.token('token-1')
       })
@@ -1544,8 +1429,6 @@ describe('ContactVerificationSection', () => {
         human_proof: 'token-1',
       })
 
-      // The proof is spent with the send: a resend asks for a fresh one and
-      // does not leave until the new widget yields it.
       await user.click(
         await screen.findByRole('button', { name: zhCN.verification.resend }),
       )
@@ -1622,7 +1505,6 @@ describe('ContactVerificationSection', () => {
           (call) => call.method === 'POST' && call.path === VERIFY_PATH,
         )
 
-      // The first send carries its proof and lands.
       await user.click(
         await screen.findByRole('button', { name: zhCN.verification.send }),
       )
@@ -1632,8 +1514,6 @@ describe('ContactVerificationSection', () => {
       })
       await waitFor(() => expect(sends()).toHaveLength(1))
 
-      // A resend waits on a fresh proof, but that wait is only the control
-      // that asked for it: the code already in hand may still be verified.
       const codeField = screen.getByLabelText(zhCN.verification.codeLabel)
       await user.type(codeField, '123456')
       const resend = await screen.findByRole('button', {
@@ -1652,11 +1532,6 @@ describe('ContactVerificationSection', () => {
       expect(verifyControl).not.toHaveAttribute('aria-disabled', 'true')
       expect(verifyControl).not.toHaveAttribute('aria-busy')
 
-      // The verification can still begin while the wait is outstanding: a
-      // step-up replay of a code the visitor already tried reaches verify
-      // directly through the form's own submit event. It calls the wait off,
-      // so the late proof never sends and the code just proved is not
-      // invalidated by a second one.
       fireEvent.submit(codeField.closest('form') as HTMLFormElement)
       await waitFor(() => expect(verifies()).toHaveLength(1))
       act(() => {
@@ -1701,7 +1576,6 @@ describe('ContactVerificationSection', () => {
           (call) => call.method === 'POST' && call.path === ADD_PATH,
         )
 
-      // The first send carries its proof and lands.
       await user.click(
         await screen.findByRole('button', { name: zhCN.verification.send }),
       )
@@ -1711,8 +1585,6 @@ describe('ContactVerificationSection', () => {
       })
       await waitFor(() => expect(sends()).toHaveLength(1))
 
-      // A resend waits on a fresh proof. Only the resend control waits: the
-      // change-address action stays usable and calls the wait off.
       await user.click(
         await screen.findByRole('button', { name: zhCN.verification.resend }),
       )
@@ -1724,16 +1596,11 @@ describe('ContactVerificationSection', () => {
       expect(change).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(change)
 
-      // Choosing another address calls the abandoned wait off: the block
-      // that held the proof leaves the document.
       const changeField = await screen.findByLabelText(
         zhCN.verification.changeLabel,
       )
       expect(fake.widgets[1]?.container.isConnected).toBe(false)
       await user.type(changeField, 'new@x.test')
-      // The change form's own submit event is not held by the abandoned
-      // wait: the new address's send leaves the block once its proof
-      // arrives.
       fireEvent.submit(changeField.closest('form') as HTMLFormElement)
       await waitFor(() => expect(fake.widgets).toHaveLength(3))
       expect(sends()).toHaveLength(1)
@@ -1757,8 +1624,6 @@ describe('ContactVerificationSection', () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         reads += 1
-        // The first read settles the pending target; every later refresh
-        // fails.
         return reads === 1
           ? jsonResponse(200, profileVerification('pending', 'ada@x.test'))
           : errorResponse(500, 'authn.unavailable')
@@ -1774,14 +1639,11 @@ describe('ContactVerificationSection', () => {
       await queryClient.invalidateQueries()
     })
 
-    // The failed refresh keeps the settled target and the code step on
-    // screen under the stale notice, not the error placeholder.
     expect(screen.getByText(target)).toBeTruthy()
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
     expect(screen.queryByText(zhCN.verification.error.title)).toBeNull()
 
-    // The stale notice's retry re-reads the profile.
     const readsBeforeRetry = reads
     await user.click(screen.getByRole('button', { name: zhCN.verification.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
@@ -1820,9 +1682,6 @@ describe('ContactVerificationSection', () => {
       ).toBe(true),
     )
 
-    // The landed verification replaces the code step: the control that
-    // started it leaves the document, so focus moves to the section that
-    // stays, never to the document body.
     verified = true
     await act(async () => {
       held.release(jsonResponse(200, { state: 'verified' }))
@@ -1866,10 +1725,6 @@ describe('ContactVerificationSection', () => {
       ).toBe(true),
     )
 
-    // The browser can leave the active element on a node the landing
-    // detached instead of dropping it to the body. The guard must treat
-    // that dead node as focus the removal took, not as a place the
-    // operator chose.
     const detached = document.createElement('button')
     Object.defineProperty(document, 'activeElement', {
       configurable: true,
@@ -1925,9 +1780,6 @@ describe('ContactVerificationSection', () => {
       ).toBe(true),
     )
 
-    // The scope is busy with the verification, so every other initiating
-    // control in the step is held without a reason: no aria-busy, no
-    // description, and activation reaches no request.
     const send = screen.getByRole('button', { name: zhCN.verification.send })
     const change = screen.getByRole('button', {
       name: zhCN.verification.change,
@@ -1945,12 +1797,10 @@ describe('ContactVerificationSection', () => {
         (call) => call.method === 'POST' && call.path === ADD_PATH,
       ),
     ).toHaveLength(0)
-    // The change form did not open from a held control.
     expect(
       screen.queryByLabelText(zhCN.verification.changeLabel),
     ).toBeNull()
 
-    // Keyboard activation is swallowed the same way.
     change.focus()
     await user.keyboard('{Enter}')
     expect(
@@ -1975,8 +1825,6 @@ describe('ContactVerificationSection', () => {
     const verify = await screen.findByRole('button', {
       name: zhCN.verification.verify,
     })
-    // The precondition is unmet, but the control stays focusable and says
-    // why it cannot run.
     expect(verify).toHaveAttribute('aria-disabled', 'true')
     expect(verify).toHaveAccessibleDescription(zhCN.verification.codeEmpty)
     verify.focus()
@@ -2040,7 +1888,6 @@ describe('ContactVerificationSection', () => {
     await screen.findByRole('group', {
       name: zhCN.verification.verifiedTitle,
     })
-    // A resting place the operator chose during the write is left alone.
     expect(elsewhere).toHaveFocus()
   })
 })

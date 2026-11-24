@@ -1,4 +1,4 @@
 /**
- * vitest setup for account-ui tests: the workspace's shared setup.
+ * vitest setup for account-ui tests.
  */
 import '@speed/test-utils/setup'

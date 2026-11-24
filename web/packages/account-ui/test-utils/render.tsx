@@ -1,10 +1,5 @@
 /**
- * Shared DOM-test harness for account-ui tests: the host tree
- * (i18n, theme, query client, fixed display zone) with a fresh query client
- * that retries nothing.
- *
- * The tree is the RTL `wrapper`, so a rerender reconciles in place; change
- * the unit's `key` when only the unit must remount.
+ * Shared DOM-test harness for account-ui tests.
  */
 
 import { render } from '@testing-library/react'
@@ -26,11 +21,9 @@ import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '../src/resources.js'
 export type { RenderWithProvidersOptions }
 
 export interface RenderWithProvidersResult extends BaseResult {
-  /** The query client the tree renders with. */
   readonly queryClient: QueryClient
 }
 
-/** Fresh bilingual instance with both namespaces registered. */
 export function createAccountUiI18n(language: string = 'zh-CN'): I18nInstance {
   const instance = createTestI18n(language)
   registerNamespace(instance, ACCOUNT_UI_NAMESPACE, accountUiResources)

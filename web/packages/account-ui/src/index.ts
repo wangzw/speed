@@ -41,8 +41,8 @@ export {
   type BindingCallbackHandlerProps,
 } from './BindingCallbackHandler.js'
 /**
- * The binding callback route's source-page reader. A missing or unusable
- * value reads as undefined, leaving the host its own safe landing.
+ * The binding callback route's source-page reader; a missing or unusable value
+ * reads as undefined.
  */
 export { bindingReturnTarget } from './internal/binding-return.js'
 export {

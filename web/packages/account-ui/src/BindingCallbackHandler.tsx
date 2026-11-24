@@ -1,7 +1,6 @@
 /**
  * BindingCallbackHandler: completes a social-account binding at the host's
- * callback route. It reads the `purpose: 'link'` flow back and drives it to
- * its terminal step; it never signs anyone in and never navigates.
+ * callback route, driving the `purpose: 'link'` flow to its terminal step.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -27,8 +26,7 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 /**
  * The host supplies the session, the refused callback's problem code and
- * exit, and a fallback for an unreachable callback; the handler completes
- * the link flow and reports completion once.
+ * exit, and a fallback for an unreachable callback.
  */
 export interface BindingCallbackHandlerProps {
   /** The session whose link flow the handler reads back and completes. */
@@ -37,8 +35,7 @@ export interface BindingCallbackHandlerProps {
    * refetches; the host navigates back to the account surface. */
   readonly onBound?: () => void
   /** Rendered when no flow is bound and the deployment offers no `redirect`
-   * method, so nothing can reach this callback. Only this case reads the
-   * discovery document. */
+   * method; only this case reads the discovery document. */
   readonly absent?: ReactNode
   /** The problem code a refused callback landed with, read by the host from
    * the URL fragment. Given, the handler words it and offers no retry; the
@@ -53,7 +50,6 @@ type Phase = 'reading' | 'step' | 'failed' | 'done' | 'gone'
 
 const FLOW_INVALID = 'authn.flow_invalid'
 
-/** The answer step a challenge step's input travels under, by flow state. */
 function challengeStepOf(state: string): string {
   if (state === 'second') {
     return 'factor'
@@ -85,12 +81,8 @@ export function BindingCallbackHandler({
   const doneFeedback = useWriteFeedback()
   const succeedDone = doneFeedback.succeed
 
-  // `t` and the host's props are read through refs inside the callbacks.
-  // Hosts pass `onBound` and `absent` inline and `t` changes on a language
-  // switch, so putting any in the callbacks' dependencies would re-arm the
-  // read effect: the second read answers 401 (the flow is gone), which the
-  // silent-refresh path turns into a restore whose notification re-renders
-  // the host again, closing a loop that never reaches completion.
+  // Read `t` and the host's props through refs: as effect dependencies they
+  // would re-arm the read, whose 401 restore loops through the host.
   const tRef = useRef(t)
   tRef.current = t
   const onBoundRef = useRef(onBound)
@@ -100,9 +92,7 @@ export function BindingCallbackHandler({
   const onDismissRef = useRef(onDismiss)
   onDismissRef.current = onDismiss
 
-  // A running read is not cancelled on cleanup, because StrictMode's
-  // mount/effect/cleanup/effect cycle would leave one start. Each start takes
-  // a run token, and only the current token's read acts.
+  // A run token instead of cleanup: StrictMode's double effect would leave one start.
   const runRef = useRef(0)
 
   const applySettled = useCallback(
@@ -134,8 +124,7 @@ export function BindingCallbackHandler({
   const applyState = useCallback(
     async (state: AuthnFlowState | null, run: number): Promise<void> => {
       if (state === null) {
-        // With an absent slot, ask whether any redirect method exists; a
-        // failed discovery read cannot settle it, so the banner stays.
+        // A failed discovery read cannot settle absence, so the banner stays.
         if (absentRef.current !== undefined) {
           let offersRedirect = true
           try {
@@ -158,8 +147,6 @@ export function BindingCallbackHandler({
           return
         }
         if (onDismissRef.current !== undefined) {
-          // No re-read can change a gone flow, so the terminal notice replaces
-          // a retry that would spin on the same nothing.
           setPhase('gone')
           return
         }
@@ -193,7 +180,6 @@ export function BindingCallbackHandler({
           errorCodeOf(error) === FLOW_INVALID &&
           onDismissRef.current !== undefined
         ) {
-          // The completion can never land and a re-read is an empty turn.
           setPhase('gone')
           return
         }
@@ -268,8 +254,7 @@ export function BindingCallbackHandler({
   }
 
   if (initialError !== undefined) {
-    // A conflict reads here as "held by another account", not "the account
-    // changed"; the way out is back, never a repeat of the round trip.
+    // A conflict here means the provider is held by another account.
     return (
       <Box
         sx={{
@@ -302,7 +287,7 @@ export function BindingCallbackHandler({
   }
 
   // The success region stands across every phase, so the confirmation fills a
-  // live region the screen reader already knows rather than arriving with it.
+  // live region the screen reader already knows.
   return (
     <Box sx={{ width: '100%' }}>
       <WriteFeedbackRegion outcome={doneFeedback.outcome} />
@@ -362,7 +347,6 @@ export function BindingCallbackHandler({
             width: '100%',
           }}
         >
-          {/* Decorative: the announcement region already names the state. */}
           <CircularProgress size={18} aria-hidden={true} />
           <AnnouncementRegion
             message={t('bindingCallback.pending')}

@@ -34,8 +34,7 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 /**
  * The host supplies the session and return path and chooses how an account
- * without a login name is presented; the section changes the password
- * through a step-up dialog.
+ * without a login name is presented.
  */
 export interface PasswordSectionProps {
   /** The session whose step-up flow the dialog drives. */
@@ -63,10 +62,7 @@ function PasswordSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-/**
- * The change-password surface: changes the password through a step-up
- * dialog and refetches the account's session list when it settles.
- */
+/** The change-password surface: changes the password through a step-up dialog. */
 export function PasswordSection({
   session,
   withoutLoginName = 'form',
@@ -80,13 +76,10 @@ export function PasswordSection({
   const [current, setCurrent] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  // Server refusals go to the banner.
   const [fieldError, setFieldError] = useState<
     'missingNew' | 'mismatch' | null
   >(null)
   const feedback = useWriteFeedback()
-  // The policy and rejected-current-password sentences share the region's
-  // position, so only one result shows at a time.
   const [sectionFailure, setSectionFailure] = useState<
     'policy' | 'currentRejected' | null
   >(null)
@@ -96,15 +89,13 @@ export function PasswordSection({
   })
 
   const pending = isPending && data === undefined
-  // In flight through the whole attempt, including the refetches that follow.
   // Nothing is natively disabled: a focused control that turns unfocusable
   // drops the reader's focus.
   const busy = changePassword.isPending || feedback.pending
   // An answer that did not say a password is set reads as one that did; the
   // server validates the current password regardless.
   const passwordSet = data?.password_set !== false
-  // Whether an identifier is a login name does not depend on its proof. An
-  // answer that did not list identifiers is not read as "none".
+  // An answer that did not list identifiers is not read as "none".
   const loginNamePresent =
     data?.identifiers === undefined
       ? true
@@ -125,8 +116,8 @@ export function PasswordSection({
   }
 
   function change(action: ChangeAction): Promise<void> {
-    // Read before the write: the refetch that follows reports the password as
-    // set, but the success text must still be the first-password one.
+    // Read before the write: the refetch reports the password as set, but the
+    // success text must still be the first-password one.
     const settingFirst = !passwordSet
     return feedback.run(async () => {
       setSectionFailure(null)
@@ -143,8 +134,6 @@ export function PasswordSection({
             }),
           async () => {
             clearFields()
-            // The change rotates this session's token and may flip
-            // password_set, so refetch both.
             await Promise.all([
               queryClient.invalidateQueries({
                 queryKey: getAuthnSessionListQueryKey(),
@@ -168,8 +157,7 @@ export function PasswordSection({
           return null
         }
         if (code === 'authn.login_failed') {
-          // Answered for a wrong password and, silently, during back-off, so
-          // the sentence names no cause.
+          // Also answered silently during back-off, so the sentence names no cause.
           setSectionFailure('currentRejected')
           return null
         }
@@ -181,8 +169,6 @@ export function PasswordSection({
   function submit(event: FormEvent): void {
     event.preventDefault()
     if (newPassword === '') {
-      // A settled result from the previous attempt must not stand beside the
-      // field error.
       feedback.reset()
       setSectionFailure(null)
       setFieldError('missingNew')
@@ -197,8 +183,6 @@ export function PasswordSection({
     void change({ current, newPassword })
   }
 
-  // While the attempt is in flight, neither a click nor a field's Enter
-  // reaches a second request.
   const guardedSubmit = useActivationGuard(submit, { busy })
 
   return (

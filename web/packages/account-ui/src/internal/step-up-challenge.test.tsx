@@ -1,7 +1,5 @@
 /**
- * StepUpChallenge checks the dialog driving one step-up flow: its factor
- * choice, code step, refused-answer and no-factor branches, the refusal
- * verdict taken once per opening, and cancel.
+ * StepUpChallenge checks the dialog driving one step-up flow.
  */
 
 import { useState } from 'react'
@@ -31,7 +29,6 @@ import { StepUpChallenge } from './step-up-challenge.js'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-/** One active factor. */
 const ACTIVE_FACTOR = {
   id: 'factor-1',
   kind: 'totp',
@@ -40,7 +37,6 @@ const ACTIVE_FACTOR = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-/** `ageMs` moves the authentication time back past the five-minute window. */
 function sessionBody(
   options: {
     readonly methods?: readonly string[]
@@ -58,7 +54,6 @@ function sessionBody(
   }
 }
 
-/** Any leg other than the factor read is a defect of the case. */
 function bindFactors(factors: readonly unknown[]): void {
   bindRequestFn((async (path: string, options?: RequestOptions) => {
     if ((options?.method ?? 'GET') === 'GET' && path === '/api/v1/auth/factors') {
@@ -68,7 +63,6 @@ function bindFactors(factors: readonly unknown[]): void {
   }) as RequestFn)
 }
 
-/** One TOTP factor, a code challenge, then elevation. */
 function makeStepUpResponder(overrides: {
   readonly codeAnswer?: () => Response
 } = {}): RealResponder {
@@ -109,8 +103,6 @@ function makeStepUpResponder(overrides: {
   }
 }
 
-/** A first-factor re-proof that settles straight into a `complete` step;
- * `completeAnswer` scripts the automatic answer. */
 function makeReadyAfterFirstFactorResponder(overrides: {
   readonly completeAnswer?: () => Response | Promise<Response>
 } = {}): RealResponder {
@@ -165,8 +157,6 @@ function makeReadyAfterFirstFactorResponder(overrides: {
   }
 }
 
-/** A factor registered during the session: the server proves the password
- * again first, then offers the factor. */
 function makeFactorsRegisteredThisSessionResponder(): RealResponder {
   return (call: RealCall) => {
     if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -202,7 +192,6 @@ function makeFactorsRegisteredThisSessionResponder(): RealResponder {
   }
 }
 
-/** The 429 with the wait its Retry-After names. */
 function throttledResponse(retryAfterSeconds: number): Response {
   return new Response(
     JSON.stringify({
@@ -248,7 +237,6 @@ function mount(
   return { rig, onSuccess, onCancel }
 }
 
-/** For the phase cases that never touch the wire. */
 function mountSession(
   session: AuthSession,
   handlers: {
@@ -273,8 +261,6 @@ function mountSession(
   return { onSuccess, onCancel }
 }
 
-/** The host owns `open`, so the dialog keeps one provider tree across the
- * reopen cases. */
 interface DialogControl {
   setOpen(dialogOpen: boolean): void
   rerender(): void
@@ -327,8 +313,6 @@ function renderControlled(
   return control
 }
 
-/** A start refusal is only "unavailable" while the session stays
- * authenticated. */
 const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
   state: 'authenticated',
   principal: {
@@ -355,8 +339,6 @@ function unused(): never {
   throw new Error('the step-up dialog drives no such operation')
 }
 
-/** The dialog reads only getSnapshot, isStepUpShortfall,
- * startAuthenticatedFlow and abandonFlow. */
 function refusingStartSession(
   refusal: unknown,
   logout: () => Promise<void> = () => Promise.resolve(),
@@ -386,7 +368,6 @@ function refusingStartSession(
   }
 }
 
-/** The answer requests are collected for the assertions. */
 function scriptedPasswordSession(
   requests: { body: unknown }[] = [],
 ): AuthSession {
@@ -450,8 +431,6 @@ function scriptedPasswordSession(
   }
 }
 
-/** A username defaults to the unproved `self` way; any other kind to a
- * proved row. */
 function profileIdentifier(
   id: string,
   kind: string,
@@ -478,7 +457,6 @@ function profileIdentifier(
   }
 }
 
-/** `impersonating` makes the snapshot the impersonated account's. */
 function scriptedPhoneSession(
   requests: { body: unknown }[] = [],
   identifiers: readonly AuthnProfileIdentifier[] = [],
@@ -532,11 +510,6 @@ function scriptedPhoneSession(
 
 describe('StepUpChallenge', () => {
   it('stacks the dialog body with one theme spacing gap', async () => {
-    // The body's direct children -- the notice, the failure alert, the
-    // explanation and the step fields -- all sit theme.spacing(2) apart, so
-    // the alert has the same gap above and below instead of being flushed
-    // against a neighbour. jsdom applies the injected stylesheet, so the
-    // computed style is the rendered one. The default token unit is 8.
     mount(makeStepUpResponder())
     const dialog = await screen.findByRole('dialog')
     const body = dialog.querySelector<HTMLElement>('.MuiDialogContent-root')
@@ -551,11 +524,9 @@ describe('StepUpChallenge', () => {
     const { rig, onSuccess } = mount(makeStepUpResponder())
     const user = userEvent.setup()
 
-    // The factor step offers the flow's factor.
     await user.click(
       await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }),
     )
-    // The chosen factor is answered under the `factor` step.
     await waitFor(() =>
       expect(
         rig.calls.find(
@@ -565,8 +536,6 @@ describe('StepUpChallenge', () => {
     )
 
     await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
-    // Cancel is the action row's secondary control: a text button, not the
-    // primary (contained) confirm beside it.
     const cancel = screen.getByRole('button', {
       name: zhCN.mfa.stepUp.cancelLabel,
     })
@@ -580,9 +549,6 @@ describe('StepUpChallenge', () => {
     const answers = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
     )
-    // The code answer re-names the chosen factor: a challenge reply carries
-    // only the field the factor asks for, and the server re-reads the
-    // factor from it.
     expect(answers[1]?.body).toEqual({
       seq: 2,
       step: 'factor',
@@ -591,8 +557,6 @@ describe('StepUpChallenge', () => {
   })
 
   it("locks the identifier to the account's own login name", async () => {
-    // The dialog knows who is signed in: the password step shows the login
-    // name as a read-only value with the sentence that says what it is.
     bindFactors([
       { id: 'factor-1', kind: 'totp', status: 'active' },
     ])
@@ -604,7 +568,6 @@ describe('StepUpChallenge', () => {
       zhCN.flowStep.field.identifier,
     )
     expect(identifier).toHaveValue('ada')
-    // Read-only, not disabled: it stays readable and focusable.
     expect(identifier).toHaveAttribute('readonly')
     expect(identifier).not.toBeDisabled()
     expect(
@@ -620,7 +583,6 @@ describe('StepUpChallenge', () => {
     )
 
     await waitFor(() => expect(requests).toHaveLength(1))
-    // The answer carries the prefilled identifier, not an empty one.
     expect(requests[0]?.body).toMatchObject({
       seq: 1,
       step: 'answer',
@@ -629,9 +591,6 @@ describe('StepUpChallenge', () => {
   })
 
   it("locks a phone challenge to the account's one proved phone", async () => {
-    // A step-up may send a code only to a number the account proved. With
-    // exactly one, there is nothing to choose: it is shown read-only, and the
-    // answer carries it.
     bindFactors([
       { id: 'factor-1', kind: 'totp', status: 'active' },
     ])
@@ -646,7 +605,6 @@ describe('StepUpChallenge', () => {
 
     const phone = await screen.findByLabelText(zhCN.flowStep.field.phone)
     expect(phone).toHaveValue('+8613800138000')
-    // Read-only, not disabled: it stays readable and focusable.
     expect(phone).toHaveAttribute('readonly')
     expect(phone).not.toBeDisabled()
     expect(screen.getByText(zhCN.flowStep.lockedPhoneHelp)).toBeInTheDocument()
@@ -664,10 +622,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('leaves a phone challenge editable while impersonating', async () => {
-    // The snapshot names the impersonated account, but a step-up flow proves
-    // the initiator's own factor: locking the snapshot's phone would only be
-    // refused by the server, and the field must stay open for the operator's
-    // own number.
     bindFactors([
       { id: 'factor-1', kind: 'totp', status: 'active' },
     ])
@@ -689,8 +643,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('leaves a phone challenge editable when the account proved several phones', async () => {
-    // Several proved numbers are the person's to choose from: the dialog does
-    // not pick one, and the field stays free text.
     bindFactors([
       { id: 'factor-1', kind: 'totp', status: 'active' },
     ])
@@ -710,7 +662,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('does not lock a phone the account has not proved', async () => {
-    // A row without a proof is not a target the server accepts.
     bindFactors([
       { id: 'factor-1', kind: 'totp', status: 'active' },
     ])
@@ -726,9 +677,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('answers the ready step on its own and elevates once', async () => {
-    // The first-factor answer parks the flow on a ready state whose step is
-    // a bare confirmation. It collects nothing, so the dialog answers it
-    // without a second click.
     const { rig, onSuccess } = mount(makeReadyAfterFirstFactorResponder())
     const user = userEvent.setup()
 
@@ -753,18 +701,11 @@ describe('StepUpChallenge', () => {
       step: 'answer',
       input: { identifier: 'ada', password: 'secret' },
     })
-    // The automatic answer carries the ready step's own sequence number and
-    // the complete step, and it is the only completion sent.
     expect(answers[1]?.body).toEqual({ seq: 2, step: 'complete' })
     expect(answers).toHaveLength(2)
   })
 
   it('answers a first-factor password under the answer step when the account already holds factors', async () => {
-    // A factor registered during the session does not put the flow at the
-    // factor step: the server proves the password again first, then offers
-    // the factor. The dialog did not ask for a first-factor re-proof, yet
-    // this challenge is the first factor, so its answer travels under
-    // `answer` rather than `factor`.
     const { rig } = mount(makeFactorsRegisteredThisSessionResponder())
     const user = userEvent.setup()
 
@@ -789,9 +730,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('falls back to the confirmation button when the automatic answer is refused', async () => {
-    // A refused automatic answer must not leave the dialog on its
-    // placeholder: the failure code renders and the step's own confirmation
-    // button retries the same answer by hand.
     const warn = captureRefreshWarning()
     let completeAnswers = 0
     const { rig, onSuccess } = mount(
@@ -826,8 +764,6 @@ describe('StepUpChallenge', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
     expect(onSuccess).not.toHaveBeenCalled()
-    // The visible manual path: one confirmation button carrying the
-    // step's own submit label.
     const confirm = screen.getByRole('button', {
       name: zhCN.mfa.stepUp.confirmLabel,
     })
@@ -841,8 +777,6 @@ describe('StepUpChallenge', () => {
       { seq: 2, step: 'complete' },
       { seq: 2, step: 'complete' },
     ])
-    // The refused automatic answer is the expected refresh-failure
-    // diagnostic.
     expect(warn).toHaveBeenCalledWith(
       'access token refresh failed',
       expect.objectContaining({
@@ -854,9 +788,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('answers the ready step once per sequence across re-renders', async () => {
-    // The automatic answer is held open while the dialog re-renders: a
-    // second answer for the same sequence number would be a double submit,
-    // which the effect's per-sequence record must prevent.
     let release: (() => void) | null = null
     const held = new Promise<void>((resolve) => {
       release = resolve
@@ -894,8 +825,6 @@ describe('StepUpChallenge', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The one automatic answer is in flight; ordinary re-renders leave it
-    // alone.
     await waitFor(() => expect(completeAnswers).toBe(1))
     act(() => control.rerender())
     act(() => control.rerender())
@@ -910,8 +839,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('sends the host’s path as the flow’s return_to', async () => {
-    // A redirect method's round trip lands back on the page that opened the
-    // dialog, so that page reads the refusal.
     const { rig } = mount(makeStepUpResponder(), { returnPath: '/account' })
     await waitFor(() => {
       const start = rig.calls.find(
@@ -966,16 +893,12 @@ describe('StepUpChallenge', () => {
       const user = userEvent.setup()
 
       await screen.findByRole('button', { name: zhCN.mfa.factor.kind.sms })
-      // The factor step shows no challenge before the answer is asked for.
       expect(fake.widgets).toHaveLength(0)
 
       await user.click(
         screen.getByRole('button', { name: zhCN.mfa.factor.kind.sms }),
       )
 
-      // The answer waits on the proof: the block renders above the step and
-      // the step's own action gives way until the widget yields a
-      // single-use token.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
       expect(
@@ -987,7 +910,6 @@ describe('StepUpChallenge', () => {
         fake.token('token-1')
       })
 
-      // The proof arrives and the answer leaves by itself.
       await waitFor(() => {
         const body = rig.calls.find(
           (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
@@ -1024,10 +946,8 @@ describe('StepUpChallenge', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
     expect(onSuccess).not.toHaveBeenCalled()
-    // The flow is still open: the answer stayed parked on the code step.
     expect(screen.getByLabelText(zhCN.flowStep.codeLabel)).toBeTruthy()
     expect(rig.calls.length).toBeGreaterThan(0)
-    // The refused answer's 401 is the expected refresh-failure diagnostic.
     expect(warn).toHaveBeenCalledWith(
       'access token refresh failed',
       expect.objectContaining({
@@ -1036,15 +956,10 @@ describe('StepUpChallenge', () => {
         trace_id: 'trace-1',
       }),
     )
-    // Exactly one answer was refused; a duplicated answer would warn again.
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('holds the submit for the wait a throttled answer stated', async () => {
-    // The ratelimit layer refuses a throttled answer with 429 and a
-    // Retry-After. The dialog names the wait in its banner, keeps the step
-    // form but disables its submit until the interval elapses, then clears
-    // the failure and makes the step answerable again.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const user = userEvent.setup({
@@ -1066,18 +981,13 @@ describe('StepUpChallenge', () => {
       )
 
       const alert = await screen.findByRole('alert')
-      // The live region carries only the code's static sentence, so a wait
-      // that ticks does not re-announce the whole banner.
       expect(alert).toHaveTextContent(zhCN.errors.ratelimit.throttled)
-      // The countdown is a separate line, outside the alert and aria-live off.
       const countdown = screen.getByText(
         zhCN.throttle.countdown.replace('{{seconds}}', '30'),
       )
       expect(countdown.closest('[role="alert"]')).toBeNull()
       expect(countdown.getAttribute('aria-live')).toBe('off')
 
-      // One tick later the announced text is unchanged; only the countdown
-      // line has moved.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1_000)
       })
@@ -1088,9 +998,6 @@ describe('StepUpChallenge', () => {
         screen.getByText(zhCN.throttle.countdown.replace('{{seconds}}', '29')),
       ).toBeTruthy()
 
-      // The step stays on screen, but its submit is held until the wait
-      // elapses. It stays focusable, and the countdown line already on the
-      // page is its reason.
       const codeField = screen.getByLabelText(zhCN.flowStep.codeLabel)
       expect(codeField).toBeTruthy()
       const submit = screen.getByRole('button', {
@@ -1114,8 +1021,6 @@ describe('StepUpChallenge', () => {
           }),
         ).not.toHaveAttribute('aria-disabled', 'true')
       })
-      // The wait is spent, so the non-live countdown is gone and the banner
-      // stays the code's static sentence.
       expect(
         screen.queryByText(zhCN.throttle.countdown.replace('{{seconds}}', '1')),
       ).toBeNull()
@@ -1129,10 +1034,6 @@ describe('StepUpChallenge', () => {
 
   it('offers a restart when the answer finds its flow gone', async () => {
     captureRefreshWarning({ expected: true })
-    // A flow the deployment no longer holds (expired, or lost with the
-    // process that stored it) can never accept another answer, so the
-    // dialog drops the step form and offers a fresh flow instead of a
-    // submit that could only repeat the same refusal.
     const { rig } = mount(
       makeStepUpResponder({
         codeAnswer: () => errorResponse(401, 'authn.flow_invalid'),
@@ -1162,7 +1063,6 @@ describe('StepUpChallenge', () => {
     await waitFor(() => {
       expect(starts()).toBe(before + 1)
     })
-    // The fresh flow is parked on its own first step again.
     expect(
       await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }),
     ).toBeTruthy()
@@ -1181,14 +1081,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('names the missing second factor for a refused multi-factor requirement', async () => {
-    // The account has no active factor (the caller's own factor read says
-    // so) and its session already proves a fresh first factor, so a write
-    // asking for a fresh first factor would have been allowed: the refused
-    // requirement is multi-factor, which no step-up can reach without a
-    // factor. The dialog names the missing two-step verification, renders
-    // no link (these sections are the account settings surface, so nothing
-    // here navigates), starts no flow, and offers no re-login -- a new
-    // single-factor session would meet the same wall.
     const { rig } = mount(
       (call: RealCall) => {
         if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -1210,8 +1102,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('renders the host account route as a link beside the missing-factor hint', async () => {
-    // A host that has an account route passes accountHref; the dialog
-    // renders the one link, pointing where the host said.
     mount(
       (call: RealCall) => {
         if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -1233,12 +1123,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('re-proves the first factor with the session method when the window is past', async () => {
-    // An account opened by SMS sign-up has no factor, and its writes ask
-    // for a first factor proved within five minutes. Past the window the
-    // session view says so (auth_time older than the window), and the
-    // dialog starts a step-up named with the method that established the
-    // session -- sms -- whose answers travel under the flow's `answer`
-    // step.
     const { rig, onSuccess } = mount((call: RealCall) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
@@ -1277,7 +1161,6 @@ describe('StepUpChallenge', () => {
     const start = rig.calls.find((call) => call.path === FLOW_START)
     expect(start?.body).toEqual({ purpose: 'step-up', method: 'sms' })
     const answers = rig.calls.filter((call) => call.path === FLOW_ANSWER)
-    // A first-factor flow's answer is the `answer` step, not `factor`.
     expect(answers[0]?.body).toEqual({
       seq: 1,
       step: 'answer',
@@ -1318,16 +1201,7 @@ describe('StepUpChallenge', () => {
   })
 
   it('decides a reopening from a fresh session read, not the cached view', async () => {
-    // The first opening reads a first factor proved ten minutes ago, so it
-    // starts a first-factor flow. The dialog is then closed and the session
-    // re-established: the server now answers a just-authenticated session.
-    // Reopening must read again -- the cached view still says ten minutes
-    // and would start a second, spurious flow before the fresh answer
-    // switched the dialog to the enrollment hint. One QueryClient serves
-    // both openings, so the cache is the one a host would hold.
     let justAuthenticated = false
-    // The reopened opening's session read is held open, so the case can
-    // observe the dialog before the fresh answer lands.
     let unblockSession: (() => void) | null = null
     const sessionHeld = new Promise<void>((resolve) => {
       unblockSession = resolve
@@ -1375,12 +1249,9 @@ describe('StepUpChallenge', () => {
       )
     const control = renderControlled(rig.session, { onSuccess, onCancel })
 
-    // The first opening re-proves the first factor on its `answer` step.
     await screen.findByLabelText(zhCN.flowStep.codeLabel)
     expect(starts()).toHaveLength(1)
 
-    // Cancel closes the dialog; the session is re-established while it is
-    // closed.
     act(() => control.setOpen(false))
     await waitFor(() =>
       expect(
@@ -1392,24 +1263,16 @@ describe('StepUpChallenge', () => {
     )
     justAuthenticated = true
 
-    // The reopening must wait on its own read: while that read is in
-    // flight the dialog shows its starting placeholder and starts nothing
-    // -- the cached view would start a first-factor flow here at once.
     act(() => control.setOpen(true))
     expect(await screen.findByText(zhCN.mfa.stepUp.starting)).toBeTruthy()
     expect(starts()).toHaveLength(1)
 
-    // The fresh read lands: the requirement is multi-factor now, so the
-    // dialog names the missing second factor and still starts nothing.
     act(() => unblockSession?.())
     expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
     expect(starts()).toHaveLength(1)
   })
 
   it('keeps a parked verdict across the five-minute boundary', async () => {
-    // A dialog parked on the enrollment hint must not re-decide from the
-    // clock: a later render after the five-minute window would otherwise
-    // turn the same panel into a first-factor flow and start it.
     const openedAt = Date.now()
     const clock = vi.spyOn(Date, 'now').mockReturnValue(openedAt)
     try {
@@ -1433,13 +1296,11 @@ describe('StepUpChallenge', () => {
       const onCancel = vi.fn()
       const control = renderControlled(rig.session, { onSuccess, onCancel })
 
-      // Just inside the window: the refusal asks for multi-factor.
       expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
       expect(
         rig.calls.some((call) => call.path === FLOW_START),
       ).toBe(false)
 
-      // Six minutes later, a re-render reads the same frozen verdict.
       clock.mockReturnValue(openedAt + 6 * 60 * 1000)
       act(() => control.rerender())
       expect(screen.getByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
@@ -1452,13 +1313,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('reads the session view once per opening', async () => {
-    // One opening decides the refusal from one read of the caller's own
-    // session. The read is issued by the dialog's effect; the query itself
-    // is held back, because an enabled query beside that refetch issues a
-    // second GET whenever the cache already holds a view -- the default
-    // `cancelRefetch` replaces the in-flight read. The cold-cache first
-    // opening would dedupe to one either way; the warm-cache reopening is
-    // the one that shows the second read.
     const rig = makeRealClientRig((call: RealCall) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
@@ -1477,11 +1331,9 @@ describe('StepUpChallenge', () => {
         (call) => call.method === 'GET' && call.path === '/api/v1/auth/session',
       )
 
-    // A cold-cache opening reads once.
     expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
     expect(reads()).toHaveLength(1)
 
-    // A reopening reads once more, with the cache already holding a view.
     act(() => control.setOpen(false))
     act(() => control.setOpen(true))
     expect(await screen.findByText(zhCN.mfa.stepUp.noFactor)).toBeTruthy()
@@ -1489,9 +1341,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('offers a re-login when the session names no first-factor method', async () => {
-    // A social or enterprise sign-in establishes the session through a
-    // channel this dialog cannot re-prove, so no step-up is started and
-    // the only way out is a new sign-in.
     const { rig, onCancel } = mount((call: RealCall) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
         return jsonResponse(200, { factors: [] })
@@ -1527,9 +1376,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('renders a 400 start refusal as an ordinary error when a factor is registered', async () => {
-    // A 400 is not, by itself, "no factor to elevate with": the account
-    // has an active factor here, so the dialog shows the refusal's own
-    // code instead of either of the two explanations.
     bindFactors([ACTIVE_FACTOR])
     mountSession(
       refusingStartSession({
@@ -1547,9 +1393,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('treats a 401 start refusal on an established session as unavailable', async () => {
-    // The account has factors, but none whose methods may strengthen this
-    // session: the start answers 401 insufficient_user_authentication and
-    // the session stays authenticated -- a refusal no step can satisfy.
     bindFactors([ACTIVE_FACTOR])
     mountSession(
       refusingStartSession({
@@ -1570,9 +1413,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('records the operation before ending the session on the re-login exit', async () => {
-    // The unavailable branch offers "sign in to continue": the caller must
-    // record the operation before the cancel clears the gate and the logout
-    // ends the session, so the new sign-in can re-issue it.
     bindFactors([ACTIVE_FACTOR])
     const order: string[] = []
     const logout = vi.fn(() => {
@@ -1600,17 +1440,11 @@ describe('StepUpChallenge', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
     )
-    // The resume record is written first, then the gate clears, then the
-    // session ends.
     expect(order).toEqual(['relogin', 'cancel', 'logout'])
     expect(logout).toHaveBeenCalledTimes(1)
   })
 
   it('records the operation before ending the session on the SSO re-login exit', async () => {
-    // The SSO refusal is answered by the same exit: a sign-in through the
-    // tenant's identity provider resumes the refused write, so the caller
-    // records it before the cancel clears the gate and the logout ends the
-    // session.
     const order: string[] = []
     const logout = vi.fn(() => {
       order.push('logout')
@@ -1632,11 +1466,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('renders a start failure that is not a refusal as an ordinary banner', async () => {
-    // A 503 is not the deployment declining to raise the session -- the
-    // session is established, but the failure is not an elevation refusal
-    // (not a 401 shortfall), so it must not be merged into the unavailable
-    // phase: the dialog shows its resolved code text and still offers the
-    // flow.
     bindFactors([ACTIVE_FACTOR])
     mountSession(
       refusingStartSession({
@@ -1656,8 +1485,6 @@ describe('StepUpChallenge', () => {
   })
 })
 
-/** A responder whose first answer never settles until the case releases it:
- * the dialog stays on the factor step with its answer in flight. */
 function hangingFactorAnswerResponder(): {
   readonly respond: RealResponder
   readonly release: () => void
@@ -1696,10 +1523,6 @@ function hangingFactorAnswerResponder(): {
 
 describe('StepUpChallenge held step', () => {
   it('keeps the activated factor busy while the step cancel stays available', async () => {
-    // The option that started the answer reports busy and keeps focus. The
-    // cancel beside it is the operator's way out at any time: the Escape key
-    // closes the dialog the same way, as the console's own challenge does,
-    // so an answer in flight never holds the exit.
     const responder = hangingFactorAnswerResponder()
     const { onCancel } = mount(responder.respond)
     const user = userEvent.setup()
@@ -1730,8 +1553,6 @@ describe('StepUpChallenge held step', () => {
   })
 
   it('keeps the step cancel available while the answer waits on a human proof', async () => {
-    // A send the gate holds for a proof is not an answer in flight: the
-    // step's own action waits, and the cancel beside it stays the way out.
     const fake = installFakeTurnstile()
     try {
       const respond: RealResponder = (call) => {
@@ -1768,8 +1589,6 @@ describe('StepUpChallenge held step', () => {
       await user.click(
         await screen.findByRole('button', { name: zhCN.mfa.factor.kind.sms }),
       )
-      // The answer waits on the proof: the block renders above the step and
-      // no answer has left.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(
         rig.calls.filter(
@@ -1791,10 +1610,6 @@ describe('StepUpChallenge held step', () => {
   })
 
   it('lands focus on the dialog title when the answer replaces the step', async () => {
-    // The answer settles, the flow parks on its next step, and the control
-    // that gave the answer leaves the document. Focus follows into the
-    // dialog's own title instead of falling to the body for the focus trap
-    // to pull back onto the paper.
     const responder = hangingFactorAnswerResponder()
     mount(responder.respond)
     const user = userEvent.setup()
@@ -1818,8 +1633,6 @@ describe('StepUpChallenge held step', () => {
   })
 
   it('does not take focus back from where the operator put it', async () => {
-    // The landing belongs only to a focus the replacement took: an operator
-    // who moved focus elsewhere while the answer was in flight keeps it.
     const responder = hangingFactorAnswerResponder()
     mount(responder.respond)
     const user = userEvent.setup()

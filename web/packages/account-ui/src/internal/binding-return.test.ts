@@ -1,8 +1,5 @@
 /**
- * The binding return seam: the link flow's `return_to` carries the page the
- * binding started from, and the callback reads it back only when it names a
- * site-internal path. Anything else is dropped, so a crafted value cannot
- * turn the callback into a navigation elsewhere.
+ * The binding return seam checks the return_to composition and the callback's site-path read.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -53,9 +50,6 @@ describe('withBindingReturn', () => {
   })
 
   it('writes the return parameter before a fragment the callback carries', () => {
-    // A fragment is not part of the query. Appending the parameter after
-    // the `#` would put it inside the fragment, where the callback's query
-    // reader never sees it.
     expect(
       withBindingReturn('/account/callback#offline', '/account/security'),
     ).toBe('/account/callback?return=%2Faccount%2Fsecurity#offline')

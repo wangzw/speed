@@ -1,6 +1,5 @@
 /**
- * ProfileSection checks the display-name surface over the profile read and
- * the one-field PATCH.
+ * ProfileSection checks the display-name surface over the profile read and PATCH.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -21,7 +20,6 @@ import { ProfileSection } from './ProfileSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** Session-free, so a raw refusal surfaces directly. */
 function mount(respond: RealResponder) {
   const rig = makeRealClientRigWithoutSession(respond)
   rig.store.set('access-1')
@@ -96,7 +94,6 @@ describe('ProfileSection', () => {
         return jsonResponse(200, profileBody({ display_name: 'Ada' }))
       }
       if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
-        // The callback reports the answer, not the typed value.
         return jsonResponse(200, { display_name: 'Grace Hopper' })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -153,7 +150,6 @@ describe('ProfileSection', () => {
     await user.type(field, 'Grace')
     await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
 
-    // Read-only rather than disabled: a native disable drops focus to the body.
     await waitFor(() => expect(releaseRefetch).not.toBeNull())
     expect(field).toHaveAttribute('readonly')
     expect(field).not.toHaveAttribute('disabled')
@@ -203,7 +199,6 @@ describe('ProfileSection', () => {
     const user = userEvent.setup()
 
     const save = await screen.findByRole('button', { name: zhCN.profile.save })
-    // Unavailable, not natively disabled, so it stays focusable and says why.
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).not.toHaveAttribute('disabled')
     expect(save).not.toHaveAttribute('aria-busy')
@@ -258,7 +253,6 @@ describe('ProfileSection', () => {
     const save = screen.getByRole('button', { name: zhCN.profile.save })
     await user.click(save)
 
-    // Never natively disabled: the control and field keep focus.
     await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'))
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).not.toHaveAttribute('disabled')
@@ -405,7 +399,6 @@ describe('ProfileSection', () => {
     await user.type(field, 'Grace')
     await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
 
-    // Not gated: the refusal's text lands in the region and no dialog opens.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
     const saveButton = screen.getByRole('button', { name: zhCN.profile.save })

@@ -4,11 +4,9 @@
 
 import type { AuthSession } from '@speed/auth-core'
 
-/**
- * Runs `write` inside an identity-transition window and, on success, `settle`
- * with its answer. The window closes after `settle` resolves or either
- * rejects; the result is `settle`'s.
- */
+// Runs `write` inside an identity-transition window and, on success, `settle`
+// with its answer. The window closes after either rejects; the result is
+// `settle`'s.
 export async function runIdentityTransition<TWrite, TResult>(
   session: Pick<AuthSession, 'beginIdentityTransition'>,
   write: () => Promise<TWrite>,

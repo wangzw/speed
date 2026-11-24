@@ -1,6 +1,5 @@
 /**
- * AppearanceSection: the visual-theme surface of the account page, a
- * controlled select over the host's presets.
+ * AppearanceSection: the controlled theme-preset picker on the account page.
  */
 
 import MenuItem from '@mui/material/MenuItem'
@@ -10,14 +9,16 @@ import { useAccountUiTranslation } from './internal/translation.js'
 
 /** One preset the host offers: its id and its host-translated label. */
 export interface ThemePresetChoice {
+  /** The preset's id, matched against the section's selected value and
+   * reported by `onChange`. */
   readonly id: string
   /** The choice's visible name, translated by the host. */
   readonly label: string
 }
 
 /**
- * The host owns the preset list and the current selection and receives the
- * chosen id; the section holds no state.
+ * The host owns the preset list and the current selection; the section
+ * holds no state.
  */
 export interface AppearanceSectionProps {
   /** The preset choices the host offers, in display order. */
@@ -49,8 +50,7 @@ export function AppearanceSection({
         fullWidth
         sx={{ maxWidth: '24rem' }}
         slotProps={{
-          // displayEmpty keeps the control rendering when the value matches
-          // no option (an empty preset list); shrink keeps the label above it.
+          // displayEmpty keeps the select rendering when no option matches the value.
           select: {
             displayEmpty: true,
             slotProps: {

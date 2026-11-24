@@ -1,6 +1,5 @@
 /**
- * SocialBindingsSection checks the bound identities, provider resolution, the
- * unlink route and the add area's link flow.
+ * SocialBindingsSection checks bound identities, provider resolution, the unlink route and the link flow.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,7 +37,6 @@ const LINK_FLOW_PATH = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 const ACCOUNT_CALLBACK = '/account/callback'
 
-/** One active factor, as the step-up challenge's own factor read answers it. */
 const ACTIVE_FACTOR = {
   id: 'factor-1',
   kind: 'totp',
@@ -47,8 +45,6 @@ const ACTIVE_FACTOR = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-/** A fresh password-established session view, as the no-factor branch of the
- * step-up challenge reads it. */
 function sessionView(): Record<string, unknown> {
   return {
     authenticated: true,
@@ -60,7 +56,6 @@ function sessionView(): Record<string, unknown> {
   }
 }
 
-/** The deployment's discovery document, carrying redirect methods. */
 function methodsDoc(
   methods: readonly {
     name: string
@@ -104,29 +99,24 @@ function profile(links: readonly Record<string, unknown>[]): Record<string, unkn
 
 const WECHAT_AUTHORIZE_URL = 'https://open.weixin.qq.com/connect/qrconnect?appid=x'
 
-/** The bind action of the provider row whose title is `label`. */
 function bindButton(label: string): HTMLElement {
   return screen.getByRole('button', {
     name: zhCN.bindings.bindAriaWithProvider.replace('{{provider}}', label),
   })
 }
 
-/** Waits for the provider row, then returns its bind action. */
 async function findBindButton(label: string): Promise<HTMLElement> {
   return screen.findByRole('button', {
     name: zhCN.bindings.bindAriaWithProvider.replace('{{provider}}', label),
   })
 }
 
-/** The unlink action of the bound row whose provider identity is `label`. */
 function unbindButton(label: string): HTMLElement {
   return screen.getByRole('button', {
     name: zhCN.bindings.unbindAriaWithProvider.replace('{{provider}}', label),
   })
 }
 
-/** One answer held open, so a case can assert the control's in-flight state
- * before the write settles. */
 function deferredResponse(): {
   readonly response: Promise<Response>
   readonly release: (response: Response) => void
@@ -157,11 +147,6 @@ describe('SocialBindingsSection', () => {
         return jsonResponse(
           200,
           methodsDoc([
-            // The bound provider resolves through the descriptor's
-            // binding_providers, not through a matching method name: the
-            // method is called "github-org", and a section that matched by
-            // name alone would render the closed vocabulary's "GitHub" on
-            // the row and offer the channel again in the add area.
             {
               name: 'github-org',
               label: 'GitHub Org',
@@ -185,10 +170,6 @@ describe('SocialBindingsSection', () => {
     expect(
       await screen.findByRole('heading', { name: zhCN.bindings.title }),
     ).toBeTruthy()
-    // The bound row's provider label comes from the descriptor, not from
-    // the closed vocabulary ("GitHub"): a row rendering the vocabulary's
-    // word here would be indistinguishable from one that never resolved
-    // the descriptor at all.
     expect(await screen.findByText('GitHub Org')).toBeTruthy()
     expect(screen.getByText('ada@example.test')).toBeTruthy()
     expect(
@@ -202,10 +183,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('attributes a stored open-id value to the method through its namespace prefix', async () => {
-    // A WeChat identity without a union id is stored under
-    // "wechat-openid:<app id>". The method declares that namespace as a
-    // binding-provider prefix, so the value resolves to it without the
-    // client knowing the storage naming.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -236,12 +213,7 @@ describe('SocialBindingsSection', () => {
       />,
     )
 
-    // The descriptor's own label names the row; the stored value is not a
-    // sign-in mode's name, so no mode-keyed wording applies.
     expect(await screen.findByText('WeChat')).toBeTruthy()
-    // The method is already bound through the prefix, so the add area does
-    // not offer it again (the mode-keyed label names the button it would
-    // have carried).
     expect(
       screen.queryByRole('button', {
         name: zhCN.bindings.provider.wechatWeb,
@@ -265,15 +237,11 @@ describe('SocialBindingsSection', () => {
         return jsonResponse(
           200,
           methodsDoc([
-            // Declaring a namespace replaces the name default: a
-            // "github" value is not this method's binding even though the
-            // method is called "github".
             {
               name: 'github',
               label: 'GitHub Enterprise',
               bindingProviders: ['gh:'],
             },
-            // No declaration: the method's name is its binding provider.
             { name: 'gitlab', label: 'GitLab' },
           ]),
         )
@@ -289,12 +257,9 @@ describe('SocialBindingsSection', () => {
       />,
     )
 
-    // The uncovered "github" value falls back to the closed vocabulary.
     expect(
       await screen.findByText(zhCN.bindings.provider.github),
     ).toBeTruthy()
-    // The undeclared method claims its own name, so its row carries the
-    // descriptor label and its channel is withheld.
     expect(screen.getByText('GitLab')).toBeTruthy()
     expect(
       bindButton('GitHub Enterprise'),
@@ -304,9 +269,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('gives two sign-in modes that share a descriptor label distinct accessible names', async () => {
-    // Both WeChat methods describe themselves as "WeChat". The package's
-    // mode-keyed wording must outrank the descriptor label, or the two
-    // buttons would be announced identically.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profile([]))
@@ -351,8 +313,6 @@ describe('SocialBindingsSection', () => {
         zhCN.bindings.provider.wechatOfficialAccount,
       ),
     })
-    // Two buttons, two distinct names: neither is reachable by the shared
-    // descriptor label alone.
     expect(web).not.toBe(officialAccount)
     expect(
       screen.queryAllByRole('button', {
@@ -373,8 +333,6 @@ describe('SocialBindingsSection', () => {
     }
     const rig = makeRealClientRig(respond)
     rig.store.set('access-1')
-    // No redirect method and no bound links: the section's content is the
-    // empty placeholder alone.
     renderWithProviders(
       <SocialBindingsSection
         session={rig.session}
@@ -383,9 +341,6 @@ describe('SocialBindingsSection', () => {
     )
 
     const emptyTitle = await screen.findByText(zhCN.bindings.empty.title)
-    // The empty placeholder is a status, not a section: its title must not
-    // enter the page heading outline, and the placeholder is a polite status
-    // region instead.
     expect(
       screen.queryByRole('heading', { name: zhCN.bindings.empty.title }),
     ).toBeNull()
@@ -443,13 +398,7 @@ describe('SocialBindingsSection', () => {
     await waitFor(() =>
       expect(screen.queryByText('ada@example.test')).toBeNull(),
     )
-    // The unbound provider's row is gone; its channel is now offered
-    // again in the add area (the bound-provider row's unlink action is
-    // gone with it). The confirm dialog's exit transition must finish
-    // before the page behind it is queryable by role again.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // The landed unbind confirms itself in the standing status region rather
-    // than succeeding silently, and the confirmation names the provider.
     expect(zhCN.bindings.unlinked).toContain('{{provider}}')
     expect(
       await screen.findByText(
@@ -527,15 +476,7 @@ describe('SocialBindingsSection', () => {
       within(dialog).getByRole('button', { name: zhCN.bindings.confirmLabel }),
     )
 
-    // The confirm dialog closes when the mutation settles, but the attempt
-    // is still in flight through the refetch that follows it: the row's
-    // action must stay busy, not re-arm for a second DELETE against the
-    // row the first one already unlinked. It stays focusable for the same
-    // window -- a native disable here would drop the focus the dialog is
-    // about to give back to it.
     await waitFor(() => expect(refetchPending).toBe(true))
-    // Wait out the dialog's exit transition: while it runs the page behind
-    // it is hidden from the accessibility tree and role queries.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(rowUnlink()).toHaveAttribute('aria-disabled', 'true')
     expect(rowUnlink()).toHaveAttribute('aria-busy', 'true')
@@ -548,9 +489,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('holds one result slot for the unlink and add-area writes', async () => {
-    // One list, one scope: the unlink success and the add area's refused
-    // start report through the same slot, so they can never stand side by
-    // side -- the attempt that settles last replaces the one before it.
     let unlinked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -606,21 +544,14 @@ describe('SocialBindingsSection', () => {
     )
     expect(await screen.findByText(unlinkedText)).toBeTruthy()
 
-    // Now drive the same scope to a failure from the add area.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await user.click(bindButton('GitHub'))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
-    // The failure is the slot's one result: the earlier unlink confirmation
-    // was cleared when this attempt started and does not stand beside it.
     expect(screen.queryByText(unlinkedText)).toBeNull()
   })
 
   it('keeps the unbind confirmation when the list empties', async () => {
-    // The only binding goes and the deployment offers no channel to replace
-    // it, so the section falls back to its empty placeholder. The confirmation
-    // still names the provider: a settled result must not vanish with the
-    // rows it replaced.
     let unlinked = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -673,8 +604,6 @@ describe('SocialBindingsSection', () => {
       ),
     )
     expect(confirmation).toBeTruthy()
-    // The confirmation sits below the list (and the empty placeholder that
-    // replaced it), as the ui-kit rule asks for a control group's region.
     expect(
       screen
         .getByText(zhCN.bindings.empty.title)
@@ -710,8 +639,6 @@ describe('SocialBindingsSection', () => {
     )
     const user = userEvent.setup()
 
-    // No descriptor matches "github", so the row falls back to the
-    // family's closed-set wording.
     await user.click(
       await screen.findByRole('button', {
         name: zhCN.bindings.unbindAriaWithProvider.replace(
@@ -729,14 +656,10 @@ describe('SocialBindingsSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.last_login_method)
-    // The refusal leaves the row in place.
     expect(screen.getByText(zhCN.bindings.provider.github)).toBeTruthy()
   })
 
   it('opens the step-up challenge when the unlink asks for a fresh authentication', async () => {
-    // The unlink route requires a fresh local multi-factor authentication. An
-    // account that holds an active factor can satisfy that; the refusal is
-    // handed to the shared challenge instead of only rendering its code.
     captureRefreshWarning()
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -793,16 +716,11 @@ describe('SocialBindingsSection', () => {
       }),
     )
 
-    // The challenge opens on the factor step, ready for the factor the owner
-    // holds. The refusal is not also settled as a failure in the section's
-    // region: the attempt was handed to the challenge. The scan includes
-    // hidden nodes because an open dialog hides the page behind it.
     expect(
       await screen.findByRole('dialog', { name: zhCN.mfa.stepUp.title }),
     ).toBeTruthy()
     expect(await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp })).toBeTruthy()
     expect(screen.queryAllByRole('alert', { hidden: true })).toHaveLength(0)
-    // No automatic replay: the unlink waits for a won challenge.
     expect(
       rig.calls.filter(
         (call) =>
@@ -906,8 +824,6 @@ describe('SocialBindingsSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
 
-    // The won challenge replays the refused unlink, which now lands and names
-    // the provider it removed.
     expect(
       await screen.findByText(
         zhCN.bindings.unlinked.replace(
@@ -927,11 +843,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('shows the shared no-factor explanation when the account holds no factor', async () => {
-    // An account with no active factor cannot satisfy a local multi-factor
-    // requirement. The shared challenge names the missing two-step
-    // verification, starts no flow and offers no re-login here: a fresh
-    // single-factor session would meet the same wall. The surface inherits
-    // that shape unchanged.
     captureRefreshWarning()
     const rig = makeRealClientRig((call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -995,9 +906,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('opens the step-up challenge when starting a bind asks for a fresh authentication', async () => {
-    // Starting a link flow asks for the same fresh local multi-factor an
-    // unlink does. The shortfall opens the shared challenge with this method
-    // remembered, and a won challenge starts this one bind flow again.
     captureRefreshWarning()
     const URL = 'https://provider.example/authorize'
     let elevated = false
@@ -1072,7 +980,6 @@ describe('SocialBindingsSection', () => {
     const user = userEvent.setup()
 
     await user.click(await findBindButton('WeChat'))
-    // The refusal opens the shared challenge rather than settling as a banner.
     await user.click(await screen.findByRole('button', { name: zhCN.mfa.factor.kind.totp }))
     await user.type(
       await screen.findByLabelText(zhCN.flowStep.codeLabel),
@@ -1082,17 +989,11 @@ describe('SocialBindingsSection', () => {
       screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
     )
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // The bind flow started once, was refused, and the won challenge started
-    // it again -- never a second, different call.
     await waitFor(() => expect(reports).toEqual([URL]))
     expect(linkStarts).toHaveLength(2)
   })
 
   it('records the bind it must resume when the re-login exit is chosen', async () => {
-    // The deployment cannot raise this session with the account's factors, so
-    // the challenge offers "sign in to continue". Choosing it records the
-    // page and the bind operation before the session ends, so the surface can
-    // re-issue that bind after the new sign-in.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
         return jsonResponse(200, AUTHENTICATED_SESSION)
@@ -1113,8 +1014,6 @@ describe('SocialBindingsSection', () => {
         return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
       }
       if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
-        // Both the bind start and the step-up start are refused: no factor
-        // may strengthen this session, so no step can satisfy the challenge.
         return errorResponse(401, 'authn.insufficient_user_authentication')
       }
       if (call.method === 'POST' && call.path === '/api/v1/auth/logout') {
@@ -1152,8 +1051,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('re-issues the recorded bind when the page mounts after the new sign-in', async () => {
-    // The surface mounted again on the page the record names: it starts the
-    // recorded bind once, without a click, and consumes the record.
     rememberStepUpResume('user-1', 'social-bindings', '/account/security', {
       kind: 'authorize',
       method: 'wechat',
@@ -1235,8 +1132,6 @@ describe('SocialBindingsSection', () => {
       />,
     )
 
-    // The section never starts a flow it does not own, and the record stays
-    // for the page it names.
     await waitFor(() =>
       expect(
         rig.calls.some(
@@ -1295,9 +1190,6 @@ describe('SocialBindingsSection', () => {
     const start = rig.calls.find(
       (call) => call.method === 'POST' && call.path === LINK_FLOW_PATH,
     )
-    // The link flow starts with the purpose, the method name and the
-    // host's callback route as the top-level return_to; the section reads
-    // the URL off the redirect step, it does not navigate.
     expect(start?.body).toEqual({
       purpose: 'link',
       method: 'wechat',
@@ -1306,10 +1198,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('carries the source page inside the link flow return_to', async () => {
-    // A binding starts from an account pane, but the provider lands the
-    // browser on the host's callback route. The source page rides inside the
-    // flow's return_to as the callback route's `return` query, so the
-    // callback can send the viewer back where they started.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profile([]))
@@ -1357,9 +1245,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('drops a source that names another origin from the return_to', async () => {
-    // Only a site-internal path is carried. A source value that names an
-    // origin is dropped rather than sent, and the callback uses its own safe
-    // landing.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(200, profile([]))
@@ -1418,8 +1303,6 @@ describe('SocialBindingsSection', () => {
         )
       }
       if (call.method === 'GET' && call.path === METHODS_PATH) {
-        // The deployment offers two methods this family has no wording
-        // for; the add area still uses their own labels (or names).
         return jsonResponse(
           200,
           methodsDoc([
@@ -1439,10 +1322,6 @@ describe('SocialBindingsSection', () => {
       />,
     )
 
-    // A bound value no descriptor matches renders the family's own
-    // wording for a name it knows (the WeChat pair, mode-keyed) and the
-    // generic other label otherwise; the add area falls back to the
-    // method name, never a raw bundle key.
     expect(
       await screen.findByText(zhCN.bindings.provider.wechatWeb),
     ).toBeTruthy()
@@ -1513,12 +1392,6 @@ describe('SocialBindingsSection', () => {
   })
 
   it('holds the session through the credential rotation an unlink performs', async () => {
-    // The unlink replaces the requesting session's credential. The profile
-    // refetch that follows the write is answered 401, standing for a read
-    // that left under the outgoing credential. The surface opens an
-    // identity-transition window around the write, so the anonymous answer
-    // is discarded: the snapshot stays authenticated and no sign-out edge is
-    // observed. Without the window the same script ends the session.
     const warn = captureRefreshWarning()
     let rotated = false
     const respond: RealResponder = (call: RealCall) => {
@@ -1595,11 +1468,6 @@ describe('SocialBindingsSection', () => {
 
   it('releases the window a refused unlink opened', async () => {
     captureRefreshWarning({ expected: true })
-    // A refused unlink must not leave its window open: the next genuine
-    // anonymous read has to end the session. The unlink is refused 409, so
-    // no silent leg runs; once the failure is on screen the window is
-    // closed, and a fresh 401 read turns the snapshot anonymous with one
-    // sign-out edge. A window still open would discard that answer.
     let gone = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
@@ -1665,7 +1533,6 @@ describe('SocialBindingsSection', () => {
     await screen.findByText(zhCN.errors.authn.last_login_method)
     expect(rig.transitionBegins()).toBe(1)
 
-    // A fresh 401 read now settles the true state.
     gone = true
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
@@ -1707,8 +1574,6 @@ describe('SocialBindingsSection', () => {
       await queryClient.invalidateQueries()
     })
 
-    // The failed refresh keeps the settled rows on screen under the stale
-    // notice rather than replacing them with the error placeholder.
     expect(screen.getByText('ada@example.test')).toBeTruthy()
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.stale.description)
@@ -1720,7 +1585,6 @@ describe('SocialBindingsSection', () => {
   })
 
   describe('focusable initiating controls', () => {
-    /** A profile read that answers the held rows, minus the unlinked ids. */
     function linksWithout(
       unlinked: readonly string[],
       rows: readonly Record<string, unknown>[],
@@ -1784,10 +1648,6 @@ describe('SocialBindingsSection', () => {
       )
 
       await waitFor(() => expect(refetchPending).toBe(true))
-      // The confirmation closes when the mutation settles; the attempt is
-      // still in flight through the refetch. Focus comes back to the row's
-      // own action and stays there: the action reports itself busy instead
-      // of going natively disabled.
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
       const rowAction = unbindButton(label)
       await waitFor(() => expect(rowAction).toHaveFocus())
@@ -1852,8 +1712,6 @@ describe('SocialBindingsSection', () => {
         }),
       )
 
-      // The refusal leaves the row in place, so the action re-arms and the
-      // dialog hands focus back to it rather than dropping it to the body.
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
       expect(
         await screen.findByText(zhCN.errors.authn.last_login_method),
@@ -1912,9 +1770,6 @@ describe('SocialBindingsSection', () => {
         }),
       )
 
-      // The unlinked row leaves the document with the control that started
-      // the write. Focus goes to the same action on the next row, never to
-      // the document body.
       await waitFor(() =>
         expect(screen.queryByText(zhCN.bindings.provider.github)).toBeNull(),
       )
@@ -1945,7 +1800,6 @@ describe('SocialBindingsSection', () => {
         }
         throw new Error(`unexpected ${call.method} ${call.path}`)
       }
-      // The second read answers the first row alone, so the last row leaves.
       let reads = 0
       const rig = makeRealClientRig((call: RealCall) => {
         if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -2044,8 +1898,6 @@ describe('SocialBindingsSection', () => {
         }),
       )
 
-      // No row and no channel remain, so there is no neighbour action: the
-      // section's own container takes focus, never the document body.
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
       const region = screen.getByRole('group', {
         name: zhCN.bindings.title,
@@ -2110,8 +1962,6 @@ describe('SocialBindingsSection', () => {
 
       await waitFor(() => expect(refetchPending).toBe(true))
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-      // The operator moves focus to another control while the removal is
-      // still in flight. The landing must leave that place alone.
       const elsewhere = await findBindButton('WeChat')
       elsewhere.focus()
       await act(async () => {
@@ -2183,9 +2033,6 @@ describe('SocialBindingsSection', () => {
       await waitFor(() => expect(refetchPending).toBe(true))
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-      // Only the row whose unlink started reports busy. Its sibling row and
-      // the add area's channel buttons are held for the same scope: held
-      // without a reason, and activation sends nothing.
       const started = unbindButton(zhCN.bindings.provider.github)
       const sibling = unbindButton(zhCN.bindings.provider.feishu)
       const channel = bindButton('WeChat')
@@ -2271,9 +2118,6 @@ describe('SocialBindingsSection', () => {
       await user.click(wechat)
       await waitFor(() => expect(linkStarts).toHaveLength(1))
 
-      // The channel whose flow is starting reports busy; the other channel
-      // and the row's unlink action are held without a reason for the same
-      // scope, and activating either sends nothing.
       expect(wechat).toHaveAttribute('aria-busy', 'true')
       expect(wechat).toHaveAttribute('aria-disabled', 'true')
       expect(github).toHaveAttribute('aria-disabled', 'true')

@@ -10,29 +10,12 @@ import { useAccountUiErrorText } from './error-text.js'
 import { useAccountUiTranslation } from './translation.js'
 
 export interface InlineErrorProps {
-  /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
-  /**
-   * The wait a throttled answer stated, in whole seconds. Given, a countdown
-   * line renders outside the live region.
-   */
   readonly retryAfterSeconds?: number
-  /**
-   * The id the countdown line carries, so a control held by the same wait
-   * can reach it through `aria-describedby` as its reason.
-   */
   readonly countdownId?: string
-  /**
-   * Text rendered instead of the code's resolved sentence, for a surface
-   * that words this particular code for itself. The banner shell, its role
-   * and its announcement stay the shared ones.
-   */
   readonly message?: string
 }
 
-/**
- * The surface's whole-attempt failure banner, one role="alert" per error.
- */
 export function InlineError({
   code,
   retryAfterSeconds,

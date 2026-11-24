@@ -1,6 +1,5 @@
 /**
- * ProfileSection in a real browser: the in-flight control and field keep focus,
- * which a native disable would drop.
+ * ProfileSection in a real browser, where in-flight focus is visible.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -20,8 +19,6 @@ import { ProfileSection } from './ProfileSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** A promise the case settles by hand, so one request is held in flight
- * across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -33,8 +30,6 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** Mounts the section over the real client and holds the PATCH open until
- * the case settles it. */
 function mountHeldWrite(inline: boolean) {
   const held = deferred<Response>()
   let stored = 'Ada'
@@ -68,12 +63,9 @@ describe('ProfileSection writes in Chromium', () => {
     const save = screen.getByRole('button', { name: zhCN.profile.save })
 
     await user.click(save)
-    // The control that started the write keeps focus through it. A native
-    // `disabled` would have moved it to the document body already.
     await waitFor(() => expect(save).toHaveFocus())
     expect(save).toHaveAttribute('aria-busy', 'true')
     expect(save).toHaveAttribute('aria-disabled', 'true')
-    // The field is locked but stays focusable and unchangeable.
     expect(field).toHaveAttribute('readonly')
     expect(field).not.toHaveAttribute('disabled')
 
@@ -84,8 +76,6 @@ describe('ProfileSection writes in Chromium', () => {
       expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
     )
 
-    // The landing makes the field match the stored name, so the save turns
-    // unavailable with its reason -- and keeps the focus it never lost.
     await waitFor(() => expect(save).not.toHaveAttribute('aria-busy'))
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).toHaveAccessibleDescription(zhCN.profile.saveUnavailable)
@@ -106,8 +96,6 @@ describe('ProfileSection writes in Chromium', () => {
     field.focus()
     await user.keyboard('{Enter}')
 
-    // The field started the write: it stays focused and read-only, where a
-    // native `disabled` would have dropped focus to the body.
     await waitFor(() => expect(field).toHaveAttribute('readonly'))
     expect(field).toHaveFocus()
     expect(field).not.toHaveAttribute('disabled')
@@ -134,7 +122,6 @@ describe('ProfileSection writes in Chromium', () => {
     await user.click(save)
     await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'))
 
-    // The operator deliberately moves into the locked field mid-write.
     field.focus()
     expect(field).toHaveFocus()
 
@@ -143,7 +130,6 @@ describe('ProfileSection writes in Chromium', () => {
     })
     await waitFor(() => expect(save).not.toHaveAttribute('aria-busy'))
 
-    // The landing does not pull focus back to the save button.
     expect(field).toHaveFocus()
     expect(save).not.toHaveFocus()
   })

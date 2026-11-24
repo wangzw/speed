@@ -1,6 +1,5 @@
 /**
- * The factor row's remove action, driven in a real Chromium: the row leaves,
- * the group's action stays a plain add, and the success names the row.
+ * MfaSection in a real browser: the factor row's remove action and its success text.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -24,13 +23,10 @@ const FACTORS_PATH = '/api/v1/auth/factors'
 const METHODS_PATH = '/api/v1/auth/methods'
 const FACTOR_PATH = '/api/v1/auth/factors/f-passkey'
 
-/** The one enabled passkey row the case removes. */
 const ROW_NAME = 'This Mac'
 
-/** The single spacing token an action row puts between adjacent controls. */
 const SPACING_UNIT = defaultTokens.spacing.unit
 
-/** One pixel of tolerance for subpixel layout rounding. */
 const TOLERANCE = 0.5
 
 describe('MfaSection row overflow menu', () => {
@@ -79,14 +75,11 @@ describe('MfaSection row overflow menu', () => {
     const user = userEvent.setup()
 
     const method = zhCN.mfa.factor.kind.webauthn
-    // The group already holds an enabled passkey, and its action still reads
-    // as a plain add.
     const initialAdd = await screen.findByRole('button', {
       name: zhCN.mfa.addAria.replace('{{method}}', method),
     })
     expect(initialAdd.textContent).toBe(zhCN.mfa.action.add)
 
-    // The removal is reached through the row's own remove action.
     const row = (await screen.findByText(ROW_NAME, { exact: true })).closest('li')
     expect(row).not.toBeNull()
     await user.click(
@@ -102,8 +95,6 @@ describe('MfaSection row overflow menu', () => {
       }),
     )
 
-    // The landed write takes the row out of its group and names it in the
-    // success feedback.
     await waitFor(() => {
       expect(
         within(screen.getByRole('region', { name: method })).queryByText(
@@ -112,15 +103,11 @@ describe('MfaSection row overflow menu', () => {
         ),
       ).toBeNull()
     })
-    // No enabled passkey is left, so this removal leaves the account with one
-    // verification method and the confirmation says so.
     expect(
       await screen.findByText(
         zhCN.mfa.removedLast.replace('{{factor}}', ROW_NAME),
       ),
     ).toBeTruthy()
-    // No enabled passkey is left, and the group's action is the same plain
-    // add it showed before the removal.
     const add = await screen.findByRole('button', {
       name: zhCN.mfa.addAria.replace('{{method}}', method),
     })
@@ -134,12 +121,6 @@ describe('MfaSection row overflow menu', () => {
 })
 
 describe('MfaSection rename editor', () => {
-  /**
-   * The editor is the row's in-place edit: the name field takes the
-   * editor's text-column width on its own line, and the action row closes
-   * the next line on the right. jsdom lays nothing out, so the geometry is
-   * measured here.
-   */
   it('stacks the name field above its actions, closed on the right edge', async () => {
     await page.viewport(1100, 900)
     const rowLabel = 'Daily codes'
@@ -208,17 +189,12 @@ describe('MfaSection rename editor', () => {
     const cancelBox = cancel.getBoundingClientRect()
     const saveBox = save.getBoundingClientRect()
 
-    // The field owns its line at the editor's text-column width.
     expect(
       Math.abs(controlBox.width - formBox.width),
     ).toBeLessThanOrEqual(TOLERANCE)
 
-    // The actions start on the next line, not beside the field.
     expect(rowBox.top).toBeGreaterThanOrEqual(controlBox.bottom - TOLERANCE)
 
-    // One group, never two ends: cancel sits left of save, the two are
-    // exactly one spacing token apart, and the row closes on the form's
-    // content edge.
     expect(cancelBox.left).toBeLessThan(saveBox.left)
     expect(Math.abs(cancelBox.top - saveBox.top)).toBeLessThanOrEqual(TOLERANCE)
     expect(saveBox.left).toBeGreaterThanOrEqual(cancelBox.right)

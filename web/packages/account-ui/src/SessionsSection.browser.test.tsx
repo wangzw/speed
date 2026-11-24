@@ -1,6 +1,5 @@
 /**
- * SessionsSection in a real browser: every row's sign-out action closes on one
- * right rail, which only a laid-out tier can tell from a per-row shrink-wrap.
+ * SessionsSection in a real browser: every row's sign-out action closes on one right rail.
  */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -20,14 +19,10 @@ import { summarizeUserAgent } from './internal/ua-summary.js'
 const SESSIONS_PATH = '/api/v1/auth/sessions'
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** A desktop browser and a command-line client: two device names of very
- * different lengths, so a per-row shrink-wrapped action column would put
- * their glyphs on different lines. */
 const DESKTOP_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
 const CLI_UA = 'curl/8.4.0'
 
-/** One live session the account can sign out, with its own device name. */
 function session(id: string, userAgent: string) {
   return {
     id,
@@ -53,12 +48,10 @@ const responder: RealResponder = (call: RealCall) => {
   return jsonResponse(404, { code: 'client.not_found' })
 }
 
-/** The revoke aria-label the component builds for a row's device label. */
 function revokeAria(device: string): string {
   return zhCN.sessions.revokeAriaWithDevice.replace('{{device}}', device)
 }
 
-/** The device label a row renders for one raw User-Agent. */
 function deviceOf(userAgent: string): string {
   const label = summarizeUserAgent(userAgent)
   if (label === null) {
@@ -80,16 +73,12 @@ describe('SessionsSection action rail in Chromium', () => {
     const second = await screen.findByRole('button', {
       name: revokeAria(deviceOf(CLI_UA)),
     })
-    // Each action is a labelled button with its sign-out icon beside the
-    // word, and the visible word is the label the row action carries.
     expect(first.querySelector('svg')).not.toBeNull()
     expect(second.querySelector('svg')).not.toBeNull()
     expect(first).toHaveTextContent(zhCN.sessions.revokeRowLabel)
     expect(second).toHaveTextContent(zhCN.sessions.revokeRowLabel)
     await document.fonts.ready
 
-    // One right rail: the two actions end on the same vertical line however
-    // long their rows' device names are.
     const firstRight = first.getBoundingClientRect().right
     const secondRight = second.getBoundingClientRect().right
     expect(
@@ -97,8 +86,6 @@ describe('SessionsSection action rail in Chromium', () => {
       `desktop=${firstRight} cli=${secondRight}`,
     ).toBeLessThanOrEqual(0.5)
 
-    // And that rail is the list's content edge: the action closes its row
-    // flush with the list, not a shrink-wrapped island inside it.
     const list = screen.getByRole('list')
     const listRight = list.getBoundingClientRect().right
     const buttonRight = first.getBoundingClientRect().right
@@ -109,11 +96,6 @@ describe('SessionsSection action rail in Chromium', () => {
   })
 
   it('lands focus on the list with a shell drawer dialog mounted', async () => {
-    // Below the md breakpoint the host's shell keeps its temporary Drawer
-    // mounted, and that paper carries role="dialog" for the page's whole
-    // life. The bulk revoke's landing must wait for this section's own
-    // confirmation to leave, then hand focus to the list in a real browser's
-    // transition and focus-trap timing.
     let revoked = false
     const bulkResponder: RealResponder = (call: RealCall) => {
       if (call.path === PROFILE_PATH) {
@@ -165,8 +147,6 @@ describe('SessionsSection action rail in Chromium', () => {
         }),
       ).toBeNull(),
     )
-    // The page stays aria-hidden until the confirmation's exit transition
-    // ends, so the list becomes queryable only after the node leaves.
     const list = await screen.findByRole('list', {
       name: zhCN.sessions.title,
     })

@@ -1,6 +1,5 @@
 /**
- * OwnerTransferRequestsPage checks the account-level list and detail, the
- * two decisions, their account-level-only requests, and the focus contract.
+ * OwnerTransferRequestsPage checks the account-level list and detail and the two decisions.
  */
 
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -26,14 +25,12 @@ const CONFIRM_PATH = `${DETAIL_PATH}/confirm`
 const DECLINE_PATH = `${DETAIL_PATH}/decline`
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** The zh-CN label the shared confirm shows once its two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly confirmDialog: { readonly confirmAgainLabel: string }
   }
 ).confirmDialog.confirmAgainLabel
 
-/** One request in the generated view's shape. */
 function requestFixture(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -47,7 +44,6 @@ function requestFixture(
   }
 }
 
-/** Mounts the page over a scripted account-endpoint responder. */
 function mountPage(respond: RealResponder, ui?: ReactElement) {
   const rig = makeRealClientRigWithoutSession(respond)
   rig.store.set('access-1')
@@ -62,7 +58,6 @@ function mountPage(respond: RealResponder, ui?: ReactElement) {
   return { rig, ...rendered }
 }
 
-/** The two-step guard: arm, wait out the lockout, confirm. */
 async function confirmTwice(
   user: ReturnType<typeof userEvent.setup>,
   confirmLabel: string,
@@ -79,12 +74,10 @@ async function confirmTwice(
   )
 }
 
-/** Every path a call named, for the account-level scope assertion. */
 function paths(calls: readonly RealCall[]): readonly string[] {
   return calls.map((call) => call.path)
 }
 
-/** A response held open so a case can assert the in-flight state. */
 function heldResponse(): {
   readonly promise: Promise<Response>
   readonly resolve: (response: Response) => void
@@ -96,7 +89,6 @@ function heldResponse(): {
   return { promise, resolve }
 }
 
-/** Where the browser's focus is, for a failure message. */
 function describeActive(): string {
   const active = document.activeElement
   if (active === null) {
@@ -123,7 +115,6 @@ describe('OwnerTransferRequestsPage', () => {
     expect(
       screen.getByRole('link', { name: zhCN.transferRequests.open }),
     ).toHaveAttribute('href', '/transfer-requests/transfer-1')
-    // The request view carries no account identifier, and none is rendered.
     expect(screen.queryByText(/acc-/)).toBeNull()
     expect(rig.calls.every((call) => call.path.startsWith('/api/v1/auth/'))).toBe(
       true,
@@ -175,12 +166,10 @@ describe('OwnerTransferRequestsPage', () => {
         zhCN.transferRequests.confirmed.replace('{{tenant}}', 'acme-inc'),
       ),
     ).toBeInTheDocument()
-    // The detail is re-read: the request the server now answers is finished.
     await waitFor(() =>
       expect(screen.getByText(zhCN.transferRequests.terminal)).toBeInTheDocument(),
     )
     expect(screen.getByText(zhCN.transferRequests.statusValues.confirmed)).toBeInTheDocument()
-    // The surface stays inside the account endpoints.
     for (const path of paths(rig.calls)) {
       expect(path.startsWith('/api/v1/auth/')).toBe(true)
     }
@@ -306,7 +295,6 @@ describe('OwnerTransferRequestsPage', () => {
     await user.click(confirmButton)
     await confirmTwice(user, zhCN.transferRequests.confirm)
 
-    // The dialog closes and focus comes back to the initiating control.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() =>
       expect(confirmButton).toHaveAttribute('aria-busy', 'true'),
@@ -314,8 +302,6 @@ describe('OwnerTransferRequestsPage', () => {
     expect(confirmButton).toHaveAttribute('aria-disabled', 'true')
     expect(confirmButton).toHaveFocus()
 
-    // The sibling is unavailable without a reason, and activating it sends
-    // nothing: neither a click nor Enter on the focused control.
     expect(declineButton).toHaveAttribute('aria-disabled', 'true')
     expect(declineButton).not.toHaveAttribute('aria-busy')
     expect(declineButton).toHaveAccessibleDescription('')
@@ -332,8 +318,6 @@ describe('OwnerTransferRequestsPage', () => {
     held.resolve(new Response(null, { status: 204 }))
     await screen.findByText(zhCN.transferRequests.terminal)
 
-    // The decision took both controls out of the document; focus lands on
-    // the request card rather than the document body.
     await waitFor(() => {
       expect(
         screen.getByRole('group', { name: 'acme-inc' }),
@@ -446,7 +430,6 @@ describe('OwnerTransferRequestsPage', () => {
     await confirmTwice(user, zhCN.transferRequests.confirm)
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    // The operator moves focus to the list link while the write runs.
     const back = screen.getByRole('link', {
       name: zhCN.transferRequests.back,
     })
@@ -455,7 +438,6 @@ describe('OwnerTransferRequestsPage', () => {
     held.resolve(new Response(null, { status: 204 }))
     await screen.findByText(zhCN.transferRequests.terminal)
 
-    // The card does not take focus back from a place the operator chose.
     expect(back, describeActive()).toHaveFocus()
     expect(screen.getByRole('group', { name: 'acme-inc' })).not.toHaveFocus()
   })
@@ -478,8 +460,6 @@ describe('OwnerTransferRequestsPage', () => {
         }
         if (call.method === 'POST' && call.path === CONFIRM_PATH) {
           return heldWrite.promise.then(() => {
-            // The write lands; the answer the decision reports lives in
-            // the detail read that follows it.
             rereadArmed = true
             return new Response(null, { status: 204 })
           })
@@ -503,8 +483,6 @@ describe('OwnerTransferRequestsPage', () => {
       expect(confirmButton).toHaveAttribute('aria-busy', 'true'),
     )
 
-    // The write lands, but the detail re-read that reports its terminal
-    // state is still open.
     await act(async () => {
       heldWrite.resolve(new Response(null, { status: 204 }))
     })
@@ -516,9 +494,6 @@ describe('OwnerTransferRequestsPage', () => {
       ).toHaveLength(2),
     )
 
-    // Until that answer settles the decision is still in flight: the
-    // initiating control stays busy, its sibling stays unavailable, and
-    // neither activation reaches a second request or a second dialog.
     expect(confirmButton).toHaveAttribute('aria-busy', 'true')
     expect(confirmButton).toHaveAttribute('aria-disabled', 'true')
     expect(declineButton).toHaveAttribute('aria-disabled', 'true')
@@ -560,14 +535,10 @@ describe('OwnerTransferRequestsPage', () => {
     )
     await confirmTwice(user, zhCN.transferRequests.confirm)
 
-    // The refusal leaves the request in place, so this decision removed
-    // nothing and has no landing to perform.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.transferRequests.error.unknown,
     )
 
-    // The operator moves focus away, and the request later reports a
-    // terminal state through a read this page did not start.
     ;(document.activeElement as HTMLElement | null)?.blur()
     status = 'expired'
     await act(async () => {
@@ -575,7 +546,6 @@ describe('OwnerTransferRequestsPage', () => {
     })
     await screen.findByText(zhCN.transferRequests.terminal)
 
-    // A settled decision's stale landing must not take focus.
     expect(
       screen.getByRole('group', { name: 'acme-inc' }),
       describeActive(),

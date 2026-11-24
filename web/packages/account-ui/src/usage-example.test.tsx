@@ -1,6 +1,5 @@
 /**
- * The README quick start, compiled and run: the composed account page over a
- * real api-client, walking one revoke and switching the page's language.
+ * The README quick start, compiled and run.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -33,13 +32,8 @@ const SESSIONS_PATH = '/api/v1/auth/sessions'
 const FACTORS_PATH = '/api/v1/auth/factors'
 const METHODS_PATH = '/api/v1/auth/methods'
 
-/** The host's binding callback route: the flow's top-level return_to. */
 const ACCOUNT_CALLBACK = '/account/callback'
 
-/** The host's account page in the example: the sections the quick start
- * documents, under one signed-in session. The sections that drive a flow
- * (a bind, a step-up, an enroll) take the session; the profile and
- * preferences sections write without a step-up, so they take none. */
 function AccountPage({ session }: { readonly session: AuthSession }) {
   return (
     <div>
@@ -135,9 +129,6 @@ describe('the README quick start, exercised over a real api-client', () => {
             ],
           })
         case METHODS_PATH:
-          // The deployment's discovery document: its two redirect methods
-          // are the bindings add area's channels, and its mfa.factors are
-          // the enroll entries (the passkey entry is not offered).
           return jsonResponse(200, {
             methods: [
               { name: 'github', kind: 'redirect', label: 'GitHub' },
@@ -159,7 +150,6 @@ describe('the README quick start, exercised over a real api-client', () => {
     const { i18n } = renderWithProviders(<AccountPage session={rig.session} />)
     const user = userEvent.setup()
 
-    // The surfaces settle on the server's answers.
     for (const title of [
       zhCN.profile.title,
       zhCN.password.title,
@@ -174,14 +164,11 @@ describe('the README quick start, exercised over a real api-client', () => {
     }
     expect(screen.getByText(zhCN.sessions.current)).toBeTruthy()
     expect(screen.getByText(zhCN.bindings.provider.github)).toBeTruthy()
-    // The authenticator row reads as its kind: it takes no name.
     expect(
       screen.getAllByText(zhCN.mfa.factor.kind.totp).length,
     ).toBeGreaterThan(0)
     await expectNoAxeViolations()
 
-    // Two rows carry the unknown-device label; only the non-current one
-    // has a revoke action, named after that label.
     const revokeAria = zhCN.sessions.revokeAriaWithDevice.replace(
       '{{device}}',
       zhCN.sessions.deviceUnknown,
@@ -191,7 +178,6 @@ describe('the README quick start, exercised over a real api-client', () => {
       expect(screen.queryByRole('button', { name: revokeAria })).toBeNull()
     })
 
-    // The same page in the other supported language.
     await act(async () => {
       await switchLanguage(i18n, 'en-US')
     })

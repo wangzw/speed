@@ -11,13 +11,7 @@ import { useAccountUiTranslation } from './translation.js'
 
 export interface AccountAsyncSectionProps<Payload>
   extends Omit<AsyncSectionProps<Payload>, 'staleState'> {
-  /** The read's failure, as the query reports it beside its settled data. */
   readonly error: unknown
-  /**
-   * Whether a read is in flight over content already on screen. A failed
-   * refresh marks the content stale; every caller passes its read's
-   * fetching state here.
-   */
   readonly refreshing: boolean
 }
 

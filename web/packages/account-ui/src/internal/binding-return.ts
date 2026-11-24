@@ -3,7 +3,6 @@
  * link flow's top-level `return_to` as a `return` query parameter.
  */
 
-/** The query parameter that carries the source page inside `return_to`. */
 export const RETURN_PARAM = 'return'
 
 // Mirrors the server's relative-return-target bound (pkg/authn/login).
@@ -11,8 +10,8 @@ const MAX_TARGET_BYTES = 2048
 
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
 
-// Only the parsed path, query and fragment are read back, so this origin
-// never reaches the returned value.
+// Only the parsed path, query and fragment are read back, so this origin never
+// reaches the returned value.
 const RELATIVE_ORIGIN = 'http://site.invalid'
 
 function byteLength(value: string): number {
@@ -34,10 +33,6 @@ function byteLength(value: string): number {
   return bytes
 }
 
-/**
- * Whether the value is a well-formed site-internal relative path. An
- * absolute URL or a scheme-relative "//host" is never one.
- */
 export function isSitePath(value: string): boolean {
   if (!value.startsWith('/') || value.startsWith('//')) {
     return false
@@ -58,11 +53,6 @@ export function isSitePath(value: string): boolean {
   return true
 }
 
-/**
- * The link flow's top-level `return_to`: the callback route with the source
- * page appended as `return` when the source is a site-internal path, else
- * the route unchanged.
- */
 export function withBindingReturn(
   callback: string,
   source: string | undefined,
