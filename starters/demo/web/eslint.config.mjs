@@ -1,4 +1,6 @@
-import webConfig from '../../../web/eslint.config.mjs'
+import webConfig, {
+  RESTRICTED_PAGINATION_IMPORTS,
+} from '../../../web/eslint.config.mjs'
 
 const APP_RUNTIME_SRC = {
   files: ['src/**/*.{ts,tsx}'],
@@ -14,6 +16,10 @@ export default [
       'speed/no-double-feedback-region': 'error',
       'speed/no-literal-text': 'error',
       'speed/no-native-disabled-control': 'error',
+      // The options come from the web config so the two surfaces cannot
+      // drift; the web config's TablePager exemption is anchored under web/
+      // and reaches no app source, so the app needs none.
+      'no-restricted-imports': ['error', RESTRICTED_PAGINATION_IMPORTS],
     },
   },
   {
