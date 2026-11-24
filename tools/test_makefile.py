@@ -152,6 +152,8 @@ MAKE_ENVIRONMENT = (
     "GOFLAGS",
     "GATE_TIME_SCALE",
     "UNCACHED_PACKAGES",
+    "WEB_CACHE",
+    "CI",
 )
 
 CHECK_SEGMENTS = (
@@ -178,11 +180,14 @@ EMBEDS_FRONTEND_BUILD = (
 
 WEB_CHECK_PHASES = {
     "web-check-static": (
+        "case '$(WEB_CACHE)' in on|off) ;; *) echo \"WEB_CACHE must be 'on' "
+        "or 'off', not '$(WEB_CACHE)'\" >&2; exit 1;; esac",
         "pnpm -C web install --frozen-lockfile --workspace-concurrency=1 "
         "--child-concurrency=$(GATE_JOBS)",
         "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort lint "
-        "--concurrency=off",
-        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck",
+        "--concurrency=off $(WEB_CACHE_LINT_ARGS)",
+        "pnpm -C web -r --workspace-concurrency=$(GATE_JOBS) --no-sort typecheck "
+        "$(WEB_CACHE_TYPECHECK_ARGS)",
         "pnpm -C web exec vitest run --maxWorkers=$(GATE_JOBS) eslint-rules/ scripts/",
     ),
     "web-check-test": (
@@ -265,8 +270,11 @@ class LoopingLegTests(unittest.TestCase):
         goflags: str | None = None,
         failing_tools: bool = False,
         start_dir: str | pathlib.Path | None = None,
+        env_extra: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
+        if env_extra:
+            env.update(env_extra)
         if goflags is not None:
             env["GOFLAGS"] = goflags
         first = self.failing_bin if failing_tools else self.bin
@@ -938,9 +946,14 @@ class LoopingLegTests(unittest.TestCase):
                 result = self.make(leg, "green")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def leg_calls(self, leg: str, gate_jobs: str | None = None) -> list[dict]:
+    def leg_calls(
+        self,
+        leg: str,
+        gate_jobs: str | None = None,
+        env_extra: dict[str, str] | None = None,
+    ) -> list[dict]:
         self.log.unlink(missing_ok=True)
-        result = self.make(leg, "green", gate_jobs=gate_jobs)
+        result = self.make(leg, "green", gate_jobs=gate_jobs, env_extra=env_extra)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return self.calls()
 
@@ -1075,6 +1088,68 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertTrue(workflows, f"actionlint never ran:\n{calls}")
                 for call in workflows:
                     self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
+
+    def test_the_frontend_cache_stays_local(self) -> None:
+        # The stand-in strips `-C <dir>`, so these are the arguments after it.
+        lint = [
+            "-r", "--workspace-concurrency=4", "--no-sort",
+            "lint", "--concurrency=off",
+        ]
+        typecheck = [
+            "-r", "--workspace-concurrency=4", "--no-sort", "typecheck",
+        ]
+        cache_flags = [
+            "--cache", "--cache-strategy", "content",
+            "--cache-location", "node_modules/.cache/eslint/",
+        ]
+        cases = (
+            ("CI unset", {}, True),
+            ("CI=false", {"CI": "false"}, True),
+            ("CI=true", {"CI": "true"}, False),
+            ("CI=1", {"CI": "1"}, False),
+            ("CI=true WEB_CACHE=on", {"CI": "true", "WEB_CACHE": "on"}, True),
+            ("WEB_CACHE=off", {"WEB_CACHE": "off"}, False),
+            ("WEB_CACHE empty", {"WEB_CACHE": ""}, None),
+        )
+        for label, env_extra, cached in cases:
+            with self.subTest(case=label):
+                if cached is None:
+                    self.log.unlink(missing_ok=True)
+                    result = self.make(
+                        "web-check-static", "green", env_extra=env_extra
+                    )
+                    self.assertNotEqual(
+                        result.returncode, 0, f"{label}: the leg accepted the value"
+                    )
+                    self.assertIn("WEB_CACHE", result.stderr)
+                    self.assertFalse(
+                        [call for call in self.calls() if call["tool"] == "pnpm"],
+                        f"{label}: the leg ran pnpm before refusing the value",
+                    )
+                    continue
+                calls = self.leg_calls("web-check-static", env_extra=env_extra)
+                self.assertEqual(
+                    self.pnpm_call(calls, "lint")["args"],
+                    lint + cache_flags if cached else lint,
+                    f"{label}: the lint command does not match the cache setting",
+                )
+                self.assertEqual(
+                    self.pnpm_call(calls, "typecheck")["args"],
+                    typecheck + (["--incremental"] if cached else []),
+                    f"{label}: the typecheck command does not match the cache setting",
+                )
+
+    def test_an_unknown_web_cache_value_fails_the_static_leg(self) -> None:
+        self.log.unlink(missing_ok=True)
+        result = self.make(
+            "web-check-static", "green", env_extra={"WEB_CACHE": "maybe"}
+        )
+        self.assertNotEqual(result.returncode, 0, "the leg accepted WEB_CACHE=maybe")
+        self.assertIn("WEB_CACHE", result.stderr)
+        self.assertFalse(
+            [call for call in self.calls() if call["tool"] == "pnpm"],
+            "the leg ran pnpm before refusing the WEB_CACHE value",
+        )
 
     def test_every_frontend_leg_takes_its_width_from_gate_jobs(self) -> None:
         """Test that every frontend leg takes its width from gate jobs."""
