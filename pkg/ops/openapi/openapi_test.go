@@ -11,8 +11,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// spec builds one fragment resource the way a module declares it: a module
-// name, the endpoint the fragment is for, and the JSON document.
 func spec(module, endpoint, document string) core.Resource[speedhttp.Spec] {
 	return core.Resource[speedhttp.Spec]{
 		Module: module,
@@ -20,8 +18,6 @@ func spec(module, endpoint, document string) core.Resource[speedhttp.Spec] {
 	}
 }
 
-// parse reads the merged document into a generic map so a case can assert on
-// the shape the readers see.
 func parse(t *testing.T, merged []byte) map[string]any {
 	t.Helper()
 	var doc map[string]any
@@ -31,7 +27,6 @@ func parse(t *testing.T, merged []byte) map[string]any {
 	return doc
 }
 
-// keysOf returns the keys of an object map, sorted, for a failure message.
 func keysOf(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {
@@ -41,8 +36,6 @@ func keysOf(m map[string]any) []string {
 	return keys
 }
 
-// nested walks a chain of object keys and reports the value there, failing the
-// case when any of them is absent or is not an object.
 func nested(t *testing.T, doc map[string]any, keys ...string) map[string]any {
 	t.Helper()
 	at := doc
@@ -56,10 +49,8 @@ func nested(t *testing.T, doc map[string]any, keys ...string) map[string]any {
 	return at
 }
 
-// TestMergeResolvesPathsAgainstTheSpecRoot pins the composition each fragment
-// relies on: its paths are relative to the Spec's Prefix and Version, and two
-// fragments under different roots keep two distinct operations even when the
-// relative path is spelled the same.
+// TestMergeResolvesPathsAgainstTheSpecRoot checks that fragment paths resolve
+// against the Spec's prefix and version and stay distinct under different roots.
 func TestMergeResolvesPathsAgainstTheSpecRoot(t *testing.T) {
 	merged, err := Merge([]core.Resource[speedhttp.Spec]{
 		{Module: "account", Value: speedhttp.Spec{
@@ -82,9 +73,8 @@ func TestMergeResolvesPathsAgainstTheSpecRoot(t *testing.T) {
 	}
 }
 
-// TestMergeJudgesConflictsOnTheResolvedPath holds two fragments declaring one
-// operation to be a conflict once their relative paths resolve to the same
-// absolute path.
+// TestMergeJudgesConflictsOnTheResolvedPath checks that two fragments resolving
+// to one absolute path conflict.
 func TestMergeJudgesConflictsOnTheResolvedPath(t *testing.T) {
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		{Module: "one", Value: speedhttp.Spec{
@@ -106,6 +96,8 @@ func TestMergeJudgesConflictsOnTheResolvedPath(t *testing.T) {
 	}
 }
 
+// TestMergeCombinesFragmentsAndNamesTheirSources checks the merged metadata, the
+// endpoint extension and the x-fragments list.
 func TestMergeCombinesFragmentsAndNamesTheirSources(t *testing.T) {
 	merged, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("beta", "admin", `{"paths":{"/b":{"get":{"summary":"b"}}}}`),
@@ -135,7 +127,6 @@ func TestMergeCombinesFragmentsAndNamesTheirSources(t *testing.T) {
 		t.Errorf("the merged paths %v do not carry /b", paths)
 	}
 
-	// Each operation carries the endpoint it was declared for.
 	if got := nested(t, doc, "paths", "/a", "post")[endpointExtension]; got != "api" {
 		t.Errorf("/a post carries %s %v, want %q", endpointExtension, got, "api")
 	}
@@ -143,7 +134,6 @@ func TestMergeCombinesFragmentsAndNamesTheirSources(t *testing.T) {
 		t.Errorf("/b get carries %s %v, want %q", endpointExtension, got, "admin")
 	}
 
-	// x-fragments lists each source, in module order.
 	fragments, ok := doc[fragmentsExtension].([]any)
 	if !ok || len(fragments) != 2 {
 		t.Fatalf("%s is %v, want two sources", fragmentsExtension, doc[fragmentsExtension])
@@ -158,6 +148,8 @@ func TestMergeCombinesFragmentsAndNamesTheirSources(t *testing.T) {
 	}
 }
 
+// TestMergeConflictNamesBothModulesAndEndpoints checks that an operation conflict
+// names both modules, both endpoints and the uppercased method and path.
 func TestMergeConflictNamesBothModulesAndEndpoints(t *testing.T) {
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `{"paths":{"/things":{"get":{"summary":"one"}}}}`),
@@ -166,9 +158,6 @@ func TestMergeConflictNamesBothModulesAndEndpoints(t *testing.T) {
 	if !errors.Is(err, ErrOperationConflict) {
 		t.Fatalf("two fragments declaring GET /things did not report ErrOperationConflict: %v", err)
 	}
-	// The conflict names both modules and both endpoints, which is the only
-	// place the two fragments are tied back to their sources. The method is
-	// uppercased, so a fragment that spelled it differently still collides.
 	for _, want := range []string{`"alpha"`, `"api"`, `"beta"`, `"admin"`, "GET /things"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the conflict error %q does not name %s", err.Error(), want)
@@ -176,9 +165,9 @@ func TestMergeConflictNamesBothModulesAndEndpoints(t *testing.T) {
 	}
 }
 
+// TestMergeOperationConflictCrossesEndpoints checks that one route on two
+// endpoints conflicts.
 func TestMergeOperationConflictCrossesEndpoints(t *testing.T) {
-	// The same route on two endpoints is two operations one path cannot tell
-	// apart, so it is a conflict however far apart the endpoints are.
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `{"paths":{"/things":{"get":{}}}}`),
 		spec("alpha", "admin", `{"paths":{"/things":{"get":{}}}}`),
@@ -188,6 +177,8 @@ func TestMergeOperationConflictCrossesEndpoints(t *testing.T) {
 	}
 }
 
+// TestMergeComponentConflictNamesTheLaterModuleAndTheName checks that a component
+// declared differently conflicts naming the later module and the component.
 func TestMergeComponentConflictNamesTheLaterModuleAndTheName(t *testing.T) {
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `{"components":{"schemas":{"Error":{"type":"object"}}}}`),
@@ -204,9 +195,9 @@ func TestMergeComponentConflictNamesTheLaterModuleAndTheName(t *testing.T) {
 	}
 }
 
+// TestMergeComponentConflictCountsIntegersPastFloatPrecision checks that integers
+// differing past 2^53 are different components.
 func TestMergeComponentConflictCountsIntegersPastFloatPrecision(t *testing.T) {
-	// Two schemas differing only in an integer past 2^53 are different schemas.
-	// Comparing them through a float64 would read them as equal and drop one.
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `{"components":{"schemas":{"Count":{"maximum":9007199254740993}}}}`),
 		spec("beta", "admin", `{"components":{"schemas":{"Count":{"maximum":9007199254740992}}}}`),
@@ -216,9 +207,9 @@ func TestMergeComponentConflictCountsIntegersPastFloatPrecision(t *testing.T) {
 	}
 }
 
+// TestMergeComponentWithEqualContentMerges checks that like content under one
+// name merges.
 func TestMergeComponentWithEqualContentMerges(t *testing.T) {
-	// The same schema written with different whitespace is the same schema, so
-	// two fragments sharing one error body is not a conflict.
 	merged, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `{"components":{"schemas":{"Error":{"type":"object","title":"e"}}}}`),
 		spec("beta", "admin", `{"components":{"schemas":{"Error": {"title": "e", "type": "object"}}}}`),
@@ -232,6 +223,8 @@ func TestMergeComponentWithEqualContentMerges(t *testing.T) {
 	}
 }
 
+// TestMergeEmptyYieldsAWellFormedDocument checks that merging no fragments yields
+// a document with the required keys.
 func TestMergeEmptyYieldsAWellFormedDocument(t *testing.T) {
 	merged, err := Merge(nil, Options{Title: "empty"})
 	if err != nil {
@@ -248,6 +241,8 @@ func TestMergeEmptyYieldsAWellFormedDocument(t *testing.T) {
 	}
 }
 
+// TestMergeUnreadableFragmentNamesTheModule checks that a non-object fragment is
+// unreadable and names the module.
 func TestMergeUnreadableFragmentNamesTheModule(t *testing.T) {
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `[1, 2, 3]`),
@@ -260,6 +255,8 @@ func TestMergeUnreadableFragmentNamesTheModule(t *testing.T) {
 	}
 }
 
+// TestMergeUnreadableOperationNamesTheModule checks that a non-object operation is
+// unreadable and names the module.
 func TestMergeUnreadableOperationNamesTheModule(t *testing.T) {
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `{"paths":{"/a":{"get":5}}}`),
@@ -272,6 +269,7 @@ func TestMergeUnreadableOperationNamesTheModule(t *testing.T) {
 	}
 }
 
+// TestMergeNullFragmentIsUnreadable checks that a null fragment is unreadable.
 func TestMergeNullFragmentIsUnreadable(t *testing.T) {
 	_, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("alpha", "api", `null`),
@@ -281,11 +279,8 @@ func TestMergeNullFragmentIsUnreadable(t *testing.T) {
 	}
 }
 
-// TestMergeAddsGroupsSecurityAndSchemes pins what the merge owns on top of the
-// fragments: each operation is grouped under its declaring module, an
-// operation that declared no security requirement is published as guarded, one
-// that declared its own keeps it, and the document carries the top-level
-// metadata and the two carriers the requirements name.
+// TestMergeAddsGroupsSecurityAndSchemes checks the merge-owned grouping, default
+// security and security schemes.
 func TestMergeAddsGroupsSecurityAndSchemes(t *testing.T) {
 	merged, err := Merge([]core.Resource[speedhttp.Spec]{
 		spec("beta", "admin", `{"paths":{"/b":{"get":{"summary":"b","security":[{"bearerAuth":[]}]}}}}`),
@@ -332,8 +327,6 @@ func TestMergeAddsGroupsSecurityAndSchemes(t *testing.T) {
 		t.Errorf("/a post has security %v, want the guarded requirement", got)
 	}
 
-	// A fragment that declared its own requirement, or its own public array,
-	// keeps it.
 	if got := nested(t, doc, "paths", "/b", "get")["security"]; !equalJSONValue(got, []any{
 		map[string]any{"bearerAuth": []any{}},
 	}) {
@@ -351,7 +344,6 @@ func TestMergeAddsGroupsSecurityAndSchemes(t *testing.T) {
 	}
 }
 
-// slicesOfStrings reads a decoded JSON array of strings.
 func slicesOfStrings(value any) []string {
 	items, ok := value.([]any)
 	if !ok {
@@ -368,7 +360,6 @@ func slicesOfStrings(value any) []string {
 	return out
 }
 
-// equalJSONValue compares two decoded JSON values by their encoding.
 func equalJSONValue(a, b any) bool {
 	left, errLeft := json.Marshal(a)
 	right, errRight := json.Marshal(b)

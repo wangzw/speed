@@ -7,18 +7,17 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's contract is published
-// under and the version of the fragment's shape.
 const (
 	fragmentTitle   = "operations"
 	fragmentVersion = "1.0.0"
 )
 
-// OpsHealth is the liveness response body: a single status field, always ok on
-// a process that can answer.
+// OpsHealth is the liveness response body: a single status field, always ok on a
+// process that can answer.
 type OpsHealth struct {
 	_ struct{} `description:"The liveness response body: a single status field, always ok on a process that can answer."`
 
+	// Status is the liveness verdict, always "ok" on a process that can answer.
 	Status string `json:"status" required:"true" enum:"ok" description:"The literal the liveness route writes; a live process always answers ok"`
 }
 
@@ -27,19 +26,18 @@ type OpsHealth struct {
 type OpsReadiness struct {
 	_ struct{} `description:"The readiness response body, carrying the verdict and, when it is unavailable, one line per part that failed."`
 
-	Status   string   `json:"status" required:"true" enum:"ready,unavailable" description:"ready when every part answered, unavailable otherwise"`
+	// Status is the readiness verdict: "ready" or "unavailable".
+	Status string `json:"status" required:"true" enum:"ready,unavailable" description:"ready when every part answered, unavailable otherwise"`
+	// Failures lists one line per part that failed, absent when the verdict is
+	// ready.
 	Failures []string `json:"failures,omitempty" description:"One line per part that failed; absent when the verdict is ready"`
 }
 
-// OpsDocument is the merged OpenAPI document. The declaration publishes it as a
-// free-form object: the document's members are assembled at startup from every
-// module's fragment, so no fixed set of properties describes it.
+// OpsDocument is the merged OpenAPI document, published as a free-form object.
 type OpsDocument struct {
 	_ struct{} `additionalProperties:"true" description:"The merged OpenAPI document: the version it declares, its info section, every merged path, the components its fragments declared, and x-fragments naming each source"`
 }
 
-// healthOperation declares GET /health and binds its types: the handler reads
-// nothing and returns the liveness body, so the entry point writes the answer.
 var healthOperation = speedhttp.NewOperation[struct{}, OpsHealth](
 	"ops.health",
 	http.MethodGet,
@@ -57,9 +55,6 @@ var healthOperation = speedhttp.NewOperation[struct{}, OpsHealth](
 	speedhttp.Public(),
 )
 
-// readinessOperation declares GET /ready. Its handler builds the answer because
-// an unavailable process is a 503 carrying the readiness body, not a problem
-// document: both statuses are declared with the same structure.
 var readinessOperation = speedhttp.NewReplyOperation[struct{}](
 	"ops.readiness",
 	http.MethodGet,
@@ -85,10 +80,6 @@ var readinessOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// documentOperation declares GET /openapi.json. Its handler builds the answer
-// from the bytes merged at startup: the body is an opaque document that is
-// already encoded, so it is written as bytes rather than re-encoded from a
-// value.
 var documentOperation = speedhttp.NewReplyOperation[struct{}](
 	"ops.document",
 	http.MethodGet,
@@ -111,6 +102,4 @@ var documentOperation = speedhttp.NewReplyOperation[struct{}](
 	speedhttp.Public(),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{healthOperation, readinessOperation, documentOperation}

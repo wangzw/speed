@@ -28,37 +28,22 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// listeningMsg is the record the entry point writes once an endpoint's address
-// is bound. A case reads the address out of it, which is how it learns the port
-// the operating system picked for a 127.0.0.1:0 endpoint.
 const listeningMsg = "an HTTP listener is listening"
 
-// waitLimit bounds every wait in these cases, so a startup that never reaches
-// Serve fails the case with a message instead of the whole binary at the
-// global timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// host is one assembly that is serving.
 type host struct {
 	addr string
 	logs *recorder
 }
 
-// hostOptions is what one assembly is built from.
 type hostOptions struct {
-	// config is the configuration document the assembly runs on.
-	config string
-	// database, when set, is delivered as the Database capability, so the
-	// readiness probe checks it.
+	config   string
 	database db.Database
 }
 
-// startHost builds an assembly from opts and runs it until the entry point is
-// serving: the config module with a reader loaded from opts.config, the real
-// HTTP entry point, this module, and a stand-in logger (and database). The run
-// is ended when the case is, and a run that ends with an error fails the case.
 func startHost(t *testing.T, opts hostOptions) *host {
 	t.Helper()
 	logs := newRecorder()
@@ -104,10 +89,6 @@ func startHost(t *testing.T, opts hostOptions) *host {
 	return &host{addr: logs.waitListening(t, done, &runErr), logs: logs}
 }
 
-// loadReader loads the configuration through the real loader: the document is
-// written to a file, and the declarations this assembly needs reach the load as
-// the resources of registered modules, which is the only way one ever reaches
-// it.
 func loadReader(t *testing.T, document string) config.Reader {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -131,14 +112,12 @@ func loadReader(t *testing.T, document string) config.Reader {
 	return reader
 }
 
-// response is what a client got back.
 type response struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// get issues a GET and reads the response to its end.
 func (h *host) get(t *testing.T, path string) response {
 	t.Helper()
 	req, err := nethttp.NewRequestWithContext(t.Context(), nethttp.MethodGet, "http://"+h.addr+path, nil)
@@ -158,16 +137,12 @@ func (h *host) get(t *testing.T, path string) response {
 	return response{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// record is one log record as a case reads it: the level, the message, and every
-// attribute rendered as text.
 type record struct {
 	level slog.Level
 	msg   string
 	attrs map[string]string
 }
 
-// recorder is a slog handler that keeps what it is handed. Handlers derived from
-// it share its storage.
 type recorder struct {
 	mu      *sync.Mutex
 	records *[]record
@@ -208,8 +183,6 @@ func (r *recorder) all() []record {
 	return append([]record(nil), *r.records...)
 }
 
-// withMessage returns the records written with a message that starts with
-// prefix.
 func (r *recorder) withMessage(prefix string) []record {
 	var out []record
 	for _, rec := range r.all() {
@@ -220,7 +193,6 @@ func (r *recorder) withMessage(prefix string) []record {
 	return out
 }
 
-// waitListening returns the address the entry point bound, or fails the case.
 func (r *recorder) waitListening(t *testing.T, done <-chan struct{}, runErr *error) string {
 	t.Helper()
 	limit := waitLimit()
@@ -240,7 +212,6 @@ func (r *recorder) waitListening(t *testing.T, done <-chan struct{}, runErr *err
 	return ""
 }
 
-// standInLogger delivers the Logger capability over a recorder.
 type standInLogger struct{ logs *recorder }
 
 func (l standInLogger) Named(name string) *slog.Logger {
@@ -251,14 +222,11 @@ func (standInLogger) Redaction() log.Redaction { return noRedaction{} }
 
 var _ log.Logger = standInLogger{}
 
-// noRedaction takes registrations and masks nothing: what these cases observe
-// of the Logger capability is where records go, not what is masked.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// fakeRouter answers the readiness probe from a fixed endpoint table.
 type fakeRouter struct {
 	endpoints map[string]speedhttp.Endpoint
 	names     []string
@@ -274,14 +242,12 @@ func (r fakeRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
 
 func (r fakeRouter) Endpoints() []string { return r.names }
 
-// fakeEndpoint answers only Accepting, which is all the readiness probe reads.
 type fakeEndpoint struct{ accepting bool }
 
 func (fakeEndpoint) Route(string, string, ...gin.HandlerFunc) {}
 func (fakeEndpoint) Use(speedhttp.Middleware)                 {}
 func (e fakeEndpoint) Accepting() bool                        { return e.accepting }
 
-// fakeDatabase is a stand-in Database: the readiness probe reads only DB.
 type fakeDatabase struct{ handle *gorm.DB }
 
 func (d fakeDatabase) DB() *gorm.DB                                 { return d.handle }
@@ -291,8 +257,6 @@ func (fakeDatabase) Open(context.Context, string) (*gorm.DB, error) { return nil
 
 var _ db.Database = fakeDatabase{}
 
-// brokenDatabase delivers a handle whose pool is already closed, so a ping
-// against it fails the way a database that is down does.
 func brokenDatabase(t *testing.T) db.Database {
 	t.Helper()
 	handle, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: gormlogger.Discard})
