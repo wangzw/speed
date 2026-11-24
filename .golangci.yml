@@ -1,25 +1,13 @@
-# golangci-lint configuration for this repository.
-# Schema: golangci-lint v2.
-#
-# The lint target of the root Makefile invokes it once per module, from that
-# module's own directory: run from the workspace root with a path argument
-# instead, golangci-lint reports a typechecking error and still exits 0, so a
-# clean run from anywhere but the module directory proves nothing.
 version: "2"
 
 run:
   timeout: 5m
   tests: true
-  # The integration cases and the e2e-tagged build carry build tags, and a
-  # linter that does not take the tags never sees them: without this,
-  # everything that moved behind a tag leaves the static analysis as well as
-  # the commit gate's test run.
   build-tags:
     - integration
     - e2e
 
 linters:
-  # "standard" is errcheck, govet, ineffassign, staticcheck and unused.
   default: standard
   enable:
     - gosec        # security-focused static analysis
@@ -36,20 +24,17 @@ linters:
     govet:
       enable-all: true
       disable:
-        # Struct field ordering is not worth the churn on domain models.
         - fieldalignment
     staticcheck:
       checks:
         - all
     gosec:
       excludes:
-        # Audited case-by-case in review rather than blanket-failed.
         - G104
 
   exclusions:
     generated: lax
     rules:
-      # Test code may take shortcuts that production code may not.
       - path: _test\.go$
         linters:
           - gosec

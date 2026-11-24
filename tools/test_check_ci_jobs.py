@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""Cases for check_ci_jobs.py's criteria and exit codes.
-
-The subject is one ruling: the `check` workflow runs exactly the legs `make
-check` runs, and a leg split over jobs covers every module `go.work` lists.
-Each case drives the gate over a scratch tree whose Makefile, ci.yml and
-go.work are written by the case, so the finding is read from the gate's
-output rather than inferred from this repository. The last case scans this
-repository.
-
-Stdlib-only (unittest + tempfile). Run directly:
-
-    python3 tools/test_check_ci_jobs.py
-"""
+"""Cases for check_ci_jobs.py's criteria and exit codes."""
 
 from __future__ import annotations
 
@@ -136,11 +124,13 @@ class GateCase(unittest.TestCase):
 
 class TestTheLegSetsMustMatch(GateCase):
     def test_a_workflow_running_every_segment_passes(self) -> None:
+        """Test that a workflow running every segment passes."""
         code, out, err = self.run_gate()
         self.assertEqual(0, code, out + err)
         self.assertIn("run the 2 leg(s)", out)
 
     def test_a_segment_no_job_runs_is_a_finding(self) -> None:
+        """Test that a segment no job runs is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             "jobs:\n  static:\n    runs-on: ubuntu-26.04\n    steps:\n      - run: make lint\n",
@@ -150,6 +140,7 @@ class TestTheLegSetsMustMatch(GateCase):
         self.assertIn("no job runs `test`, the leg of check-test", out)
 
     def test_a_target_that_is_no_segment_is_a_finding(self) -> None:
+        """Test that a target that is no segment is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             CLEAN_CI + "  extra:\n    runs-on: ubuntu-26.04\n    steps:\n      - run: make deploy\n",
@@ -159,6 +150,7 @@ class TestTheLegSetsMustMatch(GateCase):
         self.assertIn("runs `deploy`, which no `check` segment runs", out)
 
     def test_a_job_calling_check_itself_does_not_satisfy_the_gate(self) -> None:
+        """Test that a job calling check itself does not satisfy the gate."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             "jobs:\n  all:\n    runs-on: ubuntu-26.04\n    steps:\n      - run: make check\n",
@@ -169,13 +161,12 @@ class TestTheLegSetsMustMatch(GateCase):
         self.assertIn("no job runs `lint`", out)
 
     def test_make_flags_and_trailing_segment_output_are_not_targets(self) -> None:
-        # The fixture's segments call `$(MAKE) --no-print-directory <leg>
-        # $(call segment-output,<leg>)`; a clean pass means neither the flag
-        # nor the call's words were read as a leg.
+        """Test that make flags and trailing segment output are not targets."""
         code, out, err = self.run_gate()
         self.assertEqual(0, code, out + err)
 
     def test_several_targets_on_one_make_line_are_all_counted(self) -> None:
+        """Test that several targets on one make line are all counted."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             GATE_ENV
@@ -185,6 +176,7 @@ class TestTheLegSetsMustMatch(GateCase):
         self.assertEqual(0, code, out + err)
 
     def test_a_commented_out_make_line_is_not_read(self) -> None:
+        """Test that a commented out make line is not read."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             "jobs:\n  all:\n    runs-on: ubuntu-26.04\n    steps:\n"
@@ -200,10 +192,12 @@ class TestASplitLegMustCoverTheRoster(GateCase):
     workflow = SPLIT_RACE_CI
 
     def test_two_jobs_covering_both_modules_pass(self) -> None:
+        """Test that two jobs covering both modules pass."""
         code, out, err = self.run_gate()
         self.assertEqual(0, code, out + err)
 
     def test_a_module_no_job_covers_is_a_finding(self) -> None:
+        """Test that a module no job covers is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             SPLIT_RACE_CI.split("  race-demo:")[0],
@@ -213,6 +207,7 @@ class TestASplitLegMustCoverTheRoster(GateCase):
         self.assertIn("go.work module starters/demo/server is covered by no job", out)
 
     def test_a_module_go_work_does_not_list_is_a_finding(self) -> None:
+        """Test that a module go work does not list is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             SPLIT_RACE_CI.replace("./starters/demo/server", "./elsewhere"),
@@ -222,6 +217,7 @@ class TestASplitLegMustCoverTheRoster(GateCase):
         self.assertIn("MODULES=elsewhere, which go.work does not list", out)
 
     def test_an_empty_modules_assignment_is_a_finding(self) -> None:
+        """Test that an empty modules assignment is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             SPLIT_RACE_CI.replace("MODULES=./pkg", "MODULES="),
@@ -231,6 +227,7 @@ class TestASplitLegMustCoverTheRoster(GateCase):
         self.assertIn("MODULES= naming no module", out)
 
     def test_a_leg_run_without_modules_covers_the_whole_roster(self) -> None:
+        """Test that a leg run without modules covers the whole roster."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             SPLIT_RACE_CI.replace(" MODULES=./pkg", "").split("  race-demo:")[0],
@@ -241,35 +238,41 @@ class TestASplitLegMustCoverTheRoster(GateCase):
 
 class TestTheGateRefusesASubjectItCannotRead(GateCase):
     def test_a_root_that_is_not_a_directory_exits_2(self) -> None:
+        """Test that a root that is not a directory exits 2."""
         code, _, err = self.run_gate(os.path.join(self.root, "missing"))
         self.assertEqual(2, code)
         self.assertIn("not a directory", err)
 
     def test_a_missing_workflow_exits_2(self) -> None:
+        """Test that a missing workflow exits 2."""
         os.remove(os.path.join(self.root, ".github", "workflows", "ci.yml"))
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("no workflow under", err)
 
     def test_a_makefile_without_check_exits_2(self) -> None:
+        """Test that a makefile without check exits 2."""
         self.write("Makefile", "lint:\n\t@true\n")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("no `check` target", err)
 
     def test_check_with_no_segment_exits_2(self) -> None:
+        """Test that check with no segment exits 2."""
         self.write("Makefile", "check:\n\t@true\n")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("names no `check-*` segment", err)
 
     def test_a_workflow_with_no_job_exits_2(self) -> None:
+        """Test that a workflow with no job exits 2."""
         self.write(os.path.join(".github", "workflows", "ci.yml"), "on: push\n")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("declares no job", err)
 
     def test_a_workflow_running_no_make_exits_2(self) -> None:
+        """Test that a workflow running no make exits 2."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             "jobs:\n  all:\n    runs-on: ubuntu-26.04\n    steps:\n      - run: true\n",
@@ -279,6 +282,7 @@ class TestTheGateRefusesASubjectItCannotRead(GateCase):
         self.assertIn("runs no make target", err)
 
     def test_go_work_with_no_module_exits_2(self) -> None:
+        """Test that go work with no module exits 2."""
         self.write("go.work", "go 1.27.4\n")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
@@ -287,6 +291,7 @@ class TestTheGateRefusesASubjectItCannotRead(GateCase):
 
 class TestTheWorkflowEnvCarriesTheGateSettings(GateCase):
     def test_a_workflow_without_the_gate_env_is_a_finding(self) -> None:
+        """Test that a workflow without the gate env is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             CLEAN_CI.replace(GATE_ENV, ""),
@@ -297,6 +302,7 @@ class TestTheWorkflowEnvCarriesTheGateSettings(GateCase):
         self.assertIn("GOFLAGS does not contain -count=1", out)
 
     def test_a_missing_gate_jobs_is_a_finding(self) -> None:
+        """Test that a missing gate jobs is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             CLEAN_CI.replace('  GATE_JOBS: "4"\n', ""),
@@ -307,6 +313,7 @@ class TestTheWorkflowEnvCarriesTheGateSettings(GateCase):
         self.assertNotIn("GOFLAGS does not contain", out)
 
     def test_goflags_without_count_1_is_a_finding(self) -> None:
+        """Test that goflags without count 1 is a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             CLEAN_CI.replace("GOFLAGS: -count=1", "GOFLAGS: -mod=readonly"),
@@ -316,6 +323,7 @@ class TestTheWorkflowEnvCarriesTheGateSettings(GateCase):
         self.assertIn("GOFLAGS does not contain -count=1", out)
 
     def test_count_1_among_other_flags_passes(self) -> None:
+        """Test that count 1 among other flags passes."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             CLEAN_CI.replace("GOFLAGS: -count=1", "GOFLAGS: -mod=readonly -count=1"),
@@ -324,6 +332,7 @@ class TestTheWorkflowEnvCarriesTheGateSettings(GateCase):
         self.assertEqual(0, code, out + err)
 
     def test_the_gate_settings_present_pass(self) -> None:
+        """Test that the gate settings present pass."""
         code, out, err = self.run_gate()
         self.assertEqual(0, code, out + err)
 
@@ -339,6 +348,7 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         return self.run_gate()
 
     def test_continue_on_error_true_is_a_finding(self) -> None:
+        """Test that continue on error true is a finding."""
         code, out, err = self.write_job_attribute("continue-on-error: true")
         self.assertEqual(1, code, out + err)
         self.assertIn(
@@ -347,24 +357,29 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         )
 
     def test_continue_on_error_false_passes(self) -> None:
+        """Test that continue on error false passes."""
         code, out, err = self.write_job_attribute("continue-on-error: false")
         self.assertEqual(0, code, out + err)
 
     def test_a_condition_that_skips_the_job_is_a_finding(self) -> None:
+        """Test that a condition that skips the job is a finding."""
         code, out, err = self.write_job_attribute("if: github.event_name == 'push'")
         self.assertEqual(1, code, out + err)
         self.assertIn("job go-test runs only under if:", out)
         self.assertIn("which can skip a gate segment", out)
 
     def test_always_is_an_allowed_condition(self) -> None:
+        """Test that always is an allowed condition."""
         code, out, err = self.write_job_attribute("if: always()")
         self.assertEqual(0, code, out + err)
 
     def test_always_in_an_expression_is_an_allowed_condition(self) -> None:
+        """Test that always in an expression is an allowed condition."""
         code, out, err = self.write_job_attribute("if: ${{ always() }}")
         self.assertEqual(0, code, out + err)
 
     def test_skipping_a_draft_pull_request_is_an_allowed_condition(self) -> None:
+        """Test that skipping a draft pull request is an allowed condition."""
         code, out, err = self.write_job_attribute(
             "if: github.event_name != 'pull_request' || "
             "!github.event.pull_request.draft"
@@ -374,6 +389,7 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
     def test_skipping_a_draft_in_an_expression_is_an_allowed_condition(
         self,
     ) -> None:
+        """Test that skipping a draft in an expression is an allowed condition."""
         code, out, err = self.write_job_attribute(
             "if: ${{ github.event_name != 'pull_request' || "
             "!github.event.pull_request.draft }}"
@@ -381,6 +397,7 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         self.assertEqual(0, code, out + err)
 
     def test_a_draft_condition_with_more_terms_is_a_finding(self) -> None:
+        """Test that a draft condition with more terms is a finding."""
         code, out, err = self.write_job_attribute(
             "if: ${{ (github.event_name != 'pull_request' || "
             "!github.event.pull_request.draft) && github.ref == 'refs/heads/main' }}"
@@ -398,12 +415,14 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         return self.run_gate()
 
     def test_a_step_condition_that_skips_a_gate_segment_is_a_finding(self) -> None:
+        """Test that a step condition that skips a gate segment is a finding."""
         code, out, err = self.write_step_attribute("if: false")
         self.assertEqual(1, code, out + err)
         self.assertIn("job all step all runs only under if: false", out)
         self.assertIn("which can skip a gate segment", out)
 
     def test_a_step_continue_on_error_true_is_a_finding(self) -> None:
+        """Test that a step continue on error true is a finding."""
         code, out, err = self.write_step_attribute("continue-on-error: true")
         self.assertEqual(1, code, out + err)
         self.assertIn(
@@ -412,9 +431,7 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         )
 
     def test_a_step_that_starts_with_its_run_is_read_too(self) -> None:
-        # The step's first key is `run`, not `name`. A parser that reads only
-        # a name, an `if:` or a `continue-on-error:` from the dash line never
-        # finds the leg, so the `continue-on-error:` below it goes unjudged.
+        """Test that a step that starts with its run is read too."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             GATE_ENV
@@ -428,9 +445,7 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         )
 
     def test_a_step_that_starts_with_a_block_run_is_read_too(self) -> None:
-        # The same step with its script written as a block scalar: the dash
-        # line carries the `run: |` header, and the body is deeper than the
-        # step's keys.
+        """Test that a step that starts with a block run is read too."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             GATE_ENV
@@ -443,16 +458,17 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
         self.assertIn("runs only under if: false", out)
 
     def test_a_step_always_is_an_allowed_condition(self) -> None:
+        """Test that a step always is an allowed condition."""
         code, out, err = self.write_step_attribute("if: always()")
         self.assertEqual(0, code, out + err)
 
     def test_a_step_continue_on_error_false_passes(self) -> None:
+        """Test that a step continue on error false passes."""
         code, out, err = self.write_step_attribute("continue-on-error: false")
         self.assertEqual(0, code, out + err)
 
     def test_a_step_condition_on_a_non_gate_step_is_not_a_finding(self) -> None:
-        # Only a step that runs a `check` leg is read; a step skipping some
-        # other command narrows nothing the gate depends on.
+        """Test that a step condition on a non gate step is not a finding."""
         self.write(
             os.path.join(".github", "workflows", "ci.yml"),
             GATE_ENV
@@ -468,6 +484,7 @@ class TestEveryGateJobMustBeAllowedToFailTheRun(GateCase):
 
 class TestThisRepository(GateCase):
     def test_the_check_workflow_runs_every_segment_of_check(self) -> None:
+        """Test that the check workflow runs every segment of check."""
         code, out, err = self.run_gate(REPO)
         self.assertEqual(0, code, out + err)
 

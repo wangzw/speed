@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_e2e_honesty.py's criteria and exit codes.
-
-Stdlib-only (unittest + tempfile), matching this directory's own "plain
-executables with no third-party dependencies" convention. Run directly:
-
-    python3 tools/test_check_e2e_honesty.py
-
-Every case builds a scratch tree with a clean baseline (two journey documents,
-one covered by a spec and one registered unreachable, a valid Playwright config
-and Makefile) and then mutates exactly the piece under test. The baseline
-passing on its own is asserted first, so a later case's finding cannot be a
-baseline defect in disguise.
-
-The gate's subject is the e2e harness, which later steps populate; the
-baseline is therefore a fixture tree, not this repository. The gate's own
-end-to-end run against the real tree is exercised by `make repo-check`.
-"""
+"""Unit tests for check_e2e_honesty.py's criteria and exit codes."""
 
 from __future__ import annotations
 
@@ -141,9 +125,9 @@ class GateCase(unittest.TestCase):
 
 class TestBaseline(GateCase):
     def test_the_baseline_tree_passes(self) -> None:
+        """Test that the baseline tree passes."""
         code, out, err = self.run_gate()
         self.assertEqual(code, 0, f"{out}{err}")
-        # A clean run prints the counts and nothing else.
         self.assertEqual(
             out,
             "e2e-honesty: 2 journey document(s): "
@@ -153,6 +137,7 @@ class TestBaseline(GateCase):
 
 class TestCoverage(GateCase):
     def test_a_journey_with_neither_spec_nor_registry_is_a_finding(self) -> None:
+        """Test that a journey with neither spec nor registry is a finding."""
         self.write("docs/prd/journeys/journey-gamma.md", "# Gamma\n\n- `REQ-gamma-001`\n")
         code, out, _ = self.run_gate()
         self.assertEqual(code, 1)
@@ -164,7 +149,7 @@ class TestCoverage(GateCase):
         )
 
     def test_an_absent_registry_is_valid_when_specs_cover_every_journey(self) -> None:
-        # A tree whose journeys all have specs needs no registry at all.
+        """Test that an absent registry is valid when specs cover every journey."""
         self.write(
             "starters/demo/web/e2e/specs/journey-beta.spec.ts",
             "// @journey journey-beta.md\n// @covers REQ-beta-001\n"
@@ -179,9 +164,7 @@ class TestCoverage(GateCase):
         )
 
     def test_a_reachable_journey_labelled_unreachable_with_no_reason_fails(self) -> None:
-        # journey-beta has no external precondition in this fixture tree, so
-        # calling it unreachable is the mislabelling the status distinction
-        # exists to catch; the empty reason makes the gate reject it.
+        """Test that a reachable journey labelled unreachable with no reason fails."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -199,6 +182,7 @@ class TestCoverage(GateCase):
         self.assertIn("marked unreachable with no reason", out)
 
     def test_a_pending_journey_needs_a_reason(self) -> None:
+        """Test that a pending journey needs a reason."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -216,6 +200,7 @@ class TestCoverage(GateCase):
         self.assertIn("marked pending with no reason", out)
 
     def test_pending_is_an_honest_state_not_a_failure(self) -> None:
+        """Test that pending is an honest state not a failure."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -235,8 +220,7 @@ class TestCoverage(GateCase):
         )
 
     def test_unimplemented_is_an_honest_state_not_a_failure(self) -> None:
-        # A path the product does not present yet is not a spec merely waiting
-        # its turn; the state keeps that gap out of the pending count.
+        """Test that unimplemented is an honest state not a failure."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -258,6 +242,7 @@ class TestCoverage(GateCase):
         )
 
     def test_an_unimplemented_journey_needs_a_reason(self) -> None:
+        """Test that an unimplemented journey needs a reason."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -275,6 +260,7 @@ class TestCoverage(GateCase):
         self.assertIn("marked unimplemented with no reason", out)
 
     def test_the_summary_reports_the_three_counts(self) -> None:
+        """Test that the summary reports the three counts."""
         self.write(
             "docs/prd/journeys/journey-gamma.md", "# Gamma\n\n- `REQ-gamma-001`\n"
         )
@@ -303,6 +289,7 @@ class TestCoverage(GateCase):
         )
 
     def test_a_registry_covered_entry_still_needs_a_spec(self) -> None:
+        """Test that a registry covered entry still needs a spec."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -319,6 +306,7 @@ class TestCoverage(GateCase):
         self.assertIn("marked covered but no spec declares it", out)
 
     def test_a_registry_entry_must_name_a_known_journey(self) -> None:
+        """Test that a registry entry must name a known journey."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -336,6 +324,7 @@ class TestCoverage(GateCase):
         self.assertIn("unknown journey document", out)
 
     def test_an_unknown_status_is_a_finding(self) -> None:
+        """Test that an unknown status is a finding."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -356,8 +345,7 @@ class TestCoverage(GateCase):
         )
 
     def test_a_comment_with_braces_in_the_registry_is_not_an_entry(self) -> None:
-        # The registry is read, not executed, so a comment is prose. A brace
-        # in one must not become a phantom entry.
+        """Test that a comment with braces in the registry is not an entry."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             "export const journeys = [\n"
@@ -376,6 +364,7 @@ class TestCoverage(GateCase):
 
 class TestSpecDeclarations(GateCase):
     def test_a_spec_without_a_journey_declaration_is_a_finding(self) -> None:
+        """Test that a spec without a journey declaration is a finding."""
         self.write(
             "starters/demo/web/e2e/specs/orphan.spec.ts",
             "// @covers REQ-alpha-001\nimport { test } from '@playwright/test'\n",
@@ -385,6 +374,7 @@ class TestSpecDeclarations(GateCase):
         self.assertIn("no `@journey", out)
 
     def test_a_spec_without_a_requirement_declaration_is_a_finding(self) -> None:
+        """Test that a spec without a requirement declaration is a finding."""
         self.write(
             "starters/demo/web/e2e/specs/quiet.spec.ts",
             "// @journey journey-alpha.md\nimport { test } from '@playwright/test'\n",
@@ -394,6 +384,7 @@ class TestSpecDeclarations(GateCase):
         self.assertIn("no `@covers", out)
 
     def test_a_spec_cannot_cover_a_requirement_its_journey_does_not_list(self) -> None:
+        """Test that a spec cannot cover a requirement its journey does not list."""
         self.write(
             "starters/demo/web/e2e/specs/overreach.spec.ts",
             "// @journey journey-alpha.md\n// @covers REQ-zeta-999\n",
@@ -404,6 +395,7 @@ class TestSpecDeclarations(GateCase):
         self.assertIn("REQ-zeta-999", out)
 
     def test_a_spec_cannot_declare_an_unknown_journey(self) -> None:
+        """Test that a spec cannot declare an unknown journey."""
         self.write(
             "starters/demo/web/e2e/specs/wrong.spec.ts",
             "// @journey journey-nowhere.md\n// @covers REQ-alpha-001\n",
@@ -413,6 +405,7 @@ class TestSpecDeclarations(GateCase):
         self.assertIn("unknown journey document", out)
 
     def test_a_spec_cannot_declare_two_journeys(self) -> None:
+        """Test that a spec cannot declare two journeys."""
         self.write(
             "starters/demo/web/e2e/specs/two.spec.ts",
             "// @journey journey-alpha.md\n// @journey journey-beta.md\n"
@@ -423,8 +416,7 @@ class TestSpecDeclarations(GateCase):
         self.assertIn("more than one journey", out)
 
     def test_a_spec_with_only_a_header_covers_nothing(self) -> None:
-        # A declaration with no test body would make the registry's `covered`
-        # true while no browser ever opens.
+        """Test that a spec with only a header covers nothing."""
         self.write(
             "starters/demo/web/e2e/specs/journey-beta.spec.ts",
             "// @journey journey-beta.md\n// @covers REQ-beta-001\n"
@@ -435,6 +427,7 @@ class TestSpecDeclarations(GateCase):
         self.assertIn("has no `test(...)` that runs", out)
 
     def test_a_skipped_test_does_not_cover_a_journey(self) -> None:
+        """Test that a skipped test does not cover a journey."""
         self.write(
             "starters/demo/web/e2e/specs/journey-beta.spec.ts",
             "// @journey journey-beta.md\n// @covers REQ-beta-001\n"
@@ -447,6 +440,7 @@ class TestSpecDeclarations(GateCase):
         self.assertIn("has no `test(...)` that runs", out)
 
     def test_a_test_step_counts_as_an_executed_body(self) -> None:
+        """Test that a test step counts as an executed body."""
         self.write(
             "starters/demo/web/e2e/specs/journey-beta.spec.ts",
             "// @journey journey-beta.md\n// @covers REQ-beta-001\n"
@@ -466,67 +460,80 @@ class TestSourceScan(GateCase):
         return code, out
 
     def test_bare_fetch_is_a_finding(self) -> None:
+        """Test that bare fetch is a finding."""
         code, out = self.scan("await fetch('/api/v1/auth/me')\n")
         self.assertEqual(code, 1)
         self.assertIn("direct HTTP", out)
 
     def test_environment_fetch_is_a_finding(self) -> None:
+        """Test that environment fetch is a finding."""
         code, out = self.scan("await window.fetch('/api')\n")
         self.assertEqual(code, 1)
         self.assertIn("direct HTTP", out)
 
     def test_xml_http_request_is_a_finding(self) -> None:
+        """Test that xml http request is a finding."""
         code, out = self.scan("const xhr = new XMLHttpRequest()\n")
         self.assertEqual(code, 1)
         self.assertIn("direct HTTP", out)
 
     def test_a_banned_module_import_is_a_finding(self) -> None:
+        """Test that a banned module import is a finding."""
         code, out = self.scan("import axios from 'axios'\n")
         self.assertEqual(code, 1)
         self.assertIn("direct HTTP", out)
 
     def test_a_side_effect_banned_module_import_is_a_finding(self) -> None:
+        """Test that a side effect banned module import is a finding."""
         code, out = self.scan("import 'node-fetch'\n")
         self.assertEqual(code, 1)
         self.assertIn("direct HTTP", out)
 
     def test_evaluate_is_a_finding(self) -> None:
+        """Test that evaluate is a finding."""
         code, out = self.scan("await page.evaluate(() => document.body.innerHTML)\n")
         self.assertEqual(code, 1)
         self.assertIn("in-page script evaluation", out)
 
     def test_route_interception_is_a_finding(self) -> None:
+        """Test that route interception is a finding."""
         code, out = self.scan("await page.route('**/*', (route) => route.abort())\n")
         self.assertEqual(code, 1)
         self.assertIn("route interception", out)
 
     def test_the_page_request_context_is_a_finding(self) -> None:
+        """Test that the page request context is a finding."""
         code, out = self.scan("await page.request.get('/api/v1/auth/me')\n")
         self.assertEqual(code, 1)
         self.assertIn("API request context", out)
 
     def test_the_request_fixture_is_a_finding(self) -> None:
+        """Test that the request fixture is a finding."""
         code, out = self.scan("await request.post('/api/v1/auth/login', { data: {} })\n")
         self.assertEqual(code, 1)
         self.assertIn("API request context", out)
 
     def test_connect_over_cdp_is_a_finding(self) -> None:
+        """Test that connect over cdp is a finding."""
         code, out = self.scan("await chromium.connectOverCDP(process.env.CDP_URL)\n")
         self.assertEqual(code, 1)
         self.assertIn("CDP side channel", out)
 
     def test_a_non_webauthn_cdp_command_is_a_finding(self) -> None:
+        """Test that a non webauthn cdp command is a finding."""
         code, out = self.scan("await session.send('Network.enable')\n")
         self.assertEqual(code, 1)
         self.assertIn("outside the WebAuthn.* family", out)
         self.assertIn("Network", out)
 
     def test_a_dynamic_cdp_command_is_a_finding(self) -> None:
+        """Test that a dynamic cdp command is a finding."""
         code, out = self.scan("await cdpSession.send(command)\n")
         self.assertEqual(code, 1)
         self.assertIn("non-literal command", out)
 
     def test_the_webauthn_virtual_authenticator_family_is_allowed(self) -> None:
+        """Test that the webauthn virtual authenticator family is allowed."""
         code, out = self.scan(
             "const session = await context.newCDPSession(page)\n"
             "await session.send('WebAuthn.enable', { enableUI: true })\n"
@@ -535,17 +542,17 @@ class TestSourceScan(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_non_cdp_send_is_allowed(self) -> None:
-        # A websocket frame carries no dotted domain, so it is not a CDP command.
+        """Test that a non cdp send is allowed."""
         code, out = self.scan("ws.send('hello')\n")
         self.assertEqual(code, 0, out)
 
     def test_a_comment_mentioning_a_forbidden_token_is_not_a_finding(self) -> None:
+        """Test that a comment mentioning a forbidden token is not a finding."""
         code, out = self.scan("// never call fetch('/api') or page.evaluate here\nconst x = 1\n")
         self.assertEqual(code, 0, out)
 
     def test_a_line_comment_inside_a_string_does_not_hide_the_rest(self) -> None:
-        # A heuristic that starts a comment at the first `//` would blank the
-        # rest of this line and lose the fetch call.
+        """Test that a line comment inside a string does not hide the rest."""
         code, out = self.scan(
             "const tag = 'a//b'\nawait fetch('/api/v1/auth/me')\n"
         )
@@ -553,8 +560,7 @@ class TestSourceScan(GateCase):
         self.assertIn("direct HTTP", out)
 
     def test_a_block_comment_inside_a_string_does_not_hide_the_middle(self) -> None:
-        # The old non-greedy `/* ... */` striped everything between the two
-        # string literals, including the forbidden call.
+        """Test that a block comment inside a string does not hide the middle."""
         code, out = self.scan(
             "const open = '/*'\nawait fetch('/api/v1/auth/me')\nconst close = '*/'\n"
         )
@@ -562,6 +568,7 @@ class TestSourceScan(GateCase):
         self.assertIn("direct HTTP", out)
 
     def test_a_websocket_construction_is_a_finding(self) -> None:
+        """Test that a websocket construction is a finding."""
         code, out = self.scan("const socket = new WebSocket('ws://127.0.0.1:1')\n")
         self.assertEqual(code, 1)
         self.assertIn("direct HTTP", out)
@@ -574,6 +581,7 @@ class TestLayering(GateCase):
         return code, out
 
     def test_a_helper_may_not_spawn_a_process(self) -> None:
+        """Test that a helper may not spawn a process."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/helpers/probe.ts",
             "import { execFile } from 'node:child_process'\nexport const x = execFile\n",
@@ -582,6 +590,7 @@ class TestLayering(GateCase):
         self.assertIn("may not import `node:child_process`", out)
 
     def test_a_spec_may_not_write_a_file(self) -> None:
+        """Test that a spec may not write a file."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/specs/writer.spec.ts",
             "import { writeFileSync } from 'node:fs'\n"
@@ -591,7 +600,7 @@ class TestLayering(GateCase):
         self.assertIn("filesystem write", out)
 
     def test_a_helper_may_read_a_file(self) -> None:
-        # Reading the shipped locale bundles is the helper's legitimate use.
+        """Test that a helper may read a file."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/helpers/bundles.ts",
             "import { readFileSync } from 'node:fs'\n"
@@ -600,6 +609,7 @@ class TestLayering(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_spec_may_not_open_a_database_client(self) -> None:
+        """Test that a spec may not open a database client."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/specs/db.spec.ts",
             "import Database from 'better-sqlite3'\n",
@@ -608,6 +618,7 @@ class TestLayering(GateCase):
         self.assertIn("may not import `better-sqlite3`", out)
 
     def test_a_helper_may_not_read_the_process_log_text(self) -> None:
+        """Test that a helper may not read the process log text."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/helpers/probe.ts",
             "export function read(server: { log: { text: string } }) {\n"
@@ -618,6 +629,7 @@ class TestLayering(GateCase):
         self.assertIn("reads the process log", out)
 
     def test_a_helper_may_not_import_the_logfmt_parser(self) -> None:
+        """Test that a helper may not import the logfmt parser."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/helpers/probe.ts",
             "import { parseLogfmt } from '../fixtures/log'\n"
@@ -627,6 +639,7 @@ class TestLayering(GateCase):
         self.assertIn("may not import parseLogfmt", out)
 
     def test_a_helper_may_import_the_verification_reader(self) -> None:
+        """Test that a helper may import the verification reader."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/helpers/code.ts",
             "import { waitForVerificationCode } from '../fixtures/log'\n"
@@ -635,6 +648,7 @@ class TestLayering(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_fixtures_may_assemble_the_environment(self) -> None:
+        """Test that fixtures may assemble the environment."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/fixtures/assemble.ts",
             "import { execFile } from 'node:child_process'\n"
@@ -644,6 +658,7 @@ class TestLayering(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_only_the_log_fixture_may_parse_logfmt(self) -> None:
+        """Test that only the log fixture may parse logfmt."""
         code, out = self.layer_scan(
             "starters/demo/web/e2e/fixtures/probe.ts",
             "export function parse(line: string) {\n"
@@ -657,6 +672,7 @@ class TestLayering(GateCase):
 
 class TestArtifactsAndEntryPoint(GateCase):
     def test_an_output_dir_outside_tmp_is_a_finding(self) -> None:
+        """Test that an output dir outside tmp is a finding."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             "import { defineConfig } from '@playwright/test'\n"
@@ -667,6 +683,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("not under /tmp", out)
 
     def test_a_missing_output_dir_is_a_finding(self) -> None:
+        """Test that a missing output dir is a finding."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             "import { defineConfig } from '@playwright/test'\n"
@@ -677,7 +694,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("no literal outputDir", out)
 
     def test_an_html_output_folder_inside_the_tree_is_a_finding(self) -> None:
-        # outputDir is /tmp but the HTML report writes into the repository.
+        """Test that an html output folder inside the tree is a finding."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             "import { defineConfig } from '@playwright/test'\n"
@@ -691,6 +708,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("outputFolder `./playwright-report` is not under /tmp", out)
 
     def test_a_reporter_output_file_inside_the_tree_is_a_finding(self) -> None:
+        """Test that a reporter output file inside the tree is a finding."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             "import { defineConfig } from '@playwright/test'\n"
@@ -704,7 +722,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("outputFile `results.xml` is not under /tmp", out)
 
     def test_artifacts_may_compose_the_harness_per_run_root(self) -> None:
-        # The per-run root itself is held to /tmp through fixtures/paths.ts.
+        """Test that artifacts may compose the harness per run root."""
         self.write(
             "starters/demo/web/e2e/fixtures/paths.ts",
             "export const ARTIFACT_ROOT = `/tmp/speed-e2e-${process.pid}`\n",
@@ -722,6 +740,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertEqual(code, 0, f"{out}{err}")
 
     def test_a_per_run_root_outside_tmp_is_a_finding(self) -> None:
+        """Test that a per run root outside tmp is a finding."""
         self.write(
             "starters/demo/web/e2e/fixtures/paths.ts",
             "export const ARTIFACT_ROOT = './artifacts'\n",
@@ -739,6 +758,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("is not under /tmp", out)
 
     def test_a_missing_e2e_target_is_a_finding(self) -> None:
+        """Test that a missing e2e target is a finding."""
         self.write(
             "Makefile",
             ".PHONY: e2e-install check\n\ne2e-install:\n\t@echo install\n\n"
@@ -749,6 +769,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("no `e2e` target", out)
 
     def test_a_missing_e2e_install_target_is_a_finding(self) -> None:
+        """Test that a missing e2e install target is a finding."""
         self.write(
             "Makefile",
             ".PHONY: e2e check\n\ne2e:\n\t@echo run\n\ncheck:\n\t@echo build\n",
@@ -758,6 +779,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("no `e2e-install` target", out)
 
     def test_check_must_not_invoke_the_e2e_tier(self) -> None:
+        """Test that check must not invoke the e2e tier."""
         self.write(
             "Makefile",
             ".PHONY: e2e e2e-install check\n\ne2e-install:\n\t@echo install\n\n"
@@ -768,7 +790,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("`check` target invokes the e2e tier", out)
 
     def test_check_must_not_reach_the_tier_through_playwright(self) -> None:
-        # No `e2e` token appears, but the recipe still runs the tier.
+        """Test that check must not reach the tier through playwright."""
         self.write(
             "Makefile",
             ".PHONY: e2e e2e-install check\n\ne2e-install:\n\t@echo install\n\n"
@@ -781,6 +803,7 @@ class TestArtifactsAndEntryPoint(GateCase):
         self.assertIn("`check` target invokes the e2e tier", out)
 
     def test_check_must_not_reach_the_type_check_either(self) -> None:
+        """Test that check must not reach the type check either."""
         self.write(
             "Makefile",
             ".PHONY: e2e e2e-install check\n\ne2e-install:\n\t@echo install\n\n"
@@ -794,6 +817,7 @@ class TestArtifactsAndEntryPoint(GateCase):
 
 class TestExitCodes(GateCase):
     def test_a_root_that_is_not_a_directory_is_an_infrastructure_error(self) -> None:
+        """Test that a root that is not a directory is an infrastructure error."""
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = m.main(["--root", str(pathlib.Path(self.root, "absent"))])
@@ -801,6 +825,7 @@ class TestExitCodes(GateCase):
         self.assertIn("not a directory", err.getvalue())
 
     def test_a_missing_journeys_directory_is_an_infrastructure_error(self) -> None:
+        """Test that a missing journeys directory is an infrastructure error."""
         self.root = tempfile.mkdtemp(prefix="e2e-honesty-empty-")
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         code, _, err = self.run_gate()
@@ -808,6 +833,7 @@ class TestExitCodes(GateCase):
         self.assertIn("is missing", err)
 
     def test_a_journeys_directory_with_no_document_is_an_infrastructure_error(self) -> None:
+        """Test that a journeys directory with no document is an infrastructure error."""
         for name in ("journey-alpha.md", "journey-beta.md"):
             pathlib.Path(self.root, "docs/prd/journeys", name).unlink()
         code, _, err = self.run_gate()
@@ -815,12 +841,14 @@ class TestExitCodes(GateCase):
         self.assertIn("checked nothing", err)
 
     def test_a_missing_e2e_directory_is_an_infrastructure_error(self) -> None:
+        """Test that a missing e2e directory is an infrastructure error."""
         shutil.rmtree(pathlib.Path(self.root, "starters"))
         code, _, err = self.run_gate()
         self.assertEqual(code, 2)
         self.assertIn("harness is gone", err)
 
     def test_an_unparsable_registry_is_an_infrastructure_error(self) -> None:
+        """Test that an unparsable registry is an infrastructure error."""
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             "export const journeys = [\n  { journey: 'journey-beta.md'\n",
@@ -830,6 +858,7 @@ class TestExitCodes(GateCase):
         self.assertIn("never closes", err)
 
     def test_a_registry_without_a_declaration_is_an_infrastructure_error(self) -> None:
+        """Test that a registry without a declaration is an infrastructure error."""
         self.write("starters/demo/web/e2e/journeys.ts", "export const other = []\n")
         code, _, err = self.run_gate()
         self.assertEqual(code, 2)

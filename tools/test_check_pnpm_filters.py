@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_pnpm_filters.py's criteria and exit codes.
-
-Stdlib-only (unittest + tempfile). Run directly:
-
-    python3 tools/test_check_pnpm_filters.py
-
-The subject is one ruling: a pnpm command that filters must fail when the
-filter matches nothing, and the flag that does it works only before the
-command word. Each source the gate reads is pinned by a case that would
-otherwise pass it (a Dockerfile, a package.json script, a workflow `run:`
-block, a composite action), and so are the two ways a call with the flag
-still goes wrong: the flag after the script name, and a selector that names
-no workspace member.
-
-Cases run over a scratch tree holding a workspace with two members. The last
-case scans this repository.
-"""
+"""Unit tests for check_pnpm_filters.py's criteria and exit codes."""
 
 from __future__ import annotations
 
@@ -117,6 +101,7 @@ class GateCase(unittest.TestCase):
 
 class TestTheFlagGuardsEverySource(GateCase):
     def test_a_clean_tree_passes(self) -> None:
+        """Test that a clean tree passes."""
         self.write("starters/demo/Dockerfile", DOCKERFILE)
         self.write(".github/workflows/ci.yml", WORKFLOW)
         self.write(".github/actions/setup/action.yml", ACTION)
@@ -124,6 +109,7 @@ class TestTheFlagGuardsEverySource(GateCase):
         self.assert_clean()
 
     def test_a_dockerfile_without_the_flag_is_a_finding(self) -> None:
+        """Test that a dockerfile without the flag is a finding."""
         self.write(
             "starters/demo/Dockerfile",
             DOCKERFILE.replace(" --fail-if-no-match", ""),
@@ -132,6 +118,7 @@ class TestTheFlagGuardsEverySource(GateCase):
         self.assertIn("missing", out)
 
     def test_a_package_json_script_without_the_flag_is_a_finding(self) -> None:
+        """Test that a package json script without the flag is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest("@speed/beta", "pnpm --filter @speed/alpha build && tsc"),
@@ -139,6 +126,7 @@ class TestTheFlagGuardsEverySource(GateCase):
         self.assert_finding("web/packages/beta/package.json", "--fail-if-no-match")
 
     def test_a_workflow_run_block_without_the_flag_is_a_finding(self) -> None:
+        """Test that a workflow run block without the flag is a finding."""
         self.write(
             ".github/workflows/ci.yml",
             WORKFLOW.replace("--fail-if-no-match test", "test"),
@@ -146,6 +134,7 @@ class TestTheFlagGuardsEverySource(GateCase):
         self.assert_finding(".github/workflows/ci.yml:9", "--fail-if-no-match")
 
     def test_a_composite_action_without_the_flag_is_a_finding(self) -> None:
+        """Test that a composite action without the flag is a finding."""
         self.write(
             ".github/actions/setup/action.yml",
             ACTION.replace(" --fail-if-no-match", ""),
@@ -153,10 +142,12 @@ class TestTheFlagGuardsEverySource(GateCase):
         self.assert_finding(".github/actions/setup/action.yml:4", "--fail-if-no-match")
 
     def test_a_makefile_recipe_without_the_flag_is_a_finding(self) -> None:
+        """Test that a makefile recipe without the flag is a finding."""
         self.write("Makefile", MAKEFILE.replace(" --fail-if-no-match", ""))
         self.assert_finding("Makefile:2", "--fail-if-no-match")
 
     def test_a_continued_dockerfile_line_is_read_as_one_command(self) -> None:
+        """Test that a continued dockerfile line is read as one command."""
         self.write(
             "starters/demo/Dockerfile",
             "RUN pnpm -C /src/web \\\n    --filter @speed/alpha \\\n    run build\n",
@@ -164,14 +155,17 @@ class TestTheFlagGuardsEverySource(GateCase):
         self.assert_finding("starters/demo/Dockerfile:1", "--fail-if-no-match")
 
     def test_a_call_without_a_filter_needs_no_flag(self) -> None:
+        """Test that a call without a filter needs no flag."""
         self.write("Makefile", "check:\n\t@pnpm -C web -r build\n\t@pnpm -C web install\n")
         self.assert_clean()
 
     def test_the_equals_form_of_a_selector_is_read(self) -> None:
+        """Test that the equals form of a selector is read."""
         self.write("Makefile", "build:\n\t@pnpm -C web --filter=@speed/alpha run build\n")
         self.assert_finding("Makefile:2", "--fail-if-no-match")
 
     def test_the_second_command_of_a_chain_is_read(self) -> None:
+        """Test that the second command of a chain is read."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web install && pnpm -C web --filter host-web run build\n",
@@ -181,6 +175,7 @@ class TestTheFlagGuardsEverySource(GateCase):
 
 class TestTheFlagMustStandBeforeTheCommandWord(GateCase):
     def test_the_flag_after_the_script_name_is_a_finding(self) -> None:
+        """Test that the flag after the script name is a finding."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web --filter @speed/alpha build --fail-if-no-match\n",
@@ -189,6 +184,7 @@ class TestTheFlagMustStandBeforeTheCommandWord(GateCase):
         self.assertNotIn("is missing", out)
 
     def test_the_flag_after_run_is_a_finding(self) -> None:
+        """Test that the flag after run is a finding."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web --filter @speed/alpha run --fail-if-no-match build\n",
@@ -196,6 +192,7 @@ class TestTheFlagMustStandBeforeTheCommandWord(GateCase):
         self.assert_finding("Makefile:2", "after the command word")
 
     def test_the_flag_before_the_filter_is_accepted(self) -> None:
+        """Test that the flag before the filter is accepted."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web --fail-if-no-match --filter @speed/alpha run build\n",
@@ -203,6 +200,7 @@ class TestTheFlagMustStandBeforeTheCommandWord(GateCase):
         self.assert_clean()
 
     def test_the_flag_before_the_command_word_holds_for_exec(self) -> None:
+        """Test that the flag before the command word holds for exec."""
         self.write(
             "Makefile",
             "e2e:\n\t@pnpm -C web --filter host-web --fail-if-no-match exec playwright test\n",
@@ -212,6 +210,7 @@ class TestTheFlagMustStandBeforeTheCommandWord(GateCase):
 
 class TestEverySelectorNamesAMember(GateCase):
     def test_a_selector_naming_no_member_is_a_finding_even_with_the_flag(self) -> None:
+        """Test that a selector naming no member is a finding even with the flag."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web --filter @speed/gamma --fail-if-no-match run build\n",
@@ -220,6 +219,7 @@ class TestEverySelectorNamesAMember(GateCase):
         self.assertNotIn("is missing", out)
 
     def test_one_missing_selector_among_members_is_a_finding(self) -> None:
+        """Test that one missing selector among members is a finding."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web --filter @speed/alpha --filter @speed/gone "
@@ -228,6 +228,7 @@ class TestEverySelectorNamesAMember(GateCase):
         self.assert_finding("Makefile:2", "'@speed/gone'")
 
     def test_a_member_outside_the_workspace_directory_counts(self) -> None:
+        """Test that a member outside the workspace directory counts."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web --filter host-web --fail-if-no-match run build\n",
@@ -235,6 +236,7 @@ class TestEverySelectorNamesAMember(GateCase):
         self.assert_clean()
 
     def test_graph_markers_and_negation_are_removed_before_the_comparison(self) -> None:
+        """Test that graph markers and negation are removed before the comparison."""
         for selector in ("...@speed/alpha", "@speed/alpha...", "...^@speed/alpha", "!@speed/beta"):
             with self.subTest(selector=selector):
                 self.write(
@@ -244,6 +246,7 @@ class TestEverySelectorNamesAMember(GateCase):
                 self.assert_clean()
 
     def test_a_graph_marker_does_not_excuse_a_missing_name(self) -> None:
+        """Test that a graph marker does not excuse a missing name."""
         self.write(
             "Makefile",
             "build:\n\t@pnpm -C web --filter '...@speed/gone' --fail-if-no-match build\n",
@@ -251,6 +254,7 @@ class TestEverySelectorNamesAMember(GateCase):
         self.assert_finding("Makefile:2", "'...@speed/gone'")
 
     def test_a_glob_must_match_a_member(self) -> None:
+        """Test that a glob must match a member."""
         self.write(
             "Makefile",
             "ok:\n\t@pnpm -C web --filter '@speed/*' --fail-if-no-match build\n"
@@ -260,6 +264,7 @@ class TestEverySelectorNamesAMember(GateCase):
         self.assertNotIn("Makefile:2", out)
 
     def test_a_path_selector_is_accepted(self) -> None:
+        """Test that a path selector is accepted."""
         for selector in ("./packages/alpha", "{packages/alpha}", "@speed/alpha{./packages/alpha}"):
             with self.subTest(selector=selector):
                 self.write(
@@ -271,17 +276,20 @@ class TestEverySelectorNamesAMember(GateCase):
 
 class TestExitCodes(GateCase):
     def test_a_root_that_is_not_a_directory_exits_2(self) -> None:
+        """Test that a root that is not a directory exits 2."""
         code, _, err = self.run_gate(os.path.join(self.root, "nope"))
         self.assertEqual(2, code)
         self.assertIn("not a directory", err)
 
     def test_a_tree_without_the_workspace_file_exits_2(self) -> None:
+        """Test that a tree without the workspace file exits 2."""
         os.remove(os.path.join(self.root, "web", "pnpm-workspace.yaml"))
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("pnpm-workspace.yaml", err)
 
     def test_a_workspace_that_lists_no_member_exits_2(self) -> None:
+        """Test that a workspace that lists no member exits 2."""
         self.write("web/pnpm-workspace.yaml", "packages:\n  - nothing/*\n")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
@@ -290,6 +298,7 @@ class TestExitCodes(GateCase):
 
 class TestTheRealRepository(unittest.TestCase):
     def test_every_filtered_call_in_this_repository_is_guarded(self) -> None:
+        """Test that every filtered call in this repository is guarded."""
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = m.main(["--root", REPO])

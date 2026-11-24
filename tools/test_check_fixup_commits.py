@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_fixup_commits.py.
-
-Stdlib-only (unittest + tempfile). Run directly:
-
-    python3 tools/test_check_fixup_commits.py
-
-Each case builds a scratch repository and passes the committer identity
-and `commit.gpgsign=false` on every git call, so nothing depends on the
-developer's global git config.
-"""
+"""Unit tests for check_fixup_commits.py."""
 
 from __future__ import annotations
 
@@ -73,6 +64,7 @@ class FixupCase(unittest.TestCase):
         self.git("checkout", "-q", "-b", "topic")
 
     def test_fixup_commit_fails_and_is_listed(self) -> None:
+        """Test that fixup commit fails and is listed."""
         self.init()
         self.branch()
         self.commit("feat(x): thing")
@@ -83,6 +75,7 @@ class FixupCase(unittest.TestCase):
         self.assertEqual(len(out.splitlines()), 1)
 
     def test_squash_and_amend_are_caught(self) -> None:
+        """Test that squash and amend are caught."""
         self.init()
         self.branch()
         self.commit("squash! feat(x): thing")
@@ -93,6 +86,7 @@ class FixupCase(unittest.TestCase):
         self.assertIn("amend! feat(x): thing", out)
 
     def test_clean_branch_passes(self) -> None:
+        """Test that clean branch passes."""
         self.init()
         self.branch()
         self.commit("feat(x): thing")
@@ -100,6 +94,7 @@ class FixupCase(unittest.TestCase):
         self.assertEqual(self.run_gate()[0], 0)
 
     def test_fixup_already_on_base_is_not_listed(self) -> None:
+        """Test that fixup already on base is not listed."""
         self.init()
         self.commit("fixup! feat(x): base")
         self.branch()
@@ -109,6 +104,7 @@ class FixupCase(unittest.TestCase):
         self.assertEqual(out.strip(), "")
 
     def test_failure_hints_at_autosquash(self) -> None:
+        """Test that failure hints at autosquash."""
         self.init()
         self.branch()
         self.commit("fixup! feat(x): base")
@@ -117,31 +113,35 @@ class FixupCase(unittest.TestCase):
         self.assertIn("git rebase --autosquash", out + err)
 
     def test_head_equal_to_base_passes(self) -> None:
+        """Test that head equal to base passes."""
         self.init()
         self.assertEqual(self.run_gate()[0], 0)
 
     def test_origin_main_is_preferred_over_main(self) -> None:
+        """Test that origin main is preferred over main."""
         self.init()
         self.git("update-ref", "refs/remotes/origin/main", "HEAD")
         self.commit("fixup! feat(x): base")
-        # Choosing main (now at HEAD) would see an empty range and pass.
         self.git("update-ref", "refs/heads/main", "HEAD")
         code, out, _ = self.run_gate()
         self.assertEqual(code, 1)
         self.assertIn("fixup! feat(x): base", out)
 
     def test_main_is_used_without_origin(self) -> None:
+        """Test that main is used without origin."""
         self.init()
         self.branch()
         self.commit("fixup! feat(x): base")
         self.assertEqual(self.run_gate()[0], 1)
 
     def test_non_repository_reports_nothing_checked(self) -> None:
+        """Test that non repository reports nothing checked."""
         code, out, _ = self.run_gate()
         self.assertEqual(code, 0)
         self.assertIn("nothing checked", out)
 
     def test_no_base_ref_reports_nothing_checked(self) -> None:
+        """Test that no base ref reports nothing checked."""
         self.init()
         self.git("branch", "-m", "other")
         code, out, _ = self.run_gate()

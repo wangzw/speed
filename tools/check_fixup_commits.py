@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""Fixup-commit gate for the commits a branch carries beyond main.
-
-`git commit --fixup=<sha>` records a correction to an earlier commit of
-the same branch, and `git rebase --autosquash main` folds it into that
-commit before the branch lands. A branch that lands with the `fixup!`,
-`squash!` or `amend!` commit still on it has skipped that step: the
-correction is a standalone commit on main, and main is never rewritten
-afterwards. Nothing else here reads commit subjects, so this gate does.
-
-The range is `<base>..HEAD`, where the base is `origin/main` when that
-ref resolves in the repository at --root and `main` otherwise. A commit
-is a finding when its subject starts with `fixup! `, `squash! ` or
-`amend! `. HEAD equal to the base is an empty range and passes.
-
-Exit codes: 0 = no such commit, or nothing could be checked (the root is
-not inside a git work tree, or neither base ref resolves; one line says
-so, because a checkout without history has no range to read); 1 = at
-least one such commit, each reported with short SHA and subject.
-"""
+"""Fixup-commit gate for the commits a branch carries beyond main."""
 
 from __future__ import annotations
 

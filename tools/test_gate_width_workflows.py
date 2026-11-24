@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Cases for the frontend installs the workflows run outside the Makefile.
-
-The frontend dependencies are installed in three places: the Makefile's static
-phase, the check workflow's test job (which runs on its own runner), and the
-setup action, before Playwright. Each install takes an explicit width -- the
-workspace's shared lockfile in one pass, with --child-concurrency from
-GATE_JOBS capping its child processes, and --workspace-concurrency written
-alongside to name the width even though a shared-lockfile install ignores it
--- so its width is not left to pnpm's defaults. The setup action
-refuses to run without the budget rather than falling back, and the scheduled
-workflows that call it declare the budget themselves, as the check workflow
-does.
-
-Stdlib-only (unittest). Run directly:
-
-    python3 tools/test_gate_width_workflows.py
-"""
+"""Cases for the frontend installs the workflows run outside the Makefile."""
 
 from __future__ import annotations
 
@@ -65,6 +49,7 @@ def workflow_env(text: str) -> str:
 
 class FrontendInstallWidthTests(unittest.TestCase):
     def test_the_check_workflow_installs_at_the_gate_width(self) -> None:
+        """Test that the check workflow installs at the gate width."""
         block = step_block(
             (WORKFLOWS / "ci.yml").read_text(encoding="utf-8"),
             "Install the frontend dependencies",
@@ -77,6 +62,7 @@ class FrontendInstallWidthTests(unittest.TestCase):
         )
 
     def test_the_setup_action_installs_at_the_gate_width_and_requires_it(self) -> None:
+        """Test that the setup action installs at the gate width and requires it."""
         block = step_block(
             SETUP_ACTION.read_text(encoding="utf-8"),
             "Install the frontend dependencies Playwright runs from",
@@ -89,6 +75,7 @@ class FrontendInstallWidthTests(unittest.TestCase):
         )
 
     def test_the_scheduled_workflows_declare_the_budget_they_pass(self) -> None:
+        """Test that the scheduled workflows declare the budget they pass."""
         for workflow in ("e2e.yml", "browser.yml"):
             with self.subTest(workflow=workflow):
                 env = workflow_env((WORKFLOWS / workflow).read_text(encoding="utf-8"))

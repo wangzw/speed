@@ -2,130 +2,14 @@
 """check_markdown_examples.py -- compile/parse-check fenced ```go blocks in
 markdown prose (AGENTS.md, package READMEs).
 
-Godoc Example functions compile inside each module's own unit suite;
-examples embedded in markdown prose have no compile harness of their own,
-and this script is the check that closes that gap.
+The corpus is the root AGENTS.md and README.md plus every AGENTS.md and
+README.md inside a module go.work lists; prose outside the workspace and any
+path under .git/, node_modules/ or vendor/ is not checked.
 
-WHAT IS CHECKED, and why a blanket "every fenced go block must go build"
-rule is not honest here: the overwhelming majority of fenced ```go blocks
-in the markdown corpus are deliberately partial illustrative fragments --
-a bare method signature, a struct literal, a handful of statements with
-the surrounding function/imports left to the reader's imagination -- not
-complete, buildable Go files. Forcing every one of those into a padded,
-noisy "complete program" just to satisfy a linter would make the docs
-worse, not better. So this script draws the same line the corpus itself
-draws, by whether a block's own first non-comment line is a `package`
-clause:
-
-  * A COMPLETE block (own `package` clause) is a claim that this is real,
-    working code. It is compiled for real: written into a throwaway Go
-    module, `replace`-directived onto whichever workspace modules its own
-    import list names (inferred from the import paths themselves -- no
-    guessing beyond that), then `go build`
-    and `go vet` are run against it with GOWORK=off (so it never inherits
-    the repo's own go.work) and the default GOPROXY (a `replace` directive
-    always wins over the proxy regardless of GOPROXY, so the repo's own
-    vislake/speed modules can never silently drift onto a stale published
-    version -- the replace lines alone give that guarantee; GOPROXY=off
-    would buy nothing for it while blocking every legitimate third-party
-    transitive dependency `go mod tidy` needs to resolve on a cold module
-    cache). A genuine compile failure here means the example is lying
-    about what the API looks like -- a real documentation bug -- and is
-    reported as a violation.
-
-  * A FRAGMENT block (no `package` clause) cannot be honestly compiled
-    without inventing context its author never wrote. Reinventing that
-    context (guessing imports, receivers, surrounding types) would let the
-    checker "pass" fragments that are actually wrong in ways a real compile
-    would catch, which is worse than not checking at all. Instead, a
-    fragment is syntax-checked: gofmt -e (a zero-additional-code front end
-    onto go/parser -- gofmt's own implementation is exactly
-    `parser.ParseFile` plus `go/printer`; shelling out to it gets the real
-    compiler-grade parser this task calls for without this repository
-    maintaining a second, hand-rolled Go binary next to it) is run against
-    the fragment wrapped several different ways in turn -- as a complete
-    top-level declaration list (legal even for a bare function *signature*
-    with no body, which Go's grammar permits), as the body of a throwaway
-    function, as the body of a throwaway interface, as the body of a
-    throwaway struct, and as the body of a throwaway const/var block --
-    stopping at the first wrapping that parses. A fragment that fails to
-    parse under EVERY wrapping is reported as a violation: a syntactically
-    broken example (stray tokens, an unbalanced brace, a bare `...`
-    elision placeholder standing where Go actually requires an expression
-    or a real elided-and-marked-as-such comment) is worse than a merely
-    partial one, and is exactly the class of documentation bug a reader
-    cutting and pasting the snippet would hit immediately. This is a
-    deliberate policy choice, not a default: see "Escape hatch" below for
-    why it is a hard failure rather than a warning, and how an author
-    overrides it when the fragment is genuinely, unavoidably not
-    wrappable.
-
-Survey: run with --survey to re-print the corpus census, and the census
-of the ```go blocks this gate leaves alone. The first answers the
-honest-check question above: the corpus's fenced ```go blocks are
-overwhelmingly partial illustrative fragments, which is why the
-package-clause distinction exists. The second keeps the scope decision
-below checkable rather than assumed.
-
-CORPUS -- exactly:
-  * the repository root's own AGENTS.md and README.md
-  * every AGENTS.md and README.md inside a module the go.work workspace
-    lists
-  * NOT prose outside the workspace (see below)
-  * NOT any path under .git/, node_modules/ or vendor/
-
-The workspace is the scope, and go.work is where it is read from, for
-two reasons. One is truthfulness: `make check` runs this gate, so
-whatever it reaches is a tree this repository builds and checks, and the
-root CLAUDE.md says which trees those are. A gate reaching past the
-workspace would make that statement false, quietly, in a file every
-agent reads first. The other is cost: compiling a complete block
-resolves the dependency graph of every module it imports, so a block in
-a tree outside the workspace would pull that tree's whole dependency
-graph into every CI run, on a cold module cache, before the first
-in-workspace example compiles. Scoping by the roster also means no list
-of paths is maintained here: a module joining the workspace brings its
-prose into the corpus with it.
-
-Design and decision documents are out of scope by the same rule, and
-would be even if they lived inside a module directory: their code blocks
-sketch shapes under design rather than document a shipped API, so a
-sketch that does not parse is normal there and must not fail this check.
-
-ESCAPE HATCH: a fragment that is genuinely, unavoidably unwrappable (a
-snippet illustrating invalid-on-purpose code, say) can be marked with an
-HTML comment on the line immediately before the opening fence:
-
-    <!-- markdown-example: no-parse-check -->
-    ```go
-    ... whatever the doc needs to show ...
-    ```
-
-This is a hard, git-diff-visible, per-block opt-out a reviewer sees in the
-same pull request that adds it: recorded and reviewed, never silent.
-
-Exit codes: 0 clean; 1 a block failed its check (a complete block did not
-build/vet clean, a complete block imported a module the workspace does
-not list, or a fragment parsed under no wrapping); 2 infrastructure error
-(go or gofmt missing, the go.work roster unreadable or listing no module,
---root is not a directory, or a build harness step could not even run).
-
-Usage:
-  python3 tools/check_markdown_examples.py             # check the repo
-  python3 tools/check_markdown_examples.py --root PATH
-  python3 tools/check_markdown_examples.py --survey    # print the corpus
-                                                        # census only, no
-                                                        # compiling/parsing
-  python3 tools/check_markdown_examples.py --keep-temp # leave the
-                                                        # throwaway build
-                                                        # directories on
-                                                        # disk (debugging)
-
-What is NOT checked: a fragment's imports, types and call targets are
-never resolved (go/parser does not type-check), so a fragment that parses
-but calls a method that does not exist is not caught -- only a complete
-block's real `go build` catches that class of bug, by construction, since
-only a complete block carries enough context to build at all.
+Escape hatch: a block that genuinely cannot parse may carry
+`<!-- markdown-example: no-parse-check -->` on the line immediately before its
+opening fence. It is a per-block, git-diff-visible opt-out a reviewer sees in
+the same pull request, never a silent skip.
 """
 
 from __future__ import annotations

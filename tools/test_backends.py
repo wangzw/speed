@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Cases for tools/backends.py, the per-checkout integration stack.
-
-The ports and the project name are pure functions. The compose interactions
-run against a fake `docker` executable that records its arguments and can fail
-a chosen number of `up` calls, so the retry and the final-failure cleanup are
-driven without a daemon and without starting a container.
-
-Stdlib-only (unittest, subprocess, tempfile). Run directly:
-
-    python3 tools/test_backends.py
-"""
+"""Cases for tools/backends.py, the per-checkout integration stack."""
 
 from __future__ import annotations
 
@@ -30,9 +20,6 @@ import backends
 PORT_VARIABLES = backends.PORT_VARIABLES
 ADDRESS_VARIABLES = [address for _, _, address, _ in backends.SERVICES]
 
-# Stands in for docker. It logs every invocation, answers `ps` from a file the
-# case writes, fails the first FAKE_DOCKER_UP_FAILURES `up` calls, and accepts
-# `down` and every other subcommand.
 FAKE_DOCKER = """\
 #!{python}
 import json, os, sys
@@ -82,6 +69,7 @@ def healthy_stack_output() -> str:
 
 class PortAndNameTests(unittest.TestCase):
     def test_allocates_four_distinct_ports_that_bind(self) -> None:
+        """Test that allocates four distinct ports that bind."""
         ports = backends.allocate_ports()
         self.assertEqual(len(ports), 4)
         self.assertEqual(len(set(ports)), 4, f"allocate_ports returned a duplicate: {ports}")
@@ -90,6 +78,7 @@ class PortAndNameTests(unittest.TestCase):
                 sock.bind(("127.0.0.1", port))
 
     def test_project_name_is_stable_for_one_root_and_distinct_for_another(self) -> None:
+        """Test that project name is stable for one root and distinct for another."""
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
             name = backends.project_name(first)
             self.assertRegex(name, r"^speed-test-[0-9a-f]{12}$")
@@ -97,6 +86,7 @@ class PortAndNameTests(unittest.TestCase):
             self.assertNotEqual(name, backends.project_name(second))
 
     def test_state_file_round_trips_only_the_project_and_ports(self) -> None:
+        """Test that state file round trips only the project and ports."""
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             state_path = root / "state.env"
@@ -119,6 +109,7 @@ class PortAndNameTests(unittest.TestCase):
             self.assertEqual(sorted(keys), sorted([backends.PROJECT_KEY, *PORT_VARIABLES]))
 
     def test_a_state_file_for_another_root_is_not_read(self) -> None:
+        """Test that a state file for another root is not read."""
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
             state_path = pathlib.Path(first) / "state.env"
             ports = backends.allocate_ports()
@@ -126,6 +117,7 @@ class PortAndNameTests(unittest.TestCase):
             self.assertIsNone(backends.read_state(state_path, second))
 
     def test_env_lines_carry_every_variable_the_fixtures_read(self) -> None:
+        """Test that env lines carry every variable the fixtures read."""
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             state_path = root / "state.env"
@@ -149,6 +141,7 @@ class PortAndNameTests(unittest.TestCase):
             )
 
     def test_env_fails_loudly_without_a_state_file(self) -> None:
+        """Test that env fails loudly without a state file."""
         with tempfile.TemporaryDirectory() as directory:
             missing = pathlib.Path(directory) / "absent.env"
             stderr = io.StringIO()
@@ -219,6 +212,7 @@ class ComposeTests(unittest.TestCase):
         return ports
 
     def test_up_retries_a_failed_start_and_keeps_the_successful_allocation(self) -> None:
+        """Test that up retries a failed start and keeps the successful allocation."""
         code, stdout, stderr = self.run_with("up", up_failures=2)
         self.assertEqual(code, 0, stdout + stderr)
         attempts = self.calls("up")
@@ -237,6 +231,7 @@ class ComposeTests(unittest.TestCase):
         self.assertIn("started", stdout)
 
     def test_the_final_failure_removes_the_state_and_reports_the_last_output(self) -> None:
+        """Test that the final failure removes the state and reports the last output."""
         code, _, stderr = self.run_with("up", up_failures=99)
         self.assertNotEqual(code, 0)
         self.assertEqual(len(self.calls("up")), backends.ATTEMPTS)
@@ -246,6 +241,7 @@ class ComposeTests(unittest.TestCase):
         self.assertIn("last output", stderr)
 
     def test_a_failed_cleanup_keeps_the_state_file_for_deps_down(self) -> None:
+        """Test that a failed cleanup keeps the state file for deps down."""
         code, _, stderr = self.run_with("up", up_failures=99, down_fails=True)
         self.assertNotEqual(code, 0)
         self.assertTrue(self.calls("down"), "the failed project was not taken down")
@@ -259,6 +255,7 @@ class ComposeTests(unittest.TestCase):
         self.assertIn("last output", stderr)
 
     def test_a_stale_state_file_is_not_reused(self) -> None:
+        """Test that a stale state file is not reused."""
         self.write_stack()
         code, _, stderr = self.run_with("up", ps_output="")
         self.assertEqual(code, 0, stderr)
@@ -266,6 +263,7 @@ class ComposeTests(unittest.TestCase):
         self.assertTrue(self.calls("up"), "a stack whose containers are gone was reused")
 
     def test_a_healthy_stack_is_reused(self) -> None:
+        """Test that a healthy stack is reused."""
         ports = self.write_stack()
         code, stdout, stderr = self.run_with("up", ps_output=healthy_stack_output())
         self.assertEqual(code, 0, stderr)
@@ -277,6 +275,7 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual([state.ports[variable] for variable in PORT_VARIABLES], ports)
 
     def test_down_names_the_state_projects_project_and_removes_the_file(self) -> None:
+        """Test that down names the state projects project and removes the file."""
         self.write_stack()
         project = backends.project_name(self.root)
         code, _, stderr = self.run_with("down")
@@ -289,11 +288,13 @@ class ComposeTests(unittest.TestCase):
         self.assertFalse(self.state.exists())
 
     def test_down_without_a_state_file_touches_no_project(self) -> None:
+        """Test that down without a state file touches no project."""
         code, _, _ = self.run_with("down")
         self.assertEqual(code, 0)
         self.assertEqual(self.calls(), [])
 
     def test_down_refuses_a_state_file_that_is_not_this_checkout(self) -> None:
+        """Test that down refuses a state file that is not this checkout."""
         with tempfile.TemporaryDirectory() as other:
             backends.write_state(self.state, backends.project_name(other), [15432, 16379, 14222, 11222])
         code, _, stderr = self.run_with("down")

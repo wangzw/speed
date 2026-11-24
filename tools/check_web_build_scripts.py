@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
-"""Web build-script guard: every workspace package builds only itself.
-
-The frontend gate builds the packages with `pnpm -r run build:self`. pnpm
-silently skips a member whose manifest has no `build:self` script, so the leg
-stays green while that package's dist is never written. The gate reads the
-members `web/pnpm-workspace.yaml` lists and, for every one except the two
-declared exceptions (`@speed/test-utils` and `demo-web`, whose builds the
-gate does not use), holds its `package.json` scripts to:
-
-- `build:self` is exactly `tsc -p tsconfig.build.json`, so the script compiles
-  this package and nothing else;
-- `build` is exactly
-  `pnpm --filter <own name>... --fail-if-no-match --workspace-concurrency=1
-  run build:self`, so a standalone build selects this package with its whole
-  dependency graph, runs those scripts one at a time, and fails rather than
-  matching nothing.
-
-Exit codes: 0 = every package conforms; 1 = at least one does not, each
-reported as path:line with the package name; 2 = infrastructure error -- the
-root is not a directory, the workspace file is missing, it lists no member
-with a readable manifest, or a member manifest cannot be read or parsed.
-"""
+"""Web build-script guard: every workspace package builds only itself."""
 
 from __future__ import annotations
 

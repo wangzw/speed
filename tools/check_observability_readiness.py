@@ -1,114 +1,5 @@
 #!/usr/bin/env python3
-"""Observability-readiness gate over pkg/.
-
-A round of work landed three observability obligations in pkg/ and guarded
-each one with a Go test -- the logging dependency a module that resolves a
-logger must declare, the redaction rule a module that holds a secret config
-value must register, and the transport wrapper a module that opens an egress
-client must apply. Every one of those tests carries a hand-written list of
-the modules it covers, and design-log.md states the price of that shape: a
-module that both omits the companion and is absent from the list passes
-silently. No descriptor says a module logs, registers a rule or wraps a
-client -- that lives inside its callbacks -- so the list cannot be derived by
-the tests that read descriptors.
-
-This gate is the backstop that admission calls for. It does not restate the
-three assertions; it derives from the source which call sites those
-assertions are about, so the scan is the source of truth and no list has to
-be kept in step. A fourth check is the reverse assertion for the upstream
-global provider a module must not install.
-
-The four checks, each anchored on a pattern that occurs in the tree:
-
-  1. Dependency. A package that takes log.Logger out of the registry must
-     declare it. Resolution is written `core.Resolve[log.Logger](reg)` or
-     through the package-local `optional[log.Logger](reg, ...)`; the
-     declaration is the token `(*log.Logger)(nil)` in the module descriptor
-     of the same package. Without it the module is ordered by name alone,
-     may be constructed ahead of the logging module, and falls back to the
-     process default logger.
-
-  2. Redaction. A `config.Item{Sensitive: true}` whose value is the secret
-     itself must have that value registered as a logging redaction rule. Only
-     a flag that marks a configuration item is read: a keyed entry of a schema
-     map (`KEY: { ... }`) or a literal of the item type (`config.Item{ ... }`),
-     the two shapes the tree declares an item in. A `Sensitive: true` on any
-     other struct is a field of that struct, not an item -- a view that
-     reports or masks the sensitivity of a value writes exactly that and
-     declares no schema -- so such a package owes no registration. A
-     package registers one either directly (`literal.Register(...)`) or by
-     handing the value to the `Secrets` hook of a Spec (`Secrets func(cfg)
-     []string`, `Secrets: func(cfg) []string {...}`, `Secrets: <ref>`), which
-     the factory turns into a `literal.Register`; a shared config unit -- an
-     `Items()` provider with no module -- hands the value on through the
-     `Secrets` hook of the module that mounts it. The check is per item, not
-     per package: the count of registered values must be at least the count of
-     Sensitive items, since a static text cannot be tied to one item (the
-     label is a module-prefixed credential name, not the item key). A
-     `Secrets` hook or a variadic value list covers every item; a fixed value
-     list covers its own number; a package that declares two Sensitive items
-     and registers one value is a finding. A value is attributed to the items
-     only when the registration that hands it over carries a module-prefixed
-     label, and `Secrets` is read in its `[]string`-returning shapes rather
-     than as any field merely named `Secrets`. That narrows the ways a
-     registration can be missed; it does not close them -- see "What this gate
-     is not" below for what a text scan cannot decide.
-     The two items whose value is a filesystem path and not the secret
-     (`sp-key-file` in authn.sso.saml, `signing-key-file` in authn.token)
-     register nothing and are named by package and key in an allow-list;
-     nothing else is exempt by the shape of its key.
-
-  3. Egress. A package that calls `egress.New(` must wrap the client it gets
-     back with `observability.Transport`. design-authn-sso.md states the
-     caller wraps the client's Transport from outside (the egress package
-     provides no wrapper of its own). The one exception is
-     `pkg/authn/login/internal/wechat`: the same document states its URL
-     carries the secret, so it does not wrap, and the package's docstring
-     repeats it. The exception is a named allow-list, not a scan of the
-     expression.
-
-  4. No global provider. pkg/ must call none of the package-level entries of
-     the upstream global: `otel.Tracer(`, `otel.Meter(` and the accessors
-     that install or read the process-wide provider
-     (`otel.SetTracerProvider(`, `otel.GetTracerProvider(`,
-     `otel.SetMeterProvider(`, `otel.GetMeterProvider(`, `otel.Handle(`).
-     adr-observability-provider records that this module installs
-     no global provider, so a signal written through the global resolves to
-     the upstream no-op and reaches no destination. The check reads non-test
-     files, as the others do.
-
-The presence patterns read the code with comments and the contents of string
-and rune literals masked out, so a call named only in a comment or quoted in
-a string is neither a registration nor a call site; the one constant that
-legitimately lives inside a string -- an import path -- is read against the
-raw text instead.
-
-Every check carries a positive control. Before it reports the absence of a
-companion it asserts that it actually scanned the call sites -- that the
-derived set is non-empty and holds a package it knows resolves, declares,
-marks sensitive or opens a client. A scan that drew an empty set has checked
-nothing, and this gate exits 2 rather than pass on it, the same shape the
-descriptor-level Go tests use.
-
-What this gate is not: a type analysis. Every pattern here is a text scan, and
-the redaction check in particular decides heuristically, from the shape a
-package writes its registration in, whether it has given an item a rule. A
-deliberately constructed spelling can defeat the shape -- a registration whose
-label is dressed up to carry the module name, or a hook written to look like
-the `[]string` one -- and pass a package that registers nothing. So a clean
-run here is a backstop, not a guarantee: it catches a module that stayed off
-the hand-written lists the descriptor-level tests carry, and it errs toward
-reporting where it cannot tie a registration to an item, but the type-level
-guarantee lives in those Go tests (`pkg/internal/logdeps` and the
-`secrecy_test.go` files beside the packages), which a text scan cannot
-replace. A reader must not take the absence of a finding as proof that every
-obligation is met.
-
-Exit codes: 0 = clean; 1 = at least one finding, each reported with file,
-line and what is missing; 2 = infrastructure error -- the root is not a
-directory, pkg/ is missing, no Go file was read, or a positive control saw
-an empty set. Paths in the report are relative to --root.
-"""
+"""Observability-readiness gate over pkg/."""
 
 from __future__ import annotations
 
@@ -224,23 +115,12 @@ SENSITIVE_ANCHORS = ("pkg/db", "pkg/event/nats", "pkg/authn/login/github")
 EGRESS_NEW = re.compile(r"\begress\.New\s*\(")
 EGRESS_TRANSPORT = re.compile(r"\bobservability\.Transport\(")
 
-# The package that opens an egress client and does not wrap it, with its
-# source. design-authn-sso.md: "the caller wraps the client's Transport with
-# observability.Transport from outside; the WeChat client does not wrap, its
-# URL carries the secret". Its query string carries the application secret, so
-# the client is left unwrapped on purpose.
 EGRESS_EXEMPT = "pkg/authn/login/internal/wechat"
 
 EGRESS_ANCHORS = ("pkg/authn/login/github", "pkg/authn/sso/oidc")
 
 # -- check 4 -----------------------------------------------------------------
 
-# The package-level entries of the upstream global provider: the constructors
-# and the accessors that install or read the process-wide provider. The
-# installing entries are the ones the ADR forbids; the reading ones are named
-# with them because a signal written through the global reaches the same
-# no-op. A provider taken off the registry is a different call on a value, not
-# on the package, and is not matched.
 GLOBAL_OTEL = re.compile(
     r"\botel\.(?:Tracer|Meter|SetTracerProvider|GetTracerProvider|"
     r"SetMeterProvider|GetMeterProvider|Handle)\s*\("

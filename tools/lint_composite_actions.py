@@ -1,37 +1,5 @@
 #!/usr/bin/env python3
-"""Shellcheck over the `run:` scripts of the repository's composite actions.
-
-actionlint lints workflow files only: its documentation says it does not check
-the steps of a composite action, so a script in `.github/actions/*/action.yml`
-reaches a runner with whatever shell defects it carries. This script closes
-that gap for the shells actionlint covers. For every `run:` step of a composite
-action whose `shell:` is bash or sh it runs shellcheck the way actionlint does
-for a workflow step:
-
-    shellcheck --norc -f json -x --shell <sh> \\
-        -e SC1091,SC2194,SC2050,SC2153,SC2154,SC2157,SC2043 -
-
-with `set -eo pipefail` (bash) or `set -e` (sh) prepended to the script, and
-every `${{ ... }}` expression replaced by underscores of the same length, so
-the shell sees a word where the expression stood and the columns stay put.
-The reported line is the line of the script in the action file.
-
-A step whose shell is anything else (pwsh, python, cmd and so on) is skipped:
-shellcheck does not read it. A `run:` step with no `shell:` is a finding, since
-a composite action's run step must name one.
-
-Not a gate by name: it takes the shellcheck to run, which the Makefile's
-`actionlint` target already requires on PATH, and that target runs it after
-actionlint so the two linters report together.
-
-Usage: lint_composite_actions.py [--root DIR] [--shellcheck PATH]
-
-Exit codes: 0 = every checked script is clean; 1 = a finding (file:line:column
-and the shellcheck message), or a run step without a shell; 2 = infrastructure
-error: the root is not a directory, it holds no composite action, shellcheck is
-not found or does not answer in the JSON format. A tool that read nothing has
-not passed. Paths in the report are relative to --root.
-"""
+"""Shellcheck over the `run:` scripts of the repository's composite actions."""
 
 from __future__ import annotations
 

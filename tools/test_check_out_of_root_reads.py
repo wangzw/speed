@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_out_of_root_reads.py's criterion and exit codes.
-
-Stdlib-only (unittest + tempfile), matching this directory's own "plain
-executables with no third-party dependencies" convention. The cases build a
-scratch tree whose module root is starters/demo/server and whose Makefile
-carries UNCACHED_PACKAGES, then drive the gate through main().
-
-The criterion under test is how a relative path literal is resolved: from the
-package directory, as `go test` runs it, against the module root, however the
-literal is spelled (a bare `../`, a `./../`, or a filepath.Join that climbs out
-through a sibling), with a filepath.Join of literals resolved once and string
-literals inside comments or absolute paths ignored. The exit-code contract is
-the other half: a read is a finding and exits 1, while a root with no scope or
-a Makefile with no UNCACHED_PACKAGES line is an infrastructure error and exits
-2. An uncaught traceback exits 1 and would read as a finding.
-"""
+"""Unit tests for check_out_of_root_reads.py's criterion and exit codes."""
 
 from __future__ import annotations
 

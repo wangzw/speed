@@ -1,74 +1,11 @@
 #!/usr/bin/env python3
 """End-to-end honesty gate: the journeys, their specs, and the tier's rules.
 
-The e2e tier (starters/demo/web/e2e) claims to prove the product works by
-driving the built demo binary through a real browser with mouse and keyboard
-only. Six things can quietly falsify that claim, and this gate holds each:
-
-  1. Coverage. Every journey document under docs/prd/journeys is either
-     exercised by a spec or registered in the harness's journey registry as
-     pending, unreachable or unimplemented *with a reason*. A journey that is
-     neither is a documented path nothing vouches for.
-  2. Declarations. Each spec declares, in its header, the journey document it
-     drives (`@journey <file>.md`) and the requirement ids it exercises
-     (`@covers REQ-...`). The declared journey must exist, every covered id
-     must be one the journey document itself lists, and the spec must contain
-     at least one test that actually runs -- a header alone covers nothing.
-  3. Forbidden tokens. No source file under e2e/ may issue network requests,
-     intercept routes or evaluate script in the page: those are the ways a
-     "browser" test stops touching the rendered product. The one allowed side
-     channel is a WebAuthn.* virtual-authenticator fixture over a CDP session;
-     any other CDP domain is a finding.
-  4. Layers. The harness may assemble its environment (build, seed, probe) in
-     fixtures/, but a spec or a helper may not reach around the product: it may
-     not spawn processes, write files, open a database client, or read the
-     process log beyond the sanctioned reads -- a verification code, the log
-     SMS carrier's accepted-message line, and the delivery pipeline's
-     external-send record. Only fixtures/log.ts parses logfmt lines; a spec or
-     helper may import only `waitForVerificationCode` and asks the server
-     fixture for the other two.
-  5. Artifacts. Every Playwright artifact path -- outputDir, the HTML
-     reporter's outputFolder, any outputFile -- must resolve under /tmp (or
-     through the harness's own /tmp ARTIFACT_ROOT), so a run leaves nothing in
-     the tree.
-  6. Entry point. The root Makefile must carry an `e2e` target, and `check`
-     must not invoke the tier directly or indirectly means (the target name,
-     `playwright test`, or the tier's type-check).
-
-Registry contract (starters/demo/web/e2e/journeys.ts). The gate reads, not
-executes, the TypeScript, so the registry uses a shape it can parse:
-
-    export const journeys = [
-      {
-        journey: 'journey-example.md',
-        status: 'pending',                // 'covered', 'pending', 'unreachable' or 'unimplemented'
-        reason: 'why the tier cannot drive it, or when its spec is due',
-        covers: ['REQ-example-001'],
-      },
-    ]
-
-An object must name `journey` and carry one of those four statuses. A
-`pending`, `unreachable` or `unimplemented` entry must carry a non-empty
-`reason`: `pending` says the path is reachable and its spec is scheduled;
-`unimplemented` says the product does not present the path yet, so no spec can
-drive it and the gap is the feature rather than the schedule; `unreachable`
-names the precondition the tier cannot provide. An absent registry is valid --
-a tree whose journeys all have specs needs none.
-
-The gate prints a one-line summary of the covered, pending, unreachable and
-unimplemented counts on every run, so the number of journeys still unverified
-is visible rather than implied, and an unimplemented path is not miscounted as
-a spec merely waiting its turn.
-
-Spec declaration contract (header comment, before the imports):
+A spec declares the journey it drives and the requirements it covers in its
+header:
 
     // @journey journey-first-registration-to-personal-organization.md
     // @covers REQ-signin-001, REQ-signup-001
-
-Exit codes: 0 = clean; 1 = one or more findings, each printed with its path
-(and line for a token hit); 2 = infrastructure error -- the root is not a
-directory, the journeys directory is missing or empty (nothing to check is not
-a pass), the e2e directory is missing, or the registry cannot be parsed.
 """
 
 from __future__ import annotations
@@ -94,7 +31,6 @@ MAKEFILE = "Makefile"
 # around it. fixtures/ is the assembly layer and is deliberately absent.
 RESTRICTED_LAYERS = (SPECS_DIR, HELPERS_DIR)
 
-# A requirement id as the PRD writes it: REQ-<family>-<number>.
 REQ_ID = re.compile(r"REQ-[A-Za-z0-9-]+")
 
 # A spec's header declarations.

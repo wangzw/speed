@@ -1,42 +1,5 @@
 #!/usr/bin/env python3
-"""CI-jobs gate: every leg of `make check` runs in the `check` workflow.
-
-`make check` declares one segment per leg (`check-lint`, `check-test-race`,
-...), and each segment's recipe calls its leg through `$(MAKE)`. The `check`
-workflow splits those same legs across parallel jobs. A segment added to
-`check` and not to the workflow widens the commit gate beyond what CI runs:
-the commit waits for a local gate nobody repeats on the runner, and the
-coverage gap is invisible because both sides pass.
-
-The gate reads the leg each `check-*` prerequisite of `check` calls, reads
-every `make` command in `.github/workflows/ci.yml`, and holds the two sets
-equal. A leg narrowed with `MODULES=` runs part of that leg's module loop, so
-the union of a leg's `MODULES=` values across the jobs must cover exactly the
-modules `go.work` lists; a job that runs the leg without `MODULES=` covers
-the whole roster.
-
-The workflow is read as text with the shape ci.yml has: job keys under
-`jobs:`, and each job's `run:` value either inline or a block scalar. A make
-command is a word `make` at a shell boundary, its target words are the bare
-words after it, and a `MODULES=` assignment narrows it.
-
-A leg's coverage is not enough: the run must also fail when the leg fails.
-Two settings would undo that. The workflow-level `env:` must set `GATE_JOBS`
-and a `GOFLAGS` that contains `-count=1`, so the tools take the intended
-width and a cached test result is never replayed. And a job that runs a
-`check` leg must neither set `continue-on-error` (any value but `false`) nor
-carry an `if:` that can skip it; `always()`, bare or in `${{ }}`, is the one
-condition allowed because it never skips the job. The same holds one level
-down: a step whose `run:` invokes a `check` leg must not set
-`continue-on-error` and must not carry an `if:` that can skip it, because a
-tolerated or skipped step lets the leg fail without failing the run.
-
-Exit codes: 0 clean, 1 a finding (a leg no job runs, a target that is no
-segment, a module no job covers, the workflow env missing `GATE_JOBS` or
-`-count=1`, or a gate job or gate step that could let a failure pass), 2
-infrastructure error -- the root is not a directory, or the Makefile, the
-workflow or go.work is missing or names nothing to compare.
-"""
+"""CI-jobs gate: every leg of `make check` runs in the `check` workflow."""
 
 from __future__ import annotations
 

@@ -1,49 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_test_limits.py's criteria and exit codes.
-
-Stdlib-only (unittest + tempfile). Run directly:
-
-    python3 tools/test_check_test_limits.py
-
-Three rulings are pinned here, each with a case that would otherwise pass it.
-A test may not derive a width from the host's core count -- `runtime.NumCPU`
-under any `runtime` alias, `runtime.GOMAXPROCS(0)`, a negative argument or a
-variable argument, `os.cpus` and `os.availableParallelism` under any import,
-destructuring, inline-`require` or dynamic-`import` form,
-`navigator.hardwareConcurrency`, and a `maxWorkers`/`minWorkers`/`workers`
-percentage -- and a declared case or wait budget may not sit below the shared
-default, read from `test.setTimeout`, `testInfo.setTimeout`,
-`test.info().setTimeout`, `configure({ asyncUtilTimeout })`, an `it.each`
-table or tagged template, and the usual options objects. The exceptions are
-pinned too: saving and restoring the process width is not a probe (whatever
-its argument; two saves that share a name inside one top-level function are
-judged together, so a clean one is reported when its sibling escapes), a
-fixed width or a range-table width is not a probe, a case budget of 0 means
-no limit, a token named in a comment or a string is prose, an apostrophe
-inside a regex
-is not a string delimiter, a division is not a regex, an `it.each` table is
-not its first argument read as a budget, and a wait that is not a Testing
-Library query is not a case budget. The project's own `waitForCondition`
-wrapper is the one exempt wait: it takes the larger of the caller's timeout
-and the shared async budget, so its timeout is not a limit, and the gate
-asserts that premise every run -- a wrapper that used the caller's value
-directly, or a missing `wait.ts`, exits 2 instead of passing silently. The
-shared defaults themselves are held to their floors, because a lowered
-default would make every per-case limit pass; the floors live in their own
-file, are read at a raised value, and a missing file or key, invalid JSON,
-or a non-finite value is an infrastructure error rather than a silent pass.
-The third ruling keeps `coretest` bounds out of package initialization: a
-test-side file may not call `coretest` from a package-level declaration,
-an `init` body or `TestMain`, because the test log starts only at `M.Run`,
-so a value read before it is not hashed into `go test`'s cache key.
-Reachability is by name across one directory, so a package-level call to a
-two-layer local helper is reported while a call made when a case runs is
-not.
-
-Cases run over a scratch tree holding one clean Vitest package, its preset,
-its floors file, its async budget, one Playwright spec and its config. The
-last case scans this repository.
-"""
+"""Unit tests for check_test_limits.py's criteria and exit codes."""
 
 from __future__ import annotations
 
@@ -207,6 +163,7 @@ class GateCase(unittest.TestCase):
 
 class TestCoreCountIsTheCallers(GateCase):
     def test_a_go_test_reading_num_cpu_is_a_finding(self) -> None:
+        """Test that a go test reading num cpu is a finding."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -218,6 +175,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("pkg/alpha/alpha_test.go", "runtime.NumCPU", "GATE_JOBS")
 
     def test_gomaxprocs_taken_as_a_default_is_a_finding(self) -> None:
+        """Test that gomaxprocs taken as a default is a finding."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -229,8 +187,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("pkg/alpha/alpha_test.go", "runtime.GOMAXPROCS(0)")
 
     def test_a_saved_and_restored_width_is_not_a_default(self) -> None:
-        # The governor test's idiom: read the current width only to restore
-        # it, and set a width the test chooses in between.
+        """Test that a saved and restored width is not a default."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -245,9 +202,7 @@ class TestCoreCountIsTheCallers(GateCase):
     def test_a_saved_and_restored_width_with_a_positive_argument_is_clean(
         self,
     ) -> None:
-        # `GOMAXPROCS(4)` sets a width the test chose and returns the previous
-        # one; reading that return value only to restore it is the same idiom
-        # as the `GOMAXPROCS(0)` form, so it must not be reported.
+        """Test that a saved and restored width with a positive argument is clean."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -259,9 +214,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_clean()
 
     def test_two_same_named_saved_widths_do_not_accuse_each_other(self) -> None:
-        # Two functions in one file each save and restore their own `prev`.
-        # The occurrences must be paired per save, not judged by name alone,
-        # or each save's `prev` looks like a use of the other's.
+        """Test that two same named saved widths do not accuse each other."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -279,10 +232,7 @@ class TestCoreCountIsTheCallers(GateCase):
     def test_one_escaped_save_does_not_accuse_a_clean_same_named_save(
         self,
     ) -> None:
-        # The first `prev` escapes into `t.Log`, so that save was a default.
-        # The second `prev` is only saved, restored and never read beyond the
-        # restore, so it is clean. Pairing by name outright would report both;
-        # pairing within each function reports only the first (line 9).
+        """Test that one escaped save does not accuse a clean same named save."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -304,9 +254,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assertEqual(1, out.count("runtime.GOMAXPROCS(0)"))
 
     def test_two_escaped_same_named_saves_are_both_findings(self) -> None:
-        # Both saves escape into their own `t.Log`, so both reads were
-        # defaults. A pairing that stopped at the first reported name would
-        # miss the second (line 15).
+        """Test that two escaped same named saves are both findings."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -329,6 +277,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assertEqual(2, out.count("runtime.GOMAXPROCS(0)"))
 
     def test_a_fixed_process_width_is_allowed(self) -> None:
+        """Test that a fixed process width is allowed."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -339,6 +288,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_clean()
 
     def test_a_vitest_config_reading_cpus_is_a_finding(self) -> None:
+        """Test that a vitest config reading cpus is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "import os from 'node:os'\n"
@@ -347,6 +297,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "os.cpus")
 
     def test_a_destructured_cpus_import_is_a_finding(self) -> None:
+        """Test that a destructured cpus import is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "import { cpus } from 'node:os'\n"
@@ -355,6 +306,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "os.cpus")
 
     def test_a_playwright_spec_reading_available_parallelism_is_a_finding(self) -> None:
+        """Test that a playwright spec reading available parallelism is a finding."""
         spec = (
             "import os from 'node:os'\n"
             + PLAYWRIGHT_SPEC.replace(
@@ -370,6 +322,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_browser_core_probe_is_a_finding(self) -> None:
+        """Test that a browser core probe is a finding."""
         spec = PLAYWRIGHT_SPEC.replace(
             "test('alpha journey'",
             "const workers = navigator.hardwareConcurrency\n"
@@ -382,6 +335,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_token_in_a_comment_or_string_is_prose(self) -> None:
+        """Test that a token in a comment or string is prose."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport "testing"\n\n'
@@ -393,8 +347,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_clean()
 
     def test_a_go_test_support_file_that_imports_testing_is_scanned(self) -> None:
-        # A package name that does not end in `test` (dbsuite, bussuite,
-        # cutproxy, routefixture) still helps tests when it imports testing.
+        """Test that a go test support file that imports testing is scanned."""
         self.write(
             "pkg/db/internal/dbsuite/dbsuite.go",
             'package dbsuite\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -405,9 +358,7 @@ class TestCoreCountIsTheCallers(GateCase):
     def test_a_go_test_helper_package_without_the_testing_import_is_scanned(
         self,
     ) -> None:
-        # `coretest` is the Go convention's test-helper package: it helps
-        # tests but imports no `testing`, so the union includes a package or
-        # directory whose name ends in `test`.
+        """Test that a go test helper package without the testing import is scanned."""
         self.write(
             "pkg/core/coretest/width.go",
             'package coretest\n\nimport "runtime"\n\n'
@@ -418,9 +369,7 @@ class TestCoreCountIsTheCallers(GateCase):
     def test_a_package_name_ending_in_test_is_scanned_without_a_directory_rule(
         self,
     ) -> None:
-        # The directory `helper` matches no rule; the package name `coretest`
-        # alone puts this file in scope. An implementation that read only the
-        # directory name would skip it.
+        """Test that a package name ending in test is scanned without a directory rule."""
         self.write(
             "pkg/core/helper/width.go",
             'package coretest\n\nimport "runtime"\n\n'
@@ -431,9 +380,7 @@ class TestCoreCountIsTheCallers(GateCase):
     def test_a_directory_name_ending_in_test_is_scanned_without_a_package_rule(
         self,
     ) -> None:
-        # The package `core` matches no rule; the directory `coretest` alone
-        # puts this file in scope. An implementation that read only the
-        # package name would skip it.
+        """Test that a directory name ending in test is scanned without a package rule."""
         self.write(
             "pkg/core/coretest/width.go",
             'package core\n\nimport "runtime"\n\n'
@@ -442,9 +389,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("pkg/core/coretest/width.go", "runtime.NumCPU")
 
     def test_a_go_file_that_does_not_import_testing_is_out_of_scope(self) -> None:
-        # A product file that is not `_test.go`, does not import `testing`,
-        # and lives in neither a package nor a directory ending in `test` is
-        # out of scope: product code chooses its own width.
+        """Test that a go file that does not import testing is out of scope."""
         self.write(
             "pkg/alpha/runtime.go",
             'package alpha\n\nimport "runtime"\n\n'
@@ -453,6 +398,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_clean()
 
     def test_a_test_utils_support_file_is_scanned(self) -> None:
+        """Test that a test utils support file is scanned."""
         self.write(
             "web/test-utils/src/harness.ts",
             "import os from 'node:os'\n"
@@ -461,6 +407,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/test-utils/src/harness.ts", "os.cpus")
 
     def test_an_e2e_helper_file_is_scanned(self) -> None:
+        """Test that an e2e helper file is scanned."""
         self.write(
             "starters/demo/web/e2e/helpers/wait.ts",
             "import os from 'node:os'\n"
@@ -471,6 +418,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_renamed_cpus_import_is_a_finding(self) -> None:
+        """Test that a renamed cpus import is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "import { cpus as c } from 'node:os'\n"
@@ -481,6 +429,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_renamed_cpus_require_is_a_finding(self) -> None:
+        """Test that a renamed cpus require is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "const { cpus: c } = require('os')\n"
@@ -491,6 +440,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_required_os_module_alias_is_a_finding(self) -> None:
+        """Test that a required os module alias is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "const host = require('os')\n"
@@ -499,6 +449,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "os.cpus")
 
     def test_a_namespace_os_import_is_a_finding(self) -> None:
+        """Test that a namespace os import is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "import * as host from 'node:os'\n"
@@ -507,8 +458,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "os.cpus")
 
     def test_an_inline_require_of_cpus_is_a_finding(self) -> None:
-        # No module alias is bound, and the mask blanks the specifier, so the
-        # binding scan cannot see this; the inline form is read on its own.
+        """Test that an inline require of cpus is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default { test: { maxWorkers: require('os').cpus().length } }\n",
@@ -516,6 +466,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "os.cpus")
 
     def test_a_dynamic_import_of_cpus_is_a_finding(self) -> None:
+        """Test that a dynamic import of cpus is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default async () => {\n"
@@ -526,9 +477,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "os.cpus")
 
     def test_a_dynamic_import_then_destructure_is_a_finding(self) -> None:
-        # The destructuring happens inside `.then(({ ... }) => ...)`, which
-        # binds no name the module scan can follow; the form is matched on
-        # its own.
+        """Test that a dynamic import then destructure is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default async () => {\n"
@@ -542,6 +491,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_dynamic_import_member_read_is_a_finding(self) -> None:
+        """Test that a dynamic import member read is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default async () => {\n"
@@ -554,6 +504,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_an_os_require_named_in_a_string_is_prose(self) -> None:
+        """Test that an os require named in a string is prose."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default { test: { name: \"require('os').cpus()\" } }\n",
@@ -561,6 +512,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_clean()
 
     def test_a_renamed_runtime_import_is_a_finding(self) -> None:
+        """Test that a renamed runtime import is a finding."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\trt "runtime"\n\t"testing"\n)\n\n'
@@ -569,6 +521,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("pkg/alpha/alpha_test.go", "runtime.NumCPU")
 
     def test_gomaxprocs_with_a_negative_argument_is_a_finding(self) -> None:
+        """Test that gomaxprocs with a negative argument is a finding."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -579,6 +532,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("pkg/alpha/alpha_test.go", "runtime.GOMAXPROCS(0)")
 
     def test_gomaxprocs_with_a_variable_argument_is_a_finding(self) -> None:
+        """Test that gomaxprocs with a variable argument is a finding."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -590,10 +544,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("pkg/alpha/alpha_test.go", "runtime.GOMAXPROCS(width)")
 
     def test_a_positive_literal_save_used_beyond_restore_is_a_finding(self) -> None:
-        # The save's argument is a positive literal, which the query scan does
-        # not match, but the read value escapes as a worker count, so the
-        # width was taken as a default. Without this report the positive
-        # literal branch would be silent.
+        """Test that a positive literal save used beyond restore is a finding."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -609,8 +560,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_saved_width_used_beyond_restore_is_a_finding(self) -> None:
-        # The file contains a restore call, but the saved value also escapes
-        # as a worker count, so the read was a default, not an idiom.
+        """Test that a saved width used beyond restore is a finding."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -624,6 +574,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("pkg/alpha/alpha_test.go", "runtime.GOMAXPROCS(0)")
 
     def test_a_range_variable_width_is_the_tests_own_table(self) -> None:
+        """Test that a range variable width is the tests own table."""
         self.write(
             "pkg/alpha/alpha_test.go",
             'package alpha\n\nimport (\n\t"runtime"\n\t"testing"\n)\n\n'
@@ -638,6 +589,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_clean()
 
     def test_a_vitest_worker_percentage_is_a_finding(self) -> None:
+        """Test that a vitest worker percentage is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default { test: { maxWorkers: '50%' } }\n",
@@ -645,6 +597,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "maxWorkers")
 
     def test_a_vitest_min_worker_percentage_is_a_finding(self) -> None:
+        """Test that a vitest min worker percentage is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default { test: { minWorkers: '25%' } }\n",
@@ -652,6 +605,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "minWorkers")
 
     def test_a_playwright_worker_percentage_is_a_finding(self) -> None:
+        """Test that a playwright worker percentage is a finding."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             PLAYWRIGHT_CONFIG.replace(
@@ -663,6 +617,7 @@ class TestCoreCountIsTheCallers(GateCase):
         )
 
     def test_a_worker_count_from_gate_jobs_is_clean(self) -> None:
+        """Test that a worker count from gate jobs is clean."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default { test: { maxWorkers: process.env.GATE_JOBS } }\n",
@@ -670,9 +625,7 @@ class TestCoreCountIsTheCallers(GateCase):
         self.assert_clean()
 
     def test_an_apostrophe_in_a_regex_is_not_a_string_delimiter(self) -> None:
-        # An apostrophe inside a regex is masked with the regex, so a probe
-        # named in a later case title stays prose rather than being read as
-        # code.
+        """Test that an apostrophe in a regex is not a string delimiter."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { expect, it } from 'vitest'\n"
@@ -686,6 +639,7 @@ class TestCoreCountIsTheCallers(GateCase):
 
 class TestCaseLimitsStayAtTheSharedDefault(GateCase):
     def test_a_vitest_option_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that a vitest option budget below the default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -695,6 +649,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms", "60000ms")
 
     def test_a_vitest_trailing_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that a vitest trailing budget below the default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace("  })\n})", "  }, 5_000)\n})"),
@@ -702,6 +657,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_a_vitest_set_timeout_below_the_default_is_a_finding(self) -> None:
+        """Test that a vitest set timeout below the default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -712,6 +668,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "1000ms")
 
     def test_a_multiline_case_names_the_line_of_its_budget(self) -> None:
+        """Test that a multiline case names the line of its budget."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -724,6 +681,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts:4", "5000ms")
 
     def test_an_it_each_case_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that an it each case budget below the default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -732,6 +690,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts:2", "5000ms")
 
     def test_a_vitest_budget_at_the_default_is_clean(self) -> None:
+        """Test that a vitest budget at the default is clean."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -741,6 +700,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_vitest_config_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that a vitest config budget below the default is a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default { test: { testTimeout: 5_000, hookTimeout: 5_000 } }\n",
@@ -748,6 +708,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/beta/vitest.config.ts", "5000ms")
 
     def test_a_vitest_config_taking_the_shared_budget_is_clean(self) -> None:
+        """Test that a vitest config taking the shared budget is clean."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "import { sharedTimeoutMs } from '../../vitest.shared.ts'\n"
@@ -756,6 +717,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_testing_library_wait_below_the_async_default_is_a_finding(self) -> None:
+        """Test that a testing library wait below the async default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -769,6 +731,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_a_find_by_wait_below_the_async_default_is_a_finding(self) -> None:
+        """Test that a find by wait below the async default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -782,6 +745,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_a_wait_at_the_async_default_is_clean(self) -> None:
+        """Test that a wait at the async default is clean."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -793,6 +757,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_wait_through_the_shared_async_budget_is_clean(self) -> None:
+        """Test that a wait through the shared async budget is clean."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -806,8 +771,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_an_e2e_helper_case_budget_is_a_finding(self) -> None:
-        # A fixture or helper that narrows a bound narrows every case that
-        # uses it, so the e2e support files are read, not skipped.
+        """Test that an e2e helper case budget is a finding."""
         self.write(
             "starters/demo/web/e2e/helpers/wait.ts",
             "import { test } from '@playwright/test'\n"
@@ -818,6 +782,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_a_playwright_case_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that a playwright case budget below the default is a finding."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             PLAYWRIGHT_SPEC.replace(
@@ -830,6 +795,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_a_scaled_playwright_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that a scaled playwright budget below the default is a finding."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             PLAYWRIGHT_SPEC.replace(
@@ -843,6 +809,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_a_widened_playwright_budget_is_clean(self) -> None:
+        """Test that a widened playwright budget is clean."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             PLAYWRIGHT_SPEC.replace(
@@ -854,6 +821,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_playwright_describe_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that a playwright describe budget below the default is a finding."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             "test.describe.configure({ timeout: scaledTimeout(60_000) })\n"
@@ -864,6 +832,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_playwright_waits_and_retries_are_not_case_budgets(self) -> None:
+        """Test that playwright waits and retries are not case budgets."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             PLAYWRIGHT_SPEC.replace(
@@ -877,6 +846,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_quoted_budget_is_prose(self) -> None:
+        """Test that a quoted budget is prose."""
         self.write(
             "web/scripts/guard.test.mjs",
             "import { it } from 'vitest'\n"
@@ -888,6 +858,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_trailing_scaled_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that a trailing scaled budget below the default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -897,6 +868,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_an_arithmetic_budget_below_the_default_is_a_finding(self) -> None:
+        """Test that an arithmetic budget below the default is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -906,7 +878,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_an_arithmetic_budget_above_the_default_is_clean(self) -> None:
-        # Read as 2*60_000 = 120_000, not as a bare 2.
+        """Test that an arithmetic budget above the default is clean."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -916,6 +888,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_third_argument_options_budget_is_a_finding(self) -> None:
+        """Test that a third argument options budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -924,6 +897,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_a_vi_set_config_budget_is_a_finding(self) -> None:
+        """Test that a vi set config budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -934,6 +908,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_a_test_info_set_timeout_budget_is_a_finding(self) -> None:
+        """Test that a test info set timeout budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             VITEST_CASE.replace(
@@ -944,6 +919,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "1000ms")
 
     def test_a_skip_if_chain_budget_is_a_finding(self) -> None:
+        """Test that a skip if chain budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -952,6 +928,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_a_test_for_chain_budget_is_a_finding(self) -> None:
+        """Test that a test for chain budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { test } from 'vitest'\n"
@@ -960,6 +937,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_a_playwright_test_info_set_timeout_is_a_finding(self) -> None:
+        """Test that a playwright test info set timeout is a finding."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             PLAYWRIGHT_SPEC.replace(
@@ -973,8 +951,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_a_playwright_info_set_timeout_is_a_finding(self) -> None:
-        # Playwright's `test.info()` returns the TestInfo, so this is the
-        # same case bound as `testInfo.setTimeout` in another shape.
+        """Test that a playwright info set timeout is a finding."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             PLAYWRIGHT_SPEC.replace(
@@ -988,7 +965,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         )
 
     def test_a_case_budget_of_zero_is_unlimited(self) -> None:
-        # Both Vitest and Playwright read a case budget of 0 as no limit.
+        """Test that a case budget of zero is unlimited."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -997,6 +974,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_vitest_set_timeout_of_zero_is_unlimited(self) -> None:
+        """Test that a vitest set timeout of zero is unlimited."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1005,8 +983,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_playwright_set_timeout_of_zero_is_unlimited(self) -> None:
-        # Playwright reads a case budget of 0 as no limit too, so the same
-        # widening passes on that side.
+        """Test that a playwright set timeout of zero is unlimited."""
         self.write(
             "starters/demo/web/e2e/specs/journey-alpha.spec.ts",
             PLAYWRIGHT_SPEC.replace(
@@ -1017,8 +994,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_an_async_wait_timeout_of_zero_is_still_a_finding(self) -> None:
-        # 0 on a wait is not "unlimited": a wait for a condition that returns
-        # at once buys nothing, so it is still below the shared async default.
+        """Test that an async wait timeout of zero is still a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1027,8 +1003,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "0ms")
 
     def test_a_find_by_wait_timeout_of_zero_is_still_a_finding(self) -> None:
-        # The zero exception belongs to case budgets only; a query that
-        # returns at once is still below the shared async default.
+        """Test that a find by wait timeout of zero is still a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1039,8 +1014,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "0ms")
 
     def test_an_async_configure_timeout_is_a_finding(self) -> None:
-        # A test that narrows Testing Library's async budget lowers the same
-        # wait the setup widened, so it is judged against the async default.
+        """Test that an async configure timeout is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { configure } from '@testing-library/react'\n"
@@ -1049,6 +1023,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
 
     def test_an_async_configure_through_the_shared_budget_is_clean(self) -> None:
+        """Test that an async configure through the shared budget is clean."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { configure } from '@testing-library/react'\n"
@@ -1057,6 +1032,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_non_timeout_configure_key_is_clean(self) -> None:
+        """Test that a non timeout configure key is clean."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { configure } from '@testing-library/react'\n"
@@ -1065,6 +1041,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_hook_trailing_budget_is_a_finding(self) -> None:
+        """Test that a hook trailing budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { beforeEach } from 'vitest'\n"
@@ -1073,6 +1050,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "2000ms")
 
     def test_a_run_if_chain_budget_is_a_finding(self) -> None:
+        """Test that a run if chain budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1081,6 +1059,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_a_tagged_template_each_budget_is_a_finding(self) -> None:
+        """Test that a tagged template each budget is a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1089,6 +1068,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "5000ms")
 
     def test_a_tagged_template_each_table_is_not_a_budget(self) -> None:
+        """Test that a tagged template each table is not a budget."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1097,8 +1077,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_an_each_table_call_is_not_read_as_a_budget(self) -> None:
-        # `range(5)` is the table, not a 5ms limit; only a recognised scaling
-        # wrapper is peeled, so the table's first argument is not read.
+        """Test that an each table call is not read as a budget."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1107,8 +1086,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_clean()
 
     def test_a_division_budget_is_read_as_division(self) -> None:
-        # `1000 / 60` is division, not a regex literal: a mask that read it as
-        # a regex would blank the value and miss the 16ms budget.
+        """Test that a division budget is read as division."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1117,6 +1095,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "16ms")
 
     def test_division_shapes_are_not_masked_as_a_regex(self) -> None:
+        """Test that division shapes are not masked as a regex."""
         for source in (
             "const t = a / b / c",
             "const t = (1) / 2",
@@ -1125,6 +1104,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
             self.assertEqual(source, m.mask_javascript(source))
 
     def test_config_budgets_on_separate_lines_are_each_a_finding(self) -> None:
+        """Test that config budgets on separate lines are each a finding."""
         self.write(
             "web/packages/beta/vitest.config.ts",
             "export default {\n"
@@ -1160,46 +1140,50 @@ class TestTheJavascriptMask(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
 
     def test_jsx_self_closing_tag_with_attributes_keeps_scanning(self) -> None:
+        """Test that jsx self closing tag with attributes keeps scanning."""
         self.assert_shape_reports("render(<A p={x} />);\n")
 
     def test_jsx_self_closing_after_an_identifier_keeps_scanning(self) -> None:
+        """Test that jsx self closing after an identifier keeps scanning."""
         self.assert_shape_reports("render(<Br />);\n")
 
     def test_jsx_self_closing_after_a_quoted_attribute_keeps_scanning(self) -> None:
+        """Test that jsx self closing after a quoted attribute keeps scanning."""
         self.assert_shape_reports('render(<A p="x" />);\n')
 
     def test_a_regex_starting_with_a_self_closing_slash_is_masked(self) -> None:
-        # `.replace(/>/g, ...)` is the shape in the demo's SAML fixture. The
-        # slash after `(` opens a regex, so its `>` is masked with the regex
-        # body. Reading `/>` as a tag end instead leaves the `>` in the mask
-        # and lets the scan fall through to the next slash.
+        """Test that a regex starting with a self closing slash is masked."""
         self.assertEqual(
             ".replace(/ /g, '    ')\n",
             m.mask_javascript(".replace(/>/g, '&gt;')\n"),
         )
 
     def test_the_saml_replace_shape_keeps_scanning(self) -> None:
+        """Test that the saml replace shape keeps scanning."""
         self.assert_shape_reports("value.replace(/>/g, '&gt;');\n")
 
     def test_jsx_text_apostrophe_keeps_scanning(self) -> None:
+        """Test that jsx text apostrophe keeps scanning."""
         self.assert_shape_reports("render(<p>it's here</p>);\n")
 
     def test_jsx_closing_tag_before_a_template_keeps_scanning(self) -> None:
+        """Test that jsx closing tag before a template keeps scanning."""
         self.assert_shape_reports("render(<Link>a</Link>); f(`/a/${id}`);\n")
 
     def test_jsx_self_closing_before_a_template_keeps_scanning(self) -> None:
+        """Test that jsx self closing before a template keeps scanning."""
         self.assert_shape_reports("render(<A p={x} />); f(`/a/${id}`);\n")
 
     def test_a_regex_after_an_if_header_keeps_scanning(self) -> None:
+        """Test that a regex after an if header keeps scanning."""
         self.assert_shape_reports("if (x) /`/.test(s);\n")
 
     def test_a_regex_after_a_comparison_slash_keeps_scanning(self) -> None:
+        """Test that a regex after a comparison slash keeps scanning."""
         self.assert_shape_reports("x</`/.test(s);\n")
 
     def test_a_double_slash_in_jsx_text_is_not_a_line_comment(self) -> None:
-        # `<p>http://x</p>` writes a URL in JSX text, where `//` is literal
-        # characters, not a comment. Reading it as a comment blanks the rest
-        # of the line, including the findBy wait that sits on it.
+        """Test that a double slash in jsx text is not a line comment."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it, screen } from 'vitest'\n"
@@ -1211,9 +1195,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
 
     def test_a_regex_on_the_right_of_a_less_than_is_not_code(self) -> None:
-        # `s</re/.test(t)` is `s < /re/.test(t)`: the `<` is a comparison
-        # whose right operand is a regex, so the regex is masked and its
-        # content is not read as code.
+        """Test that a regex on the right of a less than is not code."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1224,23 +1206,18 @@ class TestTheJavascriptMask(GateCase):
         self.assert_clean()
 
     def test_a_closing_tag_after_jsx_text_is_still_markup(self) -> None:
-        # The same `</` shape inside JSX text closes an element; the text
-        # before it is not an operand of a comparison.
+        """Test that a closing tag after jsx text is still markup."""
         self.assert_shape_reports("render(<Link>a</Link>);\n")
 
     def test_a_comment_after_a_nested_closing_tag_is_masked(self) -> None:
-        # A nested closing tag, the text after it and the parent's closing
-        # tag all end their elements; the `//` after them is a real comment,
-        # so a name inside it stays prose.
+        """Test that a comment after a nested closing tag is masked."""
         masked = m.mask_javascript(
             "render(<p><b>x</b> hello</p>) // names os.cpus()\n"
         )
         self.assertNotIn("os.cpus", masked)
 
     def test_a_wait_after_a_nested_closing_tag_is_read(self) -> None:
-        # The `</` before `p` closes the element instead of opening a regex
-        # that would run to the division later on the line and blank the
-        # wait's arguments.
+        """Test that a wait after a nested closing tag is read."""
         masked = m.mask_javascript(
             "render(<p><b>x</b> hello</p>); "
             "await screen.findByText('x', { timeout: 500 }); "
@@ -1249,21 +1226,19 @@ class TestTheJavascriptMask(GateCase):
         self.assertIn("500", masked)
 
     def test_code_after_a_multiline_element_close_is_read(self) -> None:
-        # Text and its closing tag on a later line still end the element,
-        # so the `os.cpus()` after it is code, not part of a regex body.
+        """Test that code after a multiline element close is read."""
         masked = m.mask_javascript(
             "render(<p><b>x</b>\n hello</p>); const n = os.cpus() / 2\n"
         )
         self.assertIn("os.cpus", masked)
 
     def test_text_after_a_self_closing_child_keeps_its_slashes(self) -> None:
-        # `http://y` sits in the parent's text after a self-closing child;
-        # `//` there is literal text, not a line comment.
+        """Test that text after a self closing child keeps its slashes."""
         masked = m.mask_javascript("render(<p><br/>http://y</p>)\n")
         self.assertIn("http://y", masked)
 
     def test_text_after_a_nested_open_tag_keeps_its_slashes(self) -> None:
-        # The same URL written after a nested open tag is still text.
+        """Test that text after a nested open tag keeps its slashes."""
         masked = m.mask_javascript("render(<p>see <b>http://y</b></p>)\n")
         self.assertIn("http://y", masked)
 
@@ -1272,9 +1247,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_shape_reports(shape)
 
     def test_a_return_before_jsx_keeps_its_text_and_wait(self) -> None:
-        # `return` ends in identifier characters but is not an operand, so
-        # `return <p>` opens an element: the `//` in the URL is text and the
-        # wait on the next line keeps its 500ms timeout.
+        """Test that a return before jsx keeps its text and wait."""
         self.assert_keyword_shape_keeps_text_and_wait(
             "return <p>http://y</p>\n"
         )
@@ -1282,37 +1255,36 @@ class TestTheJavascriptMask(GateCase):
     def test_a_return_before_jsx_text_with_an_apostrophe_keeps_the_wait(
         self,
     ) -> None:
-        # The apostrophe in `as'x` is JSX text, not a string opener, so it
-        # does not swallow the next line's query.
+        """Test that a return before jsx text with an apostrophe keeps the wait."""
         self.assert_keyword_shape_keeps_text_and_wait(
             "return <p>as'x http://y</p>\n"
         )
 
     def test_an_await_before_jsx_keeps_its_text_and_wait(self) -> None:
+        """Test that an await before jsx keeps its text and wait."""
         self.assert_keyword_shape_keeps_text_and_wait("await <p>http://y</p>\n")
 
     def test_an_awaited_parenthesised_jsx_element_keeps_its_text(self) -> None:
+        """Test that an awaited parenthesised jsx element keeps its text."""
         self.assert_keyword_shape_keeps_text_and_wait(
             "await (<p>http://y</p>)\n"
         )
 
     def test_a_ternary_branch_jsx_element_keeps_its_text_and_wait(self) -> None:
+        """Test that a ternary branch jsx element keeps its text and wait."""
         self.assert_keyword_shape_keeps_text_and_wait(
             "const v = x ? <p>http://y</p> : y\n"
         )
 
     def test_a_comparison_after_a_keyword_is_still_code(self) -> None:
-        # The keyword rule reads the word right before `<` only: in
-        # `return a < b` the operand is `a`, so the `//` is a comment and a
-        # name in it is prose.
+        """Test that a comparison after a keyword is still code."""
         masked = m.mask_javascript(
             "function f() { return a < b } // os.cpus()\n"
         )
         self.assertNotIn("os.cpus", masked)
 
     def test_a_string_in_an_expression_container_is_masked(self) -> None:
-        # A `{` in JSX text enters code: the string inside is masked, so a
-        # token in it is prose.
+        """Test that a string in an expression container is masked."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1323,7 +1295,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_clean()
 
     def test_a_comment_in_an_expression_container_is_masked(self) -> None:
-        # The same entry makes a `//` inside the container a comment.
+        """Test that a comment in an expression container is masked."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1334,18 +1306,14 @@ class TestTheJavascriptMask(GateCase):
         self.assert_clean()
 
     def test_text_resumes_after_an_expression_container_closes(self) -> None:
-        # The `}` that closes the container returns to text, so the `//` in
-        # the URL after it is text, not a comment.
+        """Test that text resumes after an expression container closes."""
         masked = m.mask_javascript("render(<p>{x} http://y</p>)\n")
         self.assertIn("http://y", masked)
 
     def test_a_type_parameter_misread_reports_the_name_between_the_tags(
         self,
     ) -> None:
-        # `foo(<T>bar)` is a type assertion, but a `</T>` in a later comment
-        # makes the scan read it as an element. Text blanks nothing, so the
-        # `os.cpus()` in the comment is visible and reported: the misread
-        # costs a false finding rather than a missed one.
+        """Test that a type parameter misread reports the name between the tags."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1357,9 +1325,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "os.cpus")
 
     def test_a_type_argument_in_a_tag_does_not_end_the_tag(self) -> None:
-        # `<FormField<FormValues, 'name'> ... />` is one opening tag: the
-        # `>` that closes the type argument must not end it, or the trailing
-        # `/>` is read as a regex start and the code after it is masked.
+        """Test that a type argument in a tag does not end the tag."""
         masked = m.mask_javascript(
             "render(<FormField<FormValues, 'name'> value={x} />); "
             "const d = a / b\n"
@@ -1367,8 +1333,7 @@ class TestTheJavascriptMask(GateCase):
         self.assertIn("const d = a / b", masked)
 
     def test_a_less_than_chain_keeps_its_comment(self) -> None:
-        # `a<b>c` is `(a < b) > c`, not markup, so the `//` still starts a
-        # comment and a token named in it is prose.
+        """Test that a less than chain keeps its comment."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1379,10 +1344,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_clean()
 
     def test_a_string_after_as_is_masked(self) -> None:
-        # A type assertion may have no space before its string
-        # (`x as'user'`). The apostrophe opens a string, so its contents are
-        # masked and the scan continues instead of failing closed on the
-        # closing quote.
+        """Test that a string after as is masked."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it, screen } from 'vitest'\n"
@@ -1395,9 +1357,7 @@ class TestTheJavascriptMask(GateCase):
         self.assertNotIn("os.cpus", out)
 
     def test_a_string_after_as_does_not_fail_closed(self) -> None:
-        # Without the keyword, the opening apostrophe is read as JSX text,
-        # the closing one opens a string, and the scan reaches end of file
-        # inside it: exit 2 instead of reading the file.
+        """Test that a string after as does not fail closed."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1408,9 +1368,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_clean()
 
     def test_a_comment_after_a_type_assertion_is_masked(self) -> None:
-        # `foo(<T>bar)` is a type assertion: no `</T>` closes it, so the
-        # `>` does not open element text and the `//` after it stays a
-        # comment. A name inside it is prose, not a finding.
+        """Test that a comment after a type assertion is masked."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1421,9 +1379,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_clean()
 
     def test_a_generic_arrow_does_not_turn_later_lines_into_text(self) -> None:
-        # `<T,>() => ...` is a generic arrow, not an element. Its `>` has no
-        # `</T>`, so the comment and the string on later lines are still
-        # masked: a text state would leave the name in them visible.
+        """Test that a generic arrow does not turn later lines into text."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1436,9 +1392,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_clean()
 
     def test_an_apostrophe_in_jsx_text_does_not_hide_the_next_wait(self) -> None:
-        # JSX text is literal, so the apostrophe in `as'x` is a character,
-        # not a string opener: the wait on the next line keeps its name and
-        # its 500ms timeout is reported.
+        """Test that an apostrophe in jsx text does not hide the next wait."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it, screen } from 'vitest'\n"
@@ -1450,6 +1404,7 @@ class TestTheJavascriptMask(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "500ms")
 
     def test_an_unclosed_construct_raises_rather_than_blanking(self) -> None:
+        """Test that an unclosed construct raises rather than blanking."""
         for source in (
             "const s = 'unclosed\n",
             'const s = "unclosed\n',
@@ -1462,6 +1417,7 @@ class TestTheJavascriptMask(GateCase):
                     m.mask_javascript(source)
 
     def test_an_unclosed_template_exits_2_naming_the_file(self) -> None:
+        """Test that an unclosed template exits 2 naming the file."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1485,6 +1441,7 @@ class TestTheWaitConditionExemption(GateCase):
     """
 
     def test_a_wait_for_condition_timeout_of_zero_passes(self) -> None:
+        """Test that a wait for condition timeout of zero passes."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1496,6 +1453,7 @@ class TestTheWaitConditionExemption(GateCase):
         self.assert_clean()
 
     def test_a_wait_for_condition_timeout_below_the_default_passes(self) -> None:
+        """Test that a wait for condition timeout below the default passes."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it } from 'vitest'\n"
@@ -1507,8 +1465,7 @@ class TestTheWaitConditionExemption(GateCase):
         self.assert_clean()
 
     def test_a_vi_wait_for_timeout_of_zero_is_still_a_finding(self) -> None:
-        # `vi.waitFor` has no wrapper in front of it, so its 0 is a wait that
-        # returns at once, not a widening.
+        """Test that a vi wait for timeout of zero is still a finding."""
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
             "import { it, vi } from 'vitest'\n"
@@ -1517,6 +1474,7 @@ class TestTheWaitConditionExemption(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "0ms")
 
     def test_a_wrapper_using_the_callers_value_directly_exits_2(self) -> None:
+        """Test that a wrapper using the callers value directly exits 2."""
         self.write(
             "web/test-utils/src/wait.ts",
             WAIT_CONDITION.replace(
@@ -1532,6 +1490,7 @@ class TestTheWaitConditionExemption(GateCase):
         self.assertIn("must", err)
 
     def test_a_missing_wait_condition_file_exits_2(self) -> None:
+        """Test that a missing wait condition file exits 2."""
         os.remove(
             os.path.join(self.root, "web", "test-utils", "src", "wait.ts")
         )
@@ -1541,8 +1500,7 @@ class TestTheWaitConditionExemption(GateCase):
         self.assertIn("cannot be checked", err)
 
     def test_an_unreadable_wait_condition_file_exits_2(self) -> None:
-        # A file that exists but cannot be decoded is the same premise
-        # failure as a missing one: the gate must not scan past it.
+        """Test that an unreadable wait condition file exits 2."""
         path = os.path.join(self.root, "web", "test-utils", "src", "wait.ts")
         with open(path, "wb") as handle:
             handle.write(b"\xff\xfe\x00")
@@ -1552,8 +1510,7 @@ class TestTheWaitConditionExemption(GateCase):
         self.assertIn("cannot be read", err)
 
     def test_the_premise_check_reads_the_wrappers_body(self) -> None:
-        # A Math.max elsewhere in the file does not stand for the wrapper's
-        # own; the function body is what the check reads.
+        """Test that the premise check reads the wrappers body."""
         self.assertTrue(m.wait_condition_takes_larger_timeout(WAIT_CONDITION))
         self.assertFalse(
             m.wait_condition_takes_larger_timeout(
@@ -1569,13 +1526,12 @@ class TestTheWaitConditionExemption(GateCase):
 
 class TestTheSharedDefaultsHoldTheirFloors(GateCase):
     def test_a_lowered_vitest_default_is_a_finding(self) -> None:
+        """Test that a lowered vitest default is a finding."""
         self.write("web/vitest.shared.ts", PRESET_WITH.format(default_ms="5_000"))
         self.assert_finding("web/vitest.shared.ts", "5000ms", "60000ms")
 
     def test_the_vitest_floor_comes_from_the_floors_file(self) -> None:
-        # Raise the floor above a default that clears the file's current
-        # 60_000. An implementation that read a fixed floor instead of the
-        # file would pass it.
+        """Test that the vitest floor comes from the floors file."""
         self.write(
             "web/scripts/test-time-floors.json",
             FLOORS_WITH % "90000",
@@ -1584,9 +1540,7 @@ class TestTheSharedDefaultsHoldTheirFloors(GateCase):
         self.assert_finding("web/vitest.shared.ts", "80000ms", "90000ms")
 
     def test_a_raised_default_is_what_case_budgets_are_judged_against(self) -> None:
-        # The preset is raised to 90_000, so an 80_000 case budget is now
-        # below it. An implementation that judged against a hardcoded 60_000
-        # would pass this case.
+        """Test that a raised default is what case budgets are judged against."""
         self.write("web/vitest.shared.ts", PRESET_WITH.format(default_ms="90_000"))
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
@@ -1597,6 +1551,7 @@ class TestTheSharedDefaultsHoldTheirFloors(GateCase):
         self.assert_finding("web/packages/alpha/src/alpha.test.ts", "80000ms", "90000ms")
 
     def test_a_raised_default_still_passes_a_budget_above_it(self) -> None:
+        """Test that a raised default still passes a budget above it."""
         self.write("web/vitest.shared.ts", PRESET_WITH.format(default_ms="90_000"))
         self.write(
             "web/packages/alpha/src/alpha.test.ts",
@@ -1607,9 +1562,7 @@ class TestTheSharedDefaultsHoldTheirFloors(GateCase):
         self.assert_clean()
 
     def test_the_playwright_floor_comes_from_the_floors_file(self) -> None:
-        # Raise the floor above a default that clears the file's current
-        # 120_000. An implementation that read a fixed floor instead of the
-        # file would pass it.
+        """Test that the playwright floor comes from the floors file."""
         self.write(
             "web/scripts/test-time-floors.json",
             PLAYWRIGHT_FLOORS_WITH % "200000",
@@ -1623,13 +1576,12 @@ class TestTheSharedDefaultsHoldTheirFloors(GateCase):
         )
 
     def test_the_async_floor_comes_from_the_floors_file(self) -> None:
-        # Raise the async floor above the default that clears the file's
-        # current 30_000. An implementation with a fixed 30_000 floor would
-        # pass it.
+        """Test that the async floor comes from the floors file."""
         self.write("web/scripts/test-time-floors.json", ASYNC_FLOORS_WITH % "40000")
         self.assert_finding("web/test-utils/src/gate-time.ts", "30000ms", "40000ms")
 
     def test_a_lowered_playwright_default_is_a_finding(self) -> None:
+        """Test that a lowered playwright default is a finding."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             PLAYWRIGHT_CONFIG.replace("scaledTimeout(180_000)", "scaledTimeout(60_000)"),
@@ -1639,8 +1591,7 @@ class TestTheSharedDefaultsHoldTheirFloors(GateCase):
         )
 
     def test_the_playwright_default_is_read_at_any_indentation(self) -> None:
-        # Four-space properties are still the top-level object; the nested
-        # `expect` timeout is at a deeper brace depth and is not the default.
+        """Test that the playwright default is read at any indentation."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             "import { defineConfig } from '@playwright/test'\n"
@@ -1653,6 +1604,7 @@ class TestTheSharedDefaultsHoldTheirFloors(GateCase):
         self.assert_clean()
 
     def test_a_nested_only_timeout_is_not_the_default(self) -> None:
+        """Test that a nested only timeout is not the default."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             "export default defineConfig({\n"
@@ -1669,11 +1621,13 @@ class TestTheSharedDefaultsHoldTheirFloors(GateCase):
 
 class TestExitCodes(GateCase):
     def test_a_root_that_is_not_a_directory_exits_2(self) -> None:
+        """Test that a root that is not a directory exits 2."""
         code, _, err = self.run_gate(os.path.join(self.root, "nope"))
         self.assertEqual(2, code)
         self.assertIn("not a directory", err)
 
     def test_a_tree_with_no_test_file_exits_2(self) -> None:
+        """Test that a tree with no test file exits 2."""
         empty = tempfile.mkdtemp(prefix="test-limits-empty-")
         self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
         code, _, err = self.run_gate(empty)
@@ -1681,12 +1635,14 @@ class TestExitCodes(GateCase):
         self.assertIn("nothing was checked", err)
 
     def test_a_vitest_tree_without_the_preset_exits_2(self) -> None:
+        """Test that a vitest tree without the preset exits 2."""
         os.remove(os.path.join(self.root, "web", "vitest.shared.ts"))
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("vitest.shared.ts", err)
 
     def test_a_vitest_tree_without_the_gate_time_default_exits_2(self) -> None:
+        """Test that a vitest tree without the gate time default exits 2."""
         os.remove(
             os.path.join(self.root, "web", "test-utils", "src", "gate-time.ts")
         )
@@ -1695,12 +1651,14 @@ class TestExitCodes(GateCase):
         self.assertIn("gate-time.ts", err)
 
     def test_a_vitest_tree_without_the_floors_file_exits_2(self) -> None:
+        """Test that a vitest tree without the floors file exits 2."""
         os.remove(os.path.join(self.root, "web", "scripts", "test-time-floors.json"))
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("test-time-floors.json", err)
 
     def test_a_floors_file_without_a_key_exits_2(self) -> None:
+        """Test that a floors file without a key exits 2."""
         self.write(
             "web/scripts/test-time-floors.json",
             '{"playwrightCaseTimeoutMs": 120000}\n',
@@ -1710,6 +1668,7 @@ class TestExitCodes(GateCase):
         self.assertIn("vitestCaseTimeoutMs", err)
 
     def test_a_floors_file_without_the_async_key_exits_2(self) -> None:
+        """Test that a floors file without the async key exits 2."""
         self.write(
             "web/scripts/test-time-floors.json",
             '{"vitestCaseTimeoutMs": 60000, "playwrightCaseTimeoutMs": 120000}\n',
@@ -1719,8 +1678,7 @@ class TestExitCodes(GateCase):
         self.assertIn("asyncUtilTimeoutMs", err)
 
     def test_a_nan_floor_exits_2(self) -> None:
-        # `json` parses the NaN literal into a float that no comparison
-        # rejects, so the value must be refused before it is converted.
+        """Test that a nan floor exits 2."""
         self.write(
             "web/scripts/test-time-floors.json",
             '{"vitestCaseTimeoutMs": NaN, "playwrightCaseTimeoutMs": 120000, '
@@ -1731,6 +1689,7 @@ class TestExitCodes(GateCase):
         self.assertIn("vitestCaseTimeoutMs", err)
 
     def test_an_infinite_floor_exits_2(self) -> None:
+        """Test that an infinite floor exits 2."""
         self.write(
             "web/scripts/test-time-floors.json",
             '{"vitestCaseTimeoutMs": 60000, "playwrightCaseTimeoutMs": 120000, '
@@ -1741,12 +1700,14 @@ class TestExitCodes(GateCase):
         self.assertIn("asyncUtilTimeoutMs", err)
 
     def test_a_floors_file_that_is_not_json_exits_2(self) -> None:
+        """Test that a floors file that is not json exits 2."""
         self.write("web/scripts/test-time-floors.json", "{ not json\n")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("not readable JSON", err)
 
     def test_a_playwright_tree_without_the_config_exits_2(self) -> None:
+        """Test that a playwright tree without the config exits 2."""
         os.remove(
             os.path.join(
                 self.root, "starters", "demo", "web", "e2e", "playwright.config.ts"
@@ -1757,6 +1718,7 @@ class TestExitCodes(GateCase):
         self.assertIn("playwright.config.ts", err)
 
     def test_a_playwright_config_without_a_default_exits_2(self) -> None:
+        """Test that a playwright config without a default exits 2."""
         self.write(
             "starters/demo/web/e2e/playwright.config.ts",
             "export default defineConfig({ testDir: './specs' })\n",
@@ -2126,6 +2088,7 @@ class TestCoretestIsReadWhenTheCaseRuns(GateCase):
 
 class TestTheRealRepository(unittest.TestCase):
     def test_every_test_and_test_configuration_obeys_the_rulings(self) -> None:
+        """Test that every test and test configuration obeys the rulings."""
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = m.main(["--root", REPO])

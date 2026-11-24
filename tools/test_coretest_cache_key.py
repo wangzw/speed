@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""GATE_TIME_SCALE reaching the go test cache key.
-
-Runs a scratch module at scale 1 twice as the control and once at scale 3,
-and holds that case-time bounds rerun while a package-level bound stays cached.
-Stdlib-only (unittest): python3 tools/test_coretest_cache_key.py
-"""
+"""GATE_TIME_SCALE reaching the go test cache key."""
 
 from __future__ import annotations
 
@@ -23,8 +18,6 @@ PKG_GO_MOD = ROOT / "pkg" / "go.mod"
 
 MODULE_PATH = "example.com/coretest-cache-key"
 
-# A test package that computes its one bound inside the case, so the read lands
-# in the test log and therefore in the cache key.
 BOUND_PACKAGE = """package {name}
 
 import (
@@ -42,8 +35,6 @@ func TestTheBoundIsComputedWhenTheCaseRuns(t *testing.T) {{
 }}
 """
 
-# The premise: a bound computed in a package-level variable is read before the
-# test log starts, so a scale change never reruns it.
 PREMISE_PACKAGE = """package premise
 
 import (
@@ -71,8 +62,6 @@ BOUND_CALLS = {
     "declaredagainst": "_ = coretest.DeclaredAgainst(t, 0, time.Second, time.Hour)",
 }
 
-# A package that imports coretest but never calls it, so only the package's
-# own initialization can stop the run.
 IMPORTS_SOURCE = """package imports
 
 import (
@@ -146,8 +135,6 @@ class CacheKeyTests(unittest.TestCase):
         env["GOWORK"] = "off"
         env["GOTOOLCHAIN"] = "local"
         env["GOPROXY"] = "off"
-        # CI's -count=1 would disable the cache and blunt every run below.
-        # Everything else, -p from tools-test included, is passed on.
         env["GOFLAGS"] = " ".join(
             flag
             for flag in env.get("GOFLAGS", "").split()
