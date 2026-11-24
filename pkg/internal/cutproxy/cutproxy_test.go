@@ -9,12 +9,8 @@ import (
 	"time"
 )
 
-// TestACutClosesTheLinkItCarriesAndRefusesTheNext pins the three states a case
-// leans on: a link carries bytes to the upstream and back, a cut closes the
-// link it was carrying and refuses the next one, and a restore lets a new link
-// through. The cases that cut a link are only as strong as these: a cut that
-// left its links standing, or a connection the cut refused but never closed,
-// would leave them passing over a link nothing ever cut.
+// TestACutClosesTheLinkItCarriesAndRefusesTheNext checks that Cut closes the carried link and
+// refuses the next, and Restore lets a new link through.
 func TestACutClosesTheLinkItCarriesAndRefusesTheNext(t *testing.T) {
 	upstream, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -38,8 +34,6 @@ func TestACutClosesTheLinkItCarriesAndRefusesTheNext(t *testing.T) {
 	roundTrip(t, after, "after")
 }
 
-// echo answers every connection with what it is given, so a case can tell a
-// link that carries bytes from one that does not.
 func echo(listener net.Listener) {
 	for {
 		conn, err := listener.Accept()
@@ -53,7 +47,6 @@ func echo(listener net.Listener) {
 	}
 }
 
-// dialLink opens a link through addr, and closes it when the test ends.
 func dialLink(t *testing.T, addr string) net.Conn {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
@@ -64,8 +57,6 @@ func dialLink(t *testing.T, addr string) net.Conn {
 	return conn
 }
 
-// roundTrip writes message on the link and reads it back, which only an
-// upstream that is reached and answers can produce.
 func roundTrip(t *testing.T, conn net.Conn, message string) {
 	t.Helper()
 	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
@@ -84,8 +75,6 @@ func roundTrip(t *testing.T, conn net.Conn, message string) {
 	}
 }
 
-// refused requires the link to be closed: a byte arriving on it, or a read left
-// hanging until its deadline, is the failure.
 func refused(t *testing.T, conn net.Conn, what string) {
 	t.Helper()
 	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
