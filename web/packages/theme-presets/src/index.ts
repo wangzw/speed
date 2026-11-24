@@ -1,24 +1,7 @@
 /**
- * Theme presets: named, ready-made token overrides.
- *
- * @speed/tokens owns the mechanism -- one default tree, deepMerge, and the
- * types. This package is the shelf: each preset is a TokensOverride, that
- * is, a diff against the default tree, and nothing more. The assembly
- * order is defaultTokens -> preset -> projectTokens -> tenantOverrides, so
- * a project's brand colors still beat a preset and tenant overrides still
- * beat both.
- *
- * Two contracts shape the shape below:
- *
- * - The package is pure data. It imports types only, with no runtime
- *   dependency, no React, no MUI and no i18n. Display names are product
- *   copy and belong to the host's locale resources, so a preset carries an
- *   id and tokens, never a label.
- * - Layout and stacking are not style. `breakpoints` is a functional
- *   contract pinned by the layout design, and `zIndex` is depended on by
- *   the side-panel and dialog ordering; a preset that moved either would
- *   break chrome rather than restyle it. `ThemePresetTokens` excludes both
- *   at the type level.
+ * Theme presets: named, ready-made token overrides. Each preset is a
+ * TokensOverride, a diff against the default tree; display names belong to
+ * the host's locale resources.
  */
 
 import type { TokensOverride } from '@speed/tokens'
@@ -32,7 +15,6 @@ export interface ThemePreset {
   readonly tokens: ThemePresetTokens
 }
 
-/** Recursively freeze an object in place, idempotently, and return it. */
 function deepFreeze<T>(value: T): T {
   if (typeof value === 'object' && value !== null) {
     for (const child of Object.values(value as Record<string, unknown>)) {
@@ -43,7 +25,6 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
-/** Assemble one preset and freeze it: presets are shared data, never mutable state. */
 function createPreset(id: string, tokens: ThemePresetTokens): ThemePreset {
   return deepFreeze({ id, tokens })
 }
@@ -51,11 +32,7 @@ function createPreset(id: string, tokens: ThemePresetTokens): ThemePreset {
 /** The baseline: no diff at all, byte-identical to the default token tree. */
 export const defaultThemePreset: ThemePreset = createPreset('default', {})
 
-/**
- * Classic: the traditional admin-console look -- nearly square corners, a
- * denser spacing base, hard rules and shadows, tighter leading, a navy
- * primary on a steel secondary.
- */
+/** Classic: the traditional admin-console look. */
 export const classicThemePreset: ThemePreset = createPreset('classic', {
   color: {
     divider: '#94A3B8',
@@ -97,11 +74,7 @@ export const classicThemePreset: ThemePreset = createPreset('classic', {
   },
 })
 
-/**
- * Modern: the fashion-forward product look -- large radii, an airier
- * spacing base, soft wide shadows, looser leading, a violet primary on a
- * rose secondary.
- */
+/** Modern: the fashion-forward product look. */
 export const modernThemePreset: ThemePreset = createPreset('modern', {
   color: {
     semantic: {
@@ -168,37 +141,22 @@ export const compactThemePreset: ThemePreset = createPreset('compact', {
 })
 
 /**
- * Glass: liquid glass -- large radii, translucent surfaces over a colored
- * canvas gradient, backdrop blur and saturation, soft shadows.
- *
- * The raised surfaces declare an opacity but no fill, so each mode
- * inherits its own paper color before the alpha is applied: white in
- * light mode, the dark paper tone in dark mode. A hardcoded white fill
- * would composite to a mid-grey on the dark canvas and drop the dark
- * palette's light text below 4.5:1; inheriting the mode-resolved paper
- * keeps one token value correct on both pages. The light-mode error tone
- * is deepened because the pastel canvas stops already cost the default
- * red most of its headroom.
+ * Glass: liquid glass -- large radii, translucent surfaces over a canvas
+ * gradient, blur and saturation. Raised surfaces declare opacity but no fill, so
+ * each mode inherits its paper; a white fill would drop dark text below 4.5:1.
  */
 export const glassThemePreset: ThemePreset = createPreset('glass', {
   color: {
     background: {
-      // The light stops stay pastel so the page itself reads light; the
-      // dark stops stay vivid so the raised surfaces have a visible tint
-      // to show through. The composite is what the contrast test pins.
       canvas: {
         light: { from: '#C7D2FE', to: '#FBCFE8' },
         dark: { from: '#4338CA', to: '#9D174D' },
       },
     },
     text: {
-      // The saturated canvas leaves the default secondary ink too light.
       secondary: '#1E293B',
     },
     semantic: {
-      // The saturated canvas costs every role most of its headroom, so the
-      // light palette uses the deepest tone of each family as main; dark
-      // mode paints the light tone instead and keeps the vivid accents.
       primary: {
         main: '#1E1B4B',
         light: '#C7D2FE',
@@ -241,13 +199,7 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
     borderRadius: 24,
   },
   surface: {
-    // The canvas is the page background: it paints above the body's
-    // background color, so a page fill would be invisible under an opaque
-    // gradient. The translucency that makes the glass read lives on the
-    // raised surfaces below, over each mode's own paper tone.
     container: {
-      // Opaque enough that the panel separates from the pastel canvas; at
-      // 0.4 the light mode's card and page nearly met.
       opacity: 0.5,
       borderColor: 'rgba(15, 23, 42, 0.30)',
       borderColorDark: 'rgba(255, 255, 255, 0.55)',
@@ -264,12 +216,8 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
       elevation: 8,
     },
     header: {
-      // The table header is the panel's own glass, not a tinted band: a
-      // transparent fill lets the card show through, and the header's
-      // weight plus the row divider separate it from the body. A fill or
-      // a backdrop filter here would stack a second layer inside the
-      // panel's own blur -- the filter samples the wrong backdrop and the
-      // row reads as a darker strip.
+      // The table header is the panel's own glass: a fill or backdrop filter
+      // here would stack a second layer inside the panel's blur.
       fill: 'transparent',
       borderColor: 'rgba(15, 23, 42, 0.22)',
       borderColorDark: 'rgba(255, 255, 255, 0.5)',
@@ -286,22 +234,10 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
   },
 })
 
-/**
- * The mono stack plus CJK fallbacks, ending in the generic monospace
- * family: Chinese text stays monospaced instead of falling back to a
- * proportional face.
- */
 const ASCII_FONT_STACK =
   "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', monospace"
 
-/**
- * ASCII: the terminal look -- one monospaced face everywhere, no radii,
- * hard green rules, green and amber semantic roles, no shadows and a
- * green text glow. The two color modes are the two terminal papers: a
- * pale green sheet with dark green ink in light mode, a near-black
- * screen with pale green ink in dark mode. The surface roles declare no
- * fill, so each mode inherits its own paper and header tone.
- */
+/** ASCII: the terminal look -- one monospaced face, no radii, hard green rules, no shadows, a text glow. */
 export const asciiThemePreset: ThemePreset = createPreset('ascii', {
   color: {
     background: {
@@ -314,10 +250,6 @@ export const asciiThemePreset: ThemePreset = createPreset('ascii', {
       disabled: '#4D7C0F',
     },
     divider: '#16A34A',
-    // The ramp carries the dark terminal: dark mode paints its surfaces
-    // from its dark end and its text from its light end, so the same
-    // green family serves both modes. Light mode's header surface reads
-    // neutral 50 as well, which keeps it on the same sheet.
     neutral: {
       50: '#DCFCE7',
       100: '#BBF7D0',
@@ -332,9 +264,6 @@ export const asciiThemePreset: ThemePreset = createPreset('ascii', {
       950: '#020403',
     },
     semantic: {
-      // Each family carries both papers: `main` reads on the light
-      // sheet, and dark mode paints `light` as its main on the black
-      // screen.
       primary: {
         main: '#15803D',
         light: '#4ADE80',
