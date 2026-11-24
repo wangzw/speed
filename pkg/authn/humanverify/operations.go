@@ -9,48 +9,38 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "authn humanverify"
 	fragmentVersion = "1.0.0"
 )
 
-// The routes as the fragment writes them: relative to the module's API root,
-// so the absolute paths are /api/v1/auth/human/challenge and
-// /api/v1/auth/human/captcha/challenge.
 const (
 	challengePath        = "/auth/human/challenge"
 	captchaChallengePath = "/auth/human/captcha/challenge"
 )
 
-// typePrefix starts the Problem.Type of every failure this module's handler
-// writes, the code following it being one of mount's closed table.
 const typePrefix = "urn:speed:authn:"
 
-// ChallengeResponse is the answer of the challenge route: the challenge a
-// client solves, the difficulty its proof must reach, and how long the
-// challenge stays valid.
+// ChallengeResponse is the answer of the challenge route: the challenge, the difficulty its proof must reach, and its lifetime.
 type ChallengeResponse struct {
 	_ struct{} `description:"A proof-of-work challenge, the work it takes to solve, and how long it stays valid."`
 
-	Provider   string `json:"provider" required:"true" description:"The mechanism that issued the challenge: the constant pow."`
-	Algorithm  string `json:"algorithm" required:"true" description:"The hash a proof is computed with: sha256."`
-	Challenge  string `json:"challenge" required:"true" description:"The random challenge, base64url without padding. Solve it into a nonce, and present the two joined by a dot as the proof."`
-	Difficulty int    `json:"difficulty" required:"true" description:"The number of leading zero bits the proof's hash must carry; higher values take exponentially more work."`
-	ExpiresIn  int    `json:"expires_in" required:"true" description:"How long the challenge stays valid, in whole seconds. A proof that names an expired challenge is refused."`
+	// Provider is the mechanism that issued the challenge.
+	Provider string `json:"provider" required:"true" description:"The mechanism that issued the challenge: the constant pow."`
+	// Algorithm is the hash a proof is computed with.
+	Algorithm string `json:"algorithm" required:"true" description:"The hash a proof is computed with: sha256."`
+	// Challenge is the random challenge a client solves.
+	Challenge string `json:"challenge" required:"true" description:"The random challenge, base64url without padding. Solve it into a nonce, and present the two joined by a dot as the proof."`
+	// Difficulty is the number of leading zero bits the proof must reach.
+	Difficulty int `json:"difficulty" required:"true" description:"The number of leading zero bits the proof's hash must carry; higher values take exponentially more work."`
+	// ExpiresIn is how long the challenge stays valid, in whole seconds.
+	ExpiresIn int `json:"expires_in" required:"true" description:"How long the challenge stays valid, in whole seconds. A proof that names an expired challenge is refused."`
 }
 
-// challengeInput is the challenge route's input: the surface the challenge is
-// issued for. A proof is bound to it, so a challenge obtained for one surface
-// cannot be spent on the other.
 type challengeInput struct {
 	Scope string `query:"scope" required:"true" enum:"phone,other" description:"The surface the challenge is issued for: phone for a send that delivers a message to a phone number, other for every send that does not. Required; a missing or unknown value is a 400. A proof is bound to it: presenting it on the other surface is refused."`
 }
 
-// challengeOperation declares the public route that issues a challenge. Its
-// handler builds the answer because the success body carries the difficulty and
-// the lifetime, neither of which the declaration can compute.
 var challengeOperation = speedhttp.NewReplyOperation[challengeInput](
 	"authn.humanverify.challenge",
 	http.MethodPost,
@@ -88,20 +78,12 @@ var challengeOperation = speedhttp.NewReplyOperation[challengeInput](
 	speedhttp.Public(),
 )
 
-// captchaChallengeInput is the challenge route's input: the surface the
-// challenge is issued for, the accessibility form the caller may ask for and,
-// for that form, the language its digits are spoken in. The image and slider
-// forms are not a caller's choice.
 type captchaChallengeInput struct {
 	Scope string `query:"scope" required:"true" enum:"phone,other" description:"The surface the challenge is issued for: phone for a send that delivers a message to a phone number, other for every send that does not. Required; a missing or unknown value is a 400. A proof is bound to it: presenting it on the other surface is refused."`
 	Form  string `query:"form" enum:"image,slider,audio" description:"The challenge form. Only audio is honoured: it draws the spoken reading of digits, the screen-reader alternative. The value image or slider, or an absent item, is ignored: the server rotates between those two forms from a cryptographic random source and answers whichever it drew. Any other value is a 400 bad-request."`
 	Lang  string `query:"lang" description:"The language the audio form's digits are spoken in, as a BCP 47 tag. The provider pronounces English, Japanese, Russian and Chinese; a tag naming another language is a 400. Absent or empty uses the request's active locale, falling back to English for a locale the provider does not pronounce. Ignored by the rotating forms."`
 }
 
-// captchaChallengeOperation declares the public route that issues a self-hosted
-// captcha challenge. Its handler builds the answer because the success body
-// carries the media paths the mounter resolves from its configured base, which
-// the declaration cannot compute.
 var captchaChallengeOperation = speedhttp.NewReplyOperation[captchaChallengeInput](
 	"authn.humanverify.captchaChallenge",
 	http.MethodPost,
@@ -150,8 +132,6 @@ var captchaChallengeOperation = speedhttp.NewReplyOperation[captchaChallengeInpu
 	speedhttp.Public(),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the route is mounted from the same declaration.
 var operations = speedhttp.Operations{
 	challengeOperation,
 	captchaChallengeOperation,

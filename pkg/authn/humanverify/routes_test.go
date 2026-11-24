@@ -14,13 +14,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// challengeFullPath is where a route mounted through the capability's mounter
-// lands: the mounter's default base joined to the declaration's relative path.
 const challengeFullPath = "/api/v1/auth/human/challenge"
 
-// TestTheChallengeRouteExistsOnlyInTheProofOfWorkMode holds the mode condition:
-// the route a client obtains a challenge from is present when the deployment
-// runs the proof of work, and absent in the other modes.
+// TestTheChallengeRouteExistsOnlyInTheProofOfWorkMode checks that the challenge route exists only in proof-of-work mode.
 func TestTheChallengeRouteExistsOnlyInTheProofOfWorkMode(t *testing.T) {
 	for _, mode := range []string{ModeOff, ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
@@ -37,7 +33,6 @@ func TestTheChallengeRouteExistsOnlyInTheProofOfWorkMode(t *testing.T) {
 	}
 }
 
-// challengeAnswer is the wire shape the route answers with.
 type challengeAnswer struct {
 	Provider   string `json:"provider"`
 	Algorithm  string `json:"algorithm"`
@@ -46,10 +41,7 @@ type challengeAnswer struct {
 	ExpiresIn  int    `json:"expires_in"`
 }
 
-// TestTheChallengeRouteAnswersTheDeclaredShape holds the answer: the mechanism,
-// the algorithm, a challenge, the difficulty and the lifetime. The challenge it
-// hands out is one the delivered verifier accepts, which is what makes the
-// answer a usable challenge rather than a document of the right shape.
+// TestTheChallengeRouteAnswersTheDeclaredShape checks that the challenge route answers the declared shape.
 func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModePoW)))
 	verifier := rig.drive(t)
@@ -87,9 +79,7 @@ func TestTheChallengeRouteAnswersTheDeclaredShape(t *testing.T) {
 	}
 }
 
-// TestTheChallengeRouteRefusesAMissingOrUnknownScope holds the required scope:
-// a request that names none, or names a surface the gate does not serve, is a
-// bad request.
+// TestTheChallengeRouteRefusesAMissingOrUnknownScope checks that the challenge route refuses a missing or unknown scope.
 func TestTheChallengeRouteRefusesAMissingOrUnknownScope(t *testing.T) {
 	for _, target := range []string{challengeFullPath, challengeFullPath + "?scope=email"} {
 		t.Run(target, func(t *testing.T) {
@@ -112,8 +102,7 @@ func TestTheChallengeRouteRefusesAMissingOrUnknownScope(t *testing.T) {
 	}
 }
 
-// TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails holds the outage
-// answer: a store that cannot count or store answers 503 and issues nothing.
+// TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails checks that the challenge route answers unavailable when the store fails.
 func TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModePoW)))
 	rig.drive(t)
@@ -134,9 +123,7 @@ func TestTheChallengeRouteAnswersUnavailableWhenTheStoreFails(t *testing.T) {
 	}
 }
 
-// TestTheChallengeRouteAnswersThrottledAtTheIssuanceCap holds the per-source
-// bound: one source that asks for more challenges than its window allows is
-// answered 429.
+// TestTheChallengeRouteAnswersThrottledAtTheIssuanceCap checks that the challenge route answers throttled at the issuance cap.
 func TestTheChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModePoW)))
 	rig.drive(t)
@@ -162,8 +149,6 @@ func TestTheChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) {
 	}
 }
 
-// solveChallenge finds a nonce that reaches difficulty, using the algorithm the
-// route's description publishes.
 func solveChallenge(t *testing.T, challenge string, difficulty int) string {
 	t.Helper()
 	raw, err := base64.RawURLEncoding.DecodeString(challenge)

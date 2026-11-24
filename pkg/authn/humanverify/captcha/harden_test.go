@@ -11,7 +11,6 @@ import (
 	libcaptcha "github.com/mojocn/base64Captcha"
 )
 
-// pngSize reads the pixel dimensions of a PNG body.
 func pngSize(t *testing.T, body []byte) (width, height int) {
 	t.Helper()
 	cfg, err := png.DecodeConfig(bytes.NewReader(body))
@@ -21,9 +20,7 @@ func pngSize(t *testing.T, body []byte) (width, height int) {
 	return cfg.Width, cfg.Height
 }
 
-// TestTheImageFormVariesItsGeometry holds the image hardening: the height and
-// width are drawn per challenge from the declared ranges, so successive
-// challenges do not share one geometry a template matcher could key on.
+// TestTheImageFormVariesItsGeometry checks that the image form varies its geometry.
 func TestTheImageFormVariesItsGeometry(t *testing.T) {
 	p, _ := newProvider(t)
 	sizes := make(map[string]bool)
@@ -47,9 +44,7 @@ func TestTheImageFormVariesItsGeometry(t *testing.T) {
 	}
 }
 
-// TestTheSliderPieceSizeVaries holds the slider's geometry hardening: the piece
-// keeps no constant silhouette across challenges, so the size is drawn per
-// challenge from the declared range.
+// TestTheSliderPieceSizeVaries checks that the slider piece size varies.
 func TestTheSliderPieceSizeVaries(t *testing.T) {
 	p, _ := newProvider(t)
 	sizes := make(map[int]bool)
@@ -73,10 +68,7 @@ func TestTheSliderPieceSizeVaries(t *testing.T) {
 	}
 }
 
-// TestTheSliderNoisesItsImages holds the slider's noise hardening: a uniform
-// image becomes per-pixel non-uniform, the amplitude stays inside the declared
-// range, the same delta reaches all three colour channels and alpha is left
-// alone, and two draws do not share one noise field.
+// TestTheSliderNoisesItsImages checks that the slider noises its images.
 func TestTheSliderNoisesItsImages(t *testing.T) {
 	const base = 128
 	uniform := func() *image.RGBA {
@@ -125,7 +117,6 @@ func TestTheSliderNoisesItsImages(t *testing.T) {
 	}
 }
 
-// pngOf encodes an image, so two draws can be compared as bytes.
 func pngOf(t *testing.T, img image.Image) []byte {
 	t.Helper()
 	encoded, err := encodePNG(img)
@@ -135,9 +126,7 @@ func pngOf(t *testing.T, img image.Image) []byte {
 	return encoded
 }
 
-// TestTheAudioIsPostProcessed holds the audio hardening: the body the route
-// serves is not what the library drew, the post-processing is not one fixed
-// transform, and the result is still the wave format the route states.
+// TestTheAudioIsPostProcessed checks that the audio is post-processed.
 func TestTheAudioIsPostProcessed(t *testing.T) {
 	driver := libcaptcha.NewDriverAudio(audioLength, DefaultAudioLanguage)
 	_, question, _ := driver.GenerateIdQuestionAnswer()

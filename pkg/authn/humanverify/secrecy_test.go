@@ -15,15 +15,9 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/egress"
 )
 
-// secretSentinel is the value a case configures as the Turnstile secret and
-// then looks for in every failure.
 const secretSentinel = "turnstile-secret-sentinel-9f8e7d6c"
 
-// TestAConfigurationErrorNeverRepeatsTheTurnstileSecret holds the discipline that
-// a module holding a secret configuration value keeps it out of the text of
-// every failure on the way to a runnable configuration. The value is registered
-// as a literal redaction rule for logs; this is the other half: the failure a
-// startup prints must not carry it, whichever item the failure actually names.
+// TestAConfigurationErrorNeverRepeatsTheTurnstileSecret checks that a configuration error never repeats the Turnstile secret.
 func TestAConfigurationErrorNeverRepeatsTheTurnstileSecret(t *testing.T) {
 	cases := map[string]func(map[string]any){
 		"a secret with no site key":      func(s map[string]any) { delete(s, siteKeyItem) },
@@ -47,9 +41,7 @@ func TestAConfigurationErrorNeverRepeatsTheTurnstileSecret(t *testing.T) {
 	}
 }
 
-// TestAVerificationFailureNeverRepeatsTheTurnstileSecret holds the same
-// discipline over the runtime path: a siteverify failure answers an outage whose
-// text carries neither the configured secret nor the token the caller presented.
+// TestAVerificationFailureNeverRepeatsTheTurnstileSecret checks that a verification failure never repeats the Turnstile secret.
 func TestAVerificationFailureNeverRepeatsTheTurnstileSecret(t *testing.T) {
 	const token = "turnstile-token-sentinel-1a2b3c"
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -11,11 +11,6 @@ import (
 	"strconv"
 )
 
-// The slider's geometry: a background of a fixed size, a piece of a size drawn
-// per challenge from a fixed vertical position, and the tolerance by which a
-// client's offset may miss the cut position. The horizontal cut position is
-// drawn fresh for every challenge and is the answer. The piece size varies so
-// the piece's silhouette is not a constant a template matcher can key on.
 const (
 	sliderWidth     = 320
 	sliderHeight    = 160
@@ -24,33 +19,18 @@ const (
 	sliderTolerance = 2
 )
 
-// sliderImages is what one slider challenge is served with.
 type sliderImages struct {
 	background []byte
 	piece      []byte
-	// digests are the accepted offsets, one digest each keyed by the
-	// challenge's salt, so the cut position itself is not stored.
-	digests []string
+	digests    []string
 }
 
-// intDrawer draws an integer in [min, max], both ends included. Production draws
-// through randomInt from crypto/rand; the slider's tests pin the draw through
-// this seam, so a position at one end of a range is reached deterministically
-// rather than by waiting for the random source to land there.
 type intDrawer func(min, max int) (int, error)
 
-// newSlider draws a background, cuts a piece out of it and records the digests
-// of the offsets that count as the right answer, keyed by the challenge's salt.
 func newSlider(salt string) (sliderImages, error) {
 	return newSliderWithDrawer(salt, randomInt)
 }
 
-// newSliderWithDrawer builds a slider whose cut position is drawn by draw. It is
-// the seam the package's own tests use: the edges of the cut range are a
-// correctness boundary, and a case that needs the cut at one edge must not wait
-// for a random draw to put it there. The caller guarantees draw returns a value
-// in the [min, max] it is passed: production draws through randomInt, and the
-// package's tests pin the draw themselves.
 func newSliderWithDrawer(salt string, draw intDrawer) (sliderImages, error) {
 	pieceSize, err := randomInt(pieceSizeMin, pieceSizeMax)
 	if err != nil {
@@ -61,20 +41,14 @@ func newSliderWithDrawer(salt string, draw intDrawer) (sliderImages, error) {
 		return sliderImages{}, err
 	}
 	pieceTop := (sliderHeight - pieceSize) / 2
-	// The piece's left edge stays clear of the background's own edges, and the
-	// cut leaves room for the whole tolerance window on the upper side, so the
-	// accepted offsets are all positions the piece can occupy and there are
-	// always 2*sliderTolerance+1 of them. The lower side needs no such room:
-	// pieceSize is at least pieceSizeMin, which is well above sliderTolerance,
-	// so cut-sliderTolerance is never negative.
+	// The piece's left edge stays clear of the background's edges, and the cut leaves room for the whole tolerance window on the upper side, so the accepted offsets are all positions the piece can occupy. The lower side needs no such room because pieceSize is well above sliderTolerance.
 	cut, err := draw(pieceSize, sliderWidth-pieceSize-sliderTolerance)
 	if err != nil {
 		return sliderImages{}, err
 	}
 
 	piece := cutPiece(background, cut, pieceTop, pieceSize)
-	// The piece and the background are each noised after the cut, so the piece
-	// does not match the hole pixel for pixel even at the right offset.
+	// The piece and the background are each noised after the cut, so the piece does not match the hole pixel for pixel even at the right offset.
 	if noiseErr := addImageNoise(piece); noiseErr != nil {
 		return sliderImages{}, noiseErr
 	}
@@ -102,8 +76,6 @@ func newSliderWithDrawer(salt string, draw intDrawer) (sliderImages, error) {
 	return sliderImages{background: backgroundPNG, piece: piecePNG, digests: digests}, nil
 }
 
-// drawBackground paints a vertical gradient whose colours, circles and lines are
-// all drawn per challenge, so two sliders do not share a background.
 func drawBackground() (*image.RGBA, error) {
 	img := image.NewRGBA(image.Rect(0, 0, sliderWidth, sliderHeight))
 	r0, err := randomInt(10, 70)
@@ -165,9 +137,7 @@ func drawBackground() (*image.RGBA, error) {
 		if err != nil {
 			return nil, err
 		}
-		// The bytes are shifted into the upper half of the range, so the
-		// circles read as light over the dark gradient. Byte arithmetic wraps,
-		// which is what makes the channels differ.
+		// The bytes are shifted into the upper half of the range so the circles read as light over the dark gradient; byte arithmetic wraps, which makes the channels differ.
 		shade = 128 + shade%96
 		fillCircle(img, cx, cy, radius, color.RGBA{
 			R: shade,
@@ -203,8 +173,6 @@ func drawBackground() (*image.RGBA, error) {
 	return img, nil
 }
 
-// cutPiece copies the square at (left, top) of the given size into a round piece
-// with a light border. Everything outside the circle is transparent.
 func cutPiece(background *image.RGBA, left, top, size int) *image.RGBA {
 	piece := image.NewRGBA(image.Rect(0, 0, size, size))
 	draw.Draw(piece, piece.Bounds(), background, image.Pt(left, top), draw.Src)
@@ -226,15 +194,11 @@ func cutPiece(background *image.RGBA, left, top, size int) *image.RGBA {
 	return piece
 }
 
-// drawHole darkens the round area the piece was cut from, so the cut position is
-// a visible gap rather than a texture the piece still matches exactly.
 func drawHole(background *image.RGBA, cx, cy, size int) {
 	fillCircle(background, cx, cy, size/2-2, color.RGBA{R: 18, G: 24, B: 38, A: 208})
 	fillCircle(background, cx, cy, size/2-2, color.RGBA{R: 120, G: 142, B: 170, A: 34})
 }
 
-// addImageNoise adds per-pixel noise in both directions to the image's colour
-// channels, leaving alpha alone. The amplitude is drawn per image.
 func addImageNoise(img *image.RGBA) error {
 	amplitude, err := randomInt(6, 14)
 	if err != nil {
@@ -261,7 +225,6 @@ func addImageNoise(img *image.RGBA) error {
 	return nil
 }
 
-// fillCircle blends col over the points of dst within radius of (cx, cy).
 func fillCircle(dst *image.RGBA, cx, cy, radius int, col color.RGBA) {
 	for y := cy - radius; y <= cy+radius; y++ {
 		for x := cx - radius; x <= cx+radius; x++ {
@@ -277,7 +240,6 @@ func fillCircle(dst *image.RGBA, cx, cy, radius int, col color.RGBA) {
 	}
 }
 
-// drawLine blends col along the line from (x0, y0) to (x1, y1).
 func drawLine(dst *image.RGBA, x0, y0, x1, y1 int, col color.RGBA) {
 	dx := abs(x1 - x0)
 	dy := -abs(y1 - y0)
@@ -308,7 +270,6 @@ func drawLine(dst *image.RGBA, x0, y0, x1, y1 int, col color.RGBA) {
 	}
 }
 
-// blend composites src over dst with src's alpha.
 func blend(dst, src color.RGBA) color.RGBA {
 	sa := float64(src.A) / 255
 	da := float64(dst.A) / 255
@@ -324,7 +285,6 @@ func blend(dst, src color.RGBA) color.RGBA {
 	}
 }
 
-// encodePNG encodes an image.
 func encodePNG(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
@@ -333,8 +293,6 @@ func encodePNG(img image.Image) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// randomInt draws a value in [min, max]. The modulo bias is immaterial for the
-// ranges here.
 func randomInt(min, max int) (int, error) {
 	if max <= min {
 		return min, nil
@@ -347,7 +305,6 @@ func randomInt(min, max int) (int, error) {
 	return min + value%(max-min+1), nil
 }
 
-// randomFloat draws a value in [min, max).
 func randomFloat(min, max float64) (float64, error) {
 	var raw [2]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -357,7 +314,6 @@ func randomFloat(min, max float64) (float64, error) {
 	return min + unit*(max-min), nil
 }
 
-// clampByte holds a colour channel inside the unsigned byte range.
 func clampByte(value int) uint8 {
 	switch {
 	case value < 0:
@@ -369,7 +325,6 @@ func clampByte(value int) uint8 {
 	}
 }
 
-// randomByte draws one random byte.
 func randomByte() (uint8, error) {
 	var raw [1]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -378,7 +333,6 @@ func randomByte() (uint8, error) {
 	return raw[0], nil
 }
 
-// abs is the absolute value of n.
 func abs(n int) int {
 	if n < 0 {
 		return -n

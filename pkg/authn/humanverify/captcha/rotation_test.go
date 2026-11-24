@@ -8,12 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// rotationRounds is how many identical issuances a rotation case draws. With a
-// two-form rotation the chance that one form never appears is 2^-(rounds-1).
 const rotationRounds = 64
 
-// clearIssuance forgets the test source's visual issuance counter, so a case can
-// make more identical requests than the per-source bound without being throttled.
 func clearIssuance(t *testing.T, s *store) {
 	t.Helper()
 	if err := s.Delete(t.Context(), issueKey(source)); err != nil {
@@ -21,10 +17,7 @@ func clearIssuance(t *testing.T, s *store) {
 	}
 }
 
-// TestIssueRotatesBetweenTheImageAndSliderForms holds the rotation: the form a
-// client may not name is the server's choice, it is drawn from a fresh random
-// value rather than from anything the request carries, and it is never the audio
-// alternative. Every request in the sample is identical.
+// TestIssueRotatesBetweenTheImageAndSliderForms checks that issuance rotates between the image and slider forms.
 func TestIssueRotatesBetweenTheImageAndSliderForms(t *testing.T) {
 	p, s := newProvider(t)
 	seen := map[Form]int{}
@@ -45,9 +38,7 @@ func TestIssueRotatesBetweenTheImageAndSliderForms(t *testing.T) {
 	}
 }
 
-// TestARequestedImageOrSliderFormDoesNotPinTheChallenge holds that a client
-// cannot choose either rotating form: a request carrying form=image or
-// form=slider is ignored, and the sample still covers both forms.
+// TestARequestedImageOrSliderFormDoesNotPinTheChallenge checks that a requested image or slider form does not pin the challenge.
 func TestARequestedImageOrSliderFormDoesNotPinTheChallenge(t *testing.T) {
 	for _, requested := range []Form{FormImage, FormSlider} {
 		t.Run(string(requested), func(t *testing.T) {
@@ -72,10 +63,7 @@ func TestARequestedImageOrSliderFormDoesNotPinTheChallenge(t *testing.T) {
 	}
 }
 
-// TestAnAudioRequestReturnsTheAudioForm holds that audio is the one form a
-// client may choose, because it is the accessibility alternative: the answer's
-// form is audio and the media stored are the spoken digits, not an image or a
-// slider.
+// TestAnAudioRequestReturnsTheAudioForm checks that an audio request returns the audio form.
 func TestAnAudioRequestReturnsTheAudioForm(t *testing.T) {
 	p, _ := newProvider(t)
 	issued := issue(t, p, FormAudio)
@@ -90,15 +78,12 @@ func TestAnAudioRequestReturnsTheAudioForm(t *testing.T) {
 			t.Errorf("the audio challenge carries the %s media, resolved with %v", kind, err)
 		}
 	}
-	// The language item still governs the audio form.
 	if _, err := p.Issue(t.Context(), IssueOptions{Scope: authn.HumanScopePhone, Form: FormAudio, Lang: "klingon", RemoteIP: "203.0.113.8"}); !errors.Is(err, ErrUnknownAudioLanguage) {
 		t.Errorf("an unsupported audio language resolved with %v, want ErrUnknownAudioLanguage", err)
 	}
 }
 
-// TestARotationFailureIssuesNothing holds that a rotation which cannot draw a
-// form is the outage answer, and that the failure is reached before the source's
-// issuance counter is spent.
+// TestARotationFailureIssuesNothing checks that a rotation failure issues nothing.
 func TestARotationFailureIssuesNothing(t *testing.T) {
 	s := newStore()
 	p, err := newProviderWithRotation(s, nil, func() (Form, error) {
@@ -112,8 +97,6 @@ func TestARotationFailureIssuesNothing(t *testing.T) {
 			t.Fatalf("Issue %d resolved with %v, want ErrUnavailable", i+1, issueErr)
 		}
 	}
-	// The cap was never spent, so a provider with a working rotation still has
-	// the source's full allowance.
 	working, err := newProviderWithRotation(s, nil, func() (Form, error) { return FormImage, nil })
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -123,9 +106,7 @@ func TestARotationFailureIssuesNothing(t *testing.T) {
 	}
 }
 
-// TestTheRotationCannotWidenTheDrawnForms holds that an injected rotation cannot
-// widen the set of forms the server draws: a rotation answering audio (or
-// anything else) is refused as an outage rather than served.
+// TestTheRotationCannotWidenTheDrawnForms checks that rotation cannot widen the drawn forms.
 func TestTheRotationCannotWidenTheDrawnForms(t *testing.T) {
 	for _, form := range []Form{FormAudio, Form("puzzle"), ""} {
 		t.Run(string(form), func(t *testing.T) {
@@ -147,7 +128,6 @@ func TestNewRequiresARotation(t *testing.T) {
 	}
 }
 
-// drawRotated draws challenges until the rotation has produced one of form.
 func drawRotated(t *testing.T, p *Provider, s *store, form Form) Challenge {
 	t.Helper()
 	const attempts = 256
@@ -165,10 +145,7 @@ func drawRotated(t *testing.T, p *Provider, s *store, form Form) Challenge {
 	return Challenge{}
 }
 
-// TestRotatedFormsKeepTheOneTimeAndLifetimeSemantics holds the two storage
-// properties for both forms the rotation draws: an answer is accepted once and
-// refused on a second presentation, and a fresh challenge is refused once its
-// five-minute lifetime has passed.
+// TestRotatedFormsKeepTheOneTimeAndLifetimeSemantics checks that rotated forms keep the one-time and lifetime semantics.
 func TestRotatedFormsKeepTheOneTimeAndLifetimeSemantics(t *testing.T) {
 	for _, form := range []Form{FormImage, FormSlider} {
 		t.Run(string(form), func(t *testing.T) {

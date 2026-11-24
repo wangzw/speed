@@ -15,7 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// The captcha routes as the mounter mounts them on its default base.
 const (
 	captchaChallengeFullPath  = "/api/v1/auth/human/captcha/challenge"
 	captchaImageFullPath      = "/api/v1/auth/human/captcha/image/:id"
@@ -24,7 +23,6 @@ const (
 	captchaAudioFullPath      = "/api/v1/auth/human/captcha/audio/:id"
 )
 
-// captchaAnswer is the wire shape the challenge route answers with.
 type captchaAnswer struct {
 	Provider      string `json:"provider"`
 	Form          string `json:"form"`
@@ -37,9 +35,7 @@ type captchaAnswer struct {
 	ExpiresIn     int    `json:"expires_in"`
 }
 
-// TestTheCaptchaRoutesExistOnlyInTheCaptchaMode holds the mode condition: the
-// challenge and media routes are present when the deployment runs the captcha
-// on a surface, and absent in the other modes.
+// TestTheCaptchaRoutesExistOnlyInTheCaptchaMode checks that the captcha routes exist only in captcha mode.
 func TestTheCaptchaRoutesExistOnlyInTheCaptchaMode(t *testing.T) {
 	routes := []struct{ method, path string }{
 		{http.MethodPost, captchaChallengeFullPath},
@@ -67,9 +63,7 @@ func TestTheCaptchaRoutesExistOnlyInTheCaptchaMode(t *testing.T) {
 	}
 }
 
-// TestTheCaptchaChallengeRouteAnswersTheAudioForm holds the one form a client
-// may choose: form=audio answers the audio form, its instruction key, the
-// lifetime and only the audio media path.
+// TestTheCaptchaChallengeRouteAnswersTheAudioForm checks that the captcha challenge route answers the audio form.
 func TestTheCaptchaChallengeRouteAnswersTheAudioForm(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 	rig.drive(t)
@@ -107,9 +101,7 @@ func TestTheCaptchaChallengeRouteAnswersTheAudioForm(t *testing.T) {
 	assertMedia(t, rig, answer.AudioURL, "audio")
 }
 
-// TestTheCaptchaChallengeRouteRefusesAMissingOrUnknownScope holds the required
-// scope: a request that names none, or names a surface the gate does not serve,
-// is a bad request.
+// TestTheCaptchaChallengeRouteRefusesAMissingOrUnknownScope checks that the captcha challenge route refuses a missing or unknown scope.
 func TestTheCaptchaChallengeRouteRefusesAMissingOrUnknownScope(t *testing.T) {
 	for _, target := range []string{captchaChallengeFullPath, captchaChallengeFullPath + "?scope=email"} {
 		t.Run(target, func(t *testing.T) {
@@ -132,9 +124,7 @@ func TestTheCaptchaChallengeRouteRefusesAMissingOrUnknownScope(t *testing.T) {
 	}
 }
 
-// TestTheCaptchaChallengeRouteAnswersARotatedForm holds that a request naming
-// image or slider, and one naming no form, answers one of the rotating forms:
-// the form the rotation drew, its instruction key and only that form's media.
+// TestTheCaptchaChallengeRouteAnswersARotatedForm checks that the captcha challenge route answers a rotated form.
 func TestTheCaptchaChallengeRouteAnswersARotatedForm(t *testing.T) {
 	for _, requested := range []string{"", "image", "slider"} {
 		name := requested
@@ -202,7 +192,6 @@ func TestTheCaptchaChallengeRouteAnswersARotatedForm(t *testing.T) {
 	}
 }
 
-// decodeCaptchaAnswer reads a challenge answer.
 func decodeCaptchaAnswer(t *testing.T, raw []byte) captchaAnswer {
 	t.Helper()
 	var answer captchaAnswer
@@ -212,7 +201,6 @@ func decodeCaptchaAnswer(t *testing.T, raw []byte) captchaAnswer {
 	return answer
 }
 
-// assertMedia fetches one media path and holds its type and signature.
 func assertMedia(t *testing.T, rig *moduleRig, path, name string) {
 	t.Helper()
 	served := rig.mounter.Do(httptest.NewRequest(http.MethodGet, path, nil))
@@ -232,8 +220,7 @@ func assertMedia(t *testing.T, rig *moduleRig, path, name string) {
 	}
 }
 
-// TestTheCaptchaMediaRoutesRefuseUnknownIDs holds the 404 of an id this provider
-// did not draw, whether it is the wrong shape or simply unknown.
+// TestTheCaptchaMediaRoutesRefuseUnknownIDs checks that the captcha media routes refuse unknown ids.
 func TestTheCaptchaMediaRoutesRefuseUnknownIDs(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 	rig.drive(t)
@@ -250,9 +237,7 @@ func TestTheCaptchaMediaRoutesRefuseUnknownIDs(t *testing.T) {
 	}
 }
 
-// TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap holds the
-// per-source bound at the route: one source that asks for more challenges than
-// its window allows is answered 429.
+// TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap checks that the captcha challenge route answers throttled at the issuance cap.
 func TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 	rig.drive(t)
@@ -267,8 +252,6 @@ func TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) 
 	if recorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("the request past the cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
 	}
-	// The refusal states the window's upper bound, so a client that waits that
-	// long is not throttled again by the back half of the same window.
 	if got, want := recorder.Header().Get("Retry-After"), strconv.Itoa(int(captcha.IssueWindow/time.Second)); got != want {
 		t.Errorf("Retry-After = %q, want the issuance window's %q", got, want)
 	}
@@ -283,10 +266,7 @@ func TestTheCaptchaChallengeRouteAnswersThrottledAtTheIssuanceCap(t *testing.T) 
 	}
 }
 
-// TestTheCaptchaAudioFormHasItsOwnStricterLimit holds the audio budget at the
-// route: audio is the accessibility alternative and gets one issuance per source
-// per window, its refusal does not spend the visual rotation's larger allowance,
-// and another source keeps its own audio budget.
+// TestTheCaptchaAudioFormHasItsOwnStricterLimit checks that the captcha audio form has its own stricter limit.
 func TestTheCaptchaAudioFormHasItsOwnStricterLimit(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 	rig.drive(t)
@@ -303,7 +283,6 @@ func TestTheCaptchaAudioFormHasItsOwnStricterLimit(t *testing.T) {
 		t.Errorf("Retry-After = %q, want the issuance window's %q", got, want)
 	}
 
-	// The visual rotation keeps its own bound: the audio refusal spent none of it.
 	for i := 0; i < 10; i++ {
 		recorder := rig.mounter.Do(httptest.NewRequest(http.MethodPost, captchaChallengeFullPath+"?scope=phone", nil))
 		if recorder.Code != http.StatusOK {
@@ -314,7 +293,6 @@ func TestTheCaptchaAudioFormHasItsOwnStricterLimit(t *testing.T) {
 		t.Fatalf("the visual request past its cap answered %d, want 429:\n%s", recorder.Code, recorder.Body)
 	}
 
-	// Audio's bound is per source: another address still gets its one.
 	other := httptest.NewRequest(http.MethodPost, audio, nil)
 	other.RemoteAddr = "198.51.100.24:1234"
 	if recorder := rig.mounter.Do(other); recorder.Code != http.StatusOK {
@@ -322,9 +300,7 @@ func TestTheCaptchaAudioFormHasItsOwnStricterLimit(t *testing.T) {
 	}
 }
 
-// TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage holds that an
-// audio language the provider cannot pronounce is a bad request rather than
-// silently drawn in English.
+// TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage checks that the captcha challenge route refuses an unsupported audio language.
 func TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 	rig.drive(t)
@@ -336,8 +312,7 @@ func TestTheCaptchaChallengeRouteRefusesAnUnsupportedAudioLanguage(t *testing.T)
 	}
 }
 
-// TestTheCaptchaChallengeRouteRefusesAnUnknownForm holds the closed set of
-// forms at the route: an unknown one is the 400 of a bad request.
+// TestTheCaptchaChallengeRouteRefusesAnUnknownForm checks that the captcha challenge route refuses an unknown form.
 func TestTheCaptchaChallengeRouteRefusesAnUnknownForm(t *testing.T) {
 	rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 	rig.drive(t)
@@ -358,8 +333,7 @@ func TestTheCaptchaChallengeRouteRefusesAnUnknownForm(t *testing.T) {
 	}
 }
 
-// TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails holds the outage
-// answer on both the challenge and the media route.
+// TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails checks that the captcha routes answer unavailable when the store fails.
 func TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails(t *testing.T) {
 	t.Run("challenge", func(t *testing.T) {
 		rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
@@ -375,8 +349,6 @@ func TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails(t *testing.T) {
 		rig := newRig(t, body(t, sectionFor(ModeCaptcha)))
 		rig.drive(t)
 
-		// Audio is the form a client may choose, so the media path is known
-		// without depending on the rotation.
 		issued := rig.mounter.Do(httptest.NewRequest(http.MethodPost,
 			captchaChallengeFullPath+"?scope=phone&form=audio", nil))
 		if issued.Code != http.StatusOK {
@@ -392,11 +364,7 @@ func TestTheCaptchaRoutesAnswerUnavailableWhenTheStoreFails(t *testing.T) {
 	})
 }
 
-// TestAudioLanguageFollowsTheActiveLocale holds how an audio challenge's
-// language is chosen: an explicit lang item wins, an absent one follows the
-// request's negotiated locale, and a locale the library does not pronounce
-// falls back to English rather than refusing the accessible form. An explicit
-// item naming an unpronounced language is refused.
+// TestAudioLanguageFollowsTheActiveLocale checks that audio language follows the active locale.
 func TestAudioLanguageFollowsTheActiveLocale(t *testing.T) {
 	cases := []struct {
 		name   string

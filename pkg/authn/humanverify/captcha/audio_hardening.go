@@ -10,17 +10,11 @@ import (
 	libcaptcha "github.com/mojocn/base64Captcha"
 )
 
-// The wave format the library writes and this file post-processes: a canonical
-// 44-byte header followed by unsigned 8-bit mono PCM at 8 kHz.
 const (
 	audioSampleRate = 8000
 	waveHeaderLen   = 44
 )
 
-// The post-processing ranges. The library already randomizes each digit's speed
-// and mixes reversed digits into the background at a low level; these factors
-// sit on top of that and change the whole reading, so a speech recognizer cannot
-// key on one fixed pace or one clean signal.
 const (
 	audioSpeedMin      = 0.86
 	audioSpeedMax      = 1.16
@@ -31,16 +25,6 @@ const (
 	babbleMinLengthDiv = 4
 )
 
-// hardenAudio post-processes one library audio: it changes the pace of the whole
-// reading, adds a stronger noise floor than the library's own, and mixes a
-// second spoken digit stream underneath the answer at a low level. The answer
-// is unaffected; only the signal a recognizer sees changes.
-//
-// base64Captcha v1.3.8 offers no noise, speed or multi-voice setting on
-// DriverAudio, so this is done here on the WAV bytes with the standard library.
-// The second stream is the same voice pronouncing other digits: the library does
-// not ship a second voice, so this is competing speech rather than true
-// multi-voice synthesis.
 func hardenAudio(body []byte, language string) ([]byte, error) {
 	pcm, err := wavePCM(body)
 	if err != nil {
@@ -76,8 +60,6 @@ func hardenAudio(body []byte, language string) ([]byte, error) {
 	return encoded, nil
 }
 
-// wavePCM reads the PCM body of the canonical wave the library writes. Anything
-// else is refused rather than misread as samples.
 func wavePCM(body []byte) ([]byte, error) {
 	if len(body) < waveHeaderLen ||
 		string(body[0:4]) != "RIFF" ||
@@ -95,9 +77,6 @@ func wavePCM(body []byte) ([]byte, error) {
 	return append([]byte(nil), body[waveHeaderLen:]...), nil
 }
 
-// encodeWave writes the canonical 44-byte header the library writes, over pcm.
-// The format names chunk lengths in 32 bits, so a body larger than that cannot
-// be described and is refused.
 func encodeWave(pcm []byte) ([]byte, error) {
 	n := int64(len(pcm))
 	if n < 0 || n > math.MaxUint32 {
@@ -124,9 +103,6 @@ func encodeWave(pcm []byte) ([]byte, error) {
 	return append(header, pcm...), nil
 }
 
-// resample changes the pace of the reading by nearest-neighbour resampling. A
-// factor above one is faster and shorter, below one slower and longer; both the
-// speed and the pitch move, which is what the library's own changeSpeed does.
 func resample(pcm []byte, speed float64) []byte {
 	if len(pcm) == 0 {
 		return nil
@@ -142,9 +118,6 @@ func resample(pcm []byte, speed float64) []byte {
 	return out
 }
 
-// addNoise raises the floor by a random amplitude in both directions around the
-// 8-bit centre. One random buffer is drawn for the whole signal rather than one
-// draw per sample.
 func addNoise(pcm []byte, amplitude int) error {
 	noise := make([]byte, len(pcm))
 	if _, readErr := rand.Read(noise); readErr != nil {
@@ -158,9 +131,6 @@ func addNoise(pcm []byte, amplitude int) error {
 	return nil
 }
 
-// drawBabble renders a second library audio of random digits in the same
-// language and returns its PCM. It is mixed under the answer as competing
-// speech.
 func drawBabble(language string, length int) ([]byte, error) {
 	if length <= 0 {
 		return nil, nil
@@ -179,15 +149,12 @@ func drawBabble(language string, length int) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("captcha: reading the competing speech: %w", err)
 	}
-	// A very short draw is not worth mixing; the noise and pace still apply.
 	if len(pcm) < length/babbleMinLengthDiv {
 		return nil, nil
 	}
 	return pcm, nil
 }
 
-// mixBabble mixes src under dst at the given level, starting at a random offset
-// so the competing speech does not always begin with the answer.
 func mixBabble(dst, src []byte, level float64) error {
 	if len(src) == 0 {
 		return nil
@@ -206,12 +173,10 @@ func mixBabble(dst, src []byte, level float64) error {
 	return nil
 }
 
-// centre8 shifts an unsigned 8-bit sample onto the signed axis around zero.
 func centre8(sample byte) int {
 	return int(sample) - 128
 }
 
-// clampSample holds a signed sample inside the unsigned 8-bit range.
 func clampSample(value int) byte {
 	switch {
 	case value < 0:

@@ -15,30 +15,21 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// The stand-in modules that deliver the capabilities this module takes up when
-// the proof-of-work mode asks for them. A case supplies the instances so the
-// real registry can drive the real descriptor.
 const (
 	kvStandIn    = "stand-in.kv"
 	mountStandIn = "stand-in.mount"
 )
 
-// standIn is a module that declares the capability token and delivers it
-// without a New, so a case supplies the instance.
 func standIn(name string, token core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: token}}}
 }
 
-// moduleRig is what a case drives: the registry, the mounter the module mounts
-// its route on, and the store the provider keeps its challenges in.
 type moduleRig struct {
 	reg     *core.Registry
 	mounter *mounttest.Mounter
 	store   *stubKV
 }
 
-// newRig builds a registry over a configuration body, with the optional
-// capabilities the proof-of-work mode takes up supplied as stand-ins.
 func newRig(t *testing.T, document string) *moduleRig {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
@@ -55,7 +46,6 @@ func newRig(t *testing.T, document string) *moduleRig {
 	return &moduleRig{reg: reg, mounter: mounter, store: store}
 }
 
-// drive advances the rig to Init and returns the verifier the module delivers.
 func (r *moduleRig) drive(t *testing.T) authn.HumanVerifier {
 	t.Helper()
 	var found authn.HumanVerifier
@@ -77,9 +67,6 @@ func (r *moduleRig) drive(t *testing.T) authn.HumanVerifier {
 	return found
 }
 
-// registryWithReader builds a registry with a real configuration reader over a
-// body, supplied under the config module's name, which is what this module reads
-// before its Prepare runs.
 func registryWithReader(t *testing.T, document string) *core.Registry {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
@@ -89,16 +76,11 @@ func registryWithReader(t *testing.T, document string) *core.Registry {
 	return reg
 }
 
-// driveVerifier assembles the module the way a host does and returns the verifier
-// it delivers.
 func driveVerifier(t *testing.T, document string) authn.HumanVerifier {
 	t.Helper()
 	return newRig(t, document).drive(t)
 }
 
-// sectionFor is the configuration a case runs one mechanism on both surfaces:
-// the credentials Turnstile needs, and the mode alone for the mechanisms that
-// need none.
 func sectionFor(mode string) map[string]any {
 	if mode == ModeTurnstile {
 		section := turnstileSection()
@@ -108,8 +90,7 @@ func sectionFor(mode string) map[string]any {
 	return map[string]any{modeItem: mode, phoneModeItem: mode}
 }
 
-// The off gate requires nothing and accepts any proof, an empty one included,
-// so a deployment that leaves it off behaves as though the gate were absent.
+// TestTheOffProviderRequiresNothingAndAcceptsAnyProof checks that the off provider requires nothing and accepts any proof.
 func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
 	v := driveVerifier(t, body(t, sectionFor(ModeOff)))
 	if got := v.Provider(authn.HumanScopeOther); got != ModeOff {
@@ -132,8 +113,7 @@ func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
 	}
 }
 
-// Every mode is a provider that reports its own name, and every mode but off
-// makes a proof a condition of sending.
+// TestEveryModeBuildsAProviderThatReportsIt checks that every mode builds a provider that reports it.
 func TestEveryModeBuildsAProviderThatReportsIt(t *testing.T) {
 	for _, mode := range []string{ModeOff, ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
@@ -148,8 +128,7 @@ func TestEveryModeBuildsAProviderThatReportsIt(t *testing.T) {
 	}
 }
 
-// The Turnstile provider reports the public site key a client renders its
-// widget with, so the surface can answer with it.
+// TestTurnstileReportsItsSiteKey checks that Turnstile reports its site key.
 func TestTurnstileReportsItsSiteKey(t *testing.T) {
 	v := driveVerifier(t, body(t, turnstileSection()))
 	if got, want := v.SiteKey(authn.HumanScopeOther), "1x00000000000000000000AA"; got != want {
@@ -157,9 +136,7 @@ func TestTurnstileReportsItsSiteKey(t *testing.T) {
 	}
 }
 
-// The Turnstile provider reports the action its widget must be rendered with,
-// so a client cannot obtain a token under one action and present it for
-// another.
+// TestTurnstileReportsItsAction checks that Turnstile reports its action.
 func TestTurnstileReportsItsAction(t *testing.T) {
 	v := driveVerifier(t, body(t, turnstileSection()))
 	if got, want := v.Action(authn.HumanScopeOther), "login"; got != want {
@@ -170,8 +147,7 @@ func TestTurnstileReportsItsAction(t *testing.T) {
 	}
 }
 
-// A deployment can run a different mechanism on each surface, and every answer
-// is the answer of the surface named.
+// TestEachSurfaceAnswersItsOwnMechanism checks that each surface answers its own mechanism.
 func TestEachSurfaceAnswersItsOwnMechanism(t *testing.T) {
 	v := driveVerifier(t, body(t, map[string]any{
 		modeItem:      ModePoW,
@@ -193,9 +169,7 @@ func TestEachSurfaceAnswersItsOwnMechanism(t *testing.T) {
 	}
 }
 
-// The site key is the selected surface's: a Turnstile surface reports the key a
-// client renders its widget with, and a self-hosted surface on the other side
-// reports none, whichever surface each mechanism runs on.
+// TestSiteKeyIsPerSurface checks that the site key is per surface.
 func TestSiteKeyIsPerSurface(t *testing.T) {
 	const siteKey = "1x00000000000000000000AA"
 	v := driveVerifier(t, body(t, map[string]any{
@@ -214,10 +188,7 @@ func TestSiteKeyIsPerSurface(t *testing.T) {
 	}
 }
 
-// Turning one surface off disables that surface alone: the other surface keeps
-// requiring its proof, and a proof presented for the off surface is accepted
-// while the same proof fails on the surface that requires one. This is the
-// composed verifier routing Verify by scope, not only its descriptive answers.
+// TestOffDisablesOnlyItsSurface checks that off disables only its surface.
 func TestOffDisablesOnlyItsSurface(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -266,9 +237,7 @@ func TestOffDisablesOnlyItsSurface(t *testing.T) {
 	}
 }
 
-// The captcha mechanism needs the store its challenges and media live in, and
-// the mounter that serves them: a command that selects it without either fails
-// the startup rather than serving a challenge a client cannot fetch.
+// TestCaptchaWithoutItsDependenciesFailsTheStartup checks that captcha without its dependencies fails the startup.
 func TestCaptchaWithoutItsDependenciesFailsTheStartup(t *testing.T) {
 	t.Run("store", func(t *testing.T) {
 		reader := configtest.Reader(t, body(t, sectionFor(ModeCaptcha)), Module())
@@ -304,9 +273,7 @@ func TestCaptchaWithoutItsDependenciesFailsTheStartup(t *testing.T) {
 	})
 }
 
-// A phone surface that runs the captcha while the other surface is off still
-// needs the store and the mounter: the requirement follows the selected
-// mechanism, not whether both surfaces run one.
+// TestThePhoneSurfaceAloneStillNeedsItsDependencies checks that the phone surface alone still needs its dependencies.
 func TestThePhoneSurfaceAloneStillNeedsItsDependencies(t *testing.T) {
 	section := map[string]any{modeItem: ModeOff, phoneModeItem: ModeCaptcha}
 	t.Run("store", func(t *testing.T) {
@@ -343,10 +310,7 @@ func TestThePhoneSurfaceAloneStillNeedsItsDependencies(t *testing.T) {
 	})
 }
 
-// A deployment that writes only mode=off still runs the phone surface's default
-// captcha, so it still needs the store that captcha keeps its challenges in.
-// This is the migration trap for a deployment that knew only the former single
-// mode: turning the other surface off alone does not turn the phone surface off.
+// TestTheOtherSurfaceOffAloneStillNeedsThePhoneCaptchaStore checks that the other surface off alone still needs the phone captcha store.
 func TestTheOtherSurfaceOffAloneStillNeedsThePhoneCaptchaStore(t *testing.T) {
 	reader := configtest.Reader(t, body(t, map[string]any{modeItem: ModeOff}), Module())
 	reg := core.New()
@@ -363,8 +327,7 @@ func TestTheOtherSurfaceOffAloneStillNeedsThePhoneCaptchaStore(t *testing.T) {
 	}
 }
 
-// A gate that requires a proof refuses a request that presents none, whatever
-// the mechanism, and that refusal is the 403 answer rather than an outage.
+// TestAVerifyingModeRefusesAnEmptyProof checks that a verifying mode refuses an empty proof.
 func TestAVerifyingModeRefusesAnEmptyProof(t *testing.T) {
 	for _, mode := range []string{ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
@@ -380,9 +343,7 @@ func TestAVerifyingModeRefusesAnEmptyProof(t *testing.T) {
 	}
 }
 
-// A deployment that names the Turnstile mode without the items its provider
-// needs fails the startup where the configuration is read. It does not come up
-// with a gate that cannot check a proof and send anyway.
+// TestTurnstileWithoutItsCredentialsFailsTheStartup checks that Turnstile without its credentials fails the startup.
 func TestTurnstileWithoutItsCredentialsFailsTheStartup(t *testing.T) {
 	reg := registryWithReader(t, body(t, map[string]any{"mode": ModeTurnstile}))
 	_, err := Module().Prepare(t.Context(), reg)
@@ -391,11 +352,7 @@ func TestTurnstileWithoutItsCredentialsFailsTheStartup(t *testing.T) {
 	}
 }
 
-// A Turnstile mode that was given the widget key and the expected hostname but
-// no secret key is half configured: the siteverify call cannot authenticate, so
-// the startup stops and names the item. This is the same rule the whole-section
-// absence above exercises, asserted on the secret alone so a change that accepts
-// an unauthenticated siteverify call shows here.
+// TestTurnstileWithoutTheSecretKeyFailsNamingIt checks that Turnstile without the secret key fails naming it.
 func TestTurnstileWithoutTheSecretKeyFailsNamingIt(t *testing.T) {
 	section := turnstileSection()
 	delete(section, secretKeyItem)
@@ -409,8 +366,7 @@ func TestTurnstileWithoutTheSecretKeyFailsNamingIt(t *testing.T) {
 	}
 }
 
-// The proof-of-work mode checks a presented proof now: an invalid one is the
-// 403 refusal, not the outage the unbuilt mechanism answers.
+// TestProofOfWorkRefusesAnInvalidProofAsAProofFailure checks that proof of work refuses an invalid proof as a proof failure.
 func TestProofOfWorkRefusesAnInvalidProofAsAProofFailure(t *testing.T) {
 	v := driveVerifier(t, body(t, map[string]any{"mode": ModePoW}))
 	err := v.Verify(t.Context(), authn.HumanProof{Token: "not a challenge and a nonce"}, authn.HumanScopeOther)
@@ -422,8 +378,7 @@ func TestProofOfWorkRefusesAnInvalidProofAsAProofFailure(t *testing.T) {
 	}
 }
 
-// Prepare states enabled for every mode in the closed set: the mode decides what
-// the verifier requires, not whether the module runs.
+// TestPrepareStatesEnabledForEveryMode checks that Prepare states enabled for every mode.
 func TestPrepareStatesEnabledForEveryMode(t *testing.T) {
 	for _, mode := range []string{ModeOff, ModePoW, ModeCaptcha, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
@@ -439,8 +394,7 @@ func TestPrepareStatesEnabledForEveryMode(t *testing.T) {
 	}
 }
 
-// A mode outside the closed set stops the startup in Prepare, where a
-// configuration defect belongs, and names the key to correct.
+// TestPrepareRefusesAnUnknownModeNamingTheKey checks that Prepare refuses an unknown mode naming the key.
 func TestPrepareRefusesAnUnknownModeNamingTheKey(t *testing.T) {
 	reg := registryWithReader(t, body(t, map[string]any{"mode": "bogus"}))
 	_, err := Module().Prepare(t.Context(), reg)
@@ -452,10 +406,7 @@ func TestPrepareRefusesAnUnknownModeNamingTheKey(t *testing.T) {
 	}
 }
 
-// The Turnstile mode needs the key-value store it claims spent tokens in: a
-// command that selects it on a surface and delivers no store fails at
-// construction, rather than starting a gate whose single-use property is only
-// the upstream service's promise.
+// TestTurnstileWithoutAKeyValueStoreFailsTheStartup checks that Turnstile without a key-value store fails the startup.
 func TestTurnstileWithoutAKeyValueStoreFailsTheStartup(t *testing.T) {
 	section := turnstileSection()
 	section[phoneModeItem] = ModeOff
@@ -477,9 +428,7 @@ func TestTurnstileWithoutAKeyValueStoreFailsTheStartup(t *testing.T) {
 	}
 }
 
-// The proof-of-work mode needs the store its challenges live in: a command that
-// asks for the mode and delivers no key-value capability fails at construction,
-// naming the mode, rather than starting a gate that cannot issue a challenge.
+// TestProofOfWorkWithoutAKeyValueStoreFailsTheStartup checks that proof of work without a key-value store fails the startup.
 func TestProofOfWorkWithoutAKeyValueStoreFailsTheStartup(t *testing.T) {
 	reader := configtest.Reader(t, body(t, map[string]any{"mode": ModePoW}), Module())
 	reg := core.New()
@@ -496,9 +445,7 @@ func TestProofOfWorkWithoutAKeyValueStoreFailsTheStartup(t *testing.T) {
 	}
 }
 
-// The proof-of-work mode needs the route mounter: whatever delivers the store,
-// a command with no mounter fails at Init rather than serving a mode whose
-// clients cannot obtain a challenge.
+// TestProofOfWorkWithoutARouteMounterFailsTheStartup checks that proof of work without a route mounter fails the startup.
 func TestProofOfWorkWithoutARouteMounterFailsTheStartup(t *testing.T) {
 	reader := configtest.Reader(t, body(t, map[string]any{"mode": ModePoW}), Module())
 	reg := core.New()
@@ -517,8 +464,7 @@ func TestProofOfWorkWithoutARouteMounterFailsTheStartup(t *testing.T) {
 	}
 }
 
-// An unknown scope answers as the phone surface when that surface is gated,
-// otherwise as the gated other surface; an all-off pair answers as off.
+// TestAnUnknownScopeAnswersAsTheGatedSurface checks that an unknown scope answers as the gated surface.
 func TestAnUnknownScopeAnswersAsTheGatedSurface(t *testing.T) {
 	const unknown authn.HumanScope = "no-such-surface"
 	cases := []struct {
@@ -573,7 +519,7 @@ func TestAnUnknownScopeAnswersAsTheGatedSurface(t *testing.T) {
 	}
 }
 
-// The module is named and namespaced as the command tree writes it.
+// TestTheModuleCarriesItsNameAndNamespace checks that the module is named and namespaced as the command tree writes it.
 func TestTheModuleCarriesItsNameAndNamespace(t *testing.T) {
 	if ModuleName != "authn.humanverify" || ConfigNamespace != "authn.humanverify" {
 		t.Errorf("the module name %q and namespace %q, want authn.humanverify", ModuleName, ConfigNamespace)
