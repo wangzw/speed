@@ -12,9 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// TestARejectionNeverRepeatsTheMessage holds the discipline that this package
-// names the field at fault and never the value: a caller's address, subject or
-// body must not survive into the text of the failure, whichever rule refused it.
+// TestARejectionNeverRepeatsTheMessage checks that a refused message's address,
+// subject, body and attachment name never reach the failure text.
 func TestARejectionNeverRepeatsTheMessage(t *testing.T) {
 	const (
 		badAddr = "s3cr3t-recipient-sentinel"
@@ -53,7 +52,6 @@ func TestARejectionNeverRepeatsTheMessage(t *testing.T) {
 	}
 }
 
-// capturingRedaction records the rules registered with it.
 type capturingRedaction struct {
 	names   []string
 	matches []log.Matcher
@@ -66,14 +64,12 @@ func (c *capturingRedaction) AddPattern(name string, match log.Matcher) {
 	c.matches = append(c.matches, match)
 }
 
-// capturingLogger is a logging capability that records redaction registrations.
 type capturingLogger struct{ red *capturingRedaction }
 
 func (l *capturingLogger) Named(string) *slog.Logger { return slog.Default() }
 
 func (l *capturingLogger) Redaction() log.Redaction { return l.red }
 
-// providingLoggerModule is a logging capability a drive can construct.
 func providingLoggerModule(red *capturingRedaction) core.Module {
 	return core.Module{
 		Name:     "stand-in.logger",
@@ -82,8 +78,6 @@ func providingLoggerModule(red *capturingRedaction) core.Module {
 	}
 }
 
-// secretModule registers a carrier whose configuration holds one credential, so
-// the factory registers it as a literal redaction rule.
 func secretModule(credential string) core.Module {
 	prototype := stubConfig{}
 	return NewModule(Spec[stubConfig]{
@@ -99,9 +93,8 @@ func secretModule(credential string) core.Module {
 	})
 }
 
-// TestACredentialIsRegisteredAsARedactionRule holds that a carrier's credential
-// leaves the factory as a literal redaction rule, so a credential that turns up
-// in any log line of the process is masked.
+// TestACredentialIsRegisteredAsARedactionRule checks that a carrier's credential
+// becomes a literal redaction rule that masks it in a log line.
 func TestACredentialIsRegisteredAsARedactionRule(t *testing.T) {
 	const credential = "s3cr3t-mail-credential-sentinel"
 	red := &capturingRedaction{}

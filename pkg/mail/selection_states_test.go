@@ -7,9 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestOffBySelectionReportsTheSweepOff holds the dependent's reading of the
-// selection: none switches the capability off and the reason a dependent states
-// when it stands itself down names the selection.
+// TestOffBySelectionReportsTheSweepOff checks that the none selection reports the
+// capability off with a reason naming the selection.
 func TestOffBySelectionReportsTheSweepOff(t *testing.T) {
 	reg := pickRegistry(t, `{"mail":{"carrier":"none"}}`)
 	off, reason, err := OffBySelection(reg)
@@ -24,9 +23,8 @@ func TestOffBySelectionReportsTheSweepOff(t *testing.T) {
 	}
 }
 
-// TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn holds the other side:
-// an assembly with no configuration reader has no selection to read, so it is
-// not reported off.
+// TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn checks that an assembly
+// with no configuration reader is not reported off.
 func TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn(t *testing.T) {
 	off, _, err := OffBySelection(core.New())
 	if err != nil {
@@ -37,14 +35,8 @@ func TestOffBySelectionWithoutAReaderLeavesTheCapabilityOn(t *testing.T) {
 	}
 }
 
-// TestSelectionNamesACarrierThatCannotRun holds the named-but-unrunnable state:
-// a selection that names this carrier makes its configuration gap a startup
-// error, not a silent stand-down. The message names the module, the carrier and
-// the carrier's own reason.
-//
-// The error does not wrap ErrInvalidConfig today, while the unknown-name path
-// does. The test holds the observable text only so it does not pin that
-// classification either way.
+// TestSelectionNamesACarrierThatCannotRun checks that a selection naming an
+// unrunnable carrier is a startup error naming the module, carrier and reason.
 func TestSelectionNamesACarrierThatCannotRun(t *testing.T) {
 	primary := pickModule("mail.pick.primary", "primary", false, unconfigured)
 	reg := pickRegistry(t, `{"mail":{"carrier":"primary"}}`, primary)

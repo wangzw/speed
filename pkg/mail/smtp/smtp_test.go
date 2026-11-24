@@ -24,7 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 )
 
-// The senders and recipients the cases run with.
 const (
 	defaultSender    = "sender@example.com"
 	otherSender      = "other@example.com"
@@ -35,7 +34,6 @@ const (
 	testBinaryHeader = "binary.bin"
 )
 
-// tlsForMode is the connection posture that reaches one session shape.
 func tlsForMode(mode sessionMode) string {
 	switch mode {
 	case modeStartTLS:
@@ -47,8 +45,6 @@ func tlsForMode(mode sessionMode) string {
 	}
 }
 
-// newTestSender builds the module's product against a fake server, running the
-// real client construction.
 func newTestSender(t *testing.T, srv *fakeServer, mutate func(*moduleConfig)) *sender {
 	t.Helper()
 	cfg := moduleConfig{
@@ -72,7 +68,6 @@ func newTestSender(t *testing.T, srv *fakeServer, mutate func(*moduleConfig)) *s
 	return s
 }
 
-// textOnly is a message with a plain body alone.
 func textOnly() mail.Message {
 	return mail.Message{
 		To:      []string{testRecipient},
@@ -81,8 +76,6 @@ func textOnly() mail.Message {
 	}
 }
 
-// parseMessage parses a landed message with the standard library, so an
-// independent parser and not this package's writer is the judge.
 func parseMessage(t *testing.T, raw []byte) *netmail.Message {
 	t.Helper()
 	m, err := netmail.ReadMessage(bytes.NewReader(raw))
@@ -92,10 +85,8 @@ func parseMessage(t *testing.T, raw []byte) *netmail.Message {
 	return m
 }
 
-// headerish is what both net/mail's header and a MIME part's header offer.
 type headerish interface{ Get(key string) string }
 
-// decodedHeader reads a header value and undoes its RFC 2047 encoding.
 func decodedHeader(t *testing.T, h headerish, name string) string {
 	t.Helper()
 	value := h.Get(name)
@@ -109,8 +100,6 @@ func decodedHeader(t *testing.T, h headerish, name string) string {
 	return decoded
 }
 
-// mediaType splits a Content-Type header into its media type and parameters,
-// defaulting an absent one to text/plain.
 func mediaType(t *testing.T, h headerish) (string, map[string]string) {
 	t.Helper()
 	raw := h.Get("Content-Type")
@@ -124,7 +113,6 @@ func mediaType(t *testing.T, h headerish) (string, map[string]string) {
 	return mt, params
 }
 
-// decodeBody reads a part body and undoes its transfer encoding.
 func decodeBody(t *testing.T, h headerish, r io.Reader) []byte {
 	t.Helper()
 	switch strings.ToLower(h.Get("Content-Transfer-Encoding")) {
@@ -149,25 +137,17 @@ func decodeBody(t *testing.T, h headerish, r io.Reader) []byte {
 	}
 }
 
-// lf turns CRLF into LF, so a body compares the same however the transport
-// spelled its line endings.
 func lf(b []byte) string { return strings.ReplaceAll(string(b), "\r\n", "\n") }
 
-// sameText compares a landed body with what the caller wrote. The trailing
-// newline a body part terminates with is not part of the caller's text, so it is
-// trimmed from both sides.
 func sameText(got []byte, want string) bool {
 	return strings.TrimRight(lf(got), "\n") == strings.TrimRight(want, "\n")
 }
 
-// part is one MIME part read into memory.
 type part struct {
 	header textproto.MIMEHeader
 	body   []byte
 }
 
-// readParts reads every part of a multipart body into memory, so cases can walk
-// them without the reader losing an unread body under them.
 func readParts(t *testing.T, mr *multipart.Reader) []part {
 	t.Helper()
 	var parts []part
@@ -187,7 +167,6 @@ func readParts(t *testing.T, mr *multipart.Reader) []part {
 	}
 }
 
-// partsOf opens a multipart body into its parts.
 func partsOf(t *testing.T, h headerish, body io.Reader) []part {
 	t.Helper()
 	mt, params := mediaType(t, h)
@@ -197,13 +176,11 @@ func partsOf(t *testing.T, h headerish, body io.Reader) []part {
 	return readParts(t, multipart.NewReader(body, params["boundary"]))
 }
 
-// decodedPart is a part's body with its transfer encoding undone.
 func decodedPart(t *testing.T, p part) []byte {
 	t.Helper()
 	return decodeBody(t, p.header, bytes.NewReader(p.body))
 }
 
-// findPart returns the first part whose media type is want, or a fatal.
 func findPart(t *testing.T, parts []part, want string) part {
 	t.Helper()
 	for _, p := range parts {
@@ -215,8 +192,8 @@ func findPart(t *testing.T, parts []part, want string) part {
 	return part{}
 }
 
-// TestSendDeliversATextOnlyMessage holds the simplest shape: one plain body, the
-// envelope the message named, and the body the caller wrote.
+// TestSendDeliversATextOnlyMessage checks that a plain message reaches the relay
+// with the named envelope and body.
 func TestSendDeliversATextOnlyMessage(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -249,8 +226,8 @@ func TestSendDeliversATextOnlyMessage(t *testing.T) {
 	}
 }
 
-// TestSendDeliversBothBodiesAsAlternative holds the two-body shape: a
-// multipart/alternative with the plain text part first and the HTML second.
+// TestSendDeliversBothBodiesAsAlternative checks that two bodies become a
+// multipart/alternative with the plain part first.
 func TestSendDeliversBothBodiesAsAlternative(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -287,8 +264,8 @@ func TestSendDeliversBothBodiesAsAlternative(t *testing.T) {
 	}
 }
 
-// TestSendDeliversAnHTMLOnlyMessage holds the single-HTML shape: a message with
-// no plain body goes out as text/html, not as a plain part carrying markup.
+// TestSendDeliversAnHTMLOnlyMessage checks that a message with no plain body goes
+// out as text/html.
 func TestSendDeliversAnHTMLOnlyMessage(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -311,8 +288,8 @@ func TestSendDeliversAnHTMLOnlyMessage(t *testing.T) {
 	}
 }
 
-// TestSendDeliversAnAttachmentHoldsTheAttachedShape: a multipart/mixed whose
-// first part is the multipart/alternative and whose second is the attachment.
+// TestSendDeliversAnAttachment checks the multipart/mixed shape with the
+// alternative first and the attachment second.
 func TestSendDeliversAnAttachment(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -353,11 +330,6 @@ func TestSendDeliversAnAttachment(t *testing.T) {
 	}
 }
 
-// attachmentPart finds the part whose Content-Disposition names fileName. A
-// file name outside ASCII travels as an RFC 2231 extended parameter
-// (filename* carrying the charset and the percent-encoded octets), which the
-// media-type parser decodes itself, so the raw header is parsed as it was
-// written.
 func attachmentPart(t *testing.T, parts []part, fileName string) part {
 	t.Helper()
 	for _, p := range parts {
@@ -373,8 +345,8 @@ func attachmentPart(t *testing.T, parts []part, fileName string) part {
 	return part{}
 }
 
-// TestANonASCIISubjectRoundTrips holds that a subject outside ASCII is written
-// as an RFC 2047 encoded word and reads back unchanged.
+// TestANonASCIISubjectRoundTrips checks that a non-ASCII subject is written as an
+// RFC 2047 encoded word and reads back unchanged.
 func TestANonASCIISubjectRoundTrips(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -396,8 +368,8 @@ func TestANonASCIISubjectRoundTrips(t *testing.T) {
 	}
 }
 
-// TestANonASCIIAttachmentFilenameRoundTrips holds that an attachment file name
-// outside ASCII survives into the part's Content-Disposition.
+// TestANonASCIIAttachmentFilenameRoundTrips checks that a non-ASCII attachment
+// name survives into the part's Content-Disposition.
 func TestANonASCIIAttachmentFilenameRoundTrips(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -417,9 +389,8 @@ func TestANonASCIIAttachmentFilenameRoundTrips(t *testing.T) {
 	}
 }
 
-// TestABodyLineBeginningWithADotSurvivesDotStuffing holds the one line the DATA
-// framing is most likely to corrupt: the wire carries it with an extra leading
-// dot, and the message a reader parses carries the original line.
+// TestABodyLineBeginningWithADotSurvivesDotStuffing checks that a dotted body line
+// is dot-stuffed on the wire and reads back unchanged.
 func TestABodyLineBeginningWithADotSurvivesDotStuffing(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -441,8 +412,8 @@ func TestABodyLineBeginningWithADotSurvivesDotStuffing(t *testing.T) {
 	}
 }
 
-// TestABinaryAttachmentRoundTripsByteForByte holds that an attachment holding a
-// NUL and a CRLF pair comes back out of the message with the same bytes.
+// TestABinaryAttachmentRoundTripsByteForByte checks that binary attachment bytes
+// come back unchanged.
 func TestABinaryAttachmentRoundTripsByteForByte(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -470,8 +441,8 @@ func TestABinaryAttachmentRoundTripsByteForByte(t *testing.T) {
 	}
 }
 
-// TestCCApearsInHeadersWhileBCCReachesOnlyTheEnvelope holds the blind-copy rule:
-// Cc is a header, Bcc is an envelope recipient and never a header.
+// TestCCApearsInHeadersWhileBCCReachesOnlyTheEnvelope checks that Cc is a header
+// and Bcc is an envelope recipient only.
 func TestCCApearsInHeadersWhileBCCReachesOnlyTheEnvelope(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -502,7 +473,7 @@ func TestCCApearsInHeadersWhileBCCReachesOnlyTheEnvelope(t *testing.T) {
 	}
 }
 
-// TestReplyToIsWritten holds that a reply-to list becomes a Reply-To header.
+// TestReplyToIsWritten checks that a reply-to list becomes a Reply-To header.
 func TestReplyToIsWritten(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -519,8 +490,7 @@ func TestReplyToIsWritten(t *testing.T) {
 	}
 }
 
-// TestEachSendOpensOneConnection holds that a send is one connection: the client
-// never pools or reuses one across calls.
+// TestEachSendOpensOneConnection checks that every send opens its own connection.
 func TestEachSendOpensOneConnection(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -535,9 +505,8 @@ func TestEachSendOpensOneConnection(t *testing.T) {
 	}
 }
 
-// TestConcurrentSendsShareTheSenderSafely holds the carrier's concurrency
-// contract under the race detector: several goroutines may send at once over one
-// sender, and racing calls carrying one identifier still reach the relay once.
+// TestConcurrentSendsShareTheSenderSafely checks that concurrent sends reach the
+// relay once per distinct identifier and once for one shared identifier.
 func TestConcurrentSendsShareTheSenderSafely(t *testing.T) {
 	t.Run("distinct identifiers each reach the relay", func(t *testing.T) {
 		srv := newFakeServer(t, modePlain)
@@ -588,10 +557,8 @@ func TestConcurrentSendsShareTheSenderSafely(t *testing.T) {
 	})
 }
 
-// TestTheMessageSenderMustBeAmongTheConfiguredOnes holds the allowed-set check:
-// a sender the configuration does not hold is refused before the relay is
-// reached, and one it holds — the default or an additional allowed sender — is
-// not.
+// TestTheMessageSenderMustBeAmongTheConfiguredOnes checks that a sender outside
+// the configured set is refused before the relay is reached.
 func TestTheMessageSenderMustBeAmongTheConfiguredOnes(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, func(c *moduleConfig) {
@@ -614,7 +581,7 @@ func TestTheMessageSenderMustBeAmongTheConfiguredOnes(t *testing.T) {
 	}
 }
 
-// TestAMessageWithNoRecipientIsRefused holds that a message the package refuses
+// TestAMessageWithNoRecipientIsRefused checks that a message the package refuses
 // never reaches the relay.
 func TestAMessageWithNoRecipientIsRefused(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
@@ -629,9 +596,8 @@ func TestAMessageWithNoRecipientIsRefused(t *testing.T) {
 	}
 }
 
-// TestOneIdentifierReachesTheRelayOnce holds the dedupe guard: a second call for
-// one identifier is answered with the first call's outcome and opens no second
-// connection.
+// TestOneIdentifierReachesTheRelayOnce checks that a second call for one
+// identifier is answered with the first outcome and opens no connection.
 func TestOneIdentifierReachesTheRelayOnce(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -652,10 +618,8 @@ func TestOneIdentifierReachesTheRelayOnce(t *testing.T) {
 	}
 }
 
-// TestARepeatedIdentifierIsAnsweredWithTheFirstFailure holds that the dedupe
-// guard carries the outcome and not only the receipt: a second call for an
-// identifier whose first call was refused is refused the same way, rather than
-// being answered with an empty success.
+// TestARepeatedIdentifierIsAnsweredWithTheFirstFailure checks that the dedupe
+// guard carries a failure, not only a receipt.
 func TestARepeatedIdentifierIsAnsweredWithTheFirstFailure(t *testing.T) {
 	srv := newFakeServer(t, modePlain, func(s *fakeServer) { s.rejectRCPTCode = "550" })
 	s := newTestSender(t, srv, nil)
@@ -676,8 +640,8 @@ func TestARepeatedIdentifierIsAnsweredWithTheFirstFailure(t *testing.T) {
 	}
 }
 
-// TestAnAttachmentThatCannotBeReadIsRefused holds that a reader falling over
-// part way is a caller defect: it is a rejection and reaches no relay.
+// TestAnAttachmentThatCannotBeReadIsRefused checks that an unreadable attachment
+// is a rejection that reaches no relay.
 func TestAnAttachmentThatCannotBeReadIsRefused(t *testing.T) {
 	srv := newFakeServer(t, modePlain)
 	s := newTestSender(t, srv, nil)
@@ -695,9 +659,8 @@ func TestAnAttachmentThatCannotBeReadIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheThreeSessionShapesDeliver holds that each connection posture reaches
-// the relay: plaintext with AUTH, STARTTLS with an in-session upgrade, and
-// implicit TLS from the first byte.
+// TestTheThreeSessionShapesDeliver checks that the plaintext, STARTTLS and
+// implicit-TLS postures each reach the relay.
 func TestTheThreeSessionShapesDeliver(t *testing.T) {
 	cases := []struct {
 		name string
@@ -732,9 +695,8 @@ func TestTheThreeSessionShapesDeliver(t *testing.T) {
 	}
 }
 
-// TestTheFailurePathsAreClassified holds the classification of a landed failure:
-// a permanent refusal is a rejection, and a connection lost mid-message, a
-// refused dial and a timeout are all uncertain.
+// TestTheFailurePathsAreClassified checks that reply codes and incomplete calls
+// map to the right sentinel.
 func TestTheFailurePathsAreClassified(t *testing.T) {
 	t.Run("a 4xx at RCPT is a throttle", func(t *testing.T) {
 		srv := newFakeServer(t, modePlain, func(s *fakeServer) { s.rejectRCPTCode = "450" })
@@ -817,9 +779,8 @@ func TestTheFailurePathsAreClassified(t *testing.T) {
 	})
 }
 
-// TestTheExportedSurfaceNamesNoCarrierType holds that the vendor library stays
-// behind the seam: a host that imports this package to name the carrier sees the
-// mail.Sender interface and nothing of the SDK behind it.
+// TestTheExportedSurfaceNamesNoCarrierType checks that the vendor library stays
+// behind the seam.
 func TestTheExportedSurfaceNamesNoCarrierType(t *testing.T) {
 	doc := goDoc(t)
 	if strings.Contains(doc, "wneessen") {
@@ -832,7 +793,6 @@ func TestTheExportedSurfaceNamesNoCarrierType(t *testing.T) {
 	}
 }
 
-// goDoc is this package's exported surface, as go doc renders it.
 func goDoc(t *testing.T) string {
 	t.Helper()
 	cmd := exec.Command("go", "doc", "-all", ".")

@@ -20,43 +20,24 @@ import (
 	"time"
 )
 
-// sessionMode is the connection shape a fake server offers.
 type sessionMode int
 
 const (
-	// modePlain runs the whole session in the clear, AUTH included.
 	modePlain sessionMode = iota
-	// modeStartTLS greets in the clear and upgrades the session when the client
-	// sends STARTTLS.
 	modeStartTLS
-	// modeImplicit encrypts from the first byte, the SMTPS posture.
 	modeImplicit
 )
 
-// session is the envelope and the body the fake server received in one
-// transaction.
 type session struct {
 	mailFrom string
 	rcptTo   []string
-	// data is the message body with the dot-stuffing undone: what a real relay
-	// would store and hand on.
-	data []byte
-	// wire is the same body as it arrived, dot-stuffing included, so a case can
-	// see what actually went over the socket.
+	data     []byte
 	wire     []byte
 	tls      bool
 	authUser string
 	authPass string
 }
 
-// fakeServer is a hand-written SMTP server with no third-party dependency. It
-// answers the greeting and the transaction commands, records the envelope and
-// the body, and can present each of the three connection shapes.
-//
-// It is deliberately small: it exists to hold this package's own behaviour
-// against an independent SMTP peer, and its own tests hold it to the two rules
-// that are easy to get wrong — un-dot-stuffing a body line and finding the
-// CRLF-dot-CRLF terminator however the bytes arrive.
 type fakeServer struct {
 	host string
 	port int
@@ -64,16 +45,10 @@ type fakeServer struct {
 
 	tlsConfig *tls.Config
 
-	// silent accepts a connection and never answers, so a client with a short
-	// timeout times out.
-	silent bool
-	// rejectRCPTCode, when set, is the code answered to every RCPT TO.
+	silent         bool
 	rejectRCPTCode string
-	// rejectDataCode, when set, is the code answered after the body was read,
-	// in place of the acceptance.
 	rejectDataCode string
-	// dropMidData closes the connection part way through reading the body.
-	dropMidData bool
+	dropMidData    bool
 
 	raw net.Listener
 	ln  net.Listener
@@ -84,10 +59,6 @@ type fakeServer struct {
 	auths       []session
 }
 
-// newFakeServer starts a fake server on a loopback port and stops it when the
-// case ends. The knobs a case sets — rejectRCPTCode, dropMidData, silent — go
-// through configure, which runs before the serving goroutine starts, so nothing
-// is written after a session has begun.
 func newFakeServer(t *testing.T, mode sessionMode, configure ...func(*fakeServer)) *fakeServer {
 	t.Helper()
 	raw, err := net.Listen("tcp", "127.0.0.1:0")
@@ -113,7 +84,6 @@ func newFakeServer(t *testing.T, mode sessionMode, configure ...func(*fakeServer
 	return s
 }
 
-// serve accepts connections until the listener is closed.
 func (s *fakeServer) serve() {
 	for {
 		conn, err := s.ln.Accept()
@@ -127,13 +97,10 @@ func (s *fakeServer) serve() {
 	}
 }
 
-// handle runs one SMTP session.
 func (s *fakeServer) handle(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
 	if s.silent {
-		// Read and discard whatever the client sends until it gives up; the
-		// point is that no reply ever comes.
 		_, _ = io.Copy(io.Discard, conn)
 		return
 	}
@@ -220,8 +187,6 @@ func (s *fakeServer) handle(conn net.Conn) {
 	}
 }
 
-// greet answers EHLO with a multi-line 250 listing the capabilities this
-// session supports.
 func (s *fakeServer) greet(w *bufio.Writer, advertiseStartTLS bool) {
 	w.WriteString("250-fake greets you\r\n")
 	w.WriteString("250-PIPELINING\r\n")
@@ -234,8 +199,6 @@ func (s *fakeServer) greet(w *bufio.Writer, advertiseStartTLS bool) {
 	_ = w.Flush()
 }
 
-// auth answers the AUTH command, reading the initial response inline or from the
-// continuation line, and records the identity.
 func (s *fakeServer) auth(r *bufio.Reader, w *bufio.Writer, line string, sess *session) bool {
 	fields := strings.Fields(line)
 	var encoded string
@@ -263,7 +226,6 @@ func (s *fakeServer) auth(r *bufio.Reader, w *bufio.Writer, line string, sess *s
 	return s.reply(w, "235 authentication successful\r\n")
 }
 
-// reply writes one line and reports whether it went out.
 func (s *fakeServer) reply(w *bufio.Writer, line string) bool {
 	if _, err := w.WriteString(line); err != nil {
 		return false
@@ -271,22 +233,18 @@ func (s *fakeServer) reply(w *bufio.Writer, line string) bool {
 	return w.Flush() == nil
 }
 
-// record files a completed transaction.
 func (s *fakeServer) record(sess session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions = append(s.sessions, sess)
 }
 
-// connectionCount is how many connections the server has accepted.
 func (s *fakeServer) connectionCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.connections
 }
 
-// lastSession is the most recent completed transaction, or a fatal if none
-// landed.
 func (s *fakeServer) lastSession(t *testing.T) session {
 	t.Helper()
 	s.mu.Lock()
@@ -297,9 +255,6 @@ func (s *fakeServer) lastSession(t *testing.T) session {
 	return s.sessions[len(s.sessions)-1]
 }
 
-// lastAuth is the most recent identity the server accepted, or a fatal if none
-// authenticated. A transaction that failed before DATA records no session, so
-// the identity is tracked apart from it.
 func (s *fakeServer) lastAuth(t *testing.T) session {
 	t.Helper()
 	s.mu.Lock()
@@ -310,11 +265,6 @@ func (s *fakeServer) lastAuth(t *testing.T) session {
 	return s.auths[len(s.auths)-1]
 }
 
-// readData reads a DATA payload up to the CRLF-dot-CRLF terminator.
-//
-// It returns the message with the dot-stuffing undone, and the same body as it
-// arrived with the stuffing intact. A line that begins with a dot was sent with
-// a leading dot added; the terminator is a line holding a single dot.
 func readData(r *bufio.Reader) (message, wire []byte, err error) {
 	var msg, raw bytes.Buffer
 	for {
@@ -330,10 +280,6 @@ func readData(r *bufio.Reader) (message, wire []byte, err error) {
 	}
 }
 
-// envelopeAddr reads the addr-spec out of a MAIL FROM or RCPT TO argument. A
-// MAIL FROM may carry ESMTP parameters after the angle-addr, so the address is
-// taken from between the brackets when they are present and from the first field
-// otherwise.
 func envelopeAddr(arg string) string {
 	arg = strings.TrimSpace(arg)
 	if open := strings.Index(arg, "<"); open >= 0 {
@@ -347,7 +293,6 @@ func envelopeAddr(arg string) string {
 	return ""
 }
 
-// selfSignedCert signs a throwaway server certificate in process.
 func selfSignedCert(t *testing.T) *tls.Certificate {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -373,12 +318,8 @@ func selfSignedCert(t *testing.T) *tls.Certificate {
 	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
-// TestReadDataUndoesDotStuffing holds the fake's own rule: a body line that
-// begins with a dot arrives with one more dot, and reading the body hands the
-// original line back.
+// TestReadDataUndoesDotStuffing checks that reading the body undoes dot-stuffing.
 func TestReadDataUndoesDotStuffing(t *testing.T) {
-	// The body ".leading dot\r\nnormal\r\n" is transmitted with the first line
-	// stuffed to "..leading dot".
 	const transmitted = "..leading dot\r\nnormal\r\n.\r\n"
 	message, wire, err := readData(bufio.NewReader(strings.NewReader(transmitted)))
 	if err != nil {
@@ -392,12 +333,9 @@ func TestReadDataUndoesDotStuffing(t *testing.T) {
 	}
 }
 
-// TestReadDataFindsTheTerminatorAcrossReads holds the other rule: the terminator
-// is recognised even when the bytes arrive one at a time, which is what a TCP
-// stream is free to do.
+// TestReadDataFindsTheTerminatorAcrossReads checks that the terminator is found
+// even when the bytes arrive one at a time.
 func TestReadDataFindsTheTerminatorAcrossReads(t *testing.T) {
-	// OneByteReader hands the reader a single byte per underlying read, so the
-	// CRLF-dot-CRLF terminator is split across reads.
 	r := bufio.NewReader(iotest.OneByteReader(strings.NewReader("a line\r\n.\r\n")))
 	message, _, err := readData(r)
 	if err != nil {
@@ -408,7 +346,6 @@ func TestReadDataFindsTheTerminatorAcrossReads(t *testing.T) {
 	}
 }
 
-// unusedPort opens and closes a loopback port so a dial to it is refused.
 func unusedPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

@@ -6,9 +6,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestAnEmptySectionStandsDown holds the unconfigured state: the prototype a
-// run with no configuration starts from gives this carrier nothing, so it
-// closes itself with a reason instead of failing the run.
+// TestAnEmptySectionStandsDown checks that the empty prototype stands the carrier
+// down with a reason instead of failing.
 func TestAnEmptySectionStandsDown(t *testing.T) {
 	got, err := stance(&configDefaults)
 	if err != nil {
