@@ -27,7 +27,10 @@
  * walking the provider's flow again), so the row asks once before the
  * DELETE goes out. After a successful unbind the profile query is
  * invalidated, so the rows converge on the server's answer, and the
- * confirmation names the provider. The unlink replaces this session's
+ * confirmation names the provider. The removed row takes its action with
+ * it: focus moves to the same action on the next row, else the previous
+ * one, else the section's control group, and only when the removal is what
+ * took focus from the row's action. The unlink replaces this session's
  * credential, so it runs inside an identity-transition window
  * (session.beginIdentityTransition): a read that lands with the outgoing
  * credential and answers anonymous is discarded instead of ending the
@@ -76,11 +79,14 @@
  * start replaces an earlier unlink confirmation instead of standing beside
  * it, and the button re-arms for another attempt. Starting the flow does
  * not rotate this session's credential -- the callback handler completes
- * it -- so no identity-transition window is opened here. One bind flow at
- * a time: while a channel's flow is being started every provider button is
- * disabled, so a second start -- any channel's -- cannot begin before the
- * first answers. When every redirect method is already bound the add area
- * does not render.
+ * it -- so no identity-transition window is opened here. The list's one
+ * write scope admits one attempt at a time: the control that started it
+ * reports itself busy (focusable, aria-busy, progress shown), while every
+ * other initiating control in the section -- the other channel buttons and
+ * the rows' unlink actions -- is held unavailable without a reason, so a
+ * second start, an unlink included, cannot begin before the first answers.
+ * When every redirect method is already bound the add area does not
+ * render.
  *
  * The section no longer takes a host-supplied channel list: a provider is
  * the deployment's login-method name, and the discovery document is the
@@ -107,7 +113,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
@@ -120,6 +125,7 @@ import { useMutation } from '@tanstack/react-query'
 import type { AuthnMethodDescriptor, AuthSession } from '@speed/auth-core'
 import { useStepUpGate } from '@speed/auth-core'
 import {
+  ActionButton,
   ConfirmDialog,
   ListSkeleton,
   SectionCard,
@@ -317,6 +323,41 @@ function methodLabel(
     : method.name
 }
 
+/** The row whose unlink is in flight, with the row order at the attempt's
+ * start and the action that started it: once the row leaves the read, focus
+ * goes to the same action on the next row, else the previous one, else the
+ * section's container. */
+interface UnbindLanding {
+  readonly id: string
+  readonly order: readonly string[]
+  readonly control: HTMLElement | null
+}
+
+/**
+ * Whether focus was lost when the initiating control's row left the
+ * document. A write that removes its own row hands focus to a neighbour,
+ * but only if the operator had not moved focus elsewhere while the write
+ * was in flight: the browser drops focus to the body (or leaves it on a
+ * detached node) in that case, while a connected control outside the row
+ * means the operator chose that place. Focus still sitting in a dialog is
+ * the write's own confirmation or step-up challenge finishing its exit:
+ * the control it would hand focus back to is the one the removal took, so
+ * that counts as lost too.
+ */
+function focusFellWith(removed: HTMLElement | null): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  if (removed !== null && removed.contains(active)) {
+    return true
+  }
+  return active.closest('[role="dialog"]') !== null
+}
+
 /** The pending-state placeholder: rows shaped like the content rows,
  * read aloud as one loading announcement, never a fake heading. */
 function BindingListSkeleton({ label }: { readonly label: string }) {
@@ -368,6 +409,17 @@ export function SocialBindingsSection({
     readonly label: string
   } | null>(null)
   const [busyProvider, setBusyProvider] = useState<string | null>(null)
+  // The row whose unlink is in flight. Only that row's action reports busy;
+  // every other initiating control in the list's one write scope is held
+  // unavailable without a reason, so two writes never overlap.
+  const [unbindRowId, setUnbindRowId] = useState<string | null>(null)
+  // Each bound row's unlink action, so a successful unlink can hand focus
+  // to the adjacent row's action when its own row leaves the document.
+  const unbindButtons = useRef(new Map<string, HTMLButtonElement>())
+  const unbindLanding = useRef<UnbindLanding | null>(null)
+  // The control group's container: the focus landing left when the removed
+  // row had no neighbour action and no section content remains.
+  const bindingsRegion = useRef<HTMLDivElement | null>(null)
   // One write scope for the whole list: the bound rows' unlink actions and
   // the add area's flow starts report through one slot, rendered in one
   // region below the rows, so two results never stand side by side and the
@@ -551,53 +603,125 @@ export function SocialBindingsSection({
     pending || (rows !== undefined && (rows.length > 0 || hasAddArea))
 
   function handleUnbind(linkId: string, providerLabel: string): Promise<void> {
-    return feedback.run(async () => {
-      try {
-        // The unlink replaces this session's credential as it commits, so
-        // the window is open before the write and closes once the profile
-        // refetch that follows it has settled: a read still carrying the
-        // outgoing credential is discarded instead of ending the session.
-        return await runIdentityTransition(
-          session,
-          () => unbindMutation.mutateAsync(linkId),
-          async () => {
-            setUnbindTarget(null)
-            await queryClient.invalidateQueries({
-              queryKey: getAuthnProfileGetQueryKey(),
+    // The row that started the attempt carries the busy state for as long as
+    // the attempt runs, including the profile refetch that follows the
+    // mutation. The row order and the action captured here name the
+    // neighbour that takes focus once the row leaves the read.
+    setUnbindRowId(linkId)
+    unbindLanding.current = {
+      id: linkId,
+      order: (rows ?? [])
+        .map((link) => link.id)
+        .filter((id): id is string => id != null),
+      control: unbindButtons.current.get(linkId) ?? null,
+    }
+    return feedback
+      .run(async () => {
+        try {
+          // The unlink replaces this session's credential as it commits, so
+          // the window is open before the write and closes once the profile
+          // refetch that follows it has settled: a read still carrying the
+          // outgoing credential is discarded instead of ending the session.
+          return await runIdentityTransition(
+            session,
+            () => unbindMutation.mutateAsync(linkId),
+            async () => {
+              setUnbindTarget(null)
+              await queryClient.invalidateQueries({
+                queryKey: getAuthnProfileGetQueryKey(),
+              })
+              // The confirmation names the provider that was unlinked.
+              return t('bindings.unlinked', {
+                provider: providerLabel,
+                interpolation: { escapeValue: false },
+              })
+            },
+          )
+        } catch (error) {
+          setUnbindTarget(null)
+          // The row stays, so there is no removal to land from; a replay
+          // after a won challenge captures its own landing.
+          unbindLanding.current = null
+          // The route asks for a fresh local multi-factor authentication: that
+          // shortfall opens the shared challenge with this row remembered
+          // instead of settling as a refusal. The failed write released its own
+          // window above; a won challenge's replay opens a fresh one.
+          if (
+            gate.intercept(error, {
+              kind: 'unbind',
+              id: linkId,
+              label: providerLabel,
             })
-            // The confirmation names the provider that was unlinked.
-            return t('bindings.unlinked', {
-              provider: providerLabel,
-              interpolation: { escapeValue: false },
-            })
-          },
-        )
-      } catch (error) {
-        setUnbindTarget(null)
-        // The route asks for a fresh local multi-factor authentication: that
-        // shortfall opens the shared challenge with this row remembered
-        // instead of settling as a refusal. The failed write released its own
-        // window above; a won challenge's replay opens a fresh one.
-        if (
-          gate.intercept(error, {
-            kind: 'unbind',
-            id: linkId,
-            label: providerLabel,
-          })
-        ) {
-          return null
+          ) {
+            return null
+          }
+          throw error
         }
-        throw error
-      }
-    })
+      })
+      .finally(() => setUnbindRowId(null))
   }
 
+  // The unlinked row left the read: focus goes to the same action on the
+  // next row, else the previous one, else the section's container, in the
+  // commit that removes the row. Focus is handed over only when the removal
+  // is what took it; an operator who moved it elsewhere during the write
+  // keeps that place. A passive effect, not a layout one: the confirmation
+  // (or step-up challenge) the write came through may be closing in the
+  // same commit, and its focus trap refuses focus until its own passive
+  // cleanup has run -- child cleanups precede this effect.
+  useEffect(() => {
+    const target = unbindLanding.current
+    if (target === null) {
+      return
+    }
+    const linkRows = rows
+    if (linkRows === undefined) {
+      return
+    }
+    const remaining = new Set(
+      linkRows
+        .map((link) => link.id)
+        .filter((id): id is string => id != null),
+    )
+    if (remaining.has(target.id)) {
+      // Settled without removing the row (a refusal, or an answer that still
+      // carries it): there is nothing to land from.
+      if (unbindRowId === null) {
+        unbindLanding.current = null
+      }
+      return
+    }
+    unbindLanding.current = null
+    if (!focusFellWith(target.control)) {
+      return
+    }
+    const index = target.order.indexOf(target.id)
+    const candidates =
+      index === -1
+        ? [...target.order]
+        : [
+            ...target.order.slice(index + 1),
+            ...target.order.slice(0, index).reverse(),
+          ]
+    for (const id of candidates) {
+      if (!remaining.has(id)) {
+        continue
+      }
+      const button = unbindButtons.current.get(id)
+      if (button !== undefined && button.isConnected) {
+        button.focus()
+        return
+      }
+    }
+    bindingsRegion.current?.focus()
+  }, [rows, unbindRowId])
+
   function handleAuthorize(method: AuthnMethodDescriptor): Promise<void> {
-    // One bind flow at a time, across every provider: the busy slot is
-    // provider-wide, so a second authorize click while a flow is being
-    // started -- this channel's or any other's -- is refused outright
-    // instead of racing the in-flight request.
-    if (busyProvider !== null) {
+    // One bind flow at a time, across every provider, and never while an
+    // unlink is in flight: the list's write scope admits one attempt, so a
+    // second start -- this channel's, any other's, or a row action's -- is
+    // refused outright instead of racing the in-flight request.
+    if (busyProvider !== null || unbindRowId !== null) {
       return Promise.resolve()
     }
     setBusyProvider(method.name)
@@ -628,14 +752,24 @@ export function SocialBindingsSection({
     })
   }
 
-  // Disabled through the whole attempt, including the profile refetch that
-  // follows the mutation, so the row's unlink action cannot re-arm while the
-  // scope is still pending -- the dialog closing is not the attempt settling.
-  const unbindBusy = unbindMutation.isPending || feedback.pending
+  // The list's one write scope admits one attempt at a time. Each initiating
+  // control reports the attempt's own state: the control that started it is
+  // busy; every other one is unavailable without a reason.
+  const writeInFlight = unbindRowId !== null || busyProvider !== null
 
   return (
     <>
       <SectionCard title={showHeader ? t('bindings.title') : undefined}>
+      {/* The section's control group: every write in the section reports
+          into one feedback scope, and when a removal leaves no neighbour
+          action this container is the focus landing. It is named by the
+          section title so the operator hears where focus went. */}
+      <Box
+        ref={bindingsRegion}
+        tabIndex={-1}
+        role="group"
+        aria-label={t('bindings.title')}
+      >
       {/* The section header is hidden while the empty placeholder shows, but
           the empty placeholder is a status, not a section: a heading here
           ("No linked social accounts") would still enter the page outline as
@@ -746,11 +880,18 @@ export function SocialBindingsSection({
                       </Typography>
                     </Box>
                     {id !== null && (
-                      <Button
-                        variant="outlined"
-                        color="error"
+                      <ActionButton
+                        ref={(element) => {
+                          if (element === null) {
+                            unbindButtons.current.delete(id)
+                          } else {
+                            unbindButtons.current.set(id, element)
+                          }
+                        }}
                         size="small"
-                        disabled={unbindBusy}
+                        tone="danger"
+                        busy={unbindRowId === id}
+                        unavailable={writeInFlight && unbindRowId !== id}
                         aria-label={t('bindings.unbindAriaWithProvider', {
                           provider: unbindIdentity,
                           interpolation: { escapeValue: false },
@@ -760,7 +901,7 @@ export function SocialBindingsSection({
                         }
                       >
                         {t('bindings.unbind')}
-                      </Button>
+                      </ActionButton>
                     )}
                   </Box>
                 )
@@ -816,10 +957,12 @@ export function SocialBindingsSection({
                         {t('bindings.description')}
                       </Typography>
                     </Box>
-                    <Button
-                      variant="outlined"
+                    <ActionButton
                       size="small"
-                      disabled={busyProvider !== null}
+                      busy={busyProvider === method.name}
+                      unavailable={
+                        writeInFlight && busyProvider !== method.name
+                      }
                       data-testid={`bind-${method.name}`}
                       aria-label={t('bindings.bindAriaWithProvider', {
                         provider: label,
@@ -828,7 +971,7 @@ export function SocialBindingsSection({
                       onClick={() => handleAuthorize(method)}
                     >
                       {t('bindings.bind')}
-                    </Button>
+                    </ActionButton>
                   </Box>
                 )
               })}
@@ -844,6 +987,7 @@ export function SocialBindingsSection({
           empty when the last binding goes. Its success names the provider,
           and a failure is one banner in the same place. */}
       <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mt: 1.5 }} />
+      </Box>
       </SectionCard>
 
       <ConfirmDialog
@@ -874,10 +1018,3 @@ export function SocialBindingsSection({
   )
 }
 
-/** The add area: one button per unbound redirect method, plus the
- * authorize-path failure banner. Rendered only when the list has loaded
- * and at least one redirect method is unbound. The button name is the
- * mode-keyed wording for a brand's several sign-in modes, otherwise the
- * descriptor's own label, defaulting to the method name. While a bind
- * flow is being started every button is disabled together -- the busy
- * flag is provider-wide, never one channel's alone. */

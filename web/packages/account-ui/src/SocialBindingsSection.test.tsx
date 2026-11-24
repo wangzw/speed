@@ -12,12 +12,15 @@
  * vocabulary for a value no descriptor claims -- and the add area offers
  * only the deployment's unbound redirect methods, labelled by their
  * descriptors; an unlink DELETE-s the link and refetches the profile, and
- * its row action stays disabled through that refetch; a refused unlink (the
- * account's last sign-in method) renders its code text below the list and
- * leaves the row; the unlink actions and the add area's flow starts share one
- * write scope, so their results never stand side by side; and the add area's
- * click starts a link flow carrying the host's `return_to` at the top level,
- * whose redirect step's URL is reported upward (the section never navigates).
+ * its row action stays busy and focusable through that refetch; a refused
+ * unlink (the account's last sign-in method) renders its code text below the
+ * list and leaves the row; the unlink actions and the add area's flow starts
+ * share one write scope, so their results never stand side by side and one
+ * attempt runs at a time -- the control that started it busy, the others
+ * unavailable without a reason; a removed row hands focus to the adjacent
+ * row's action, never the document body; and the add area's click starts a
+ * link flow carrying the host's `return_to` at the top level, whose redirect
+ * step's URL is reported upward (the section never navigates).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -133,6 +136,26 @@ async function findBindButton(label: string): Promise<HTMLElement> {
   return screen.findByRole('button', {
     name: zhCN.bindings.bindAriaWithProvider.replace('{{provider}}', label),
   })
+}
+
+/** The unlink action of the bound row whose provider identity is `label`. */
+function unbindButton(label: string): HTMLElement {
+  return screen.getByRole('button', {
+    name: zhCN.bindings.unbindAriaWithProvider.replace('{{provider}}', label),
+  })
+}
+
+/** One answer held open, so a case can assert the control's in-flight state
+ * before the write settles. */
+function deferredResponse(): {
+  readonly response: Promise<Response>
+  readonly release: (response: Response) => void
+} {
+  let release: (response: Response) => void = () => {}
+  const response = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  return { response, release }
 }
 
 describe('SocialBindingsSection', () => {
@@ -468,7 +491,7 @@ describe('SocialBindingsSection', () => {
     ).toBeGreaterThanOrEqual(2)
   })
 
-  it('keeps the row unlink disabled while the profile refetch settles', async () => {
+  it('keeps the row unlink busy while the profile refetch settles', async () => {
     let unlinked = false
     let refetchPending = false
     let releaseRefetch: ((response: Response) => void) | undefined
@@ -526,13 +549,17 @@ describe('SocialBindingsSection', () => {
 
     // The confirm dialog closes when the mutation settles, but the attempt
     // is still in flight through the refetch that follows it: the row's
-    // action must stay disabled, not re-arm for a second DELETE against the
-    // row the first one already unlinked.
+    // action must stay busy, not re-arm for a second DELETE against the
+    // row the first one already unlinked. It stays focusable for the same
+    // window -- a native disable here would drop the focus the dialog is
+    // about to give back to it.
     await waitFor(() => expect(refetchPending).toBe(true))
     // Wait out the dialog's exit transition: while it runs the page behind
     // it is hidden from the accessibility tree and role queries.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(rowUnlink()).toBeDisabled()
+    expect(rowUnlink()).toHaveAttribute('aria-disabled', 'true')
+    expect(rowUnlink()).toHaveAttribute('aria-busy', 'true')
+    await waitFor(() => expect(rowUnlink()).toHaveFocus())
 
     await act(async () => {
       releaseRefetch?.(jsonResponse(200, profile([])))
@@ -1710,5 +1737,596 @@ describe('SocialBindingsSection', () => {
     const readsBeforeRetry = reads
     await user.click(screen.getByRole('button', { name: zhCN.bindings.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
+
+  describe('focusable initiating controls', () => {
+    /** A profile read that answers the held rows, minus the unlinked ids. */
+    function linksWithout(
+      unlinked: readonly string[],
+      rows: readonly Record<string, unknown>[],
+    ): Record<string, unknown> {
+      return profile(rows.filter((row) => !unlinked.includes(row.id as string)))
+    }
+
+    it('keeps focus on the row unlink action after the confirmation closes while the attempt is in flight', async () => {
+      let unlinked = false
+      let refetchPending = false
+      let releaseRefetch: ((response: Response) => void) | undefined
+      const respond: RealResponder = async (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          if (refetchPending) {
+            return new Promise<Response>((resolve) => {
+              releaseRefetch = resolve
+            })
+          }
+          return jsonResponse(
+            200,
+            profile(
+              unlinked ? [] : [{ id: 'github-1', provider: 'github' }],
+            ),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc([]))
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1'
+        ) {
+          unlinked = true
+          refetchPending = true
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+        />,
+      )
+      const user = userEvent.setup()
+      const label = zhCN.bindings.provider.github
+
+      await user.click(await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          label,
+        ),
+      }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.bindings.confirmLabel,
+        }),
+      )
+
+      await waitFor(() => expect(refetchPending).toBe(true))
+      // The confirmation closes when the mutation settles; the attempt is
+      // still in flight through the refetch. Focus comes back to the row's
+      // own action and stays there: the action reports itself busy instead
+      // of going natively disabled.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      const rowAction = unbindButton(label)
+      await waitFor(() => expect(rowAction).toHaveFocus())
+      expect(rowAction).toHaveAttribute('aria-disabled', 'true')
+      expect(rowAction).toHaveAttribute('aria-busy', 'true')
+
+      await act(async () => {
+        releaseRefetch?.(jsonResponse(200, profile([])))
+      })
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', {
+            name: zhCN.bindings.unbindAriaWithProvider.replace(
+              '{{provider}}',
+              label,
+            ),
+          }),
+        ).toBeNull(),
+      )
+    })
+
+    it('leaves focus on the row unlink action when the unlink is refused', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profile([{ id: 'github-1', provider: 'github' }]),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc([]))
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1'
+        ) {
+          return errorResponse(409, 'authn.last_login_method')
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+        />,
+      )
+      const user = userEvent.setup()
+      const label = zhCN.bindings.provider.github
+
+      await user.click(await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          label,
+        ),
+      }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.bindings.confirmLabel,
+        }),
+      )
+
+      // The refusal leaves the row in place, so the action re-arms and the
+      // dialog hands focus back to it rather than dropping it to the body.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(
+        await screen.findByText(zhCN.errors.authn.last_login_method),
+      ).toBeTruthy()
+      const rowAction = unbindButton(label)
+      await waitFor(() => expect(rowAction).toHaveFocus())
+      expect(rowAction).not.toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it("moves focus to the next row's unlink action when a row leaves", async () => {
+      const unlinked = new Set<string>()
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            linksWithout([...unlinked], [
+              { id: 'github-1', provider: 'github' },
+              { id: 'feishu-1', provider: 'feishu' },
+            ]),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc([]))
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1'
+        ) {
+          unlinked.add('github-1')
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+        />,
+      )
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.bindings.unbindAriaWithProvider.replace(
+            '{{provider}}',
+            zhCN.bindings.provider.github,
+          ),
+        }),
+      )
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.bindings.confirmLabel,
+        }),
+      )
+
+      // The unlinked row leaves the document with the control that started
+      // the write. Focus goes to the same action on the next row, never to
+      // the document body.
+      await waitFor(() =>
+        expect(screen.queryByText(zhCN.bindings.provider.github)).toBeNull(),
+      )
+      await waitFor(() =>
+        expect(unbindButton(zhCN.bindings.provider.feishu)).toHaveFocus(),
+      )
+    })
+
+    it("moves focus to the previous row's unlink action when the last row leaves", async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profile([
+              { id: 'github-1', provider: 'github' },
+              { id: 'feishu-1', provider: 'feishu' },
+            ]),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc([]))
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/feishu-1'
+        ) {
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      // The second read answers the first row alone, so the last row leaves.
+      let reads = 0
+      const rig = makeRealClientRig((call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          reads += 1
+          if (reads > 1) {
+            return jsonResponse(
+              200,
+              profile([{ id: 'github-1', provider: 'github' }]),
+            )
+          }
+        }
+        return respond(call)
+      })
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+        />,
+      )
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.bindings.unbindAriaWithProvider.replace(
+            '{{provider}}',
+            zhCN.bindings.provider.feishu,
+          ),
+        }),
+      )
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.bindings.confirmLabel,
+        }),
+      )
+
+      await waitFor(() =>
+        expect(screen.queryByText(zhCN.bindings.provider.feishu)).toBeNull(),
+      )
+      await waitFor(() =>
+        expect(unbindButton(zhCN.bindings.provider.github)).toHaveFocus(),
+      )
+    })
+
+    it('hands focus to the section container when the only binding leaves', async () => {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profile([{ id: 'github-1', provider: 'github' }]),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(200, methodsDoc([]))
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1'
+        ) {
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      let reads = 0
+      const rig = makeRealClientRig((call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          reads += 1
+          if (reads > 1) {
+            return jsonResponse(200, profile([]))
+          }
+        }
+        return respond(call)
+      })
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+        />,
+      )
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.bindings.unbindAriaWithProvider.replace(
+            '{{provider}}',
+            zhCN.bindings.provider.github,
+          ),
+        }),
+      )
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.bindings.confirmLabel,
+        }),
+      )
+
+      // No row and no channel remain, so there is no neighbour action: the
+      // section's own container takes focus, never the document body.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      const region = screen.getByRole('group', {
+        name: zhCN.bindings.title,
+      })
+      await waitFor(() => expect(region).toHaveFocus())
+    })
+
+    it('does not take focus back when the operator moved it during the removal', async () => {
+      let refetchPending = false
+      let releaseRefetch: ((response: Response) => void) | undefined
+      const respond: RealResponder = async (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          if (refetchPending) {
+            return new Promise<Response>((resolve) => {
+              releaseRefetch = resolve
+            })
+          }
+          return jsonResponse(
+            200,
+            profile([{ id: 'github-1', provider: 'github' }]),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(
+            200,
+            methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+          )
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1'
+        ) {
+          refetchPending = true
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+        />,
+      )
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.bindings.unbindAriaWithProvider.replace(
+            '{{provider}}',
+            zhCN.bindings.provider.github,
+          ),
+        }),
+      )
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.bindings.confirmLabel,
+        }),
+      )
+
+      await waitFor(() => expect(refetchPending).toBe(true))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      // The operator moves focus to another control while the removal is
+      // still in flight. The landing must leave that place alone.
+      const elsewhere = await findBindButton('WeChat')
+      elsewhere.focus()
+      await act(async () => {
+        releaseRefetch?.(jsonResponse(200, profile([])))
+      })
+      await waitFor(() =>
+        expect(screen.queryByText(zhCN.bindings.provider.github)).toBeNull(),
+      )
+      expect(elsewhere).toHaveFocus()
+    })
+
+    it('holds the sibling rows and channel actions unavailable without a reason while an unlink is in flight', async () => {
+      let refetchPending = false
+      let releaseRefetch: ((response: Response) => void) | undefined
+      const respond: RealResponder = async (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          if (refetchPending) {
+            return new Promise<Response>((resolve) => {
+              releaseRefetch = resolve
+            })
+          }
+          return jsonResponse(
+            200,
+            profile([
+              { id: 'github-1', provider: 'github' },
+              { id: 'feishu-1', provider: 'feishu' },
+            ]),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(
+            200,
+            methodsDoc([{ name: 'wechat', label: 'WeChat' }]),
+          )
+        }
+        if (
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1'
+        ) {
+          refetchPending = true
+          return new Response(null, { status: 204 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+        />,
+      )
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', {
+          name: zhCN.bindings.unbindAriaWithProvider.replace(
+            '{{provider}}',
+            zhCN.bindings.provider.github,
+          ),
+        }),
+      )
+      const dialog = await screen.findByRole('dialog')
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: zhCN.bindings.confirmLabel,
+        }),
+      )
+      await waitFor(() => expect(refetchPending).toBe(true))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+      // Only the row whose unlink started reports busy. Its sibling row and
+      // the add area's channel buttons are held for the same scope: held
+      // without a reason, and activation sends nothing.
+      const started = unbindButton(zhCN.bindings.provider.github)
+      const sibling = unbindButton(zhCN.bindings.provider.feishu)
+      const channel = bindButton('WeChat')
+      expect(started).toHaveAttribute('aria-disabled', 'true')
+      expect(started).toHaveAttribute('aria-busy', 'true')
+      expect(sibling).toHaveAttribute('aria-disabled', 'true')
+      expect(sibling).not.toHaveAttribute('aria-busy')
+      expect(sibling).not.toHaveAccessibleDescription()
+      expect(channel).toHaveAttribute('aria-disabled', 'true')
+      expect(channel).not.toHaveAttribute('aria-busy')
+      expect(channel).not.toHaveAccessibleDescription()
+
+      await user.click(sibling)
+      expect(screen.queryByRole('dialog')).toBeNull()
+      await user.click(channel)
+      sibling.focus()
+      await user.keyboard('{Enter}')
+      expect(screen.queryByRole('dialog')).toBeNull()
+      channel.focus()
+      await user.keyboard('{Enter}')
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'POST' && call.path === LINK_FLOW_PATH,
+        ),
+      ).toHaveLength(0)
+      expect(
+        rig.calls.filter(
+          (call) =>
+            call.method === 'DELETE' &&
+            call.path === '/api/v1/auth/links/feishu-1',
+        ),
+      ).toHaveLength(0)
+
+      await act(async () => {
+        releaseRefetch?.(
+          jsonResponse(
+            200,
+            profile([{ id: 'feishu-1', provider: 'feishu' }]),
+          ),
+        )
+      })
+    })
+
+    it('marks only the channel being started busy and holds the others unavailable', async () => {
+      const started = deferredResponse()
+      const linkStarts: string[] = []
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(
+            200,
+            profile([{ id: 'feishu-1', provider: 'feishu' }]),
+          )
+        }
+        if (call.method === 'GET' && call.path === METHODS_PATH) {
+          return jsonResponse(
+            200,
+            methodsDoc([
+              { name: 'wechat', label: 'WeChat' },
+              { name: 'github', label: 'GitHub' },
+            ]),
+          )
+        }
+        if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+          linkStarts.push('link')
+          return started.response
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <SocialBindingsSection
+          session={rig.session}
+          returnTo={ACCOUNT_CALLBACK}
+          onAuthorizeUrl={() => undefined}
+        />,
+      )
+      const user = userEvent.setup()
+      const wechat = await findBindButton('WeChat')
+      const github = bindButton('GitHub')
+      const rowAction = unbindButton(zhCN.bindings.provider.feishu)
+
+      await user.click(wechat)
+      await waitFor(() => expect(linkStarts).toHaveLength(1))
+
+      // The channel whose flow is starting reports busy; the other channel
+      // and the row's unlink action are held without a reason for the same
+      // scope, and activating either sends nothing.
+      expect(wechat).toHaveAttribute('aria-busy', 'true')
+      expect(wechat).toHaveAttribute('aria-disabled', 'true')
+      expect(github).toHaveAttribute('aria-disabled', 'true')
+      expect(github).not.toHaveAttribute('aria-busy')
+      expect(github).not.toHaveAccessibleDescription()
+      expect(rowAction).toHaveAttribute('aria-disabled', 'true')
+      expect(rowAction).not.toHaveAttribute('aria-busy')
+      expect(rowAction).not.toHaveAccessibleDescription()
+
+      await user.click(github)
+      expect(linkStarts).toHaveLength(1)
+      await user.click(rowAction)
+      expect(screen.queryByRole('dialog')).toBeNull()
+      github.focus()
+      await user.keyboard('{Enter}')
+      expect(linkStarts).toHaveLength(1)
+      rowAction.focus()
+      await user.keyboard('{Enter}')
+      expect(screen.queryByRole('dialog')).toBeNull()
+
+      await act(async () => {
+        started.release(
+          jsonResponse(200, {
+            seq: 1,
+            state: 'first',
+            next: {
+              kind: 'redirect',
+              url: WECHAT_AUTHORIZE_URL,
+              method: 'GET',
+            },
+          }),
+        )
+      })
+    })
   })
 })
