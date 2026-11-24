@@ -14,9 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/guard"
 )
 
-// TestAnImpersonatingIdentityIsKeyedByItsActor holds the identity the module
-// carries: the accountability key is the administrator, not the target, so a
-// route's rate limit and audit are charged to the administrator.
+// TestAnImpersonatingIdentityIsKeyedByItsActor checks that the key is the actor, not the target.
 func TestAnImpersonatingIdentityIsKeyedByItsActor(t *testing.T) {
 	id := impersonatingIdentity(t, sessionBackend)
 	if id.Key() != string(id.Actor()) || id.Key() != string(actorID) {
@@ -30,11 +28,8 @@ func TestAnImpersonatingIdentityIsKeyedByItsActor(t *testing.T) {
 	}
 }
 
-// TestGuardRequireDecidesAnImpersonatingIdentityByTheOperatorsLevel holds the
-// step-up decision on an impersonating identity: the operator is the one who
-// authenticated, so the identity carries the operator's level and a route that
-// requires multi-factor authentication is met by a multi-factor operator and
-// refused to a single-factor one.
+// TestGuardRequireDecidesAnImpersonatingIdentityByTheOperatorsLevel checks that the
+// operator's assurance decides a step-up requirement on an impersonating identity.
 func TestGuardRequireDecidesAnImpersonatingIdentityByTheOperatorsLevel(t *testing.T) {
 	cases := []struct {
 		name       string

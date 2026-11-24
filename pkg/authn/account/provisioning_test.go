@@ -19,13 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// The cases here drive the in-transaction provisioning seam: an account is
-// created or deleted together with what a provisioning module writes for it, or
-// neither happens.
-
-// createProvisioningProbe adds the table a stand-in seam writes into, so that a
-// case can tell a write made on the caller's transaction from one made on a
-// connection of its own.
 func createProvisioningProbe(t *testing.T, h *harness) {
 	t.Helper()
 	if err := h.handle.Exec("CREATE TABLE provisioning_probe (account_id TEXT NOT NULL)").Error; err != nil {
@@ -33,8 +26,6 @@ func createProvisioningProbe(t *testing.T, h *harness) {
 	}
 }
 
-// countIn counts a table's rows through the given session, which is the
-// transaction the seam was handed.
 func countIn(t *testing.T, session *gorm.DB, table, where string, args ...any) int64 {
 	t.Helper()
 	var n int64
@@ -51,9 +42,7 @@ func requireInTransaction(t *testing.T, tx *gorm.DB) {
 	}
 }
 
-// A creation provisions the account inside its own transaction, after the row,
-// its identifier and its credential are written. The stand-in's write is
-// committed with the account, and the facts it was handed are the account's.
+// A creation provisions the account inside its own transaction, after the row, identifier and credential are written.
 func TestCreateProvisionsTheAccountInsideItsTransaction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		createProvisioningProbe(t, h)
@@ -93,8 +82,7 @@ func TestCreateProvisionsTheAccountInsideItsTransaction(t *testing.T) {
 	})
 }
 
-// A provisioning refusal fails the account's transaction: the account row, its
-// identifier, its credential and the seam's own write are all rolled back.
+// A provisioning refusal rolls back the account row, its identifier, its credential and the seam's write.
 func TestAProvisioningFailureRollsBackTheAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		createProvisioningProbe(t, h)
@@ -147,9 +135,7 @@ func TestRegisterProvisionsTheAccountInsideItsTransaction(t *testing.T) {
 	})
 }
 
-// A deletion provisions the account's end inside the same transaction, after
-// the account's own rows are erased. The facts still name the username and the
-// display name the erase has already removed.
+// A deletion provisions the account's end in the same transaction, after the account's rows are erased.
 func TestDeleteProvisionsTheAccountInsideItsTransaction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		createProvisioningProbe(t, h)
@@ -191,8 +177,7 @@ func TestDeleteProvisionsTheAccountInsideItsTransaction(t *testing.T) {
 	})
 }
 
-// A deletion the seam refuses leaves the account in service: the tombstone, the
-// erase and the seam's own write all roll back.
+// A deletion the seam refuses leaves the account in service: the tombstone, the erase and the seam's write all roll back.
 func TestADeletionProvisioningFailureRollsBackTheTombstone(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		createProvisioningProbe(t, h)
@@ -221,8 +206,7 @@ func TestADeletionProvisioningFailureRollsBackTheTombstone(t *testing.T) {
 	})
 }
 
-// The unverified-account sweep provisions the deletion inside the transaction
-// it deletes the account in.
+// The unverified sweep provisions the deletion inside the transaction it deletes in.
 func TestTheUnverifiedSweepProvisionsTheDeletionInsideItsTransaction(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -253,9 +237,7 @@ func TestTheUnverifiedSweepProvisionsTheDeletionInsideItsTransaction(t *testing.
 	})
 }
 
-// The work a provisioning implementation hands to the after-commit collector
-// runs once the account's transaction has committed, so it reads the committed
-// account and not an uncommitted one.
+// Work handed to the after-commit collector runs once the transaction commits, so it reads the committed account.
 func TestTheProvisioningAfterCommitWorkRunsAfterTheCommit(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		seam := provisioningtest.New()
@@ -284,8 +266,7 @@ func TestTheProvisioningAfterCommitWorkRunsAfterTheCommit(t *testing.T) {
 	})
 }
 
-// The provisioning seam is a required dependency: a registry that names the
-// account module without a provider does not start.
+// The provisioning seam is required: a registry naming the module without a provider does not start.
 func TestTheAccountModuleDoesNotStartWithoutAProvisioningSeam(t *testing.T) {
 	reader := authntest.ConfigReader(t, Module(), `{}`)
 	reg := core.New()
@@ -305,10 +286,7 @@ func TestTheAccountModuleDoesNotStartWithoutAProvisioningSeam(t *testing.T) {
 	}
 }
 
-// A status change moves the account's own state and calls the lifecycle hooks;
-// it does not run the provisioning seam. What a status change leaves in place is
-// the data the account owns for the whole of its life, and re-writing it would
-// be a second, unrelated decision.
+// A status change moves the account's state and calls the lifecycle hooks but does not run the provisioning seam.
 func TestSetStatusDoesNotCallTheProvisioningSeam(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		seam := provisioningtest.New()
@@ -333,9 +311,7 @@ func TestSetStatusDoesNotCallTheProvisioningSeam(t *testing.T) {
 	})
 }
 
-// A service account has no username and owns no organization. The seam is still
-// reached on its creation, and the facts say what the account is: kind service
-// and an empty username, so an implementation writes nothing for it.
+// A service account has no username and owns no organization.
 func TestAServiceAccountReachesTheSeamWithoutAUsername(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		seam := provisioningtest.New()

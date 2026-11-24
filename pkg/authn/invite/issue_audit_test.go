@@ -10,11 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestAnIssuedInvitationIsAuditedByItsIdentifier holds the mandatory issue row:
-// it names the invitation the action creates, so one record carries both the
-// operator and the invitation identifier. During an impersonation the journal
-// files the row under the operator while the invitation names the impersonated
-// account, and the invitation identifier is what ties the two together.
+// TestAnIssuedInvitationIsAuditedByItsIdentifier checks that the issue audit row
+// names the created invitation and carries the operator and account.
 func TestAnIssuedInvitationIsAuditedByItsIdentifier(t *testing.T) {
 	h := newHarness(t)
 	h.mounter.As(
@@ -56,11 +53,8 @@ func TestAnIssuedInvitationIsAuditedByItsIdentifier(t *testing.T) {
 	}
 }
 
-// TestAFailedIssueIsAuditedByTheSameInvitationAsItsPermittedRow holds the row a
-// refused issuance writes. The identifier is minted before the mandatory row, so
-// the permitted row names the invitation the request would create; the row
-// closing the same action names it too, and the tenant's name never stands in
-// for the object of this action. One action therefore never writes two objects.
+// TestAFailedIssueIsAuditedByTheSameInvitationAsItsPermittedRow holds the row
+// a refused issuance writes.
 func TestAFailedIssueIsAuditedByTheSameInvitationAsItsPermittedRow(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()

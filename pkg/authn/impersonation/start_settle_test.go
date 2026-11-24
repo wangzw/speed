@@ -8,14 +8,10 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// target2 is a second account a start may impersonate, so that the prior
-// record's target is not the one the new start is judged against.
 const target2 = authn.AccountID("acct-user-2")
 
-// TestStartSettlesALapsedRecordWithItsOwnEvent holds the other writer of a
-// non-expiry lapse: a start whose session carries a lapsed record ends that
-// record in its transaction and, once the transaction commits, counts the end
-// and publishes its event with the cause category.
+// TestStartSettlesALapsedRecordWithItsOwnEvent checks that a start ends a lapsed
+// record in its transaction and, after commit, counts and publishes its ended event.
 func TestStartSettlesALapsedRecordWithItsOwnEvent(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -53,10 +49,7 @@ func TestStartSettlesALapsedRecordWithItsOwnEvent(t *testing.T) {
 	})
 }
 
-// TestStartAnnouncesNoLapseWhenItsRecordTransactionRollsBack holds the other
-// side of the commit boundary: the lapse update runs inside the transaction,
-// the insert then breaks the primary key, and the rollback leaves neither the
-// end nor its count and event behind.
+// TestStartAnnouncesNoLapseWhenItsRecordTransactionRollsBack checks that a rolled-back record transaction leaves neither the lapse nor its count and event.
 func TestStartAnnouncesNoLapseWhenItsRecordTransactionRollsBack(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -66,8 +59,6 @@ func TestStartAnnouncesNoLapseWhenItsRecordTransactionRollsBack(t *testing.T) {
 		}
 		r.clock.advance(31 * time.Minute)
 
-		// Reusing the prior record's identifier for the new insert makes the
-		// lapse update run and the insert then break the primary key.
 		if _, err := r.p.record(ctx, adminIdentity(t), request(), 30*time.Minute, first.ID, r.clock.read()); err == nil {
 			t.Fatal("record = nil error, want the insert's failure")
 		}

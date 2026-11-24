@@ -11,14 +11,9 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// builtinCases are names from the built-in list, one from each part of the
-// system the list covers.
 var builtinCases = []string{"api", "well-known", "root"}
 
-// TestABuiltInReservedUsernameIsRefusedAtEveryWriteSurface holds the three
-// entry points that write a username: an account created by the management face
-// or a first login, an anonymous self-registration and an identifier added to an
-// existing account. A reserved name is refused at each of them and leaves no row.
+// A built-in reserved username is refused at every write surface: management create or first login, self-registration and identifier add.
 func TestABuiltInReservedUsernameIsRefusedAtEveryWriteSurface(t *testing.T) {
 	for _, name := range builtinCases {
 		t.Run(name, func(t *testing.T) {
@@ -52,10 +47,7 @@ func TestABuiltInReservedUsernameIsRefusedAtEveryWriteSurface(t *testing.T) {
 	}
 }
 
-// TestAPersonalPrefixedUsernameIsReserved holds the one prefix the reserved set
-// keeps besides its literal names. A personal tenant's name is its owner's
-// username, and a name beginning with the prefix the old personal identifiers
-// used may not be taken, so no personal name can read as such an identifier.
+// The personal prefix is reserved besides the literal names.
 func TestAPersonalPrefixedUsernameIsReserved(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -71,10 +63,7 @@ func TestAPersonalPrefixedUsernameIsReserved(t *testing.T) {
 	})
 }
 
-// TestAnEmptyUsernameIsAShapeFailureAtEveryWriteSurface holds that a missing or
-// blank username is the username field's own failure: the answer names the
-// field (400 username-invalid), the same as a badly formed one, rather than
-// leaving it to the body's generic refusal.
+// A missing or blank username is the field's own 400 username-invalid at every write surface, not the body's generic refusal.
 func TestAnEmptyUsernameIsAShapeFailureAtEveryWriteSurface(t *testing.T) {
 	for _, name := range []string{"", "   "} {
 		t.Run("a blank name", func(t *testing.T) {
@@ -97,10 +86,7 @@ func TestAnEmptyUsernameIsAShapeFailureAtEveryWriteSurface(t *testing.T) {
 	}
 }
 
-// TestADeploymentAppendedReservedUsernameIsRefusedAtEveryWriteSurface holds the
-// setting's contribution to the effective set: an appended name is refused like
-// a built-in one, and an element written in another case is matched by its
-// normalized form.
+// A deployment-appended reserved name is refused like a built-in one, matched by its normalized form whatever case it is written in.
 func TestADeploymentAppendedReservedUsernameIsRefusedAtEveryWriteSurface(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -125,9 +111,7 @@ func TestADeploymentAppendedReservedUsernameIsRefusedAtEveryWriteSurface(t *test
 	})
 }
 
-// TestAReservedUsernameIsNotAnAccountExists holds the two refusals apart: a
-// reserved name is a value that may not be used, a taken name is one another
-// account holds, and each is only itself.
+// A reserved name and a taken name are distinct refusals, each only itself.
 func TestAReservedUsernameIsNotAnAccountExists(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -151,10 +135,7 @@ func TestAReservedUsernameIsNotAnAccountExists(t *testing.T) {
 	})
 }
 
-// TestTheBuiltInReservedListStandsWhenTheSettingCannotBeRead holds the built-in
-// list against a store that fails: the read adds nothing and takes nothing away,
-// so a built-in name is still refused and a name outside the list is still
-// accepted.
+// A failed settings read leaves the built-in reserved list standing, refusing built-ins and accepting names outside it.
 func TestTheBuiltInReservedListStandsWhenTheSettingCannotBeRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -172,9 +153,7 @@ func TestTheBuiltInReservedListStandsWhenTheSettingCannotBeRead(t *testing.T) {
 	})
 }
 
-// TestTheReservedSettingAdmitsOnlyAJSONArrayOfUsernames holds the domain the
-// declaration states: a JSON array of strings, and nothing else. Whether an
-// element is a username is judged when the set is read, not when it is written.
+// The reserved setting admits a JSON array of usernames and nothing else.
 func TestTheReservedSettingAdmitsOnlyAJSONArrayOfUsernames(t *testing.T) {
 	for _, c := range []struct {
 		text string
@@ -197,10 +176,7 @@ func TestTheReservedSettingAdmitsOnlyAJSONArrayOfUsernames(t *testing.T) {
 	}
 }
 
-// TestTheReservedSettingTakesAnElementThatIsNotAUsername holds the write side of
-// the same domain: the store takes the array as it stands, and the element that
-// is not a username is skipped when the set is read rather than refused at the
-// write.
+// The store takes the array as written and skips an element that is not a username when the set is read.
 func TestTheReservedSettingTakesAnElementThatIsNotAUsername(t *testing.T) {
 	store, _ := deliveredSettings(t)
 	err := store.Set(context.Background(), settings.Write{
@@ -211,9 +187,7 @@ func TestTheReservedSettingTakesAnElementThatIsNotAUsername(t *testing.T) {
 	}
 }
 
-// TestAnAppendedNameIsNormalizedWhenTheSetIsRead holds that the setting is read
-// through the same normalization a username write uses: an element written in
-// capitals refuses every spelling of it.
+// An appended name is normalized on read, so an element written in capitals refuses every spelling of it.
 func TestAnAppendedNameIsNormalizedWhenTheSetIsRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -230,9 +204,7 @@ func TestAnAppendedNameIsNormalizedWhenTheSetIsRead(t *testing.T) {
 	})
 }
 
-// TestAnElementThatIsNotAUsernameIsSkippedWhenTheSetIsRead holds the direction of
-// a bad element: it is ignored with one Warn while the rest of the array stands,
-// and a repeated read does not repeat the line.
+// A bad element is skipped with one Warn while the rest of the array stands, and a repeated read does not repeat the line.
 func TestAnElementThatIsNotAUsernameIsSkippedWhenTheSetIsRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -257,9 +229,7 @@ func TestAnElementThatIsNotAUsernameIsSkippedWhenTheSetIsRead(t *testing.T) {
 	})
 }
 
-// TestRemovingAnAppendedReservedUsernameIsARelaxation holds the direction of a
-// change to the appended set: a removed name lets a username through and is
-// recorded as a relaxation, while an added name checks more and is silent.
+// Removing an appended reserved name is recorded as a relaxation, while adding one checks more and is silent.
 func TestRemovingAnAppendedReservedUsernameIsARelaxation(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -317,11 +287,7 @@ func TestRemovingAnAppendedReservedUsernameIsARelaxation(t *testing.T) {
 	}
 }
 
-// TestTheReservedAnswerSeamReportsTheEffectiveSet holds the read a surface
-// choosing a tenant name makes: the built-in names, the deployment's appended
-// names and the personal prefix are answers about the set, a free name is not,
-// and a value outside the username shape is the normalizer's refusal rather
-// than a verdict on the set.
+// The reserved answer seam reports the built-in names, the appended names and the personal prefix, not a free name, and outside the username shape is the normalizer's refusal.
 func TestTheReservedAnswerSeamReportsTheEffectiveSet(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

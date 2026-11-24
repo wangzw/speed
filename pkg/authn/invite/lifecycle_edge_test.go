@@ -10,12 +10,8 @@ import (
 	"time"
 )
 
-// TestTheDeadlineBoundaryIsTerminalForRevokeAndResend holds the line the clock is
-// judged on: an invitation at exactly its deadline is expired, because a pending
-// invitation is redeemable only while the deadline is still ahead. Revoke and
-// resend refuse it, the management face answers the same 409 invitation-terminal
-// as for any expired row, and the row keeps its token, its revocation column and
-// its send record.
+// TestTheDeadlineBoundaryIsTerminalForRevokeAndResend holds that an invitation
+// at exactly its deadline is expired, though its row stays pending.
 func TestTheDeadlineBoundaryIsTerminalForRevokeAndResend(t *testing.T) {
 	h := newHarness(t)
 	deadline := h.clock.read().Add(time.Hour)
@@ -27,7 +23,6 @@ func TestTheDeadlineBoundaryIsTerminalForRevokeAndResend(t *testing.T) {
 	}
 	before := h.row(issued.Invitation.ID)
 
-	// Exactly at the deadline: not one instant past it.
 	h.clock.advance(time.Hour)
 
 	if err := h.p.Revoke(context.Background(), tenant, issued.Invitation.ID); !errors.Is(err, ErrInvitationExpired) {
@@ -69,11 +64,8 @@ func TestTheDeadlineBoundaryIsTerminalForRevokeAndResend(t *testing.T) {
 	}
 }
 
-// TestAnInvitationAtItsDeadlineIsSuperseded holds the other side of the same
-// boundary: an issuance over a row whose deadline has just arrived finds the live
-// slot free, records the replacement in superseded_at on the old row, and inserts
-// the new one. The old row keeps its stored pending state and its token still
-// reads expired; the new token reads pending.
+// TestAnInvitationAtItsDeadlineIsSuperseded checks that an issuance over a row
+// at its deadline supersedes it and inserts the new one.
 func TestAnInvitationAtItsDeadlineIsSuperseded(t *testing.T) {
 	h := newHarness(t)
 	deadline := h.clock.read().Add(time.Hour)
@@ -119,11 +111,8 @@ func TestAnInvitationAtItsDeadlineIsSuperseded(t *testing.T) {
 	}
 }
 
-// TestTheMaskedAddressKeepsTheDomainAndOneLocalCharacter holds the server-side
-// mask every caller of the public read sees: one local character, then the whole
-// domain. A single-character local part keeps that one character; an empty local
-// part is the mask alone; and an address with no domain, which normalization
-// never produces, masks to nothing rather than to a guessed shape.
+// TestTheMaskedAddressKeepsTheDomainAndOneLocalCharacter checks that the mask
+// keeps one local character and the whole domain.
 func TestTheMaskedAddressKeepsTheDomainAndOneLocalCharacter(t *testing.T) {
 	for _, c := range []struct {
 		email string
@@ -141,10 +130,8 @@ func TestTheMaskedAddressKeepsTheDomainAndOneLocalCharacter(t *testing.T) {
 	}
 }
 
-// TestTheListShowsWhenAnInvitationWasRevoked holds the listing's revoked_at
-// mapping: a revoked row carries the moment it was revoked, and a pending row
-// carries none. Both are read through the route's own answer, which is the shape
-// a client sees.
+// TestTheListShowsWhenAnInvitationWasRevoked checks that a revoked invitation
+// carries its revocation time and a pending one carries none.
 func TestTheListShowsWhenAnInvitationWasRevoked(t *testing.T) {
 	h := newHarness(t)
 	pending := h.issue(tenant, "pending@example.com")
@@ -191,11 +178,8 @@ func TestTheListShowsWhenAnInvitationWasRevoked(t *testing.T) {
 	}
 }
 
-// TestASupersededRowThatHasNotExpiredIsNotLive holds the third predicate the
-// conditional writes carry: a row a later invitation replaced is never a live
-// slot, even while its deadline is still ahead. The normal path supersedes a row
-// only once it has expired, so a case seeds this state directly and holds that
-// redemption, resend and revoke all refuse it.
+// TestASupersededRowThatHasNotExpiredIsNotLive checks that a superseded row is
+// never a live slot even before its deadline.
 func TestASupersededRowThatHasNotExpiredIsNotLive(t *testing.T) {
 	h := newHarness(t)
 	token, err := newToken()
@@ -216,9 +200,6 @@ func TestASupersededRowThatHasNotExpiredIsNotLive(t *testing.T) {
 	}
 	before := h.row(row.ID)
 
-	// Every write that would redeem, resend or revoke the row judges it the way
-	// the read does: it reads expired, so each answers the expired error rather
-	// than a missing row or an unavailable dependency.
 	if _, err := h.p.Accept(h.acceptCtx("acct-alice", "alice@example.com"), AcceptInvite{Token: token}); !errors.Is(err, ErrInvitationExpired) {
 		t.Errorf("accepting a superseded row gave %v, want ErrInvitationExpired", err)
 	}
@@ -232,8 +213,6 @@ func TestASupersededRowThatHasNotExpiredIsNotLive(t *testing.T) {
 		t.Errorf("revoking a superseded row gave %v, want ErrInvitationExpired", err)
 	}
 
-	// The routes answer the terminal refusal: 409 with invitation-terminal, on
-	// both faces, not a bare 404.
 	h.asAdmin()
 	for _, request := range []struct {
 		method string

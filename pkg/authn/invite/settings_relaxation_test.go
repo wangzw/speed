@@ -8,20 +8,14 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The name and outcome of the audit record of a setting moved to a more
-// permissive value, and the direction a longer lifetime moves in. They are
-// written out here rather than read from a constant so that the case holds the
-// contract the design lists.
 const (
 	testRelaxedAction  = "authn.settings.relaxed"
 	testRelaxedOutcome = "relaxed"
 	testIncrease       = "increase"
 )
 
-// TestALongerTTLWritesAWarnAndAnAuditRecord holds the visibility of a lifetime
-// moved toward the permissive end: the module's subscription answers the change
-// with one Warn naming the key and the direction and never the value, and one
-// best-effort audit record with the relaxed action.
+// TestALongerTTLWritesAWarnAndAnAuditRecord checks that a longer lifetime writes
+// one Warn naming key and direction without the value, and one relaxed audit row.
 func TestALongerTTLWritesAWarnAndAnAuditRecord(t *testing.T) {
 	h := newSettingsAssembly(t)
 	h.bus.deliver(t, event.Event{

@@ -16,9 +16,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestResendReplacesTheTokenOnTheSameRow holds the rule: a resend keeps the
-// invitation's identity, its deadline and its row, and only the token and the
-// send record move. The old token stops resolving.
+// TestResendReplacesTheTokenOnTheSameRow checks that a resend keeps the row and
+// deadline and replaces only the token and send record.
 func TestResendReplacesTheTokenOnTheSameRow(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue(tenant, "alice@example.com")
@@ -56,8 +55,6 @@ func TestResendReplacesTheTokenOnTheSameRow(t *testing.T) {
 		t.Errorf("the new token reads %q (%v), want pending", state, err)
 	}
 
-	// The same two answers over the public route: the old link is gone and the
-	// new one is the redeemable pending link.
 	h.mounter.AsAnonymous()
 	if w := h.request(http.MethodGet, "/api/v1/auth/invitations/"+first.Token, nil); w.Code != http.StatusNotFound {
 		t.Errorf("the old token over HTTP answered %d, want 404: %s", w.Code, w.Body.String())
@@ -147,10 +144,8 @@ func TestResendRefusesAnUnknownIdentifier(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteAnswersAndAuditsTheInvitation holds the HTTP face: the
-// answer is the invitation with the new send record, the decision's target is
-// the invitation identifier, and the mandatory audit row names the invitation,
-// not the address.
+// TestTheResendRouteAnswersAndAuditsTheInvitation checks that the HTTP answer
+// carries the new send record and the audit names the invitation.
 func TestTheResendRouteAnswersAndAuditsTheInvitation(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -184,9 +179,8 @@ func TestTheResendRouteAnswersAndAuditsTheInvitation(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteAnswers409ForATerminalInvitation holds the HTTP status of a
-// refused resend for each terminal state: the management face's 409
-// invitation-terminal, with the row's token and send record untouched.
+// TestTheResendRouteAnswers409ForATerminalInvitation checks that each terminal
+// state answers 409 invitation-terminal and leaves the row untouched.
 func TestTheResendRouteAnswers409ForATerminalInvitation(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -247,14 +241,8 @@ func TestTheResendRouteAnswers409ForATerminalInvitation(t *testing.T) {
 	}
 }
 
-// TestARefusedResendSpendsOnlyTheIssuersBudget holds the order of a resend's
-// charges: the issuing account is charged before the terminal check, so a
-// terminal row still costs the operator, while the address's and the
-// deployment's budgets are charged only once the row is known to be live. The
-// address limit is the issuance's single unit, so a resend that charged the
-// address before deciding the row was terminal would answer throttled instead
-// of the terminal state; the counts then pin both budgets at the issuance's one
-// unit.
+// TestARefusedResendSpendsOnlyTheIssuersBudget checks that a refused resend
+// spends the issuer's budget alone.
 func TestARefusedResendSpendsOnlyTheIssuersBudget(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 1)
@@ -282,9 +270,8 @@ func TestARefusedResendSpendsOnlyTheIssuersBudget(t *testing.T) {
 	}
 }
 
-// TestResendsSpendTheAddressBudget holds that a resend is another send: the
-// first issuance plus four resends fill a budget of five, and the next resend is
-// throttled.
+// TestResendsSpendTheAddressBudget checks that the issuance plus four resends
+// fill an address budget of five and the next is throttled.
 func TestResendsSpendTheAddressBudget(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 5)
@@ -304,9 +291,8 @@ func TestResendsSpendTheAddressBudget(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteAnswers429OnTheSixthSend holds the same budget on the HTTP
-// face: the first issuance and four resends spend a five-per-hour address
-// budget, so the sixth send is a 429 problem and the row is not sent again.
+// TestTheResendRouteAnswers429OnTheSixthSend checks that the sixth send answers
+// 429 with a Retry-After.
 func TestTheResendRouteAnswers429OnTheSixthSend(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 5)
@@ -341,10 +327,7 @@ func TestTheResendRouteAnswers429OnTheSixthSend(t *testing.T) {
 }
 
 // TestResendAnswersTheWrittenRowWhenTheRereadFails holds that a resend whose
-// conditional write landed does not depend on a second read. The answer is
-// built from the copy read before the write plus the values this write set, so
-// a re-read that fails cannot turn a sent invitation into an error, a lost
-// token or a failed audit row.
+// conditional write landed does not depend on a second read.
 func TestResendAnswersTheWrittenRowWhenTheRereadFails(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue(tenant, "alice@example.com")
@@ -386,8 +369,6 @@ func TestResendAnswersTheWrittenRowWhenTheRereadFails(t *testing.T) {
 			t.Errorf("a landed resend wrote a failed audit row: %+v", row)
 		}
 	}
-	// The token in the answer is the live one. The callback fails every read
-	// after the update, so turning it off lets this check read the stored row.
 	updated.Store(false)
 	if _, state, err := h.p.viewToken(context.Background(), answered.Token); err != nil || state != viewStatePending {
 		t.Errorf("the answered token reads %q (%v), want pending", state, err)

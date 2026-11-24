@@ -12,9 +12,8 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// TestThePendingRefusalIsAConflictProblem holds the mapping of the refusal a
-// concurrent issuance loses the partial unique index to: it is a 409
-// invitation-pending, never the 503 a failure outside the closed table becomes.
+// TestThePendingRefusalIsAConflictProblem checks that the pending refusal is a
+// 409 invitation-pending.
 func TestThePendingRefusalIsAConflictProblem(t *testing.T) {
 	h := newHarness(t)
 	err := h.p.answer("issuing an invitation", ErrInvitationPending)
@@ -31,10 +30,8 @@ func TestThePendingRefusalIsAConflictProblem(t *testing.T) {
 	}
 }
 
-// TestASecondIssuanceToAPendingAddressIsRefused holds the pending rule on the
-// domain call: a second issuance to an address that already holds an unexpired
-// pending invitation is refused, and it changes neither the row count nor the
-// first invitation.
+// TestASecondIssuanceToAPendingAddressIsRefused checks that a second issuance to
+// a pending address is refused and changes nothing.
 func TestASecondIssuanceToAPendingAddressIsRefused(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue(tenant, "alice@example.com")
@@ -56,9 +53,8 @@ func TestASecondIssuanceToAPendingAddressIsRefused(t *testing.T) {
 	}
 }
 
-// TestConcurrentIssuancesLeaveOneInvitation holds the race: two issuances of the
-// same tenant and address leave one winner and one invitation-pending refusal,
-// and one row.
+// TestConcurrentIssuancesLeaveOneInvitation checks that two concurrent issuances
+// leave one row and one pending refusal.
 func TestConcurrentIssuancesLeaveOneInvitation(t *testing.T) {
 	h := newHarness(t)
 	results := make(chan error, 2)
@@ -87,9 +83,8 @@ func TestConcurrentIssuancesLeaveOneInvitation(t *testing.T) {
 	}
 }
 
-// TestTheIssueRouteAnswers409ForAPendingAddress holds the same rule on the HTTP
-// face: the second request is a 409 of invitation-pending, not a 201 that
-// silently voids the first link.
+// TestTheIssueRouteAnswers409ForAPendingAddress checks that the HTTP face answers
+// 409 invitation-pending for a pending address.
 func TestTheIssueRouteAnswers409ForAPendingAddress(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -112,9 +107,8 @@ func TestTheIssueRouteAnswers409ForAPendingAddress(t *testing.T) {
 	}
 }
 
-// TestConcurrentIssuancesOverTheRouteAnswerOne201AndOne409 holds the race on the
-// HTTP face: two simultaneous requests for the same address leave one 201 and
-// one 409 of invitation-pending, and one row.
+// TestConcurrentIssuancesOverTheRouteAnswerOne201AndOne409 checks that two
+// concurrent requests leave one 201 and one 409.
 func TestConcurrentIssuancesOverTheRouteAnswerOne201AndOne409(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -153,10 +147,8 @@ func TestConcurrentIssuancesOverTheRouteAnswerOne201AndOne409(t *testing.T) {
 	}
 }
 
-// TestTheIssueRouteAnswers201OverAnExpiredInvitationAndSupersedesIt holds the
-// replacement on the HTTP face: issuing over an expired invitation is a 201, the
-// old row keeps its stored pending state so it still reads expired rather than
-// revoked, and superseded_at records the replacement.
+// TestTheIssueRouteAnswers201OverAnExpiredInvitationAndSupersedesIt checks that
+// issuing over an expired invitation is a 201 that supersedes the old row.
 func TestTheIssueRouteAnswers201OverAnExpiredInvitationAndSupersedesIt(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue(tenant, "alice@example.com")

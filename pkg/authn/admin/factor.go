@@ -10,13 +10,10 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// factorViewOf builds one factor as the management routes show it: its kind,
-// its label and its status, and nothing of its credential.
 func factorViewOf(f authn.FactorRecord) AuthnAdminFactor {
 	return AuthnAdminFactor{Kind: string(f.Kind), Label: f.Label, Status: factorStatusName(f.Status)}
 }
 
-// factorStatusName is the status's name as the view writes it.
 func factorStatusName(s authn.FactorStatus) string {
 	switch s {
 	case authn.FactorPending:
@@ -29,8 +26,6 @@ func factorStatusName(s authn.FactorStatus) string {
 	return "unknown"
 }
 
-// handleFactorList answers GET /admin/accounts/:id/factors. The action is
-// account.read.
 func (m *product) handleFactorList(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -60,8 +55,6 @@ func (m *product) handleFactorList(ctx context.Context, in accountIDInput, _ *sp
 	return speedhttp.JSONReply(200, AuthnAdminFactorList{Factors: views}), nil
 }
 
-// handleMFARequired answers POST /admin/accounts/:id/mfa-required. The action is
-// account.update.
 func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -95,11 +88,6 @@ func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *spe
 	return speedhttp.EmptyReply(204), nil
 }
 
-// handleMFAReset answers POST /admin/accounts/:id/mfa-reset: it disables the
-// account's factors. The action is mfa.reset; the actor needs a fresh, local,
-// non-SMS multi-factor authentication and a seasoned factor of their own.
-// An account whose only way to log in is a factor is refused 409: resetting the
-// factors would leave it with no way in at all.
 func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -146,11 +134,6 @@ func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *spee
 	return speedhttp.JSONReply(200, AuthnAdminRemoved{Removed: removed}), nil
 }
 
-// handlePasswordReset answers POST /admin/accounts/:id/password: an
-// administrator sets a temporary password that must be changed at the next
-// login, then every session of the account is revoked. The action is
-// account.update; the actor needs a fresh, local, non-SMS multi-factor
-// authentication and a seasoned factor of their own.
 func (m *product) handlePasswordReset(ctx context.Context, in passwordResetInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -192,11 +175,6 @@ func (m *product) handlePasswordReset(ctx context.Context, in passwordResetInput
 	return speedhttp.EmptyReply(204), nil
 }
 
-// revokeAfterPassword revokes every session of the account whose password was
-// reset. It runs after the write has landed, so a failure does not undo the
-// reset: it is logged and the sessions are left for the account's own next
-// login to replace. With no session store in the assembly there is nothing to
-// revoke, and that is logged too.
 func (m *product) revokeAfterPassword(ctx context.Context, id authn.AccountID) {
 	if m.sessions == nil {
 		m.logger.Warn(ModuleName + ": a password was reset with no session store in this assembly, so no session was revoked")
@@ -208,12 +186,6 @@ func (m *product) revokeAfterPassword(ctx context.Context, id authn.AccountID) {
 	}
 }
 
-// requireAdministrator holds a high-privilege actor to a fresh, local,
-// non-SMS multi-factor authentication and a seasoned factor of their own, and
-// refuses a subject of the static credential table outright, which has neither
-// factors nor an account to answer for. The static-subject refusal and the
-// strength conditions are a step-up 401; a missing seasoned factor is the 403
-// the step-up cannot clear.
 func (m *product) requireAdministrator(ctx context.Context, id authn.Identity) error {
 	if account := id.Account(); account == "" || account.IsStatic() {
 		return stepUpRequired(id, authn.FreshLocalMulti(m.settings.recentWindow()))
@@ -234,9 +206,6 @@ func (m *product) requireAdministrator(ctx context.Context, id authn.Identity) e
 	return nil
 }
 
-// hasNonSMSSecond reports whether the method set carries a second factor that
-// is not SMS: a one-time code or a passkey. SMS is a restricted authenticator
-// and does not count for the highest-privilege actions.
 func hasNonSMSSecond(methods []authn.Method) bool {
 	for _, method := range methods {
 		if method == authn.MethodTOTP || method == authn.MethodWebAuthn {

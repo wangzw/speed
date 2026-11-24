@@ -18,10 +18,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// TestStartBeginsAnImpersonation holds the happy path: the record is written with
-// the actor, the target, the tenant, the reason, the actor's session and a
-// lifetime, the mandatory audit row is written, and the started outcome is
-// counted.
+// TestStartBeginsAnImpersonation checks that a start writes the record, the mandatory audit row and the started count.
 func TestStartBeginsAnImpersonation(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		g, err := r.p.Start(context.Background(), adminIdentity(t), request())
@@ -57,10 +54,7 @@ func TestStartBeginsAnImpersonation(t *testing.T) {
 	})
 }
 
-// TestStartRefusesEachStructuralRestriction holds each group's conditions: a
-// violation is refused with the sentinel its nature carries, no record is
-// written, and a denied attempt is counted. The cases are the closed set the
-// design names.
+// TestStartRefusesEachStructuralRestriction checks that each restriction is refused with its own sentinel, no record and one denied attempt.
 func TestStartRefusesEachStructuralRestriction(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -76,8 +70,6 @@ func TestStartRefusesEachStructuralRestriction(t *testing.T) {
 		{
 			name: "a: the actor is a static subject",
 			build: func(t *testing.T, r *rig) authn.Identity {
-				// The subject is a live account, so only the static check can
-				// refuse it.
 				r.accounts.put(authn.AccountID("static.ops"), authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
 				return adminIdentity(t, authntest.WithAccount(authn.AccountID("static.ops")), authntest.WithBackend("static"))
 			},
@@ -144,8 +136,6 @@ func TestStartRefusesEachStructuralRestriction(t *testing.T) {
 		{
 			name: "b: the target is the actor",
 			build: func(t *testing.T, r *rig) authn.Identity {
-				// The actor is a member of the tenant, so only the self check can
-				// refuse this.
 				r.memberships.set(actorID, tenantA, true)
 				return adminIdentity(t)
 			},
@@ -165,8 +155,6 @@ func TestStartRefusesEachStructuralRestriction(t *testing.T) {
 		{
 			name: "b: the target is a static subject",
 			build: func(t *testing.T, r *rig) authn.Identity {
-				// The subject is a live member of the tenant, so only the static
-				// check can refuse it.
 				r.accounts.put(authn.AccountID("static.ops"), authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
 				r.memberships.set(authn.AccountID("static.ops"), tenantA, true)
 				return adminIdentity(t)
@@ -219,8 +207,6 @@ func TestStartRefusesEachStructuralRestriction(t *testing.T) {
 		{
 			name: "c: the tenant starts with a blank",
 			build: func(t *testing.T, r *rig) authn.Identity {
-				// The membership is in place, so only the tenant shape check can
-				// refuse this.
 				r.memberships.set(targetID, " tenant-a", true)
 				return adminIdentity(t)
 			},
@@ -292,8 +278,7 @@ func TestStartRefusesEachStructuralRestriction(t *testing.T) {
 	}
 }
 
-// TestStartRefusesASecondRecordOnOneSession holds group d: a session that already
-// carries a valid record is refused with ErrImpersonationActive.
+// TestStartRefusesASecondRecordOnOneSession checks that a session that already carries a valid record is refused with ErrImpersonationActive.
 func TestStartRefusesASecondRecordOnOneSession(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -310,9 +295,7 @@ func TestStartRefusesASecondRecordOnOneSession(t *testing.T) {
 	})
 }
 
-// TestStartAsksTheDeciderAndRefusesWhenItDeclines holds the decision seam: a
-// decline is ErrForbidden, an absent seam refuses everything, and a seam that
-// returns an error or panics is ErrUnavailable and never a permission.
+// TestStartAsksTheDeciderAndRefusesWhenItDeclines checks that a decline, an absent seam, an error and a panic are refused as forbidden or unavailable.
 func TestStartAsksTheDeciderAndRefusesWhenItDeclines(t *testing.T) {
 	decisions := []struct {
 		name  string
@@ -340,8 +323,7 @@ func TestStartAsksTheDeciderAndRefusesWhenItDeclines(t *testing.T) {
 	}
 }
 
-// TestStartAsksTheDeciderWithTheFactsOfTheAction holds the question: the action,
-// the actor, the target, the tenant, the reason and the lifetime in seconds.
+// TestStartAsksTheDeciderWithTheFactsOfTheAction checks that the decision carries the action, actor, target, tenant, reason and lifetime in seconds.
 func TestStartAsksTheDeciderWithTheFactsOfTheAction(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		if _, err := r.p.Start(context.Background(), adminIdentity(t), request()); err != nil {
@@ -358,16 +340,13 @@ func TestStartAsksTheDeciderWithTheFactsOfTheAction(t *testing.T) {
 		if d.Params["reason"] != "a support call" {
 			t.Errorf("the decision's reason is %q, want the request's", d.Params["reason"])
 		}
-		// The lifetime is the settled one in whole seconds: the 30-minute
-		// max-ttl default is 1800 seconds.
 		if d.Params["ttl"] != "1800" {
 			t.Errorf("the decision's ttl is %q, want the lifetime in seconds 1800", d.Params["ttl"])
 		}
 	})
 }
 
-// TestStartAsksTheDeciderWithTheTrimmedReason holds that the reason the Decider
-// sees is the trimmed one, the string the record and the audit row carry.
+// TestStartAsksTheDeciderWithTheTrimmedReason checks that the Decider sees the trimmed reason, the string the record and audit row carry.
 func TestStartAsksTheDeciderWithTheTrimmedReason(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		req := request()
@@ -384,11 +363,7 @@ func TestStartAsksTheDeciderWithTheTrimmedReason(t *testing.T) {
 	})
 }
 
-// TestStartWritesTheMandatoryAuditBeforeTheTransaction holds the order the design
-// fixes: the mandatory audit is written outside the record transaction. The
-// audit's row is written through a second connection to the same SQLite file, so
-// that a start that wrote the audit while holding its own write lock would fail
-// here and not merely be mis-ordered.
+// TestStartWritesTheMandatoryAuditBeforeTheTransaction checks that the mandatory audit is written outside the record transaction.
 func TestStartWritesTheMandatoryAuditBeforeTheTransaction(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "imp.db")
 	primary := dbtest.SQLite(t, dsn, nil).DB().Session(&gorm.Session{Logger: logger.Discard})
@@ -412,8 +387,6 @@ func TestStartWritesTheMandatoryAuditBeforeTheTransaction(t *testing.T) {
 	}
 }
 
-// probeAudit writes a real row through its own connection to the same database, as
-// an audit writing to its own connection would, and reports whether it landed.
 type probeAudit struct {
 	handle *gorm.DB
 	wrote  bool
@@ -429,9 +402,7 @@ func (a *probeAudit) Record(ctx context.Context, e audit.Entry) error {
 	return nil
 }
 
-// TestStartRefusesWhenTheMandatoryAuditFails holds the mandatory tier: a start
-// whose audit cannot be written is refused with ErrAuditRequired and writes no
-// record.
+// TestStartRefusesWhenTheMandatoryAuditFails checks that a start whose audit cannot be written is refused with ErrAuditRequired and writes no record.
 func TestStartRefusesWhenTheMandatoryAuditFails(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.audit.err = errFromStore
@@ -445,9 +416,7 @@ func TestStartRefusesWhenTheMandatoryAuditFails(t *testing.T) {
 	})
 }
 
-// TestTwoStartsOnOneSessionRaceToOne holds the assumption the design names: two
-// concurrent starts on one session leave exactly one record, and the loser is
-// told ErrImpersonationActive. The partial unique index is what arbitrates.
+// TestTwoStartsOnOneSessionRaceToOne checks that two concurrent starts on one session leave one record and one ErrImpersonationActive.
 func TestTwoStartsOnOneSessionRaceToOne(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		ctx := context.Background()
@@ -483,10 +452,7 @@ func TestTwoStartsOnOneSessionRaceToOne(t *testing.T) {
 	})
 }
 
-// TestStartAcceptsAReasonOfExactlyMaxRunes holds the upper boundary of the
-// reason: a reason of exactly the maximum is admitted, one longer is refused.
-// The length is written as a literal, so that moving the bound does not move the
-// input with it.
+// TestStartAcceptsAReasonOfExactlyMaxRunes checks that a reason of exactly the maximum is admitted and one longer refused.
 func TestStartAcceptsAReasonOfExactlyMaxRunes(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		req := request()
@@ -497,9 +463,7 @@ func TestStartAcceptsAReasonOfExactlyMaxRunes(t *testing.T) {
 	})
 }
 
-// TestStartAcceptsAWebAuthnSecondFactor holds the second strong factor the design
-// admits: a passkey beside the password is a non-SMS second factor, as a one-time
-// code is.
+// TestStartAcceptsAWebAuthnSecondFactor checks that a passkey beside the password counts as a strong non-SMS second factor.
 func TestStartAcceptsAWebAuthnSecondFactor(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		id := adminIdentity(t, authntest.WithMethods(authn.MethodPassword, authn.MethodWebAuthn))
@@ -512,9 +476,7 @@ func TestStartAcceptsAWebAuthnSecondFactor(t *testing.T) {
 	})
 }
 
-// TestStartRefusesANonLocalMultiFactor holds the requirement the design names:
-// the multi-factor must be locally verified, so an enterprise IdP's declaration
-// of the same level does not admit a start.
+// TestStartRefusesANonLocalMultiFactor checks that an IdP-declared multi-factor is refused because the factor must be locally verified.
 func TestStartRefusesANonLocalMultiFactor(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		id := adminIdentity(t, authntest.WithIDPAssured(true),
@@ -526,9 +488,7 @@ func TestStartRefusesANonLocalMultiFactor(t *testing.T) {
 	})
 }
 
-// TestTheLifetimeIsCappedByTheSettingAndTheCeiling holds the two upper bounds the
-// design fixes: a request longer than the setting is cut to the setting, and a
-// setting at the top of its domain is still cut at the hard hour.
+// TestTheLifetimeIsCappedByTheSettingAndTheCeiling checks that the setting caps a longer request and the hard hour caps the setting.
 func TestTheLifetimeIsCappedByTheSettingAndTheCeiling(t *testing.T) {
 	t.Run("a request longer than the setting", func(t *testing.T) {
 		onEachDialect(t, func(t *testing.T, r *rig) {
@@ -547,7 +507,7 @@ func TestTheLifetimeIsCappedByTheSettingAndTheCeiling(t *testing.T) {
 	t.Run("a setting at the top of its domain", func(t *testing.T) {
 		onEachDialect(t, func(t *testing.T, r *rig) {
 			r.store.set(maxTTLPath, time.Hour)
-			// The session outlives the setting, so the shorter of the two wins.
+
 			r.sessions.session.ExpiresAt = base.Add(2 * time.Hour)
 			g, err := r.p.Start(context.Background(), adminIdentity(t), request())
 			if err != nil {
@@ -560,9 +520,7 @@ func TestTheLifetimeIsCappedByTheSettingAndTheCeiling(t *testing.T) {
 	})
 }
 
-// TestStartRefusesASessionThatIsGone holds the corner the design names: a session
-// whose status read says it is not there leaves no lifetime to bind the record
-// by, so the start is refused as needing a session, not as unavailable.
+// TestStartRefusesASessionThatIsGone checks that a session the store reports missing is refused as needing a session, not as unavailable.
 func TestStartRefusesASessionThatIsGone(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.sessions.statusErr = authn.ErrSessionNotFound
@@ -573,11 +531,7 @@ func TestStartRefusesASessionThatIsGone(t *testing.T) {
 	})
 }
 
-// TestAnUnverifiedAccountCannotStart holds the signup gate of a start: a pending
-// self-registration is refused 403 contact-required before the strength
-// conditions, writes no record, counts no denied attempt and writes no audit
-// row. An account that never registered starts as before, and a service account
-// is refused as an impersonation restriction without its state being read.
+// TestAnUnverifiedAccountCannotStart checks that a pending self-registration is refused contact-required before the strength conditions, with no record or audit row.
 func TestAnUnverifiedAccountCannotStart(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.verification.state = authn.SignupStatus{State: authn.SignupPending}
@@ -600,9 +554,7 @@ func TestAnUnverifiedAccountCannotStart(t *testing.T) {
 	})
 }
 
-// TestAVerifiedOrNeverRegisteredAccountStarts holds the exemption of the gate:
-// neither a verified self-registration nor an account that never registered is
-// refused by it.
+// TestAVerifiedOrNeverRegisteredAccountStarts checks that a verified registration and an account that never registered both start.
 func TestAVerifiedOrNeverRegisteredAccountStarts(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -622,9 +574,7 @@ func TestAVerifiedOrNeverRegisteredAccountStarts(t *testing.T) {
 	}
 }
 
-// TestAServiceAccountIsNotGated holds the exemption of the account kind: a
-// service account is not a self-registration, so the gate does not read its
-// state, and the kind check refuses the start with the structural answer.
+// TestAServiceAccountIsNotGated checks that a service account's signup state is not read and its kind is refused as a structural restriction.
 func TestAServiceAccountIsNotGated(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.accounts.put(actorID, authn.Account{Kind: authn.KindService, Status: authn.StatusActive})
@@ -639,12 +589,7 @@ func TestAServiceAccountIsNotGated(t *testing.T) {
 	})
 }
 
-// TestTheSignupGateIsAnsweredBeforeTheStrengthConditions holds the gate's place
-// in group a: an initiator that fails the assurance, method-set and Seasoned
-// conditions is answered contact-required, not the step-up 401 or the
-// factor-not-seasoned 403 those conditions would give. The same identity with a
-// state that is not pending reaches the step-up, which proves it does fail the
-// conditions the gate ran ahead of.
+// TestTheSignupGateIsAnsweredBeforeTheStrengthConditions checks that a pending initiator is answered contact-required before the step-up and seasoned checks.
 func TestTheSignupGateIsAnsweredBeforeTheStrengthConditions(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.mfa.seasoned = false
@@ -666,11 +611,7 @@ func TestTheSignupGateIsAnsweredBeforeTheStrengthConditions(t *testing.T) {
 	})
 }
 
-// TestTheSignupGateJudgesTheInitiatorNotTheTarget holds the subject of the gate:
-// an impersonating identity's Account() is the target, so reading the state from
-// it would let the target's pending registration refuse the administrator's
-// start. The initiator's own state decides, and the target's never enters the
-// judgement.
+// TestTheSignupGateJudgesTheInitiatorNotTheTarget checks that the gate reads the initiator's signup state, not the target's.
 func TestTheSignupGateJudgesTheInitiatorNotTheTarget(t *testing.T) {
 	t.Run("a pending target does not refuse the initiator", func(t *testing.T) {
 		onEachDialect(t, func(t *testing.T, r *rig) {
@@ -698,9 +639,7 @@ func TestTheSignupGateJudgesTheInitiatorNotTheTarget(t *testing.T) {
 	})
 }
 
-// TestAnUnreadableSignupStateCannotStart holds the failure direction: a state
-// that cannot be read is unavailable, writes no record and no audit row, and
-// counts no denied attempt.
+// TestAnUnreadableSignupStateCannotStart checks that an unreadable signup state is unavailable and leaves no record, audit row or denied count.
 func TestAnUnreadableSignupStateCannotStart(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.verification.err = errors.New("boom")

@@ -21,6 +21,7 @@ import (
 
 var admin = authn.Verification{Via: authn.VerifiedViaAdmin}
 
+// Create writes an enabled account that Lookup finds by every spelling of its identifiers.
 func TestCreateWritesAnEnabledAccountFoundByEverySpellingOfItsIdentifiers(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -97,6 +98,7 @@ func TestCreateWritesAnEnabledAccountFoundByEverySpellingOfItsIdentifiers(t *tes
 	})
 }
 
+// Create accepts an imported identifier and refuses one that cannot be normalized.
 func TestCreateTakesAnImportedIdentifierAndRefusesOnesThatCannotBe(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -118,10 +120,7 @@ func TestCreateTakesAnImportedIdentifierAndRefusesOnesThatCannotBe(t *testing.T)
 	})
 }
 
-// TestAnImportRefusesAReservedUsername holds that the reserved set applies to
-// every write of a username, the import included: an imported account is a user
-// account with a login name like any other, so the name it brings back is held
-// to the same set a new one is.
+// An import is held to the reserved username set like every other username write.
 func TestAnImportRefusesAReservedUsername(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -145,8 +144,7 @@ func TestAnImportRefusesAReservedUsername(t *testing.T) {
 	})
 }
 
-// TestAnImportStillHoldsFormatAndUniqueness holds that an import meets the
-// format and uniqueness checks like every other write of a username.
+// An import meets the format and uniqueness checks like every other username write.
 func TestAnImportStillHoldsFormatAndUniqueness(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -160,6 +158,7 @@ func TestAnImportStillHoldsFormatAndUniqueness(t *testing.T) {
 	})
 }
 
+// Create refuses a kind, a channel or a field value outside what it admits.
 func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 	long := strings.Repeat("x", 300)
 	tooMany := map[string]string{}
@@ -214,12 +213,7 @@ func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 	}
 }
 
-// TestASignupAccountNeedsAPasswordWhicheverPathOpensIt holds the guard every
-// signup creation leans on directly on the account module: an account opened
-// through signup is refused without a password even when it carries the phone an
-// SMS first login proved, because the password is what the signup step now
-// collects, while a just-in-time creation, which is not a signup, may open an
-// account without one.
+// A signup-created account needs a password on every path, while a just-in-time creation may open without one.
 func TestASignupAccountNeedsAPasswordWhicheverPathOpensIt(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -265,6 +259,7 @@ func TestASignupAccountNeedsAPasswordWhicheverPathOpensIt(t *testing.T) {
 	})
 }
 
+// An account that was never enabled cannot authenticate.
 func TestAnAccountNobodyEnabledCannotAuthenticate(t *testing.T) {
 	if authn.AccountStatus(0) != authn.StatusDisabled || model.AccountStatus(0) != model.StatusDisabled {
 		t.Fatal("the zero value of AccountStatus is not disabled")
@@ -277,8 +272,6 @@ func TestAnAccountNobodyEnabledCannotAuthenticate(t *testing.T) {
 		if _, _, err := h.p.Verify(context.Background(), "nobody", "correct horse battery"); !errors.Is(err, authn.ErrInvalidCredentials) {
 			t.Errorf("a disabled account verified with %v, want ErrInvalidCredentials", err)
 		}
-		// A row written with no status at all reads as disabled, since the
-		// column's default is the zero value.
 		now := h.clock.read()
 		err := h.handle.Exec("INSERT INTO authn_accounts (id, kind, valid_after, created_at, updated_at) VALUES (?, 'user', ?, ?, ?)",
 			"zero_status", now, now, now).Error
@@ -292,6 +285,7 @@ func TestAnAccountNobodyEnabledCannotAuthenticate(t *testing.T) {
 	})
 }
 
+// Two concurrent creates of one email address leave one account.
 func TestTwoCreatesOfOneEmailLeaveOneAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		const callers = 8
@@ -328,6 +322,7 @@ func TestTwoCreatesOfOneEmailLeaveOneAccount(t *testing.T) {
 	})
 }
 
+// Reads of a missing account answer ErrAccountNotFound.
 func TestReadsReportWhatIsNotThereAsNotFound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -364,8 +359,6 @@ func TestReadsReportWhatIsNotThereAsNotFound(t *testing.T) {
 	})
 }
 
-// seedAccounts writes n accounts straight into the table, faster than creating
-// each, with identifiers that sort in the order of the number.
 func seedAccounts(t *testing.T, h *harness, n int, kind authn.AccountKind) []string {
 	t.Helper()
 	now := h.clock.read()
@@ -384,6 +377,7 @@ func seedAccounts(t *testing.T, h *harness, n int, kind authn.AccountKind) []str
 	return ids
 }
 
+// List pages by key and reads no more rows than the page size.
 func TestListPagesByKeyAndNeverReadsMoreThanItIsAskedFor(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -436,6 +430,7 @@ func TestListPagesByKeyAndNeverReadsMoreThanItIsAskedFor(t *testing.T) {
 	})
 }
 
+// List applies its filters and omits tombstones unless the query asks for them.
 func TestListFiltersAndLeavesTombstonesOutUnlessAsked(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -506,6 +501,7 @@ func TestListFiltersAndLeavesTombstonesOutUnlessAsked(t *testing.T) {
 	})
 }
 
+// An identifier-prefix listing reads a range rather than matching a pattern.
 func TestListByIdentifierPrefixReadsARangeAndMatchesNoPattern(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -539,7 +535,7 @@ func TestListByIdentifierPrefixReadsARangeAndMatchesNoPattern(t *testing.T) {
 		if got := names(authn.AccountQuery{IdentifierKind: authn.IdentifierEmail, IdentifierPrefix: "bob-b@"}); !slices.Equal(got, []string{bob.String()}) {
 			t.Errorf("the email prefix lists %v, want only bob", got)
 		}
-		// A pattern character is a character: it matches itself and nothing else.
+
 		for _, prefix := range []string{"%%%", "___", "a%c"} {
 			if got := names(authn.AccountQuery{IdentifierKind: authn.IdentifierEmail, IdentifierPrefix: prefix}); len(got) != 0 {
 				t.Errorf("the prefix %q listed %v: it was read as a pattern", prefix, got)
@@ -594,11 +590,7 @@ func TestListByIdentifierPrefixReadsARangeAndMatchesNoPattern(t *testing.T) {
 	})
 }
 
-// A listing by a display-name prefix matches the beginning of the stored name,
-// as written. The display name is not normalized, so the match is
-// case-sensitive; it is a prefix and never a substring; and it has no minimum
-// length, so a single character is honored. No index covers the column, so the
-// read strips the table by a range comparison and never by a pattern.
+// A display-name prefix matches the beginning of the stored name, as written.
 func TestListByDisplayNamePrefixMatchesTheStoredName(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -631,28 +623,26 @@ func TestListByDisplayNamePrefixMatchesTheStoredName(t *testing.T) {
 		both := []string{alice.String(), alicia.String()}
 		slices.Sort(both)
 		for prefix, want := range map[string][]string{
-			"A":       both, // no minimum length: one character is honored
-			"Ali":     both, // a hit spanning two accounts
+			"A":       both,
+			"Ali":     both,
 			"Alic":    both,
 			"Alice":   {alice.String()},
 			"Bob":     {bob.String()},
-			"bob":     {}, // case-sensitive: the name is stored as "Bob"
-			"Brown":   {}, // a prefix, not a substring: "Brown" is inside, not at the start
+			"bob":     {},
+			"Brown":   {},
 			"mstrong": {},
-			"Zed":     {}, // a value no name begins with
+			"Zed":     {},
 		} {
 			if got := names(prefix); !slices.Equal(got, want) {
 				t.Errorf("the display-name prefix %q lists %v, want %v", prefix, got, want)
 			}
 		}
-		// An empty prefix is no filter: every account is listed.
+
 		all := []string{alice.String(), alicia.String(), bob.String(), nameless.String()}
 		slices.Sort(all)
 		if got := names(""); !slices.Equal(got, all) {
 			t.Errorf("an empty display-name prefix lists %v, want every account %v", got, all)
 		}
-		// The name is stored as written: a byte prefix of it matches, and the
-		// empty-name account is selected only by the empty (no-filter) prefix.
 		if got := names("Alice Armstrong"); !slices.Equal(got, []string{alice.String()}) {
 			t.Errorf("the full stored name as a prefix lists %v, want only %s", got, alice)
 		}
@@ -669,11 +659,7 @@ func TestListByDisplayNamePrefixMatchesTheStoredName(t *testing.T) {
 	})
 }
 
-// The bound that closes a display-name range raises the prefix's last character,
-// not its last byte: a prefix that ends in a multi-byte character must yield a
-// bound that is itself valid UTF-8, or the range reads a byte sequence the
-// database rejects and the answer is an outage rather than a shorter page. A
-// prefix that is every character the highest rune has no bound above it.
+// The bound above a display-name prefix raises its last character, not its last byte.
 func TestDisplayNameBoundRaisesTheLastCharacter(t *testing.T) {
 	const max = "\U0010FFFF"
 	for _, c := range []struct {
@@ -681,17 +667,17 @@ func TestDisplayNameBoundRaisesTheLastCharacter(t *testing.T) {
 		want  string
 		bound bool
 	}{
-		{"", "", false}, // no prefix names no name
+		{"", "", false},
 		{"A", "B", true},
 		{"Ali", "Alj", true},
 		{"alice", "alicf", true},
-		{"Á", "Â", true},               // a two-byte character is raised as a character
-		{"Alicia Á", "Alicia Â", true}, // and the raise keeps the leading ASCII as it is
-		{"\uD7FF", "\uE000", true},     // the character below the surrogate range is raised past it, not into it
-		{"A\uD7FF", "A\uE000", true},   // the surrogate range is skipped wherever the character sits
-		{max, "", false},               // the highest rune alone bounds nothing above it
+		{"Á", "Â", true},
+		{"Alicia Á", "Alicia Â", true},
+		{"\uD7FF", "\uE000", true},
+		{"A\uD7FF", "A\uE000", true},
+		{max, "", false},
 		{max + max, "", false},
-		{"A" + max, "B", true}, // a lower character is carried to and raised
+		{"A" + max, "B", true},
 		{"Ali" + max, "Alj", true},
 	} {
 		got, bounded := displayNameBound(c.in)
@@ -701,25 +687,21 @@ func TestDisplayNameBoundRaisesTheLastCharacter(t *testing.T) {
 	}
 }
 
-// A bound is computed on the read seam directly, not only behind the route's
-// shape check, and every bound it returns must be valid UTF-8: a byte sequence
-// the database rejects would turn a shorter page into an outage. The bytes that
-// begin no rune may fall anywhere in the prefix, not only at its end, so the
-// cases below put them in the middle, at the tail and alone alike.
+// A display-name bound is always valid UTF-8, so the database never rejects a shorter page as an outage.
 func TestDisplayNameBoundIsAlwaysValidUTF8(t *testing.T) {
 	for _, in := range []string{
-		"\xbf",         // a lone continuation byte
-		"\xff",         // a byte that is no rune and cannot be raised
-		"\xff\xfe",     // two of them
-		"A\xbf",        // ASCII then a stray continuation byte
-		"caf\xc3",      // a truncated two-byte character at the end
-		"\xe4\xb8",     // a truncated three-byte character
-		"\xf4\x8f\xbf", // a truncated four-byte character
-		"a\x80b\xc0",   // a byte that begins no rune in the middle and at the end
-		"\xbfA",        // the offending byte is not the last one
-		"\x80xy",       // a stray continuation byte before a valid tail
-		"a\x80bc",      // it sits between valid characters
-		"\xffZ",        // a byte that is no rune before a valid tail
+		"\xbf",
+		"\xff",
+		"\xff\xfe",
+		"A\xbf",
+		"caf\xc3",
+		"\xe4\xb8",
+		"\xf4\x8f\xbf",
+		"a\x80b\xc0",
+		"\xbfA",
+		"\x80xy",
+		"a\x80bc",
+		"\xffZ",
 	} {
 		if utf8.ValidString(in) {
 			t.Fatalf("the case %q is valid UTF-8; it does not exercise the branch", in)
@@ -731,11 +713,7 @@ func TestDisplayNameBoundIsAlwaysValidUTF8(t *testing.T) {
 	}
 }
 
-// A display-name prefix whose every character is the highest rune has no bound
-// above it, and the names it begins are exactly those at or above it. The read
-// must return those rows rather than the empty set a degenerate upper bound — the
-// empty string — would close it to. This is the whole point of the branch: the
-// names are silently dropped otherwise, with no error to see.
+// A prefix of the highest runes has no bound above it, and lists the names at or above it.
 func TestListByAnUppermostDisplayNamePrefixReadsItsNames(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -766,10 +744,7 @@ func TestListByAnUppermostDisplayNamePrefixReadsItsNames(t *testing.T) {
 	})
 }
 
-// A prefix that is not valid UTF-8 is text the column never holds, so the read
-// seam returns no name for it rather than handing the database a byte sequence it
-// rejects. The management route refuses such a prefix as a shape error before it
-// reaches here.
+// A non-UTF-8 display-name prefix reads nothing rather than handing the database bytes it rejects.
 func TestListByANonUTF8DisplayNamePrefixReadsNothing(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -783,6 +758,7 @@ func TestListByANonUTF8DisplayNamePrefixReadsNothing(t *testing.T) {
 	})
 }
 
+// Account fields are written on the account that exists, each within its bound.
 func TestAccountFieldsAreWrittenOnTheAccountThatIsThere(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -849,6 +825,7 @@ func TestAccountFieldsAreWrittenOnTheAccountThatIsThere(t *testing.T) {
 	})
 }
 
+// Attribute sets stay within the bounds of the model.
 func TestAttributeSetsAreHeldToTheBoundsOfTheModel(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -889,6 +866,7 @@ func TestAttributeSetsAreHeldToTheBoundsOfTheModel(t *testing.T) {
 	})
 }
 
+// Identifiers are added and removed, and a phone number is replaced.
 func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -911,8 +889,6 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 		if n := h.count(tableIdentifiers, "account_id = ? AND kind = 'phone'", id.String()); n != 1 {
 			t.Errorf("the account has %d phone rows, want one", n)
 		}
-		// The proved number is a way in only once its holder chooses it, which is
-		// what the removal below needs the account to keep.
 		phones, _ := h.p.Identifiers(ctx, id)
 		for _, i := range phones {
 			if i.Kind == authn.IdentifierPhone {
@@ -934,9 +910,6 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 			t.Errorf("the phone events are %v, want added, then the replacement as removed and added", seen)
 		}
 
-		// The administrator's restatement of the number is not proof of it, and it
-		// may not take the sms-code proof away: the row keeps both its way and its
-		// instant.
 		h.clock.advance(time.Hour)
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierPhone, "+8613800000002", admin); err != nil {
 			t.Errorf("the same number again gave %v, want no change", err)
@@ -1003,9 +976,7 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 	})
 }
 
-// A rewrite of an already-proved identifier never lowers its proof: an
-// administrator's assertion applies only to a new identifier or one that is not
-// yet proved. A proved row keeps both its way and its instant.
+// Rewriting a proved identifier never lowers its proof: an administrator's assertion applies only to a new or unproved one.
 func TestAnAdminRewriteKeepsAProvedIdentifier(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1045,9 +1016,7 @@ func TestAnAdminRewriteKeepsAProvedIdentifier(t *testing.T) {
 	})
 }
 
-// The administrator's assertion is what a new identifier records, and what an
-// identifier without a proof takes when it is rewritten: only a proof outranks
-// it.
+// An administrator's assertion is recorded on a new identifier and on an unproved one, and outranked only by a proof.
 func TestAnAdminAssertionAppliesToANewOrUnprovedIdentifier(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1083,8 +1052,6 @@ func TestAnAdminAssertionAppliesToANewOrUnprovedIdentifier(t *testing.T) {
 	})
 }
 
-// rowsOf returns the identifier rows of one kind and value, whatever their
-// number, so a case can assert both the count and the proof kept.
 func (h *harness) rowsOf(id authn.AccountID, kind authn.IdentifierKind, value string) []identifierRow {
 	h.t.Helper()
 	var rows []identifierRow
@@ -1096,6 +1063,7 @@ func (h *harness) rowsOf(id authn.AccountID, kind authn.IdentifierKind, value st
 	return rows
 }
 
+// External identities bind by provider and subject, and conflict across accounts.
 func TestExternalIdentitiesAreBoundByProviderAndSubjectAndConflictAcrossAccounts(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1125,8 +1093,6 @@ func TestExternalIdentitiesAreBoundByProviderAndSubjectAndConflictAcrossAccounts
 			!bound[0].LastLoginAt.IsZero() || !bound[0].CreatedAt.Equal(h.clock.read()) {
 			t.Errorf("the bindings are %+v, %v", bound, err)
 		}
-		// The email of a binding is a display field: it never reaches the
-		// identifiers, and so no lookup finds the account by it.
 		if _, err = h.p.Lookup(ctx, authn.IdentifierEmail, "changed@example.com"); !errors.Is(err, authn.ErrAccountNotFound) {
 			t.Errorf("the email of a binding is an identifier: %v", err)
 		}
@@ -1147,6 +1113,7 @@ func TestExternalIdentitiesAreBoundByProviderAndSubjectAndConflictAcrossAccounts
 	})
 }
 
+// Two accounts linking one external identity leave one binding.
 func TestTwoAccountsLinkingOneExternalIdentityLeaveOneBinding(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		const callers = 6
@@ -1182,6 +1149,7 @@ func TestTwoAccountsLinkingOneExternalIdentityLeaveOneBinding(t *testing.T) {
 	})
 }
 
+// An external identity is unlinked unless it is the last way in.
 func TestAnExternalIdentityIsUnlinkedUnlessItIsTheLastWayIn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1259,6 +1227,7 @@ func TestAnExternalIdentityIsUnlinkedUnlessItIsTheLastWayIn(t *testing.T) {
 	})
 }
 
+// Two concurrent unlinks of an account's two bindings leave one.
 func TestTwoUnlinksOfAnAccountsTwoBindingsLeaveOne(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1296,6 +1265,7 @@ func TestTwoUnlinksOfAnAccountsTwoBindingsLeaveOne(t *testing.T) {
 	})
 }
 
+// Touch writes the time of the last login.
 func TestTouchWritesTheTimeOfTheLastLogin(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -1323,8 +1293,6 @@ func TestTouchWritesTheTimeOfTheLastLogin(t *testing.T) {
 		if err := h.p.Touch(ctx, id, at); !errors.Is(err, authn.ErrAccountNotFound) {
 			t.Errorf("touching a tombstone gave %v, want ErrAccountNotFound", err)
 		}
-		// A fresh row: a field the query reads as NULL is not written back onto
-		// a value the previous read left in the same struct.
 		var tomb accountRow
 		if err := h.handle.Where("id = ?", id.String()).Take(&tomb).Error; err != nil || tomb.LastLoginAt != nil {
 			t.Errorf("the tombstone has a last login %v (%v)", tomb.LastLoginAt, err)
@@ -1332,6 +1300,7 @@ func TestTouchWritesTheTimeOfTheLastLogin(t *testing.T) {
 	})
 }
 
+// Touch leaves no audit row of its own.
 func TestTouchLeavesNoAuditRowOfItsOwn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		id := h.user("quiet-toucher", "")
@@ -1346,9 +1315,7 @@ func TestTouchLeavesNoAuditRowOfItsOwn(t *testing.T) {
 	})
 }
 
-// TestCreateNamesAnAccountWithoutADisplayNameAfterItsUsername holds the one
-// fallback every creation takes: an explicit name wins, and a creation that
-// named none is named after the username it was given.
+// An explicit display name wins; a creation that named none is named after its username.
 func TestCreateNamesAnAccountWithoutADisplayNameAfterItsUsername(t *testing.T) {
 	for _, c := range []struct {
 		name        string
@@ -1375,8 +1342,7 @@ func TestCreateNamesAnAccountWithoutADisplayNameAfterItsUsername(t *testing.T) {
 	}
 }
 
-// plain admits text of exactly its bound and refuses one byte past it, which is
-// the inclusive upper bound each of its call sites passes.
+// plain admits text of exactly its bound and refuses one byte past it.
 func TestPlainAdmitsExactlyTheBound(t *testing.T) {
 	for _, c := range []struct {
 		what string

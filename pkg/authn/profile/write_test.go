@@ -26,8 +26,6 @@ func decodePatch(t *testing.T, rec *httptest.ResponseRecorder) AuthnProfilePatch
 	return v
 }
 
-// anHourOld is an identity authenticated an hour ago and carrying a login
-// session.
 func anHourOld() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(meAccount),
@@ -36,7 +34,6 @@ func anHourOld() []authntest.Option {
 	}
 }
 
-// noSession is an authenticated account with no login session.
 func noSession() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(meAccount),
@@ -44,9 +41,6 @@ func noSession() []authntest.Option {
 	}
 }
 
-// sendBody sends a request through the Mounter with a raw body and Content-Type,
-// so a case can drive the capability's decode rule. An empty contentType leaves
-// the header off the request.
 func (r *rig) sendBody(method, path, contentType string, body io.Reader, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	r.mounter.As(opts...)
@@ -57,7 +51,6 @@ func (r *rig) sendBody(method, path, contentType string, body io.Reader, opts ..
 	return r.mounter.Do(req)
 }
 
-// problemTypeOf reads the problem type of a refusal.
 func problemTypeOf(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
 	var problem struct {
@@ -69,12 +62,7 @@ func problemTypeOf(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return problem.Type
 }
 
-// TestPatchDecodesTheBodyByTheCapabilityRule holds the rule the route applied
-// before it was declared as an operation: the media type is application/json
-// with no parameter or with charset=utf-8 only, the body is non-empty and no
-// larger than the capability's 64 KiB limit, it is one JSON value the
-// declaration can hold, and every refusal carries the capability's own problem
-// code rather than the entry point's default about:blank.
+// TestPatchDecodesTheBodyByTheCapabilityRule checks the decode rule's media type, size and shape limits and problem codes.
 func TestPatchDecodesTheBodyByTheCapabilityRule(t *testing.T) {
 	oversized := []byte(`{"display_name":"` + strings.Repeat("a", mount.MaxBodyBytes) + `"}`)
 	cases := []struct {
@@ -112,8 +100,7 @@ func TestPatchDecodesTheBodyByTheCapabilityRule(t *testing.T) {
 	}
 }
 
-// TestPatchNullBodyChangesNothing holds the null body the old decoder read as
-// the zero value: the route answers 200 and neither write nor audit row runs.
+// TestPatchNullBodyChangesNothing checks that a null body binds as zero, writes nothing and audits nothing.
 func TestPatchNullBodyChangesNothing(t *testing.T) {
 	r := newRig(t)
 	rec := r.sendBody(http.MethodPatch, "/api/v1/auth/me", "application/json", strings.NewReader("null"), me()...)
@@ -132,8 +119,7 @@ func TestPatchNullBodyChangesNothing(t *testing.T) {
 	}
 }
 
-// TestPatchAcceptsABodyAtTheCapabilityLimit holds the boundary: a body of
-// exactly mount.MaxBodyBytes is within the limit and is processed.
+// TestPatchAcceptsABodyAtTheCapabilityLimit checks that a body of exactly mount.MaxBodyBytes is processed.
 func TestPatchAcceptsABodyAtTheCapabilityLimit(t *testing.T) {
 	r := newRig(t)
 	displayName := strings.Repeat("a", mount.MaxBodyBytes-len(`{"display_name":""}`))
@@ -148,8 +134,7 @@ func TestPatchAcceptsABodyAtTheCapabilityLimit(t *testing.T) {
 	}
 }
 
-// TestPatchAcceptsAUTF8Charset holds the one media-type parameter the rule
-// allows: the declared type with charset=utf-8 is bound and processed.
+// TestPatchAcceptsAUTF8Charset checks that charset=utf-8 is the one accepted media-type parameter.
 func TestPatchAcceptsAUTF8Charset(t *testing.T) {
 	r := newRig(t)
 	rec := r.sendBody(http.MethodPatch, "/api/v1/auth/me", "application/json; charset=utf-8",
@@ -162,8 +147,7 @@ func TestPatchAcceptsAUTF8Charset(t *testing.T) {
 	}
 }
 
-// TestPatchWritesTheDisplayName holds the display-name write: only SetDisplayName
-// is called, and the answer carries the written value.
+// TestPatchWritesTheDisplayName checks that only SetDisplayName runs and the answer carries the written value.
 func TestPatchWritesTheDisplayName(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "张三"}, me()...)
@@ -187,8 +171,7 @@ func TestPatchWritesTheDisplayName(t *testing.T) {
 	}
 }
 
-// TestPatchGivenAttributesReplacesTheWholeSet holds the replacement semantics: a
-// given attribute set is written as it stands, and only SetAttributes is called.
+// TestPatchGivenAttributesReplacesTheWholeSet checks that a given set replaces the current one and only SetAttributes runs.
 func TestPatchGivenAttributesReplacesTheWholeSet(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"attributes": map[string]string{"team": "red"}}, me()...)
@@ -214,9 +197,7 @@ func TestPatchGivenAttributesReplacesTheWholeSet(t *testing.T) {
 	}
 }
 
-// TestPatchMergesLocaleAndTimeZoneIntoTheAttributeSet holds the named uses of the
-// attribute set: a given locale or time zone overwrites its key and leaves the
-// rest of the set alone.
+// TestPatchMergesLocaleAndTimeZoneIntoTheAttributeSet checks that each preference overwrites its key and leaves the rest alone.
 func TestPatchMergesLocaleAndTimeZoneIntoTheAttributeSet(t *testing.T) {
 	r := newRig(t)
 	body := map[string]any{"locale": "zh-CN", "time_zone": "Asia/Shanghai"}
@@ -237,8 +218,7 @@ func TestPatchMergesLocaleAndTimeZoneIntoTheAttributeSet(t *testing.T) {
 	}
 }
 
-// TestPatchEmptyLocaleClearsTheKey holds the clear semantics: a preference given
-// as the empty string removes its key.
+// TestPatchEmptyLocaleClearsTheKey checks that an empty locale removes its key and leaves the rest alone.
 func TestPatchEmptyLocaleClearsTheKey(t *testing.T) {
 	r := newRig(t)
 	r.accounts.put(meAccount, authn.Account{
@@ -258,9 +238,7 @@ func TestPatchEmptyLocaleClearsTheKey(t *testing.T) {
 	}
 }
 
-// TestPatchMergesColorModeIntoTheAttributeSet holds the color-mode preference as
-// a named use of the attribute set: with the language and time zone it overwrites
-// its own key and leaves the rest of the set alone.
+// TestPatchMergesColorModeIntoTheAttributeSet checks that the color mode overwrites its key and leaves the rest alone.
 func TestPatchMergesColorModeIntoTheAttributeSet(t *testing.T) {
 	r := newRig(t)
 	body := map[string]any{"locale": "zh-CN", "time_zone": "Asia/Shanghai", "color_mode": "dark"}
@@ -283,8 +261,7 @@ func TestPatchMergesColorModeIntoTheAttributeSet(t *testing.T) {
 	}
 }
 
-// TestPatchEmptyColorModeClearsTheKey holds the clear semantics: a color mode
-// given as the empty string removes its key and leaves the rest of the set alone.
+// TestPatchEmptyColorModeClearsTheKey checks that an empty color mode removes its key and leaves the rest alone.
 func TestPatchEmptyColorModeClearsTheKey(t *testing.T) {
 	r := newRig(t)
 	r.accounts.put(meAccount, authn.Account{
@@ -304,9 +281,7 @@ func TestPatchEmptyColorModeClearsTheKey(t *testing.T) {
 	}
 }
 
-// TestPatchInvalidColorModeIs400 holds the value domain: a value outside light,
-// dark and system is refused 400 with the capability's own problem type and
-// reaches no write.
+// TestPatchInvalidColorModeIs400 checks that a value outside light, dark and system is a 400 that reaches no write.
 func TestPatchInvalidColorModeIs400(t *testing.T) {
 	cases := map[string]string{
 		"a mode outside the set":       "sepia",
@@ -330,9 +305,7 @@ func TestPatchInvalidColorModeIs400(t *testing.T) {
 	}
 }
 
-// TestPatchColorModeAloneWritesTheAttributeSetAndTheAuditRow holds the body that
-// carries only the color mode: the attribute set is written once and the write is
-// audited, because it changed something.
+// TestPatchColorModeAloneWritesTheAttributeSetAndTheAuditRow checks that a color-mode-only body writes the set once and audits it.
 func TestPatchColorModeAloneWritesTheAttributeSetAndTheAuditRow(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"color_mode": "system"}, me()...)
@@ -361,8 +334,7 @@ func TestPatchColorModeAloneWritesTheAttributeSetAndTheAuditRow(t *testing.T) {
 	}
 }
 
-// TestPatchEmptyBodyChangesNothing holds the all-absent case: neither write is
-// called and no audit row is written.
+// TestPatchEmptyBodyChangesNothing checks that an empty body calls neither write and writes no audit row.
 func TestPatchEmptyBodyChangesNothing(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{}, me()...)
@@ -381,8 +353,7 @@ func TestPatchEmptyBodyChangesNothing(t *testing.T) {
 	}
 }
 
-// TestPatchUnknownFieldIs400 holds the closed body: a field the body does not
-// have is refused and no write is made.
+// TestPatchUnknownFieldIs400 checks that an unknown field is refused and no write is made.
 func TestPatchUnknownFieldIs400(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"status": "disabled"}, me()...)
@@ -394,7 +365,7 @@ func TestPatchUnknownFieldIs400(t *testing.T) {
 	}
 }
 
-// TestPatchInvalidLocaleAndTimeZoneAre400 holds the two value domains.
+// TestPatchInvalidLocaleAndTimeZoneAre400 checks the locale and time-zone value domains.
 func TestPatchInvalidLocaleAndTimeZoneAre400(t *testing.T) {
 	cases := map[string]map[string]any{
 		"a locale that is not a tag": {"locale": "!!!"},
@@ -416,9 +387,7 @@ func TestPatchInvalidLocaleAndTimeZoneAre400(t *testing.T) {
 	}
 }
 
-// TestPatchRefusalsCarryTheCapabilityProblemType holds the fault path: a value
-// outside its domain is answered with the capability's own problem type, the
-// prefix and code the entry point writes from the returned fault.
+// TestPatchRefusalsCarryTheCapabilityProblemType checks that a value outside its domain answers with the capability's problem type.
 func TestPatchRefusalsCarryTheCapabilityProblemType(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"locale": "!!!"}, me()...)
@@ -436,10 +405,7 @@ func TestPatchRefusalsCarryTheCapabilityProblemType(t *testing.T) {
 	}
 }
 
-// TestPatchRefusesBeforeTheBodyIsRead holds the order the route documents: the
-// identity and the session are decided before the body is bound. A body the
-// declaration would refuse is therefore answered with the earlier refusal, not
-// the binding's 400.
+// TestPatchRefusesBeforeTheBodyIsRead checks that the identity and session are decided before the body is bound.
 func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 	cases := []struct {
 		name string
@@ -451,7 +417,7 @@ func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t)
-			// A member the declaration does not carry: binding it would be a 400.
+
 			body := map[string]any{"unknown": "member"}
 			rec := r.invoke(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", body, tc.opts...)
 			if rec.Code != tc.want {
@@ -461,14 +427,7 @@ func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 	}
 }
 
-// TestPatchIsReachableWhileImpersonating holds that an impersonating identity
-// writes the impersonated account's profile: the route is registered impersonable
-// and the handler no longer refuses the identity, so the write reaches the
-// effective account just as the target's own request would. The write is audited
-// as the operator's: the row names the effective account, and the identity it is
-// written under carries the operator's key on the target's account in the grant's
-// tenant and session, which is what the journal turns into the actor column and
-// the on_behalf_of, impersonation_scope and session detail keys.
+// TestPatchIsReachableWhileImpersonating checks that an impersonating identity writes the impersonated account's profile.
 func TestPatchIsReachableWhileImpersonating(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
@@ -501,8 +460,6 @@ func TestPatchIsReachableWhileImpersonating(t *testing.T) {
 			otherActor, meAccount, tenantA, meSession)
 	}
 
-	// The handler alone, the fallback a registration that reached it without the
-	// gateway relies on, answers the same write rather than refusing the identity.
 	r = newRig(t)
 	rec = r.invoke(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
 	if rec.Code != http.StatusOK {
@@ -513,7 +470,7 @@ func TestPatchIsReachableWhileImpersonating(t *testing.T) {
 	}
 }
 
-// TestPatchWithoutASessionIs401 holds the session requirement.
+// TestPatchWithoutASessionIs401 checks the login-session requirement.
 func TestPatchWithoutASessionIs401(t *testing.T) {
 	r := newRig(t)
 	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, noSession()...); rec.Code != http.StatusUnauthorized {
@@ -524,7 +481,7 @@ func TestPatchWithoutASessionIs401(t *testing.T) {
 	}
 }
 
-// TestPatchWithoutAnIdentityIs401 holds the no-identity refusal at the handler.
+// TestPatchWithoutAnIdentityIs401 checks the no-identity refusal at the handler.
 func TestPatchWithoutAnIdentityIs401(t *testing.T) {
 	r := newRig(t)
 	rec := r.invokeAnonymous(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"})
@@ -533,9 +490,7 @@ func TestPatchWithoutAnIdentityIs401(t *testing.T) {
 	}
 }
 
-// TestPatchWithAnOlderAuthenticationStillWrites holds the rule: the write asks
-// for no freshness beyond a login session, so an authentication an hour old
-// writes successfully.
+// TestPatchWithAnOlderAuthenticationStillWrites checks that an hour-old authentication still writes.
 func TestPatchWithAnOlderAuthenticationStillWrites(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, anHourOld()...)
@@ -550,8 +505,7 @@ func TestPatchWithAnOlderAuthenticationStillWrites(t *testing.T) {
 	}
 }
 
-// TestPatchOfAGoneAccountIs401 holds the mapping of the identity's own account
-// gone.
+// TestPatchOfAGoneAccountIs401 checks that the identity's own account gone is a 401.
 func TestPatchOfAGoneAccountIs401(t *testing.T) {
 	r := newRig(t)
 	r.accounts.getErr = authn.ErrAccountNotFound
@@ -560,8 +514,7 @@ func TestPatchOfAGoneAccountIs401(t *testing.T) {
 	}
 }
 
-// TestPatchInvalidArgumentIs400 holds the mapping of the account module's
-// shape refusal, on either write.
+// TestPatchInvalidArgumentIs400 checks that the account module's shape refusal maps to 400 on either write.
 func TestPatchInvalidArgumentIs400(t *testing.T) {
 	cases := map[string]func(*rig){
 		"the display name": func(r *rig) { r.admin.nameErr = authn.ErrInvalidArgument },
@@ -579,8 +532,7 @@ func TestPatchInvalidArgumentIs400(t *testing.T) {
 	}
 }
 
-// TestPatchOtherFailureIs503 holds the fail-closed default and its cause staying
-// out of the answer.
+// TestPatchOtherFailureIs503 checks that a failure no sentinel names is a 503 whose cause stays out of the answer.
 func TestPatchOtherFailureIs503(t *testing.T) {
 	r := newRig(t)
 	r.admin.attrErr = errors.New("database is down")
@@ -596,9 +548,7 @@ func TestPatchOtherFailureIs503(t *testing.T) {
 	}
 }
 
-// TestPatchWritesAreNotOneAtomicChange holds the ordering of the two writes: when
-// the display name lands and the attribute set does not, the display name's
-// change is in force and the answer is the failure's.
+// TestPatchWritesAreNotOneAtomicChange checks that a failed attribute write leaves the display name in force.
 func TestPatchWritesAreNotOneAtomicChange(t *testing.T) {
 	r := newRig(t)
 	r.admin.attrErr = authn.ErrInvalidArgument
@@ -616,8 +566,7 @@ func TestPatchWritesAreNotOneAtomicChange(t *testing.T) {
 	}
 }
 
-// TestPatchAuditFailureDoesNotChangeTheAnswer holds the best-effort audit: a row
-// that does not land is an Error line and the write still answers 200.
+// TestPatchAuditFailureDoesNotChangeTheAnswer checks that a failed audit row logs an Error and still answers 200.
 func TestPatchAuditFailureDoesNotChangeTheAnswer(t *testing.T) {
 	r := newRig(t)
 	r.audit.fails(errors.New("audit is down"))
@@ -629,8 +578,7 @@ func TestPatchAuditFailureDoesNotChangeTheAnswer(t *testing.T) {
 	}
 }
 
-// TestPatchWithoutAnAuditCapabilityStillAnswers holds the optional audit: an
-// assembly with no audit capability writes no row and the write still lands.
+// TestPatchWithoutAnAuditCapabilityStillAnswers checks that an assembly with no audit capability still writes.
 func TestPatchWithoutAnAuditCapabilityStillAnswers(t *testing.T) {
 	r := newRig(t, noAudit)
 	if r.p.audit != nil {
@@ -641,8 +589,7 @@ func TestPatchWithoutAnAuditCapabilityStillAnswers(t *testing.T) {
 	}
 }
 
-// TestPatchAuditRowIsTheCapabilitysOwn holds the row's shape: the closed action,
-// the account as the object, and no field value a client sent.
+// TestPatchAuditRowIsTheCapabilitysOwn checks that the row carries the closed action and no client value.
 func TestPatchAuditRowIsTheCapabilitysOwn(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "secret-name"}, me()...)

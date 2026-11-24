@@ -13,15 +13,11 @@ import (
 	"github.com/vislake/speed/pkg/authn/provisioning"
 )
 
-// hookTimeout bounds the cleanup hooks of one call, which run after the state
-// they clean up after is already in force.
 const hookTimeout = 30 * time.Second
 
-// lock takes the row of an account for the rest of the transaction by writing it,
-// and reads it. Two transactions that start with it on one account run one after
-// the other on both engines, which is what makes a read of the account's other
-// rows in the transaction a read nobody is changing under it. An account that does
-// not exist, and a tombstone, are authn.ErrAccountNotFound.
+// lock takes the account's row by writing it; the write serializes concurrent
+// transactions on one account on both engines, so the reads that follow in tx are
+// stable. A missing account and a tombstone are authn.ErrAccountNotFound.
 func (p *product) lock(tx *gorm.DB, id authn.AccountID) (accountRow, error) {
 	if err := checkID(id); err != nil {
 		return accountRow{}, err
@@ -36,12 +32,8 @@ func (p *product) lock(tx *gorm.DB, id authn.AccountID) (accountRow, error) {
 	return loadAccount(tx, id)
 }
 
-// ceilSecond is the instant a validity is moved to: the next whole second after
-// the time. A session made in the rest of the second the change happened in is
-// void as well.
 func ceilSecond(t time.Time) time.Time { return t.Truncate(time.Second).Add(time.Second) }
 
-// reasonOK reports whether the reason is one of the classes a payload may carry.
 func reasonOK(reason string) error {
 	if !authn.ValidPayloadReasonClass(reason) {
 		return fmt.Errorf("%w: the reason is not one of the reason classes", authn.ErrInvalidArgument)
@@ -49,20 +41,6 @@ func reasonOK(reason string) error {
 	return nil
 }
 
-// SetStatus moves an account between disabled and enabled.
-//
-// A disable asks the owner counter and runs under the tenant locks the account
-// administers, as a deletion does, so a transfer that makes the account an
-// owner cannot slip between the check and the commit. The account's own tables
-// change in one transaction: the status, the instant
-// before which no session is valid, and the event. Moving to disabled moves that
-// instant to the next second after the change and never back, and moving to
-// enabled leaves it, so a session of before is not revived. Once the transaction
-// has committed the hook of the target status is called on every lifecycle
-// implementation, each of them idempotent, and a hook that fails makes the call
-// authn.ErrCleanupIncomplete with the new state in force. Calling again with the
-// same status finishes the cleanup: a status the account already has changes
-// nothing and the hook of that status is called once more.
 func (p *product) SetStatus(ctx context.Context, id authn.AccountID, s authn.AccountStatus, reason string) error {
 	if s != authn.StatusDisabled && s != authn.StatusActive {
 		return fmt.Errorf("%w: a status is set to disabled or enabled, and an account is ended with Delete", authn.ErrInvalidArgument)
@@ -71,9 +49,6 @@ func (p *product) SetStatus(ctx context.Context, id authn.AccountID, s authn.Acc
 		return err
 	}
 	if s == authn.StatusDisabled {
-		// The owner check and the write that acts on it run under the same
-		// tenant locks the deletion takes, so a transfer cannot make the
-		// account an owner between the check and the commit.
 		release, err := p.lockAccountAdministration(ctx, id)
 		if err != nil {
 			return err
@@ -120,7 +95,6 @@ func (p *product) SetStatus(ctx context.Context, id authn.AccountID, s authn.Acc
 	})
 }
 
-// laterOf is the later of two times.
 func laterOf(a, b time.Time) time.Time {
 	if b.After(a) {
 		return b
@@ -128,17 +102,6 @@ func laterOf(a, b time.Time) time.Time {
 	return a
 }
 
-// Delete ends an account for good.
-//
-// The row stays as a tombstone that holds the identifier, the kind, the status,
-// the time of creation and the time of deletion, and every identifier, pending
-// contact, external identity, credential, secret and membership of the account
-// is deleted in the same transaction, together with the personal data of the row
-// itself. After the erase and before the transaction returns, the required
-// provisioning seam is called with the facts the erase has just taken away, so
-// what the account owned is ended in the same transaction. The
-// instant before which no session is valid moves on, as a disabling moves it.
-// Calling again on a tombstone finishes the cleanup the hooks did not.
 func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string) error {
 	if err := reasonOK(reason); err != nil {
 		return err
@@ -146,18 +109,11 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 	if err := checkID(id); err != nil {
 		return err
 	}
-	// The locks are taken before the check and held through the cleanup, so
-	// this deletion and any other removal that judges one of the same tenants'
-	// floors run one after the other (see refuseDeletingTheLastTenantAdmin).
 	release, err := p.lockAccountAdministration(ctx, id)
 	if err != nil {
 		return err
 	}
 	defer release()
-	// The owner check precedes the last-administrator floor: an owner is
-	// usually the organization's only administrator too, and the answer that
-	// asks for the ownership to be handed on is the one that names the actual
-	// obstacle. A non-owner sole administrator still meets the floor below.
 	if err = p.refuseDeletingTheOwner(ctx, id); err != nil {
 		return err
 	}
@@ -181,9 +137,6 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 		if row.Status == statusDeleted {
 			return nil
 		}
-		// The facts are read before the erase: the username identifier and the
-		// display name are what the deletion seam still needs, and eraseAccount
-		// takes both away in this transaction.
 		facts, factsErr := deletionFacts(tx, row)
 		if factsErr != nil {
 			return factsErr
@@ -191,8 +144,6 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 		if err = p.eraseAccount(tx, row, b); err != nil {
 			return err
 		}
-		// What the account owns is ended in the same transaction. A failure
-		// here rolls the tombstone and the erase back with it.
 		return p.provisioning.ProvisionAccountDeletion(ctx, tx, facts)
 	})
 	if err != nil {
@@ -205,11 +156,6 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 	})
 }
 
-// lockAccountAdministration takes the counter's tenant locks for every tenant
-// in which the account administers, and answers the release. An assembly with
-// no counter locks nothing: its deletion and disable paths have no floor to
-// serialise. A lock that cannot be taken is ErrUnavailable and the write does
-// not run, because an unknown floor must not be read as permission.
 func (p *product) lockAccountAdministration(ctx context.Context, id authn.AccountID) (func(), error) {
 	counter := p.tenantAdminCounter
 	if counter == nil {
@@ -224,31 +170,6 @@ func (p *product) lockAccountAdministration(ctx context.Context, id authn.Accoun
 	return release, nil
 }
 
-// refuseDeletingTheLastTenantAdmin asks the optional counter before the
-// tombstone is written. An account that is the only tenant administrator of an
-// active business tenant is refused with authn.ErrAccountLastTenantAdmin and
-// nothing is erased; the role has to be handed to another administrator first.
-// The refusal carries the tenant's identifier, so a surface can name the
-// organization the operator has to hand over.
-//
-// The check runs after lockAccountAdministration has taken the tenant locks the
-// deletion shares with every other path that judges those tenants' floors, and
-// the deletion's transaction and binding cleanup run before the locks are
-// released. Two deletions in one tenant therefore cannot each read the other
-// administrator as present and then together leave the tenant with none: the
-// second either sees the first's committed cleanup (and is refused) or runs
-// first. The same lock serialises a deletion against a binding or membership
-// removal of one of those tenants.
-//
-// A tombstone is not checked: the call is finishing a cleanup whose hooks did
-// not complete, and the live account the floor protects is already gone. An
-// account that is not there is left to the transaction's own not-found
-// refusal, so an assembly with the seam keeps the answer it gave before.
-//
-// A counter that cannot answer is ErrUnavailable and the deletion does not
-// run: an unknown floor must not be read as permission. An assembly that
-// supplies no counter skips the whole check, which is the deletion behaviour a
-// host without a policy module has.
 func (p *product) refuseDeletingTheLastTenantAdmin(ctx context.Context, id authn.AccountID) error {
 	counter := p.tenantAdminCounter
 	if counter == nil {
@@ -276,28 +197,14 @@ func (p *product) refuseDeletingTheLastTenantAdmin(ctx context.Context, id authn
 	return nil
 }
 
-// refuseDeletingTheOwner refuses an account deletion when the account owns an
-// active business organization. The organization has to be handed on or deleted
-// first; a personal organization does not count, because it is ended with the
-// account.
 func (p *product) refuseDeletingTheOwner(ctx context.Context, id authn.AccountID) error {
 	return p.refuseAccountOwningAnOrganization(ctx, id, "deleting")
 }
 
-// refuseSuspendingTheOwner refuses a suspension of an account that owns an
-// active business organization. A suspended owner would leave the organization
-// with nobody who can hand it on, exactly as a deletion would.
 func (p *product) refuseSuspendingTheOwner(ctx context.Context, id authn.AccountID) error {
 	return p.refuseAccountOwningAnOrganization(ctx, id, "suspending")
 }
 
-// refuseAccountOwningAnOrganization asks the optional owner counter. The
-// refusal carries the tenant's identifier so a surface can name the
-// organization the operator has to hand on or delete. A tombstone is not
-// checked: the live account the floor protects is already gone. A counter that
-// cannot answer is ErrUnavailable and the write does not run: an unknown owner
-// must not be read as permission. An assembly that supplies no counter skips
-// the check.
 func (p *product) refuseAccountOwningAnOrganization(ctx context.Context, id authn.AccountID, op string) error {
 	counter := p.tenantOwnerCounter
 	if counter == nil {
@@ -325,12 +232,6 @@ func (p *product) refuseAccountOwningAnOrganization(ctx context.Context, id auth
 	return nil
 }
 
-// eraseAccount writes the tombstone of a live account in tx and deletes what
-// this module holds of it: every identifier, pending contact, external identity,
-// credential, secret and membership, and the personal columns of the row. The
-// events are kept in b, and the caller publishes them once the transaction has
-// committed. The caller has locked the row and hands in the account it read, so
-// the memberships read here cannot change under the erase.
 func (p *product) eraseAccount(tx *gorm.DB, row accountRow, b *batch) error {
 	id := authn.AccountID(row.ID)
 	now := p.at()
@@ -374,12 +275,6 @@ func (p *product) eraseAccount(tx *gorm.DB, row accountRow, b *batch) error {
 	return nil
 }
 
-// callHooks calls one method of every lifecycle hook once the state it cleans up
-// after is in force. Every hook is called whatever the ones before it did, and the
-// failures are counted by hook and returned together as authn.ErrCleanupIncomplete.
-// The hooks run to the end whatever becomes of the caller's context, within a
-// bound: the state is in force, and the cleanup is all that is left. name, when
-// not nil, is what a failure is counted under in place of the hook's own name.
 func (p *product) callHooks(ctx context.Context, id authn.AccountID, name *string,
 	call func(context.Context, authn.AccountLifecycle) error,
 ) error {
@@ -408,11 +303,6 @@ func (p *product) callHooks(ctx context.Context, id authn.AccountID, name *strin
 	return fmt.Errorf("%w: %w", authn.ErrCleanupIncomplete, errors.Join(failures...))
 }
 
-// callMembershipHooks calls one method of every membership lifecycle hook once
-// the removal it cleans up after is in force. Every hook is called whatever the
-// ones before it did, and the failures are returned together as
-// authn.ErrCleanupIncomplete. The hooks run to the end whatever becomes of the
-// caller's context, within the same bound the account hooks take.
 func (p *product) callMembershipHooks(ctx context.Context, id authn.AccountID, tenant string) error {
 	if len(p.membershipHooks) == 0 {
 		return nil
@@ -434,10 +324,6 @@ func (p *product) callMembershipHooks(ctx context.Context, id authn.AccountID, t
 	return fmt.Errorf("%w: %w", authn.ErrCleanupIncomplete, errors.Join(failures...))
 }
 
-// RevokeServiceSecret revokes a secret and then calls
-// AccountLifecycle.ServiceSecretRevoked on every hook. A secret that is already
-// revoked is revoked as it was, and the hooks are called again: that is how a
-// call that was told the cleanup was incomplete is repeated.
 func (p *product) RevokeServiceSecret(ctx context.Context, id authn.AccountID, secretID string) error {
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := p.lock(tx, id); err != nil {

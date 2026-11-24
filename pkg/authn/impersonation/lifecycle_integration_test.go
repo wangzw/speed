@@ -11,9 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheListAndRevokeLifecycleOnPostgres holds the management paths on the
-// server-backed engine: a page settles a lapsed record, and a revoke that
-// follows is a no-op rather than a second end.
+// TestTheListAndRevokeLifecycleOnPostgres checks that a page settles a lapsed record and the following revoke is a no-op.
 func TestTheListAndRevokeLifecycleOnPostgres(t *testing.T) {
 	h := openDialect(t, "postgres")
 	r := newRig(t, h)
@@ -55,10 +53,7 @@ func TestTheListAndRevokeLifecycleOnPostgres(t *testing.T) {
 	}
 }
 
-// TestASettleWriteBackFailureOnPostgres holds the read-but-cannot-write branch
-// on the server-backed engine, where SQLite's trigger is not available: a
-// trigger raises on the conditional update, so the judgement fails rather than
-// reporting the record unended.
+// TestASettleWriteBackFailureOnPostgres checks that a failed write-back surfaces as an error rather than an unended record.
 func TestASettleWriteBackFailureOnPostgres(t *testing.T) {
 	h := openDialect(t, "postgres")
 	r := newRig(t, h)

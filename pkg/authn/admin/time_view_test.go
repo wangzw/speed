@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// requireNullField asserts that one field of a decoded JSON object is null.
 func requireNullField(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -23,8 +22,6 @@ func requireNullField(t *testing.T, object map[string]json.RawMessage, name stri
 	}
 }
 
-// requireUTCInstant asserts that one field of a decoded JSON object is a
-// quoted string and that its wire text ends in Z.
 func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name string) {
 	t.Helper()
 	raw, present := object[name]
@@ -37,8 +34,7 @@ func requireUTCInstant(t *testing.T, object map[string]json.RawMessage, name str
 	}
 }
 
-// TestATimeViewWritesAnInstantInUTC holds the wire rule for a present instant:
-// a value stored in a non-UTC zone leaves as UTC with a trailing Z.
+// TestATimeViewWritesAnInstantInUTC holds the wire rule for a present instant: a value stored in a non-UTC zone leaves as UTC with a trailing Z.
 func TestATimeViewWritesAnInstantInUTC(t *testing.T) {
 	at := time.Date(2027, 3, 4, 5, 6, 7, 0, time.FixedZone("UTC+8", 8*60*60))
 
@@ -76,10 +72,7 @@ func TestATimeViewWritesAnInstantInUTC(t *testing.T) {
 	})
 }
 
-// TestATimeViewWritesNullWhenThereIsNoInstant holds the wire rule for the
-// optional instants of the admin views: a secret that never expires, a secret
-// created with no expiry and an impersonation still in force are null, not the
-// zero instant.
+// TestATimeViewWritesNullWhenThereIsNoInstant checks that an absent instant is published as null rather than the zero time.
 func TestATimeViewWritesNullWhenThereIsNoInstant(t *testing.T) {
 	t.Run("a secret that never expires", func(t *testing.T) {
 		r := newRig(t)

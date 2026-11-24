@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// wireIdentifier is one identifier as the account view publishes it: the six
-// fields the view declares and nothing else.
 type wireIdentifier struct {
 	Kind           string `json:"kind"`
 	Value          string `json:"value"`
@@ -22,9 +20,6 @@ type wireIdentifier struct {
 	DefaultContact bool   `json:"default_contact"`
 }
 
-// identifiersField reads the raw identifiers member of one account view, so a
-// case can hold the wire shape itself rather than a decoded slice in which an
-// absent array and an empty one are both nil.
 func identifiersField(t *testing.T, account map[string]json.RawMessage) json.RawMessage {
 	t.Helper()
 	raw, ok := account["identifiers"]
@@ -34,7 +29,6 @@ func identifiersField(t *testing.T, account map[string]json.RawMessage) json.Raw
 	return raw
 }
 
-// decodeIdentifiers reads an identifiers member into its wire shape.
 func decodeIdentifiers(t *testing.T, raw json.RawMessage) []wireIdentifier {
 	t.Helper()
 	var out []wireIdentifier
@@ -44,8 +38,6 @@ func decodeIdentifiers(t *testing.T, raw json.RawMessage) []wireIdentifier {
 	return out
 }
 
-// singleAccountView drives GET B/accounts/:id and returns the account view as
-// its raw JSON members.
 func singleAccountView(t *testing.T, r *rig, id authn.AccountID) map[string]json.RawMessage {
 	t.Helper()
 	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts/"+string(id), nil, fresh()...)
@@ -61,15 +53,11 @@ func singleAccountView(t *testing.T, r *rig, id authn.AccountID) map[string]json
 	return envelope.Account
 }
 
-// listAccountView drives GET B/accounts and returns the view of one account
-// from the page it answers with.
 func listAccountView(t *testing.T, r *rig, id authn.AccountID) map[string]json.RawMessage {
 	t.Helper()
 	return listAccountViewQuery(t, r, "", id)
 }
 
-// listAccountViewQuery drives GET B/accounts with a query string and returns
-// the view of one account from the page it answers with.
 func listAccountViewQuery(t *testing.T, r *rig, query string, id authn.AccountID) map[string]json.RawMessage {
 	t.Helper()
 	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts"+query, nil, fresh()...)
@@ -95,8 +83,6 @@ func listAccountViewQuery(t *testing.T, r *rig, query string, id authn.AccountID
 	return nil
 }
 
-// bothReads names the two reads that carry an account view, so a case can hold
-// a property of both without repeating it.
 var bothReads = []struct {
 	name string
 	view func(t *testing.T, r *rig, id authn.AccountID) map[string]json.RawMessage
@@ -105,9 +91,7 @@ var bothReads = []struct {
 	{"list", listAccountView},
 }
 
-// TestBothAccountReadsCarryTheLoginIdentifiers holds that the list read and the
-// single read both publish an account's login identifiers: the two of them, with
-// the kind, value and proven flag of each.
+// TestBothAccountReadsCarryTheLoginIdentifiers checks that the list and single reads both publish an account's login identifiers.
 func TestBothAccountReadsCarryTheLoginIdentifiers(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,
@@ -131,9 +115,7 @@ func TestBothAccountReadsCarryTheLoginIdentifiers(t *testing.T) {
 	}
 }
 
-// TestTheIdentifierViewCarriesOnlyTheSixFields holds the view's own shape: it
-// is built field by field, so no identifier of the row, verification instant or
-// named way reaches a client by being there.
+// TestTheIdentifierViewCarriesOnlyTheSixFields checks that the identifier view publishes only its six declared fields.
 func TestTheIdentifierViewCarriesOnlyTheSixFields(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,
@@ -164,9 +146,7 @@ func TestTheIdentifierViewCarriesOnlyTheSixFields(t *testing.T) {
 	}
 }
 
-// TestAnAccountWithNoIdentifiersAnswersAnEmptyArray holds that an account with
-// none publishes an empty array, never null, so a client can iterate the member
-// without a nil check.
+// TestAnAccountWithNoIdentifiersAnswersAnEmptyArray checks that an account with no identifiers publishes an empty array, never null.
 func TestAnAccountWithNoIdentifiersAnswersAnEmptyArray(t *testing.T) {
 	r := newRig(t)
 	for _, read := range bothReads {
@@ -179,11 +159,7 @@ func TestAnAccountWithNoIdentifiersAnswersAnEmptyArray(t *testing.T) {
 	}
 }
 
-// TestTheAccountViewOrdersIdentifiersByKindThenValue holds the documented order:
-// username, email and phone, and within one kind by value ascending. The stored
-// order is deliberately different, so a view that passed the read through would
-// fail. Both reads are held to it: the list path is the one the batch read now
-// feeds.
+// TestTheAccountViewOrdersIdentifiersByKindThenValue holds the documented order: username, email and phone, and within one kind by value ascending.
 func TestTheAccountViewOrdersIdentifiersByKindThenValue(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,
@@ -210,9 +186,7 @@ func TestTheAccountViewOrdersIdentifiersByKindThenValue(t *testing.T) {
 	}
 }
 
-// TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership holds the proven rule:
-// a proof (sms-code, email-code, idp:<provider>) reads true and an
-// assertion (invite, admin, import-unverified, self) reads false.
+// TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership checks that a proof reads proven and an assertion does not.
 func TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,
@@ -235,9 +209,7 @@ func TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership(t *testing.T) {
 	}
 }
 
-// TestTheAccountListReadsIdentifiersOncePerPage holds the cost of a page: one
-// batch read for the whole page, never one read per row, however many accounts
-// it lists.
+// TestTheAccountListReadsIdentifiersOncePerPage checks that a page reads identifiers in one batch call, not once per row.
 func TestTheAccountListReadsIdentifiersOncePerPage(t *testing.T) {
 	r := newRig(t)
 	other := authn.AccountID("acct-other")
@@ -268,11 +240,7 @@ func TestTheAccountListReadsIdentifiersOncePerPage(t *testing.T) {
 	}
 }
 
-// TestEveryListedAccountCarriesTheIdentifiersOfItsSingleRead holds that a page's
-// batch read answers each row exactly as the single read answers the same
-// account: the proven flag and the documented order included. The stored order
-// differs from the view's, and the mix of proving and asserting ways makes the
-// proven flag a discriminator, not a constant.
+// TestEveryListedAccountCarriesTheIdentifiersOfItsSingleRead checks that the batch read answers each row as the single read does.
 func TestEveryListedAccountCarriesTheIdentifiersOfItsSingleRead(t *testing.T) {
 	r := newRig(t)
 	other := authn.AccountID("acct-other")
@@ -295,9 +263,7 @@ func TestEveryListedAccountCarriesTheIdentifiersOfItsSingleRead(t *testing.T) {
 	}
 }
 
-// TestAFailedIdentifierBatchFailsThePage holds that the batch read's failure is
-// still the page's 503: replacing the per-row read must not turn a store failure
-// into empty arrays.
+// TestAFailedIdentifierBatchFailsThePage checks that a failed identifier batch is the page's 503.
 func TestAFailedIdentifierBatchFailsThePage(t *testing.T) {
 	r := newRig(t)
 	r.accounts.failIdentifiers(errors.New("the store is down"))
@@ -307,16 +273,11 @@ func TestAFailedIdentifierBatchFailsThePage(t *testing.T) {
 	}
 }
 
-// TestTheAccountListShowsATombstoneWithNoIdentifiers holds that a page holding
-// a tombstone still answers: deleting an account erases its identifiers and the
-// identifier read reports a tombstone as authn.ErrAccountNotFound, so the list
-// read must not wait on it. The row carries an empty array.
+// TestTheAccountListShowsATombstoneWithNoIdentifiers checks that a tombstone in a page answers with an empty identifier array.
 func TestTheAccountListShowsATombstoneWithNoIdentifiers(t *testing.T) {
 	r := newRig(t)
 	const gone authn.AccountID = "acct-tombstone"
 	r.accounts.put(gone, authn.Account{Kind: authn.KindUser, Status: authn.StatusDeleted})
-	// An identifier left bound to the row must not be read: deletion erases it,
-	// so the stale row is not the view's answer.
 	r.accounts.putIdentifiers(gone, authn.Identifier{Kind: authn.IdentifierEmail, Value: "gone@example.com", VerifiedVia: authn.VerifiedViaAdmin})
 	view := listAccountViewQuery(t, r, "?status=deleted", gone)
 	if got := string(bytes.TrimSpace(identifiersField(t, view))); got != "[]" {
@@ -327,11 +288,7 @@ func TestTheAccountListShowsATombstoneWithNoIdentifiers(t *testing.T) {
 	}
 }
 
-// TestTheAccountListShowsARowDeletedMidPageWithoutIdentifiers holds that an
-// account deleted between the page read and its identifier read does not fail
-// the whole page: the row stays in the snapshot and answers with an empty
-// array. The single read still answers 404 for an account that is gone, because
-// it names one account rather than a page.
+// TestTheAccountListShowsARowDeletedMidPageWithoutIdentifiers checks that a row deleted mid-page answers with an empty array, not a failure.
 func TestTheAccountListShowsARowDeletedMidPageWithoutIdentifiers(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID, authn.Identifier{Kind: authn.IdentifierEmail, Value: "alice@example.com"})

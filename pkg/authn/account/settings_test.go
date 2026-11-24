@@ -12,8 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// A setting the store holds is read on every use: a longer minimum length
-// refuses a password the declared default would have allowed.
+// A setting the store holds is read on every use: a longer minimum refuses a password the default would allow.
 func TestASettingTheStoreHoldsIsRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -26,8 +25,7 @@ func TestASettingTheStoreHoldsIsRead(t *testing.T) {
 	})
 }
 
-// A value outside its domain is not acted on: the declared default is used and
-// the fault is reported at Error.
+// An out-of-domain value is not acted on: the declared default is used and the fault reported at Error.
 func TestAnOutOfDomainSettingFallsBackAndIsReported(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.withSettings().set(minLengthPath, 200)
@@ -40,8 +38,7 @@ func TestAnOutOfDomainSettingFallsBackAndIsReported(t *testing.T) {
 	})
 }
 
-// A combination of the Argon2id cost settings below what OWASP recommends falls
-// back to the default combination and is reported at Error.
+// An Argon2id cost combination below OWASP's recommendation falls back to the default and is reported at Error.
 func TestABelowFloorCombinationFallsBackAndIsReported(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		set := h.withSettings()
@@ -60,8 +57,7 @@ func TestABelowFloorCombinationFallsBackAndIsReported(t *testing.T) {
 	})
 }
 
-// A setting whose read fails is the declared default, and the fault is reported
-// at Error.
+// A setting whose read fails is the declared default, reported at Error.
 func TestASettingThatCannotBeReadFallsBackAndIsReported(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		set := h.withSettings()
@@ -75,8 +71,7 @@ func TestASettingThatCannotBeReadFallsBackAndIsReported(t *testing.T) {
 	})
 }
 
-// A change that moves a setting in the direction that relaxes a check is a Warn
-// and a best-effort audit record; one that does not relax anything is silent.
+// A change that relaxes a check is a Warn and a best-effort audit record; one that does not is silent.
 func TestARelaxedSettingIsAWarnAndAnAuditRecord(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -97,8 +92,6 @@ func TestARelaxedSettingIsAWarnAndAnAuditRecord(t *testing.T) {
 			t.Errorf("no Warn reports the relaxation: %s", h.logs.String())
 		}
 
-		// Tightening the same setting, and a setting that relaxes nothing, are
-		// both silent.
 		audit.entries = nil
 		h.logs.buf.Reset()
 		for _, c := range []settings.Change{
@@ -113,9 +106,6 @@ func TestARelaxedSettingIsAWarnAndAnAuditRecord(t *testing.T) {
 			t.Errorf("a change that does not relax a check was reported: audit %+v, log %s", audit.written(), h.logs.String())
 		}
 
-		// A change the store flagged sensitive is silent even when the values it
-		// carries would loosen: the flag says the value was withheld, and the
-		// handler must not read a withheld change as a relaxation.
 		audit.entries = nil
 		h.logs.buf.Reset()
 		sensitive := settings.Change{Key: minLengthPath, Old: "12", New: "8", Sensitive: true}
@@ -128,8 +118,7 @@ func TestARelaxedSettingIsAWarnAndAnAuditRecord(t *testing.T) {
 	})
 }
 
-// The startup diagnostics name every value that relaxes a check and the absence
-// of an outbox or a bus.
+// The startup diagnostics name every relaxing value and the absence of an outbox or a bus.
 func TestTheStartupDiagnosticsNameWhatRelaxes(t *testing.T) {
 	h := newHarness(t, db.SQLite)
 	h.withSettings()

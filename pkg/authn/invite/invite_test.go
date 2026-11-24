@@ -14,6 +14,7 @@ import (
 
 const tenant = "tenant-a"
 
+// TestIssueNormalizesTheAddressAndStoresOnlyTheDigest checks that an address with surrounding space and capitals is stored normalized and only as a digest.
 func TestIssueNormalizesTheAddressAndStoresOnlyTheDigest(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "  Alice@Example.COM ")
@@ -48,12 +49,7 @@ func TestIssueNormalizesTheAddressAndStoresOnlyTheDigest(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsBudget
-// holds the issuer the invitation records and the issuer budget it spends. The
-// impersonation's effective account is the one impersonated, so the invitation
-// names that account as its issuer while the audit keeps the operator. The
-// budget is keyed by the identity's Key, which is the operator, so the allowance
-// spent is the operator's and the impersonated account's own stays free.
+// TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsBudget holds the issuer the invitation records and the issuer budget it spends.
 func TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsBudget(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 100)
@@ -73,8 +69,6 @@ func TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsB
 		t.Errorf("invited_by = %q, want the impersonated account acct-target", got)
 	}
 
-	// Key reads the operator, so the operator's one-unit allowance is spent and
-	// the impersonated account's is not.
 	if got := h.budgetCount(budgetIssueIssuer, "acct-operator"); got != 1 {
 		t.Errorf("the issuer count under the operator = %v, want 1", got)
 	}
@@ -82,8 +76,6 @@ func TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsB
 		t.Errorf("the issuer count under the impersonated account = %v, want none", got)
 	}
 
-	// A second issuance through the same operator, even impersonating another
-	// account, spends the operator's spent allowance and is refused.
 	again := authntest.Context(t, context.Background(),
 		authntest.WithAccount("acct-other-target"),
 		authntest.WithActor("acct-operator"),
@@ -96,19 +88,13 @@ func TestAnImpersonatedIssuanceNamesTheImpersonatedAccountAndSpendsTheOperatorsB
 		throttleOf(t, err)
 	}
 
-	// The impersonated account's own key is a separate budget and still issues.
 	own := authntest.Context(t, context.Background(), authntest.WithAccount("acct-target"))
 	if _, err := h.p.Issue(own, IssueInvite{Tenant: tenant, Email: "carol@example.com"}); err != nil {
 		t.Errorf("the impersonated account's own issuance gave %v, want its own allowance to let it through", err)
 	}
 }
 
-// TestResendDoesNotRecheckTheTarget holds the rule that a resend is not a new
-// issuance: the target was judged when the invitation was issued, and the row
-// keeps its deadline and identity. A membership, a system tenant or a service
-// account's address that appears afterwards does not turn the resend into a
-// refusal, which would leave the caller unable to send the invitation it owns
-// again or to cancel it.
+// TestResendDoesNotRecheckTheTarget checks that a resend is not a new issuance: the target judged at issuance is not judged again.
 func TestResendDoesNotRecheckTheTarget(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -155,6 +141,7 @@ func TestResendDoesNotRecheckTheTarget(t *testing.T) {
 	}
 }
 
+// TestIssueRefusesAMalformedAddress checks that an empty, at-less, double-@, white-space or space-bearing address is ErrInvalidEmail.
 func TestIssueRefusesAMalformedAddress(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -172,12 +159,7 @@ func TestIssueRefusesAMalformedAddress(t *testing.T) {
 	}
 }
 
-// TestIssueReplacesAnExpiredInvitation holds the one replacement an issuance
-// still makes: an expired pending invitation for the same address leaves the
-// live slot to the new one. The old row keeps its stored pending state, so it
-// still reads expired, and only superseded_at records that a later invitation
-// took its place. Its token still resolves, but to the expired state, so it
-// grants nothing; the new token is the one that reads pending.
+// TestIssueReplacesAnExpiredInvitation checks that an issuance over an expired invitation supersedes it and takes the live slot.
 func TestIssueReplacesAnExpiredInvitation(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue(tenant, "alice@example.com")
@@ -202,6 +184,7 @@ func TestIssueReplacesAnExpiredInvitation(t *testing.T) {
 	}
 }
 
+// TestAcceptWithAnExistingAccountAddsAMembershipOnly checks that an existing account's acceptance adds a membership and ignores the display name.
 func TestAcceptWithAnExistingAccountAddsAMembershipOnly(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -222,10 +205,7 @@ func TestAcceptWithAnExistingAccountAddsAMembershipOnly(t *testing.T) {
 	}
 }
 
-// TestAcceptRefusesAnUnprovedInvitedAddress holds that holding the token is not
-// proof: an account that holds the invited address only through an unproved
-// channel is refused with the proof step's own error, and the invitation stays
-// pending for the retry after the address is proved.
+// TestAcceptRefusesAnUnprovedInvitedAddress checks that holding the token but not a proven address is refused and leaves the invitation pending.
 func TestAcceptRefusesAnUnprovedInvitedAddress(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.via = authn.VerifiedViaAdmin
@@ -243,9 +223,7 @@ func TestAcceptRefusesAnUnprovedInvitedAddress(t *testing.T) {
 	}
 }
 
-// TestAcceptRefusesAnAccountThatDoesNotHoldTheInvitedAddress holds the other
-// side: a caller with a different proven address cannot redeem the invitation,
-// and no account is created for the invited one.
+// TestAcceptRefusesAnAccountThatDoesNotHoldTheInvitedAddress checks that a caller proving another address is refused and creates no account.
 func TestAcceptRefusesAnAccountThatDoesNotHoldTheInvitedAddress(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "bob@example.com")
@@ -262,9 +240,7 @@ func TestAcceptRefusesAnAccountThatDoesNotHoldTheInvitedAddress(t *testing.T) {
 	}
 }
 
-// TestAcceptRefusesARequestWithoutAnIdentity holds that the token alone is no
-// credential: the inviter holds it too, so an unauthenticated request is
-// refused before the row is read.
+// TestAcceptRefusesARequestWithoutAnIdentity checks that the token alone is no credential and an unauthenticated request is refused.
 func TestAcceptRefusesARequestWithoutAnIdentity(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -281,11 +257,7 @@ func TestAcceptRefusesARequestWithoutAnIdentity(t *testing.T) {
 	}
 }
 
-// TestTheInviterCannotAcceptOnTheInviteesBehalf holds the product rule's reason
-// for requiring the proof: the issuer receives the token in the issue answer, so
-// bearing the token says nothing about owning the invited address. The issuer's
-// own account, which holds a different proven address, is refused and the
-// invitation stays pending for the person the address belongs to.
+// TestTheInviterCannotAcceptOnTheInviteesBehalf checks that the issuer holding the token cannot accept for the invitee.
 func TestTheInviterCannotAcceptOnTheInviteesBehalf(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "invitee@example.com")
@@ -302,10 +274,7 @@ func TestTheInviterCannotAcceptOnTheInviteesBehalf(t *testing.T) {
 	}
 }
 
-// TestAcceptKeepsAnExistingMembershipsSourceAndExemption holds that an
-// acceptance adds a member and does not rewrite how the member came to be one:
-// an active membership that already exists keeps its source and its SSO
-// exemption.
+// TestAcceptKeepsAnExistingMembershipsSourceAndExemption checks that an existing active membership keeps its source and SSO exemption.
 func TestAcceptKeepsAnExistingMembershipsSourceAndExemption(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -326,10 +295,7 @@ func TestAcceptKeepsAnExistingMembershipsSourceAndExemption(t *testing.T) {
 	}
 }
 
-// TestAcceptRefusesASuspendedMembershipAndRevokesTheInvitation holds that a
-// suspended member is not silently reactivated: the acceptance is refused, no
-// membership is written, and the invitation is revoked so the token cannot be
-// reused.
+// TestAcceptRefusesASuspendedMembershipAndRevokesTheInvitation checks that a suspended member is refused and the invitation revoked.
 func TestAcceptRefusesASuspendedMembershipAndRevokesTheInvitation(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -348,6 +314,7 @@ func TestAcceptRefusesASuspendedMembershipAndRevokesTheInvitation(t *testing.T) 
 	assertRevokedAudit(t, h, issued.Invitation.ID, authn.ReasonInvitationMembershipInactive)
 }
 
+// TestAcceptReportsTerminalStates checks that an empty or unknown token is not found, a second accept is already accepted and a revoked token is revoked.
 func TestAcceptReportsTerminalStates(t *testing.T) {
 	h := newHarness(t)
 	ctx := h.acceptCtx("acct-dave", "dave@example.com")
@@ -377,6 +344,7 @@ func TestAcceptReportsTerminalStates(t *testing.T) {
 	}
 }
 
+// TestAcceptRefusesAnExpiredToken checks that a token past its deadline is ErrInvitationExpired and the row is left pending.
 func TestAcceptRefusesAnExpiredToken(t *testing.T) {
 	h := newHarness(t)
 	deadline := h.clock.read().Add(time.Hour)
@@ -396,9 +364,7 @@ func TestAcceptRefusesAnExpiredToken(t *testing.T) {
 	}
 }
 
-// TestAcceptRollsBackWhenTheMembershipWriteFails holds the one-transaction
-// rule: a write that fails rolls the claim back with it, so the invitation is
-// still pending and the same token can be tried again once the store answers.
+// TestAcceptRollsBackWhenTheMembershipWriteFails checks that a failed membership write rolls the claim back.
 func TestAcceptRollsBackWhenTheMembershipWriteFails(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = errors.New("the membership store is down")
@@ -413,9 +379,7 @@ func TestAcceptRollsBackWhenTheMembershipWriteFails(t *testing.T) {
 	}
 }
 
-// TestAcceptLeavesTheInvitationPendingOnAPermanentWriteFailure holds that even a
-// failure no retry can complete is a rolled-back transaction, not an invitation
-// settled as revoked: the whole acceptance is undone together.
+// TestAcceptLeavesTheInvitationPendingOnAPermanentWriteFailure checks that a permanent write failure leaves the invitation pending.
 func TestAcceptLeavesTheInvitationPendingOnAPermanentWriteFailure(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrBindingConflict
@@ -433,9 +397,7 @@ func TestAcceptLeavesTheInvitationPendingOnAPermanentWriteFailure(t *testing.T) 
 	}
 }
 
-// TestAcceptRollsBackATakenContact holds that a membership write the store
-// refuses because another account holds the contact leaves the invitation
-// pending: nothing of the acceptance is written.
+// TestAcceptRollsBackATakenContact checks that a taken contact leaves the invitation pending.
 func TestAcceptRollsBackATakenContact(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrContactTaken
@@ -450,10 +412,7 @@ func TestAcceptRollsBackATakenContact(t *testing.T) {
 	}
 }
 
-// TestAcceptPropagatesACleanupIncomplete holds that a failure the membership
-// store reports is handed back as it is and not merged into ErrUnavailable, and
-// that the transaction leaves the invitation pending so a retry is not locked
-// out.
+// TestAcceptPropagatesACleanupIncomplete checks that a cleanup failure is propagated as it is and leaves the invitation pending.
 func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrCleanupIncomplete
@@ -472,8 +431,7 @@ func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
 	}
 }
 
-// A transient membership failure does not spend the invitation: once the
-// store answers, the same token redeems for the same caller.
+// A transient membership failure does not spend the invitation: once the store answers, the same token redeems for the same caller.
 func TestAcceptRetriesAfterATransientFailure(t *testing.T) {
 	h := newHarness(t)
 	h.members.err = authn.ErrCleanupIncomplete
@@ -499,9 +457,7 @@ func TestAcceptRetriesAfterATransientFailure(t *testing.T) {
 	}
 }
 
-// A membership suspended between the acceptance's read and its conditional
-// write is not resurrected: the write reports that the account is not an active
-// member, the invitation is revoked, and no membership row is written.
+// TestAcceptDoesNotResurrectAMembershipSuspendedDuringTheWrite checks that a membership suspended mid-write is not resurrected.
 func TestAcceptDoesNotResurrectAMembershipSuspendedDuringTheWrite(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "mia@example.com")
@@ -526,10 +482,7 @@ func TestAcceptDoesNotResurrectAMembershipSuspendedDuringTheWrite(t *testing.T) 
 	}
 }
 
-// A superseded expired row is not a newer pending invitation. The live
-// invitation's acceptance fails, its transaction rolls back, and the live row
-// stays pending; the older row keeps its stored pending state and its
-// superseded_at, so it still reads expired.
+// TestAFailedAcceptanceLeavesTheLiveRowPending checks that a failed acceptance leaves the live row pending and the superseded row expired.
 func TestAFailedAcceptanceLeavesTheLiveRowPending(t *testing.T) {
 	h := newHarness(t)
 	first := h.issue(tenant, "nora@example.com")
@@ -556,8 +509,7 @@ func TestAFailedAcceptanceLeavesTheLiveRowPending(t *testing.T) {
 	}
 }
 
-// A disabled tenant refuses acceptance and the invitation survives: enabling the
-// tenant makes the same token redeemable again.
+// A disabled tenant refuses acceptance and the invitation survives: enabling the tenant makes the same token redeemable again.
 func TestAcceptRefusesADisabledTenantAndKeepsTheInvitation(t *testing.T) {
 	h := newHarness(t)
 	h.tenantStates.states[tenant] = authn.TenantDisabled
@@ -583,8 +535,7 @@ func TestAcceptRefusesADisabledTenantAndKeepsTheInvitation(t *testing.T) {
 	}
 }
 
-// A deleted tenant refuses acceptance and its live row is withdrawn, so a token
-// the deletion's cleanup missed cannot be redeemed later.
+// A deleted tenant refuses acceptance and its live row is withdrawn, so a token the deletion's cleanup missed cannot be redeemed later.
 func TestAcceptRefusesADeletedTenantAndWithdrawsTheRow(t *testing.T) {
 	h := newHarness(t)
 	h.tenantStates.states[tenant] = authn.TenantDeleted
@@ -603,6 +554,7 @@ func TestAcceptRefusesADeletedTenantAndWithdrawsTheRow(t *testing.T) {
 	assertRevokedAudit(t, h, issued.Invitation.ID, authn.ReasonInvitationTenantDeleted)
 }
 
+// TestRevokeTenantInvitationsWithdrawsOnlyThatTenantsPendingRows checks that tenant revocation withdraws only that tenant’s pending invitations.
 func TestRevokeTenantInvitationsWithdrawsOnlyThatTenantsPendingRows(t *testing.T) {
 	h := newHarness(t)
 	kept := h.issue(tenant, "quinn@example.com")
@@ -627,6 +579,7 @@ func TestRevokeTenantInvitationsWithdrawsOnlyThatTenantsPendingRows(t *testing.T
 	}
 }
 
+// TestRevokeIsIdempotentAndRefusesAnAcceptedInvitation checks that a repeated revoke succeeds and an accepted invitation is refused with its own error.
 func TestRevokeIsIdempotentAndRefusesAnAcceptedInvitation(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -652,11 +605,10 @@ func TestRevokeIsIdempotentAndRefusesAnAcceptedInvitation(t *testing.T) {
 	}
 }
 
+// TestListOrdersPendingFirstAndPagesByCursor checks that pending invitations come newest-first ahead of accepted ones and that a limit pages by cursor.
 func TestListOrdersPendingFirstAndPagesByCursor(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	// Three invitations in one tenant, the middle one accepted so that it falls
-	// behind the two still pending.
 	a := h.issue(tenant, "a@example.com")
 	h.clock.advance(time.Minute)
 	b := h.issue(tenant, "b@example.com")
@@ -684,7 +636,6 @@ func TestListOrdersPendingFirstAndPagesByCursor(t *testing.T) {
 		t.Errorf("next cursor = %q, want empty on a short page", next)
 	}
 
-	// A page of one, then its cursor continues where it stopped.
 	first, cursor, err := h.p.List(ctx, tenant, authn.Page{Limit: 1})
 	if err != nil {
 		t.Fatalf("listing one: %v", err)
@@ -704,6 +655,7 @@ func TestListOrdersPendingFirstAndPagesByCursor(t *testing.T) {
 	}
 }
 
+// TestAcceptLeavesOneWinnerUnderConcurrency checks that four concurrent acceptances leave one winner, the rest already-accepted, and one membership.
 func TestAcceptLeavesOneWinnerUnderConcurrency(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "kate@example.com")

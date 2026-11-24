@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheGrantAndAuditNameTheName holds the impersonation answer and its audit
-// rows to the name: the record stores the internal identifier, and every
-// surface a person reads names the name.
+// TestTheGrantAndAuditNameTheName checks that the grant views and audit detail name the tenant.
 func TestTheGrantAndAuditNameTheName(t *testing.T) {
 	grant := authn.ImpersonationGrant{
 		ID: "g1", Target: "acct-user", Tenant: "t1",

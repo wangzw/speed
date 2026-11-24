@@ -12,23 +12,16 @@ import (
 
 const eligibilityPathPrefix = "/api/v1/auth/invitations/"
 
-// TestTheEligibilityReadAnswersForTheSignedInCallerAlone holds the guarded read
-// the invitation page opens with: an anonymous request is 401, a signed-in
-// caller who proved the invited address reads pending with the proof, one who
-// did not reads pending without it, and the answer carries no address, inviter
-// or organization. An unknown token is the bare 404 every acceptance route
-// answers.
+// TestTheEligibilityReadAnswersForTheSignedInCallerAlone checks that the guarded read answers 401 anonymously and, for the caller alone, reports the state and whether they proved the address without leaking it.
 func TestTheEligibilityReadAnswersForTheSignedInCallerAlone(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue("tenant-a", "alice@example.com")
 
-	// No identity: the gateway refuses the guarded route before the handler.
 	h.mounter.AsAnonymous()
 	if w := h.request(http.MethodGet, eligibilityPathPrefix+issued.Token+"/eligibility", nil); w.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous eligibility status = %d, want 401: %s", w.Code, w.Body.String())
 	}
 
-	// A signed-in caller who proved the invited address.
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
 	w := h.request(http.MethodGet, eligibilityPathPrefix+issued.Token+"/eligibility", nil)
 	if w.Code != http.StatusOK {
@@ -50,7 +43,6 @@ func TestTheEligibilityReadAnswersForTheSignedInCallerAlone(t *testing.T) {
 		}
 	}
 
-	// A signed-in caller who holds another address.
 	h.mounter.As(authntest.WithAccount("acct-bob"))
 	w = h.request(http.MethodGet, eligibilityPathPrefix+issued.Token+"/eligibility", nil)
 	if w.Code != http.StatusOK {
@@ -63,17 +55,13 @@ func TestTheEligibilityReadAnswersForTheSignedInCallerAlone(t *testing.T) {
 		t.Errorf("answer = %+v, want pending without the proof", body)
 	}
 
-	// A token that points at no invitation.
 	w = h.request(http.MethodGet, eligibilityPathPrefix+"spd_inv_unknown/eligibility", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("eligibility status for an unknown token = %d, want 404: %s", w.Code, w.Body.String())
 	}
 }
 
-// TestTheEligibilityReadAnswersEveryStateWithoutLeakingTheInvitation holds the
-// same answer for the three states a token can reach after the pending one: it
-// reports the state and whether the caller proved the invited address, and it
-// carries neither an address nor the inviter nor the organization.
+// TestTheEligibilityReadAnswersEveryStateWithoutLeakingTheInvitation checks that the accepted, revoked and expired states are reported without leaking the invitation.
 func TestTheEligibilityReadAnswersEveryStateWithoutLeakingTheInvitation(t *testing.T) {
 	h := newHarness(t)
 	h.acceptAsHTTP("acct-alice", "alice@example.com")
@@ -142,10 +130,7 @@ func TestTheEligibilityReadAnswersEveryStateWithoutLeakingTheInvitation(t *testi
 	}
 }
 
-// TestTheEligibilityReadChargesTheProbeBudget holds that the guarded read spends
-// the same per-token probe budget as the public one, so an authenticated account
-// cannot walk tokens faster than an anonymous visitor, and the refusal comes
-// before the token is looked up.
+// TestTheEligibilityReadChargesTheProbeBudget checks that the guarded read spends the same per-token probe budget as the public one.
 func TestTheEligibilityReadChargesTheProbeBudget(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(probeTokenPath, 1)

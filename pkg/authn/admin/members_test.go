@@ -12,10 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheMemberViewCarriesTheAccountDisplayName holds that a member row carries
-// the account's display name, and the empty string when the account has none.
-// The member read is the only identity source of the workspace administration
-// face, which does not read the platform account surface.
+// TestTheMemberViewCarriesTheAccountDisplayName checks that a member row carries the account's display name or the empty string.
 func TestTheMemberViewCarriesTheAccountDisplayName(t *testing.T) {
 	r := newRig(t)
 	r.accounts.put(userID, authn.Account{
@@ -26,8 +23,6 @@ func TestTheMemberViewCarriesTheAccountDisplayName(t *testing.T) {
 	r.members.put(authn.Membership{
 		Account: noName, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin,
 	})
-	// A membership row whose account is gone by the time the page resolves the
-	// name: the row still answers, with the empty name.
 	gone := authn.AccountID("member-without-account")
 	r.members.put(authn.Membership{
 		Account: gone, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin,
@@ -60,19 +55,12 @@ func TestTheMemberViewCarriesTheAccountDisplayName(t *testing.T) {
 	}
 }
 
-// TestTheMemberViewCarriesTheAccountUsername holds that a member row carries the
-// account's login username, found among the identifiers by kind and never by
-// position, and the empty string when the account carries none. An account
-// whose only identifier is an email has no username: an email is never a
-// stand-in. The username is the user-facing name the workspace surface shows, so
-// it must never be the account identifier.
+// TestTheMemberViewCarriesTheAccountUsername checks that a member row carries the account's username by kind, or the empty string.
 func TestTheMemberViewCarriesTheAccountUsername(t *testing.T) {
 	r := newRig(t)
 	r.accounts.put(userID, authn.Account{
 		Kind: authn.KindUser, Status: authn.StatusActive, DisplayName: "Ada Lovelace",
 	})
-	// The email is written first, so an implementation that names the account by
-	// identifiers[0] answers the email instead of the username.
 	r.accounts.putIdentifiers(userID,
 		authn.Identifier{Kind: authn.IdentifierEmail, Value: "ada@example.com"},
 		authn.Identifier{Kind: authn.IdentifierUsername, Value: "ada"},
@@ -87,8 +75,6 @@ func TestTheMemberViewCarriesTheAccountUsername(t *testing.T) {
 	r.members.put(authn.Membership{
 		Account: emailOnly, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin,
 	})
-	// A membership row whose account is gone: no identifier entry, so no
-	// username, and the row still answers.
 	gone := authn.AccountID("member-without-account")
 	r.members.put(authn.Membership{
 		Account: gone, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin,
@@ -112,13 +98,13 @@ func TestTheMemberViewCarriesTheAccountUsername(t *testing.T) {
 	if got := fmt.Sprint(byAccount[string(gone)]["username"]); got != "" {
 		t.Errorf("the member %q carries username %q, want the empty string", gone, got)
 	}
-	// The account identifier is never what a row names the account by.
+
 	for account, member := range byAccount {
 		if fmt.Sprint(member["username"]) == account {
 			t.Errorf("the member %q carries its own account identifier as username", account)
 		}
 	}
-	// The whole page costs one batch read, not one read per row.
+
 	if got := r.accounts.identifierBatchCalls(); got != 1 {
 		t.Errorf("the member page made %d batch identifier reads, want one", got)
 	}
@@ -127,9 +113,7 @@ func TestTheMemberViewCarriesTheAccountUsername(t *testing.T) {
 	}
 }
 
-// TestTheMemberListWhoseIdentifierReadFailsIs503 holds the failure direction: a
-// page whose usernames could not be read is an outage, never an empty username
-// presented as resolved.
+// TestTheMemberListWhoseIdentifierReadFailsIs503 checks that a page whose usernames cannot be read is a 503, not empty usernames.
 func TestTheMemberListWhoseIdentifierReadFailsIs503(t *testing.T) {
 	r := newRig(t)
 	r.accounts.failIdentifiers(errors.New("the identifier store is down"))
@@ -142,11 +126,7 @@ func TestTheMemberListWhoseIdentifierReadFailsIs503(t *testing.T) {
 	}
 }
 
-// TestTheMemberListRefusesANonUTF8Query holds that the query parameter is
-// text: a byte sequence that is not valid UTF-8 is a 400 and the membership
-// read is never made, rather than a filter the read hands to the database,
-// which rejects it and answers an outage instead of the shape error the caller
-// caused.
+// TestTheMemberListRefusesANonUTF8Query checks that a query that is not valid UTF-8 is a 400 before the membership read.
 func TestTheMemberListRefusesANonUTF8Query(t *testing.T) {
 	r := newRig(t)
 	for _, q := range []string{"?query=%BF", "?query=caf%C3", "?query=%FF%FE"} {
@@ -159,7 +139,6 @@ func TestTheMemberListRefusesANonUTF8Query(t *testing.T) {
 		t.Errorf("the member read ran %d time(s) on a non-UTF-8 query, want no read", r.members.listCalls)
 	}
 
-	// A query that is valid UTF-8 text reaches the read as written.
 	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members?query=Ada", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a valid query: status = %d, want 200: %s", rec.Code, rec.Body.String())
@@ -169,9 +148,7 @@ func TestTheMemberListRefusesANonUTF8Query(t *testing.T) {
 	}
 }
 
-// TestTheMemberListHandsTheQueryToTheMembershipRead holds that the list route
-// parses its optional query parameter and hands it to the membership read. The
-// member picker of the workspace surface drives this read.
+// TestTheMemberListHandsTheQueryToTheMembershipRead holds that the list route parses its optional query parameter and hands it to the membership read.
 func TestTheMemberListHandsTheQueryToTheMembershipRead(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members?query=Ada", nil, fresh()...)
@@ -183,15 +160,11 @@ func TestTheMemberListHandsTheQueryToTheMembershipRead(t *testing.T) {
 	}
 }
 
-// memberPage is one member listing as the wire carries it, read as a map so that
-// a case about a field the view does not carry yet fails on the answer rather
-// than on the package not compiling.
 type memberPage struct {
 	body    map[string]any
 	members []map[string]any
 }
 
-// readMemberPage decodes a member listing into its members and the page envelope.
 func readMemberPage(t *testing.T, body []byte) memberPage {
 	t.Helper()
 	var doc map[string]any
@@ -213,7 +186,6 @@ func readMemberPage(t *testing.T, body []byte) memberPage {
 	return memberPage{body: doc, members: members}
 }
 
-// memberByAccount finds one member row in a page.
 func (p memberPage) memberByAccount(t *testing.T, account string) map[string]any {
 	t.Helper()
 	for _, member := range p.members {
@@ -225,10 +197,7 @@ func (p memberPage) memberByAccount(t *testing.T, account string) map[string]any
 	return nil
 }
 
-// TestTheMemberViewCarriesRolesAndJoinedAt holds that a member row tells the
-// administration face which roles the account holds and when it joined. The
-// roles are the tenant's role names in ascending order and always an array; the
-// join instant is the membership's creation instant in UTC.
+// TestTheMemberViewCarriesRolesAndJoinedAt holds that a member row tells the administration face which roles the account holds and when it joined.
 func TestTheMemberViewCarriesRolesAndJoinedAt(t *testing.T) {
 	r := newRig(t)
 	joined := time.Date(2025, 3, 4, 5, 6, 7, 0, time.UTC)
@@ -261,11 +230,7 @@ func TestTheMemberViewCarriesRolesAndJoinedAt(t *testing.T) {
 	}
 }
 
-// TestTheMemberViewCarriesNoOwnerField holds the boundary on the owner
-// exposure: the platform tenant detail and the tenant profile view name the
-// organization's owner, and the member list does not. A member row is read by
-// anyone holding membership.manage and carries the membership's own facts, so
-// no spelling of the owner reaches it.
+// TestTheMemberViewCarriesNoOwnerField checks that the member list exposes no organization-owner field.
 func TestTheMemberViewCarriesNoOwnerField(t *testing.T) {
 	r := newRig(t)
 	r.members.put(authn.Membership{Account: userID, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin})
@@ -282,8 +247,7 @@ func TestTheMemberViewCarriesNoOwnerField(t *testing.T) {
 	}
 }
 
-// TestTheMemberListAnswersANextCursor holds the page envelope: a full page names
-// the cursor of the next one, and the last page names none.
+// TestTheMemberListAnswersANextCursor holds the page envelope: a full page names the cursor of the next one, and the last page names none.
 func TestTheMemberListAnswersANextCursor(t *testing.T) {
 	r := newRig(t)
 	for _, id := range []authn.AccountID{"member-a", "member-b", "member-c"} {
@@ -319,10 +283,7 @@ func TestTheMemberListAnswersANextCursor(t *testing.T) {
 	}
 }
 
-// TestTheMemberListProbesForAnotherPageAtTheMaximumSize holds the second probe
-// the page needs at the store's ceiling: the read cannot ask for one row more
-// than the maximum, so a full page is asked again for a single row past its last
-// account.
+// TestTheMemberListProbesForAnotherPageAtTheMaximumSize checks that a full page at the store's ceiling probes for one more row.
 func TestTheMemberListProbesForAnotherPageAtTheMaximumSize(t *testing.T) {
 	r := newRig(t)
 	for i := 0; i <= authn.MaxPageLimit; i++ {
@@ -346,9 +307,7 @@ func TestTheMemberListProbesForAnotherPageAtTheMaximumSize(t *testing.T) {
 	}
 }
 
-// TestTheMemberListNamesNoCursorOnTheLastFullPage holds the other side of the
-// probe: a page that fills the ceiling exactly and has nothing after it names no
-// cursor, so a client stops instead of asking for an empty page.
+// TestTheMemberListNamesNoCursorOnTheLastFullPage checks that a full last page names no cursor.
 func TestTheMemberListNamesNoCursorOnTheLastFullPage(t *testing.T) {
 	r := newRig(t)
 	for i := 0; i < authn.MaxPageLimit; i++ {
@@ -366,11 +325,7 @@ func TestTheMemberListNamesNoCursorOnTheLastFullPage(t *testing.T) {
 	}
 }
 
-// TestTheMemberWriteRefusesSuspendingTheCaller holds the rule that an
-// administrator cannot suspend their own membership: a tenant with at least one
-// active administrator stays governable, while another administrator may suspend
-// or remove them. The refusal is a 409 of this capability's own code and no
-// membership write is made.
+// TestTheMemberWriteRefusesSuspendingTheCaller checks that an administrator cannot suspend their own membership.
 func TestTheMemberWriteRefusesSuspendingTheCaller(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/"+string(adminID),
@@ -386,8 +341,7 @@ func TestTheMemberWriteRefusesSuspendingTheCaller(t *testing.T) {
 	}
 }
 
-// TestTheMemberWriteSuspendsAnotherMember holds that the refusal is about the
-// caller alone: suspending somebody else still writes the membership.
+// TestTheMemberWriteSuspendsAnotherMember holds that the refusal is about the caller alone: suspending somebody else still writes the membership.
 func TestTheMemberWriteSuspendsAnotherMember(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodPut, "/api/v1/tenants/"+tenantA+"/members/"+string(userID),
@@ -400,9 +354,7 @@ func TestTheMemberWriteSuspendsAnotherMember(t *testing.T) {
 	}
 }
 
-// TestTheMemberListReadsTheMembersRolesInOneBulkCall holds the seam's shape: one
-// call answers the whole page, and the view sorts the names ascending even when
-// an implementation answers another order.
+// TestTheMemberListReadsTheMembersRolesInOneBulkCall checks that one bulk role read answers the page, sorted ascending.
 func TestTheMemberListReadsTheMembersRolesInOneBulkCall(t *testing.T) {
 	r := newRig(t)
 	r.roles.roles = map[authn.AccountID][]string{userID: {"zulu", "alpha"}}
@@ -428,9 +380,7 @@ func TestTheMemberListReadsTheMembersRolesInOneBulkCall(t *testing.T) {
 	}
 }
 
-// TestTheMemberListAnswersWithoutRolesWhenTheSeamIsAbsent holds the optional
-// dependency: an assembly with no role reader still lists members, with empty
-// role arrays.
+// TestTheMemberListAnswersWithoutRolesWhenTheSeamIsAbsent checks that an assembly with no role reader lists members with empty role arrays.
 func TestTheMemberListAnswersWithoutRolesWhenTheSeamIsAbsent(t *testing.T) {
 	r := newRig(t, noMemberRoles)
 	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
@@ -444,8 +394,7 @@ func TestTheMemberListAnswersWithoutRolesWhenTheSeamIsAbsent(t *testing.T) {
 	}
 }
 
-// TestTheMemberListDegradesWhenTheRoleReadFails holds the failure direction: a
-// policy store that cannot answer costs the listing its roles, not its members.
+// TestTheMemberListDegradesWhenTheRoleReadFails holds the failure direction: a policy store that cannot answer costs the listing its roles, not its members.
 func TestTheMemberListDegradesWhenTheRoleReadFails(t *testing.T) {
 	r := newRig(t)
 	r.roles.err = errors.New("the policy store is down")
@@ -463,8 +412,6 @@ func TestTheMemberListDegradesWhenTheRoleReadFails(t *testing.T) {
 	}
 }
 
-// pageAccounts returns the account identifiers one member page carries, in the
-// order the page lists them.
 func pageAccounts(p memberPage) []string {
 	out := make([]string, 0, len(p.members))
 	for _, member := range p.members {
@@ -473,10 +420,7 @@ func pageAccounts(p memberPage) []string {
 	return out
 }
 
-// TestTheMemberListFiltersByRoleExactly holds the role filter's matching rule:
-// the role name is compared exactly, an empty role selects every member, and a
-// role no binding uses selects nobody without failing. The last is deliberate:
-// a 400 for an unknown role would tell a caller which role names exist.
+// TestTheMemberListFiltersByRoleExactly checks the role filter's exact match, its empty value and an unknown role.
 func TestTheMemberListFiltersByRoleExactly(t *testing.T) {
 	r := newRig(t)
 	for _, id := range []authn.AccountID{"member-a", "member-b", "member-c", "member-d"} {
@@ -501,8 +445,6 @@ func TestTheMemberListFiltersByRoleExactly(t *testing.T) {
 		t.Errorf("the page names next_cursor %q, want none", got)
 	}
 
-	// A prefix of a role name matches no role: "admi" is not "admin", and
-	// "administrators" is a different role.
 	for _, role := range []string{"admi", "administrator"} {
 		rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role="+role, nil, fresh()...)
 		if rec.Code != http.StatusOK {
@@ -513,7 +455,6 @@ func TestTheMemberListFiltersByRoleExactly(t *testing.T) {
 		}
 	}
 
-	// A role no binding uses is an empty page, not a refusal.
 	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role=no-such-role", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("an unknown role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
@@ -526,7 +467,6 @@ func TestTheMemberListFiltersByRoleExactly(t *testing.T) {
 		t.Errorf("an unknown role's answer carries members = %T, want an array", page.body["members"])
 	}
 
-	// An empty role is no filter, exactly like an absent one.
 	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/members?role=", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("an empty role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
@@ -537,10 +477,7 @@ func TestTheMemberListFiltersByRoleExactly(t *testing.T) {
 	}
 }
 
-// TestTheMemberListPagesThroughRoleMatches holds the cursor rule under a role
-// filter: the cursor is the last matching account on the page, and walking the
-// pages reaches every match once, even across pages where most rows do not
-// match.
+// TestTheMemberListPagesThroughRoleMatches checks that walking a role-filtered list reaches every match once.
 func TestTheMemberListPagesThroughRoleMatches(t *testing.T) {
 	r := newRig(t)
 	admins := map[authn.AccountID]bool{}
@@ -596,9 +533,7 @@ func TestTheMemberListPagesThroughRoleMatches(t *testing.T) {
 	}
 }
 
-// TestTheMemberListCombinesTheRoleFilterWithTheQuery holds that the two
-// narrowing rules compose: the role filter runs on the members the query
-// selects, and every membership read of the walk still carries the query.
+// TestTheMemberListCombinesTheRoleFilterWithTheQuery checks that the role filter and the text query compose.
 func TestTheMemberListCombinesTheRoleFilterWithTheQuery(t *testing.T) {
 	r := newRig(t)
 	for _, id := range []authn.AccountID{"member-a", "member-b"} {
@@ -629,10 +564,7 @@ func TestTheMemberListCombinesTheRoleFilterWithTheQuery(t *testing.T) {
 	}
 }
 
-// TestTheMemberListRefusesARoleFilterWithoutTheSeam holds the required
-// dependency: a role filter cannot run without a role reader, and an assembly
-// that lacks one answers 503 instead of an empty page, which would read as "the
-// role has no members".
+// TestTheMemberListRefusesARoleFilterWithoutTheSeam checks that a role filter without a role reader is a 503.
 func TestTheMemberListRefusesARoleFilterWithoutTheSeam(t *testing.T) {
 	r := newRig(t, noMemberRoles)
 
@@ -644,16 +576,13 @@ func TestTheMemberListRefusesARoleFilterWithoutTheSeam(t *testing.T) {
 		t.Errorf("the refusal %q carries a members view, want none", rec.Body.String())
 	}
 
-	// Without a role filter the same assembly still lists members.
 	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("listing members without a role: status = %d, want 200; body %s", rec.Code, rec.Body.String())
 	}
 }
 
-// TestTheMemberListRefusesARoleFilterWhenTheRoleReadFails holds the other
-// direction of the required dependency: a role read that fails refuses the
-// filter rather than answering every member or an empty page.
+// TestTheMemberListRefusesARoleFilterWhenTheRoleReadFails checks that a failing role read refuses the filter with a 503.
 func TestTheMemberListRefusesARoleFilterWhenTheRoleReadFails(t *testing.T) {
 	r := newRig(t)
 	r.roles.err = errors.New("the policy store is down")
@@ -666,8 +595,6 @@ func TestTheMemberListRefusesARoleFilterWhenTheRoleReadFails(t *testing.T) {
 		t.Errorf("the refusal %q carries a members view, want none", rec.Body.String())
 	}
 
-	// The role-less listing keeps the degradation rule: the members are listed
-	// without their roles.
 	rec = r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("listing members without a role: status = %d, want 200; body %s", rec.Code, rec.Body.String())

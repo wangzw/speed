@@ -11,71 +11,25 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// VerifiedViaInvite is the channel an invitation leaves on a row. It is a known
-// value of the account capability's closed set, but it is not a proof of the
-// invited address: the token was delivered to the address and presented by its
-// holder, which grants the membership the invitation names and says nothing about
-// who owns the address. An account that accepts must prove the invited address
-// through an ordinary proving channel first.
+// VerifiedViaInvite is the verification channel an invitation leaves on a row.
+// It is a member of the account capability's closed set but does not prove the
+// invited address; acceptance requires an ordinary proving channel.
 const VerifiedViaInvite = "invite"
 
-// maxClaimAttempts bounds how many times Accept re-reads and re-attempts the
-// conditional write before giving up on contention. A failed claim is the only
-// retried outcome: every write of the acceptance shares one transaction, so a
-// write that fails rolls the claim back with it.
 const maxClaimAttempts = 3
 
-// The two control-flow outcomes of one redemption attempt. Neither reaches a
-// caller: the claim losing its race makes Accept re-read and try again, and a
-// join the store refuses is answered as the inactive membership it stands for
-// after the transaction has rolled back.
 var (
 	errClaimLost   = errors.New("invite: the conditional claim matched no live row")
 	errJoinRefused = errors.New("invite: the membership write refused the join")
 )
 
-// membershipWriterTx is the part of the account module's transaction-aware
-// membership surface an acceptance joins: the read that holds the account's row
-// and the conditional join. The account module delivers the whole
-// provisioning.MembershipWriter, which this narrower interface is satisfied by;
-// the acceptance takes only what it writes.
 type membershipWriterTx interface {
 	MembershipTx(ctx context.Context, tx *gorm.DB, tenant string, account authn.AccountID) (authn.Membership, bool, error)
 	PutJoiningTx(ctx context.Context, tx *gorm.DB, m authn.Membership, wasActive bool) (bool, func(context.Context) error, error)
 }
 
-// Accept redeems an invitation with its token.
-//
-// The caller must be authenticated: the token grants a membership, and the
-// requesting account is the one the membership is written for. The account must
-// be a user account: a service account signs in with a service secret and has
-// no acceptable membership, and a subject with no account row has no account to
-// grant it to, so both are refused with ErrInvitationTargetInvalid before the
-// token is read. The holder of the token alone is not enough — the inviter holds
-// it too — so the caller must also hold the invited address as a proven email
-// identifier. An account without that proof is refused with
-// ErrInvitationEmailUnproved so the client can show the proof step; acceptance
-// never creates an account and never makes the invited address a sign-in
-// identifier.
-//
-// The acceptance is one transaction: the row is won with a conditional write
-// that includes the presented digest, the membership is written through the
-// account module's transaction-aware join, and the role the invitation carries
-// is bound through the policy module's transaction-aware write. Any of the three
-// failing rolls all three back, so the invitation stays pending and neither the
-// membership nor the binding is written. The transaction is what makes the
-// invitation's acceptance and the membership it grants one fact.
-//
-// Everything that judges rather than writes runs before the transaction opens.
-// The role review is the reason: it reads the policy tables through the policy
-// module, and a read that took a second connection could wait on the transaction
-// forever where the database has one writer.
-//
-// A membership that already exists keeps its source and its SSO exemption: an
-// acceptance adds a member, it does not rewrite how the member came to be one,
-// and it still binds the invitation's role. A membership that is suspended is
-// refused with ErrInvitationMembershipInactive and the invitation is revoked, so
-// a suspended member cannot use a live token.
+// Accept redeems an invitation with its token. The caller must be
+// authenticated; the membership is written for the caller's account.
 func (p *product) Accept(ctx context.Context, in AcceptInvite) (Accepted, error) {
 	caller, ok := authn.FromContext(ctx)
 	if !ok {
@@ -93,9 +47,6 @@ func (p *product) Accept(ctx context.Context, in AcceptInvite) (Accepted, error)
 	auditedID := ""
 	actionID := ""
 	succeeded := false
-	// A mandatory row written for an attempt that then failed is closed with a
-	// failed row sharing its action identifier. The row is written once, before
-	// the first transaction; a retry does not write another.
 	defer func() {
 		if actionID != "" && !succeeded {
 			p.acceptFailed(ctx, auditedID, actionID)
@@ -132,8 +83,6 @@ func (p *product) Accept(ctx context.Context, in AcceptInvite) (Accepted, error)
 		accepted, after, redeemErr := p.redeem(ctx, caller, row, digest, now)
 		switch {
 		case errors.Is(redeemErr, errClaimLost):
-			// Another acceptance or a resend changed the row between the read
-			// and the claim. Re-read and judge it again.
 			continue
 		case errors.Is(redeemErr, errJoinRefused):
 			p.revokePending(ctx, row, authn.ReasonInvitationMembershipInactive)
@@ -148,9 +97,6 @@ func (p *product) Accept(ctx context.Context, in AcceptInvite) (Accepted, error)
 	return Accepted{}, failed("redeeming an invitation", authn.ErrUnavailable)
 }
 
-// redeem runs one acceptance's write transaction. The claim, the membership
-// write and the role binding commit together or not at all; the returned
-// closures are the work the two module writes owe after that commit.
 func (p *product) redeem(ctx context.Context, caller authn.Identity, row invitationRow, digest string, now time.Time) (Accepted, []func(context.Context) error, error) {
 	if p.membershipWriter == nil {
 		return Accepted{}, nil, fmt.Errorf("%w: accepting an invitation needs the transaction-aware "+
@@ -208,13 +154,6 @@ func (p *product) redeem(ctx context.Context, caller authn.Identity, row invitat
 	return accepted, after, nil
 }
 
-// acceptAudit writes the acceptance's mandatory audit row and answers the action
-// identifier its failed row would share. It runs after every refusal that is
-// about the invitation or the caller and before the transaction, so a refused
-// acceptance leaves no success row, and a row that cannot land means the
-// acceptance does not happen. The detail names the tenant, the role when the
-// invitation carries one, and the inviter; the object is the invitation
-// identifier.
 func (p *product) acceptAudit(ctx context.Context, row invitationRow) (string, error) {
 	tenantName, err := p.nameOf(ctx, row.TenantID)
 	if err != nil {
@@ -235,9 +174,6 @@ func (p *product) acceptAudit(ctx context.Context, row invitationRow) (string, e
 	return actionID, nil
 }
 
-// acceptFailed closes a success audit row an attempt did not live up to: the
-// attempt wrote its mandatory row and then lost the race or failed its write.
-// With no action identifier there is no row to close, and nothing is written.
 func (p *product) acceptFailed(ctx context.Context, invitationID, actionID string) {
 	if actionID == "" {
 		return
@@ -245,8 +181,6 @@ func (p *product) acceptFailed(ctx context.Context, invitationID, actionID strin
 	p.auditBestEffort(ctx, failedAudit(actionAccept, invitationID, actionID))
 }
 
-// runAfter runs the closures the transaction-aware writes returned, once the
-// acceptance's transaction has committed.
 func (p *product) runAfter(ctx context.Context, after []func(context.Context) error) {
 	for _, fn := range after {
 		if fn == nil {
@@ -259,11 +193,6 @@ func (p *product) runAfter(ctx context.Context, after []func(context.Context) er
 	}
 }
 
-// refuseUnservedTenant refuses an acceptance into a tenant that is deleted or
-// disabled. A deleted tenant's row is revoked here in case the deletion path's
-// cleanup did not reach it; a disabled tenant's invitation is left pending, so
-// enabling the tenant makes the same token redeemable again. An assembly with
-// no tenant state resolver has no such state to judge and accepts.
 func (p *product) refuseUnservedTenant(ctx context.Context, row invitationRow) error {
 	if p.tenantState == nil {
 		return nil
@@ -283,14 +212,6 @@ func (p *product) refuseUnservedTenant(ctx context.Context, row invitationRow) e
 	}
 }
 
-// requireUserCaller refuses an acceptance attempted by anything other than a
-// user account. An invitation grants a membership to a person; a service
-// account signs in with a service secret and has no acceptable membership, and
-// a subject with no account row — a static password-table subject — has no
-// account to grant it to. Both are refused as an invalid acceptance target (403
-// invitation-target-invalid), not as an unauthenticated request: the caller is
-// authenticated, and a 401 would make a client refresh and retry a permanent
-// refusal. A read that fails is the judgement being unavailable, never a pass.
 func (p *product) requireUserCaller(ctx context.Context, caller authn.Identity) error {
 	account, err := p.accounts.Get(ctx, caller.Account())
 	switch {
@@ -305,10 +226,6 @@ func (p *product) requireUserCaller(ctx context.Context, caller authn.Identity) 
 	return nil
 }
 
-// requireProvenInvitedEmail refuses a caller who does not hold the invited
-// address as a proven email identifier. It is the acceptance's use of the same
-// question the eligibility read answers: the invitation stays pending, and the
-// client shows the proof step.
 func (p *product) requireProvenInvitedEmail(ctx context.Context, id authn.AccountID, email string) error {
 	proved, err := p.provesInvitedEmail(ctx, id, email)
 	if err != nil {
@@ -320,12 +237,6 @@ func (p *product) requireProvenInvitedEmail(ctx context.Context, id authn.Accoun
 	return nil
 }
 
-// provesInvitedEmail reports whether the account holds the invited address as a
-// proven email identifier. Both values are normalized, so equality is the
-// comparison. An account that does not exist, or that holds the address only
-// through an unproved channel or through an invitation, is not a holder: the
-// caller must prove the address first. A read failure is not a refusal and is
-// left to the caller as unavailable.
 func (p *product) provesInvitedEmail(ctx context.Context, id authn.AccountID, email string) (bool, error) {
 	identifiers, err := p.accounts.Identifiers(ctx, id)
 	if err != nil {
@@ -345,9 +256,6 @@ func (p *product) provesInvitedEmail(ctx context.Context, id authn.AccountID, em
 	return false, nil
 }
 
-// acceptedMembership is the membership an acceptance stands for. A membership
-// that already exists keeps its source and its SSO exemption: an acceptance adds
-// a member, it does not rewrite how the member came to be one.
 func acceptedMembership(id authn.AccountID, tenant string, existing authn.Membership, exists bool) authn.Membership {
 	mem := authn.Membership{Account: id, Tenant: tenant, Active: true, Source: SourceInvite}
 	if exists {
@@ -357,12 +265,6 @@ func acceptedMembership(id authn.AccountID, tenant string, existing authn.Member
 	return mem
 }
 
-// terminalState reports a row that cannot be redeemed, or nil for a pending one
-// that is neither expired nor superseded. The order follows the design: a
-// terminal state is told first, and a superseded row and expiry are judged last,
-// from the stored record and the clock. A superseded row reads expired even
-// while its own deadline is ahead, because a later invitation took the live
-// slot; the writes that share this judgement answer it the same way.
 func terminalState(row invitationRow, now time.Time) error {
 	switch row.Status {
 	case statusAccepted:
@@ -376,14 +278,6 @@ func terminalState(row invitationRow, now time.Time) error {
 	return nil
 }
 
-// claim is the conditional write that wins a pending invitation: the row is
-// flipped to accepted only while it is still pending, not expired, not
-// superseded by a later invitation and still carries the digest of the token
-// presented. The digest is part of the condition because a resend issued while
-// the acceptance was in flight replaces the token: the old token no longer
-// resolves, and the stale acceptance must not redeem the row the resend just
-// refreshed. A superseded row is never a live slot, so the condition excludes it
-// even when its deadline is still ahead. RowsAffected of one is the win.
 func (p *product) claim(tx *gorm.DB, id, digest string, now time.Time) (bool, error) {
 	res := tx.Model(&invitationRow{}).
 		Where("id = ? AND token_digest = ? AND status = ? AND expires_at > ? AND superseded_at IS NULL",
@@ -395,24 +289,6 @@ func (p *product) claim(tx *gorm.DB, id, digest string, now time.Time) (bool, er
 	return res.RowsAffected == 1, nil
 }
 
-// revokePending revokes one pending invitation that has not expired. It is the
-// settlement of an invitation a suspended member can no longer redeem, of one
-// whose tenant is gone and of one whose role can no longer be granted: the
-// token is void from here on and a retry answers the same terminal state. The
-// write is conditional on the row still being pending and live, so a row that
-// expired between the terminal check and the settlement keeps reading expired
-// rather than becoming revoked. Its own failure is an Error line that changes
-// nothing about the answer handed back.
-//
-// A revocation that actually changed the row leaves one best-effort revoke
-// audit row, so a token that was withdrawn without an administrator asking for
-// it is still traceable. The row carries the reason class that made the
-// acceptance settle it, drawn from the closed set; its actor is the account
-// attempting the acceptance, the request the revocation happened in, not the
-// invitation's issuer. The row is best effort because the refusal it settles is
-// the answer the caller needs; an audit store that is down must not turn it
-// into a different failure. A tenant name that cannot be read does not suppress
-// the row: the tenant identifier stands in for the name.
 func (p *product) revokePending(ctx context.Context, row invitationRow, reason string) {
 	now := p.at()
 	res := p.conn(ctx).Model(&invitationRow{}).
@@ -428,9 +304,6 @@ func (p *product) revokePending(ctx context.Context, row invitationRow, reason s
 	}
 	tenantName, err := p.nameOf(ctx, row.TenantID)
 	if err != nil {
-		// The settlement's audit row does not depend on the name read: a
-		// revocation the acceptance performed is traceable even when the
-		// tenant cannot be named, so the identifier stands in for the name.
 		tenantName = row.TenantID
 	}
 	p.auditBestEffort(ctx, mandatory(actionRevoke, row.ID, map[string]string{

@@ -23,7 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The identifiers and tenants a case starts from.
 const (
 	adminID    = authn.AccountID("acct-admin")
 	userID     = authn.AccountID("acct-user")
@@ -37,7 +36,6 @@ const (
 	identifier = "identifier-1"
 )
 
-// logBuffer collects what the module logs.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -59,7 +57,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail.
 type recordingAudit struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -81,7 +78,6 @@ func (a *recordingAudit) entries() []audit.Entry {
 
 func (a *recordingAudit) fails(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
 
-// fakeDecider answers what a case scripts and counts its calls.
 type fakeDecider struct {
 	mu    sync.Mutex
 	allow bool
@@ -107,32 +103,23 @@ func (d *fakeDecider) last() (authn.Decision, bool) {
 	return d.calls[len(d.calls)-1], true
 }
 
-// fakeAccounts is the account read surface.
 type fakeAccounts struct {
 	authn.Accounts
-	mu              sync.Mutex
-	accounts        map[authn.AccountID]authn.Account
-	order           []authn.AccountID
-	secrets         map[authn.AccountID][]authn.ServiceSecretInfo
-	identifiers     map[authn.AccountID][]authn.Identifier
-	listErr         error
-	secretErr       error
-	identifierErr   error
-	listCalls       int
-	secretCalls     int
-	identifierCalls int
-	// identifierBatches counts the batch identifier reads, so a case can hold
-	// that one page costs one read rather than one per row.
+	mu                sync.Mutex
+	accounts          map[authn.AccountID]authn.Account
+	order             []authn.AccountID
+	secrets           map[authn.AccountID][]authn.ServiceSecretInfo
+	identifiers       map[authn.AccountID][]authn.Identifier
+	listErr           error
+	secretErr         error
+	identifierErr     error
+	listCalls         int
+	secretCalls       int
+	identifierCalls   int
 	identifierBatches int
-	// identifierReads counts the identifier reads per account, so a case can
-	// hold that a tombstone's identifiers are never read.
-	identifierReads map[authn.AccountID]int
-	// vanished holds accounts the page read still returns but whose identifier
-	// read reports gone, modelling a delete between the two reads.
-	vanished map[authn.AccountID]bool
-	// lastQuery is the query the most recent List was handed, so a case can hold
-	// what the handler parsed out of the request.
-	lastQuery authn.AccountQuery
+	identifierReads   map[authn.AccountID]int
+	vanished          map[authn.AccountID]bool
+	lastQuery         authn.AccountQuery
 }
 
 func newAccounts() *fakeAccounts {
@@ -145,8 +132,6 @@ func newAccounts() *fakeAccounts {
 	}
 }
 
-// putIdentifiers binds identifiers to an account, in the order given, so a case
-// can hold the order the view sorts into against an order that differs.
 func (a *fakeAccounts) putIdentifiers(id authn.AccountID, identifiers ...authn.Identifier) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -161,9 +146,6 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 	if a.identifierErr != nil {
 		return nil, a.identifierErr
 	}
-	// The store reports a missing account and a tombstone as
-	// authn.ErrAccountNotFound; the fake holds the same contract so a case can
-	// exercise a read the real capability would refuse.
 	acct, ok := a.accounts[id]
 	if !ok || acct.Status == authn.StatusDeleted || a.vanished[id] {
 		return nil, authn.ErrAccountNotFound
@@ -171,9 +153,6 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 	return append([]authn.Identifier(nil), a.identifiers[id]...), nil
 }
 
-// IdentifiersMany answers the batch read, omitting an unknown account, a
-// tombstone and one that vanished, the same absence the single read reports as
-// authn.ErrAccountNotFound.
 func (a *fakeAccounts) IdentifiersMany(_ context.Context, ids []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -193,48 +172,36 @@ func (a *fakeAccounts) IdentifiersMany(_ context.Context, ids []authn.AccountID)
 	return out, nil
 }
 
-// failIdentifiers makes every identifier read fail, so a case can hold what a
-// page does when the store does not answer.
 func (a *fakeAccounts) failIdentifiers(err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.identifierErr = err
 }
 
-// identifierBatchCalls reports how many times the batch identifier read ran.
 func (a *fakeAccounts) identifierBatchCalls() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.identifierBatches
 }
 
-// identifierSingleCalls reports how many times the per-account identifier read
-// ran.
 func (a *fakeAccounts) identifierSingleCalls() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.identifierCalls
 }
 
-// vanish makes the identifier read of one account report it gone while the
-// page read still returns it, so a case can hold a delete between the two
-// reads.
 func (a *fakeAccounts) vanish(id authn.AccountID) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.vanished[id] = true
 }
 
-// identifiersRead reports how many times the identifier read ran for one
-// account.
 func (a *fakeAccounts) identifiersRead(id authn.AccountID) int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.identifierReads[id]
 }
 
-// lastList is the query the most recent List was handed, taken under the lock so
-// a case reads it without racing the handler.
 func (a *fakeAccounts) lastList() authn.AccountQuery {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -284,7 +251,6 @@ func (a *fakeAccounts) ListServiceSecrets(_ context.Context, id authn.AccountID)
 	return append([]authn.ServiceSecretInfo(nil), a.secrets[id]...), nil
 }
 
-// fakeAccountAdmin is the account write surface, counting each call.
 type fakeAccountAdmin struct {
 	authn.AccountAdmin
 	mu         sync.Mutex
@@ -297,10 +263,7 @@ type fakeAccountAdmin struct {
 	addedKind  authn.IdentifierKind
 	addedValue string
 	addedVia   authn.Verification
-	// loginWay is what HasLoginWayOtherThanPasskey answers. It defaults to true,
-	// the ordinary account, so only the cases about the lock-out guard set it
-	// false.
-	loginWay bool
+	loginWay   bool
 }
 
 func newAccountAdmin() *fakeAccountAdmin {
@@ -386,7 +349,6 @@ func (a *fakeAccountAdmin) RevokeServiceSecret(_ context.Context, _ authn.Accoun
 	return a.note("revoke-secret")
 }
 
-// fakePasswords is the password capability.
 type fakePasswords struct {
 	authn.Passwords
 	mu    sync.Mutex
@@ -403,7 +365,6 @@ func (p *fakePasswords) Set(_ context.Context, _ authn.AccountID, _ string, o au
 	return p.err
 }
 
-// fakeMemberships is the membership store.
 type fakeMemberships struct {
 	authn.Memberships
 	mu        sync.Mutex
@@ -447,8 +408,6 @@ func (f *fakeMemberships) Members(_ context.Context, tenant string, query authn.
 			out = append(out, m)
 		}
 	}
-	// The real read orders by account identifier and applies the page bounds,
-	// so a case about cursors observes the same page a request would.
 	slices.SortFunc(out, func(a, b authn.Membership) int {
 		switch {
 		case a.Account < b.Account:
@@ -487,7 +446,6 @@ func (f *fakeMemberships) Remove(_ context.Context, id authn.AccountID, tenant s
 	return nil
 }
 
-// fakeSessions is the session store.
 type fakeSessions struct {
 	authn.Sessions
 	mu          sync.Mutex
@@ -496,9 +454,7 @@ type fakeSessions struct {
 	revokedAcct int
 	listCalls   int
 	err         error
-	// revokeErr fails the revocation alone, so a case can drive an action that
-	// fails after the set it is about to end has been read.
-	revokeErr error
+	revokeErr   error
 }
 
 func newSessions() *fakeSessions {
@@ -547,10 +503,6 @@ func (s *fakeSessions) Revoke(_ context.Context, _ authn.SessionID, _ string) er
 	return nil
 }
 
-// revocable is the account's browser and token identifiers, the set the real
-// RevocableSessions hands out and RevokeAccount ends. Service sessions are not
-// in it, and neither read nor write looks at a row's deadline: the statement
-// selects on revoked_at alone.
 func (s *fakeSessions) revocable(account authn.AccountID) []authn.SessionID {
 	var out []authn.SessionID
 	for _, info := range s.infos {
@@ -584,7 +536,6 @@ func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID,
 	return s.revocable(account), nil
 }
 
-// fakeMFA is the multi-factor composition.
 type fakeMFA struct {
 	authn.MFA
 	mu          sync.Mutex
@@ -618,11 +569,8 @@ func (f *fakeMFA) Seasoned(_ context.Context, _ authn.AccountID) (bool, error) {
 	return f.seasoned, nil
 }
 
-// fakeTokens stands in for the token capability, which only gates the secret
-// group.
 type fakeTokens struct{ authn.Tokens }
 
-// fakeProviders is the SSO provider register.
 type fakeProviders struct {
 	authn.SSOProviders
 	mu          sync.Mutex
@@ -651,15 +599,12 @@ func newProviders() *fakeProviders {
 	}
 }
 
-// claimDomain records one email domain a provider has claimed, verified or not,
-// so the views' domain read has something to report.
 func (f *fakeProviders) claimDomain(id string, domain authn.SSOProviderDomain) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.claims[id] = append(f.claims[id], domain)
 }
 
-// Domains answers the single-provider domain read.
 func (f *fakeProviders) Domains(_ context.Context, id string) ([]authn.SSOProviderDomain, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -670,7 +615,6 @@ func (f *fakeProviders) Domains(_ context.Context, id string) ([]authn.SSOProvid
 	return append([]authn.SSOProviderDomain{}, f.claims[id]...), nil
 }
 
-// DomainsMany answers the batch domain read the list builds from.
 func (f *fakeProviders) DomainsMany(_ context.Context, ids []string) (map[string][]authn.SSOProviderDomain, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -787,7 +731,6 @@ func (f *fakeProviders) ReverifyDomains(_ context.Context, _ string) error {
 	return nil
 }
 
-// fakeRefresher refreshes one protocol's metadata.
 type fakeRefresher struct {
 	protocol string
 	calls    int
@@ -800,7 +743,6 @@ func (r *fakeRefresher) Refresh(_ context.Context, id string) (authn.SSOProvider
 	return authn.SSOProvider{ID: id, Protocol: r.protocol, Tenant: tenantA, Version: 2}, nil
 }
 
-// fakeRecords is the impersonation capability read through the extended shape.
 type fakeRecords struct {
 	authn.Impersonation
 	mu        sync.Mutex
@@ -851,7 +793,6 @@ func (f *fakeRecords) Revoke(_ context.Context, _ string, _ authn.Identity, _ st
 	return nil
 }
 
-// fakeStore is the settings store.
 type fakeStore struct {
 	settings.Store
 	mu     sync.Mutex
@@ -869,7 +810,6 @@ func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// fakeMemberRoles is the policy side's bulk role read.
 type fakeMemberRoles struct {
 	mu    sync.Mutex
 	roles map[authn.AccountID][]string
@@ -890,7 +830,6 @@ func (f *fakeMemberRoles) seen() int {
 	return f.calls
 }
 
-// rig is the module with every dependency a case drives.
 type rig struct {
 	t            *testing.T
 	p            *product
@@ -912,7 +851,6 @@ type rig struct {
 	logs         *logBuffer
 }
 
-// leaveOut names a capability a rig builds without.
 type leaveOut string
 
 const (
@@ -928,8 +866,6 @@ const (
 	noMemberRoles     leaveOut = "member-roles"
 )
 
-// newRig builds the module over a mounttest Mounter with every capability
-// present. Each group the capabilities above leave out is not mounted.
 func newRig(t *testing.T, omit ...leaveOut) *rig {
 	t.Helper()
 	left := map[leaveOut]bool{}
@@ -961,19 +897,16 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 
 	logger := r.logs.logger()
 	p := &product{
-		mounter:      r.mounter,
-		accounts:     r.accounts,
-		accountAdm:   r.accountAdm,
-		verification: r.verification,
-		passwords:    r.passwords,
-		memberships:  r.members,
-		audit:        r.audit,
-		tenantNames:  identityNames{},
-		logger:       logger,
-		settings:     newReader(r.store, logger),
-		// The rig stands in for a deployment that offers the SSO management
-		// surface: its subject is the groups and their capabilities, not the
-		// configuration gate, which the module-level cases drive.
+		mounter:         r.mounter,
+		accounts:        r.accounts,
+		accountAdm:      r.accountAdm,
+		verification:    r.verification,
+		passwords:       r.passwords,
+		memberships:     r.members,
+		audit:           r.audit,
+		tenantNames:     identityNames{},
+		logger:          logger,
+		settings:        newReader(r.store, logger),
 		ssoGroupEnabled: true,
 	}
 	if !left[noSessions] {
@@ -1008,8 +941,6 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 	return r
 }
 
-// fresh builds options for an administrator whose authentication is a fresh,
-// local multi-factor one with a one-time code beside it.
 func fresh(opts ...authntest.Option) []authntest.Option {
 	return append([]authntest.Option{
 		authntest.WithAccount(adminID),
@@ -1019,8 +950,6 @@ func fresh(opts ...authntest.Option) []authntest.Option {
 	}, opts...)
 }
 
-// impersonating builds options for an administrator acting as the user inside
-// tenant A, as a verifying backend would stamp it.
 func impersonating() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(userID),
@@ -1031,8 +960,6 @@ func impersonating() []authntest.Option {
 	}
 }
 
-// do sends a request through the Mounter with the identity the options build
-// and a JSON body when one is given.
 func (r *rig) do(method, path string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	r.mounter.As(opts...)
@@ -1051,12 +978,6 @@ func (r *rig) do(method, path string, body any, opts ...authntest.Option) *httpt
 	return r.mounter.Do(req)
 }
 
-// invoke calls a handler directly, with the identity the options build and the
-// path parameters given, bypassing the gateway. It is how a case drives the
-// handler's own impersonation check, which the Mounter's gateway would answer
-// first. A nil body sends an empty JSON object, because the entry point binds
-// the operation's declared body before the handler runs; an operation that
-// declares none ignores it.
 func (r *rig) invoke(handler gin.HandlerFunc, method, target string, params gin.Params, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -1076,9 +997,6 @@ func (r *rig) invoke(handler gin.HandlerFunc, method, target string, params gin.
 	return w
 }
 
-// fakeSignupVerification reports the self-registration state a case scripts and
-// counts how often it was read. states overrides state for the accounts it
-// names, so a case can tell an unproved operator from a proved target.
 type fakeSignupVerification struct {
 	mu     sync.Mutex
 	state  authn.SignupStatus
@@ -1088,8 +1006,6 @@ type fakeSignupVerification struct {
 	reads  int
 }
 
-// SignupStateOf answers the state scripted for the account, falling back to
-// state, or the scripted failure.
 func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.AccountID) (authn.SignupStatus, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -1101,20 +1017,16 @@ func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.Accou
 	return v.state, v.err
 }
 
-// PendingAccountByContact is not part of the management surface.
 func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
 	return "", false, errors.New("admin: the pending-contact read is not part of this surface")
 }
 
-// readCount is how many state reads the fake answered.
 func (v *fakeSignupVerification) readCount() int {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.reads
 }
 
-// identityNames stands in for the roster's id-to-name seam over an assembly
-// whose fixture identifiers double as their names.
 type identityNames struct{}
 
 func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {

@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// gateRoute is one management route, with the seeds its handler needs to reach
-// the gate: an object for the routes that resolve one.
 type gateRoute struct {
 	name  string
 	write bool
@@ -19,8 +17,6 @@ type gateRoute struct {
 	req   func(r *rig) *httptest.ResponseRecorder
 }
 
-// seedObjects puts the account, session, membership, provider, record and factor
-// a case addresses into the rig.
 func seedObjects(r *rig) {
 	r.accounts.put("acct-t2", authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
 	r.sessions.put(authn.SessionInfo{ID: sessionA, Account: "acct-t2", Kind: authn.SessionBrowser})
@@ -31,8 +27,6 @@ func seedObjects(r *rig) {
 	r.records.put(authn.ImpersonationGrant{ID: grantA, Actor: adminID, Target: "acct-t2", Tenant: tenantB})
 }
 
-// managementRoutes is the module's closed route set, each naming whether it is a
-// management write and how it is driven.
 func managementRoutes() []gateRoute {
 	seed := func(r *rig) { seedObjects(r) }
 	return []gateRoute{
@@ -149,10 +143,7 @@ func managementRoutes() []gateRoute {
 	}
 }
 
-// TestAPendingRegistrationCannotWrite holds the signup gate across the whole
-// route set: every management write is refused 403 contact-required, asks no
-// Decider, calls no writing capability and writes no audit row; every read is
-// served as before.
+// TestAPendingRegistrationCannotWrite checks that every management write by a pending registration is refused contact-required without deciding, auditing or writing.
 func TestAPendingRegistrationCannotWrite(t *testing.T) {
 	for _, tc := range managementRoutes() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -196,11 +187,7 @@ func TestAPendingRegistrationCannotWrite(t *testing.T) {
 	}
 }
 
-// TestTheSignupGateIsAnsweredBeforeTheStrengthCheck holds the gate's place in
-// the pipeline the design fixes: an initiator that does not meet the route's
-// strength requirement is answered 403 contact-required, not the step-up 401.
-// The same identity with a state that is not pending gets the 401, which proves
-// it does fail the check the gate ran ahead of.
+// TestTheSignupGateIsAnsweredBeforeTheStrengthCheck checks that a pending registration is answered contact-required before the strength check.
 func TestTheSignupGateIsAnsweredBeforeTheStrengthCheck(t *testing.T) {
 	weak := fresh(authntest.WithAssurance(authn.AssuranceSingle))
 
@@ -233,12 +220,7 @@ func TestTheSignupGateIsAnsweredBeforeTheStrengthCheck(t *testing.T) {
 	})
 }
 
-// TestTheSignupGateReadsTheOperatorsOwnState holds the gate's subject when the
-// request is an impersonation: the operator's hands are on the request, so the
-// operator's unproved address is what the tenant-domain write is refused for,
-// even when the impersonated account has proved its own. Reading the effective
-// account instead would let the operator write through the target's
-// verification.
+// TestTheSignupGateReadsTheOperatorsOwnState checks that the gate reads the impersonating operator's state, not the impersonated account's.
 func TestTheSignupGateReadsTheOperatorsOwnState(t *testing.T) {
 	r := newRig(t)
 	seedObjects(r)
@@ -265,9 +247,7 @@ func TestTheSignupGateReadsTheOperatorsOwnState(t *testing.T) {
 	}
 }
 
-// TestAnUnreadableSignupStateIs503 holds the failure direction on the
-// management face: a write whose state cannot be read is unavailable, asks no
-// Decider and calls no writing capability.
+// TestAnUnreadableSignupStateIs503 checks that a write whose signup state cannot be read is a 503 that asks no Decider and writes nothing.
 func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	r := newRig(t)
 	seedObjects(r)
@@ -284,9 +264,7 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	}
 }
 
-// TestAServiceAccountAndAnUnregisteredAccountWrite holds the exemptions: a
-// service account and an account that never registered are not gated, and a
-// service account's state is not even read.
+// TestAServiceAccountAndAnUnregisteredAccountWrite checks that service accounts and never-registered accounts are not gated.
 func TestAServiceAccountAndAnUnregisteredAccountWrite(t *testing.T) {
 	t.Run("a service account", func(t *testing.T) {
 		r := newRig(t)

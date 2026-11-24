@@ -9,9 +9,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// secretViewOf builds one service secret as the management routes show it: its
-// identifier, its label, its expiry and whether it was revoked, and never the
-// secret.
 func secretViewOf(s authn.ServiceSecretInfo) AuthnAdminSecret {
 	return AuthnAdminSecret{
 		ID:        s.ID,
@@ -21,8 +18,6 @@ func secretViewOf(s authn.ServiceSecretInfo) AuthnAdminSecret {
 	}
 }
 
-// handleSecretList answers GET /admin/accounts/:id/secrets. The action is
-// account.read.
 func (m *product) handleSecretList(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -52,9 +47,6 @@ func (m *product) handleSecretList(ctx context.Context, in accountIDInput, _ *sp
 	return speedhttp.JSONReply(200, AuthnAdminSecretList{Secrets: views}), nil
 }
 
-// handleSecretCreate answers POST /admin/accounts/:id/secrets: it mints a secret
-// for a service account, handed over once and never again. The action is
-// client.manage and the actor needs a fresh local multi-factor authentication.
 func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -98,9 +90,6 @@ func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, 
 	}), nil
 }
 
-// handleSecretRevoke answers DELETE /admin/accounts/:id/secrets/:secret. The
-// action is client.manage and the actor needs a fresh local multi-factor
-// authentication.
 func (m *product) handleSecretRevoke(ctx context.Context, in secretRevokeInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {

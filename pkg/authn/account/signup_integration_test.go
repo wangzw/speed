@@ -12,9 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// postgresOnly runs a case on the PostgreSQL leg alone. A case here needs real
-// concurrent writers, which the SQLite file is not made for: several connections
-// answer a busy database where PostgreSQL arbitrates on the unique index.
+// Runs on the PostgreSQL leg alone: SQLite answers a busy database instead of arbitrating on the unique index.
 func postgresOnly(t *testing.T, run func(t *testing.T, h *harness)) {
 	t.Helper()
 	t.Run(string(db.Postgres), func(t *testing.T) {
@@ -22,10 +20,7 @@ func postgresOnly(t *testing.T, run func(t *testing.T, h *harness)) {
 	})
 }
 
-// Concurrent registrations of one username leave one account: the unique index
-// on (kind, value) is the arbiter and every other call reads the name as taken.
-// Each attempt names an address of its own, so the username is what the
-// arbitration is about.
+// Concurrent registrations of one username leave one account, the unique index on (kind, value) arbitrating.
 func TestConcurrentRegistrationsOfOneUsernameLeaveOneAccount(t *testing.T) {
 	postgresOnly(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -67,10 +62,7 @@ func TestConcurrentRegistrationsOfOneUsernameLeaveOneAccount(t *testing.T) {
 	})
 }
 
-// Concurrent registrations of one email address leave one reservation: the
-// unique index on (kind, value) is the arbiter, the winner owns the address and
-// every other call is ErrContactTaken. Each attempt names a username of its own,
-// so the address is what the arbitration is about.
+// Concurrent registrations of one email leave one reservation, the winner owning it and the rest ErrContactTaken.
 func TestConcurrentRegistrationsOfOneEmailLeaveOneAccount(t *testing.T) {
 	postgresOnly(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()

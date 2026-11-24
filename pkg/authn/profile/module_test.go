@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// standIn is a module that delivers instance for the tokens named, the way
-// another module of the directory delivers its capability exclusively.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -27,9 +25,7 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// TestTheDescriptorNamesWhatItRequiresAndDelivers holds the descriptor's shape:
-// the required capabilities, the optional ones, and that this module delivers no
-// capability of its own.
+// TestTheDescriptorNamesWhatItRequiresAndDelivers checks the descriptor's name, required and optional capabilities, and that it delivers none.
 func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.profile" {
@@ -75,7 +71,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabled holds the stance.
+// TestPrepareStatesEnabled checks that the descriptor always prepares as enabled.
 func TestPrepareStatesEnabled(t *testing.T) {
 	got, err := Module().Prepare(t.Context(), core.New())
 	if err != nil {
@@ -86,15 +82,13 @@ func TestPrepareStatesEnabled(t *testing.T) {
 	}
 }
 
-// TestImportingThePackageRegistersTheModuleWithTheProcess holds the init.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that the process registry holds authn.profile.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	if _, ok := core.ProcessRegistry.Lookup(ModuleName); !ok {
 		t.Fatalf("the process registry holds no module named %s", ModuleName)
 	}
 }
 
-// drive advances the assembly to Start through the module's descriptor with
-// every required capability present and the two optional ones the caller names.
 func drive(t *testing.T, run func(m *mounttest.Mounter), omit ...leaveOut) error {
 	t.Helper()
 	mounter := mounttest.New(t)
@@ -130,8 +124,7 @@ func drive(t *testing.T, run func(m *mounttest.Mounter), omit ...leaveOut) error
 	})
 }
 
-// TestARealRegistryMountsTheProfileRoutes holds the descriptor end to end: the
-// module mounts GET /me and PATCH /me as impersonable, both guarded.
+// TestARealRegistryMountsTheProfileRoutes checks that a real registry mounts GET and PATCH /me guarded and impersonable.
 func TestARealRegistryMountsTheProfileRoutes(t *testing.T) {
 	err := drive(t, func(m *mounttest.Mounter) {
 		get, ok := m.Registered(http.MethodGet, "/api/v1/auth/me")

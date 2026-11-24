@@ -10,26 +10,18 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 )
 
-// tableInvitations is the one table this module owns. A migration file, the
-// model below and a raw statement name it, and a change to one is a change to
-// all three.
+// tableInvitations is the one table this module owns; a migration file, the
+// model and a raw statement all name it.
 const tableInvitations = "authn_invitations"
 
-// The status column's numbers, which are InvitationStatus's.
 const (
 	statusPending  int16 = 0
 	statusAccepted int16 = 1
 	statusRevoked  int16 = 2
 )
 
-// invitationRow is one row of authn_invitations. The two time columns the
-// database module's model path would fill itself are switched off: every time
-// is written explicitly, in UTC, through internal/clock. accepted_at is NULL
-// until the invitation is accepted and revoked_at NULL until it is revoked;
-// last_sent_at is written by the issuance itself, so it is never NULL.
-// superseded_at records when a later invitation replaced this one; it never
-// reaches a client view. role is the role the invitation grants
-// beside the membership, empty for none.
+// invitationRow is one row of authn_invitations. Its two time columns are filled
+// explicitly in UTC, through internal/clock, so the gorm auto hooks are off.
 type invitationRow struct {
 	ID           string     `gorm:"column:id;primaryKey"`
 	TenantID     string     `gorm:"column:tenant_id"`
@@ -50,9 +42,6 @@ type invitationRow struct {
 
 func (invitationRow) TableName() string { return tableInvitations }
 
-// toInvitation is the view a row stands for. A NULL column stays absent, so a
-// caller reads "not accepted", "not revoked" and "never sent" as nil rather than
-// as the zero instant, which is a real moment to everything downstream.
 func toInvitation(r invitationRow) Invitation {
 	s := InvitationPending
 	switch r.Status {
@@ -78,7 +67,6 @@ func toInvitation(r invitationRow) Invitation {
 	}
 }
 
-// nullableUTC renders a nullable column in UTC, keeping NULL as absent.
 func nullableUTC(t *time.Time) *time.Time {
 	if t == nil {
 		return nil
@@ -87,12 +75,11 @@ func nullableUTC(t *time.Time) *time.Time {
 	return &at
 }
 
-// utc is a time as the database stores and compares it.
 func utc(t time.Time) time.Time { return clock.UTC(t).Truncate(time.Microsecond) }
 
-// findByDigest reads the invitation a token digest points to. The second result
-// is false when no row carries it. The lookup carries no tenant predicate: an
-// acceptor has no tenant yet, which is why token_digest is globally unique.
+// findByDigest reads the invitation a digest points to. It carries no tenant
+// predicate: an acceptor has no tenant yet, which token_digest's global
+// uniqueness makes safe.
 func (p *product) findByDigest(tx *gorm.DB, digest string) (invitationRow, bool, error) {
 	var rows []invitationRow
 	if err := tx.Where("token_digest = ?", digest).Limit(1).Find(&rows).Error; err != nil {
@@ -104,8 +91,7 @@ func (p *product) findByDigest(tx *gorm.DB, digest string) (invitationRow, bool,
 	return rows[0], true, nil
 }
 
-// findByID reads one invitation of a tenant by its identifier. The tenant is
-// part of the key, so one tenant's identifier never reaches another's row.
+// findByID reads one invitation of a tenant; the tenant is part of the key.
 func (p *product) findByID(tx *gorm.DB, tenant, id string) (invitationRow, bool, error) {
 	var rows []invitationRow
 	if err := tx.Where("tenant_id = ? AND id = ?", tenant, id).Limit(1).Find(&rows).Error; err != nil {
@@ -117,6 +103,4 @@ func (p *product) findByID(tx *gorm.DB, tenant, id string) (invitationRow, bool,
 	return rows[0], true, nil
 }
 
-// duplicate reports whether a statement was refused by a unique constraint,
-// which the database module classifies the same way on both engines.
 func duplicate(err error) bool { return errors.Is(err, gorm.ErrDuplicatedKey) }

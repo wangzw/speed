@@ -12,7 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// throttleOf reads the throttled error an issuance or probe answered with.
 func throttleOf(t *testing.T, err error) *authn.ThrottledError {
 	t.Helper()
 	var throttled *authn.ThrottledError
@@ -25,18 +24,12 @@ func throttleOf(t *testing.T, err error) *authn.ThrottledError {
 	return throttled
 }
 
-// issueAs issues an invitation over an identity so the issuer budget is spent.
 func issueAs(h *harness, account authn.AccountID, email string) (Issued, error) {
 	ctx := authntest.Context(h.t, context.Background(), authntest.WithAccount(account))
 	return h.p.Issue(ctx, IssueInvite{Tenant: tenant, Email: email})
 }
 
-// TestThePerAddressIssueBudgetAnswersThrottled holds the first send budget: one
-// invited address receives no more than its window allows, a resend counts like
-// any other issuance, and the address is folded to its canonical inbox form so a
-// plus suffix cannot multiply the allowance. Each issuance is revoked before the
-// next, because a live pending invitation is refused by the target checks before
-// the address budget is consulted.
+// TestThePerAddressIssueBudgetAnswersThrottled checks that one address is throttled after its window's allowance, a resend included, and that the canonical inbox form is counted once.
 func TestThePerAddressIssueBudgetAnswersThrottled(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 2)
@@ -57,15 +50,13 @@ func TestThePerAddressIssueBudgetAnswersThrottled(t *testing.T) {
 	} else {
 		throttleOf(t, err)
 	}
-	// Another address is a different budget and still issues.
+
 	if _, err := issueAs(h, adminID, "bob@example.com"); err != nil {
 		t.Errorf("an issuance to another address gave %v, want it let through", err)
 	}
 }
 
-// TestThePerIssuerIssueBudgetAnswersThrottled holds the second send budget: one
-// issuing account sends no more than its window allows, while another operator
-// has its own budget.
+// TestThePerIssuerIssueBudgetAnswersThrottled checks that one issuing account is throttled after its allowance while another operator has its own.
 func TestThePerIssuerIssueBudgetAnswersThrottled(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 100)
@@ -87,8 +78,7 @@ func TestThePerIssuerIssueBudgetAnswersThrottled(t *testing.T) {
 	}
 }
 
-// TestTheGlobalIssueBudgetAnswersThrottled holds the third send budget: the
-// deployment's ceiling applies across addresses and operators alike.
+// TestTheGlobalIssueBudgetAnswersThrottled checks that the deployment's ceiling applies across addresses and operators.
 func TestTheGlobalIssueBudgetAnswersThrottled(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 100)
@@ -107,13 +97,9 @@ func TestTheGlobalIssueBudgetAnswersThrottled(t *testing.T) {
 	}
 }
 
-// TestTheIssueRouteAnswers429WithRetryAfter holds the platform-standard refusal
-// on the HTTP face: a spent send budget is a 429 problem whose type is the
-// capability's throttled code and whose Retry-After names the wait.
+// TestTheIssueRouteAnswers429WithRetryAfter checks that a spent send budget answers 429 with the throttled problem type and a Retry-After.
 func TestTheIssueRouteAnswers429WithRetryAfter(t *testing.T) {
 	h := newHarness(t)
-	// The issuing account's budget is the one charged before the target checks,
-	// so it is the budget the second request spends.
 	h.store.set(issueIssuerPath, 1)
 	h.store.set(issueAddressPath, 100)
 	h.store.set(issueGlobalPath, 100)
@@ -139,10 +125,7 @@ func TestTheIssueRouteAnswers429WithRetryAfter(t *testing.T) {
 	}
 }
 
-// TestTheAcceptanceProbeBudgetAnswersThrottledWithoutRevealingTheToken holds the
-// probe budget on the public acceptance read: one token may be presented only so
-// many times, and the refusal is the same 429 whether the token exists or not,
-// because the budget is charged before the token is looked up.
+// TestTheAcceptanceProbeBudgetAnswersThrottledWithoutRevealingTheToken checks that a token's probe budget answers the same 429 whether or not the token exists.
 func TestTheAcceptanceProbeBudgetAnswersThrottledWithoutRevealingTheToken(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(probeTokenPath, 1)
@@ -152,8 +135,6 @@ func TestTheAcceptanceProbeBudgetAnswersThrottledWithoutRevealingTheToken(t *tes
 	h.mounter.AsAnonymous()
 	path := "/api/v1/auth/invitations/"
 
-	// A real token, presented twice: the first is a view, the second is the
-	// probe budget.
 	if w := h.request(http.MethodGet, path+issued.Token, nil); w.Code != http.StatusOK {
 		t.Fatalf("the first view of a real token answered %d, want 200: %s", w.Code, w.Body.String())
 	}
@@ -162,8 +143,6 @@ func TestTheAcceptanceProbeBudgetAnswersThrottledWithoutRevealingTheToken(t *tes
 		t.Fatalf("the second view of a real token answered %d, want 429", real.Code)
 	}
 
-	// An unknown token, presented twice: the first is a bare 404, the second is
-	// the same probe budget.
 	const unknown = "spd_inv_thisTokenDoesNotExist"
 	if w := h.request(http.MethodGet, path+unknown, nil); w.Code != http.StatusNotFound {
 		t.Fatalf("the first view of an unknown token answered %d, want 404", w.Code)
@@ -174,7 +153,6 @@ func TestTheAcceptanceProbeBudgetAnswersThrottledWithoutRevealingTheToken(t *tes
 			"tell a caller whether the token exists", fake.Code)
 	}
 
-	// The two refusals are indistinguishable.
 	if real.Body.String() != fake.Body.String() {
 		t.Errorf("the throttled answer to a real token is %q and to an unknown token %q; they must read alike",
 			real.Body.String(), fake.Body.String())
@@ -185,9 +163,7 @@ func TestTheAcceptanceProbeBudgetAnswersThrottledWithoutRevealingTheToken(t *tes
 	}
 }
 
-// TestThePerClientProbeBudgetAnswersThrottled holds the coarse per-client bound:
-// a source that walks distinct tokens is stopped by the address budget even
-// though no single token's budget is spent.
+// TestThePerClientProbeBudgetAnswersThrottled checks that one client is throttled across distinct tokens by its own bound.
 func TestThePerClientProbeBudgetAnswersThrottled(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(probeTokenPath, 100)
@@ -208,9 +184,7 @@ func TestThePerClientProbeBudgetAnswersThrottled(t *testing.T) {
 	}
 }
 
-// TestTheBudgetsFallBackToTheirDefaultsWhenTheStoreFails holds the failure
-// direction: a settings read that fails leaves the declared defaults in force,
-// so a security budget is never silently disabled by a bad row.
+// TestTheBudgetsFallBackToTheirDefaultsWhenTheStoreFails checks that a failed settings read leaves the declared defaults in force.
 func TestTheBudgetsFallBackToTheirDefaultsWhenTheStoreFails(t *testing.T) {
 	h := newHarness(t)
 	h.store.failOn(issueAddressPath, errors.New("the settings store is down"))
@@ -222,10 +196,7 @@ func TestTheBudgetsFallBackToTheirDefaultsWhenTheStoreFails(t *testing.T) {
 	}
 }
 
-// TestAThrottledIssuanceWritesNoRow holds that the budget is charged before the
-// action: an over-budget issuance leaves no invitation row behind. The first
-// invitation is revoked so that the target checks do not refuse the second one
-// before the address budget is consulted.
+// TestAThrottledIssuanceWritesNoRow checks that an over-budget issuance writes no invitation row.
 func TestAThrottledIssuanceWritesNoRow(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 1)
@@ -247,19 +218,12 @@ func TestAThrottledIssuanceWritesNoRow(t *testing.T) {
 	}
 }
 
-// TestAnAttemptTheChecksRefuseSpendsOnlyTheIssuersBudget holds the order of the
-// send budgets: the issuing account is charged first, so an attempt the target
-// checks refuse still costs the operator, and the address and the deployment are
-// charged only once every check has passed. A refused attempt therefore cannot
-// spend an invited address's allowance, so a resend of that address's live
-// invitation still goes out.
+// TestAnAttemptTheChecksRefuseSpendsOnlyTheIssuersBudget checks that a refused attempt spends the issuer's budget alone, not the address's.
 func TestAnAttemptTheChecksRefuseSpendsOnlyTheIssuersBudget(t *testing.T) {
 	t.Run("refused attempts against one address do not spend its budget", func(t *testing.T) {
 		h := newHarness(t)
 		issued := h.issue(tenant, "alice@example.com")
 		h.asAdmin()
-		// The address already holds a live invitation, so each of these is
-		// refused before anything is written.
 		for i := 0; i < 4; i++ {
 			if w := h.request(http.MethodPost, pathAdmin, map[string]string{"email": "alice@example.com"}); w.Code != http.StatusConflict {
 				t.Fatalf("refused attempt %d answered %d, want 409: %s", i+1, w.Code, w.Body.String())
@@ -292,9 +256,7 @@ func TestAnAttemptTheChecksRefuseSpendsOnlyTheIssuersBudget(t *testing.T) {
 	})
 }
 
-// TestTheSettingsSchemaDeclaresTheBudgetKeys holds the declaration the budgets
-// are read through. A key the schema does not declare is a schema a host cannot
-// tune, and a read of it would cover no declaration.
+// TestTheSettingsSchemaDeclaresTheBudgetKeys checks that the settings schema declares every budget key.
 func TestTheSettingsSchemaDeclaresTheBudgetKeys(t *testing.T) {
 	s := settingsSchema()
 	for _, item := range []string{
@@ -307,8 +269,7 @@ func TestTheSettingsSchemaDeclaresTheBudgetKeys(t *testing.T) {
 	}
 }
 
-// TestTheDeclaredBudgetDefaultsAreInDomain holds that the defaults shipped with
-// the module are values the budgets will actually act on.
+// TestTheDeclaredBudgetDefaultsAreInDomain checks that the shipped defaults lie inside their domains.
 func TestTheDeclaredBudgetDefaultsAreInDomain(t *testing.T) {
 	if !windowInDomain(DefaultIssueWindow) || !windowInDomain(DefaultProbeWindow) {
 		t.Errorf("a declared window (%s, %s) is outside its domain",
@@ -327,9 +288,7 @@ func TestTheDeclaredBudgetDefaultsAreInDomain(t *testing.T) {
 	}
 }
 
-// TestTheProbeClientKeyCountsAnIPv6AddressByItsSlashSixtyFour holds the coarse
-// client bound's key: one host's /64 shares one bucket, a different /64 is a
-// different bucket, and an IPv4 address is counted as itself.
+// TestTheProbeClientKeyCountsAnIPv6AddressByItsSlashSixtyFour checks the client key: one /64 shares a bucket, another differs, and IPv4 is counted as itself.
 func TestTheProbeClientKeyCountsAnIPv6AddressByItsSlashSixtyFour(t *testing.T) {
 	a := clientSubject("2001:db8:1:2:aaaa::1")
 	b := clientSubject("2001:db8:1:2:bbbb::2")
@@ -347,9 +306,7 @@ func TestTheProbeClientKeyCountsAnIPv6AddressByItsSlashSixtyFour(t *testing.T) {
 	}
 }
 
-// TestTheBudgetKeysEscapeTheirSegments holds the key construction: a colon in a
-// segment cannot build another budget's key, and one window's key is stable
-// while the next window's differs.
+// TestTheBudgetKeysEscapeTheirSegments checks that a colon cannot forge another budget's key and that a key is stable within one window.
 func TestTheBudgetKeysEscapeTheirSegments(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	window := time.Hour

@@ -1,12 +1,5 @@
 // Package provisioningtest supplies a stand-in for the account-provisioning
 // seam to an assembly's tests.
-//
-// The account module requires an AccountProvisioning provider, so every test
-// that drives it through a registry has to supply one. Module registers a Seam
-// that does nothing and records what it was handed; a case that needs a refusal
-// or a write of its own sets the Seam's hooks or errors. The stand-in lives
-// here, outside the test files, because the assemblies that need it sit in
-// several packages.
 package provisioningtest
 
 import (

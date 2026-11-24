@@ -9,12 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The identifier-axes migration adds the two axes and the default contact, and
-// backfills a database written before them without changing any stored fact.
-// Every identifier written under the old behaviour becomes a sign-in way, every
-// email identifier among them is also a contact, and each account's earliest
-// proved email address, ties broken by identifier, is its default contact. An
-// address only asserted, not proved, never becomes the default.
+// The identifier-axes migration adds the two axes and the default contact, and backfills an older database without changing any stored fact.
 func TestTheIdentifierAxesMigrationBackfillsExistingRows(t *testing.T) {
 	for _, dialect := range dialectsUnderTest {
 		t.Run(string(dialect), func(t *testing.T) {
@@ -96,7 +91,6 @@ func TestTheIdentifierAxesMigrationBackfillsExistingRows(t *testing.T) {
 				}
 			}
 
-			// A row written after the migration starts outside both axes.
 			if err := handle.Exec("INSERT INTO "+tableIdentifiers+" (id, account_id, kind, value, verified_at, verified_via, created_at) "+
 				"VALUES (?, ?, ?, ?, ?, ?, ?)", "e-new", "account-c", string(authn.IdentifierEmail),
 				"new@example.com", at, authn.VerifiedViaSelf, at).Error; err != nil {
@@ -115,7 +109,6 @@ func TestTheIdentifierAxesMigrationBackfillsExistingRows(t *testing.T) {
 				t.Errorf("the new row reads %+v, want both axes and the default contact false", fresh)
 			}
 
-			// The account read carries the backfilled flags out.
 			cfg, err := configDefaults.resolve()
 			if err != nil {
 				t.Fatalf("resolving the default configuration: %v", err)
@@ -142,7 +135,6 @@ func TestTheIdentifierAxesMigrationBackfillsExistingRows(t *testing.T) {
 				}
 			}
 
-			// At most one default contact per account.
 			if err := handle.Exec("UPDATE "+tableIdentifiers+" SET default_contact = ? WHERE id = ?", true, "e-a2").Error; !duplicate(err) {
 				t.Errorf("a second default contact gave %v, want the unique constraint", err)
 			}
@@ -150,10 +142,7 @@ func TestTheIdentifierAxesMigrationBackfillsExistingRows(t *testing.T) {
 	}
 }
 
-// TestTheRegisteredAddressContactMigrationBackfillsExistingRows holds that the
-// migration after the axes one makes every stored email address and phone number
-// a contact, including rows written between the two, and changes nothing else:
-// the sign-in axis and the default contact stay as they were.
+// The contact migration makes every stored email and phone a contact, including rows written between migrations, and changes nothing else.
 func TestTheRegisteredAddressContactMigrationBackfillsExistingRows(t *testing.T) {
 	for _, dialect := range dialectsUnderTest {
 		t.Run(string(dialect), func(t *testing.T) {
@@ -182,8 +171,6 @@ func TestTheRegisteredAddressContactMigrationBackfillsExistingRows(t *testing.T)
 
 			applyMigrationFile(t, handle, dialect, "0004_identifier_axes.sql")
 
-			// Rows written after the axes migration and before this invariant
-			// start outside both axes, so the contact of the address is false.
 			insert("account-1", "e-new", string(authn.IdentifierEmail), "new@example.com", authn.VerifiedViaEmailCode, at)
 			insert("account-2", "p-new", string(authn.IdentifierPhone), "+12025550124", authn.VerifiedViaSMSCode, at)
 
@@ -226,10 +213,7 @@ func TestTheRegisteredAddressContactMigrationBackfillsExistingRows(t *testing.T)
 	}
 }
 
-// TestCreateRequiresAUsernameWhereItOpensAnAccount holds that every path that
-// opens a user account names a username, and that one which does not creates
-// neither the account nor any identifier. A service account, which signs in with
-// a service secret, is the only exemption.
+// Every path that opens a user account names a username, and one that does not creates neither the account nor any identifier.
 func TestCreateRequiresAUsernameWhereItOpensAnAccount(t *testing.T) {
 	for name, in := range map[string]authn.CreateAccount{
 		"an administrator": {
@@ -265,11 +249,7 @@ func TestCreateRequiresAUsernameWhereItOpensAnAccount(t *testing.T) {
 	}
 }
 
-// TestCreateRequiresAUsernameOfAnImportAndExemptsAServiceAccount holds the two
-// remaining rules: an import is a user account and names a username like every
-// other creation path, while a service account signs in with a service secret
-// and is exempt. A service account that does name a username is held to the same
-// normalization and reserved set as any other.
+// An import names a username like every other creation, while a service account is exempt.
 func TestCreateRequiresAUsernameOfAnImportAndExemptsAServiceAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -300,11 +280,7 @@ func TestCreateRequiresAUsernameOfAnImportAndExemptsAServiceAccount(t *testing.T
 	})
 }
 
-// TestCreateWritesTheAxesOfTheIdentifiersItCreates holds the flags an account
-// opens with: a username is always a login way and never a contact; the account's
-// only email address, proved here, is a contact and a login way too and its
-// default contact; the phone an SMS first login signed in with is a contact and a
-// login way.
+// Create writes each identifier's axes: a username is a login way only, a proved sole email is contact and login way and the default, and a proved phone is both.
 func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -341,9 +317,7 @@ func TestCreateWritesTheAxesOfTheIdentifiersItCreates(t *testing.T) {
 	})
 }
 
-// TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact holds that an email
-// address only asserted, not proved, is a contact but neither a login way nor the
-// default contact.
+// An email only asserted, not proved, is a contact but neither a login way nor the default contact.
 func TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -370,10 +344,7 @@ func TestCreateDoesNotMakeAnUnprovedEmailTheDefaultContact(t *testing.T) {
 	})
 }
 
-// TestAnImportWritesTheSignInAxisOfItsSourceRecord holds that an import restores
-// the sign-in axis from its source record while the address is a contact
-// regardless, and that a proved email address the source did not name as the
-// default becomes it anyway, while an unproved one never does.
+// An import restores the sign-in axis from its source record, and a proved email the source did not name as default becomes it while an unproved one never does.
 func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -404,8 +375,6 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 				email.SignIn, email.Contact, email.DefaultContact)
 		}
 
-		// A source record that did not call its address a contact does not make
-		// it anything else here: a registered address is always a contact.
 		noContact := read(authn.CreateAccount{
 			ID: "legacy_no_contact", Username: "legacy-no-contact", Via: "import",
 			Email: "nocontact@example.com", EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaEmailCode},
@@ -437,8 +406,7 @@ func TestAnImportWritesTheSignInAxisOfItsSourceRecord(t *testing.T) {
 	})
 }
 
-// TestRegisterWritesItsUsernameAsALoginWay holds that self-registration, which
-// does not go through Create, writes the username as a login way.
+// Self-registration writes the username as a login way.
 func TestRegisterWritesItsUsernameAsALoginWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()

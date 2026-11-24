@@ -9,23 +9,15 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section: the title this module's fragment carries and the
-// version of the fragment's shape.
 const (
 	fragmentTitle   = "authn impersonation"
 	fragmentVersion = "1.0.0"
 )
 
-// impersonationPath is the route of the self-service group, relative to the
-// module's API root, which is the mounter's base less the part this capability
-// owns. The mounter registration resolves the same declaration against its base,
-// so the path is written once.
 const impersonationPath = "/auth/impersonation"
 
-// AuthnImpersonationGrant is an impersonation record as a client sees it. It is
-// built field by field so that a field added to the record later does not reach
-// a client by being there. The reason and the administrator's identity are not
-// part of it.
+// AuthnImpersonationGrant is an impersonation record as a client sees it: it
+// omits the reason and the administrator's identity.
 type AuthnImpersonationGrant struct {
 	_ struct{} `description:"An impersonation record as a client sees it. The reason and the administrator's identity are not part of it."`
 
@@ -51,14 +43,11 @@ type AuthnImpersonationStart struct {
 	Grant       AuthnImpersonationGrant `json:"grant" required:"true" description:"The record just created; started_at is absent because a start answer does not carry the start instant."`
 	AccessToken string                  `json:"access_token,omitempty" description:"Present on a bearer start; absent on a cookie start, whose carrier is the session cookie"`
 	TokenType   string                  `json:"token_type,omitempty" description:"Present with access_token; always Bearer"`
-	// ExpiresIn is a pointer so a cookie start omits it while a bearer start
-	// writes it even at the zero a sub-second lifetime rounds to. The format
-	// tag keeps the published schema the int64 the wire carries; the reflector
-	// reads a pointer's own type as a plain integer.
+	// ExpiresIn is set with access_token: a pointer so a cookie start omits it
+	// while a bearer start writes it even at zero.
 	ExpiresIn *int64 `json:"expires_in,omitempty" format:"int64" description:"Present with access_token; the access token's lifetime in whole seconds"`
 }
 
-// startInput is the request of a start.
 type startInput struct {
 	_ struct{} `description:"The parameters of a start. Only account is required by the schema; a missing or empty tenant or reason is refused with 403."`
 
@@ -68,9 +57,6 @@ type startInput struct {
 	TTLSeconds int64  `json:"ttl_seconds" description:"Requested lifetime in whole seconds. Zero or absent takes the max-ttl setting (30 minutes by default); the settled lifetime is the shortest of the request, that setting, the remaining lifetime of the caller's session and a hard ceiling of one hour."`
 }
 
-// startResponse declares the success answer of a start: the record and, under a
-// bearer credential, the token. It is a reply operation because a cookie start
-// also writes the rotated session cookie, which the simple form cannot write.
 var startResponse = speedhttp.Response{
 	Status:      http.StatusOK,
 	Description: "The started record, and an access token under a bearer credential",
@@ -80,7 +66,6 @@ var startResponse = speedhttp.Response{
 	},
 }
 
-// grantResponse declares the success answer of the status route.
 var grantResponse = speedhttp.Response{
 	Status:      http.StatusOK,
 	Description: "The record still valid on the session",
@@ -90,37 +75,23 @@ var grantResponse = speedhttp.Response{
 	},
 }
 
-// challengeHeader declares the header every 401 on this module's routes
-// carries: the gateway writes the endpoint's challenge when it refuses the
-// request first, and a handler that answers 401 itself returns it in the fault's
-// headers. Either way the exchange is a challenge, so the response declares the
-// header and a handler's fault writes it.
 var challengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
 }
 
-// unauthorized is the declaration of a 401 that carries the capability's
-// challenge.
 func unauthorized(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{challengeHeader}
 	return response
 }
 
-// capabilityProblem is an error answer the entry point writes itself, before a
-// handler runs: the binding refusals of the start route. Its problem type is
-// the capability's code for the status, so a body refused before the handler is
-// answered in the same vocabulary as one the handler refuses.
 func capabilityProblem(status int, code, description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(status, description)
 	response.ProblemType = typePrefix + code
 	return response
 }
 
-// startOperation declares POST /impersonation: it calls Start and then attaches
-// the carrier, publishes the started event and writes the answer. The handler
-// builds the answer because a cookie start writes the rotated session cookie.
 var startOperation = speedhttp.NewReplyOperation[startInput](
 	"authn.impersonation.start",
 	http.MethodPost,
@@ -152,9 +123,6 @@ var startOperation = speedhttp.NewReplyOperation[startInput](
 	},
 )
 
-// statusOperation declares GET /impersonation: the impersonation in force on the
-// caller's session, or 404 when there is none still valid. The handler builds
-// the answer because the 404 is a bare status with no problem document.
 var statusOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.impersonation.status",
 	http.MethodGet,
@@ -173,10 +141,6 @@ var statusOperation = speedhttp.NewReplyOperation[struct{}](
 	},
 )
 
-// endOperation declares DELETE /impersonation: it ends the record on the
-// caller's session and clears the marker under a cookie, without rotating the
-// token or writing a cookie. The handler builds the answer because the 404 and
-// the 204 carry no problem document.
 var endOperation = speedhttp.NewReplyOperation[struct{}](
 	"authn.impersonation.end",
 	http.MethodDelete,
@@ -196,8 +160,6 @@ var endOperation = speedhttp.NewReplyOperation[struct{}](
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	startOperation,
 	statusOperation,

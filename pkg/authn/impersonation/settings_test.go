@@ -12,8 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestTheLifetimeComesFromTheSettings holds the max-ttl setting: it bounds the
-// record's end, and a read that fails falls back to the declared default.
+// TestTheLifetimeComesFromTheSettings checks that the max-ttl setting bounds the record's end and a failed read falls back to the declared default.
 func TestTheLifetimeComesFromTheSettings(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -39,9 +38,7 @@ func TestTheLifetimeComesFromTheSettings(t *testing.T) {
 	}
 }
 
-// TestTheAuthenticationAgeComesFromTheSettings holds the max-auth-age setting: a
-// value smaller than the default refuses an authentication the default would
-// admit, with the step-up sentinel.
+// TestTheAuthenticationAgeComesFromTheSettings checks that a max-auth-age below the default refuses an older authentication with ErrStepUpRequired.
 func TestTheAuthenticationAgeComesFromTheSettings(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.store.set(maxAuthAgePath, time.Minute)
@@ -53,12 +50,10 @@ func TestTheAuthenticationAgeComesFromTheSettings(t *testing.T) {
 	})
 }
 
-// TestTheTTLIsBoundedByTheRequestTheSettingAndTheSession holds the shorter of the
-// three: the request's own lifetime, the setting, and the session's remaining
-// life, and the hard hour ceiling.
+// TestTheTTLIsBoundedByTheRequestTheSettingAndTheSession checks that the settled
+// lifetime is the shortest of the request, the setting, the session's remaining life and the hour ceiling.
 func TestTheTTLIsBoundedByTheRequestTheSettingAndTheSession(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
-		// A session with ten minutes left bounds a thirty-minute setting.
 		r.sessions.session.ExpiresAt = base.Add(10 * time.Minute)
 		g, err := r.p.Start(context.Background(), adminIdentity(t), request())
 		if err != nil {
@@ -70,8 +65,7 @@ func TestTheTTLIsBoundedByTheRequestTheSettingAndTheSession(t *testing.T) {
 	})
 }
 
-// TestASessionWithNoRemainingLifeIsRefused holds the corner: a session that has
-// no life left to bound the record by is ErrImpersonationNeedsSession.
+// TestASessionWithNoRemainingLifeIsRefused checks that a session with no life left is ErrImpersonationNeedsSession.
 func TestASessionWithNoRemainingLifeIsRefused(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.sessions.session.ExpiresAt = base.Add(-time.Minute)
@@ -82,9 +76,7 @@ func TestASessionWithNoRemainingLifeIsRefused(t *testing.T) {
 	})
 }
 
-// TestAMissingStoreReadsTheDeclaredDefaults holds the legal assembly with no
-// settings store: every setting read falls back to its declared default rather
-// than reaching into a store that is not there.
+// TestAMissingStoreReadsTheDeclaredDefaults checks that every setting reads its declared default with no settings store.
 func TestAMissingStoreReadsTheDeclaredDefaults(t *testing.T) {
 	r := newReader(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if got := r.maxTTL(); got != defaults.MaxTTL {
@@ -98,9 +90,7 @@ func TestAMissingStoreReadsTheDeclaredDefaults(t *testing.T) {
 	}
 }
 
-// TestASettingOutsideItsDomainReadsAsTheDefault holds a value written around the
-// store: a max-ttl above its domain reads as the declared default, and so does
-// the token module's access-ttl above its own.
+// TestASettingOutsideItsDomainReadsAsTheDefault checks that a max-ttl or access-ttl above its domain reads as the declared default.
 func TestASettingOutsideItsDomainReadsAsTheDefault(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.store.set(maxTTLPath, 2*time.Hour)
@@ -111,8 +101,6 @@ func TestASettingOutsideItsDomainReadsAsTheDefault(t *testing.T) {
 		if want := base.Add(defaults.MaxTTL); !g.EndsAt.Equal(want) {
 			t.Errorf("EndsAt = %v, want the declared default %v", g.EndsAt, want)
 		}
-		// The token module's access-ttl is read through the same path and has its
-		// own domain: a value above it reads as the declared default too.
 		r.store.set(accessTTLPath, 2*time.Hour)
 		if got := r.p.settings.tokenAccessTTL(); got != defaultTokenAccessTTL {
 			t.Errorf("tokenAccessTTL = %v, want the declared default %v", got, defaultTokenAccessTTL)
@@ -120,9 +108,7 @@ func TestASettingOutsideItsDomainReadsAsTheDefault(t *testing.T) {
 	})
 }
 
-// TestASettingAtTheBottomOfItsDomainIsAccepted holds the lower boundary: a
-// max-ttl at the bottom of its domain is used as written, not read as the
-// default.
+// TestASettingAtTheBottomOfItsDomainIsAccepted checks that a max-ttl at the bottom of its domain is used as written.
 func TestASettingAtTheBottomOfItsDomainIsAccepted(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.store.set(maxTTLPath, minMaxTTL)
@@ -136,9 +122,7 @@ func TestASettingAtTheBottomOfItsDomainIsAccepted(t *testing.T) {
 	})
 }
 
-// TestTheMaxAuthAgeOutsideItsDomainReadsAsTheDefault holds the auth-age domain:
-// a value above its domain reads as the declared default, which then refuses an
-// authentication the larger value would have admitted.
+// TestTheMaxAuthAgeOutsideItsDomainReadsAsTheDefault checks that an auth age above its domain reads as the declared default.
 func TestTheMaxAuthAgeOutsideItsDomainReadsAsTheDefault(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, r *rig) {
 		r.store.set(maxAuthAgePath, time.Hour)

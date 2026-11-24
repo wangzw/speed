@@ -1,36 +1,5 @@
 // Package provisioning declares the in-transaction seams an account needs
 // other modules to satisfy.
-//
-// An account is the anchor of data other capabilities hold: its tenant
-// memberships, the roles bound to it and, for a user account, the organization
-// that belongs to it alone. Some of that data has to exist for exactly as long
-// as the account does, and a failure to write it must undo the account itself.
-// AccountLifecycle is not that seam: its hooks run after the account's
-// transaction has committed, so a hook that fails leaves the account in being
-// without the data the account is not meant to exist without.
-//
-// AccountProvisioning is the seam that runs inside the account's transaction
-// instead. The account module calls ProvisionAccount after the account row, its
-// identifiers and its credential are written and before the creation event is
-// staged, and ProvisionAccountDeletion after the account's own rows are erased
-// and before the transaction returns. An implementation writes through the
-// *gorm.DB it is handed and nothing else: that handle is the account module's
-// transaction, so a row written on a connection of its own would survive a
-// rollback the account does not survive. A provisioning failure fails the
-// account's transaction, and the account is not created or not deleted.
-//
-// MembershipWriter is the account module's transaction-aware membership write.
-// The account module delivers it, and a provisioning implementation that writes
-// the creator's membership in the same transaction takes it from the registry.
-// The plain Memberships surface opens a transaction of its own and is therefore
-// the wrong path there.
-//
-// AfterCommit is how the work a transaction-aware write owes after the commit —
-// the roster or policy snapshot reread, and the event that tells the other
-// replicas — reaches the account module's commit boundary. The account module
-// puts a collector on the context it hands a provisioning implementation, and
-// runs it once the transaction has committed; an implementation hands the
-// resulting closure of every transaction-aware write to AfterCommitOf(ctx).
 package provisioning
 
 import (
@@ -43,11 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// AccountFacts is what the account module knew of the account when it called a
-// provisioning method. ID, Kind and Status are as the account row carries them;
-// Username is the normalized username identifier, empty for a service account;
-// and DisplayName is the name the account was created with, before a deletion
-// erases it.
+// AccountFacts is the account facts a provisioning method receives.
 type AccountFacts struct {
 	// ID is the account's identifier, the string form of authn.AccountID.
 	ID string
@@ -63,21 +28,11 @@ type AccountFacts struct {
 	DisplayName string
 }
 
-// AccountProvisioning is the seam that writes what an account owns inside the
-// transaction that creates or deletes the account. The account module requires
-// one implementation; an assembly without it does not start.
-//
-// Every statement of an implementation runs on the tx it is handed. Opening a
-// connection of its own would write outside the account's transaction, so the
-// data would outlive a rollback and the account would not, or a committed
-// account would be left without the data it was supposed to own. A non-nil
-// error fails the account's transaction and is returned to the account
-// module's caller.
+// AccountProvisioning writes what an account owns inside the transaction that
+// creates or deletes it. The account module requires one implementation.
 type AccountProvisioning interface {
-	// ProvisionAccount writes what a user account owns for the whole of its
-	// life. It is called after the account row, its identifiers and its
-	// credential are written and before the creation event is staged, and it
-	// must write nothing for a service account.
+	// ProvisionAccount writes what a user account owns for the whole of its life,
+	// before the creation event is staged, and writes nothing for a service account.
 	ProvisionAccount(ctx context.Context, tx *gorm.DB, facts AccountFacts) error
 	// ProvisionAccountDeletion ends what ProvisionAccount wrote, keeping the
 	// parts an identifier's history needs. It is called after the account's
@@ -85,77 +40,38 @@ type AccountProvisioning interface {
 	ProvisionAccountDeletion(ctx context.Context, tx *gorm.DB, facts AccountFacts) error
 }
 
-// MembershipWriter is the account module's transaction-aware membership
-// surface: the writes that join the caller's transaction, and the read that
-// holds the account's row in it. The account module delivers it exclusively.
-//
-// The two write methods write in the transaction they are handed, unlike the
-// Memberships surface, whose Put and Remove open a transaction of their own.
-// Each returns a closure for the work that belongs after the caller's commit —
-// publishing the membership events, staged in the transaction — and nil when
-// the call changed nothing. The caller runs the closure once its transaction has
-// committed.
-//
-// MembershipTx reads one membership under the account's row lock, so a caller
-// that has to act on the answer (a transfer checking the new owner is an active
-// member) cannot have a concurrent suspension change it before the caller's
-// commit: the suspension's own write takes that row first.
-//
-// Neither write method asks a MembershipGuard or calls a MembershipLifecycle
-// hook: a guard protects an explicit removal from a tenant that stays in
-// service, and a hook cleans up after a removal that has committed. A call
-// inside a transaction is neither, and the caller owns the decision to ask one.
+// MembershipWriter is the account module's transaction-aware membership surface.
+// The account module delivers it exclusively.
 type MembershipWriter interface {
-	// MembershipTx reads one membership in the transaction it is handed,
-	// taking the account's row first. The second result is false when the
-	// account holds no membership in the tenant, and also when the account
-	// does not exist.
+	// MembershipTx reads one membership in the given transaction, locking the
+	// account row first. It returns false when the account has no membership in
+	// the tenant or does not exist.
 	MembershipTx(ctx context.Context, tx *gorm.DB, tenant string, account authn.AccountID) (authn.Membership, bool, error)
 	// PutMembershipTx writes a membership, and writing the same one again is no
 	// change. It is Put's rules without the transaction Put opens.
 	PutMembershipTx(ctx context.Context, tx *gorm.DB, m authn.Membership) (after func(context.Context) error, err error)
-	// PutJoiningTx writes a joining membership in the transaction it is handed,
-	// with PutJoining's rules: the account ends as an active member only when it
-	// had no membership or its membership is still active. wasActive says the
-	// caller read an active membership. The second result reports whether the
-	// account is an active member after the call; a suspended membership is
-	// never resumed and a membership removed since the read is not written
-	// again. The after closure publishes the events staged in the transaction,
-	// and is nil when the call changed nothing.
+	// PutJoiningTx writes a joining membership with PutJoining's rules: only an
+	// account with no membership or an active one ends active, and a suspended
+	// one is never resumed. It reports whether the account is active afterwards.
 	PutJoiningTx(ctx context.Context, tx *gorm.DB, m authn.Membership, wasActive bool) (joined bool, after func(context.Context) error, err error)
 	// RemoveMembershipTx deletes a membership. One that is not there is already
 	// removed and returns a nil closure. It is RemoveMembershipForDeletion's
 	// rules without the transaction that method opens.
 	RemoveMembershipTx(ctx context.Context, tx *gorm.DB, account authn.AccountID, tenant string) (after func(context.Context) error, err error)
-	// RemoveTenantMembershipsTx deletes every membership of one tenant in the
-	// transaction it is handed, publishing authn.membership.changed for each row
-	// it removed. It is the organization-deletion path: the tenant is becoming a
-	// tombstone, so no guard is asked and no lifecycle hook is called. A tenant
-	// with no membership returns a nil closure.
+	// RemoveTenantMembershipsTx deletes every membership of one tenant in the given
+	// transaction, publishing authn.membership.changed for each removed row. No guard
+	// is asked and no lifecycle hook runs; a tenant with no membership returns nil.
 	RemoveTenantMembershipsTx(ctx context.Context, tx *gorm.DB, tenant string) (after func(context.Context) error, err error)
 }
 
-// RoleBinder is the transaction-aware role-binding write an acceptance joins.
-// The acceptance writes the membership and the role the invitation carries in
-// one transaction, so the binding has to be written through the transaction
-// handle rather than through a manager method that opens its own. The policy
-// module delivers it beside the lifecycle hooks rather than exclusively: a host
-// that holds policy of its own may deliver its own, and the registry resolves
-// the one the assembly provides.
-//
-// The tenant, account and role are plain strings because the authentication
-// capability holds no authorization value type. The binding is the same one the
-// tenant management surface writes: the role must exist in the tenant, and the
-// platform administrator may not be bound outside the platform domain. The after
-// closure is the policy module's work after the caller's commit — the snapshot
-// reread and the change event — and is nil when the call changed nothing.
+// RoleBinder is the transaction-aware role-binding write an acceptance joins, so
+// the binding lands in the acceptance's own transaction.
 type RoleBinder interface {
 	// BindRoleTx binds role to account within tenant in the transaction it is
 	// handed.
 	BindRoleTx(ctx context.Context, tx *gorm.DB, tenant, account, role string) (after func(context.Context) error, err error)
 }
 
-// afterCommitKey is the context key of an AfterCommit collector.
 type afterCommitKey struct{}
 
 // WithAfterCommit returns a context carrying a fresh collector, and the
@@ -165,10 +81,8 @@ func WithAfterCommit(ctx context.Context) (context.Context, *AfterCommit) {
 	return context.WithValue(ctx, afterCommitKey{}, a), a
 }
 
-// AfterCommitOf returns the collector a context carries, if any. It is nil for
-// a context that carries none, and a caller of Add need not distinguish: a nil
-// collector drops its work, which is what an implementation called outside the
-// account module's transaction expects.
+// AfterCommitOf returns the collector the context carries, or nil. A nil
+// collector drops its work, so a call outside the transaction needs no special case.
 func AfterCommitOf(ctx context.Context) *AfterCommit {
 	if a, ok := ctx.Value(afterCommitKey{}).(*AfterCommit); ok {
 		return a

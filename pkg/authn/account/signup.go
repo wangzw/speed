@@ -12,39 +12,11 @@ import (
 	"github.com/vislake/speed/pkg/authn/provisioning"
 )
 
-// signupLocaleAttr and signupTimeZoneAttr are the attribute keys a registration
-// writes the caller's language and zone preferences to. They are the names the
-// account attributes reserve for those two preferences.
 const (
 	signupLocaleAttr   = "i18n.locale"
 	signupTimeZoneAttr = "i18n.tz"
 )
 
-// Register opens an account for anonymous self-registration.
-//
-// The password-signup setting is read here and is the authority: any value but
-// open is authn.ErrSignupClosed, and a store that cannot be read reads as
-// closed. The username and the email address are normalized first and the
-// password is held to the policy; all of that happens before the back-off, and
-// the back-off is read before the uniqueness check, so a request that cannot
-// succeed costs no derivation. A registration that names no display name is named
-// after the username it chose. A username that is taken is authn.ErrAccountExists
-// and counts one failure against the signup-username back-off; a concurrent
-// registration that loses the username's unique constraint counts one as well.
-// The email address is not checked before the write: the reservation row's unique
-// constraint is the one atomic arbiter, and a registration that loses it is
-// authn.ErrContactTaken, which says the address is already reserved rather than
-// that the username exists. An unproved reservation is accepted: the first
-// registration to claim an address owns it until it is proved or its account is
-// deleted. A derivation that finds its capacity full and a transaction that fails
-// for any other reason count nothing, since neither says anything about the name.
-// The derivation runs under the self-registration width and no memory budget of
-// its own; a full width is authn.ErrBusy.
-//
-// One transaction writes the enabled account with signup_state 1, a username
-// identifier written through self, a password credential and one email
-// reservation awaiting verification. No identifier awaits verification, no email
-// is sent and no session is made.
 func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn.Account, error) {
 	if p.passwordSignup() != signupOpen {
 		return authn.Account{}, fmt.Errorf("%w", authn.ErrSignupClosed)
@@ -76,8 +48,7 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 		return authn.Account{}, err
 	}
 
-	// The back-off is read before the uniqueness check and before any
-	// derivation: a name under it is refused whatever its state.
+	// The back-off is read before the uniqueness check and before any derivation.
 	wait, err := p.Check(ctx, authn.ScopeSignupUsername, username)
 	if err != nil {
 		return authn.Account{}, err
@@ -124,7 +95,6 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 		identifier := identifierRow{
 			ID: identifierID, AccountID: id, Kind: string(authn.IdentifierUsername), Value: username,
 			VerifiedAt: now, VerifiedVia: authn.VerifiedViaSelf,
-			// A username is always a login way.
 			SignIn: true, CreatedAt: now,
 		}
 		if idErr = tx.Create(&identifier).Error; idErr != nil {
@@ -142,19 +112,14 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 			CreatedAt: now, UpdatedAt: now,
 		}
 		if idErr = tx.Create(&pending).Error; idErr != nil {
-			// The contact row is the only arbiter of the address. A duplicate
-			// says another account reserved it, not that the username exists,
-			// and the transaction rolls the account, identifier and credential
-			// back with it.
+			// The contact row is the only arbiter of the address.
 			if duplicate(idErr) {
 				return fmt.Errorf("%w", authn.ErrContactTaken)
 			}
 			return idErr
 		}
-		// The provisioning seam runs in this same transaction, after the
-		// account, its username identifier and its credential and before the
-		// creation event: a refused provisioning leaves neither the account nor
-		// what it owns.
+		// The provisioning seam runs in this same transaction, after the account, its
+		// username identifier and its credential.
 		if idErr = p.provisioning.ProvisionAccount(ctx, tx, accountFactsFor(row, username)); idErr != nil {
 			return idErr
 		}
@@ -162,8 +127,8 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 	})
 	switch {
 	case duplicate(err):
-		// The name was free when it was read and taken before the insert. The
-		// unique constraint is the arbiter, and the loser counts the failure.
+		// The name was free when read and taken before the insert; the unique
+		// constraint is the arbiter.
 		p.fail(ctx, authn.ScopeSignupUsername, username, "")
 		return authn.Account{}, fmt.Errorf("%w", authn.ErrAccountExists)
 	case err != nil:
@@ -181,16 +146,11 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 	if err := p.callHooks(ctx, account.ID, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
 		return h.AccountCreated(hookCtx, account.ID)
 	}); err != nil {
-		// The account is in being; only the hook that builds what shares its life
-		// is unfinished, and the same call repeated finishes it.
 		return account, err
 	}
 	return account, nil
 }
 
-// signupAttributes is the attribute set a registration writes: the caller's
-// language and zone when given, and nothing else. The bounds of an account's
-// attribute set are judged here as on any other write.
 func signupAttributes(in authn.RegisterAccount) (string, error) {
 	attributes := map[string]string{}
 	if in.Locale != "" {
@@ -209,10 +169,6 @@ func signupAttributes(in authn.RegisterAccount) (string, error) {
 	return encoded, nil
 }
 
-// hashSignupPassword derives the PHC text of a registration password under the
-// self-registration width. A width that is full is authn.ErrBusy and takes no
-// place from a password login; the memory one derivation takes is bounded by
-// that width and is not budgeted separately.
 func (p *product) hashSignupPassword(ctx context.Context, plaintext string) (string, error) {
 	params, err := p.hashParams()
 	if err != nil {
@@ -227,7 +183,6 @@ func (p *product) hashSignupPassword(ctx context.Context, plaintext string) (str
 	return phc, nil
 }
 
-// usernameTaken reports whether a normalized username is already an identifier.
 func usernameTaken(conn *gorm.DB, username string) (bool, error) {
 	var ids []string
 	err := conn.Raw("SELECT account_id FROM "+tableIdentifiers+" WHERE kind = ? AND value = ?",
@@ -238,27 +193,6 @@ func usernameTaken(conn *gorm.DB, username string) (bool, error) {
 	return len(ids) > 0, nil
 }
 
-// SignupStateOf reads how far an account's email verification has got. The
-// state is judged from the identifiers and the contact reservations on every
-// call; the signup_state column is not read. An account of a kind other than
-// user has nothing to verify and reads SignupNone.
-//
-// Verified is a user account that holds at least one email identifier whose way
-// of verification proves ownership. Its address is the one proved earliest,
-// ties broken by identifier, and Since is signup_verified_at, or that
-// identifier's own instant when the column is empty.
-//
-// Pending is a user account with no proved email address but with something to
-// prove: an email identifier written through a channel that does not prove
-// ownership (admin, import-unverified, self), or a contact reservation its
-// registration left awaiting verification. Its address is the earliest of those
-// two by creation instant, ties broken by identifier, and Since is
-// signup_verified_at, which is the zero time for an account that never reached
-// Verified.
-//
-// SignupNone is a user account with no email address at all, proved or
-// unproved. There is nothing to verify, so nothing gates on it; Since is the
-// zero time.
 func (p *product) SignupStateOf(ctx context.Context, id authn.AccountID) (authn.SignupStatus, error) {
 	conn := p.conn(ctx)
 	row, err := loadAccount(conn, id)
@@ -284,23 +218,17 @@ func (p *product) SignupStateOf(ctx context.Context, id authn.AccountID) (authn.
 		return authn.SignupStatus{}, failed("reading a pending contact", err)
 	}
 	if !found {
-		// No email address at all is nothing to verify: the account is not held
-		// to a proof it has no target for.
 		return authn.SignupStatus{}, nil
 	}
 	return authn.SignupStatus{State: authn.SignupPending, Email: email, Since: timeOf(row.SignupVerifiedAt)}, nil
 }
 
-// emailIdentifiersOf reads every email identifier one account holds.
 func emailIdentifiersOf(conn *gorm.DB, account string) ([]identifierRow, error) {
 	var rows []identifierRow
 	err := conn.Where("account_id = ? AND kind = ?", account, string(authn.IdentifierEmail)).Find(&rows).Error
 	return rows, err
 }
 
-// earliestProvedEmail is the email identifier a verified account reports: the
-// one proved earliest, and among those verified at the same instant the one
-// whose identifier sorts first. No proved identifier is nil.
 func earliestProvedEmail(rows []identifierRow) *identifierRow {
 	var earliest *identifierRow
 	for i := range rows {
@@ -320,19 +248,12 @@ func earliestProvedEmail(rows []identifierRow) *identifierRow {
 	return earliest
 }
 
-// unprovedEmail is one address a pending account may report, with the ordering
-// key that decides which one it is: the instant it was written and its
-// identifier.
 type unprovedEmail struct {
 	value string
 	at    time.Time
 	id    string
 }
 
-// earliestUnprovedEmail is the address a pending account reports: the earliest
-// of its unproved email identifiers and its reservations still awaiting
-// verification, by creation instant, ties broken by identifier. found is false
-// when the account has no email address at all.
 func earliestUnprovedEmail(conn *gorm.DB, account string, emails []identifierRow) (string, bool, error) {
 	candidates := make([]unprovedEmail, 0, len(emails))
 	for _, row := range emails {
@@ -367,14 +288,6 @@ func earliestUnprovedEmail(conn *gorm.DB, account string, emails []identifierRow
 	return earliest.value, true, nil
 }
 
-// PendingAccountByContact finds the one pending account a contact belongs to.
-// kind is email or phone and value is normalized first; a caller never guesses
-// an owner, so no owner and more than one owner are both ok false. The rows are
-// read from authn_pending_contacts only, never from the identifier table. Only
-// an unproved reservation belongs to a pending account: a row whose verified_at
-// is set is a contact an account already holds, and that account is answered by
-// the identifier table, not here. The account's stored signup state is not
-// read, because an unproved reservation is what makes the contact pending.
 func (p *product) PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error) {
 	identifierKind := authn.IdentifierKind(kind)
 	if identifierKind != authn.IdentifierEmail && identifierKind != authn.IdentifierPhone {
@@ -397,8 +310,7 @@ func (p *product) PendingAccountByContact(ctx context.Context, kind string, valu
 	case 1:
 		return ids[0], true, nil
 	}
-	// The table's unique index holds at most one row per contact, so more than
-	// one owner can only come from a row written around it, and an owner is not
-	// guessed.
+	// The unique index holds at most one row per contact, so more than one owner
+	// comes only from a row written around it.
 	return "", false, nil
 }

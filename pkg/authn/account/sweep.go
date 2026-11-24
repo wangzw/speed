@@ -15,34 +15,22 @@ import (
 	"github.com/vislake/speed/pkg/authn/provisioning"
 )
 
-// The sweeps this module runs and how long Stop waits for them. Every replica
-// runs all of them and the deletions are conditional, so two sweeps never
-// conflict. The throttles and service secrets sweep on a fixed interval; the
-// unverified accounts sweep reads its interval from the settings before every
-// pass.
 const (
 	throttleSweepEvery = 10 * time.Minute
 	secretSweepEvery   = time.Hour
 	stopWait           = 5 * time.Second
 
-	// sweepBatch is how many rows one statement deletes, and sweepBatches how many
-	// statements one pass runs at most: a pass is bounded, and what it leaves the
-	// next pass takes.
 	sweepBatch   = 1000
 	sweepBatches = 100
 )
 
-// diagnosticPrefix starts the lines this module writes to the startup
-// diagnostics, which name the capability directory and not the module.
 const diagnosticPrefix = "authn: "
 
-// sweepers is the goroutines the module starts and the means to stop them.
 type sweepers struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
-// start probes the tables, writes the startup diagnostics and starts the sweeps.
 func (p *product) start(ctx context.Context) error {
 	if err := p.probe(); err != nil {
 		return err
@@ -61,9 +49,6 @@ func (p *product) start(ctx context.Context) error {
 	return nil
 }
 
-// stop ends the sweeps and waits for them, at most the bound this module gives
-// itself: a context given to Stop has its cancellation removed, so the wait is
-// this module's to limit.
 func (p *product) stop(_ context.Context) {
 	if p.sweepers.cancel == nil {
 		return
@@ -83,8 +68,6 @@ func (p *product) stop(_ context.Context) {
 	}
 }
 
-// probe looks for every table the module owns. A database in which they are
-// missing was not migrated by a command that took this module in statically.
 func (p *product) probe() error {
 	var missing []string
 	for _, name := range tables {
@@ -99,9 +82,6 @@ func (p *product) probe() error {
 		"migrations, which is IncludeAllDeclarations", authn.ErrNotMigrated, ModuleName, missing)
 }
 
-// diagnose writes the startup diagnostics: what the module runs on, each setting
-// that relaxes a check, and what an assembly without an outbox or a bus does not
-// have. A relaxation is a line of its own, so that it can be found in the log.
 func (p *product) diagnose() {
 	algorithm, err := p.passwordAlgorithm()
 	if err != nil {
@@ -125,18 +105,9 @@ func (p *product) diagnose() {
 			"membership are published after the commit and at most once, and erasing an account's data in the other " +
 			"modules is not guaranteed to finish when the process stops between the commit and the cleanup")
 	}
-	// Judging the combination of the cost settings reports a combination below
-	// what OWASP recommends at Error, so the startup says so as well. A read
-	// fault is reported by that same call and needs no separate handling here.
 	_, _ = p.hashParams()
 }
 
-// sweepLoop runs one sweep at the start and again every interval until the
-// context ends. The interval is read before every pass, so a setting that
-// states it takes effect without a restart. It cancels the shared context as it
-// returns, so the resources the sweeps were made with are released whether Stop
-// cancelled them or the caller's own context ended first; the other goroutines'
-// cancel is a no-op.
 func (p *product) sweepLoop(ctx context.Context, cancel context.CancelFunc, every func() time.Duration, what string,
 	sweep func(context.Context) (int64, error),
 ) {
@@ -163,8 +134,6 @@ func (p *product) sweepLoop(ctx context.Context, cancel context.CancelFunc, ever
 	}
 }
 
-// sweepThrottles deletes the rows of keys whose window has gone by without a failure
-// and whose wait is over, a batch at a time. It reports how many it deleted.
 func (p *product) sweepThrottles(ctx context.Context) (int64, error) {
 	now := p.now.Now().Truncate(time.Microsecond)
 	horizon := now.Add(-p.throttleParams().decay)
@@ -173,8 +142,6 @@ func (p *product) sweepThrottles(ctx context.Context) (int64, error) {
 		horizon, now, sweepBatch)
 }
 
-// sweepSecrets deletes the rows of service secrets that expired or were revoked
-// before the retention began, a batch at a time.
 func (p *product) sweepSecrets(ctx context.Context) (int64, error) {
 	cutoff := p.now.Now().Add(-p.retention()).Truncate(time.Microsecond)
 	return p.sweep(ctx, "DELETE FROM "+tableServiceKeys+" WHERE id IN (SELECT id FROM "+tableServiceKeys+
@@ -183,14 +150,8 @@ func (p *product) sweepSecrets(ctx context.Context) (int64, error) {
 }
 
 // sweepUnverified deletes self-registered accounts that never proved an email
-// address, a batch of accounts at a time. A candidate is an account whose
-// signup_state is pending, whose signup_verified_at is empty, that holds no email
-// identifier written through a proving channel (invite is not one), and that has neither logged in
-// nor been created within unverified-ttl; the conditions are read once to pick
-// the batch and again inside each deletion, so an account that proved an address
-// or logged in in between is skipped rather than deleted. An account that is not
-// a self-registration and one whose registration is verified are never selected.
-// A ttl of zero turns the sweep off.
+// address. Each selected account is re-judged under its row lock, so one that
+// proved an address or logged in since is skipped.
 func (p *product) sweepUnverified(ctx context.Context) (int64, error) {
 	ttl := p.unverifiedTTL()
 	if ttl <= 0 {
@@ -217,9 +178,7 @@ func (p *product) sweepUnverified(ctx context.Context) (int64, error) {
 		for _, id := range ids {
 			deleted, err := p.deleteUnverified(ctx, authn.AccountID(id), horizon)
 			if err != nil {
-				// The account is tombstoned even when a lifecycle hook failed;
-				// the next sweep does not select it again. The failure is
-				// reported and the rest of the batch goes on.
+				// The account is tombstoned even when a lifecycle hook failed.
 				if firstErr == nil {
 					firstErr = err
 				}
@@ -238,13 +197,6 @@ func (p *product) sweepUnverified(ctx context.Context) (int64, error) {
 	return total, firstErr
 }
 
-// deleteUnverified deletes one account the sweep selected, after re-judging in
-// its own transaction that it is still an unverified registration that has been
-// idle past the horizon. The conditions were judged when the batch was read, and
-// the account may have proved an address or logged in since: the row is locked
-// first, so the re-judgement sees whatever committed before the deletion and a
-// write that comes after it waits for the lock, and an account that changed state
-// is skipped. It reports whether an account was deleted.
 func (p *product) deleteUnverified(ctx context.Context, id authn.AccountID, horizon time.Time) (bool, error) {
 	b := &batch{}
 	deleted := false
@@ -252,8 +204,6 @@ func (p *product) deleteUnverified(ctx context.Context, id authn.AccountID, hori
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		row, err := p.lock(tx, id)
 		if errors.Is(err, authn.ErrAccountNotFound) {
-			// The account is gone, or another pass tombstoned it: nothing is
-			// left to skip or to delete.
 			return nil
 		}
 		if err != nil {
@@ -292,11 +242,6 @@ func (p *product) deleteUnverified(ctx context.Context, id authn.AccountID, hori
 	})
 }
 
-// unverified reports whether a locked account is still a registration the sweep
-// may delete: pending, never proved an address, and idle since before the
-// horizon. The proof is judged on every email identifier the account holds, with
-// the same rule the identifier write uses, so a channel this module does not
-// count as a proof does not keep the account alive either.
 func (p *product) unverified(tx *gorm.DB, row accountRow, horizon time.Time) (bool, error) {
 	if signupStateOf(row.SignupState) != authn.SignupPending || row.SignupVerifiedAt != nil {
 		return false, nil
@@ -322,8 +267,6 @@ func (p *product) unverified(tx *gorm.DB, row accountRow, horizon time.Time) (bo
 	return true, nil
 }
 
-// sweep runs a bounded delete until a statement deletes less than a batch, or the
-// pass has run its statements.
 func (p *product) sweep(ctx context.Context, statement string, args ...any) (int64, error) {
 	var total int64
 	for range sweepBatches {

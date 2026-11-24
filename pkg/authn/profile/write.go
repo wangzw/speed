@@ -15,13 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// patchInput is the request of PATCH B/me. Every field is optional: a field left
-// out is left as it is, and an unknown field is refused. display_name, locale,
-// time_zone and color_mode are pointers so that a field left out is told apart
-// from one given empty; attributes is a map, so a given one — the empty map
-// included — replaces the whole set and an absent one leaves it alone. The
-// declaration reflects the type, so the descriptions below are the body's
-// published schema.
 type patchInput struct {
 	_ struct{} `description:"The profile write; the set of fields is closed and every one is optional. A body carrying no field succeeds and changes nothing."`
 
@@ -32,34 +25,12 @@ type patchInput struct {
 	ColorMode   *string           `json:"color_mode" description:"The color-mode preference stored under the presentation.color-mode attribute: light, dark or system. Any other value is refused 400; the empty string clears the attribute and an absent field leaves it alone."`
 }
 
-// patchEntry is the complete handler of the write route: the checks below, the
-// capability's decode rule, then the declared handler that binds the body and
-// answers. The entry point binds the declared input before it calls a handler,
-// so the checks that the order of this route puts in front of the body — the
-// identity and that it has a login session — run in front of the bound handler
-// instead.
 func (p *product) patchEntry() gin.HandlerFunc {
 	return p.guardPatch(patchDecoded(patchOperation.Handle(p.handlePatchMe)))
 }
 
-// patchDecoded applies the capability's decode rule and puts a body the entry
-// point can bind back on the request: application/json with no parameter or
-// with charset=utf-8 as its only one, a body no larger than mount.MaxBodyBytes,
-// a single JSON value the declaration can hold, no member the declaration does
-// not carry, and nothing after the value. An empty body is refused; a literal
-// null is the zero value the old decoder read and is put back as the empty
-// object that stands for it.
-//
-// The entry point binds the same body again after this check and reads it from
-// the copy put back. Its own refusals carry the problem types the operation
-// declares; this wrapper answers the capability's rule itself, including the
-// 64 KiB capability limit, which the endpoint's larger limit does not express.
-// A request over the endpoint's limit is the entry point's 413, which is a
-// platform-wide answer; that is why the write route declares 413.
 func patchDecoded(next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// The old decoder checked the media type before it read anything, so a
-		// body of any size with the wrong type is the 415 first.
 		if !isPatchJSONContentType(c.GetHeader("Content-Type")) {
 			mount.Fail(c, mount.CodeUnsupportedMediaType)
 			return
@@ -68,9 +39,8 @@ func patchDecoded(next gin.HandlerFunc) gin.HandlerFunc {
 		if c.Request.Body != nil {
 			body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, mount.MaxBodyBytes))
 			if err != nil {
-				// A body over the capability's limit is a bad request, the same
-				// answer a body the decoder cannot read gets; the endpoint's own
-				// limit is the one that answers 413.
+				// A body over the capability's limit is a bad request; the endpoint's own
+				// limit answers 413.
 				mount.Fail(c, mount.CodeBadRequest)
 				return
 			}
@@ -89,8 +59,6 @@ func patchDecoded(next gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// isPatchJSONContentType reports whether a Content-Type value is
-// application/json, with no parameter or with charset=utf-8 as its only one.
 func isPatchJSONContentType(value string) bool {
 	media, params, err := mime.ParseMediaType(value)
 	if err != nil || media != "application/json" {
@@ -104,10 +72,6 @@ func isPatchJSONContentType(value string) bool {
 	return true
 }
 
-// guardPatch refuses a request the write route must not read a body for: one
-// that carries no identity, or an identity with no login session. An answer of
-// its own is written through the capability's own writers, so a 401 carries the
-// endpoint's challenge.
 func (p *product) guardPatch(next gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -124,21 +88,6 @@ func (p *product) guardPatch(next gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// handlePatchMe answers PATCH B/me: it writes the caller's own display name, its
-// whole attribute set, and the language, time zone and color mode named inside
-// that set. The writable set is closed; the account's status, its identifiers
-// and its external bindings are not writable here and no field of this body
-// reaches them.
-//
-// The order is fixed: the checks guardPatch makes before the body is read, the
-// body's shape and the value domains, the account read, the writes, the
-// best-effort audit row, the answer. The identity and session conditions are
-// checked again here as the fallback for a registration that did not go through
-// patchEntry. An impersonating identity is not refused: the write is the
-// effective account's own, so it lands on the impersonated account. The two
-// writes are not one atomic change: when the display name lands and the
-// attribute set does not, the display name's change is in force and the answer is
-// the failure's.
 func (p *product) handlePatchMe(ctx context.Context, body patchInput) (AuthnProfilePatch, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok || id.Account() == "" {
@@ -183,12 +132,6 @@ func (p *product) handlePatchMe(ctx context.Context, body patchInput) (AuthnProf
 	return patchViewOf(displayName, attributes), nil
 }
 
-// mergeAttributes composes the attribute set one SetAttributes writes: a given
-// set replaces the whole of the current one, and a given locale, time zone or
-// color mode then overwrites its key. An empty one clears the key. The merge is
-// "read the current, merge, write the whole back": two concurrent writes that
-// change different keys can lose one of them, and the loss is bounded to the
-// concurrent pair.
 func mergeAttributes(current, given map[string]string, hasLocale bool, locale string, hasZone bool, zone string, hasColorMode bool, colorMode string) map[string]string {
 	var merged map[string]string
 	if given != nil {
@@ -214,9 +157,6 @@ func mergeAttributes(current, given map[string]string, hasLocale bool, locale st
 	return merged
 }
 
-// trimmed returns the string a body field named, and whether the field was given
-// at all. A pointer that is nil is a field left out; a pointer to a value is the
-// value, trimmed of surrounding space.
 func trimmed(v *string) (string, bool) {
 	if v == nil {
 		return "", false
@@ -224,7 +164,6 @@ func trimmed(v *string) (string, bool) {
 	return strings.TrimSpace(*v), true
 }
 
-// setOrClear writes value under key, or removes the key when value is empty.
 func setOrClear(attributes map[string]string, key, value string) {
 	if value == "" {
 		delete(attributes, key)

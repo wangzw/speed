@@ -7,17 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// The views the profile routes answer with. Each is built field by field from a
-// root-package value and never handed through as it stands, so that a field
-// added to a record later does not reach a client by being there. The
-// declaration names each one, so the fragment publishes the schema of exactly
-// the shape the handler returns.
-
-// AuthnProfileProfile is GET B/me's answer: the caller's own profile. It
-// carries the account's self fields — the display name, the whole attribute set
-// and the language, time zone and color mode read out of it — plus the read-only
-// identifiers and external bindings, whose values are never written under this
-// surface.
+// AuthnProfileProfile is GET B/me's answer: the caller's own profile, built
+// field by field from the account module's values.
 type AuthnProfileProfile struct {
 	_ struct{} `description:"The caller's own profile: the account's self fields plus its identifiers and external bindings, which this surface only reads. It is built field by field from the account module's values, so a field added to the record there does not reach a client by being there."`
 
@@ -36,9 +27,7 @@ type AuthnProfileProfile struct {
 	Links        []AuthnProfileLink       `json:"links" required:"true" description:"The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included"`
 }
 
-// AuthnProfileVerification is the email-verification state as the profile shows
-// it: the state, the address that state reports, and when the account first
-// reached verified.
+// AuthnProfileVerification is the email-verification state as the profile shows it.
 type AuthnProfileVerification struct {
 	_ struct{} `description:"How far the account's email verification has got, read on this request: none when it has no email address to verify, pending when it holds an address that has not been proved, verified when it holds one whose ownership was proved."`
 
@@ -62,9 +51,8 @@ type AuthnProfileIdentifier struct {
 	DefaultContact bool      `json:"default_contact" required:"true" description:"Whether this proved email address is the one notifications to the account go to; at most one identifier of an account carries it"`
 }
 
-// AuthnProfileLink is one external binding of the caller's account. It has no
-// field for the subject, which is the provider's own name for the person and no
-// part of what the account's holder is shown.
+// AuthnProfileLink is one external binding of the caller's account, without the
+// provider's subject.
 type AuthnProfileLink struct {
 	_ struct{} `description:"One external identity bound to the account, as the account module keeps it; it carries no provider subject."`
 
@@ -76,8 +64,7 @@ type AuthnProfileLink struct {
 }
 
 // AuthnProfilePatch is PATCH B/me's answer: the self-writable fields as they
-// stand after the write — the display name, the whole attribute set, and the
-// language, time zone and color mode read out of it.
+// stand after the write.
 type AuthnProfilePatch struct {
 	_ struct{} `description:"The self-writable fields as they stand after a profile write, read back from what was stored."`
 
@@ -88,7 +75,6 @@ type AuthnProfilePatch struct {
 	ColorMode   string            `json:"color_mode" required:"true" description:"Read out of the attribute set, empty when it carries none"`
 }
 
-// profileViewOf builds the read view from the account module's read surface.
 func profileViewOf(account authn.Account, identifiers []authn.Identifier, links []authn.ExternalBinding,
 	signup authn.SignupStatus,
 ) AuthnProfileProfile {
@@ -133,7 +119,6 @@ func profileViewOf(account authn.Account, identifiers []authn.Identifier, links 
 	return view
 }
 
-// patchViewOf builds the write view from the values now stored.
 func patchViewOf(displayName string, attributes map[string]string) AuthnProfilePatch {
 	return AuthnProfilePatch{
 		DisplayName: displayName,
@@ -144,8 +129,6 @@ func patchViewOf(displayName string, attributes map[string]string) AuthnProfileP
 	}
 }
 
-// copyAttributes returns a copy of an attribute set, never the caller's map, and
-// reads a set that is nil as the empty one so an answer is always an object.
 func copyAttributes(attributes map[string]string) map[string]string {
 	out := make(map[string]string, len(attributes))
 	for k, v := range attributes {
@@ -154,9 +137,6 @@ func copyAttributes(attributes map[string]string) map[string]string {
 	return out
 }
 
-// signupStateName is the name the view writes for an account's email
-// verification state: none, pending or verified. A value outside the declared
-// set reads none, which is the zero state.
 func signupStateName(s authn.SignupState) string {
 	switch s {
 	case authn.SignupPending:
@@ -168,8 +148,6 @@ func signupStateName(s authn.SignupState) string {
 	}
 }
 
-// instant is t as an RFC 3339 instant in UTC, and nil for the zero time, which
-// a view publishes as null.
 func instant(t time.Time) *time.Time {
 	if t.IsZero() {
 		return nil

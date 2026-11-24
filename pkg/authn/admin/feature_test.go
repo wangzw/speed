@@ -24,13 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here drive the real feature board through a real registry, to Start,
-// beside the real administration module. They assert the three facts the design
-// ties together for every group: the capability is present exactly when the
-// group's name is in the frozen set, exactly when the group's routes are
-// registered. Swapping two groups' conditions makes the two sides disagree.
-
-// featureCapture keeps what the board logs, so a case reads the frozen set back.
 type featureCapture struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -70,8 +63,6 @@ func (c *featureCapture) names(t *testing.T) []string {
 	return nil
 }
 
-// diagnostic is the administration module's startup line, which names the
-// route groups it mounted.
 func (c *featureCapture) diagnostic(t *testing.T) string {
 	t.Helper()
 	c.mu.Lock()
@@ -95,15 +86,12 @@ type noRedaction struct{}
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// openGate stands in for the authentication gateway, which only has to accept
-// the board's impersonable registration.
 type openGate struct{}
 
 func (openGate) Exempt(string, string, string)       {}
 func (openGate) Optional(string, string, string)     {}
 func (openGate) Impersonable(string, string, string) {}
 
-// capabilities names the optional groups a case switches on.
 type capabilities struct {
 	sessions    bool
 	factors     bool
@@ -113,28 +101,17 @@ type capabilities struct {
 	impersonate bool
 }
 
-// The two configuration fragments the cases assemble: the feature board's
-// endpoint, and the item that turns the SSO provider group on. An absent item
-// reads as off, which is the module's declared default.
 const (
 	featureBoardConfig = `"feature": {"board": {"endpoint": "account"}}`
 	ssoEnabledConfig   = `"authn": {"admin": {"sso": {"enabled": true}}}`
 )
 
-// driveWithBoard assembles the administration module, the real board and the
-// stand-ins both need, and advances to Start. The SSO management group is
-// enabled, because the cases here hold the groups against their capabilities,
-// not the configuration gate. It returns the mounter, so a case reads the
-// groups the module registered, and the frozen feature names.
 func driveWithBoard(t *testing.T, on capabilities) (*mounttest.Mounter, []string) {
 	t.Helper()
 	mounter, names, _ := driveWithConfig(t, on, "{"+featureBoardConfig+", "+ssoEnabledConfig+"}")
 	return mounter, names
 }
 
-// driveWithConfig is driveWithBoard over a configuration body the case writes.
-// It also returns the module's startup diagnostic, which names the mounted
-// groups.
 func driveWithConfig(t *testing.T, on capabilities, body string) (*mounttest.Mounter, []string, string) {
 	t.Helper()
 
@@ -190,9 +167,7 @@ func driveWithConfig(t *testing.T, on capabilities, body string) (*mounttest.Mou
 	return mounter, capture.names(t), capture.diagnostic(t)
 }
 
-// TestAGroupIsPresentExactlyWhenItIsNamedAndMounted holds the equivalence for
-// every group: capability present, exactly when the name is frozen, exactly when
-// the group's routes are registered. The static name is in every combination.
+// TestAGroupIsPresentExactlyWhenItIsNamedAndMounted checks that a group's capability, feature name and mounted routes are present together.
 func TestAGroupIsPresentExactlyWhenItIsNamedAndMounted(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -236,7 +211,6 @@ func TestAGroupIsPresentExactlyWhenItIsNamedAndMounted(t *testing.T) {
 				}
 			}
 
-			// The static name's groups are mounted in every combination.
 			for _, r := range []struct{ method, path string }{
 				{http.MethodGet, "/api/v1/system/auth/accounts"},
 				{http.MethodGet, "/api/v1/tenants/:tenant/members"},
@@ -249,12 +223,7 @@ func TestAGroupIsPresentExactlyWhenItIsNamedAndMounted(t *testing.T) {
 	}
 }
 
-// TestTheSSOGroupFollowsItsConfigurationItem holds the one configuration gate:
-// the register capability being present is not enough, because it says the
-// process could manage providers, not that this deployment offers the
-// management surface. Off or absent, the group's routes are not registered,
-// neither feature is frozen into the document, and the startup diagnostic names
-// no SSO group.
+// TestTheSSOGroupFollowsItsConfigurationItem checks that the SSO group is mounted and named only when authn.admin.sso.enabled is true.
 func TestTheSSOGroupFollowsItsConfigurationItem(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -274,8 +243,6 @@ func TestTheSSOGroupFollowsItsConfigurationItem(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// The register and the refresher are both present, so only the item
-			// can make the answer differ.
 			mounter, names, diagnostic := driveWithConfig(t,
 				capabilities{sso: true, refresher: true}, tc.body)
 
@@ -299,9 +266,7 @@ func TestTheSSOGroupFollowsItsConfigurationItem(t *testing.T) {
 	}
 }
 
-// TestEveryDeclaredNameIsSpecified keeps the declarations and the posts in one
-// place: every name a case can see frozen above is declared with the right
-// conditionality.
+// TestEveryDeclaredNameIsSpecified checks that every feature name is declared once with the right conditionality.
 func TestEveryDeclaredNameIsSpecified(t *testing.T) {
 	want := map[string]bool{
 		featureAdmin:          false,

@@ -9,14 +9,10 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// deliverChange hands a settings.changed event to the module's relaxation
-// handler, as the bus would once the module subscribed. The handler reads its
-// decision from the payload alone, so the rig is built over no database.
 func (r *rig) deliverChange(change settings.Change) {
 	_ = r.p.onSettingsChanged(context.Background(), event.Event{Type: settings.ChangedEventType, Payload: change})
 }
 
-// warns counts the Warn lines that carry every fragment given.
 func (r *rig) warns(fragments ...string) int {
 	count := 0
 	for _, line := range strings.Split(r.logs.String(), "\n") {
@@ -37,10 +33,7 @@ func (r *rig) warns(fragments ...string) int {
 	return count
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: each watched
-// setting moved in its relaxing direction writes one Warn naming the key and the
-// direction, and one best-effort audit row, and nothing else. The Warn carries
-// the key and the direction and never the values.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow checks that each watched setting moved toward lenient writes one Warn and one audit row.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -75,9 +68,7 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningOrEqualChangeWritesNothing holds the other direction: a move that
-// checks more, and a move that keeps a value the same, are not a relaxation and
-// are not reported.
+// TestATighteningOrEqualChangeWritesNothing checks that a tightening or equal change is neither warned nor audited.
 func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 	r := newRig(t, nil)
 	r.deliverChange(settings.Change{Key: maxTTLPath, Old: "59m0s", New: "30m0s"})
@@ -92,9 +83,7 @@ func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestAnUnwatchedOrSensitiveChangeIsIgnored holds the filter: a key this module
-// does not watch, and a change whose value was withheld, are both dropped before
-// the relaxation test.
+// TestAnUnwatchedOrSensitiveChangeIsIgnored checks that an unwatched key and a withheld value are dropped before the relaxation test.
 func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	r := newRig(t, nil)
 	r.deliverChange(settings.Change{Key: accessTTLPath, Old: "10m0s", New: "59m0s"})
@@ -108,9 +97,7 @@ func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	}
 }
 
-// TestTheSubscriptionNeedsBothBusAndStore holds the wiring: the module subscribes
-// to the settings change only when the assembly carries both the event bus and the
-// settings store, and is silent when either is absent.
+// TestTheSubscriptionNeedsBothBusAndStore checks that the module subscribes only when both the event bus and the settings store are present.
 func TestTheSubscriptionNeedsBothBusAndStore(t *testing.T) {
 	r := newRig(t, nil)
 	r.p.subscribeSettings(r.bus)
@@ -132,9 +119,7 @@ func TestTheSubscriptionNeedsBothBusAndStore(t *testing.T) {
 	}
 }
 
-// TestTheHandlerIsInertWithoutABusOrStore holds the legal assembly that carries
-// neither: the handler reaches for neither, records nothing with no audit seam,
-// and neither it nor the subscription panics.
+// TestTheHandlerIsInertWithoutABusOrStore checks that the handler and the subscription are inert in an assembly with no bus, store or audit seam.
 func TestTheHandlerIsInertWithoutABusOrStore(t *testing.T) {
 	p := build(nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if p.bus != nil || p.settings.store != nil || p.audit != nil {

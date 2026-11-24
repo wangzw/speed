@@ -9,15 +9,9 @@ import (
 	"time"
 )
 
-// TestAConcurrentIssuanceThatLosesDoesNotSpendTheAddress holds the race's
-// accounting: both issuances pass every target check, so both charge the address
-// and the deployment before either writes; the one the partial unique index
-// refuses gives both counts back, leaving the winner's single charge.
+// TestAConcurrentIssuanceThatLosesDoesNotSpendTheAddress checks that a losing concurrent issuance gives its address and deployment charges back.
 func TestAConcurrentIssuanceThatLosesDoesNotSpendTheAddress(t *testing.T) {
 	h := newHarness(t)
-	// Hold both issuances at the address charge: reaching it means each one has
-	// passed the pending check, so the loser is left for the unique index rather
-	// than the pre-check.
 	var arrived atomic.Int32
 	gate := make(chan struct{})
 	h.counters.onIncr = func(key string, delta float64) {
@@ -62,9 +56,7 @@ func TestAConcurrentIssuanceThatLosesDoesNotSpendTheAddress(t *testing.T) {
 	}
 }
 
-// TestADeploymentRefusalDoesNotSpendTheAddress holds the third budget's order:
-// the address is charged before the deployment, and a deployment refusal gives
-// the address charge back because nothing was sent.
+// TestADeploymentRefusalDoesNotSpendTheAddress checks that a deployment refusal gives the address charge back.
 func TestADeploymentRefusalDoesNotSpendTheAddress(t *testing.T) {
 	h := newHarness(t)
 	h.store.set(issueAddressPath, 100)
@@ -84,10 +76,7 @@ func TestADeploymentRefusalDoesNotSpendTheAddress(t *testing.T) {
 	}
 }
 
-// TestAResendThatLosesTheRowDoesNotSpendTheAddress holds the resend's accounting:
-// the row's terminal check passes, then the row turns terminal before the
-// conditional write, so the write lands nowhere and the address and deployment
-// charges are given back.
+// TestAResendThatLosesTheRowDoesNotSpendTheAddress checks that a resend whose write lands nowhere gives its charges back.
 func TestAResendThatLosesTheRowDoesNotSpendTheAddress(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -98,8 +87,6 @@ func TestAResendThatLosesTheRowDoesNotSpendTheAddress(t *testing.T) {
 			return
 		}
 		armed = false
-		// The row turns terminal after the terminal check and before the
-		// conditional write.
 		if err := h.p.Revoke(context.Background(), tenant, issued.Invitation.ID); err != nil {
 			h.t.Errorf("revoking during the resend: %v", err)
 		}

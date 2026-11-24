@@ -9,16 +9,12 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// domainClaimJSON is one entry of a provider view's domains member.
 type domainClaimJSON struct {
 	Domain   string `json:"domain"`
 	Verified bool   `json:"verified"`
 }
 
-// TestProviderViewsCarryTheirDomains holds that a provider view reports every
-// email domain the provider has claimed and whether it is verified, on both the
-// list and the single-provider read. A claim awaiting its DNS record reads as
-// unverified; the domain that record proved reads as verified.
+// TestProviderViewsCarryTheirDomains checks that provider views report every claimed domain and its verification state.
 func TestProviderViewsCarryTheirDomains(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{
@@ -68,8 +64,7 @@ func TestProviderViewsCarryTheirDomains(t *testing.T) {
 	}
 }
 
-// TestAProviderWithNoDomainsCarriesAnEmptyArray holds the response contract the
-// console reads: the domains member is always an array and never null.
+// TestAProviderWithNoDomainsCarriesAnEmptyArray holds the response contract the console reads: the domains member is always an array and never null.
 func TestAProviderWithNoDomainsCarriesAnEmptyArray(t *testing.T) {
 	r := newRig(t)
 	r.providers.put(authn.SSOProvider{

@@ -16,33 +16,16 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// typePrefix starts the Problem.Type of every failure this capability's
-// handlers write, the code following it being one of mount's table or one this
-// package declares.
 const typePrefix = "urn:speed:authn:"
 
-// codeCannotSuspendSelf is the problem code of the self-suspension refusal: a
-// handler of this capability produces it, so it lives beside typePrefix rather
-// than in mount's table, which names the codes its request pipeline writes. The
-// type it produces is urn:speed:authn:cannot-suspend-self.
 const codeCannotSuspendSelf = "cannot-suspend-self"
 
-// errNotFound marks a capability failure that means the object the route names
-// is not there. A management route answers it as a bare 404, which carries no
-// problem document; the reply handlers turn it into one, and a simple handler,
-// whose operation cannot write a bare 404, never produces it.
 var errNotFound = errors.New("authn.admin: no such object")
 
-// authnFailure is a refusal of one of the capability's problem codes: the entry
-// point writes it as a problem document of the code's status and type.
 func authnFailure(status int, code string) error {
 	return speedhttp.Fault{Status: status, Type: typePrefix + code}
 }
 
-// caller reads the identity the gateway put on the request. The routes are
-// guarded, so a request that reaches a handler carries one; an absent identity
-// is answered with the gateway's own 401, challenge included, rather than read
-// as a caller.
 func (m *product) caller(ctx context.Context) (authn.Identity, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -57,33 +40,13 @@ func (m *product) caller(ctx context.Context) (authn.Identity, error) {
 	return id, nil
 }
 
-// decisionDomain is where a management route's action is decided. The platform
-// domain covers the account, session, secret and impersonation-record surfaces;
-// the tenant domain covers the membership, identity-provider and metadata
-// refresh surfaces. The distinction matters to one check alone: an
-// impersonating identity holds the impersonated account's capabilities and
-// none of the platform permissions a target never carries, so its requests are
-// refused on the platform domain and decided by the effective account on the
-// tenant domain.
 type decisionDomain int
 
 const (
-	// platformDomain is the surface decided in the platform domain, where an
-	// impersonating identity is refused with impersonation-restricted.
 	platformDomain decisionDomain = iota
-	// tenantDomain is the surface decided in the tenant the path or the object
-	// names, where an impersonating identity is decided by the effective
-	// account's permissions in that tenant.
 	tenantDomain
 )
 
-// admit applies the checks a management route makes before it reads anything:
-// an impersonating identity is refused on the platform domain, and a Decider is
-// there. The tenant domain admits the impersonating identity, whose capabilities
-// are the impersonated account's in that tenant, and leaves the decision to the
-// same Decider call the route makes for the account itself. It answers a refusal
-// as an error, so that a deployment with no Decider tells a caller nothing about
-// which objects exist.
 func (m *product) admit(id authn.Identity, where decisionDomain) error {
 	if where == platformDomain && id.Impersonating() {
 		return authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
@@ -94,22 +57,11 @@ func (m *product) admit(id authn.Identity, where decisionDomain) error {
 	return nil
 }
 
-// gateSignup refuses a management write an operator with an unproved email
-// address makes. It sits after the caller and the object's ownership are known
-// and before the Decider, the strength requirement and the mandatory audit: a
-// refused request asks no Decider, asks for no strength, writes no audit row and
-// calls no capability. The subject is the operator, not the effective account:
-// an impersonated target's own verification says nothing about the address the
-// operator's hands proved. A service account and an account with no email
-// address are exempt, having nothing to verify; a state that cannot be read is a
-// 503 and is never read as verified.
 func (m *product) gateSignup(ctx context.Context, id authn.Identity) error {
 	actor := id.Actor()
 	account, err := m.accounts.Get(ctx, actor)
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
-		// A static password-table subject is no account row and holds no email
-		// address; the rest of the pipeline answers for it.
 		return nil
 	case err != nil:
 		return m.unavailable("reading the acting account", fmt.Errorf("%w: %w", authn.ErrUnavailable, err))
@@ -127,8 +79,6 @@ func (m *product) gateSignup(ctx context.Context, id authn.Identity) error {
 	return nil
 }
 
-// asks puts one Decision to the Decider. A refusal is a 403 and an error or a
-// panic is a 503; either is returned as the fault the entry point writes.
 func (m *product) asks(ctx context.Context, d authn.Decision) error {
 	allow, err := m.callDecider(ctx, d)
 	switch {
@@ -141,9 +91,6 @@ func (m *product) asks(ctx context.Context, d authn.Decision) error {
 	return nil
 }
 
-// callDecider calls Decide and turns a returned error and a panic alike into
-// ErrUnavailable, so that a defective Decider is refused rather than taken for a
-// permission or a decline, and never takes the request down with it.
 func (m *product) callDecider(ctx context.Context, d authn.Decision) (allow bool, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -157,8 +104,6 @@ func (m *product) callDecider(ctx context.Context, d authn.Decision) (allow bool
 	return allow, nil
 }
 
-// require holds the actor to a strength requirement and returns the step-up 401
-// when it falls short. A zero requirement asks for nothing.
 func (m *product) require(id authn.Identity, req authn.Requirement) error {
 	if req == (authn.Requirement{}) {
 		return nil
@@ -169,14 +114,6 @@ func (m *product) require(id authn.Identity, req authn.Requirement) error {
 	return stepUpRequired(id, req)
 }
 
-// stepUpRequired is the 401 of an identity that does not meet a requirement:
-// the problem type insufficient_user_authentication and, in WWW-Authenticate,
-// the scheme the identity authenticated with followed by the level, the
-// freshness and the local-only flag the requirement names.
-//
-// The challenge is built here rather than through the capability's writer
-// because a typed handler has no *gin.Context to hand it; the shape is the one
-// that writer produces, byte for byte.
 func stepUpRequired(id authn.Identity, r authn.Requirement) error {
 	return speedhttp.Fault{
 		Status: http.StatusUnauthorized,
@@ -188,9 +125,6 @@ func stepUpRequired(id authn.Identity, r authn.Requirement) error {
 	}
 }
 
-// stepUpChallenge renders the step-up challenge: RFC 9470's parameters carried
-// on the scheme the identity authenticated with, which is this capability's
-// convention on Cookie and Basic as well as on Bearer.
 func stepUpChallenge(scheme string, r authn.Requirement) string {
 	var b strings.Builder
 	b.WriteString(challengeScheme(scheme))
@@ -207,14 +141,8 @@ func stepUpChallenge(scheme string, r authn.Requirement) string {
 	return b.String()
 }
 
-// stepUpDescription is the error_description of the step-up challenge. It names
-// no requirement of the route and nothing of the account.
 const stepUpDescription = "A stronger or more recent authentication is required"
 
-// challengeScheme returns scheme when it is an RFC 9110 token, and Bearer
-// otherwise. The gateway stamps Identity.Challenge, so an odd value is a zero
-// identity or a defect, and neither may put a character into a header that ends
-// the field.
 func challengeScheme(scheme string) string {
 	if scheme == "" {
 		return "Bearer"
@@ -231,10 +159,8 @@ func challengeScheme(scheme string) string {
 	return scheme
 }
 
-// auditRequired writes the mandatory audit row of a write, outside any
-// transaction and before the action. A row that does not land is the module's
-// own failure or the audit module's state, and the action is not carried out:
-// the answer is 503.
+// The mandatory audit is recorded before the action and outside any transaction:
+// a caller's open transaction would block this write.
 func (m *product) auditRequired(ctx context.Context, e audit.Entry) error {
 	if err := m.audit.Record(ctx, e); err != nil {
 		m.logger.Error(ModuleName+": the mandatory audit row could not be written, so the action was not carried out",
@@ -244,8 +170,6 @@ func (m *product) auditRequired(ctx context.Context, e audit.Entry) error {
 	return nil
 }
 
-// auditBestEffort writes an audit row that does not block the action. A failure
-// is an Error line and changes nothing about the answer.
 func (m *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	if err := m.audit.Record(ctx, e); err != nil {
 		m.logger.Error(ModuleName+": an audit row could not be written",
@@ -253,13 +177,7 @@ func (m *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// answer maps a failure a capability returned to the refusal it belongs to. A
-// missing object is errNotFound, which a reply handler writes as a bare 404; a
-// failure the route did not cause that no sentinel names is a 503.
 func (m *product) answer(ctx context.Context, op string, err error) error {
-	// The account-deletion floor has a code of its own, and the tenant in the
-	// detail: a surface can tell this refusal from every other 409 and name the
-	// organization whose only administrator the account still is.
 	var lastAdmin *authn.AccountLastTenantAdminError
 	if errors.As(err, &lastAdmin) {
 		name, nameErr := m.nameOf(ctx, lastAdmin.Tenant)
@@ -319,8 +237,6 @@ func (m *product) answer(ctx context.Context, op string, err error) error {
 	}
 }
 
-// replyFailure maps a capability failure to the answer of a reply operation: a
-// missing object is a bare 404, every other refusal is the fault answer returns.
 func (m *product) replyFailure(ctx context.Context, op string, err error) (speedhttp.Reply, error) {
 	mapped := m.answer(ctx, op, err)
 	if errors.Is(mapped, errNotFound) {
@@ -329,15 +245,10 @@ func (m *product) replyFailure(ctx context.Context, op string, err error) (speed
 	return nil, mapped
 }
 
-// bad answers a body or a query parameter the route refuses: a 400 with this
-// capability's code. It is for shape problems the handler judges itself, ahead
-// of any capability call.
 func (m *product) bad() error {
 	return authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 }
 
-// unavailable answers a failure of a dependency: a 503 whose cause stays in the
-// log and never reaches the caller.
 func (m *product) unavailable(op string, err error) error {
 	m.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
 	return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)

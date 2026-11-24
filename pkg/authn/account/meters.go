@@ -14,10 +14,8 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// The meter every module of the capability directory reports under, and the
-// instruments and attributes this module reports through. A dashboard or an alert
-// rule written against a name stops matching when it changes, so they are fixed
-// here.
+// A dashboard or an alert rule written against one of these names stops matching
+// when it changes, so they are fixed here.
 const (
 	meterName = "authn"
 
@@ -34,8 +32,6 @@ const (
 	mandatoryAttribute = "mandatory"
 )
 
-// The outcomes of a password verification, as the instrument's attribute takes
-// them.
 const (
 	outcomeOK       = "ok"
 	outcomeBad      = "bad"
@@ -43,9 +39,6 @@ const (
 	outcomeUpgraded = "upgraded"
 )
 
-// The hooks a cleanup failure is told apart by. The first three are the modules
-// that implement AccountLifecycle today, and the fourth is the revocation of a
-// service secret's session; a hook this module cannot name reads other.
 const (
 	hookSession = "session"
 	hookMFA     = "mfa"
@@ -54,9 +47,6 @@ const (
 	hookOther   = "other"
 )
 
-// meters is the instruments this module reports through. The zero value reports
-// nothing, which is the state of an assembly with no metric capability, and every
-// method is safe on it.
 type meters struct {
 	verifications metric.Int64Counter
 	derive        metric.Float64Histogram
@@ -65,7 +55,6 @@ type meters struct {
 	auditFailures metric.Int64Counter
 }
 
-// newMeters creates the instruments on the meter of the capability directory.
 func newMeters(provider observability.MeterProvider) (meters, error) {
 	meter := provider.Meter(meterName)
 	var m meters
@@ -128,9 +117,6 @@ func (m meters) auditFailed(ctx context.Context, mandatory bool) {
 	}
 }
 
-// hookName is what a lifecycle implementation reports as in the cleanup counter:
-// the last element of the package it is declared in, when that is one of the
-// three modules that hold account data, and other for any other.
 func hookName(h authn.AccountLifecycle) string {
 	t := reflect.TypeOf(h)
 	for t != nil && t.Kind() == reflect.Pointer {

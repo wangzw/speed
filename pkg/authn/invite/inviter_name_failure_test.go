@@ -12,11 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// errInviterUnreadable is the failure a case scripts for the account read that
-// resolves an inviter's name after the invitation was written.
 var errInviterUnreadable = errors.New("the account store could not answer")
 
-// invitationByEmail finds the invitation a page holds for an address.
 func invitationByEmail(t *testing.T, page AuthnInvitePage, email string) AuthnInviteInvitation {
 	t.Helper()
 	for _, invitation := range page.Invitations {
@@ -28,9 +25,8 @@ func invitationByEmail(t *testing.T, page AuthnInvitePage, email string) AuthnIn
 	return AuthnInviteInvitation{}
 }
 
-// TestTheIssueAnswerNamesAReadableInviter is the control the failure cases are
-// read against: with the reads answering, both name keys carry the issuer's
-// display name and username.
+// TestTheIssueAnswerNamesAReadableInviter checks that the issue answer carries
+// the inviter's display name and username.
 func TestTheIssueAnswerNamesAReadableInviter(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.named(adminID, "Ada Admin")
@@ -53,12 +49,8 @@ func TestTheIssueAnswerNamesAReadableInviter(t *testing.T) {
 	}
 }
 
-// TestTheIssueAnswerKeepsTheTokenWhenTheInviterCannotBeRead holds the one-time
-// token against a read failure that happens after the invitation is settled:
-// failing the answer would discard the only copy of the acceptance link. The
-// inviter's names are omitted and the failure is logged. The acting operator
-// issues as the impersonated account, so the failed read is the inviter's
-// alone and the signup gate's own read still answers.
+// TestTheIssueAnswerKeepsTheTokenWhenTheInviterCannotBeRead checks that an
+// unreadable inviter still leaves the one-time token in the answer.
 func TestTheIssueAnswerKeepsTheTokenWhenTheInviterCannotBeRead(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.named(adminID, "Ada Admin")
@@ -88,10 +80,8 @@ func TestTheIssueAnswerKeepsTheTokenWhenTheInviterCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestTheResendAnswerKeepsTheTokenWhenTheInviterCannotBeRead holds the same rule
-// on a resend, where the cost of failing the answer is higher: the resend has
-// already replaced the token, so the caller would hold neither the old link nor
-// the new one.
+// TestTheResendAnswerKeepsTheTokenWhenTheInviterCannotBeRead checks that a resend
+// whose inviter cannot be read still answers its new token.
 func TestTheResendAnswerKeepsTheTokenWhenTheInviterCannotBeRead(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.named("acct-inviter", "Ivy Inviter")
@@ -117,9 +107,8 @@ func TestTheResendAnswerKeepsTheTokenWhenTheInviterCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestTheListOmitsTheInviterWhenTheAccountCannotBeRead holds the same rule on
-// the management list, and its counterpart: one inviter whose read fails loses
-// both names, while another invitation on the same page still carries them.
+// TestTheListOmitsTheInviterWhenTheAccountCannotBeRead checks that one unreadable
+// inviter loses both names while the rest of the page keeps theirs.
 func TestTheListOmitsTheInviterWhenTheAccountCannotBeRead(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.named("acct-a", "Alex Able")
@@ -131,7 +120,6 @@ func TestTheListOmitsTheInviterWhenTheAccountCannotBeRead(t *testing.T) {
 	h.issueAs("acct-b", tenant, "bob@example.com", "")
 	h.asAdmin()
 
-	// The control: with every read answering, both invitations are named.
 	w := h.request(http.MethodGet, pathAdmin, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
@@ -147,8 +135,6 @@ func TestTheListOmitsTheInviterWhenTheAccountCannotBeRead(t *testing.T) {
 		t.Errorf("bob's inviter username = %q, want the readable username", got)
 	}
 
-	// One inviter's read fails: the page still answers, that invitation loses
-	// both names, and the other keeps its own.
 	h.accounts.failsFor("acct-b", errInviterUnreadable)
 	w = h.request(http.MethodGet, pathAdmin, nil)
 	if w.Code != http.StatusOK {
@@ -176,9 +162,8 @@ func TestTheListOmitsTheInviterWhenTheAccountCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestTheListKeepsDisplayNamesWhenTheUsernameReadFails holds the bulk read's
-// failure: a page that already resolved each inviter's display name keeps them
-// and omits only the usernames.
+// TestTheListKeepsDisplayNamesWhenTheUsernameReadFails checks that a failed bulk
+// read keeps the display names and omits the usernames.
 func TestTheListKeepsDisplayNamesWhenTheUsernameReadFails(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.named(adminID, "Ada Admin")
@@ -213,8 +198,6 @@ func TestTheListKeepsDisplayNamesWhenTheUsernameReadFails(t *testing.T) {
 	}
 }
 
-// assertNoInviterNames holds that neither name key reaches the answer, so a
-// client sees an absent name rather than an empty one.
 func assertNoInviterNames(t *testing.T, body string) {
 	t.Helper()
 	for _, field := range []string{"invited_by_name", "invited_by_username"} {

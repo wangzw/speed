@@ -13,7 +13,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// problemTypeOf reads the problem document's type from a refused answer.
 func problemTypeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 	t.Helper()
 	var problem struct {
@@ -25,7 +24,6 @@ func problemTypeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 	return problem.Type
 }
 
-// invitationJSON decodes the invitation an issue or list answer carries.
 func invitationJSON(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var answered struct {
@@ -37,10 +35,7 @@ func invitationJSON(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	return answered.Invitation
 }
 
-// TestIssuingARoleTheCallerCannotManageIsForbidden holds the first issuance
-// rule: a caller that may manage memberships but not roles cannot hand a role
-// out through an invitation. The role policy answers the missing permission, and
-// the route refuses before a row is written.
+// TestIssuingARoleTheCallerCannotManageIsForbidden checks that a caller who may manage memberships but not roles gets 403 forbidden.
 func TestIssuingARoleTheCallerCannotManageIsForbidden(t *testing.T) {
 	h := newHarness(t)
 	h.rolePolicy.grantErr = authn.ErrForbidden
@@ -58,10 +53,7 @@ func TestIssuingARoleTheCallerCannotManageIsForbidden(t *testing.T) {
 	}
 }
 
-// TestIssuingAProtectedRoleAnswersItsOwnForbidden holds the second issuance
-// rule: a role the caller may not grant — platform-admin, one carrying a
-// permission the caller does not hold, or one the host write guard protects — is
-// its own 403 code rather than the generic forbidden.
+// TestIssuingAProtectedRoleAnswersItsOwnForbidden checks that a protected role answers its own 403 code.
 func TestIssuingAProtectedRoleAnswersItsOwnForbidden(t *testing.T) {
 	h := newHarness(t)
 	h.rolePolicy.grantErr = authn.ErrRoleProtected
@@ -79,8 +71,7 @@ func TestIssuingAProtectedRoleAnswersItsOwnForbidden(t *testing.T) {
 	}
 }
 
-// TestIssuingAnUnknownRoleAnswersBadRequest holds the third issuance rule: a
-// role the tenant does not have is a 400 of its own.
+// TestIssuingAnUnknownRoleAnswersBadRequest checks that a role the tenant does not have is a 400 of its own.
 func TestIssuingAnUnknownRoleAnswersBadRequest(t *testing.T) {
 	h := newHarness(t)
 	h.rolePolicy.grantErr = authn.ErrRoleUnknown
@@ -98,9 +89,7 @@ func TestIssuingAnUnknownRoleAnswersBadRequest(t *testing.T) {
 	}
 }
 
-// TestIssuingARoleWithoutThePolicyFailsClosed holds the assembly rule: a role
-// cannot be issued when no policy can judge it, because nobody would have
-// checked that the caller may grant it.
+// TestIssuingARoleWithoutThePolicyFailsClosed checks that an issuance with a role and no policy answers 503.
 func TestIssuingARoleWithoutThePolicyFailsClosed(t *testing.T) {
 	h := newHarness(t)
 	h.p.rolePolicy = nil
@@ -115,9 +104,7 @@ func TestIssuingARoleWithoutThePolicyFailsClosed(t *testing.T) {
 	}
 }
 
-// TestIssuingWithoutARoleDoesNotAskTheRolePolicy holds that an invitation
-// without a role behaves as it always did: no policy question, no capability
-// needed.
+// TestIssuingWithoutARoleDoesNotAskTheRolePolicy checks that an issuance without a role asks no policy.
 func TestIssuingWithoutARoleDoesNotAskTheRolePolicy(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -130,9 +117,7 @@ func TestIssuingWithoutARoleDoesNotAskTheRolePolicy(t *testing.T) {
 	}
 }
 
-// TestTheManagementAndPublicViewsCarryTheRole holds the view fields: an
-// invitation that carries a role shows it in the issue answer, the list, the
-// public read and the acceptance answer.
+// TestTheManagementAndPublicViewsCarryTheRole checks that every view and the acceptance answer carry the role.
 func TestTheManagementAndPublicViewsCarryTheRole(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -192,8 +177,7 @@ func TestTheManagementAndPublicViewsCarryTheRole(t *testing.T) {
 	}
 }
 
-// TestTheViewsOmitTheRoleKeyWhenThereIsNone holds the absence rule: no role
-// means the key is absent, never null, in every view.
+// TestTheViewsOmitTheRoleKeyWhenThereIsNone checks that no role means the key is absent, never null, in every view.
 func TestTheViewsOmitTheRoleKeyWhenThereIsNone(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -232,9 +216,7 @@ func TestTheViewsOmitTheRoleKeyWhenThereIsNone(t *testing.T) {
 	}
 }
 
-// TestAcceptBindsTheInvitationsRole holds the acceptance's write: the role the
-// invitation carries is bound to the accepting account, and the answer reports
-// it.
+// TestAcceptBindsTheInvitationsRole checks that the acceptance binds the invitation's role to the accepting account.
 func TestAcceptBindsTheInvitationsRole(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issueRole(tenant, "alice@example.com", "editor")
@@ -258,9 +240,7 @@ func TestAcceptBindsTheInvitationsRole(t *testing.T) {
 	}
 }
 
-// TestAcceptKeepsAnExistingMembershipAndStillBindsTheRole holds the join rule:
-// an invited person who is already a member keeps the membership's source and
-// SSO exemption, and the invitation's role is bound beside it.
+// TestAcceptKeepsAnExistingMembershipAndStillBindsTheRole checks that an existing member keeps the source and exemption and still gets the role.
 func TestAcceptKeepsAnExistingMembershipAndStillBindsTheRole(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issueRole(tenant, "alice@example.com", "editor")
@@ -280,11 +260,7 @@ func TestAcceptKeepsAnExistingMembershipAndStillBindsTheRole(t *testing.T) {
 	}
 }
 
-// TestAcceptRefusesARoleThatCanNoLongerBeGranted holds the acceptance review:
-// when the role is gone, the inviter has lost a permission it carries, or the
-// inviter is no longer an active member or has lost role management, the
-// acceptance revokes the invitation and writes neither the membership nor the
-// binding. The revocation leaves one audit row of its own.
+// TestAcceptRefusesARoleThatCanNoLongerBeGranted checks that a role that can no longer be granted revokes the invitation and writes nothing.
 func TestAcceptRefusesARoleThatCanNoLongerBeGranted(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -322,10 +298,7 @@ func TestAcceptRefusesARoleThatCanNoLongerBeGranted(t *testing.T) {
 	}
 }
 
-// TestAcceptKeepsTheInvitationWhenTheRoleReviewIsUnavailable holds the
-// difference between a refusal and a failure: a review that cannot answer is not
-// a decision about the role, so the acceptance answers unavailable, the
-// invitation stays pending, and nothing is revoked, written or audited.
+// TestAcceptKeepsTheInvitationWhenTheRoleReviewIsUnavailable checks that a review that cannot answer leaves the invitation pending and answers unavailable.
 func TestAcceptKeepsTheInvitationWhenTheRoleReviewIsUnavailable(t *testing.T) {
 	h := newHarness(t)
 	h.rolePolicy.stillErr = errors.New("the policy store is down")
@@ -353,9 +326,7 @@ func TestAcceptKeepsTheInvitationWhenTheRoleReviewIsUnavailable(t *testing.T) {
 	}
 }
 
-// TestAcceptKeepsTheInvitationWhenTheInviterCannotBeRead holds the account read
-// apart from a refusal: a read that cannot answer leaves the invitation
-// pending, with no revocation, no membership, no binding and no revoke audit.
+// TestAcceptKeepsTheInvitationWhenTheInviterCannotBeRead checks that an unreadable inviter leaves the invitation pending.
 func TestAcceptKeepsTheInvitationWhenTheInviterCannotBeRead(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issueRole(tenant, "alice@example.com", "editor")
@@ -382,9 +353,7 @@ func TestAcceptKeepsTheInvitationWhenTheInviterCannotBeRead(t *testing.T) {
 	}
 }
 
-// TestAcceptRevokesTheInvitationWhenTheInviterCannotStand holds the inviter's
-// account states: one that no longer exists and one an administrator disabled
-// both withdraw the invitation, because neither can have its standing replayed.
+// TestAcceptRevokesTheInvitationWhenTheInviterCannotStand checks that a gone or disabled inviter withdraws the invitation.
 func TestAcceptRevokesTheInvitationWhenTheInviterCannotStand(t *testing.T) {
 	for name, script := range map[string]func(*fakeAccounts){
 		"the inviter account no longer exists": func(a *fakeAccounts) { a.gone(adminID) },
@@ -414,9 +383,7 @@ func TestAcceptRevokesTheInvitationWhenTheInviterCannotStand(t *testing.T) {
 	}
 }
 
-// TestAnInviterWithoutAnAccountIsNeverRead holds the two exemptions from the
-// account read: a host command's invitation has no inviter, and a static
-// subject has no account row, so neither may send the acceptance to the store.
+// TestAnInviterWithoutAnAccountIsNeverRead checks that a host command and a static subject are never read from the account store.
 func TestAnInviterWithoutAnAccountIsNeverRead(t *testing.T) {
 	t.Run("a host command's invitation", func(t *testing.T) {
 		h := newHarness(t)
@@ -448,10 +415,6 @@ func TestAnInviterWithoutAnAccountIsNeverRead(t *testing.T) {
 		if after := h.accounts.getCountOf("static.ops"); after != before {
 			t.Errorf("the acceptance read the account store %d time(s), want none for a static subject", after-before)
 		}
-		// The static subject skips the account-state read but not the role
-		// review: the seam is asked exactly once, for this invitation's role and
-		// its static inviter, so treating the static subject as a host command or
-		// skipping the review altogether fails here.
 		review := h.rolePolicy.acceptCalls()
 		if len(review) != 1 || review[0].Tenant != tenant || review[0].Account != "static.ops" || review[0].Role != "editor" {
 			t.Errorf("the static subject's review asked %+v, want one editor judgement for static.ops in %s", review, tenant)
@@ -480,9 +443,6 @@ func TestAnInviterWithoutAnAccountIsNeverRead(t *testing.T) {
 	})
 }
 
-// seedStaticInvitation stores one pending invitation issued by a deployment
-// static subject, so a case can hold what acceptance does with an inviter that
-// has no account row. It answers the token and the invitation identifier.
 func (h *harness) seedStaticInvitation() (token, id string) {
 	h.t.Helper()
 	minted, err := newToken()
@@ -503,9 +463,7 @@ func (h *harness) seedStaticInvitation() (token, id string) {
 	return minted, row.ID
 }
 
-// TestAnIdentityWithoutAnAccountIsNotAHost holds the issuer reading apart: no
-// identity is a host command, while an identity that carries no account is
-// refused rather than read as one.
+// TestAnIdentityWithoutAnAccountIsNotAHost checks that no identity is a host command and an identity with no account is refused.
 func TestAnIdentityWithoutAnAccountIsNotAHost(t *testing.T) {
 	if _, host, err := issuerOf(authn.Identity{}, false); err != nil || !host {
 		t.Errorf("issuerOf(no identity) = (host=%v, err=%v), want a host command", host, err)
@@ -515,9 +473,6 @@ func TestAnIdentityWithoutAnAccountIsNotAHost(t *testing.T) {
 	}
 }
 
-// assertRevokedAudit holds the settlement's audit row: the revocation the
-// acceptance performed names the invitation, succeeds, carries the tenant, and
-// says which reason class settled it.
 func assertRevokedAudit(t *testing.T, h *harness, invitationID, reason string) {
 	t.Helper()
 	var found int
@@ -545,10 +500,7 @@ func assertRevokedAudit(t *testing.T, h *harness, invitationID, reason string) {
 	}
 }
 
-// TestAHostCommandIssuesAnInvitationWithARole holds the host path end to end:
-// a command with no acting identity may issue an invitation that carries a
-// role, the seam is asked with no account, the stored inviter is empty, and the
-// acceptance binds the role while checking only that the role still exists.
+// TestAHostCommandIssuesAnInvitationWithARole checks that a host command issues and accepts a role without an inviter account.
 func TestAHostCommandIssuesAnInvitationWithARole(t *testing.T) {
 	h := newHarness(t)
 	issued, err := h.p.Issue(context.Background(), IssueInvite{
@@ -584,8 +536,7 @@ func TestAHostCommandIssuesAnInvitationWithARole(t *testing.T) {
 	}
 }
 
-// TestAcceptWritesTheAcceptanceAudit holds the mandatory audit row: one row per
-// acceptance, naming the tenant, the role when there is one and the inviter.
+// TestAcceptWritesTheAcceptanceAudit checks that one audit row per acceptance names the tenant, the role when there is one and the inviter.
 func TestAcceptWritesTheAcceptanceAudit(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issueRole(tenant, "alice@example.com", "editor")
@@ -620,8 +571,7 @@ func TestAcceptWritesTheAcceptanceAudit(t *testing.T) {
 	}
 }
 
-// TestIssueAuditCarriesTheRole holds the issue audit's detail: an invitation
-// issued with a role names it, and one issued without a role names none.
+// TestIssueAuditCarriesTheRole checks that the issue audit names the role when there is one and omits it otherwise.
 func TestIssueAuditCarriesTheRole(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -652,8 +602,7 @@ func TestIssueAuditCarriesTheRole(t *testing.T) {
 	}
 }
 
-// TestAcceptanceAuditOmitsTheRoleWhenThereIsNone holds the detail key's absence
-// rule: an acceptance of an invitation without a role names no role.
+// TestAcceptanceAuditOmitsTheRoleWhenThereIsNone checks that an acceptance of an invitation without a role names no role.
 func TestAcceptanceAuditOmitsTheRoleWhenThereIsNone(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -670,9 +619,7 @@ func TestAcceptanceAuditOmitsTheRoleWhenThereIsNone(t *testing.T) {
 	}
 }
 
-// TestAnAcceptanceWithoutAnAuditDoesNotHappen holds the audit's mandatory
-// strength: a row that cannot be written means the acceptance is not carried
-// out, and the invitation stays pending with no membership written.
+// TestAnAcceptanceWithoutAnAuditDoesNotHappen checks that an audit row that cannot land means the acceptance is not carried out.
 func TestAnAcceptanceWithoutAnAuditDoesNotHappen(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -692,11 +639,7 @@ func TestAnAcceptanceWithoutAnAuditDoesNotHappen(t *testing.T) {
 	}
 }
 
-// TestTheAcceptanceRouteAnswersAWithdrawnRoleAsTerminal holds the acceptance
-// face's mapping: a role the review can no longer grant settles the invitation
-// and answers 409 invitation-terminal, not the generic 503. The case drives the
-// route, so dropping the withdrawn-role disjunction from the mapping turns it
-// into a 503.
+// TestTheAcceptanceRouteAnswersAWithdrawnRoleAsTerminal checks that a withdrawn role answers 409 invitation-terminal.
 func TestTheAcceptanceRouteAnswersAWithdrawnRoleAsTerminal(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issueRole(tenant, "alice@example.com", "editor")
@@ -716,18 +659,13 @@ func TestTheAcceptanceRouteAnswersAWithdrawnRoleAsTerminal(t *testing.T) {
 	}
 }
 
-// failingTenantNames fails every tenant-name read, so a case can judge what a
-// settlement writes when the name cannot be had.
 type failingTenantNames struct{ err error }
 
 func (f failingTenantNames) TenantNameOf(context.Context, string) (string, error) {
 	return "", f.err
 }
 
-// TestARoleWithdrawalIsAuditedWhenTheTenantNameIsUnreadable holds that the
-// settlement's audit row does not depend on the name read: when the name cannot
-// be read the row is written with the tenant identifier in its place, so a
-// revocation the acceptance performed is never left unaudited.
+// TestARoleWithdrawalIsAuditedWhenTheTenantNameIsUnreadable checks that the revocation audit lands with the tenant identifier when the name cannot be read.
 func TestARoleWithdrawalIsAuditedWhenTheTenantNameIsUnreadable(t *testing.T) {
 	h := newHarness(t)
 	h.p.tenantNames = failingTenantNames{err: errors.New("the name store is down")}

@@ -1,22 +1,5 @@
-// Package impersonation is the impersonation module of the authentication
-// capability: it holds the impersonation records, decides whether one may begin,
-// writes the mandatory audit before the action, and answers whether a record is
-// still in force.
-//
-// An impersonation is a record with a lifetime, a reason and one tenant, and not
-// a new credential and not a switch on an identity. It hangs on the
-// administrator's own session; the browser carries it as a marker on that
-// session, and the API carries it as a short-lived impersonation access token.
-// The administrator stays the accountable party through every request: the
-// identity's account is the target and its actor and key are the administrator.
-//
-// The module enforces a set of structural restrictions that do not depend on the
-// decision seam: who the actor is, how recently and how strongly the actor
-// authenticated, which target and which tenant, how long, and whether the actor's
-// session already has one in force. A Decider is asked above those and can only
-// tighten them, never relax them. The result is a record that is never deleted,
-// that answers who impersonated whom, and that carries the module's seam-level
-// audit rows: a start is written only when the mandatory audit succeeded.
+// Package impersonation holds impersonation records: it decides whether one may
+// begin, audits it, and reports whether a record is still in force.
 package impersonation
 
 import (
@@ -47,22 +30,13 @@ import (
 // command that takes impersonation in.
 const ModuleName = "authn.impersonation"
 
-// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
-// routes for. The endpoint the routes are actually mounted on is the one the
-// mounter resolves; the fragment is a static declaration written before that is
-// known, so it carries the conventional name.
+// defaultEndpoint is the conventional endpoint the static fragment declares; the
+// mounter decides where the routes are actually mounted.
 const defaultEndpoint = "account"
 
-// impersonationFragment is this module's OpenAPI fragment, describing the three
-// routes of the impersonation self-service.
-//
 //go:embed openapi/impersonation.json
 var impersonationFragment []byte
 
-// impersonationSpec is the API root this module's fragment and routes hang off.
-// Its prefix and version are the common ones; the fragment writes the
-// capability's own segment, so a route's declared path begins with the part of
-// the mounter's base that lies below this root.
 var impersonationSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
@@ -70,46 +44,26 @@ var impersonationSpec = speedhttp.Spec{
 	Document: impersonationFragment,
 }
 
-// diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
 
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so that the
-// tree the database module sees has one directory per dialect at its root.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
-		// The embed directive is what makes this unreachable: the directory is
-		// part of the source tree or the build fails first.
 		panic(ModuleName + ": the embedded migration tree: " + err.Error())
 	}
 	return sub
 }()
 
-// The module registers itself. Importing this package is what puts it in a
-// binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// product must deliver what the descriptor declares.
 var _ authn.Impersonation = (*product)(nil)
 
-// Module is the descriptor a host registers.
-//
-// The database, the route mounter, the session store, the account reads, the
-// signup verification reads, the membership reads, the multi-factor composition,
-// the audit capability and the tenant admission layer's scope guard are required, and each is delivered
-// exclusively by another module of the directory, so the closure of a command
-// that takes this one in does not pull them in: the host writes them down. The
-// settings store is required as optional only so that it is initialised first;
-// the decision seam, the token capability, the event bus, the logger and the
-// metric provider are taken up in Init, and the absence of a Decider is a legal
-// assembly with the behaviour of refusing every start.
-//
-// The stance is StateEnabled and never StateAuto: whether to run is a decision
-// on the command tree and not a conclusion a configuration can infer.
+// Module is the descriptor a host registers. Its required capabilities are the
+// database, the route mounter, the session and account stores, the signup and
+// membership reads, multi-factor, audit and the tenant scope guard.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -134,8 +88,6 @@ func Module() core.Module {
 			db.Migrations{FS: migrationsFS},
 			impersonationSpec,
 			operations,
-			// The impersonation self-service routes: mounted whenever the module
-			// is in force, so the feature is static.
 			feature.Spec{Name: "authn.impersonation"},
 		},
 
@@ -165,21 +117,15 @@ func Module() core.Module {
 
 		Stop: func(context.Context, *core.Registry, any) error { return nil },
 
-		// The handle belongs to the database module, which closes it.
 		Close: func(context.Context, *core.Registry, any) error { return nil },
 	}
 }
 
-// productOf narrows an instance to this module's product. The callbacks are also
-// handed an instance a host supplied for the module, which can be any value that
-// delivers the capability; they act on the module's own product and leave a
-// supplied one as it is.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance. It delivers the impersonation capability.
 type product struct {
 	store        *store
 	accounts     authn.Accounts
@@ -191,24 +137,19 @@ type product struct {
 	scopeGuard   authn.ScopeGuard
 	mounter      mount.Mounter
 
-	// What Init takes up. decider and tokens are nil when absent, which the
-	// behaviour of each states.
 	decider     authn.Decider
 	tokens      authn.Tokens
 	bus         event.Bus
 	meters      *meters
 	settings    *reader
 	tenantNames authn.TenantNameResolver
-	// tenantDirectory answers the identifier a name names, nil when the
-	// assembly supplies no roster. The start request names its tenant by name
-	// and the membership read keys by identifier, so a start without this seam
-	// cannot tell which tenant the request names and is refused.
+	// tenantDirectory maps a tenant name to its identifier; with no directory a
+	// start cannot resolve its tenant and is refused.
 	tenantDirectory authn.TenantDirectory
 	logger          *slog.Logger
 	clock           clock.Source
 }
 
-// newProduct takes up what the descriptor requires.
 func newProduct(reg *core.Registry) (*product, error) {
 	database, err := core.Resolve[db.Database](reg)
 	if err != nil {
@@ -249,9 +190,6 @@ func newProduct(reg *core.Registry) (*product, error) {
 	return build(database.DB(), accounts, verification, memberships, mfa, sessions, auditor, guard, mounter), nil
 }
 
-// build assembles a product from its parts. The optional parts start absent and
-// the logger starts as the process's, so that a product that has not been through
-// Init is still one that does not panic.
 func build(handle *gorm.DB, accounts authn.Accounts, verification authn.SignupVerification,
 	memberships authn.Memberships, mfa authn.MFA, sessions authn.Sessions, auditor audit.Audit,
 	guard authn.ScopeGuard, mounter mount.Mounter,
@@ -273,8 +211,6 @@ func build(handle *gorm.DB, accounts authn.Accounts, verification authn.SignupVe
 	}
 }
 
-// wire runs in Init, where every instance exists. It takes up the optional
-// capabilities and mounts the routes.
 func (m *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		m.logger = delivered.Named(ModuleName)
@@ -314,9 +250,9 @@ func (m *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// optional takes up a capability whose absence is a legal assembly: the zero
-// value says it is absent, and any other failure to take it up ends the startup,
-// because a capability that is there and cannot be taken up is not an absence.
+// optional reads a capability whose absence is legal; any failure other than
+// ErrMissingProvider is returned, because a capability that is there and cannot
+// be read is not an absence.
 func optional[T any](reg *core.Registry, what string) (T, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -330,9 +266,6 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 	}
 }
 
-// start runs in Start: the table must be there, and the mount endpoint must not
-// be one the admission layer guards, or an impersonating identity would be
-// answered 404 there and could not even end its impersonation.
 func (m *product) start(ctx context.Context) error {
 	if err := m.store.probe(ctx); err != nil {
 		return fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)

@@ -9,14 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestAServiceAccountCannotAcceptAnInvitation holds the acceptance's caller
-// check: a service account can hold the invited address as a proven identifier
-// and reach the optional route with a client-credentials identity, but it signs
-// in with a service secret and has no acceptable membership. The acceptance
-// refuses it with 403 invitation-target-invalid, not a 401: the caller is
-// authenticated, and a client that reads a 401 as an expired credential would
-// refresh and retry a permanent refusal. The invitation stays pending and no
-// membership is written.
+// TestAServiceAccountCannotAcceptAnInvitation checks that a service account, even one holding the invited address, is refused with invitation-target-invalid.
 func TestAServiceAccountCannotAcceptAnInvitation(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -41,10 +34,7 @@ func TestAServiceAccountCannotAcceptAnInvitation(t *testing.T) {
 	}
 }
 
-// TestASubjectWithNoAccountRowCannotAcceptAnInvitation holds the same refusal
-// for a subject that has no account row at all, such as a static password-table
-// subject: it is authenticated, but it is not a user account, so the answer is
-// the same 403 invitation-target-invalid rather than a 401 challenge.
+// TestASubjectWithNoAccountRowCannotAcceptAnInvitation checks that a subject with no account row is refused the same invitation-target-invalid, not a 401.
 func TestASubjectWithNoAccountRowCannotAcceptAnInvitation(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -67,10 +57,7 @@ func TestASubjectWithNoAccountRowCannotAcceptAnInvitation(t *testing.T) {
 	}
 }
 
-// TestAReadFailureOnTheAcceptingAccountAnswers503 holds that a caller's account
-// read that fails is unavailable, not a refusal and not a pass: the acceptance
-// answers 503, and the invitation stays pending so the same token can be
-// redeemed once the dependency answers again.
+// TestAReadFailureOnTheAcceptingAccountAnswers503 checks that a failed account read answers 503 and leaves the invitation pending.
 func TestAReadFailureOnTheAcceptingAccountAnswers503(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")

@@ -5,10 +5,8 @@ import (
 	"time"
 )
 
-// TestSendCountDefaultsToTheFirstSend pins the table's counter default to the
-// invariant every writer keeps: an invitation row exists only after it was
-// sent, so a row that leaves the counter to the table counts that first send as
-// one rather than zero.
+// TestSendCountDefaultsToTheFirstSend checks that a row leaving the counter to the
+// table counts its first send as one.
 func TestSendCountDefaultsToTheFirstSend(t *testing.T) {
 	h := newHarness(t)
 	now := h.clock.read()

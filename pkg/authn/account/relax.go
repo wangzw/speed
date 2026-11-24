@@ -12,48 +12,22 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The directions a setting is moved in that relax a check. A password that has to
-// be shorter, a hash that costs less, a back-off that is shorter or starts later,
-// a registration budget that is turned off or raised, a switch moved to the value
-// that checks less: each lets a guess, a weak password or a first login through
-// that the declared default would have refused. A hash algorithm moved from the
-// stronger one to the weaker one is a downgrade: it does not change how a check
-// is made, but it makes every entry written afterwards cheaper to attack.
 const (
-	moveDown = "decrease"
-	moveUp   = "increase"
-	// moveToZero is the direction of a numeric setting whose zero turns it off:
-	// zero is the widest value, not the smallest count.
-	moveToZero = "to-zero"
-	// moveRelaxed is the direction of a switch moved to the value that checks
-	// less. It is the authn events contract's direction for the relaxation
-	// switches, whose value set also includes to-false, to-zero, add-member and
-	// remove-member.
-	moveRelaxed = "relax"
-	// moveDowngrade is the direction of the password algorithm moved from
-	// argon2id to pbkdf2-sha256.
+	moveDown      = "decrease"
+	moveUp        = "increase"
+	moveToZero    = "to-zero"
+	moveRelaxed   = "relax"
 	moveDowngrade = "downgrade"
 )
 
-// relaxWhen is how a numeric setting of this module loosens a check when it
-// moves.
 type relaxWhen int
 
 const (
-	// relaxWhenLarger: a larger value relaxes, a smaller one tightens.
 	relaxWhenLarger relaxWhen = iota
-	// relaxWhenSmaller: a smaller value relaxes, a larger one tightens.
 	relaxWhenSmaller
-	// relaxWhenOff: zero turns the budget off and is the widest value; from a
-	// positive value, zero and any larger value both relax, and a smaller
-	// positive value tightens. It is not one direction, because zero is not the
-	// smallest budget but the absence of one.
 	relaxWhenOff
 )
 
-// relaxing is, for each numeric setting of this module that relaxes a check when
-// it moves, how it relaxes. A setting that is not in the table is one whose
-// change relaxes nothing and is not watched.
 var relaxing = map[string]relaxWhen{
 	minLengthPath:      relaxWhenSmaller,
 	argonMemoryPath:    relaxWhenSmaller,
@@ -66,44 +40,25 @@ var relaxing = map[string]relaxWhen{
 	signupHourlyPath:   relaxWhenLarger,
 }
 
-// relaxingSwitch is, for each switch of this module that relaxes a check, the
-// value it relaxes at. A change to that value from any other one is a
-// relaxation; a change back to the strict value is not watched.
 var relaxingSwitch = map[string]string{
 	signupPath:         signupOpen,
 	passwordSignupPath: signupOpen,
 }
 
-// downgradingSwitch is, for each setting of this module whose value set is
-// ordered strongest to weakest, the value that is a downgrade. A move to it from
-// any other one is reported; a move back to the stronger value is not.
 var downgradingSwitch = map[string]string{
 	algorithmPath: string(password.PBKDF2SHA256),
 }
 
-// relaxingList is, for each list setting of this module whose loss of a member
-// widens what a write accepts, the direction the record takes. The reserved
-// username set only grows when a deployment appends a name: removing an appended
-// name lets a username through that the previous value refused, and the design
-// names that direction relax.
 var relaxingList = map[string]string{
 	reservedPath: moveRelaxed,
 }
 
-// relaxedAction is the name of the audit record of a setting moved to a more
-// permissive value, and relaxedOutcome its outcome. The record names the key and
-// the direction and never the value.
+// The record names the key and the direction and never the value.
 const (
 	relaxedAction  = "authn.settings.relaxed"
 	relaxedOutcome = "relaxed"
 )
 
-// onSettingsChanged is the subscriber of the settings module's change event. A
-// change to one of this module's settings that moves it in the direction that
-// relaxes a check is a Warn and a best-effort audit record, and nothing else:
-// the settings store has no access control of its own and cannot be made to
-// refuse, so what this module guarantees is that the change is visible after it.
-// The handler is idempotent and never fails an event.
 func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error {
 	var change settings.Change
 	if err := event.DecodePayload(evt.Payload, &change); err != nil {
@@ -112,9 +67,6 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	if change.Sensitive {
 		return nil
 	}
-	// Every setting this module watches is read from the global layer alone, so
-	// a row written at a tenant layer leaves the effective value unchanged and
-	// is not a relaxation.
 	if evt.TenantID != "" {
 		return nil
 	}
@@ -155,11 +107,6 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	return nil
 }
 
-// relaxedMove says whether a move of a numeric setting relaxes it, and which
-// direction the record takes. The direction is the event contract's name for the
-// move: a smaller wait or count is decrease, a larger one increase, and a budget
-// turned off is to-zero. A budget that is off at both ends, and a positive value
-// that shrinks, loosen nothing.
 func relaxedMove(rule relaxWhen, before, after int64) (string, bool) {
 	switch rule {
 	case relaxWhenSmaller:
@@ -171,8 +118,7 @@ func relaxedMove(rule relaxWhen, before, after int64) (string, bool) {
 		case after == 0 && before != 0:
 			return moveToZero, true
 		case before == 0:
-			// Zero is the budget off, the widest value: a count that starts there
-			// can only tighten.
+			// Zero is the budget off, the widest value.
 			return "", false
 		case after > before:
 			return moveUp, true
@@ -181,16 +127,11 @@ func relaxedMove(rule relaxWhen, before, after int64) (string, bool) {
 	return "", false
 }
 
-// warnRelaxation writes the Warn a removed check is visible by: the key and the
-// direction, never the value. The startup diagnostics write it when the value is
-// already relaxed, and the change handler writes it when a value is moved there.
 func (p *product) warnRelaxation(key, direction string) {
 	p.logger.Warn(diagnosticPrefix+ModuleName+": a setting is at a value that checks less than before",
 		slog.String("setting", key), slog.String("direction", direction))
 }
 
-// reportRelaxation writes the Warn and the best-effort audit record of one
-// relaxation.
 func (p *product) reportRelaxation(ctx context.Context, key, direction string) {
 	p.warnRelaxation(key, direction)
 	if p.audit == nil {
@@ -209,9 +150,6 @@ func (p *product) reportRelaxation(ctx context.Context, key, direction string) {
 	}
 }
 
-// numeric reads the text of a setting's value as a number to compare, in the
-// unit of the setting: a count as itself and a duration in nanoseconds. A layer
-// that holds no row, or whose row was deleted, is the declared default.
 func (p *product) numeric(key, text string, declared bool) (int64, bool) {
 	if declared {
 		return declaredNumber(key)
@@ -223,8 +161,6 @@ func (p *product) numeric(key, text string, declared bool) (int64, bool) {
 	return n, err == nil
 }
 
-// declaredNumber is the declared default of one of the watched settings, as the
-// comparison reads it.
 func declaredNumber(key string) (int64, bool) {
 	switch key {
 	case minLengthPath:

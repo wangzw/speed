@@ -13,13 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// standInDBName is the name a stand-in database module registers under, so that
-// the descriptor's requirement is met without a real engine.
 const standInDBName = "stand-in.database"
 
-// standInDBModule delivers the database capability over a stub. The module's New
-// stage takes the handle and reads no table, which is what makes the delivery
-// check below runnable without a migrated database.
 func standInDBModule(database db.Database) core.Module {
 	return core.Module{
 		Name:     standInDBName,
@@ -28,9 +23,6 @@ func standInDBModule(database db.Database) core.Module {
 	}
 }
 
-// driveModule brings the module up in a real registry beside a stand-in database,
-// the provisioning seam it requires and the configuration reader, and runs the
-// action once every instance exists.
 func driveModule(t *testing.T, body string, action func(context.Context, *core.Registry) error) {
 	t.Helper()
 	reader := authntest.ConfigReader(t, Module(), body)
@@ -50,10 +42,7 @@ func driveModule(t *testing.T, body string, action func(context.Context, *core.R
 	}
 }
 
-// The eight capabilities the descriptor declares are each delivered, and each
-// resolves to one and the same instance: construction asserts the instance
-// against every capability, so a product missing one fails the drive with
-// core.ErrUndeliveredCapability before the action runs.
+// Each of the eight capabilities resolves to one and the same instance, and a missing one fails the drive before the action runs.
 func TestTheEightCapabilitiesAreDeliveredByOneInstance(t *testing.T) {
 	driveModule(t, `{}`, func(_ context.Context, reg *core.Registry) error {
 		accounts, err := core.Resolve[authn.Accounts](reg)
@@ -105,9 +94,7 @@ func TestTheEightCapabilitiesAreDeliveredByOneInstance(t *testing.T) {
 	})
 }
 
-// A command that does not name the module delivers no capability: the drive
-// without it in the participants finds no provider, which is what makes a host
-// that forgot the module a startup failure.
+// A drive without the module in its participants finds no provider, so a host that forgot it fails at startup.
 func TestACapabilityWithNoModuleIsMissing(t *testing.T) {
 	reader := authntest.ConfigReader(t, Module(), `{}`)
 	reg := core.New()

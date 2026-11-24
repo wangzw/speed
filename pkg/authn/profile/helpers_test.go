@@ -20,7 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// The identifiers a case starts from.
 const (
 	meAccount  = authn.AccountID("acct-me")
 	meSession  = authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0d")
@@ -28,7 +27,6 @@ const (
 	tenantA    = "tenant-a"
 )
 
-// logBuffer collects what the module logs.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -50,10 +48,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// recordingAudit keeps the rows it was asked to write, the identity each was
-// written under, and can be told to fail. The identity is what the journal turns
-// into the row's actor column and its impersonation detail keys; keeping it lets
-// a case assert who the row names without standing in for the journal.
 type recordingAudit struct {
 	mu    sync.Mutex
 	rows  []audit.Entry
@@ -78,8 +72,6 @@ func (a *recordingAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), a.rows...)
 }
 
-// writtenUnder returns the identity each recorded row was written under, and
-// whether the context carried one at all.
 func (a *recordingAudit) writtenUnder() ([]authn.Identity, []bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -88,7 +80,6 @@ func (a *recordingAudit) writtenUnder() ([]authn.Identity, []bool) {
 
 func (a *recordingAudit) fails(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
 
-// fakeAccounts is the account read surface.
 type fakeAccounts struct {
 	authn.Accounts
 	mu          sync.Mutex
@@ -146,8 +137,6 @@ func (a *fakeAccounts) Externals(_ context.Context, id authn.AccountID) ([]authn
 	return append([]authn.ExternalBinding(nil), a.links[id]...), nil
 }
 
-// fakeAccountAdmin is the account write surface, counting each call and keeping
-// the last set written.
 type fakeAccountAdmin struct {
 	authn.AccountAdmin
 	mu          sync.Mutex
@@ -197,12 +186,10 @@ func (a *fakeAccountAdmin) SetAttributes(_ context.Context, _ authn.AccountID, a
 	return nil
 }
 
-// leaveOut names a capability a rig builds without.
 type leaveOut string
 
 const noAudit leaveOut = "audit"
 
-// rig is the module over a mounttest Mounter with every capability present.
 type rig struct {
 	t            *testing.T
 	mounter      *mounttest.Mounter
@@ -214,8 +201,6 @@ type rig struct {
 	p            *product
 }
 
-// newRig builds the module over a mounttest Mounter with every capability
-// present. Each capability the omit list leaves out is not there.
 func newRig(t *testing.T, omit ...leaveOut) *rig {
 	t.Helper()
 	left := map[leaveOut]bool{}
@@ -254,8 +239,6 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 	return r
 }
 
-// me is the identity of the account itself, freshly authenticated through a
-// first factor and carrying a login session.
 func me() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(meAccount),
@@ -264,8 +247,6 @@ func me() []authntest.Option {
 	}
 }
 
-// impersonating is an actor whose hands are on a request taken to be from the
-// account, as a verifying backend would stamp it.
 func impersonating() []authntest.Option {
 	return []authntest.Option{
 		authntest.WithAccount(meAccount),
@@ -276,15 +257,12 @@ func impersonating() []authntest.Option {
 	}
 }
 
-// do sends a request through the Mounter with the identity the options build and
-// a JSON body when one is given.
 func (r *rig) do(method, path string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	r.mounter.As(opts...)
 	return r.send(method, path, body)
 }
 
-// doAnonymous sends a request with no identity.
 func (r *rig) doAnonymous(method, path string, body any) *httptest.ResponseRecorder {
 	r.t.Helper()
 	r.mounter.AsAnonymous()
@@ -308,9 +286,6 @@ func (r *rig) send(method, path string, body any) *httptest.ResponseRecorder {
 	return r.mounter.Do(req)
 }
 
-// invoke calls a handler directly, with the identity the options build,
-// bypassing the gateway. It is how a case drives the handler's own refusals,
-// which the Mounter's gateway would answer first.
 func (r *rig) invoke(handler gin.HandlerFunc, method, target string, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -324,7 +299,6 @@ func (r *rig) invoke(handler gin.HandlerFunc, method, target string, body any, o
 	return w
 }
 
-// invokeAnonymous calls a handler directly with a context carrying no identity.
 func (r *rig) invokeAnonymous(handler gin.HandlerFunc, method, target string, body any) *httptest.ResponseRecorder {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -349,8 +323,6 @@ func bodyReader(t *testing.T, body any) io.Reader {
 	return bytes.NewReader(encoded)
 }
 
-// fakeSignupVerification reports the self-registration state a case scripts and
-// counts how often it was read.
 type fakeSignupVerification struct {
 	mu    sync.Mutex
 	state authn.SignupStatus
@@ -358,7 +330,6 @@ type fakeSignupVerification struct {
 	reads int
 }
 
-// SignupStateOf answers the scripted state, or the scripted failure.
 func (v *fakeSignupVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -366,12 +337,10 @@ func (v *fakeSignupVerification) SignupStateOf(_ context.Context, _ authn.Accoun
 	return v.state, v.err
 }
 
-// PendingAccountByContact is not part of the profile surface.
 func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
 	return "", false, errors.New("profile: the pending-contact read is not part of this surface")
 }
 
-// readCount is how many state reads the fake answered.
 func (v *fakeSignupVerification) readCount() int {
 	v.mu.Lock()
 	defer v.mu.Unlock()

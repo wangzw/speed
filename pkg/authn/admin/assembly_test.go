@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// standIn is a module that delivers instance for the tokens named, the way
-// another module of the directory delivers its capability exclusively.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -31,8 +29,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// membersOf is the membership store a drive registers: the one the case
-// supplied, or a fresh one.
 func membersOf(m *fakeMemberships) *fakeMemberships {
 	if m != nil {
 		return m
@@ -40,9 +36,7 @@ func membersOf(m *fakeMemberships) *fakeMemberships {
 	return newMemberships()
 }
 
-// TestTheDescriptorNamesWhatItRequiresAndDelivers holds the descriptor's shape:
-// the required capabilities, the settings store as the one optional one, and
-// that this module delivers no capability of its own.
+// TestTheDescriptorNamesWhatItRequiresAndDelivers checks the descriptor's required capabilities and that it delivers none.
 func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.admin" {
@@ -93,23 +87,13 @@ func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	}
 }
 
-// assembly drives a real registry through the module's descriptor.
 type assembly struct {
-	// audit is the audit capability; nil leaves it out, which must fail the
-	// drive with a missing provider before any instance is built.
-	audit audit.Audit
-	// roles is the optional member-role read; nil leaves it out, which is a
-	// legal assembly with empty role arrays.
-	roles authn.MemberRoleReader
-	// members is the membership store; nil gets a fresh one.
+	audit   audit.Audit
+	roles   authn.MemberRoleReader
 	members *fakeMemberships
-	// decider is the decision seam; nil leaves a legal assembly that refuses
-	// every request.
 	decider authn.Decider
 }
 
-// drive advances the assembly to Start and returns what the drive returned. It
-// hands the Mounter the module mounted its routes on to the run function.
 func (a assembly) drive(t *testing.T, run func(m *mounttest.Mounter)) error {
 	t.Helper()
 	mounter := mounttest.New(t)
@@ -156,8 +140,7 @@ func (a assembly) drive(t *testing.T, run func(m *mounttest.Mounter)) error {
 	})
 }
 
-// TestARealRegistryMountsTheManagementRoutes holds the descriptor end to end:
-// the module mounts the account and membership groups and delivers nothing.
+// TestARealRegistryMountsTheManagementRoutes holds the descriptor end to end: the module mounts the account and membership groups and delivers nothing.
 func TestARealRegistryMountsTheManagementRoutes(t *testing.T) {
 	err := assembly{audit: &recordingAudit{}}.drive(t, func(m *mounttest.Mounter) {
 		if _, ok := m.Registered(http.MethodGet, "/api/v1/system/auth/accounts"); !ok {
@@ -172,8 +155,7 @@ func TestARealRegistryMountsTheManagementRoutes(t *testing.T) {
 	}
 }
 
-// TestTheDriveFailsWithoutAnAuditCapability holds the required dependency: the
-// module with no audit capability fails before any instance is built.
+// TestTheDriveFailsWithoutAnAuditCapability holds the required dependency: the module with no audit capability fails before any instance is built.
 func TestTheDriveFailsWithoutAnAuditCapability(t *testing.T) {
 	err := assembly{}.drive(t, func(*mounttest.Mounter) {})
 	if !errors.Is(err, core.ErrMissingProvider) {
@@ -181,10 +163,7 @@ func TestTheDriveFailsWithoutAnAuditCapability(t *testing.T) {
 	}
 }
 
-// TestAnAssemblyThatDeliversTheMemberRoleReaderUsesIt holds the optional seam
-// end to end: the admitted capability is taken up in Init, and the member
-// listing carries the roles it answers without the membership store knowing
-// about policy.
+// TestAnAssemblyThatDeliversTheMemberRoleReaderUsesIt checks that an assembly with a role reader carries its roles in the member listing.
 func TestAnAssemblyThatDeliversTheMemberRoleReaderUsesIt(t *testing.T) {
 	members := newMemberships()
 	members.put(authn.Membership{Account: userID, Tenant: tenantA, Active: true, Source: authn.ReasonAdmin})

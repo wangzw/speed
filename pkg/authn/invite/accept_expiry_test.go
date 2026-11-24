@@ -8,10 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestSettlingASuspendedMemberLeavesAnExpiredInvitationPending holds the
-// settlement's condition: revokePending flips only a live pending row. A row that
-// expires between the terminal check and the settlement is left as it is, so it
-// reads expired rather than revoked.
+// TestSettlingASuspendedMemberLeavesAnExpiredInvitationPending checks that a settlement over an expired row leaves it pending rather than revoked.
 func TestSettlingASuspendedMemberLeavesAnExpiredInvitationPending(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")

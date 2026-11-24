@@ -13,10 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The descriptor states what the design states: the database is required and is
-// the one thing the module stands on, the eight capabilities are each delivered
-// exclusively and by nothing else, and the module declares its own section, its
-// settings and its migrations as resources.
+// The descriptor requires the database, delivers the eight capabilities exclusively, and declares its section, settings and migrations as resources.
 func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.account" {
@@ -68,9 +65,7 @@ func containsToken(tokens []core.Token, want core.Token) bool {
 	return false
 }
 
-// Every product satisfies all eight capabilities, which the package asserts at
-// compile time; a case holds that the instance the descriptor builds is the one
-// product they are asserted for.
+// The instance the descriptor builds is the one product asserted against all eight capabilities.
 func TestTheProductSatisfiesEachCapability(t *testing.T) {
 	var p any = newProduct(stubDatabase{dialect: db.SQLite}, mustResolve(t, configDefaults))
 	if _, ok := p.(authn.Accounts); !ok {
@@ -114,8 +109,7 @@ func mustResolve(t *testing.T, c moduleConfig) resolved {
 	return r
 }
 
-// Prepare states the module runs whatever the section says, and a section it
-// cannot run on is a startup failure and not a stand-down.
+// Prepare states the module runs whatever the section says, and a section it cannot run on fails startup rather than standing down.
 func TestPrepareStatesTheModuleRunsOrRefusesTheConfiguration(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -171,9 +165,7 @@ func TestTheSizesAreHeldToTheirDomains(t *testing.T) {
 	}
 }
 
-// The sizes are configuration a host states anywhere; the algorithm, the
-// relaxation switches and the registration parameters are settings, not
-// configuration.
+// The sizes are configuration a host states anywhere; the algorithm, the relaxation switches and the registration parameters are settings.
 func TestTheConfigurationItemsAreTheSizes(t *testing.T) {
 	s := schema()
 	for _, key := range []string{concurrencyItem, signupConcurrencyItem, memoryBudgetItem} {
@@ -188,8 +180,7 @@ func TestTheConfigurationItemsAreTheSizes(t *testing.T) {
 	}
 }
 
-// The settings are declared with a domain, so that a write is judged when it is
-// made and again when it is read.
+// Settings are declared with a domain, so a write is judged when made and again when read.
 func TestTheSettingsAreDeclaredWithADomain(t *testing.T) {
 	s := settingsSchema()
 	want := []string{

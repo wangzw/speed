@@ -10,8 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A suspended membership is found but reads as no member: the zero value of the
-// row's status is suspended.
+// A suspended membership is found but reads as no member, because the zero status is suspended.
 func TestAMembershipIsSuspendedResumedAndReadAsAMember(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -52,8 +51,7 @@ func TestAMemberOfNothingIsNoMember(t *testing.T) {
 	})
 }
 
-// Put is idempotent: writing the same membership again changes nothing, and
-// writing it many times at once leaves one row.
+// Put is idempotent: writing the same membership changes nothing and concurrent writes leave one row.
 func TestPutIsIdempotent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -80,8 +78,7 @@ func TestPutIsIdempotent(t *testing.T) {
 	})
 }
 
-// Put on an account that is not there, or that is a tombstone, is
-// ErrAccountNotFound: no foreign key holds the membership to one.
+// Put on a missing account or a tombstone is ErrAccountNotFound.
 func TestPutOnAnAccountThatIsNotThereIsNotFound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -132,10 +129,7 @@ func TestMembersPagesByAccount(t *testing.T) {
 	})
 }
 
-// Members narrows a page to the accounts whose display name or login
-// identifiers begin with the query. The display name is matched as written, and
-// an identifier after the query is lower-cased, the form usernames and email
-// addresses are stored in.
+// Members narrows a page to accounts whose display name or login identifiers begin with the query.
 func TestMembersFiltersByDisplayNameOrIdentifier(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -177,7 +171,6 @@ func TestMembersFiltersByDisplayNameOrIdentifier(t *testing.T) {
 	})
 }
 
-// sameIDs reports whether two identifier lists hold the same accounts.
 func sameIDs(got, want []authn.AccountID) bool {
 	if len(got) != len(want) {
 		return false
@@ -194,8 +187,7 @@ func sameIDs(got, want []authn.AccountID) bool {
 	return true
 }
 
-// Every statement of a per-tenant operation names the tenant, so that nothing
-// reads or writes across tenants by accident.
+// Every per-tenant statement names the tenant, so nothing reads or writes across tenants by accident.
 func TestEveryPerTenantStatementNamesTheTenant(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -224,8 +216,7 @@ func TestEveryPerTenantStatementNamesTheTenant(t *testing.T) {
 	})
 }
 
-// Removing a membership, and removing one that is not there, both leave the
-// account without it.
+// Removing a membership, present or not, leaves the account without it.
 func TestRemoveLeavesNoMembership(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -262,9 +253,7 @@ func TestTenantsListsEveryMembershipOfAnAccount(t *testing.T) {
 	})
 }
 
-// PutJoining writes a membership only into a tenant the account has no
-// membership in, or over one that is still active. A suspended membership is
-// never resumed by a join.
+// PutJoining writes a membership only into a tenant the account has none in, or over one still active.
 func TestPutJoiningNeverResumesASuspendedMembership(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -288,8 +277,7 @@ func TestPutJoiningNeverResumesASuspendedMembership(t *testing.T) {
 	})
 }
 
-// PutJoining inserts a membership when the account has none, and reports that
-// the account is an active member.
+// PutJoining inserts a membership when the account has none and reports it an active member.
 func TestPutJoiningInsertsWhenTheAccountHasNoMembership(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -307,8 +295,7 @@ func TestPutJoiningInsertsWhenTheAccountHasNoMembership(t *testing.T) {
 	})
 }
 
-// PutJoining does not write again a membership the caller read as active but
-// that has been removed, and it leaves an active membership active.
+// PutJoining does not rewrite a membership the caller read active but that has been removed.
 func TestPutJoiningRespectsTheRemovalThatFollowedTheRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

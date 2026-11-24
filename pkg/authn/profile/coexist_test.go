@@ -15,10 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// The capabilities another module delivers exclusively that this test's
-// assembly needs but that no case reaches into: each stands in for one, carrying
-// a nil embedded interface so that a call the drive should not make panics
-// rather than passing silently.
 type (
 	stubKV          struct{ kv.KV }
 	stubMemberships struct{ authn.Memberships }
@@ -31,8 +27,6 @@ type (
 	stubReader      struct{}
 )
 
-// stubHuman is the required human-verification gate the login engine takes up,
-// with both surfaces off: this case never sends.
 type stubHuman struct{}
 
 func (stubHuman) Required(authn.HumanScope) bool                                   { return false }
@@ -41,12 +35,8 @@ func (stubHuman) SiteKey(authn.HumanScope) string                               
 func (stubHuman) Action(authn.HumanScope) string                                   { return "" }
 func (stubHuman) Verify(context.Context, authn.HumanProof, authn.HumanScope) error { return nil }
 
-// Decode reads nothing: every value the login module reads from the
-// configuration keeps its zero value, which the module's own defaults cover.
 func (stubReader) Decode(string, any) error { return nil }
 
-// stubMethod is a login method that the drive registers and never calls: the
-// engine only needs a name to take the method up.
 type stubMethod struct{ name string }
 
 func (m stubMethod) Name() string { return m.name }
@@ -62,11 +52,6 @@ func (stubMethod) Answer(context.Context, authn.FlowState, authn.StepInput) (aut
 	return authn.Step{}, nil
 }
 
-// driveCoexist drives authn.login and authn.profile together, on one Mounter and
-// with every capability each requires present, to the stage where their routes
-// are registered. A route both modules register makes gin panic where the second
-// one is mounted; the panic is caught and returned, so a conflict is a failure
-// of the calling test rather than the end of its binary.
 func driveCoexist(t *testing.T, m *mounttest.Mounter) (err error) {
 	t.Helper()
 	defer func() {
@@ -100,8 +85,7 @@ func driveCoexist(t *testing.T, m *mounttest.Mounter) (err error) {
 		names = append(names, m.Name)
 	}
 	// The configuration reader is looked up in Prepare, before any module's New
-	// has run, so it is supplied the way a host supplies one and not declared by
-	// a stand-in.
+	// has run, so a host supplies one rather than a stand-in declaring it.
 	reg.Register(config.Module())
 	reg.Supply(stubReader{}, config.ModuleName)
 	return reg.Drive(t.Context(), core.Drive{
@@ -111,10 +95,7 @@ func driveCoexist(t *testing.T, m *mounttest.Mounter) (err error) {
 	})
 }
 
-// TestTheLoginAndProfileRoutesShareOneEndpoint holds that authn.login and
-// authn.profile can be taken in together and mount onto one endpoint: the drive
-// registers both modules' routes under one base path, and no route of one is a
-// route of the other, which is what a conflicting registration would be.
+// TestTheLoginAndProfileRoutesShareOneEndpoint checks that authn.login and authn.profile mount together without a route conflict.
 func TestTheLoginAndProfileRoutesShareOneEndpoint(t *testing.T) {
 	m := mounttest.New(t)
 	if err := driveCoexist(t, m); err != nil {

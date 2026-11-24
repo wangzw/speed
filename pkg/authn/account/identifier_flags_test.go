@@ -9,7 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// identifierByValue reads one identifier of a kind and value the account holds.
 func identifierByValue(t *testing.T, h *harness, id authn.AccountID, kind authn.IdentifierKind,
 	value string,
 ) authn.Identifier {
@@ -27,8 +26,6 @@ func identifierByValue(t *testing.T, h *harness, id authn.AccountID, kind authn.
 	return authn.Identifier{}
 }
 
-// defaultContactValue is the value of the one identifier carrying the default
-// contact, and how many carry it. No identifier is both an empty value and one.
 func defaultContactValue(t *testing.T, h *harness, id authn.AccountID) (string, int) {
 	t.Helper()
 	list, err := h.p.Identifiers(context.Background(), id)
@@ -44,12 +41,7 @@ func defaultContactValue(t *testing.T, h *harness, id authn.AccountID) (string, 
 	return value, count
 }
 
-// TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact holds how a
-// declared identifier enters the account: an address is a contact from the
-// moment it is registered, whether it is proved or only asserted, and a username
-// never is. The account's only email address, proved here, becomes a login way
-// and the default contact in the same transaction while a later one is no login
-// way and leaves the default alone.
+// AddIdentifier writes the axes: an address is a contact whether proved or asserted, a username never is, and the first proved address becomes the default contact.
 func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -82,8 +74,6 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Errorf("the default contact is %q (%d rows), want first@example.com on one row", value, count)
 		}
 
-		// An address only asserted is a contact but neither a sign-in way nor the
-		// default, and proving it later keeps the default where it was.
 		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierEmail, "asserted@example.com",
 			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
 			t.Fatalf("adding an asserted email address: %v", err)
@@ -100,8 +90,6 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 			t.Errorf("proving a later address moved the default contact to %q", value)
 		}
 
-		// A phone number is a contact and not a sign-in way, and a username is a
-		// sign-in way and never a contact.
 		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierPhone, "+8613800000031",
 			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
 			t.Fatalf("adding a phone number: %v", err)
@@ -117,7 +105,6 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 				username.SignIn, username.Contact, username.DefaultContact)
 		}
 
-		// A phone number written as an assertion is a contact too.
 		if err = h.p.AddIdentifier(ctx, created.ID, authn.IdentifierPhone, "+8613800000032",
 			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
 			t.Fatalf("adding an asserted phone number: %v", err)
@@ -130,10 +117,7 @@ func TestAddIdentifierWritesTheAxesAndEstablishesTheFirstDefaultContact(t *testi
 	})
 }
 
-// TestProvingAnAssertedAddressMakesItTheDefaultContact holds the other way the
-// first proved address appears: the account was opened with an asserted address,
-// which is not the default, and the proof written over that row establishes the
-// choice without adding a second row.
+// Proving an asserted address establishes it as the default contact without adding a second row.
 func TestProvingAnAssertedAddressMakesItTheDefaultContact(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -171,10 +155,7 @@ func TestProvingAnAssertedAddressMakesItTheDefaultContact(t *testing.T) {
 	})
 }
 
-// TestSetIdentifierFlagsKeepsTheAxesIndependent holds the write surface of the two
-// axes: contact may be set on a row whose ownership is not proved, sign-in may
-// not, a username has no axes, a row of another account is not this account's,
-// and choosing a proved row leaves its contact alone.
+// SetIdentifierFlags keeps the axes independent: contact may be set on an unproved row, sign-in may not, a username has no axes, and choosing a proved row leaves its contact alone.
 func TestSetIdentifierFlagsKeepsTheAxesIndependent(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -211,8 +192,6 @@ func TestSetIdentifierFlagsKeepsTheAxesIndependent(t *testing.T) {
 			t.Errorf("writing another account's identifier gave %v, want ErrInvalidArgument", err)
 		}
 
-		// Proving the row makes sign-in possible, and does not clear the contact
-		// axis it already carries.
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "flags@example.com",
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
 			t.Fatalf("proving the address: %v", err)
@@ -228,10 +207,7 @@ func TestSetIdentifierFlagsKeepsTheAxesIndependent(t *testing.T) {
 	})
 }
 
-// TestSetIdentifierFlagsRefusesTakingAwayTheContactAxis holds that the contact
-// axis is not a choice: a registered address is always a contact, so asking for
-// false is refused and changes nothing, whether the row is the default contact or
-// not. Asking for true is accepted and leaves the row as it is.
+// The contact axis is not a choice: asking to take it away is refused and changes nothing.
 func TestSetIdentifierFlagsRefusesTakingAwayTheContactAxis(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -268,16 +244,13 @@ func TestSetIdentifierFlagsRefusesTakingAwayTheContactAxis(t *testing.T) {
 	})
 }
 
-// TestReprovingAHeldAddressRestoresItsContactAxis holds the write made when an
-// address the account already holds is proved again: the row is an address the
-// account owns, so it carries the contact axis even when it was written before
-// the invariant and reads false.
+// Reproving an address the account already holds restores its contact axis even when the row reads false.
 func TestReprovingAHeldAddressRestoresItsContactAxis(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		id := h.user("reprove", "correct horse battery")
 		emailID := identifierOfKind(t, h, id, authn.IdentifierEmail).ID
-		// A row written before the invariant is a contact that reads false.
+
 		if err := h.handle.Exec("UPDATE "+tableIdentifiers+" SET contact = ? WHERE id = ?", false, emailID).Error; err != nil {
 			t.Fatalf("clearing the contact axis: %v", err)
 		}
@@ -291,13 +264,7 @@ func TestReprovingAHeldAddressRestoresItsContactAxis(t *testing.T) {
 	})
 }
 
-// TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay holds the two
-// refusals of taking a row out of sign-in, in the order the removal uses, and
-// that neither takes effect: a password account whose username was removed
-// around this surface that would lose its last login name is
-// ErrIdentifierRequired, and a passwordless account that would lose every way in
-// is ErrLastLoginMethod. A username is never removable, which is why the first
-// case writes the row away rather than removing it.
+// Taking a row out of sign-in is refused as ErrIdentifierRequired for the last login name and ErrLastLoginMethod for the last way in, and neither takes effect.
 func TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -350,9 +317,7 @@ func TestSetIdentifierFlagsRefusesTheLastLoginNameAndTheLastWay(t *testing.T) {
 	})
 }
 
-// TestSetDefaultContactSwitchesTheChoiceAndRefusesWhatCannotBeOne holds the
-// default contact's write: only a proved email address of the account may be
-// chosen, and choosing one clears the previous choice in the same transaction.
+// Only a proved email of the account may be the default contact, and choosing one clears the previous choice in the same transaction.
 func TestSetDefaultContactSwitchesTheChoiceAndRefusesWhatCannotBeOne(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -412,10 +377,7 @@ func TestSetDefaultContactSwitchesTheChoiceAndRefusesWhatCannotBeOne(t *testing.
 	})
 }
 
-// TestRemovingTheDefaultContactHandsItToTheEarliestRemaining holds that removing
-// the default address transfers the choice to the earliest proved address left,
-// that removing another address leaves the choice where it was, and that the last
-// proved address takes the choice away with it.
+// Removing the default contact hands the choice to the earliest proved address left, removing another keeps it, and the last address takes it away.
 func TestRemovingTheDefaultContactHandsItToTheEarliestRemaining(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

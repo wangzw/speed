@@ -10,10 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheResendRouteKeepsTheTenantInTheRowKey holds that a tenant's route cannot
-// act on another tenant's invitation: tenant-b's identifier under tenant-a's
-// path is the bare 404, and tenant-b's row keeps its token, its send record and
-// its state.
+// TestTheResendRouteKeepsTheTenantInTheRowKey checks that another tenant's
+// invitation under this tenant's path is a bare 404 and untouched.
 func TestTheResendRouteKeepsTheTenantInTheRowKey(t *testing.T) {
 	h := newHarness(t)
 	foreign := h.issue("tenant-b", "bob@example.com")
@@ -42,9 +40,8 @@ func TestTheResendRouteKeepsTheTenantInTheRowKey(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteDoesNotActWhenTheMandatoryAuditFails holds the audit's place
-// in the admission order: the row is written before the action, so a journal that
-// refuses it answers 503 and the invitation is not resent.
+// TestTheResendRouteDoesNotActWhenTheMandatoryAuditFails checks that a failed
+// mandatory audit answers 503 and leaves the row unresent.
 func TestTheResendRouteDoesNotActWhenTheMandatoryAuditFails(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -68,9 +65,8 @@ func TestTheResendRouteDoesNotActWhenTheMandatoryAuditFails(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteRefusedByTheDeciderWritesNothing holds the decision's place:
-// a refusal is 403, the Decider was asked for membership.manage on the invitation
-// identifier, and neither an audit row nor a token change follows.
+// TestTheResendRouteRefusedByTheDeciderWritesNothing checks that a decider
+// refusal is a 403 and writes nothing.
 func TestTheResendRouteRefusedByTheDeciderWritesNothing(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -96,9 +92,8 @@ func TestTheResendRouteRefusedByTheDeciderWritesNothing(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteIsGatedForAnUnverifiedOperator holds the signup gate on the
-// resend face: a pending registration answers 403 contact-required before the
-// Decider and the audit, and the row is untouched.
+// TestTheResendRouteIsGatedForAnUnverifiedOperator checks that a pending
+// registration is refused by the signup gate before the Decider and the audit.
 func TestTheResendRouteIsGatedForAnUnverifiedOperator(t *testing.T) {
 	h := newHarness(t)
 	issued := h.issue(tenant, "alice@example.com")
@@ -125,9 +120,8 @@ func TestTheResendRouteIsGatedForAnUnverifiedOperator(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteAnswersABare404ForAnUnknownIdentifier holds the not-found
-// answer on this route: no problem document, because an identifier naming no
-// invitation of the tenant tells the caller nothing it may rely on.
+// TestTheResendRouteAnswersABare404ForAnUnknownIdentifier checks that an unknown
+// identifier is a bare 404.
 func TestTheResendRouteAnswersABare404ForAnUnknownIdentifier(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -141,10 +135,8 @@ func TestTheResendRouteAnswersABare404ForAnUnknownIdentifier(t *testing.T) {
 	}
 }
 
-// TestTheResendRouteCarriesNoTokenWhenTheNoticeWasSent holds the token hand-over
-// rule on the resend answer: a notice that reached the address means the
-// recipient holds the link, so the answer reports sent and omits the token field
-// altogether. The notice itself carries the new token, whose digest is the row's.
+// TestTheResendRouteCarriesNoTokenWhenTheNoticeWasSent checks that a sent notice
+// omits the token from the resend answer.
 func TestTheResendRouteCarriesNoTokenWhenTheNoticeWasSent(t *testing.T) {
 	h := newHarness(t)
 	notifier := &fakeNotifier{delivery: authn.InviteSent}

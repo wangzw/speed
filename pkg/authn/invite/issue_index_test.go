@@ -11,14 +11,7 @@ import (
 )
 
 // TestALostLiveSlotIsThePendingRefusal holds the index path rather than the
-// pre-check. A create callback inserts a conflicting live row inside the same
-// transaction after every target check has passed, so the issuance statement
-// itself meets the partial unique index and the refusal is the 409
-// invitation-pending the race produces. The failed transaction is rolled back
-// whole, leaving neither the invitation nor the row the callback wrote.
-//
-// The concurrent case beside it proves the same answer against a real race, which
-// only some interleavings take this path; this one takes it every time.
+// pre-check.
 func TestALostLiveSlotIsThePendingRefusal(t *testing.T) {
 	h := newHarness(t)
 	var fired atomic.Bool
@@ -46,8 +39,7 @@ func TestALostLiveSlotIsThePendingRefusal(t *testing.T) {
 		t.Fatalf("registering the callback: %v", err)
 	}
 	// The handle belongs to this case alone, so the callback needs no removal:
-	// taking it off would write a GORM warning for a handle that is about to be
-	// discarded.
+	// taking it off would write a GORM warning for a discarded handle.
 	h.asAdmin()
 	w := h.request(http.MethodPost, pathAdmin, map[string]string{"email": "alice@example.com"})
 	if w.Code != http.StatusConflict {

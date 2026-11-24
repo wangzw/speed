@@ -9,15 +9,12 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// The session identifiers these cases read and compare.
 const (
 	sessionOwn   = authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c1a")
 	sessionOther = authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c1b")
 	sessionThird = authn.SessionID("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c1c")
 )
 
-// sessionRowIDs decodes the session list a response carries into the ids it
-// names and the current flag of each row.
 type sessionRowIDs struct {
 	Sessions []struct {
 		ID      string `json:"id"`
@@ -34,7 +31,6 @@ func decodeSessionRows(t *testing.T, body []byte) sessionRowIDs {
 	return rows
 }
 
-// currentRows reports the ids the listing marked current.
 func (r sessionRowIDs) currentRows() []string {
 	var out []string
 	for _, row := range r.Sessions {
@@ -45,10 +41,7 @@ func (r sessionRowIDs) currentRows() []string {
 	return out
 }
 
-// TestOnlyTheCallersOwnSessionIsMarkedCurrent holds the administration list's
-// current flag against the caller it is read for: the caller's own account
-// marks the caller's session and nothing else, another account marks nothing,
-// and a token-kind caller session is compared the same way.
+// TestOnlyTheCallersOwnSessionIsMarkedCurrent checks that only the caller's own session is marked current.
 func TestOnlyTheCallersOwnSessionIsMarkedCurrent(t *testing.T) {
 	t.Run("the caller's own account", func(t *testing.T) {
 		r := newRig(t)
@@ -97,9 +90,7 @@ func TestOnlyTheCallersOwnSessionIsMarkedCurrent(t *testing.T) {
 	})
 }
 
-// TestTheSessionListDeclaresTheCurrentFlag holds that the declared operation a
-// generated client is built from carries the field the handler answers with, so
-// the two cannot drift without a failing test.
+// TestTheSessionListDeclaresTheCurrentFlag checks that the declared operation carries the current flag as a required boolean.
 func TestTheSessionListDeclaresTheCurrentFlag(t *testing.T) {
 	var doc struct {
 		Components struct {

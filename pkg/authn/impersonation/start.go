@@ -17,35 +17,15 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// The parameters a start's reason is held to, and the ceiling no setting may
-// raise the lifetime past.
 const (
 	maxReasonRunes = 500
 	hardTTLCeiling = time.Hour
 )
 
-// Start begins an impersonation on actor's session.
-//
-// The structural restrictions are checked first, group by group and in order
-// within a group: the actor's facts, the target's, the parameters, then the
-// session's concurrency. A violation is refused with the sentinel its nature
-// carries and a best-effort denied audit row is written. Only then is the
-// Decider asked, and only after it allows is the mandatory seam-level audit
-// written, outside any transaction and before any record. The record is written
-// in a transaction that first ends the session's lapsed records and then
-// inserts the new one; a unique-constraint conflict there is ErrImpersonationActive
-// and any other failure is ErrUnavailable, with a failed audit row written in
-// either case.
-//
-// Start does not attach the carrier, issue a token or publish the started event:
-// it has no response writer, so the handler does all three once Start returns.
 func (m *product) Start(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest) (authn.ImpersonationGrant, error) {
 	now := m.clock.Now()
 
 	if err := m.checkActor(ctx, actor); err != nil {
-		// The signup gate is answered without a denied audit row: the refusal is
-		// guidance to prove an address, and a state that cannot be read is a
-		// dependency that did not answer. Neither is an impersonation attempt.
 		if !quietRefusal(err) {
 			m.refuse(ctx, actor, r, err)
 		}
@@ -74,8 +54,8 @@ func (m *product) Start(ctx context.Context, actor authn.Identity, r authn.Imper
 		return authn.ImpersonationGrant{}, authn.ErrForbidden
 	}
 
-	// The action identifier is minted after the decision and before the audit, so
-	// that the granted row and any failed row written beside it are linked.
+	// The action identifier is minted after the decision and before the audit,
+	// linking granted and failed rows.
 	grantID := event.NewID()
 	if err = m.mandatoryAudit(ctx, actor, r, ttl, grantID); err != nil {
 		return authn.ImpersonationGrant{}, err
@@ -93,19 +73,7 @@ func (m *product) Start(ctx context.Context, actor authn.Identity, r authn.Imper
 	return g, nil
 }
 
-// checkActor holds the actor to group a: not already impersonating, a human
-// account that is enabled, a session to hang the record on, a local multi-factor
-// authentication that is recent and not by SMS alone, and a seasoned non-SMS
-// factor. The assurance, freshness, Local and method-set conditions are a
-// step-up, and only a stronger authentication can clear them; the seasoned
-// factor is a separate refusal, because no authentication clears it. A missing
-// account is read as the actor being unavailable, which is the same refusal as
-// a static or disabled one and says nothing about the target.
 func (m *product) checkActor(ctx context.Context, actor authn.Identity) error {
-	// The signup gate is the first condition of group a: a pending
-	// self-registration is refused before any authorization or strength
-	// judgement, so that it receives the guidance to prove its address rather
-	// than a step-up or a factor refusal.
 	if err := m.checkSignup(ctx, actor); err != nil {
 		return err
 	}
@@ -146,27 +114,12 @@ func (m *product) checkActor(ctx context.Context, actor authn.Identity) error {
 	return nil
 }
 
-// errSignupUnavailable marks a signup-state read that did not answer. It is one
-// of the gate's two answers that write no denied audit row, and it still reads
-// as ErrUnavailable to the caller's answer mapping.
 var errSignupUnavailable = errors.New("authn.impersonation: the signup state could not be read")
 
-// quietRefusal reports whether a refusal of group a is one of the signup gate's
-// answers: a pending self-registration's 403, or the 503 of a state that could
-// not be read. Neither writes an audit row or counts a denied attempt.
 func quietRefusal(err error) bool {
 	return errors.Is(err, authn.ErrContactRequired) || errors.Is(err, errSignupUnavailable)
 }
 
-// checkSignup refuses an initiator whose email address has not been proved. The
-// state is read on every start and never cached; a service account and an
-// account with no email address are exempt, having nothing to verify.
-//
-// The initiator is Actor(), not Account(): an impersonating identity's Account()
-// is the target, and the target's verification state never takes part in whether
-// the administrator may start. Start is a host-visible seam, so it judges the
-// initiator itself rather than relying on the handler having refused the
-// impersonating identity first.
 func (m *product) checkSignup(ctx context.Context, actor authn.Identity) error {
 	initiator := actor.Actor()
 	if initiator == "" || initiator.IsStatic() {
@@ -175,8 +128,6 @@ func (m *product) checkSignup(ctx context.Context, actor authn.Identity) error {
 	a, err := m.accounts.Get(ctx, initiator)
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
-		// The rest of group a answers a missing account as an impersonation
-		// restriction, which is the same refusal a static or disabled one gets.
 		return nil
 	case err != nil:
 		return authn.ErrUnavailable
@@ -194,10 +145,6 @@ func (m *product) checkSignup(ctx context.Context, actor authn.Identity) error {
 	return nil
 }
 
-// hasStrongSecondMethod reports whether the method set carries a second factor
-// that is not SMS: a one-time code or a passkey. A multi-factor authentication
-// reached with SMS alone does not count for an impersonation, because SMS is a
-// restricted authenticator.
 func hasStrongSecondMethod(methods []authn.Method) bool {
 	for _, method := range methods {
 		if method == authn.MethodTOTP || method == authn.MethodWebAuthn {
@@ -207,10 +154,6 @@ func hasStrongSecondMethod(methods []authn.Method) bool {
 	return false
 }
 
-// checkTarget holds the target to group b: an enabled human account that is not
-// the actor, not a static subject, not protected, and an active member of the
-// tenant the impersonation is confined to. The membership is read from the store
-// and never from a cache.
 func (m *product) checkTarget(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest) error {
 	if r.Target == "" || r.Target == actor.Account() || r.Target.IsStatic() {
 		return authn.ErrImpersonationRestricted
@@ -235,11 +178,6 @@ func (m *product) checkTarget(ctx context.Context, actor authn.Identity, r authn
 	return nil
 }
 
-// checkParams holds the parameters to group c and returns the settled lifetime:
-// the shortest of the requested one (zero taking the setting), the max-ttl
-// setting, the actor's session's remaining lifetime and the hard hour ceiling.
-// A session that is not there or no longer valid leaves no lifetime to bound the
-// record by, and the start is refused with ErrImpersonationNeedsSession.
 func (m *product) checkParams(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest) (time.Duration, error) {
 	if !validTenant(r.Tenant) {
 		return 0, authn.ErrImpersonationRestricted
@@ -276,10 +214,9 @@ func (m *product) checkParams(ctx context.Context, actor authn.Identity, r authn
 	return ttl, nil
 }
 
-// checkConcurrency holds the session to group d: it may carry no valid record.
-// The evaluate is a read of the validity determination and writes nothing; a
-// record that has lapsed is left for the record transaction to end, so that no
-// write happens before the mandatory audit.
+// checkConcurrency judges the session's unended record without writing: a lapsed
+// one is left for the record transaction, so nothing is written before the
+// mandatory audit.
 func (m *product) checkConcurrency(ctx context.Context, actor authn.Identity, now time.Time) error {
 	prior, found, err := m.store.unendedForSession(ctx, actor.Session())
 	if err != nil {
@@ -298,13 +235,6 @@ func (m *product) checkConcurrency(ctx context.Context, actor authn.Identity, no
 	return nil
 }
 
-// decide asks the Decider whether the actor may start this impersonation. The
-// decision is a platform capability and decides in the platform domain: Tenant
-// is the data the record is confined to, not the policy domain, so the initiator
-// needs no permission in it; the target's membership in it is checked before the
-// decision. An absent Decider refuses everything; a panic is a refusal that is
-// neither a permission nor a decline, so it is ErrUnavailable and no action
-// follows.
 func (m *product) decide(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, ttl time.Duration) (bool, error) {
 	if m.decider == nil {
 		return false, nil
@@ -323,9 +253,6 @@ func (m *product) decide(ctx context.Context, actor authn.Identity, r authn.Impe
 	return m.callDecider(ctx, d)
 }
 
-// callDecider calls Decide and turns a returned error and a panic alike into
-// ErrUnavailable, so that a defective Decider is refused rather than taken for a
-// permission or a decline, and never takes the request down with it.
 func (m *product) callDecider(ctx context.Context, d authn.Decision) (allow bool, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -340,9 +267,6 @@ func (m *product) callDecider(ctx context.Context, d authn.Decision) (allow bool
 	return allow, nil
 }
 
-// mandatoryAudit writes the granted seam-level row outside any transaction and
-// before the record. A write that fails, including a module that is not
-// accepting, is ErrAuditRequired and the impersonation does not begin.
 func (m *product) mandatoryAudit(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, ttl time.Duration, grantID string) error {
 	if m.audit == nil {
 		return authn.ErrAuditRequired
@@ -364,9 +288,8 @@ func (m *product) mandatoryAudit(ctx context.Context, actor authn.Identity, r au
 	return nil
 }
 
-// startDetail is the detail of a start's audit row: the tenant's name, the
-// settled lifetime, the actor's session and the action identifier. The session
-// is written as sid; the journal owns the name session on an impersonating row.
+// startDetail writes the session as sid, never session, which the journal owns on
+// an impersonating row.
 func startDetail(actor authn.Identity, r authn.ImpersonationRequest, grantID string, ttl time.Duration, tenantName string) map[string]string {
 	return map[string]string{
 		detailTenant:     tenantName,
@@ -376,9 +299,6 @@ func startDetail(actor authn.Identity, r authn.ImpersonationRequest, grantID str
 	}
 }
 
-// failedAudit writes the failed row that closes a start whose record
-// transaction did not commit. It links to the granted row by the action
-// identifier. A failure to write it changes nothing: the record did not land.
 func (m *product) failedAudit(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, grantID string) {
 	tenantName, _ := m.nameOf(ctx, r.Tenant)
 	m.writeAudit(ctx, audit.Entry{
@@ -390,10 +310,6 @@ func (m *product) failedAudit(ctx context.Context, actor authn.Identity, r authn
 	})
 }
 
-// refuse writes the best-effort denied audit row and counts a denied attempt.
-// It changes nothing about the refusal it accompanies. The cause is not put
-// into the row: the detail's key set is closed and the refusal is told by the
-// outcome.
 func (m *product) refuse(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, _ error) {
 	m.recordSession(ctx, outcomeDenied)
 	tenantName, _ := m.nameOf(ctx, r.Tenant)
@@ -406,16 +322,8 @@ func (m *product) refuse(ctx context.Context, actor authn.Identity, r authn.Impe
 	})
 }
 
-// record writes the record in a transaction that first ends the session's lapsed
-// records and then inserts the new one. The transaction writes only this
-// module's table: it calls neither audit.Record nor Bus.Publish. A valid record
-// left on the session makes the insert break the partial unique index, which the
-// caller reads as ErrImpersonationActive.
-//
-// The lapse the transaction writes is remembered and announced only after the
-// transaction commits: the caller that wins the conditional update counts the
-// end and publishes its event, while a transaction that rolls back counted and
-// announced nothing.
+// record writes the record in a transaction that writes only this module's table:
+// it calls neither audit.Record nor Bus.Publish, which do not join it.
 func (m *product) record(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, ttl time.Duration, grantID string, now time.Time) (authn.ImpersonationGrant, error) {
 	g := authn.ImpersonationGrant{
 		ID:        grantID,
@@ -462,18 +370,12 @@ func (m *product) record(ctx context.Context, actor authn.Identity, r authn.Impe
 	return g, nil
 }
 
-// validTenant reports whether s is a tenant an impersonation may be confined to:
-// non-empty and free of blanks and control characters. The rule is restated here
-// and not imported, because the authentication directory does not import the
-// tenant directory.
 func validTenant(s string) bool {
 	return s != "" && strings.IndexFunc(s, func(r rune) bool {
 		return unicode.IsSpace(r) || unicode.IsControl(r)
 	}) < 0
 }
 
-// validReason reports whether reason is one to 500 characters with no control
-// character.
 func validReason(reason string) bool {
 	if reason == "" || utf8.RuneCountInString(reason) > maxReasonRunes {
 		return false

@@ -11,13 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// reasonClassThrottled is the reason_class of the line that says a key has passed
-// its free attempts. It is one of the closed values the events design registers
-// for the field, and only a log line carries it.
 const reasonClassThrottled = authn.ReasonThrottled
 
-// validScope reports whether the scope is one of the six. The set is closed, and
-// counters of different scopes never share a key space.
 func validScope(scope authn.ThrottleScope) bool {
 	switch scope {
 	case authn.ScopeIdentifier, authn.ScopeAccount, authn.ScopeFactor, authn.ScopePhone, authn.ScopeClient,
@@ -31,17 +26,15 @@ func badScope(scope authn.ThrottleScope) error {
 	return fmt.Errorf("%w: %q is not a throttle scope", authn.ErrInvalidArgument, string(scope))
 }
 
-// keyHash is the form a key is kept in: the SHA-256 of the key as it was handed
-// over, in hex. What the key holds is the caller's to normalize, and the table
-// never holds it.
+// keyHash keeps the table from holding a key as it was handed over.
 func keyHash(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
 }
 
-// Check reports how long the key still has to wait: zero means it may try now. A
-// state that cannot be read is an error and never a zero, so that a caller that
-// cannot tell does not verify.
+// Check reports how long the key still has to wait, zero for now. A state that
+// cannot be read is an error and never a zero, so a caller that cannot tell does
+// not verify.
 func (p *product) Check(ctx context.Context, scope authn.ThrottleScope, key string) (time.Duration, error) {
 	if !validScope(scope) {
 		return 0, badScope(scope)
@@ -58,16 +51,8 @@ func (p *product) Check(ctx context.Context, scope authn.ThrottleScope, key stri
 	return max(0, timeOf(rows[0].LockedUntil).Sub(p.now.Now())), nil
 }
 
-// Fail records one failed attempt, and engaged says that this failure is the first
-// one past the free attempts of the key, the one that started a back-off.
-//
-// The count moves in one statement that is atomic on both engines, so that
-// failures that arrive together are all counted: the row is made, or its count
-// is moved by one, or its count starts again at one when the window has gone by
-// without a failure and the wait the earlier failures earned is over. The wait
-// the new count earns is written after, and only ever later than the one already
-// there, so the failure that has the highest count decides it however the
-// statements of several failures interleave.
+// Fail records one failed attempt; engaged reports that this one started the
+// back-off. The count moves in one atomic statement on both engines.
 func (p *product) Fail(ctx context.Context, scope authn.ThrottleScope, key string) (bool, error) {
 	if !validScope(scope) {
 		return false, badScope(scope)
@@ -111,7 +96,6 @@ func (p *product) Fail(ctx context.Context, scope authn.ThrottleScope, key strin
 	return engaged, nil
 }
 
-// Succeed clears the key's failures.
 func (p *product) Succeed(ctx context.Context, scope authn.ThrottleScope, key string) error {
 	if !validScope(scope) {
 		return badScope(scope)

@@ -13,12 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
-// the OpenAPI fragment and the registrations have to agree on: the fragment is
-// the only source a generated client is built from, and the design leaves the
-// two free to drift with no failure signal at run time. The check drives the
-// module's own Init, through the real route-mounting module, and compares what
-// it registered there with what it declared.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters checks that the OpenAPI
+// fragment and the module's registrations agree.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	stubs, config := routefixture.Assembly(t, Module())
 	stubs = append(stubs, routefixture.Seams(
@@ -36,10 +32,8 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	})
 }
 
-// TestTheAcceptOperationPublishesEveryConflictProblemCode holds the public
-// fragment's 409 answer to every problem code the acceptance can answer. The
-// fragment carries one response per status, so a second 409 declaration
-// replaces the first and the codes only the first names never reach a client.
+// TestTheAcceptOperationPublishesEveryConflictProblemCode checks that the public
+// fragment's 409 answer names every conflict code.
 func TestTheAcceptOperationPublishesEveryConflictProblemCode(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, publicOperations)
 	if err != nil {

@@ -8,11 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A secret never reaches a statement, and so never reaches a statement-level
-// audit row. The password and the service secret are written by a raw statement
-// that carries only the hash, and the plaintext appears in no statement the
-// module runs; a model-path statement, which is what an audit row is built from,
-// would carry whatever value it was given.
+// A secret never reaches a statement, so it never reaches a statement-level audit row.
 func TestNoSecretReachesAStatement(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -45,8 +41,6 @@ func TestNoSecretReachesAStatement(t *testing.T) {
 		if !rawCredential {
 			t.Error("the credential and the secret were not written by a raw statement, so a model-path audit could see them")
 		}
-		// The only entries the module hands the audit capability name a setting's
-		// key and direction, never a value.
 		for _, entry := range audit.written() {
 			if strings.Contains(entry.Action+entry.Object+entry.Outcome, secret) {
 				t.Errorf("an audit entry carries a secret: %+v", entry)

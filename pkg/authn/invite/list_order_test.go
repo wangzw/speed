@@ -14,12 +14,8 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// TestTheListOrdersFourGroupsAndTheCursorCarriesTheGroup holds the listing's
-// order: unexpired pending first, then expired pending, then accepted, then
-// revoked; within a group newest first. The cursor carries the group, so a page
-// boundary lands in the right group rather than resuming by the stored status,
-// which cannot tell pending from expired. Each view's state is judged on the
-// server, by the same clock that decided the row's group.
+// TestTheListOrdersFourGroupsAndTheCursorCarriesTheGroup checks the four-group
+// order and that the cursor carries the group.
 func TestTheListOrdersFourGroupsAndTheCursorCarriesTheGroup(t *testing.T) {
 	h := newHarness(t)
 	pendingOld := h.issue(tenant, "old@example.com")
@@ -85,10 +81,8 @@ func TestTheListOrdersFourGroupsAndTheCursorCarriesTheGroup(t *testing.T) {
 	}
 }
 
-// TestAPageBoundaryOnAnExpiredRowResumesInTheNextGroup holds the cursor a page
-// ending on an expired pending row carries: its group is the expired one, so the
-// next page starts at the accepted group rather than repeating or skipping rows
-// through the stored status, which still reads pending for that row.
+// TestAPageBoundaryOnAnExpiredRowResumesInTheNextGroup checks that a page ending
+// on an expired pending row resumes in the accepted group.
 func TestAPageBoundaryOnAnExpiredRowResumesInTheNextGroup(t *testing.T) {
 	h := newHarness(t)
 	pending := h.issue(tenant, "pending@example.com")
@@ -141,9 +135,8 @@ func TestAPageBoundaryOnAnExpiredRowResumesInTheNextGroup(t *testing.T) {
 	}
 }
 
-// TestACursorOutsideTheGroupsIsRefused holds the closed cursor vocabulary: a
-// cursor carrying a group the listing never writes is unreadable, so it is
-// refused rather than served as a position.
+// TestACursorOutsideTheGroupsIsRefused checks that a cursor carrying an unknown
+// group is refused.
 func TestACursorOutsideTheGroupsIsRefused(t *testing.T) {
 	for _, group := range []int{-1, listGroupRevoked + 1} {
 		raw := encodeCursor(cursor{
@@ -157,10 +150,8 @@ func TestACursorOutsideTheGroupsIsRefused(t *testing.T) {
 	}
 }
 
-// TestACursorFromAnEarlierFormatIsRefused holds the version mark: the
-// three-part cursor an earlier build minted and a cursor naming a version this
-// build does not know are both refused with 400 rather than read as the current
-// sort key.
+// TestACursorFromAnEarlierFormatIsRefused checks that an earlier-format cursor
+// and an unknown version are refused with 400.
 func TestACursorFromAnEarlierFormatIsRefused(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -177,12 +168,8 @@ func TestACursorFromAnEarlierFormatIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheManagementViewNamesTheInviterAndJudgesTheState holds the management
-// view's three new fields: the state is the server's four-state judgement, and
-// the inviter's display name and username are resolved from the account that
-// issued the invitation. A host command's invitation has no issuer to name, and
-// an account that no longer exists is a tombstone with no name, so both keys are
-// absent; the issuer identifier stays in invited_by.
+// TestTheManagementViewNamesTheInviterAndJudgesTheState checks the state judgement
+// and the inviter names, absent for a host command or a tombstone.
 func TestTheManagementViewNamesTheInviterAndJudgesTheState(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.named(adminID, "Ada Admin")
@@ -215,7 +202,6 @@ func TestTheManagementViewNamesTheInviterAndJudgesTheState(t *testing.T) {
 		t.Error("last_sent_at is the zero time, want the issuance instant")
 	}
 
-	// A host command's invitation names no issuer.
 	hostIssued, err := h.p.Issue(context.Background(), IssueInvite{Tenant: tenant, Email: "host@example.com"})
 	if err != nil {
 		t.Fatalf("issuing without an identity: %v", err)
@@ -234,7 +220,6 @@ func TestTheManagementViewNamesTheInviterAndJudgesTheState(t *testing.T) {
 		}
 	}
 
-	// The issuing account gone leaves the identifier and drops both names.
 	h.accounts.gone(adminID)
 	gonePage := h.listPage()
 	for _, invitation := range gonePage.Invitations {
@@ -259,9 +244,8 @@ func TestTheManagementViewNamesTheInviterAndJudgesTheState(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatedIssuanceNamesTheImpersonatedAccount holds the naming rule
-// during an impersonation: the invitation records the effective account, so the
-// view names the impersonated account, while the audit keeps the operator.
+// TestAnImpersonatedIssuanceNamesTheImpersonatedAccount checks that the view
+// names the impersonated account, not the operator.
 func TestAnImpersonatedIssuanceNamesTheImpersonatedAccount(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.named("acct-target", "Target Person")
@@ -291,7 +275,6 @@ func TestAnImpersonatedIssuanceNamesTheImpersonatedAccount(t *testing.T) {
 	}
 }
 
-// listPage reads the first unfiltered page through the management route.
 func (h *harness) listPage() AuthnInvitePage {
 	h.t.Helper()
 	h.asAdmin()
@@ -306,8 +289,6 @@ func (h *harness) listPage() AuthnInvitePage {
 	return page
 }
 
-// issueWithExpiry issues an invitation with an explicit deadline as the
-// administrator would.
 func (h *harness) issueWithExpiry(email string, expiresAt time.Time) Issued {
 	h.t.Helper()
 	ctx := authntest.Context(h.t, context.Background(), authntest.WithAccount(adminID))

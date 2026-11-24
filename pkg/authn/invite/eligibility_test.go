@@ -12,10 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestIssueRefusesAnAddressThatIsAlreadyAMember holds the membership rule in
-// both directions: an active member and a suspended one are refused, because a
-// suspended member is resumed through the membership surface, not through an
-// invitation. No row is written either way.
+// TestIssueRefusesAnAddressThatIsAlreadyAMember checks that an active and a suspended member are both refused.
 func TestIssueRefusesAnAddressThatIsAlreadyAMember(t *testing.T) {
 	for _, active := range []bool{true, false} {
 		name := "suspended"
@@ -38,8 +35,7 @@ func TestIssueRefusesAnAddressThatIsAlreadyAMember(t *testing.T) {
 	}
 }
 
-// TestIssueRefusesAServiceAccountsAddress holds the target rule: a service
-// account is not a person an invitation can be addressed to.
+// TestIssueRefusesAServiceAccountsAddress checks that a service account's address is refused.
 func TestIssueRefusesAServiceAccountsAddress(t *testing.T) {
 	h := newHarness(t)
 	h.accounts.put("robot@example.com", "acct-robot")
@@ -54,8 +50,7 @@ func TestIssueRefusesAServiceAccountsAddress(t *testing.T) {
 	}
 }
 
-// TestIssueRefusesTheSystemTenant holds the target rule for the tenant side: the
-// platform's own tenant is not an organization and nothing is invited into it.
+// TestIssueRefusesTheSystemTenant checks that the platform's own tenant is refused.
 func TestIssueRefusesTheSystemTenant(t *testing.T) {
 	h := newHarness(t)
 	h.tenantDescs.byID[tenant] = authn.TenantDescription{Name: tenant, System: true}
@@ -69,8 +64,7 @@ func TestIssueRefusesTheSystemTenant(t *testing.T) {
 	}
 }
 
-// TestIssueLimitsAnExplicitDeadlineToNinetyDays holds the boundary: exactly 90
-// days after issuance is allowed, a minute past it is refused.
+// TestIssueLimitsAnExplicitDeadlineToNinetyDays checks that a deadline of exactly 90 days is allowed and a minute past it is refused.
 func TestIssueLimitsAnExplicitDeadlineToNinetyDays(t *testing.T) {
 	t.Run("exactly ninety days", func(t *testing.T) {
 		h := newHarness(t)
@@ -100,9 +94,7 @@ func TestIssueLimitsAnExplicitDeadlineToNinetyDays(t *testing.T) {
 	})
 }
 
-// TestTheIssueRouteAcceptsAnExplicitDeadlineAtNinetyDays holds the allowed edge
-// of the same limit on the HTTP face: a deadline exactly at issuance plus ninety
-// days is a 201, not a refusal.
+// TestTheIssueRouteAcceptsAnExplicitDeadlineAtNinetyDays checks that a 90-day deadline on the HTTP face answers 201.
 func TestTheIssueRouteAcceptsAnExplicitDeadlineAtNinetyDays(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
@@ -127,8 +119,7 @@ func TestTheIssueRouteAcceptsAnExplicitDeadlineAtNinetyDays(t *testing.T) {
 	}
 }
 
-// TestTheIssueRouteAnswersTheEligibilityRefusals holds the problem codes on the
-// HTTP face, so the frontend can tell the cases apart.
+// TestTheIssueRouteAnswersTheEligibilityRefusals checks the problem code each eligibility refusal answers on the HTTP face.
 func TestTheIssueRouteAnswersTheEligibilityRefusals(t *testing.T) {
 	cases := []struct {
 		name   string

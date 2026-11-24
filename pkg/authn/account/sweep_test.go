@@ -11,8 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// Start refuses to run against a database that was not migrated by a command
-// that took the module in statically.
+// Start refuses a database that was not migrated by a command that took the module in statically.
 func TestStartRefusesAMissingTable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		if err := h.handle.Exec("DROP TABLE " + tableThrottles).Error; err != nil {
@@ -24,8 +23,7 @@ func TestStartRefusesAMissingTable(t *testing.T) {
 	})
 }
 
-// The probe covers every table the module owns, the pending contacts among them:
-// a database migrated before that table existed refuses the startup and names it.
+// The probe covers every table, the pending contacts among them: a database migrated before one existed refuses startup and names it.
 func TestStartRefusesAMissingPendingContactTable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		if err := h.handle.Exec("DROP TABLE " + tablePending).Error; err != nil {
@@ -41,8 +39,7 @@ func TestStartRefusesAMissingPendingContactTable(t *testing.T) {
 	})
 }
 
-// Start brings the sweeps up and Stop waits for them within the bound the module
-// gives itself.
+// Start brings the sweeps up and Stop waits for them within the module's own bound.
 func TestStartAndStopTheSweepsWithinTheBound(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		if err := h.p.start(t.Context()); err != nil {
@@ -56,8 +53,7 @@ func TestStartAndStopTheSweepsWithinTheBound(t *testing.T) {
 	})
 }
 
-// A flood of random identifiers is reclaimed by the sweep once the window has
-// gone by without a failure and the waits are over.
+// A flood of random identifiers is reclaimed once the window passes without a failure and the waits are over.
 func TestTheThrottleSweepReclaimsAFlood(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -80,8 +76,7 @@ func TestTheThrottleSweepReclaimsAFlood(t *testing.T) {
 	})
 }
 
-// A pass that deletes a full batch of its bound continues, so a table holding
-// more than one batch is reclaimed by a single pass.
+// A pass that deletes a full batch continues, so one pass reclaims more than a batch.
 func TestTheThrottleSweepReclaimsMoreThanOneBatchInAPass(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -124,8 +119,7 @@ func TestTheThrottleSweepKeepsAKeyWithinItsWindow(t *testing.T) {
 	})
 }
 
-// A service secret is swept once it expired or was revoked before the retention
-// began, and a live one is left alone.
+// A service secret is swept once it expired or was revoked before retention began, and a live one is left alone.
 func TestTheSecretSweepDeletesOldRows(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()

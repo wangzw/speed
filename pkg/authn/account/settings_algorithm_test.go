@@ -12,12 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// testPasswordAlgorithmKey is the setting this module carries for the algorithm
-// a new hash is written with. It is written out here rather than read from a
-// constant so that the case names the key the design lists.
 const testPasswordAlgorithmKey = "authn.account.password-algorithm"
 
-// storedPHC is the credential text a case reads straight from the table.
 func storedPHC(t *testing.T, h *harness, id authn.AccountID) string {
 	t.Helper()
 	var row struct{ PHC string }
@@ -27,9 +23,7 @@ func storedPHC(t *testing.T, h *harness, id authn.AccountID) string {
 	return row.PHC
 }
 
-// TestAStoredPasswordAlgorithmShapesTheNextEnrollment holds the runtime read: a
-// value written after the module started shapes the hash the next enrollment
-// writes, and an entry already written with argon2id still verifies.
+// A stored algorithm value written after start shapes the next enrollment's hash, and an existing argon2id entry still verifies.
 func TestAStoredPasswordAlgorithmShapesTheNextEnrollment(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -53,7 +47,6 @@ func TestAStoredPasswordAlgorithmShapesTheNextEnrollment(t *testing.T) {
 				entry.Params().Algorithm, password.PBKDF2SHA256)
 		}
 
-		// An entry written with argon2id before the move still verifies.
 		id := h.user("argon", "correct horse battery")
 		if arg := storedPHC(t, h, id); !strings.HasPrefix(arg, "$argon2id$") {
 			t.Fatalf("the existing entry is %q, want an argon2id one", arg)
@@ -64,9 +57,7 @@ func TestAStoredPasswordAlgorithmShapesTheNextEnrollment(t *testing.T) {
 	})
 }
 
-// TestAPasswordWriteRefusesAnUnusableAlgorithm holds that an algorithm that
-// cannot be read is not replaced by another one: a write fails instead of
-// silently falling back to the declared algorithm.
+// A password write with an unreadable algorithm fails rather than falling back to the declared one.
 func TestAPasswordWriteRefusesAnUnusableAlgorithm(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -93,9 +84,7 @@ func TestAPasswordWriteRefusesAnUnusableAlgorithm(t *testing.T) {
 	}
 }
 
-// TestAnEnrollmentRefusesAnUnusableAlgorithm holds the other hash write: an
-// enrollment whose algorithm cannot be read answers unavailable rather than
-// writing with the declared algorithm.
+// An enrollment with an unreadable algorithm answers unavailable rather than writing with the declared one.
 func TestAnEnrollmentRefusesAnUnusableAlgorithm(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -113,12 +102,7 @@ func TestAnEnrollmentRefusesAnUnusableAlgorithm(t *testing.T) {
 	})
 }
 
-// TestAnUndeclaredAlgorithmKeyIsReported holds that a key the store answers as
-// undeclared is reported rather than silently falling back: the store reserves
-// ErrUnknownKey for a key no declaration covers, which is a defect in this
-// module's own schema. The write proceeds on the declared algorithm, and one
-// Error names the setting so the defect is visible. The fake store answers a key
-// with no value as ErrUnknownKey, which is how this case reaches that direction.
+// A key the store answers as undeclared is reported rather than silently falling back, since that is a defect in this module's schema.
 func TestAnUndeclaredAlgorithmKeyIsReported(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		id := h.user("undeclared", "")
@@ -133,9 +117,7 @@ func TestAnUndeclaredAlgorithmKeyIsReported(t *testing.T) {
 	})
 }
 
-// TestThePostLoginUpgradeIsSkippedWhenTheAlgorithmCannotBeRead holds the second
-// hash write: a login that would rewrite a weak entry leaves it alone and says
-// so at Error once, and the login itself still succeeds.
+// The post-login upgrade of a weak entry is skipped with one Error when the algorithm cannot be read, and the login succeeds.
 func TestThePostLoginUpgradeIsSkippedWhenTheAlgorithmCannotBeRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -159,10 +141,7 @@ func TestThePostLoginUpgradeIsSkippedWhenTheAlgorithmCannotBeRead(t *testing.T) 
 	})
 }
 
-// TestMovingTheAlgorithmToPBKDF2WritesAWarnAndAnAuditRecord holds the visibility
-// of a downgrade: the module's subscription answers the change with one Warn
-// naming the key and the direction and never the value, and one best-effort
-// audit record with the relaxed action. A move back to argon2id writes nothing.
+// Moving the algorithm to PBKDF2 writes one Warn naming the key and direction and one best-effort relaxed audit record.
 func TestMovingTheAlgorithmToPBKDF2WritesAWarnAndAnAuditRecord(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		audit := h.withAudit()
@@ -198,7 +177,6 @@ func TestMovingTheAlgorithmToPBKDF2WritesAWarnAndAnAuditRecord(t *testing.T) {
 			t.Errorf("the audit detail change = %q, want downgrade", got)
 		}
 
-		// A move back to the stronger algorithm is not a downgrade.
 		deliverChange(t, h, settings.Change{
 			Key: testPasswordAlgorithmKey, Old: string(password.PBKDF2SHA256), New: string(password.Argon2id),
 		})
@@ -211,9 +189,7 @@ func TestMovingTheAlgorithmToPBKDF2WritesAWarnAndAnAuditRecord(t *testing.T) {
 	})
 }
 
-// TestAConfigurationCarryingTheRemovedAlgorithmFailsStartup holds the move out of
-// configuration: a configuration file that still carries the algorithm is an
-// unknown key and refuses the startup, naming the key.
+// A configuration file still carrying the algorithm is an unknown key and refuses startup, naming the key.
 func TestAConfigurationCarryingTheRemovedAlgorithmFailsStartup(t *testing.T) {
 	body := `{"authn":{"account":{"password-algorithm":"pbkdf2-sha256"}}}`
 	err := loadAccountConfiguration(t, body)
