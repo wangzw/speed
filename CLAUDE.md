@@ -130,19 +130,30 @@ A change that crosses the boundary is two changes: run each side's gate.
 **The gate's CPU budget is `GATE_JOBS`**, defaulted by the Makefile. Every
 tool a gate leg calls that takes a width setting is told that width
 explicitly — go build, go test and go vet (`-p` and `GOMAXPROCS`; tests also
-`-parallel`), golangci-lint (`--concurrency`), vitest (`--maxWorkers`),
-Playwright (`--workers`) and pnpm -r (`--workspace-concurrency`) — so none
-of them probes the host's core count, which is wrong inside a container
-because the process sees the node's cores rather than the share it was given.
-Three carry
-no width this repository can set and run at whatever their runtime decides:
-`golangci-lint fmt`, tsc, and the rolldown thread pool behind `vite build`.
+`-parallel`), go mod tidy, `golangci-lint fmt` and actionlint (`GOMAXPROCS`),
+golangci-lint run (`--concurrency`), vitest (`--maxWorkers`), Playwright
+(`--workers`), pnpm -r (`--workspace-concurrency`), pnpm install
+(`--workspace-concurrency` and `--child-concurrency`) and ESLint
+(`--concurrency`) — so none of them probes the host's core count, which is
+wrong inside a container because the process sees the node's cores rather than
+the share it was given. The gate scripts in `tools/` run under the same
+`GOMAXPROCS` and a `GOFLAGS` carrying `-p`, and hand both to the go commands
+they start. Four carry no width this repository can set and run at whatever
+their runtime decides: tsc, the rolldown thread pool behind `vite build`, the
+shellcheck processes actionlint starts (one per CPU it sees), and the threads
+pnpm install links packages with.
 Set it to the CPU share this run may use. A leg that nests two of those
-widths — pnpm -r starting one vitest process per package — keeps the product
-within the budget, not just each factor: the frontend test segment runs its
-packages one at a time (`--workspace-concurrency=1`) and gives each vitest
-process the whole `GATE_JOBS`, so the product is `GATE_JOBS` rather than its
-square. `web-a11y` and `web-browser` start a single vitest process, so their
+widths keeps the product within the budget, not just each factor. pnpm -r
+starting one vitest process per package is one such leg: the frontend test
+segment runs its packages one at a time (`--workspace-concurrency=1`) and
+gives each vitest process the whole `GATE_JOBS`, so the product is `GATE_JOBS`
+rather than its square. The lint leg nests the other way round: pnpm -r runs
+`GATE_JOBS` packages at once and each ESLint process lints on one thread
+(`--concurrency=off`). pnpm install installs the workspace in one pass under
+its shared lockfile, so `--child-concurrency` caps the lifecycle scripts of
+the whole install at `GATE_JOBS`, and `--workspace-concurrency=1` takes no
+effect there and only keeps that width from being left to a default.
+`web-a11y` and `web-browser` start a single vitest process, so their
 `--maxWorkers` is already the budget. `make -j N check` multiplies it: up to
 N segments run at once, each able to use `GATE_JOBS` cores, so a caller
 running segments in parallel divides its budget between the two.

@@ -76,9 +76,11 @@ parallel run reach the same segments (the frontend build that writes the
 embedded bundle, ordered after every Go leg that compiles it), and
 `web-check` to the three phases it splits into, whose commands together are
 the frontend gate. Every tool that takes a width setting is held to
-`GATE_JOBS` there as well: go build, go test and go vet, golangci-lint,
-vitest, Playwright and pnpm -r must receive the width, default 4 and
-following an override, so none falls back to the host's core count. The
+`GATE_JOBS` there as well: go build, go test and go vet, go mod tidy,
+`golangci-lint fmt`, golangci-lint run and actionlint, vitest, Playwright,
+pnpm -r, pnpm install and ESLint must receive the width, default 4 and
+following an override, so none falls back to the host's core count, and the
+gate scripts pass `-p` and `GOMAXPROCS` on to the go commands they start. The
 cases for the gate's structure read the `Makefile` rather than drive it: a
 segment dropped from the gate runs nowhere else, so the expectation is
 written out in the test instead of derived from the file. The width cases
