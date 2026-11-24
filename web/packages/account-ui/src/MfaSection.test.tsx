@@ -20,9 +20,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
+import { getAuthnMfaFactorsQueryKey, getAuthnProfileGetQueryKey } from '@speed/api-sdk'
 import { formatInstant } from '@speed/i18n'
 import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -185,6 +185,11 @@ const abandonCalls = (calls: readonly RealCall[]): RealCall[] =>
   calls.filter(
     (call) => call.method === 'DELETE' && call.path === FLOW_CURRENT,
   )
+
+/** The PATCH requests a case sent to rename a factor. */
+const renameCalls = (calls: readonly RealCall[]): RealCall[] =>
+  calls.filter((call) => call.method === 'PATCH')
+
 /** The factor row that reads as `name`: a passkey or phone by its label, the
  * authenticator entry by its kind. */
 function factorRow(name: string): HTMLElement {
@@ -235,6 +240,29 @@ async function openRenameEditor(
 ): Promise<HTMLElement> {
   await clickRowAction(user, factor, zhCN.mfa.rename)
   return screen.findByLabelText(zhCN.mfa.renameLabel)
+}
+
+/** A promise the case settles by hand, so one request is held in flight
+ * while the case asserts the pending and settled states. */
+function deferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+/** The enrollment panel's flow starting step, parked on a `webauthn` code
+ * step, answered by the case's own responder. */
+function enrollCodeStep(): Record<string, unknown> {
+  return {
+    seq: 1,
+    state: 'enroll',
+    next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+  }
 }
 
 describe('MfaSection', () => {
@@ -2910,5 +2938,1379 @@ describe('MfaSection', () => {
     await waitFor(() =>
       expect(screen.queryByText('Old key')).toBeNull(),
     )
+  })
+
+  it('marks the row being removed busy and holds the section’s other actions unavailable while the removal is in flight', async () => {
+    const heldRefetch = deferred<Response>()
+    let factorsRead = 0
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        if (factorsRead === 1) {
+          return jsonResponse(200, {
+            factors: [
+              passkey({ id: 'factor-a', label: 'Laptop key' }),
+              passkey({ id: 'factor-b', label: 'Backup key' }),
+            ],
+          })
+        }
+        return heldRefetch.promise
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Laptop key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    // The confirm closes on the answer, and the refetch it waits for is
+    // still held: the row stays in the document, its remove action keeps the
+    // progress state, and every other write control in the section is
+    // unavailable without a reason.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const removeA = within(factorRow('Laptop key')).getByRole('button', {
+      name: zhCN.mfa.remove,
+    })
+    await waitFor(() => expect(removeA).toHaveAttribute('aria-busy', 'true'))
+    expect(removeA).toHaveAttribute('aria-disabled', 'true')
+    expect(removeA).not.toHaveAttribute('disabled')
+
+    const removeB = within(factorRow('Backup key')).getByRole('button', {
+      name: zhCN.mfa.remove,
+    })
+    expect(removeB).toHaveAttribute('aria-disabled', 'true')
+    expect(removeB).not.toHaveAttribute('aria-busy')
+    expect(removeB).not.toHaveAttribute('disabled')
+    expect(removeB).not.toHaveAccessibleDescription()
+    const renameB = within(factorRow('Backup key')).getByRole('button', {
+      name: zhCN.mfa.rename,
+    })
+    expect(renameB).toHaveAttribute('aria-disabled', 'true')
+    expect(renameB).not.toHaveAttribute('aria-busy')
+    expect(renameB).not.toHaveAccessibleDescription()
+
+    const add = screen.getByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.webauthn),
+    })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    expect(add).not.toHaveAttribute('aria-busy')
+    expect(add).not.toHaveAttribute('disabled')
+    expect(add).not.toHaveAccessibleDescription()
+
+    // The held siblings are focusable and keyboard-activatable, and the
+    // activation is refused: neither opens an editor nor a panel. Focus is
+    // asserted first, so a control the surface cannot actually reach -- a
+    // hidden control behind a modal -- cannot make the refusal look proven.
+    renameB.focus()
+    expect(renameB).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
+    add.focus()
+    expect(add).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByLabelText(zhCN.mfa.enroll.labelField)).toBeNull()
+
+    await act(async () => {
+      heldRefetch.resolve(
+        jsonResponse(200, {
+          factors: [passkey({ id: 'factor-b', label: 'Backup key' })],
+        }),
+      )
+    })
+    expect(removed).toBe(true)
+    expect(
+      await screen.findByText(
+        zhCN.mfa.removed.replace('{{factor}}', 'Laptop key'),
+      ),
+    ).toBeTruthy()
+  })
+
+  it('keeps the rename save busy, the cancel and siblings unavailable and the field read-only while the rename is in flight', async () => {
+    const held = deferred<Response>()
+    let renamed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            passkey({
+              id: 'factor-a',
+              label: renamed ? 'New name' : 'Old name',
+            }),
+            passkey({ id: 'factor-b', label: 'Backup key' }),
+          ],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        return held.promise.then((answer) => {
+          renamed = true
+          return answer
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const field = await openRenameEditor(user, 'Old name')
+    await user.clear(field)
+    await user.type(field, 'New name')
+    const save = screen.getByRole('button', { name: zhCN.mfa.renameSave })
+    await user.click(save)
+
+    await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'))
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(save).not.toHaveAttribute('disabled')
+    const cancel = screen.getByRole('button', { name: zhCN.mfa.renameCancel })
+    expect(cancel).toHaveAttribute('aria-disabled', 'true')
+    expect(cancel).not.toHaveAttribute('aria-busy')
+    expect(cancel).not.toHaveAttribute('disabled')
+    expect(cancel).not.toHaveAccessibleDescription()
+
+    // The field stays focusable and unchangeable through the write.
+    expect(field).toHaveAttribute('readonly')
+    expect(field).not.toHaveAttribute('disabled')
+    field.focus()
+    expect(field).toHaveFocus()
+    const before = (field as HTMLInputElement).value
+    await user.keyboard('9')
+    expect((field as HTMLInputElement).value).toBe(before)
+
+    // Sibling rows and the add entry are held without a reason.
+    const removeB = within(factorRow('Backup key')).getByRole('button', {
+      name: zhCN.mfa.remove,
+    })
+    expect(removeB).toHaveAttribute('aria-disabled', 'true')
+    expect(removeB).not.toHaveAttribute('aria-busy')
+    expect(removeB).not.toHaveAccessibleDescription()
+    const add = screen.getByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.webauthn),
+    })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    expect(add).not.toHaveAttribute('disabled')
+
+    // Activating a held sibling sends nothing: the remove action opens no
+    // confirmation and the add entry opens no panel, by click or by Enter.
+    await user.click(removeB)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    removeB.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await user.click(add)
+    expect(screen.queryByLabelText(zhCN.mfa.enroll.labelField)).toBeNull()
+    add.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.queryByLabelText(zhCN.mfa.enroll.labelField)).toBeNull()
+
+    // The form's own submit is guarded as well as its button: a submit event
+    // during the write reaches no second PATCH. The rename actions have left
+    // the document, so this submit can only come from the held form.
+    const form = field.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+    expect(renameCalls(rig.calls)).toHaveLength(1)
+    expect(screen.getByRole('button', { name: zhCN.mfa.renameSave })).toBe(
+      save,
+    )
+
+    await act(async () => {
+      held.resolve(
+        jsonResponse(
+          200,
+          passkey({ id: 'factor-a', label: 'New name' }),
+        ),
+      )
+    })
+    expect(
+      await screen.findByText(
+        zhCN.mfa.renamed.replace('{{factor}}', 'New name'),
+      ),
+    ).toBeTruthy()
+  })
+
+  it('keeps the enrollment name field read-only and the panel’s other controls unavailable while the flow starts', async () => {
+    const held = deferred<Response>()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return held.promise
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
+    const field = await screen.findByLabelText(zhCN.mfa.enroll.labelField)
+    expect(field).toHaveAttribute('readonly')
+    expect(field).not.toHaveAttribute('disabled')
+
+    const heldControls = [zhCN.mfa.enroll.cancelLabel, zhCN.mfa.retry].map(
+      (name) => screen.getByRole('button', { name }),
+    )
+    for (const control of heldControls) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy')
+      expect(control).not.toHaveAttribute('disabled')
+      expect(control).not.toHaveAccessibleDescription()
+    }
+
+    // Neither a click nor Enter on a held control acts: the panel stays
+    // open and no second start reaches the server.
+    const [cancelControl, retryControl] = heldControls as [
+      HTMLElement,
+      HTMLElement,
+    ]
+    const starts = () =>
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      ).length
+    await user.click(cancelControl)
+    expect(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
+    ).toBeTruthy()
+    await user.click(retryControl)
+    retryControl.focus()
+    await user.keyboard('{Enter}')
+    expect(starts()).toBe(1)
+
+    await act(async () => {
+      held.resolve(jsonResponse(200, enrollCodeStep()))
+    })
+    // The start settled: the cancel control answers again.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
+      ).not.toHaveAttribute('aria-disabled', 'true'),
+    )
+  })
+
+  it('marks the enrollment confirm busy and the cancel unavailable while the answer is in flight', async () => {
+    const held = deferred<Response>()
+    let enrolled = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: enrolled ? [factor({ id: 'factor-new' })] : [],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, enrollCodeStep())
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number; step: string }
+        if (body.step === 'enroll') {
+          return held.promise.then((answer) => {
+            enrolled = true
+            return answer
+          })
+        }
+        return jsonResponse(200, { state: 'enrolled' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await confirmEnrollment(user)
+
+    const confirm = screen.getByRole('button', {
+      name: zhCN.mfa.enroll.confirmLabel,
+    })
+    await waitFor(() => expect(confirm).toHaveAttribute('aria-busy', 'true'))
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).not.toHaveAttribute('disabled')
+    const cancel = screen.getByRole('button', {
+      name: zhCN.mfa.enroll.cancelLabel,
+    })
+    expect(cancel).toHaveAttribute('aria-disabled', 'true')
+    expect(cancel).not.toHaveAttribute('aria-busy')
+    expect(cancel).not.toHaveAttribute('disabled')
+    expect(cancel).not.toHaveAccessibleDescription()
+
+    await act(async () => {
+      held.resolve(
+        jsonResponse(200, { seq: 2, state: 'ready', next: { kind: 'complete' } }),
+      )
+    })
+    expect(
+      await screen.findByText(
+        zhCN.mfa.enroll.enrolled.replace(
+          '{{factor}}',
+          zhCN.mfa.factor.kind.totp,
+        ),
+      ),
+    ).toBeTruthy()
+  })
+
+  it('holds the enrollment panel’s controls unavailable while another write in the section is in flight', async () => {
+    const heldPatch = deferred<Response>()
+    let renamed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            passkey({
+              id: 'factor-b',
+              label: renamed ? 'New backup' : 'Backup key',
+            }),
+          ],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, enrollCodeStep())
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-b'
+      ) {
+        return heldPatch.promise.then((answer) => {
+          renamed = true
+          return answer
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    // The TOTP panel is open and parked on its code step when a sibling
+    // row's rename starts. The section has one write scope, so the panel's
+    // controls hold with the rest of it instead of answering into a second
+    // write.
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await screen.findByLabelText(zhCN.flowStep.codeLabel)
+    const field = await openRenameEditor(user, 'Backup key')
+    await user.clear(field)
+    await user.type(field, 'New backup')
+    const save = screen.getByRole('button', { name: zhCN.mfa.renameSave })
+    await user.click(save)
+    await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'))
+
+    const panel = screen.getByRole('region', {
+      name: enrollTitleOf(zhCN.mfa.factor.kind.totp),
+    })
+    const confirm = within(panel).getByRole('button', {
+      name: zhCN.mfa.enroll.confirmLabel,
+    })
+    expect(confirm).toHaveAttribute('aria-disabled', 'true')
+    expect(confirm).not.toHaveAttribute('aria-busy')
+    expect(confirm).not.toHaveAccessibleDescription()
+    const cancel = within(panel).getByRole('button', {
+      name: zhCN.mfa.enroll.cancelLabel,
+    })
+    expect(cancel).toHaveAttribute('aria-disabled', 'true')
+    expect(cancel).not.toHaveAttribute('aria-busy')
+    expect(cancel).not.toHaveAccessibleDescription()
+
+    // Neither control answers while the sibling write runs: no flow answer
+    // reaches the server and the panel stays open.
+    const answers = () =>
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+      ).length
+    await user.click(confirm)
+    confirm.focus()
+    await user.keyboard('{Enter}')
+    await user.click(cancel)
+    expect(answers()).toBe(0)
+    expect(
+      screen.getByRole('region', {
+        name: enrollTitleOf(zhCN.mfa.factor.kind.totp),
+      }),
+    ).toBeTruthy()
+
+    await act(async () => {
+      heldPatch.resolve(
+        jsonResponse(200, passkey({ id: 'factor-b', label: 'New backup' })),
+      )
+    })
+    expect(
+      await screen.findByText(
+        zhCN.mfa.renamed.replace('{{factor}}', 'New backup'),
+      ),
+    ).toBeTruthy()
+  })
+
+  it('holds the enrollment retry and cancel unavailable while another write in the section is in flight', async () => {
+    const heldPatch = deferred<Response>()
+    let renamed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            passkey({
+              id: 'factor-b',
+              label: renamed ? 'New backup' : 'Backup key',
+            }),
+          ],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        // The start is refused, so the panel parks on its retry.
+        return errorResponse(400, 'authn.bad_request')
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-b'
+      ) {
+        return heldPatch.promise.then((answer) => {
+          renamed = true
+          return answer
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await screen.findByText(zhCN.errors.authn.bad_request)
+    const retry = screen.getByRole('button', { name: zhCN.mfa.retry })
+    const cancel = screen.getByRole('button', {
+      name: zhCN.mfa.enroll.cancelLabel,
+    })
+
+    // A sibling row's rename starts while the panel's retry is on screen.
+    const field = await openRenameEditor(user, 'Backup key')
+    await user.clear(field)
+    await user.type(field, 'New backup')
+    const save = screen.getByRole('button', { name: zhCN.mfa.renameSave })
+    await user.click(save)
+    await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'))
+
+    for (const control of [retry, cancel]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+      expect(control).not.toHaveAttribute('aria-busy')
+      expect(control).not.toHaveAccessibleDescription()
+    }
+    const starts = () =>
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === FLOW_START,
+      ).length
+    await user.click(retry)
+    retry.focus()
+    await user.keyboard('{Enter}')
+    await user.click(cancel)
+    // The only start is the one the panel opened with.
+    expect(starts()).toBe(1)
+    expect(screen.getByRole('button', { name: zhCN.mfa.retry })).toBeTruthy()
+
+    await act(async () => {
+      heldPatch.resolve(
+        jsonResponse(200, passkey({ id: 'factor-b', label: 'New backup' })),
+      )
+    })
+    expect(
+      await screen.findByText(
+        zhCN.mfa.renamed.replace('{{factor}}', 'New backup'),
+      ),
+    ).toBeTruthy()
+  })
+
+  it('lands focus on the next row’s remove action when a removal takes the focused row away', async () => {
+    const heldRefetch = deferred<Response>()
+    let factorsRead = 0
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        if (factorsRead === 1) {
+          return jsonResponse(200, {
+            factors: [
+              passkey({ id: 'factor-a', label: 'Laptop key' }),
+              passkey({ id: 'factor-b', label: 'Backup key' }),
+            ],
+          })
+        }
+        return heldRefetch.promise
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Laptop key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    // The confirm closes on the answer; the refetch is still held, so the
+    // row is still in the document and focus returns to its remove action.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const removeA = within(factorRow('Laptop key')).getByRole('button', {
+      name: zhCN.mfa.remove,
+    })
+    await waitFor(() => expect(removeA).toHaveFocus())
+
+    await act(async () => {
+      heldRefetch.resolve(
+        jsonResponse(200, {
+          factors: [passkey({ id: 'factor-b', label: 'Backup key' })],
+        }),
+      )
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('Laptop key')).toBeNull(),
+    )
+    expect(removed).toBe(true)
+    expect(
+      within(factorRow('Backup key')).getByRole('button', {
+        name: zhCN.mfa.remove,
+      }),
+    ).toHaveFocus()
+  })
+
+  it('lands focus on the previous row’s remove action when the last row goes', async () => {
+    const heldRefetch = deferred<Response>()
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        if (factorsRead === 1) {
+          return jsonResponse(200, {
+            factors: [
+              passkey({ id: 'factor-a', label: 'Laptop key' }),
+              passkey({ id: 'factor-b', label: 'Backup key' }),
+            ],
+          })
+        }
+        return heldRefetch.promise
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-b'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Backup key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await act(async () => {
+      heldRefetch.resolve(
+        jsonResponse(200, {
+          factors: [passkey({ id: 'factor-a', label: 'Laptop key' })],
+        }),
+      )
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('Backup key')).toBeNull(),
+    )
+    expect(
+      within(factorRow('Laptop key')).getByRole('button', {
+        name: zhCN.mfa.remove,
+      }),
+    ).toHaveFocus()
+  })
+
+  it('lands focus on the section container when the removed row’s kind group goes away', async () => {
+    const heldRefetch = deferred<Response>()
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        // The deployment offers only the authenticator app, so the passkey
+        // group the one row lives in disappears with the row.
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        if (factorsRead === 1) {
+          return jsonResponse(200, {
+            factors: [passkey({ id: 'factor-a', label: 'Laptop key' })],
+          })
+        }
+        return heldRefetch.promise
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Laptop key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await act(async () => {
+      heldRefetch.resolve(jsonResponse(200, { factors: [] }))
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('Laptop key')).toBeNull(),
+    )
+    expect(
+      screen.getByRole('group', { name: zhCN.mfa.title }),
+    ).toHaveFocus()
+  })
+
+  it('does not move focus when the reader already put it elsewhere before the row goes', async () => {
+    const heldRefetch = deferred<Response>()
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        // A second method's add entry is a control in this section that is
+        // not any row's landing: neither the removed row's remove action nor
+        // its neighbours' -- so staying on it proves the landing did not
+        // steal focus.
+        return jsonResponse(200, methodsDoc(['webauthn', 'totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        if (factorsRead === 1) {
+          return jsonResponse(200, {
+            factors: [
+              passkey({ id: 'factor-a', label: 'Laptop key' }),
+              passkey({ id: 'factor-b', label: 'Backup key' }),
+            ],
+          })
+        }
+        return heldRefetch.promise
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Laptop key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    const addTotp = screen.getByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.totp),
+    })
+    addTotp.focus()
+    expect(addTotp).toHaveFocus()
+
+    await act(async () => {
+      heldRefetch.resolve(
+        jsonResponse(200, {
+          factors: [passkey({ id: 'factor-b', label: 'Backup key' })],
+        }),
+      )
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('Laptop key')).toBeNull(),
+    )
+    expect(addTotp).toHaveFocus()
+    expect(
+      within(factorRow('Backup key')).getByRole('button', {
+        name: zhCN.mfa.remove,
+      }),
+    ).not.toHaveFocus()
+  })
+
+  it('keeps focus inside another role=dialog node while the removal lands', async () => {
+    // The host's shell can keep a dialog of its own mounted -- a drawer or a
+    // command palette -- and focusing it is a place the operator chose.
+    // Only this section's own dialogs (its danger confirmation and its
+    // step-up challenge) mean the write's exit took focus; a role=dialog
+    // match on any node in the document would read the shell's node as a
+    // lost focus and pull it away.
+    const heldRefetch = deferred<Response>()
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        if (factorsRead === 1) {
+          return jsonResponse(200, {
+            factors: [
+              passkey({ id: 'factor-a', label: 'Laptop key' }),
+              passkey({ id: 'factor-b', label: 'Backup key' }),
+            ],
+          })
+        }
+        return heldRefetch.promise
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Laptop key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    // The confirmation closes on the answer while the refetch is held: the
+    // row is still listed and the write is in flight.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    const shell = document.createElement('div')
+    shell.setAttribute('role', 'dialog')
+    shell.setAttribute('aria-label', 'shell drawer')
+    shell.tabIndex = -1
+    document.body.append(shell)
+    shell.focus()
+    expect(shell).toHaveFocus()
+    try {
+      await act(async () => {
+        heldRefetch.resolve(
+          jsonResponse(200, {
+            factors: [passkey({ id: 'factor-b', label: 'Backup key' })],
+          }),
+        )
+      })
+      await waitFor(() => expect(screen.queryByText('Laptop key')).toBeNull())
+      expect(shell).toHaveFocus()
+      expect(
+        within(factorRow('Backup key')).getByRole('button', {
+          name: zhCN.mfa.remove,
+        }),
+      ).not.toHaveFocus()
+    } finally {
+      shell.remove()
+    }
+  })
+
+  it('clears a settled removal’s landing when the list still carries the row', async () => {
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn', 'totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        // The first read and the read that follows the removal still list
+        // the row: the write settled with it there. A later read -- another
+        // surface's -- is the one that drops it.
+        return jsonResponse(200, {
+          factors:
+            factorsRead <= 2
+              ? [
+                  passkey({ id: 'factor-a', label: 'Laptop key' }),
+                  passkey({ id: 'factor-b', label: 'Backup key' }),
+                ]
+              : [passkey({ id: 'factor-b', label: 'Backup key' })],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Laptop key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    expect(
+      await screen.findByText(
+        zhCN.mfa.removed.replace('{{factor}}', 'Laptop key'),
+      ),
+    ).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // The write settled while the list still held the row.
+    const removeA = within(factorRow('Laptop key')).getByRole('button', {
+      name: zhCN.mfa.remove,
+    })
+    await waitFor(() => expect(removeA).not.toHaveAttribute('aria-busy'))
+    // Focus falls away from every row action before the later read.
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement).toBe(document.body)
+
+    // A read that drops the row must not resurrect the settled removal's
+    // landing: the record was cleared when the write landed with the row
+    // still there, so the body keeps the focus.
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: getAuthnMfaFactorsQueryKey(),
+      })
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('Laptop key')).toBeNull(),
+    )
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('lands focus on the row’s rename action when a landed rename closes its editor', async () => {
+    let renamed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            passkey({
+              id: 'factor-a',
+              label: renamed ? 'New name' : 'Old name',
+            }),
+          ],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        renamed = true
+        return jsonResponse(200, passkey({ id: 'factor-a', label: 'New name' }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const field = await openRenameEditor(user, 'Old name')
+    await user.clear(field)
+    await user.type(field, 'New name')
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
+
+    expect(
+      await screen.findByText(
+        zhCN.mfa.renamed.replace('{{factor}}', 'New name'),
+      ),
+    ).toBeTruthy()
+    expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
+    // The editor closes onto its own row, which stays: focus returns to the
+    // rename action that opened it, the same element throughout.
+    expect(
+      within(factorRow('New name')).getByRole('button', {
+        name: zhCN.mfa.rename,
+      }),
+    ).toHaveFocus()
+  })
+
+  it('lands focus on the row’s rename action when the reader cancels the editor', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [passkey({ id: 'factor-a', label: 'Old name' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await openRenameEditor(user, 'Old name')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.renameCancel }),
+    )
+    expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
+    await waitFor(() =>
+      expect(
+        within(factorRow('Old name')).getByRole('button', {
+          name: zhCN.mfa.rename,
+        }),
+      ).toHaveFocus(),
+    )
+  })
+
+  it('lands focus on the next row’s rename action when a rename finds its factor gone', async () => {
+    let gone = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: gone
+            ? [passkey({ id: 'factor-b', label: 'Backup key' })]
+            : [
+                passkey({ id: 'factor-a', label: 'Old name' }),
+                passkey({ id: 'factor-b', label: 'Backup key' }),
+              ],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        gone = true
+        return errorResponse(404, 'authn.factor_not_found')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const field = await openRenameEditor(user, 'Old name')
+    await user.clear(field)
+    await user.type(field, 'New name')
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
+
+    expect(
+      await screen.findByText(zhCN.errors.authn.factor_not_found),
+    ).toBeTruthy()
+    expect(screen.queryByLabelText(zhCN.mfa.renameLabel)).toBeNull()
+    // The row the editor belonged to is gone with it: focus follows the
+    // removal order to the next row's rename action.
+    await waitFor(() =>
+      expect(
+        within(factorRow('Backup key')).getByRole('button', {
+          name: zhCN.mfa.rename,
+        }),
+      ).toHaveFocus(),
+    )
+  })
+
+  it('does not move focus when the reader left the rename editor before it closed', async () => {
+    const held = deferred<Response>()
+    let renamed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        // A second method's add entry is not the rename landing, so staying
+        // on it proves the landing did not steal focus.
+        return jsonResponse(200, methodsDoc(['webauthn', 'totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            passkey({
+              id: 'factor-a',
+              label: renamed ? 'New name' : 'Old name',
+            }),
+            passkey({ id: 'factor-b', label: 'Backup key' }),
+          ],
+        })
+      }
+      if (
+        call.method === 'PATCH' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        return held.promise.then((answer) => {
+          renamed = true
+          return answer
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const field = await openRenameEditor(user, 'Old name')
+    await user.clear(field)
+    await user.type(field, 'New name')
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.renameSave }))
+
+    const addTotp = screen.getByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.totp),
+    })
+    addTotp.focus()
+    expect(addTotp).toHaveFocus()
+
+    await act(async () => {
+      held.resolve(
+        jsonResponse(200, passkey({ id: 'factor-a', label: 'New name' })),
+      )
+    })
+    expect(
+      await screen.findByText(
+        zhCN.mfa.renamed.replace('{{factor}}', 'New name'),
+      ),
+    ).toBeTruthy()
+    expect(addTotp).toHaveFocus()
+  })
+
+  it('lands focus on the method’s add action when a landed enrollment closes its panel', async () => {
+    let enrolled = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: enrolled ? [factor({ id: 'factor-new' })] : [],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, enrollCodeStep())
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number; step: string }
+        if (body.step === 'enroll') {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'ready',
+            next: { kind: 'complete' },
+          })
+        }
+        enrolled = true
+        return jsonResponse(200, { state: 'enrolled' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await confirmEnrollment(user)
+
+    expect(
+      await screen.findByText(
+        zhCN.mfa.enroll.enrolled.replace(
+          '{{factor}}',
+          zhCN.mfa.factor.kind.totp,
+        ),
+      ),
+    ).toBeTruthy()
+    expect(screen.queryByLabelText(zhCN.flowStep.codeLabel)).toBeNull()
+    // The panel closes onto its method's own entry: the add/replace action
+    // mounts again in the same commit, and focus returns to it.
+    expect(
+      screen.getByRole('button', { name: replaceName() }),
+    ).toHaveFocus()
+  })
+
+  it('lands focus on the method’s add action when the reader cancels the enrollment panel', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, enrollCodeStep())
+      }
+      if (call.method === 'DELETE' && call.path === FLOW_CURRENT) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await screen.findByLabelText(zhCN.flowStep.codeLabel)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.cancelLabel }),
+    )
+
+    const add = await screen.findByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.totp),
+    })
+    await waitFor(() => expect(add).toHaveFocus())
+  })
+
+  it('lands focus on the method’s add action when the reader cancels the step-up an enrollment opened', async () => {
+    captureRefreshWarning()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [factor({ id: 'factor-1', kind: 'totp' })],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        const body = call.body as { purpose: string }
+        if (body.purpose === 'enroll') {
+          // The enrollment start refuses with the elevation requirement: the
+          // panel closes and the challenge opens in its place.
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.webauthn)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.stepUp.cancelLabel,
+      }),
+    )
+
+    const add = await screen.findByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.webauthn),
+    })
+    await waitFor(() => expect(add).toHaveFocus())
+  })
+
+  it('lands focus on its row’s remove action when a cancelled step-up drops focus to the body', async () => {
+    captureRefreshWarning({ expected: true })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [passkey({ id: 'factor-a', label: 'Laptop key' })],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        // The refused removal leaves its row in the list and opens the
+        // challenge in the confirmation's place.
+        return errorResponse(401, 'authn.insufficient_user_authentication')
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-a', kind: 'webauthn', label: 'Laptop key' }],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    // The row action is activated without taking focus: a pointer click
+    // need not focus a button (Safari does not), so focus stays on the
+    // body. The challenge then restores focus to the confirmation's own
+    // control, whose unmount drops it back to the body; the section's
+    // landing is what puts it on the row's remove action.
+    await waitFor(() => expect(factorRow('Laptop key')).toBeTruthy())
+    expect(document.activeElement).toBe(document.body)
+    fireEvent.click(
+      within(factorRow('Laptop key')).getByRole('button', {
+        name: zhCN.mfa.remove,
+      }),
+    )
+    const confirm = await screen.findByRole('dialog')
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    const challenge = await screen.findByRole('dialog')
+    await user.click(
+      within(challenge).getByRole('button', {
+        name: zhCN.mfa.stepUp.cancelLabel,
+      }),
+    )
+
+    // The row is still listed, so the removal never happened: the dialog's
+    // close hands focus back to the remove action that started the write.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    const remove = within(factorRow('Laptop key')).getByRole('button', {
+      name: zhCN.mfa.remove,
+    })
+    await waitFor(() => expect(remove).toHaveFocus())
+  })
+
+  it('lands focus on the groups container when a removal empties a section with no enrollable method', async () => {
+    const heldRefetch = deferred<Response>()
+    let factorsRead = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        // The deployment offers no add entry, so the empty branch is the one
+        // that must still own the focus landing.
+        return jsonResponse(200, methodsDoc([]))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        factorsRead += 1
+        if (factorsRead === 1) {
+          return jsonResponse(200, {
+            factors: [passkey({ id: 'factor-a', label: 'Laptop key' })],
+          })
+        }
+        return heldRefetch.promise
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-a'
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const dialog = await openRemoveConfirm(user, 'Laptop key')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await act(async () => {
+      heldRefetch.resolve(jsonResponse(200, { factors: [] }))
+    })
+    await waitFor(() =>
+      expect(screen.queryByText('Laptop key')).toBeNull(),
+    )
+    const container = screen.getByRole('group', { name: zhCN.mfa.title })
+    expect(container).toHaveTextContent(zhCN.mfa.empty)
+    expect(container).toHaveFocus()
+  })
+
+  it('does not move focus when the reader left the enrollment panel before it closed', async () => {
+    const held = deferred<Response>()
+    let enrolled = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: enrolled ? [factor({ id: 'factor-new' })] : [],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, enrollCodeStep())
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number; step: string }
+        if (body.step === 'enroll') {
+          return held.promise.then((answer) => {
+            enrolled = true
+            return answer
+          })
+        }
+        return jsonResponse(200, { state: 'enrolled' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await openEnrollment(user, zhCN.mfa.factor.kind.totp)
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await confirmEnrollment(user)
+
+    const addWebauthn = screen.getByRole('button', {
+      name: addNameOf(zhCN.mfa.factor.kind.webauthn),
+    })
+    addWebauthn.focus()
+    expect(addWebauthn).toHaveFocus()
+
+    await act(async () => {
+      held.resolve(
+        jsonResponse(200, {
+          seq: 2,
+          state: 'ready',
+          next: { kind: 'complete' },
+        }),
+      )
+    })
+    expect(
+      await screen.findByText(
+        zhCN.mfa.enroll.enrolled.replace(
+          '{{factor}}',
+          zhCN.mfa.factor.kind.totp,
+        ),
+      ),
+    ).toBeTruthy()
+    expect(addWebauthn).toHaveFocus()
   })
 })

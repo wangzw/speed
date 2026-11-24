@@ -144,10 +144,10 @@
  * because then there is no add action to point at.
  */
 
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -174,6 +174,7 @@ import {
   ListSkeleton,
   SectionCard,
   SectionSurfaceContext,
+  useActivationGuard,
   useWriteFeedback,
   type WriteOutcome,
 } from '@speed/ui-kit'
@@ -183,7 +184,7 @@ import type { FlowStepAnswer } from './internal/flow-step.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { asFactorList } from './internal/models.js'
 import { useFactorsQuery, useProfileQuery } from './internal/queries.js'
-import { StepUpChallenge } from './internal/step-up-challenge.js'
+import { StepUpChallengeFrame } from './internal/step-up-challenge.js'
 import { useAccountTimeZone } from './internal/time-zone.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
 import { useAccountUiTranslation } from './internal/translation.js'
@@ -233,6 +234,67 @@ interface EnrollPanel {
 interface RenameDraft {
   readonly id: string
   readonly label: string
+}
+
+/** A removal's focus landing, recorded while its initiating control is
+ * still in the document: the row order the list held then, the control that
+ * started the write, and whether the row is expected to leave. A removal
+ * that lands takes its own row's action away and lands on a neighbour's; a
+ * removal refused by the elevation requirement never went, so when the
+ * reader cancels the challenge its row stays and the same action is the way
+ * back. */
+interface RemovedLanding {
+  readonly id: string
+  readonly kind: string
+  readonly siblings: readonly string[]
+  readonly control: HTMLElement | null
+  readonly outcome: 'removed' | 'refused'
+}
+
+/** A rename whose editor closes, recorded before the editor goes. A factor
+ * the server no longer has is marked removed even while the list it rereads
+ * still carries it. */
+interface RenameLanding {
+  readonly id: string
+  readonly kind: string
+  readonly siblings: readonly string[]
+  readonly removed: boolean
+}
+
+/** An enrollment panel that closes, and the method whose entry it closes
+ * onto. */
+interface EnrollLanding {
+  readonly kind: string
+}
+
+/**
+ * Whether focus was lost when the control that started a write left the
+ * document. A write that takes its initiating control away hands focus to
+ * the next place, but only when focus fell with it: the browser drops focus
+ * to the body (or leaves it on a detached node) in that case, while a
+ * connected control elsewhere means the operator chose that place. Focus
+ * still inside one of this section's own dialogs -- the danger confirmation
+ * or the step-up challenge -- is the write's own dialog finishing its exit,
+ * which counts as lost too. Any other role="dialog" node in the document is
+ * the host shell's, a place the operator chose, and never counts.
+ */
+function focusFellWith(
+  control: HTMLElement | null,
+  ownDialogs: readonly (HTMLElement | null)[],
+): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  if (control !== null && control.contains(active)) {
+    return true
+  }
+  return ownDialogs.some(
+    (dialog) => dialog !== null && dialog.contains(active),
+  )
 }
 
 /** What a reply leaves the flow doing: waiting on a step, or parked on a
@@ -308,25 +370,46 @@ function enrollNoteKey(kind: string): string {
 
 /** One factor row's actions: rename it and remove it, in that order. A
  * disabled factor offers removal alone. A row with one action renders that
- * action alone; a row with several renders one small action row. */
+ * action alone; a row with several renders one small action row.
+ *
+ * The row whose removal is in flight keeps the progress state on its remove
+ * action; every other action in the section is unavailable while any write
+ * is in flight, without a reason -- the scope's pending write is the
+ * context, not a precondition of that row. */
 function FactorActions({
   canRename,
-  disabled,
+  removeBusy,
+  unavailable,
   onRename,
   onRemove,
+  renameRef,
+  removeRef,
 }: {
   readonly canRename: boolean
-  readonly disabled: boolean
+  /** This row's removal is the write in flight. */
+  readonly removeBusy: boolean
+  /** A write is in flight in this section, so this row cannot write. */
+  readonly unavailable: boolean
   readonly onRename: () => void
   readonly onRemove: () => void
+  /** Registers the rename action, the landing target when a rename closes
+   * its editor on a row that stays. */
+  readonly renameRef: (element: HTMLButtonElement | null) => void
+  /** Registers the remove action, the landing target when a removal takes a
+   * neighbouring row's action away. */
+  readonly removeRef: (element: HTMLButtonElement | null) => void
 }) {
   const { t } = useAccountUiTranslation()
+  // A busy button already reports itself unavailable; it gives no reason.
+  const removeUnavailable = !removeBusy && unavailable
   if (!canRename) {
     return (
       <ActionButton
+        ref={removeRef}
         size="small"
         tone="danger"
-        disabled={disabled}
+        busy={removeBusy}
+        unavailable={removeUnavailable}
         onClick={onRemove}
       >
         {t('mfa.remove')}
@@ -335,13 +418,89 @@ function FactorActions({
   }
   return (
     <ActionRow size="small">
-      <ActionButton disabled={disabled} onClick={onRename}>
+      <ActionButton ref={renameRef} unavailable={unavailable} onClick={onRename}>
         {t('mfa.rename')}
       </ActionButton>
-      <ActionButton tone="danger" disabled={disabled} onClick={onRemove}>
+      <ActionButton
+        ref={removeRef}
+        tone="danger"
+        busy={removeBusy}
+        unavailable={removeUnavailable}
+        onClick={onRemove}
+      >
         {t('mfa.remove')}
       </ActionButton>
     </ActionRow>
+  )
+}
+
+/** One row's in-place rename editor. Its submit runs through the activation
+ * guard so an implicit submission from the name field is refused exactly
+ * when the save action is; the field stays focusable and read-only while a
+ * write is in flight. */
+function FactorRenameForm({
+  label,
+  busy,
+  locked,
+  onLabelChange,
+  onCancel,
+  onSave,
+}: {
+  readonly label: string
+  /** This rename is the write in flight. */
+  readonly busy: boolean
+  /** A write is in flight in the section: the field and the cancel action
+   * are held, and the editor refuses another submission. */
+  readonly locked: boolean
+  readonly onLabelChange: (label: string) => void
+  readonly onCancel: () => void
+  readonly onSave: () => void
+}) {
+  const { t } = useAccountUiTranslation()
+  const guardedSubmit = useActivationGuard(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      onSave()
+    },
+    { busy, unavailable: locked && !busy },
+  )
+  return (
+    <Box
+      component="form"
+      onSubmit={guardedSubmit}
+      // The row's in-place edit: the name field owns its line at the
+      // editor's text-column width, and the actions close the next line on
+      // the right.
+      sx={{ mt: 1 }}
+    >
+      <TextField
+        size="small"
+        fullWidth
+        label={t('mfa.renameLabel')}
+        value={label}
+        onChange={(event) => onLabelChange(event.target.value)}
+        helperText={t('mfa.renameHint')}
+        slotProps={{ htmlInput: { readOnly: locked } }}
+        sx={{ mb: 1 }}
+      />
+      <ActionRow size="small" sx={{ width: '100%' }}>
+        <ActionButton
+          type="button"
+          unavailable={locked}
+          onClick={onCancel}
+        >
+          {t('mfa.renameCancel')}
+        </ActionButton>
+        <ActionButton
+          type="submit"
+          emphasis="primary"
+          busy={busy}
+          unavailable={!busy && locked}
+        >
+          {t('mfa.renameSave')}
+        </ActionButton>
+      </ActionRow>
+    </Box>
   )
 }
 
@@ -395,8 +554,59 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
   const [enrolling, setEnrolling] = useState(false)
   // The row whose removal is being confirmed.
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
+  // The row whose removal started, until its attempt settles: its remove
+  // action shows the progress state, and every sibling stays unavailable.
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null)
+  // The row whose rename started, until its attempt settles.
+  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null)
+  // Which control started the enrollment flow's current attempt. The add
+  // entry leaves the document when the panel opens, so an attempt it started
+  // has no control to mark busy; a retry does, and keeps the progress state.
+  const [startOrigin, setStartOrigin] = useState<'add' | 'retry' | null>(null)
   // The row whose name is being edited, if any.
   const [renameDraft, setRenameDraft] = useState<RenameDraft | null>(null)
+  // Focus landings for the writes that take their initiating control away:
+  // the removal that removes its row, the rename that closes its editor, and
+  // the enrollment that closes its panel. Each records what the landing
+  // needs before the control goes; the effect below hands focus over in the
+  // committing render, and only if focus fell with the control that went.
+  const removedLanding = useRef<RemovedLanding | null>(null)
+  const renameLanding = useRef<RenameLanding | null>(null)
+  const enrollLanding = useRef<EnrollLanding | null>(null)
+  // The row actions and the method entries, keyed by what the landing names:
+  // a removal's landing is the same action on the next row, else the
+  // previous one; a rename lands on its own row's rename action; a closed
+  // panel lands on its method's add/replace entry.
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>())
+  const renameButtons = useRef(new Map<string, HTMLButtonElement>())
+  const addButtons = useRef(new Map<string, HTMLButtonElement>())
+  const removeRefs = useRef(
+    new Map<string, (element: HTMLButtonElement | null) => void>(),
+  )
+  const renameRefs = useRef(
+    new Map<string, (element: HTMLButtonElement | null) => void>(),
+  )
+  const addRefs = useRef(
+    new Map<string, (element: HTMLButtonElement | null) => void>(),
+  )
+  // Each kind group's section and the container of all groups: the landing
+  // places when no row's action is left to take focus.
+  const groupSections = useRef(new Map<string, HTMLElement>())
+  const groupRefs = useRef(
+    new Map<string, (element: HTMLElement | null) => void>(),
+  )
+  const groupsContainer = useRef<HTMLDivElement | null>(null)
+  // This section's danger confirmation. A refused removal's landing waits
+  // for it to leave: the challenge that replaced it restores focus to
+  // whatever was focused when it opened, and while the confirmation is
+  // still exiting that is its own confirm control, whose unmount would then
+  // drop focus to the body.
+  const confirmDialog = useRef<HTMLDivElement | null>(null)
+  // This section's own step-up challenge. The landing checks read both of
+  // this section's dialogs: focus inside either one is the write's own
+  // dialog exiting, while any other role="dialog" node belongs to the
+  // host's shell and is a place the operator chose.
+  const stepUpDialog = useRef<HTMLDivElement | null>(null)
   // The section's one result slot: enrollment, rename and removal all report
   // through it, and it renders once below the grouped methods. The slot
   // holds at most one outcome, so the result that settles last replaces the
@@ -513,14 +723,226 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
 
   const factors = data?.factors
   const pending = isPending && data === undefined
-  // Disabled through the whole attempt, including the refetches that follow
-  // the mutation, so no control changes context under a pending scope.
-  const busy =
+  // One write attempt at a time in this section's slot, held through the
+  // refetches that follow the mutation so no control changes context under a
+  // pending scope. Only the control that started the write is busy; the rest
+  // of the section's write controls are unavailable while it runs.
+  const writeInFlight =
     enrolling ||
-    removeMutation.isPending ||
-    updateMutation.isPending ||
     feedback.pending ||
-    panelFeedback.pending
+    pendingRemoveId !== null ||
+    pendingRenameId !== null
+
+  /** A stable ref callback for one control, keyed by the row or kind that
+   * owns it, so a landing can read the element that is mounted now. */
+  function actionRefFor(
+    key: string,
+    buttons: Map<string, HTMLButtonElement>,
+    refs: Map<string, (element: HTMLButtonElement | null) => void>,
+  ): (element: HTMLButtonElement | null) => void {
+    let ref = refs.get(key)
+    if (ref === undefined) {
+      ref = (element) => {
+        if (element === null) {
+          buttons.delete(key)
+        } else {
+          buttons.set(key, element)
+        }
+      }
+      refs.set(key, ref)
+    }
+    return ref
+  }
+
+  /** A stable ref callback for one row's remove action. */
+  function removeRefFor(
+    id: string,
+  ): (element: HTMLButtonElement | null) => void {
+    return actionRefFor(id, removeButtons.current, removeRefs.current)
+  }
+
+  /** A stable ref callback for one row's rename action. */
+  function renameRefFor(
+    id: string,
+  ): (element: HTMLButtonElement | null) => void {
+    return actionRefFor(id, renameButtons.current, renameRefs.current)
+  }
+
+  /** A stable ref callback for one method's add/replace entry. */
+  function addRefFor(
+    kind: string,
+  ): (element: HTMLButtonElement | null) => void {
+    return actionRefFor(kind, addButtons.current, addRefs.current)
+  }
+
+  /** A stable ref callback for one kind group's section. */
+  function groupRefFor(kind: string): (element: HTMLElement | null) => void {
+    let ref = groupRefs.current.get(kind)
+    if (ref === undefined) {
+      ref = (element) => {
+        if (element === null) {
+          groupSections.current.delete(kind)
+        } else {
+          groupSections.current.set(kind, element)
+        }
+      }
+      groupRefs.current.set(kind, ref)
+    }
+    return ref
+  }
+
+  /** Hands focus to the control group a write belongs to, or to the
+   * container of all groups when that group left with the write. */
+  function focusKindGroup(kind: string): void {
+    const group = groupSections.current.get(kind)
+    ;(group ?? groupsContainer.current)?.focus()
+  }
+
+  /** The rendered rows of one kind, in list order, as a removal's landing
+   * reads them: a pending row is the enrollment's own intermediate state
+   * and is not rendered. */
+  function siblingIdsOf(kind: string): readonly string[] {
+    return (factors ?? []).flatMap((factor) =>
+      factor.status !== 'pending' &&
+      (factor.kind ?? '') === kind &&
+      factor.id !== undefined
+        ? [factor.id]
+        : [],
+    )
+  }
+
+  /** Hands focus to a row's neighbour's action after that row left: the
+   * next row in the recorded order, else the previous one, else the kind
+   * group (or the groups container when the group went too). Only controls
+   * still connected are candidates. */
+  function landOnNeighbour(
+    id: string,
+    order: readonly string[],
+    buttons: ReadonlyMap<string, HTMLButtonElement>,
+    kind: string,
+  ): void {
+    const index = order.indexOf(id)
+    const candidates =
+      index === -1
+        ? [...order]
+        : [...order.slice(index + 1), ...order.slice(0, index).reverse()]
+    for (const candidate of candidates) {
+      if (candidate === id) {
+        continue
+      }
+      const button = buttons.get(candidate)
+      if (button !== undefined && button.isConnected) {
+        button.focus()
+        return
+      }
+    }
+    focusKindGroup(kind)
+  }
+
+  // A write that took its initiating control out of the document lands
+  // focus in the same commit, and only when focus fell with that control
+  // (the browser dropped it to the body) -- an operator who moved focus
+  // elsewhere keeps that place. A landing record is cleared once the write
+  // settled with the row still in the list, as the social-binding surface
+  // does, so a later read cannot hand focus over for a write that removed
+  // nothing.
+  useLayoutEffect(() => {
+    let observer: MutationObserver | null = null
+    // This section's dialogs, read once for this commit: a focus inside
+    // either is this write's own dialog exiting, and nothing else.
+    const ownDialogs = [confirmDialog.current, stepUpDialog.current]
+    const removal = removedLanding.current
+    if (removal !== null) {
+      const remaining = (factors ?? []).some(
+        (factor) => factor.id === removal.id,
+      )
+      if (remaining) {
+        if (pendingRemoveId === null && gate === null) {
+          if (removal.outcome === 'refused') {
+            // A refused removal left its row in the list: the challenge's
+            // close is what took focus, so the row's own remove action
+            // takes it back. Only when focus fell with the challenge -- a
+            // place the operator still holds is kept. The confirmation the
+            // challenge replaced may still be exiting, and the challenge
+            // restores focus to its confirm control until it leaves; the
+            // landing waits for that node to go, so the unmount cannot
+            // drop focus to the body after it.
+            const dialog = confirmDialog.current
+            const land = (): void => {
+              if (removedLanding.current !== removal) {
+                observer?.disconnect()
+                return
+              }
+              if (dialog !== null && dialog.isConnected) {
+                return
+              }
+              removedLanding.current = null
+              observer?.disconnect()
+              if (focusFellWith(removal.control, ownDialogs)) {
+                removeButtons.current.get(removal.id)?.focus()
+              }
+            }
+            land()
+            if (removedLanding.current === removal) {
+              observer = new MutationObserver(land)
+              observer.observe(document.body, { childList: true })
+            }
+          } else {
+            removedLanding.current = null
+          }
+        }
+      } else {
+        removedLanding.current = null
+        if (focusFellWith(removal.control, ownDialogs)) {
+          landOnNeighbour(
+            removal.id,
+            removal.siblings,
+            removeButtons.current,
+            removal.kind,
+          )
+        }
+      }
+    }
+    const rename = renameLanding.current
+    if (rename !== null && renameDraft === null) {
+      const remaining =
+        !rename.removed &&
+        (factors ?? []).some((factor) => factor.id === rename.id)
+      if (remaining) {
+        if (pendingRenameId === null) {
+          renameLanding.current = null
+        }
+        if (focusFellWith(null, ownDialogs)) {
+          renameButtons.current.get(rename.id)?.focus()
+        }
+      } else {
+        renameLanding.current = null
+        if (focusFellWith(null, ownDialogs)) {
+          landOnNeighbour(
+            rename.id,
+            rename.siblings,
+            renameButtons.current,
+            rename.kind,
+          )
+        }
+      }
+    }
+    const enroll = enrollLanding.current
+    if (enroll !== null && panel === null && gate === null) {
+      enrollLanding.current = null
+      if (focusFellWith(null, ownDialogs)) {
+        const add = addButtons.current.get(enroll.kind)
+        if (add !== undefined && add.isConnected) {
+          add.focus()
+        } else {
+          focusKindGroup(enroll.kind)
+        }
+      }
+    }
+    return () => {
+      observer?.disconnect()
+    }
+  }, [factors, renameDraft, panel, gate, pendingRemoveId, pendingRenameId])
 
   /** Whether a kind's factors carry a reader-chosen name. Only a kind that
    * may be held more than once needs one: the account keeps a single
@@ -662,19 +1084,23 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     const label =
       factorKind === 'webauthn' ? suggestedFactorName() : ''
     setPanel({ kind: factorKind, label, step: null, seq: 0 })
-    void startEnrollFlow(factorKind, token, label)
+    void startEnrollFlow(factorKind, token, label, 'add')
   }
 
   /** Start the enrollment flow of one method and park its first step on the
-   * open panel. */
+   * open panel. `origin` names the control that started the attempt: the
+   * add entry leaves the document with the panel, so only a retry can show
+   * the progress state. */
   async function startEnrollFlow(
     factorKind: string,
     token: number,
     label: string,
+    origin: 'add' | 'retry',
   ): Promise<void> {
     // A retry starts a new attempt: the slot is cleared before it goes out.
     feedback.reset()
     panelFeedback.reset()
+    setStartOrigin(origin)
     setEnrolling(true)
     try {
       const started = await session.startAuthenticatedFlow({
@@ -720,6 +1146,11 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       }
       // A settled flow has spent its state, so there is nothing to release.
       flowOpenRef.current = false
+      if (state.state === 'enrolled') {
+        // The panel closes on the landed enrollment and takes its confirm
+        // with it; focus moves to the method's group.
+        enrollLanding.current = { kind: factorKind }
+      }
       setPanel(null)
       if (state.state === 'enrolled') {
         try {
@@ -747,6 +1178,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     } finally {
       if (token === panelTokenRef.current) {
         setEnrolling(false)
+        setStartOrigin(null)
       }
     }
   }
@@ -820,6 +1252,11 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       }
       // A settled flow has spent its state, so there is nothing to release.
       flowOpenRef.current = false
+      if (state.state === 'enrolled') {
+        // The panel closes on the landed enrollment and takes its confirm
+        // with it; focus moves to the method's group.
+        enrollLanding.current = { kind }
+      }
       setPanel(null)
       if (state.state !== 'enrolled') {
         // A settled state other than 'enrolled' is not an enroll outcome.
@@ -834,15 +1271,20 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     } finally {
       if (token === panelTokenRef.current) {
         setEnrolling(false)
+        setStartOrigin(null)
       }
     }
   }
 
   /** Close the panel and give its flow up. A start still in flight releases
-   * the flow it opens when its answer lands under the stale token. */
+   * the flow it opens when its answer lands under the stale token. The
+   * panel's own entry mounts again with the close, so focus returns to it. */
   function cancelEnroll(): void {
     panelTokenRef.current += 1
     releaseEnrollFlow()
+    if (panel !== null) {
+      enrollLanding.current = { kind: panel.kind }
+    }
     setPanel(null)
     feedback.reset()
     panelFeedback.reset()
@@ -885,40 +1327,58 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     // discard a genuine anonymous answer and postpone a real sign-out.
     const rotates = removed === undefined || removed.status === 'active'
     const lastActive = rotates && isLastActiveFactor(factorId)
-    return feedback.run(async () => {
-      try {
-        const write = () => removeMutation.mutateAsync({ id: factorId })
-        const settle = async (): Promise<string> => {
+    const kind = removed?.kind ?? ''
+    // The landing is decided before the write: the row's own action leaves
+    // the document when the list drops it, and the same action on the next
+    // row (else the previous one) takes focus. The order is the list the
+    // attempt acted on; a pending row is the enrollment's own state and is
+    // not rendered.
+    removedLanding.current = {
+      id: factorId,
+      kind,
+      siblings: siblingIdsOf(kind),
+      control: removeButtons.current.get(factorId) ?? null,
+      outcome: 'removed',
+    }
+    setPendingRemoveId(factorId)
+    return feedback
+      .run(async () => {
+        try {
+          const write = () => removeMutation.mutateAsync({ id: factorId })
+          const settle = async (): Promise<string> => {
+            setRemoveTarget(null)
+            await invalidateFactors()
+            // The confirmation names the factor row removed, and says so when
+            // the account is left with a single verification method.
+            return t(lastActive ? 'mfa.removedLast' : 'mfa.removed', {
+              factor: removedLabel,
+              interpolation: { escapeValue: false },
+            })
+          }
+          // Only a rotating removal needs the window: it is open across the
+          // write and the refetch that follows it, so a read that left under
+          // the replaced credential and answers anonymous is discarded while
+          // the request that produced it keeps its own 401. The release is
+          // idempotent, and a step-up re-run opens its own window.
+          if (rotates) {
+            return await runIdentityTransition(session, write, settle)
+          }
+          await write()
+          return await settle()
+        } catch (error) {
+          // The row stays, so there is no landing to make.
+          removedLanding.current = null
           setRemoveTarget(null)
-          await invalidateFactors()
-          // The confirmation names the factor row removed, and says so when
-          // the account is left with a single verification method.
-          return t(lastActive ? 'mfa.removedLast' : 'mfa.removed', {
-            factor: removedLabel,
-            interpolation: { escapeValue: false },
-          })
+          const code = errorCodeOf(error)
+          const reason = stepUpReasonOf(code)
+          if (reason !== null) {
+            setGate({ kind: 'remove', factorId, reason })
+            return null
+          }
+          throw error
         }
-        // Only a rotating removal needs the window: it is open across the
-        // write and the refetch that follows it, so a read that left under
-        // the replaced credential and answers anonymous is discarded while
-        // the request that produced it keeps its own 401. The release is
-        // idempotent, and a step-up re-run opens its own window.
-        if (rotates) {
-          return await runIdentityTransition(session, write, settle)
-        }
-        await write()
-        return await settle()
-      } catch (error) {
-        setRemoveTarget(null)
-        const code = errorCodeOf(error)
-        const reason = stepUpReasonOf(code)
-        if (reason !== null) {
-          setGate({ kind: 'remove', factorId, reason })
-          return null
-        }
-        throw error
-      }
-    })
+      })
+      .finally(() => setPendingRemoveId(null))
   }
 
   /** Rename one factor. The label is metadata, so no step-up can gate this
@@ -926,32 +1386,72 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
    * that is gone closes the editor and rereads the list once, so the
    * sentence and the list agree. */
   function renameFactor(factorId: string, label: string): Promise<void> {
-    return feedback.run(async () => {
-      try {
-        const updated = await updateMutation.mutateAsync({
-          id: factorId,
-          data: { label },
-        })
-        setRenameDraft(null)
-        await invalidateFactors()
-        // The confirmation names the row by the name the server stored; an
-        // empty name means the row reads as its kind.
-        const name =
-          updated.label !== ''
-            ? updated.label
-            : factorKindLabel(updated.kind ?? '')
-        return t('mfa.renamed', {
-          factor: name,
-          interpolation: { escapeValue: false },
-        })
-      } catch (error) {
-        if (factorIsGone(error)) {
+    const kind =
+      factors?.find((factor) => factor.id === factorId)?.kind ?? ''
+    setPendingRenameId(factorId)
+    return feedback
+      .run(async () => {
+        try {
+          const updated = await updateMutation.mutateAsync({
+            id: factorId,
+            data: { label },
+          })
+          const updatedKind = updated.kind ?? kind
+          // A landed rename closes its editor and takes its save action with
+          // it: focus returns to the row's rename action, which stays in the
+          // document throughout.
+          renameLanding.current = {
+            id: factorId,
+            kind: updatedKind,
+            siblings: siblingIdsOf(updatedKind),
+            removed: false,
+          }
           setRenameDraft(null)
           await invalidateFactors()
+          // The confirmation names the row by the name the server stored; an
+          // empty name means the row reads as its kind.
+          const name =
+            updated.label !== ''
+              ? updated.label
+              : factorKindLabel(updated.kind ?? '')
+          return t('mfa.renamed', {
+            factor: name,
+            interpolation: { escapeValue: false },
+          })
+        } catch (error) {
+          if (factorIsGone(error)) {
+            // The row leaves with the editor, so focus follows the removal
+            // order to a neighbour's rename action.
+            renameLanding.current = {
+              id: factorId,
+              kind,
+              siblings: siblingIdsOf(kind),
+              removed: true,
+            }
+            setRenameDraft(null)
+            await invalidateFactors()
+          }
+          throw error
         }
-        throw error
-      }
-    })
+      })
+      .finally(() => setPendingRenameId(null))
+  }
+
+  /** Close the editor without a write; focus returns to the row's rename
+   * action that opened it. */
+  function cancelRename(): void {
+    if (renameDraft === null) {
+      return
+    }
+    const kind =
+      factors?.find((factor) => factor.id === renameDraft.id)?.kind ?? ''
+    renameLanding.current = {
+      id: renameDraft.id,
+      kind,
+      siblings: siblingIdsOf(kind),
+      removed: false,
+    }
+    setRenameDraft(null)
   }
 
   function handleStepUpSuccess(): void {
@@ -964,11 +1464,14 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
     }
   }
 
+  // The name this surface carries on either host: a plain block names the
+  // methods to tell its region from the page block above it.
+  const sectionTitle =
+    surface === 'plain' ? t('mfa.landmarkName') : t('mfa.title')
+
   return (
     <>
-      <SectionCard
-        title={surface === 'plain' ? t('mfa.landmarkName') : t('mfa.title')}
-      >
+      <SectionCard title={sectionTitle}>
         <AccountAsyncSection
         pending={pending}
         payload={factors}
@@ -1030,23 +1533,30 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                   action on the heading. The groups stand in one fixed
                   strength order, the same whether a method is enabled or
                   still to set up. */}
-              {orderedKinds.length === 0 ? (
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ py: 1 }}
-                >
-                  {t('mfa.empty')}
-                </Typography>
-              ) : (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                  }}
-                >
-                  {orderedKinds.map((kind) => {
+              <Box
+                ref={groupsContainer}
+                role="group"
+                aria-label={sectionTitle}
+                tabIndex={-1}
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 3,
+                }}
+              >
+                {orderedKinds.length === 0 ? (
+                  // The empty branch keeps the same named, focusable
+                  // container: a removal that empties the section lands
+                  // focus here instead of on the body.
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ py: 1 }}
+                  >
+                    {t('mfa.empty')}
+                  </Typography>
+                ) : (
+                  orderedKinds.map((kind) => {
                     const kindFactors = visibleFactors.filter(
                       (factor) => (factor.kind ?? '') === kind,
                     )
@@ -1068,7 +1578,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                       <Box
                         component="section"
                         key={kind}
+                        ref={groupRefFor(kind)}
                         aria-label={headingText}
+                        tabIndex={-1}
                       >
                         <Box
                           sx={{
@@ -1090,10 +1602,10 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                             {headingText}
                           </Typography>
                           {open !== null || !enrollable ? null : (
-                            <Button
-                              variant="outlined"
+                            <ActionButton
+                              ref={addRefFor(kind)}
                               size="small"
-                              disabled={busy}
+                              unavailable={writeInFlight}
                               data-testid={`mfa-add-${kind}`}
                               // The accessible name carries the visible
                               // action word and names the method, so it
@@ -1115,7 +1627,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   ? 'mfa.action.replace'
                                   : 'mfa.action.add',
                               )}
-                            </Button>
+                            </ActionButton>
                           )}
                         </Box>
                         {open !== null ? (
@@ -1141,7 +1653,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   )
                                 }
                                 helperText={t('mfa.enroll.labelHelp')}
-                                disabled={enrolling}
+                                slotProps={{
+                                  htmlInput: { readOnly: writeInFlight },
+                                }}
                                 fullWidth
                                 sx={{ mt: 2 }}
                               />
@@ -1165,7 +1679,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 <ActionRow sx={{ mt: 1.5 }}>
                                   <ActionButton
                                     type="button"
-                                    disabled={enrolling}
+                                    unavailable={writeInFlight}
                                     onClick={cancelEnroll}
                                   >
                                     {t('mfa.enroll.cancelLabel')}
@@ -1173,10 +1687,21 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                   <ActionButton
                                     type="button"
                                     emphasis="primary"
-                                    disabled={enrolling}
+                                    busy={
+                                      enrolling && startOrigin === 'retry'
+                                    }
+                                    unavailable={
+                                      writeInFlight &&
+                                      !(enrolling && startOrigin === 'retry')
+                                    }
                                     onClick={() => {
                                       const token = ++panelTokenRef.current
-                                      void startEnrollFlow(kind, token, open.label)
+                                      void startEnrollFlow(
+                                        kind,
+                                        token,
+                                        open.label,
+                                        'retry',
+                                      )
                                     }}
                                   >
                                     {t('mfa.retry')}
@@ -1189,6 +1714,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 step={open.step}
                                 sequence={open.seq}
                                 busy={enrolling}
+                                // A sibling write holds the step's answer
+                                // without taking the step or its fields away.
+                                submitDisabled={writeInFlight && !enrolling}
                                 answerStep="enroll"
                                 submitLabel={t('mfa.enroll.confirmLabel')}
                                 onSubmit={(answer) => {
@@ -1197,7 +1725,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                 secondaryAction={
                                   <ActionButton
                                     type="button"
-                                    disabled={enrolling}
+                                    unavailable={writeInFlight}
                                     onClick={cancelEnroll}
                                   >
                                     {t('mfa.enroll.cancelLabel')}
@@ -1328,65 +1856,27 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                         </Typography>
                                         {renameDraft !== null &&
                                           renameDraft.id === id && (
-                                            <Box
-                                              component="form"
-                                              onSubmit={(event) => {
-                                                event.preventDefault()
+                                            <FactorRenameForm
+                                              label={renameDraft.label}
+                                              busy={
+                                                pendingRenameId ===
+                                                renameDraft.id
+                                              }
+                                              locked={writeInFlight}
+                                              onLabelChange={(label) =>
+                                                setRenameDraft({
+                                                  id: renameDraft.id,
+                                                  label,
+                                                })
+                                              }
+                                              onCancel={cancelRename}
+                                              onSave={() => {
                                                 void renameFactor(
                                                   renameDraft.id,
                                                   renameDraft.label,
                                                 )
                                               }}
-                                              // The row's in-place edit: the
-                                              // name field owns its line at
-                                              // the editor's text-column
-                                              // width, and the actions close
-                                              // the next line on the right.
-                                              sx={{ mt: 1 }}
-                                            >
-                                              <TextField
-                                                size="small"
-                                                fullWidth
-                                                label={t('mfa.renameLabel')}
-                                                value={renameDraft.label}
-                                                onChange={(event) =>
-                                                  setRenameDraft({
-                                                    id: renameDraft.id,
-                                                    label: event.target.value,
-                                                  })
-                                                }
-                                                helperText={t(
-                                                  'mfa.renameHint',
-                                                )}
-                                                disabled={
-                                                  updateMutation.isPending
-                                                }
-                                                sx={{ mb: 1 }}
-                                              />
-                                              <ActionRow
-                                                size="small"
-                                                sx={{ width: '100%' }}
-                                              >
-                                                <ActionButton
-                                                  type="button"
-                                                  disabled={
-                                                    updateMutation.isPending
-                                                  }
-                                                  onClick={() =>
-                                                    setRenameDraft(null)
-                                                  }
-                                                >
-                                                  {t('mfa.renameCancel')}
-                                                </ActionButton>
-                                                <ActionButton
-                                                  type="submit"
-                                                  emphasis="primary"
-                                                  disabled={busy}
-                                                >
-                                                  {t('mfa.renameSave')}
-                                                </ActionButton>
-                                              </ActionRow>
-                                            </Box>
+                                            />
                                           )}
                                       </Box>
                                       {id !== null ? (
@@ -1394,7 +1884,12 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                                           canRename={
                                             !disabled && takesName(kind)
                                           }
-                                          disabled={busy}
+                                          removeBusy={
+                                            pendingRemoveId === id
+                                          }
+                                          unavailable={writeInFlight}
+                                          renameRef={renameRefFor(id)}
+                                          removeRef={removeRefFor(id)}
                                           onRename={() =>
                                             setRenameDraft({
                                               id,
@@ -1413,9 +1908,9 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
                         )}
                       </Box>
                     )
-                  })}
-                </Box>
-              )}
+                  })
+                )}
+              </Box>
 
               {/* The section's one result, below the groups the writes
                   belong to. Enrollment, rename and removal share this slot,
@@ -1428,6 +1923,7 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
       </SectionCard>
 
       <ConfirmDialog
+        ref={confirmDialog}
         open={removeTarget !== null}
         title={t('mfa.removeConfirm.title')}
         message={t('mfa.removeConfirm.message')}
@@ -1442,12 +1938,35 @@ export function MfaSection({ session, returnPath }: MfaSectionProps) {
         }}
       />
 
-      <StepUpChallenge
+      <StepUpChallengeFrame
+        ref={stepUpDialog}
         open={gate !== null}
         reason={gate?.reason}
         session={session}
         onSuccess={handleStepUpSuccess}
-        onCancel={() => setGate(null)}
+        onCancel={() => {
+          // A cancelled enrollment challenge leaves the method's entry as
+          // the way back: focus returns to it with the dialog's close.
+          if (gate?.kind === 'enroll') {
+            enrollLanding.current = { kind: gate.factorKind }
+          } else if (gate?.kind === 'remove') {
+            // The refused removal left its row in the list: the row's own
+            // remove action is the way back when the challenge's close took
+            // focus.
+            const removed = factors?.find(
+              (factor) => factor.id === gate.factorId,
+            )
+            const kind = removed?.kind ?? ''
+            removedLanding.current = {
+              id: gate.factorId,
+              kind,
+              siblings: siblingIdsOf(kind),
+              control: removeButtons.current.get(gate.factorId) ?? null,
+              outcome: 'refused',
+            }
+          }
+          setGate(null)
+        }}
         returnPath={returnPath}
         excludeFactorId={
           gate?.kind === 'remove' ? gate.factorId : undefined

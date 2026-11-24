@@ -92,7 +92,14 @@
  * session shows its code text and the host's session gate converges.
  */
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Dialog from '@mui/material/Dialog'
@@ -196,18 +203,29 @@ export interface StepUpChallengeProps {
   readonly notice?: string
 }
 
-export function StepUpChallenge({
-  open,
-  reason = 'mfa',
-  session,
-  onSuccess,
-  onCancel,
-  accountHref,
-  returnPath,
-  onRelogin,
-  excludeFactorId,
-  notice,
-}: StepUpChallengeProps) {
+/** The shared implementation. Its forwarded ref reaches the dialog's root
+ * element, so a section in this package deciding where focus should land
+ * after its own write can tell this dialog's node from any other
+ * role="dialog" the document holds. Not exported from the package's entry
+ * point: `StepUpChallenge` is the public face there. */
+export const StepUpChallengeFrame = forwardRef<
+  HTMLDivElement,
+  StepUpChallengeProps
+>(function StepUpChallengeFrame(
+  {
+    open,
+    reason = 'mfa',
+    session,
+    onSuccess,
+    onCancel,
+    accountHref,
+    returnPath,
+    onRelogin,
+    excludeFactorId,
+    notice,
+  },
+  ref,
+) {
   const { t } = useAccountUiTranslation()
   const titleId = useId()
   // The SSO refusal cannot be satisfied by any local factor, so the dialog
@@ -301,6 +319,7 @@ export function StepUpChallenge({
 
   return (
     <Dialog
+      ref={ref}
       open={open}
       onClose={onCancel}
       aria-labelledby={titleId}
@@ -348,7 +367,7 @@ export function StepUpChallenge({
       )}
     </Dialog>
   )
-}
+})
 
 /** The flow a challenge drives, split from the dialog so a restart can
  * remount it: a fresh mount re-drives useStepUp, and the challenge's factor
@@ -760,6 +779,14 @@ function freshFirstFactor(view: AuthnSessionView): boolean {
   return (
     authenticatedAt <= now && now - authenticatedAt <= FIRST_FACTOR_WINDOW_MS
   )
+}
+
+/** The challenge dialog. Its signature is the original function component's,
+ * with no ref: consumers of the package reach this dialog, not its root
+ * element. The implementation below forwards a ref to that element for the
+ * package's own sections. */
+export function StepUpChallenge(props: StepUpChallengeProps) {
+  return <StepUpChallengeFrame {...props} />
 }
 
 /** The login method that established the session's first factor, from the
