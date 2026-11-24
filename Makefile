@@ -85,11 +85,13 @@ PYTHON ?= python3
 # together are the width of the compile as well.
 #
 # The demo program's cases start their child processes through childEnv, which
-# drops only the test prefix and the OpenTelemetry variables, so a child
-# inherits GOMAXPROCS=$(GATE_JOBS) and schedules up to that width itself. A
-# case that starts several children, or several such cases running at once,
-# therefore uses this width times the children in flight; the number is a
-# per-process budget, not a ceiling on the leg.
+# forwards only the variables demotest names, each read with os.LookupEnv
+# rather than copied from the host, so the host environment cannot change what
+# a child sees. GOMAXPROCS is on that list, so a child inherits
+# GOMAXPROCS=$(GATE_JOBS) and schedules up to that width itself. A case that
+# starts several children, or several such cases running at once, therefore
+# uses this width times the children in flight; the number is a per-process
+# budget, not a ceiling on the leg.
 GATE_JOBS ?= 4
 
 # The caller's multiplier for the test tiers' wait limits: Vitest's shared
