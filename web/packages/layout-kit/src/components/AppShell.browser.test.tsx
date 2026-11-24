@@ -925,6 +925,79 @@ describe('AppShell focus order in Chromium', () => {  it('makes the skip link th
   })
 })
 
+describe('AppShell drawer focus return in Chromium', () => {
+  /** The temporary drawer's paper: mounted while closed (keepMounted),
+   * laid out only once the drawer opens. */
+  function drawerPaper(): HTMLElement {
+    const paper = document.querySelector<HTMLElement>(
+      `.${drawerClasses.paper}`,
+    )
+    if (paper === null) {
+      throw new Error('AppShell: no drawer paper is mounted')
+    }
+    return paper
+  }
+
+  it('returns focus to the menu button after Escape closes the temporary drawer', async () => {
+    await page.viewport(400, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell navItems={NAV_ITEMS}>
+        <h1>Main content</h1>
+      </AppShell>,
+    )
+    const menuButton = screen.getByRole('button', { name: OPEN_NAV })
+    await userEvent.click(menuButton)
+    await waitFor(() => {
+      expect(drawerPaper().getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+    expect(
+      screen.getByRole('banner', { hidden: true }).closest('[inert]'),
+    ).not.toBeNull()
+
+    await userEvent.keyboard('{Escape}')
+
+    // A passive-effect lift would leave the trigger inert when MUI restores
+    // focus, and the restore would fail silently.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(menuButton)
+    })
+    expect(
+      screen.getByRole('banner', { hidden: true }).closest('[inert]'),
+    ).toBeNull()
+  })
+
+  it('returns focus to the menu button when a nav item closes the temporary drawer', async () => {
+    await page.viewport(400, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        navItems={[
+          {
+            id: 'home',
+            label: 'Home',
+            href: '#/home',
+            onClick: (event) => {
+              event.preventDefault()
+            },
+          },
+        ]}
+      >
+        <h1>Main content</h1>
+      </AppShell>,
+    )
+    const menuButton = screen.getByRole('button', { name: OPEN_NAV })
+    await userEvent.click(menuButton)
+    await waitFor(() => {
+      expect(drawerPaper().getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+
+    await userEvent.click(screen.getByRole('link', { name: 'Home' }))
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(menuButton)
+    })
+  })
+})
+
 function FooterProbe() {
   return (
     <div
