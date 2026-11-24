@@ -12,10 +12,9 @@ import (
 
 const membershipSource = "jit:"
 
-// enterpriseUnbound resolves an enterprise identity with no binding (A5). The
-// provider's row, not the method, says which tenant it belongs to and how its
-// users get accounts. A just-in-time first login parks at the pending signup,
-// which asks its person for a username before anything is written.
+// enterpriseUnbound resolves an enterprise identity with no binding: the provider's row names
+// the tenant and how its users get accounts, and a just-in-time first login parks at the pending
+// signup.
 func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l authn.ExternalLink, ext *authn.External,
 	aliases []authn.ExternalLink,
 ) (Result, error) {
@@ -47,9 +46,6 @@ func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l a
 	case authn.ProvisioningPreprovisioned:
 		return r.preprovisioned(ctx, l, ext)
 	case authn.ProvisioningJIT:
-		// An address an account already holds is decided here, before any
-		// username is asked for: the login must bind explicitly rather than take
-		// the account over or open a second one.
 		_, found, err := r.occupant(ctx, ext.Email)
 		if err != nil {
 			return Result{}, err
@@ -63,18 +59,14 @@ func (r *Resolver) enterpriseUnbound(ctx context.Context, providerID string, l a
 		case authn.UsernameStrategyUserConfirm:
 			return pendingEnterprise(prov, ext, aliases), nil
 		default:
-			// A stored provider whose strategy is absent or unknown came from a
-			// write this build would refuse. No username can be determined, so no
-			// account may be opened.
 			return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameStrategy)
 		}
 	}
 	return Result{}, fmt.Errorf("%w: resolve: the provider's provisioning is not one that is known", authn.ErrInvalidArgument)
 }
 
-// occupant finds the account that holds an address as an identifier. An address
-// that cannot be normalized is held by nobody, and for an enterprise login that
-// is a user the tenant has no account for.
+// occupant finds the account that holds an address as an identifier; an address that cannot
+// be normalized is held by nobody.
 func (r *Resolver) occupant(ctx context.Context, email string) (id authn.AccountID, found bool, err error) {
 	id, err = r.accounts.Lookup(ctx, authn.IdentifierEmail, email)
 	switch {
@@ -86,12 +78,9 @@ func (r *Resolver) occupant(ctx context.Context, email string) (id authn.Account
 	return "", false, err
 }
 
-// preprovisioned binds the identity to the account an administrator prepared
-// for the address: an account that holds it as an identifier whose channel
-// proves ownership, or that an administrator asserted. The administrator's own
-// assertion counts here, because the account was made for this person, and that
-// is the one place it does. An invitation is not a proof of the invited address,
-// so it never matches this path.
+// preprovisioned binds the identity to the account an administrator prepared for the address:
+// one that holds it as a proven identifier or was asserted by an administrator. An invitation is
+// not a proof of the address.
 func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext *authn.External) (Result, error) {
 	id, found, err := r.occupant(ctx, ext.Email)
 	if err != nil {
@@ -120,11 +109,9 @@ func (r *Resolver) preprovisioned(ctx context.Context, l authn.ExternalLink, ext
 	return Result{Account: id, Outcome: OutcomeMatched}, nil
 }
 
-// createEnterprise opens the account a pending enterprise signup describes and
-// its membership of the provider's tenant. The account takes the provider's
-// display name and nothing else: the address it declared is not written. A
-// username another login took in the race for the same name is
-// authn.ErrAccountExists for the answer route's 409.
+// createEnterprise opens the account a pending enterprise signup describes and its membership.
+// The account takes the provider's display name and no address; a username taken in the race is
+// authn.ErrAccountExists.
 func (r *Resolver) createEnterprise(ctx context.Context, p Pending, username string,
 	usernameVia authn.Verification,
 ) (Result, error) {

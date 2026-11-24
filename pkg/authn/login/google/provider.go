@@ -8,11 +8,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 )
 
-// providerCache holds the discovered provider. Discovery is lazy and cached:
-// the provider is discovered on the first call that needs it, a failure is
-// returned as an outage and is not cached, so the next call tries again. The
-// provider's key set lives with it, and a rotation of the provider's keys is
-// picked up by the library when a key identifier is not found.
+// providerCache holds the discovered provider: discovery is lazy, a failure is returned and
+// not cached, and a key rotation is picked up when a key identifier is not found.
 type providerCache struct {
 	issuer string
 	client *http.Client
@@ -21,11 +18,9 @@ type providerCache struct {
 	provider *oidc.Provider
 }
 
-// get returns the discovered provider, discovering it under ctx when it is not
-// yet known. The restricted client is injected through the context, so the
-// discovery request, the key set and every later call go through it; without the
-// injection the library would use a client with no timeout. A discovery that
-// fails is not cached: the failure is returned and the next call retries.
+// get returns the discovered provider, discovering it under ctx when unknown. The restricted
+// client is injected through the context so discovery and the key set use it; a failed
+// discovery is not cached.
 func (c *providerCache) get(ctx context.Context) (*oidc.Provider, error) {
 	c.mu.Lock()
 	cached := c.provider

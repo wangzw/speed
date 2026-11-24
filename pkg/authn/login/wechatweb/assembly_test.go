@@ -90,9 +90,6 @@ var (
 	_ log.Logger    = (*recordingLogger)(nil)
 )
 
-// mask applies the spans a matcher reports the way the logging layer does —
-// ordered by start and with overlapping spans merged — so a case reads what
-// would reach a destination.
 func mask(m log.Matcher, value string) string {
 	spans := m(value)
 	if len(spans) == 0 {

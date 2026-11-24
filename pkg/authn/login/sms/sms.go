@@ -141,10 +141,8 @@ func optionalStore(reg *core.Registry) (settings.Store, error) {
 	}
 }
 
-// Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
-// Describe reports the SMS method: a form asking for a phone number, which may open an account.
 func (m *method) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
 		Name:         methodName,
@@ -154,7 +152,6 @@ func (m *method) Describe() authn.MethodDescriptor {
 	}
 }
 
-// Begin starts a flow; a start request carrying the phone field uses it, otherwise the method asks for the number.
 func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if !servesPurpose(s.Purpose) {
 		return refusePurpose(s.Purpose), nil
@@ -162,7 +159,6 @@ func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	return m.phone(ctx, s.Fields, s.SendsLeft, s.Locale, s.Client.IP, s.Proof, s.Purpose, s.Account), nil
 }
 
-// Answer handles the phone the method asked for, or the code a sent message carries; a callback and an unnamed step are refused.
 func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputSubmit {
 		return authn.StepRefused(errNotSubmitted), nil

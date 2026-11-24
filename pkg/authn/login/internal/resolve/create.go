@@ -18,10 +18,9 @@ const (
 	viaSignup = "signup"
 )
 
-// displayNameOrDefault is a name made fit to store: invalid UTF-8 and control
-// characters dropped, the ends trimmed, and cut to displayNameMax characters. A
-// name that empties out falls back to the username the creation carries. It
-// decides nothing.
+// displayNameOrDefault makes a name fit to store: invalid UTF-8 and control characters
+// dropped, the ends trimmed, cut to displayNameMax characters, falling back to the username
+// when it empties out.
 func displayNameOrDefault(name, username string) string {
 	name = strings.ToValidUTF8(name, "")
 	name = strings.Map(func(r rune) rune {
@@ -40,14 +39,9 @@ func displayNameOrDefault(name, username string) string {
 	return name
 }
 
-// provision gives the host's Provisioner the account that is about to be created
-// and returns it with the two fields the host may change. Anything else the hook
-// returned is dropped: the account is created from what the resolver decided.
-// A refusal is authn.ErrProvisionRefused; any other failure is a fault of the
-// seam, which refuses the login in the same way and reads as an unavailable
-// dependency. The display name is made fit to store after the hook has had its
-// say, whichever source decided the account, and falls back to the username when
-// nothing is left.
+// provision gives the host's Provisioner the account about to be created and returns it with
+// the two fields the host may change; anything else is dropped. A refusal is
+// authn.ErrProvisionRefused, any other failure an unavailable dependency.
 func (r *Resolver) provision(ctx context.Context, in authn.CreateAccount, via string) (authn.CreateAccount, error) {
 	if r.provisioner != nil {
 		out, err := r.provisioner.Provision(ctx, in.Clone(), via)
@@ -64,36 +58,26 @@ func (r *Resolver) provision(ctx context.Context, in authn.CreateAccount, via st
 	return in, nil
 }
 
-// unwind deletes an account this login created and cannot finish. It runs
-// whatever became of the login's context, because a half-made account holds a
-// unique identifier and would turn the next attempt into a failure.
+// unwind deletes an account this login created and cannot finish, under any context, because a
+// half-made account holds a unique identifier.
 func (r *Resolver) unwind(ctx context.Context, id authn.AccountID) {
-	// The account was made a moment ago by this login and nothing else holds it,
-	// so a failure of the delete leaves only an account no login can reach.
+	// The account was just created and nothing else holds it, so a failed delete
+	// leaves only one no login can reach.
 	_ = r.admin.Delete(context.WithoutCancel(ctx), id, authn.ReasonSelf)
 }
 
 type newAccount struct {
-	create authn.CreateAccount
-	link   authn.ExternalLink
-	// membership, when set, is written once the binding stands.
+	create     authn.CreateAccount
+	link       authn.ExternalLink
 	membership *authn.Membership
 }
 
-// createBound creates an account for an external identity, binds the identity to
-// it and writes the membership, in an order that lets the uniqueness constraint
-// of the binding arbitrate a race: the account first, the binding second, the
-// membership last. The loser of a race deletes the account it made and reads the
-// winner's binding (A9), so two concurrent first logins end in one account. A
-// failure after the account exists deletes it, so that the next attempt starts
-// clean.
-//
-// created is false when the login ended on an account another login made.
+// createBound creates an account for an external identity, then binds it, then writes the
+// membership, so the binding's uniqueness arbitrates a race: a loser deletes its account and
+// reads the winner's binding. A failure after the account exists deletes it.
 func (r *Resolver) createBound(ctx context.Context, n newAccount) (id authn.AccountID, created bool, err error) {
 	acct, err := r.admin.Create(ctx, n.create)
 	if errors.Is(err, authn.ErrAccountExists) {
-		// A concurrent login of this identity made its account first; the login
-		// carries on from the binding it made.
 		winner, found, rerr := r.binding(ctx, n.link.Provider, n.link.Subject)
 		if rerr != nil {
 			return "", false, rerr
@@ -144,10 +128,9 @@ func (r *Resolver) binding(ctx context.Context, provider, subject string) (id au
 	return "", false, err
 }
 
-// bindExisting binds an external identity to an account that exists. A binding
-// another login made first for the same account is no failure and the login
-// carries on from it; one made for another account is authn.ErrBindingConflict.
-// bound is true when this call made the binding.
+// bindExisting binds an external identity to an existing account. A binding another login
+// made for the same account is no failure; one for another account is authn.ErrBindingConflict.
+// bound reports whether this call made it.
 func (r *Resolver) bindExisting(ctx context.Context, id authn.AccountID, l authn.ExternalLink) (bound bool, err error) {
 	err = r.admin.LinkExternal(ctx, id, l)
 	switch {

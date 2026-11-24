@@ -34,11 +34,8 @@ var (
 	errNoIDToken   = errors.New("authn.login.google: the token response carried no identity token")
 )
 
-// Name is the method's stable name.
 func (p *product) Name() string { return methodName }
 
-// Describe reports the Google method: a redirect button that speaks OIDC and
-// opens an account for a Google identity no account holds yet.
 func (p *product) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
 		Name:             methodName,
@@ -50,7 +47,6 @@ func (p *product) Describe() authn.MethodDescriptor {
 	}
 }
 
-// Begin starts a flow: it draws the state, the PKCE verifier and the nonce, keeps them private, and answers the authorization URL.
 func (p *product) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if !servesPurpose(s.Purpose) {
 		return refusePurpose(s.Purpose), nil
@@ -77,7 +73,6 @@ func (p *product) Begin(ctx context.Context, s authn.Start) (authn.Step, error) 
 	return authn.StepRedirect(stepAuthorize, writeState(digest(state), verifier, nonce), to), nil
 }
 
-// Answer handles the redirect back: a provider error is refused first, then the state is checked, then the code is exchanged and the token verified.
 func (p *product) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputCallback {
 		return authn.StepRefused(errNotCallback), nil
@@ -128,10 +123,8 @@ func (p *product) exchange(ctx context.Context, provider *oidc.Provider, code st
 	verifier := provider.Verifier(&oidc.Config{ClientID: p.config.clientID})
 	idToken, err := verifier.Verify(ctx, rawIDToken)
 	if err != nil {
-		// go-oidc flattens a key-set fetch failure into the same error as a
-		// signature failure, so a key set that could not be reached is refused
-		// here too; the discovery and the token exchange are where a provider
-		// outage is told apart.
+		// go-oidc flattens a key-set fetch failure into a signature failure, so an unreachable key
+		// set is refused here too; discovery and the token exchange tell an outage apart.
 		return authn.StepRefused(errRefused), nil
 	}
 	var claims idClaims

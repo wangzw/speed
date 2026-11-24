@@ -9,12 +9,8 @@ import (
 
 const stateVersion = 1
 
-// methodState is the method's private state for one flow, kept by the engine as
-// it stands: the digest of the state it drew, the PKCE verifier and the nonce.
-// It holds the state itself only as its digest, so a read of the flow record
-// yields no value an attacker could present as the state; the PKCE verifier and
-// the nonce are secrets the record holds, and the record's read permission is
-// treated as a credential.
+// methodState is the method's private state: the state's digest, the PKCE verifier and the
+// nonce. The state is kept only as its digest; the verifier and nonce are secrets the record holds.
 type methodState struct {
 	Version  int    `json:"v"`
 	State    string `json:"state"`

@@ -7,10 +7,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// wantNamedLinkRequired asserts a refusal is the link-required kind and names
-// the address whose existing account collided. Every enterprise JIT branch that
-// refuses this way must carry the address, because the landing fragment names
-// it to the caller the provider proved.
 func wantNamedLinkRequired(t *testing.T, err error, want string) {
 	t.Helper()
 	var conflicted *authn.LinkRequiredError
@@ -179,8 +175,6 @@ func TestEnterpriseJITIgnoresTheSignupSwitch(t *testing.T) {
 
 // TestEnterpriseJITAddressTakenIsLinkRequired checks that a held address answers link-required whatever the merge setting.
 func TestEnterpriseJITAddressTakenIsLinkRequired(t *testing.T) {
-	// No login merges into the account an address belongs to, whatever the
-	// provider's merge_existing says: the login must bind explicitly.
 	for _, merge := range []bool{false, true} {
 		t.Run("merge_existing="+map[bool]string{false: "off", true: "on"}[merge], func(t *testing.T) {
 			e := newEnv(t, withProvider(authn.ProvisioningJIT, merge))

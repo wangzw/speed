@@ -21,11 +21,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases here drive the real feature board through a real registry, to Start,
-// beside the real login engine. What a post made by hand cannot show is that it
-// lands in the document at all: a post from New panics inside the board, and a
-// conditional name the module did not declare fails the board's own seal.
-
 type (
 	stubSMSCodes    struct{ authn.SMSCodes }
 	stubEmailSender struct{ authn.EmailCodeSender }

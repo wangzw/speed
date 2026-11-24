@@ -625,7 +625,7 @@ func TestAStepUpNamingAPasswordTheAccountCannotProveIsRefused(t *testing.T) {
 	}
 	r := newRig(t, m)
 	r.loginAsAuthenticated("acct1", "sid")
-	r.allow("acct1") // an account row without a password credential
+	r.allow("acct1")
 	r.mfa.outcome = authn.MFAFactor
 	r.mfa.offered = []authn.FactorRecord{{
 		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive,
@@ -655,7 +655,7 @@ func TestAStepUpWithNoFactorNamingAPasswordTheAccountCannotProveIsRefused(t *tes
 	}
 	r := newRig(t, m)
 	r.loginAsAuthenticated("acct1", "sid")
-	r.allow("acct1") // an account row without a password credential
+	r.allow("acct1")
 	r.mfa.outcome = authn.MFANone
 
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
@@ -677,7 +677,7 @@ func TestAStepUpWithNoFactorRefusesAMethodTheSessionWasNotEstablishedWith(t *tes
 	password := &fakeMethod{name: "password"}
 	sms := &fakeMethod{name: "sms"}
 	r := newRigMethods(t, password, sms)
-	r.loginAsAuthenticated("acct1", "sid") // a password session
+	r.loginAsAuthenticated("acct1", "sid")
 	r.mfa.outcome = authn.MFANone
 
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
@@ -729,7 +729,7 @@ func TestAStepUpWithNoPasswordIsRefused(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	r := newRig(t, m)
 	r.loginAsAuthenticated("acct1", "sid")
-	r.allow("acct1") // an account row without a password credential
+	r.allow("acct1")
 	r.mfa.outcome = authn.MFAFactor
 	r.mfa.offered = []authn.FactorRecord{{
 		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(time.Minute),
@@ -1042,8 +1042,6 @@ func TestDeletingTheLastFactorCanProveThePassword(t *testing.T) {
 	r.mfa.offered = []authn.FactorRecord{{
 		ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive, ActivatedAt: time.Now().Add(-time.Hour),
 	}}
-	// A password proved alone is a single factor; the policy answering single
-	// here is what the elevation must carry through unchanged.
 	r.mfa.assurance = authn.MFAResult{Assurance: authn.AssuranceSingle}
 
 	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
@@ -1078,8 +1076,6 @@ func TestDeletingTheLastFactorCanProveThePassword(t *testing.T) {
 	if len(r.sessions.elevated) != 1 {
 		t.Fatalf("the step-up elevated %d sessions, want one", len(r.sessions.elevated))
 	}
-	// The password alone is a single factor: the elevation must not claim
-	// multi-factor strength, which would unlock every other account action.
 	if got := r.sessions.elevated[0].Assurance; got != authn.AssuranceSingle {
 		t.Errorf("the elevation is %v, want single-factor", got)
 	}

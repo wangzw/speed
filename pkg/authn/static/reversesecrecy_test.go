@@ -1,15 +1,5 @@
 package static_test
 
-// This file holds the reverse of the redaction obligation, pinned where a case
-// can reach the modules it is about. The rule is that a value which is a path
-// and not a secret is not registered as a literal redaction rule: the saml
-// backend's sp-key-file and the token backend's signing-key-file name a file,
-// and the secret is that file's content. Those two modules are driven here,
-// through a real registry, with a path configured, against a logging capability
-// that records every rule registered with it; the case holds that the capability
-// took none. A regression that registered the path — as a literal rule, through
-// the logging capability rather than the literal package — is caught here.
-
 import (
 	"context"
 	"crypto/ecdsa"
@@ -71,8 +61,6 @@ type (
 	noThrottle  struct{ authn.Throttle }
 )
 
-// RememberAssertion makes noProviders the register the saml method requires: the
-// method refuses a register that cannot record a consumed assertion.
 func (noProviders) RememberAssertion(context.Context, string, string, time.Time) error { return nil }
 
 func declaring(name string, tok core.Token) core.Module {

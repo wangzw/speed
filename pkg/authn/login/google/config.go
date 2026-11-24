@@ -14,9 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// The configuration keys this module accepts, relative to its namespace. They
-// are configuration and not settings because the provider is built at
-// construction, before any database or settings store is reachable.
 const (
 	clientIDItem      = "client-id"
 	clientSecretItem  = "client-secret"
@@ -26,9 +23,6 @@ const (
 	rootCAFileItem    = "root-ca-file"
 )
 
-// gateNamespace and the two mount items the gateway declares, read here because
-// the redirect target is built from the address the deployment is reached at
-// and the base path the routes are mounted under.
 const (
 	gateNamespace     = "authn.gate"
 	gateMountPath     = "mount"
@@ -37,32 +31,25 @@ const (
 )
 
 type moduleConfig struct {
-	ClientID string `config:"client-id"`
-	// ClientSecret is the OAuth client secret the provider issued.
+	ClientID     string `config:"client-id"`
 	ClientSecret string `config:"client-secret"`
-	// HostedDomain, when non-empty, is the Google Workspace domain the identity
-	// token's hd claim must equal. It confines the identity to an organization;
-	// the hd parameter on the authorization request is a display optimization
-	// and is not the check.
+	// HostedDomain, when non-empty, is the Workspace domain the identity token's hd claim must
+	// equal; the hd authorization parameter is a display optimization, not the check.
 	HostedDomain string `config:"hosted-domain"`
-	// Issuer, when non-empty, is the OpenID Connect issuer the provider is
-	// discovered at. Empty discovers the built-in Google issuer.
+	// Issuer, when non-empty, is the OpenID Connect issuer the provider is discovered at; empty
+	// discovers the built-in Google issuer.
 	Issuer string `config:"issuer"`
-	// AllowLoopback admits loopback addresses through the restricted egress
-	// client. It is a development and local-testing relaxation; production
-	// leaves it off.
+	// AllowLoopback admits loopback addresses through the restricted egress client; it is a
+	// development relaxation, off in production.
 	AllowLoopback bool `config:"allow-loopback"`
-	// RootCAFile is a PEM file whose certificates are appended to the system
-	// roots the provider's certificate is verified against, not a replacement
-	// for them. Empty uses the system roots alone.
+	// RootCAFile is a PEM file whose certificates are appended to the system roots, not a
+	// replacement for them; empty uses the system roots alone.
 	RootCAFile string `config:"root-ca-file"`
 }
 
-// configDefaults is what this module is worth without a configuration file. The
-// client identifier and the secret have none.
+// configDefaults is empty: the client identifier and the secret have no default.
 var configDefaults = moduleConfig{}
 
-// gateMount is the part of the gateway's configuration this module reads.
 type gateMount struct {
 	PublicURL string `config:"public-url"`
 	Bases     struct {
@@ -81,11 +68,9 @@ type resolved struct {
 	rootCAs       *x509.CertPool
 }
 
-// resolve holds the configuration to what the flow and the redirect target are
-// built from, or says which item to correct. The client identifier, the secret
-// and the public address are all required: the secret is needed to exchange the
-// authorization code, and the redirect target is the public address plus the
-// base path plus this provider's callback path.
+// resolve holds the configuration to what the flow and the redirect target are built from,
+// or says which item to correct. The client identifier, the secret and the public address are
+// all required.
 func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 	clientID := strings.TrimSpace(c.ClientID)
 	if clientID == "" {
@@ -118,11 +103,8 @@ func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 	}, nil
 }
 
-// resolveIssuer returns the issuer the provider is discovered at. An empty value
-// takes the built-in Google issuer. An explicit value is an absolute https
-// address; a plain http address is accepted only on a loopback host with the
-// loopback switch on, because that is the development shape of a provider
-// running on the same machine.
+// resolveIssuer returns the issuer the provider is discovered at. An explicit value must be
+// absolute https; http is accepted only on a loopback host with the loopback switch on.
 func resolveIssuer(raw string, allowLoopback bool) (string, error) {
 	issuer := strings.TrimSpace(raw)
 	if issuer == "" {
@@ -151,11 +133,8 @@ func resolveIssuer(raw string, allowLoopback bool) (string, error) {
 	}
 }
 
-// redirectTarget is the redirect URI the provider sends the user agent back to:
-// the public address, the base path the routes are mounted under, and this
-// provider's callback path. A base path the gateway did not set reads as the
-// declared default, so the target agrees with where the engine mounted the
-// callback.
+// redirectTarget is the public address, the mounted base path and this provider's callback
+// path. A base path the gateway did not set reads as the declared default.
 func redirectTarget(publicURL, basePath string) string {
 	base := strings.TrimSpace(basePath)
 	if base == "" {
@@ -197,11 +176,8 @@ func schema() config.Schema {
 	}
 }
 
-// The two required credential items, each read on its own. A single Decode of
-// the whole section cannot tell a deployment that configured neither from one
-// that configured only half: the loader refuses the first absent required item
-// it walks, so the second absence is never seen. Reading each item alone makes
-// the module's own judgement possible.
+// The two required credential items, each read on its own so the module can tell a deployment
+// that configured neither from one that configured only half.
 type clientIDOnly struct {
 	ClientID string `config:"client-id"`
 }
@@ -210,10 +186,8 @@ type clientSecretOnly struct {
 	ClientSecret string `config:"client-secret"`
 }
 
-// credentialGiven reports whether the loader was given a value for one required
-// credential item. ErrMissingRequired is the loader saying that no source gave
-// it, which is the module not being configured at all; any other failure is the
-// configuration being unreadable and is carried out as it stands.
+// credentialGiven reports whether the loader was given a value for one required credential
+// item. ErrMissingRequired means no source gave it; any other failure is carried out as it stands.
 func credentialGiven(reader config.Reader, target any) (bool, error) {
 	err := reader.Decode(ConfigNamespace, target)
 	switch {
@@ -226,21 +200,16 @@ func credentialGiven(reader config.Reader, target any) (bool, error) {
 	}
 }
 
-// halfConfigured is the failure of a deployment that supplied one credential and
-// not the other. It names the item to write: a Google application missing either
-// half cannot complete an authorization-code exchange, and starting with what is
-// there would fail at the first login instead of at startup.
+// halfConfigured is the failure of a deployment that supplied one credential and not the
+// other, naming the item to write.
 func halfConfigured(item string) error {
 	return fmt.Errorf("%w: %s.%s was not given while the other credential was; the Google "+
 		"application needs both the client identifier and the client secret, so give both or neither",
 		authn.ErrInvalidConfig, ConfigNamespace, item)
 }
 
-// readConfig decodes this module's section and the gateway's mount items, and
-// validates both. Prepare and New both go through it, so the two see one
-// configuration. A configured root CA file is read here, so a file that does not
-// work stops the start rather than leaving verification on the system roots
-// without saying so.
+// readConfig decodes this module's section and the gateway's mount items and validates both.
+// Prepare and New share it, and a root CA file that cannot be read stops the start.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

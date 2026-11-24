@@ -8,18 +8,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// socialUnbound resolves a social identity with no binding by the rules of A3:
-// an address the provider declares verified and an existing account holds is
-// link-required, and without such an address the first login opens a new
-// account. A first login that would open an account parks at the pending signup,
-// which asks its person for a username and a password before anything is
-// written.
-//
-// The address a provider declared is a clue only when the provider says it
-// verified it. An address it says it did not verify is treated as absent, so
-// that nothing about the accounts that exist is answered to a caller whose claim
-// the provider does not stand behind. A verified address no account holds is
-// written into the account the login opens, as its contact.
+// socialUnbound resolves a social identity with no binding: an address the provider declares
+// verified and an existing account holds is link-required; without one the first login parks at
+// the pending signup. An unverified address is treated as absent.
 func (r *Resolver) socialUnbound(ctx context.Context, ext *authn.External,
 	aliases []authn.ExternalLink,
 ) (Result, error) {
@@ -30,12 +21,8 @@ func (r *Resolver) socialUnbound(ctx context.Context, ext *authn.External,
 		case err == nil:
 			return Result{}, fmt.Errorf("resolve: %w", &authn.LinkRequiredError{Email: ext.Email})
 		case errors.Is(err, authn.ErrAccountNotFound):
-			// Nobody holds the address, so the account this login opens is the
-			// one that takes it.
 			declared = ext.Email
 		case errors.Is(err, authn.ErrInvalidIdentifier):
-			// An address that cannot be stored is no more a contact than it is a
-			// clue.
 		default:
 			return Result{}, err
 		}
@@ -46,12 +33,9 @@ func (r *Resolver) socialUnbound(ctx context.Context, ext *authn.External,
 	return pendingSocial(ext, aliases, declared), nil
 }
 
-// createSocial opens the account a pending social signup describes. The account
-// takes the provider's display name, the username and password its person chose,
-// and the address the provider declared verified as a contact. That address is
-// the account's only one, so it is also its sign-in way and a password login
-// name. A username another login took in the race for the same name leaves
-// authn.ErrAccountExists for the answer route's 409.
+// createSocial opens the account a pending social signup describes: the provider's display
+// name, the chosen username and password, and the declared verified address as contact. A
+// username taken in the race is authn.ErrAccountExists.
 func (r *Resolver) createSocial(ctx context.Context, p Pending, username, password string) (Result, error) {
 	create := authn.CreateAccount{
 		Kind:                authn.KindUser,

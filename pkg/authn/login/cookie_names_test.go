@@ -9,9 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/cookiename"
 )
 
-// cookieOrigin is one public URL with the names the flow and reset cookies take
-// under it and the names of the other form, which a request may carry and the
-// engine must not read.
 type cookieOrigin struct {
 	name, publicURL       string
 	flow, reset           string

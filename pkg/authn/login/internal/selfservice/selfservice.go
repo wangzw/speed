@@ -40,11 +40,9 @@ type Deps struct {
 	// with SMSCodes.
 	Throttle authn.Throttle
 
-	// EmailSender is the channel a self-service email verification code goes out
-	// over. It switches the email branch of POST /identifiers on: without it an
-	// email address cannot be added self-service, and the branch answers that the
-	// deployment offers no channel. With it, KV is required for the pending
-	// record and Signup for the unproved reservation another account may hold.
+	// EmailSender is the channel a self-service email verification code goes out over; it switches
+	// the email branch of POST /identifiers on. Without it the branch answers that the deployment
+	// offers no channel; with it, KV and Signup are required.
 	EmailSender authn.EmailCodeSender
 
 	// Signup reads the reservation of a contact a self-registration wrote. The
@@ -52,20 +50,14 @@ type Deps struct {
 	// reserved is answered as taken instead of being silently left unsent.
 	Signup authn.SignupVerification
 
-	// Human is the deployment's human-verification gate. The login engine
-	// requires it, so a service the engine builds always carries one; the gate
-	// itself may be off, and then the email branch sends without asking for a
-	// proof. With a gate that requires one, the email branch presents a valid,
-	// single-use proof, checked before any budget is spent. The phone routes do
-	// not use it: their proof travels to the code engine and is checked once
-	// there.
+	// Human is the deployment's human-verification gate. With a gate that requires one, the email
+	// branch presents a valid, single-use proof before any budget is spent; the phone routes send
+	// their proof to the code engine instead.
 	Human authn.HumanVerifier
 
-	// Settings is read for authn.mfa.recent-window, for the two authn.sms
-	// durations the phone routes answer with, and for the authn.login email-code
-	// durations and budgets the email route answers with and counts against.
-	// Without it, or when a read fails or lands outside the setting's domain, the
-	// declared default is used.
+	// Settings is read for authn.mfa.recent-window, the two authn.sms durations the phone routes
+	// answer with, and the authn.login email-code durations and budgets. Without it, or on a failed
+	// or out-of-domain read, the declared default is used.
 	Settings settings.Store
 	// Bus and Audit are optional: without them the event and the audit row are
 	// not written.

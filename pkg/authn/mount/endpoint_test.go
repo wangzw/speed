@@ -23,9 +23,9 @@ func TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares(t *
 		name       string
 		declared   []string
 		configured string
-		want       string   // the endpoint the routes land on, when the start succeeds
-		wantErr    error    // otherwise
-		inMessage  []string // what the failure names
+		want       string
+		wantErr    error
+		inMessage  []string
 	}{
 		{name: "one endpoint declared, key empty", declared: []string{"main"}, want: "main"},
 		{name: "one endpoint declared, the key names it", declared: []string{"main"}, configured: "main", want: "main"},

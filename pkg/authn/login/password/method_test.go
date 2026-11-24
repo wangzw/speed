@@ -64,7 +64,6 @@ func TestAMissingFieldIsAskedForAndNothingIsCalled(t *testing.T) {
 	}
 }
 
-// must keeps the error of a call that is not about it out of a table.
 func must(s authn.Step, err error) authn.Step {
 	if err != nil {
 		panic(err)
@@ -95,10 +94,6 @@ func TestACredentialThatHoldsIsProvenForThePasswordMethod(t *testing.T) {
 			if !slices.Equal(p.Methods, []authn.Method{authn.MethodPassword}) {
 				t.Errorf("Methods = %v, want [pwd]", p.Methods)
 			}
-			// A proof reports the facts the method proved and no more: the account
-			// came from the check, not from an identifier or an external identity,
-			// nothing here says the factor counts as two, and a credential that did
-			// not carry must_change replaced no password.
 			if p.Identifier != nil || p.External != nil || p.UserVerified || p.IDPAsserted || p.Provider != "" || len(p.Aliases) != 0 || p.PasswordChanged {
 				t.Errorf("the proof claims more than a password check proves: %+v", p)
 			}
@@ -275,9 +270,7 @@ func TestABackOffThatCannotBeReadOrWrittenIsNeverAPass(t *testing.T) {
 		pass string
 		want []string
 	}{
-		"check fails": {func(r *rig) { r.th.checkErr = boom }, sentinelPassword, []string{"check"}},
-		// A refusal that cannot be counted is not a refusal the client may have: the
-		// guess would go uncounted.
+		"check fails":   {func(r *rig) { r.th.checkErr = boom }, sentinelPassword, []string{"check"}},
 		"fail fails":    {func(r *rig) { r.th.failErr = boom }, "wrong", []string{"check", "verify", "fail"}},
 		"succeed fails": {func(r *rig) { r.th.succeedErr = boom }, sentinelPassword, []string{"check", "verify", "succeed"}},
 	}

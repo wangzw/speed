@@ -26,7 +26,7 @@ const (
 )
 
 type fakeSMSCodes struct {
-	authn.SMSCodes // the methods this module does not use
+	authn.SMSCodes
 
 	sendChallenge string
 	sendErr       error
@@ -56,7 +56,7 @@ type fakeThrottle struct {
 
 	wait     time.Duration
 	checkErr error
-	onCheck  func() // runs as Check is entered, so a case can move the call under the method
+	onCheck  func()
 
 	checks   []string
 	fails    []string
@@ -510,9 +510,6 @@ func TestACodeStepWithNoCodeAsksAgain(t *testing.T) {
 	if len(r.sm.verifies) != 0 || len(r.th.fails) != 0 {
 		t.Errorf("an empty code was checked or counted, want neither")
 	}
-	// The re-prompt must carry the same challenge state, or the answer that
-	// follows cannot be checked: answering the re-prompted step has to reach a
-	// proof.
 	private := step.PrivateOf(got)
 	if private == nil {
 		t.Fatalf("the re-prompt carried no state, want the number and the challenge kept")
@@ -747,8 +744,8 @@ func TestThePhoneShapeIsE164(t *testing.T) {
 	r.registerActive()
 
 	accepted := []string{
-		"+1000000",         // the shortest: a country code and six digits, seven in all
-		"+100000000000000", // the longest: fifteen digits in all
+		"+1000000",
+		"+100000000000000",
 	}
 	for _, v := range accepted {
 		got, _ := r.m.Begin(t.Context(), loginStart(phoneFields(v)))
@@ -758,12 +755,12 @@ func TestThePhoneShapeIsE164(t *testing.T) {
 	}
 
 	refused := []string{
-		"+100000",           // six digits, one short of the floor
-		"+1000000000000000", // sixteen digits, one past the ceiling
-		"+8613800138000x",   // a suffix after the number
-		"x+8613800138000",   // a prefix before the number
-		"+8613800138000 ",   // a trailing space
-		" +8613800138000",   // a leading space
+		"+100000",
+		"+1000000000000000",
+		"+8613800138000x",
+		"x+8613800138000",
+		"+8613800138000 ",
+		" +8613800138000",
 	}
 	for _, v := range refused {
 		got, _ := r.m.Begin(t.Context(), loginStart(phoneFields(v)))

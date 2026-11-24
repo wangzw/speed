@@ -204,7 +204,6 @@ func TestAnAddressNeedsBothMarkers(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			mock := newGitHubMock(t)
-			// The address /user carries is not verified and must never be used.
 			mock.setUser(githubUser{ID: 1, Login: "ada"}, "public@example.com", 0)
 			mock.setEmails(c.emails, 0)
 			m := methodFor(mock)

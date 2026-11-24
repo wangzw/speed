@@ -233,7 +233,6 @@ func TestTheRecordsOfTwoSessionsAreApart(t *testing.T) {
 		t.Errorf("the first session's record = %+v (%v), was touched by the second's request", first, err)
 	}
 
-	// A session that never asked has no record to verify, whatever another one holds.
 	h.as(authntest.WithSession("sess-3"))
 	h.log.reset()
 	w := h.post("/phone/verify", `{"code":"123456"}`)
@@ -360,10 +359,6 @@ func TestACompletedVerificationBindsTheNumber(t *testing.T) {
 	}
 	want := []string{
 		"kv.Get", "throttle.Check",
-		// What the proof would change is decided before the code is compared: the
-		// account's identifiers and factors say whether the number is an active
-		// SMS factor's target, and that consequence asks for freshness. Deciding
-		// it first is what leaves a step-up refusal with its challenge unspent.
 		"accounts.Identifiers", "mfa.Factors",
 		"sms.Verify", "throttle.Succeed",
 		"admin.AddIdentifier", "kv.Delete",

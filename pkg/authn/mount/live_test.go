@@ -122,14 +122,12 @@ func counted(n *atomic.Int64, h gin.HandlerFunc) gin.HandlerFunc {
 type liveStack struct {
 	endpoints     []string
 	mountEndpoint string
-	// gateItems is text for the gateway's section, JSON members without the
-	// braces, such as `"trusted-origins":["https://other.example.com"]`.
-	gateItems string
-	publicURL string
-	backends  []authn.Verifier
-	scope     authn.ScopeGuard
-	register  func(mount.Mounter)
-	hand      func(speedhttp.Router, authn.Gate)
+	gateItems     string
+	publicURL     string
+	backends      []authn.Verifier
+	scope         authn.ScopeGuard
+	register      func(mount.Mounter)
+	hand          func(speedhttp.Router, authn.Gate)
 }
 
 const defaultPublicURL = "https://app.example.com"

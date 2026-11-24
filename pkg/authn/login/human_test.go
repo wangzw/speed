@@ -15,9 +15,6 @@ func humanType(t *testing.T, body string) string {
 	return strings.TrimPrefix(fmt.Sprint(decode(t, body)["type"]), "urn:speed:authn:")
 }
 
-// fakeHuman is a human-verification gate a case scripts: whether it requires a
-// proof, the mechanism it names, and the tokens it accepts. Every call is
-// recorded, so a case can see that the engine never asks the gate.
 type fakeHuman struct {
 	required       bool
 	byScope        map[authn.HumanScope]bool
@@ -209,8 +206,6 @@ func TestARejectedStartLeavesNoContinuableFlowAndChargesNothing(t *testing.T) {
 		t.Fatalf("the method's Begin ran %d times, want once", begins)
 	}
 
-	// The refusal sets no flow cookie: the record's token never reaches the
-	// client, so the record is not a flow anything can be bound to.
 	for _, c := range start.Result().Cookies() {
 		if strings.Contains(c.Name, "authn-flow") {
 			t.Errorf("the refused start handed the client the flow cookie %q, want none", c.Name)

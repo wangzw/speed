@@ -12,19 +12,12 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/slug"
 )
 
-// store is an in-memory account store with the uniqueness semantics the real one
-// has: an identifier value is held by one account, an external key is bound to
-// one account, and a deleted account holds nothing. An email address another
-// account holds is authn.ErrContactTaken, because the real store writes its
-// contact reservation in the same transaction; a username or phone another
-// account holds is authn.ErrAccountExists. The interfaces it does not serve are
-// left nil, so a call the resolver should not make panics.
 type store struct {
 	mu sync.Mutex
 
 	accounts   map[authn.AccountID]*record
-	identifier map[string]authn.AccountID // kind + "\x00" + value
-	binding    map[string]authn.AccountID // provider + "\x00" + subject
+	identifier map[string]authn.AccountID
+	binding    map[string]authn.AccountID
 	members    map[string]authn.Membership
 	next       int
 
@@ -34,7 +27,7 @@ type store struct {
 	membershipPuts []authn.Membership
 	membershipRead int
 	discovered     []string
-	other          []string // calls of any other write method
+	other          []string
 
 	providers map[string]authn.SSOProvider
 	domains   map[string][]authn.SSOProvider

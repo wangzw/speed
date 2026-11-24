@@ -16,12 +16,9 @@ const stateBytes = 32
 
 const stateVersion = 1
 
-// State is the state a WeChat flow carries between the begin step and the
-// callback: the value sent to the provider, which the callback is compared
-// against, and the digest the flow record keeps. Only the digest is private
-// state, because a holder of the key-value store reads it. State is the CSRF
-// defence of a protocol that has no PKCE and no nonce, so it is compared without
-// leaking where two values first differ.
+// State is the state a WeChat flow carries between begin and callback: the value sent to the
+// provider and the digest the record keeps. Only the digest is private state, and the
+// comparison hides where two values differ.
 type State struct {
 	value  string
 	digest string
@@ -36,7 +33,6 @@ func NewState() (State, error) {
 	return stateOf(hex.EncodeToString(raw[:])), nil
 }
 
-// stateOf builds the state of a known value. Only the tests use it directly.
 func stateOf(value string) State {
 	sum := sha256.Sum256([]byte(value))
 	return State{value: value, digest: hex.EncodeToString(sum[:])}

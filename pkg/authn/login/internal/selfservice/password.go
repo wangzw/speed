@@ -9,11 +9,9 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// changePassword answers PUT /password. The password module decides the policy
-// and publishes authn.password.changed, so the handler writes neither the check
-// nor the event. What it adds is what Passwords.Set leaves to its caller: on
-// success it rotates the current session's token and revokes the account's other
-// sessions, and a failed Set revokes nothing.
+// changePassword answers PUT /password. The password module decides the policy and publishes
+// authn.password.changed; the handler rotates the current session's token and revokes the
+// account's other sessions, and a failed Set revokes nothing.
 func (r *routes) changePassword(ctx context.Context, in changePasswordInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, actionPasswordChange)

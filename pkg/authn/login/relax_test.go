@@ -40,7 +40,6 @@ func (l *relaxLogs) Handle(_ context.Context, r slog.Record) error {
 func (l *relaxLogs) WithAttrs([]slog.Attr) slog.Handler { return l }
 func (l *relaxLogs) WithGroup(string) slog.Handler      { return l }
 
-// warns is the Warn records written, in order.
 func (l *relaxLogs) warns() []relaxRecord {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -91,8 +90,6 @@ func (b *subscribeBus) subscribed() []string {
 	return append([]string(nil), b.types...)
 }
 
-// stubStore satisfies the settings.Store interface with a nil method set; the
-// subscription only asks whether it is present and never calls it.
 type stubStore struct{ settings.Store }
 
 func changeEvent(change settings.Change) event.Event {
@@ -153,12 +150,12 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 // TestATighteningOrEqualChangeWritesNothing holds that a move checking more, or one keeping the value, is not reported.
 func TestATighteningOrEqualChangeWritesNothing(t *testing.T) {
 	changes := []settings.Change{
-		{Key: flowTTLPath, Old: "8m0s", New: "5m0s"},                             // a shorter-lived flow
-		{Key: flowTTLPath, Old: "5m0s", New: "5m0s"},                             // no change
-		{Key: disabledMethodsPath, Old: `[]`, New: `["sms"]`},                    // a method turned off
-		{Key: disabledMethodsPath, Old: `["password"]`, New: `[]`},               // password was never off, so nothing is removed
-		{Key: deliveryModesPath, Old: `["session","token"]`, New: `["session"]`}, // a delivery mode removed
-		{Key: ipLimitPath, Old: "0", New: "5"},                                   // the pre-throttle turned on
+		{Key: flowTTLPath, Old: "8m0s", New: "5m0s"},
+		{Key: flowTTLPath, Old: "5m0s", New: "5m0s"},
+		{Key: disabledMethodsPath, Old: `[]`, New: `["sms"]`},
+		{Key: disabledMethodsPath, Old: `["password"]`, New: `[]`},
+		{Key: deliveryModesPath, Old: `["session","token"]`, New: `["session"]`},
+		{Key: ipLimitPath, Old: "0", New: "5"},
 	}
 	for _, change := range changes {
 		logs := &relaxLogs{}
@@ -208,7 +205,7 @@ func TestAnAuditWriteFailureLeavesTheHandlerSucceeding(t *testing.T) {
 func TestSubscriptionIsWiredOnlyWithABusAndAStore(t *testing.T) {
 	t.Run("neither present", func(t *testing.T) {
 		p := &product{logger: slog.New(&relaxLogs{})}
-		p.subscribe() // must not panic
+		p.subscribe()
 	})
 	t.Run("a bus with no store", func(t *testing.T) {
 		bus := &subscribeBus{}
@@ -220,7 +217,7 @@ func TestSubscriptionIsWiredOnlyWithABusAndAStore(t *testing.T) {
 	})
 	t.Run("a store with no bus", func(t *testing.T) {
 		p := &product{logger: slog.New(&relaxLogs{}), store: stubStore{}}
-		p.subscribe() // must not panic
+		p.subscribe()
 	})
 	t.Run("both present", func(t *testing.T) {
 		bus := &subscribeBus{}

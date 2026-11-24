@@ -87,7 +87,7 @@ func TestNewNamesWhatIsMissing(t *testing.T) {
 	cases := []struct {
 		name   string
 		mutate func(*selfservice.Deps)
-		want   string // empty: no error
+		want   string
 	}{
 		{"complete", func(*selfservice.Deps) {}, ""},
 		{"no accounts", func(d *selfservice.Deps) { d.Accounts = nil }, "Accounts"},

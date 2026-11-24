@@ -23,8 +23,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The instant every test's clock reads, and the account and session its
-// identity carries.
+// now is the instant every test's clock reads.
 var (
 	now = time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
 )
@@ -60,10 +59,10 @@ type harness struct {
 
 type config struct {
 	noSMS         bool
-	email         bool // the email self-service branch is switched on (EmailSender and KV)
-	impersonable  bool // every route is registered as impersonable, as a wrong registration would
+	email         bool
+	impersonable  bool
 	mutateDeps    func(*selfservice.Deps)
-	withoutOptins bool // no settings, bus or audit
+	withoutOptins bool
 }
 
 func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
@@ -220,8 +219,6 @@ func problemType(t *testing.T, w *httptest.ResponseRecorder) string {
 	return strings.TrimPrefix(p.Type, "urn:speed:authn:")
 }
 
-// logCapture collects what the handlers log, so a test can read it for what must
-// not be there.
 type logCapture struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -272,7 +269,6 @@ func gatedRoutes() []guardedRoute {
 	return out
 }
 
-// secretSubject is a binding's provider-side subject, which no answer may carry.
 const secretSubject = "subject-9f3a-never-shown"
 
 func (h *harness) richAccount() {

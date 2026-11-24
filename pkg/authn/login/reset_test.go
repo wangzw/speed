@@ -277,9 +277,6 @@ func resetCookie(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return ""
 }
 
-// resetCookieAttributes is every attribute of a reply's reset cookie except its
-// random secret, which differs by design: two answers are the same shape when
-// these agree.
 func resetCookieAttributes(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
 	for _, c := range rec.Result().Cookies() {
@@ -439,8 +436,6 @@ func TestResetSMSVerifiesThroughTheCodeCapability(t *testing.T) {
 		t.Errorf("%d verifications, want one", r.sms.verifyCount())
 	}
 
-	// The challenge the code capability verified is spent; the code kept in the
-	// record is what answers the same submission again.
 	if got := r.verify(cookie, "123456"); got.Code != http.StatusOK {
 		t.Fatalf("a repeated SMS verify answered %d: %s, want the same success", got.Code, got.Body.String())
 	}

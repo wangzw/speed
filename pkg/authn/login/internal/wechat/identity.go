@@ -2,12 +2,9 @@ package wechat
 
 import "github.com/vislake/speed/pkg/authn"
 
-// The naming of a WeChat identity. A person is the same across every WeChat
-// application they authorize through their union id; the open id alone is
-// scoped to one application. An identity that carries only an open id is
-// therefore bound under a namespace that carries the application identifier, so
-// that two applications do not collide, and an identity that later gains a union
-// id hands the old key over as an alias.
+// A person is the same across WeChat applications through their union id; an open id alone
+// is scoped to one application. An open-id-only identity is bound under a namespace carrying
+// the application id, and a later union id hands the old key over as an alias.
 const (
 	// providerName is the provider a WeChat identity is bound under when it
 	// carries a union id.
@@ -25,18 +22,15 @@ const (
 type Identity struct {
 	// OpenID names the person inside one application.
 	OpenID string
-	// UnionID names the person across every application of one WeChat
-	// account. It is empty for an application the person authorized only
-	// through one, or one that is not bound to a WeChat account that issues
-	// union ids.
+	// UnionID names the person across every application of one WeChat account. It is empty for an
+	// application the person authorized only through one, or one not bound to an account that
+	// issues union ids.
 	UnionID string
 }
 
-// Proof turns the identity the provider named into the external identity a login
-// proves. With a union id the subject is the union id and the open id is offered
-// as an alias, so a binding made under the old open-id key is upgraded in place;
-// without one the subject is the open-id key. No email is synthesized: WeChat
-// has none.
+// Proof turns the identity the provider named into the external identity a login proves. With a
+// union id the subject is the union id and the open id is an alias, upgrading a binding made
+// under the old key; without one the subject is the open-id key. No email is synthesized.
 func (c *Client) Proof(id Identity) authn.Proof {
 	openIDKey := ExternalKey(c.appID, id.OpenID)
 	if id.UnionID == "" {
@@ -67,10 +61,9 @@ func ExternalKey(appID, openID string) authn.ExternalLink {
 	return authn.ExternalLink{Provider: openIDNamespace + appID, Subject: openID}
 }
 
-// BindingProviders are the provider values, or the namespace prefixes, that a
-// WeChat identity is bound under: the union-id namespace and the open-id prefix.
-// A WeChat login method reports them so that a client can match a stored binding
-// back to the method without knowing this naming.
+// BindingProviders are the provider values, or namespace prefixes, that a WeChat identity is
+// bound under: the union-id namespace and the open-id prefix. A client matches a stored binding
+// back to the method with them.
 func BindingProviders() []string {
 	return []string{providerName, openIDNamespace}
 }

@@ -26,13 +26,8 @@ func (s *steppingEmail) SendCode(context.Context, string, string, time.Duration,
 	return s.send()
 }
 
-// CertifiesNotSent places the channel on the certifying side: a failure it
-// returns certifies that no message left, so the attempt's budget is refunded.
 func (s *steppingEmail) CertifiesNotSent(error) bool { return true }
 
-// budgetTotal is the sum of the counts the harness store holds under a budget
-// prefix. A key a refund gave back stays there holding zero, so the sum is what
-// the window has actually spent.
 func budgetTotal(h *harness, prefix string) float64 {
 	h.kv.mu.Lock()
 	defer h.kv.mu.Unlock()
@@ -363,10 +358,6 @@ func TestARefusalReleasesWhatItAlreadyReserved(t *testing.T) {
 		t.Fatalf("the refused address answered %d %s, want the deployment's 429", w.Code, w.Body)
 	}
 
-	// The accepted send holds one hourly and one daily count on each of its
-	// address and account keys, and one global count. The refused send must hold
-	// nothing anywhere: its address keys were given back, the account and global
-	// counts it raised were given back, and the global count still reads 1.
 	if got := budgetTotal(h, "authn:email-address:"); got != 2 {
 		t.Errorf("the address budgets hold %v count(s), want the accepted send's 2", got)
 	}
@@ -440,8 +431,6 @@ func TestARefundThatCannotBeWrittenStaysSpent(t *testing.T) {
 		t.Errorf("the address budgets hold %v count(s), want the failed send's hourly and daily count kept", got)
 	}
 
-	// The count stayed spent, so the retry is refused by the budget rather than
-	// refunded twice.
 	h.kv.casErr = nil
 	h.email.err = nil
 	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusTooManyRequests {

@@ -38,10 +38,9 @@ const (
 	callbackResumeID          = "authn.login.callbackResume"
 )
 
-// AuthnLoginMethods is the discovery document: one descriptor per login method
-// taking part and not turned off, whether registration is open, the kinds of
-// second factor the deployment offers, and the human-verification gate a send
-// must satisfy.
+// AuthnLoginMethods is the discovery document: one descriptor per login method taking part and
+// not turned off, whether registration is open, the second-factor kinds the deployment offers,
+// and the human-verification gate a send must satisfy.
 type AuthnLoginMethods struct {
 	_ struct{} `description:"The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, the second-factor kinds the deployment takes in, and the human-verification gate this deployment requires before a verification message is sent. Enterprise identity providers are not listed here; they are discovered through the SSO module."`
 
@@ -69,10 +68,9 @@ type AuthnLoginPasswordReset struct {
 	Methods []string `json:"methods" required:"true" description:"The channels the reset may be sent through: email and sms, sorted, leaving out a channel that is not assembled, whose template is missing or that a disabled method turned off"`
 }
 
-// AuthnLoginHuman is the human-verification gate the deployment runs, one entry
-// per surface. A deployment may run a different mechanism on each: the phone
-// surface guards the sends that reach a phone number, and the other surface
-// guards every send that does not.
+// AuthnLoginHuman is the human-verification gate the deployment runs, one entry per surface:
+// the phone surface guards sends that reach a phone number, and the other surface every send
+// that does not.
 type AuthnLoginHuman struct {
 	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message, reported once per surface. A deployment may run a different mechanism on each: the phone surface guards the four SMS sends, and the other surface guards every send that does not address a phone number. A deployment whose gate is off reports the off mechanism on both surfaces."`
 
@@ -288,10 +286,9 @@ type AuthnLoginRegistrationContact struct {
 	Email string `json:"email" required:"true" description:"The email address the caller gave, awaiting verification"`
 }
 
-// AuthnLoginAnswer is the body of the answer route, whose shape is the closed
-// union of the four answers a step can produce. It carries a value and writes it
-// as it is; the union describes the set the entry point checks the answer
-// against, and the value is one member of it.
+// AuthnLoginAnswer is the body of the answer route, the closed union of the four answers a step
+// can produce. It carries a value and writes it as it is; the union is the set the entry point
+// checks the answer against.
 type AuthnLoginAnswer struct {
 	_ struct{} "description:\"One of four shapes, told apart by `state` and the members present: an open flow, a completed login delivered as a session, a completed login delivered as a token pair or an elevated step-up, or the result of a link or enrollment.\""
 
@@ -336,7 +333,8 @@ type startInput struct {
 	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when the public URL is a loopback http address) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string `json:"input" description:"The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request."`
-	// HumanProof is read only when this request would send a message and the deployment requires a proof; it is flat because an input value is capped at 512 bytes.
+	// HumanProof is read only when this request would send a message and the deployment requires
+	// a proof.
 	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token, a captcha answer or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 

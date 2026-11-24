@@ -11,10 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The keys this module accepts, relative to its namespace. The first three are
-// configuration, which a startup needs before a database is reachable or which
-// fix what is allocated at construction; the last four are settings, read from
-// the settings store while the process runs.
+// The keys this module accepts, relative to its namespace: the first three are configuration
+// read at startup, the last four settings read from the store at run time.
 const (
 	subjectsItem    = "subjects"
 	cacheSizeItem   = "cache-size"
@@ -31,10 +29,8 @@ const (
 	maxBackoffPath   = ConfigNamespace + "." + maxBackoffKey
 )
 
-// The bounds on the two sizes configuration states. They are sanity bounds, not
-// a policy: a cache of a million entries is a few hundred megabytes and a
-// derivation width of 256 is beyond any machine this runs on, and a value past
-// either is a typing mistake that is better refused than allocated.
+// Sanity bounds on the two sizes configuration states: a cache of a million entries is a few
+// hundred megabytes and a derivation width of 256 is beyond any machine this runs on.
 const (
 	maxCacheSize   = 1_000_000
 	maxConcurrency = 256
@@ -45,20 +41,16 @@ const (
 // within 64 bytes.
 var subjectName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,56}$`)
 
-// configDefaults is what this module is worth without a configuration file.
-// There is no default subject table: a credential table guessed into existence
-// would admit somebody nobody wrote down, so a table naming no subject refuses
-// the startup rather than standing down.
+// configDefaults is empty: there is no default subject table, and a table naming no subject
+// refuses the startup.
 var configDefaults = moduleConfig{
 	CacheSize:   1024,
 	Concurrency: password.DefaultConcurrency(),
 }
 
 type moduleConfig struct {
-	// Subjects maps each subject to its password entry, in the format
-	// ParseHash reads. The value is a hash rather than a password: this
-	// table sits in a configuration file, and a file that carries readable
-	// passwords hands over every account the moment it is read.
+	// Subjects maps each subject to its password entry in the format ParseHash reads; the value is
+	// a hash, because a file carrying readable passwords hands over every account.
 	Subjects map[string]string `config:"subjects"`
 	// CacheSize is how many checks that held the cache remembers, allocated
 	// when the module is built.
@@ -85,10 +77,8 @@ var defaults = options{
 	MaxBackoff:   password.DefaultThrottleParams().MaxBackoff,
 }
 
-// The domains of the four settings. Each is the one statement of its range: the
-// settings store holds a write to it, and a read is judged against it again,
-// since a value stored before the domain was declared, or written around the
-// store, is served as it is.
+// The domains of the four settings: each is the one statement of its range, and a read is
+// judged against it again, since a stored value may predate it.
 func cacheTTLInDomain(d time.Duration) bool { return d >= 0 && d <= password.MaxCacheTTL }
 
 func freeAttemptsInDomain(n int) bool {
@@ -110,10 +100,8 @@ type resolved struct {
 	subjects    map[string]password.Entry
 	cacheSize   int
 	concurrency int
-	// secrets are the raw encoded entries of the subject table, in no fixed
-	// order. They are what New registers as literal redaction rules: the parsed
-	// entries hold no string a rule could match, and the encoded form is the
-	// one a leak would carry.
+	// secrets are the raw encoded entries of the subject table, in no fixed order; New registers
+	// them as literal redaction rules because the parsed entries hold no string a rule could match.
 	secrets []string
 }
 

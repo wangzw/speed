@@ -127,7 +127,7 @@ func TestAnEmptyReturnTargetFallsBack(t *testing.T) {
 // TestTheRegistrationReadsFallBackToTheirStrictSide holds the three reads
 // of the account module's registration settings at their two fallbacks.
 func TestTheRegistrationReadsFallBackToTheirStrictSide(t *testing.T) {
-	failing := readerWith(nil) // every key the map does not carry fails to read
+	failing := readerWith(nil)
 
 	if got := failing.passwordSignup(); got != signupClosed {
 		t.Errorf("a failed read of the password switch = %q, want %q", got, signupClosed)

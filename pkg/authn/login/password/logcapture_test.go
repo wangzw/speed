@@ -25,8 +25,6 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// captureLogs replaces the process-wide default logger, so a test that calls it
-// must not run in parallel with another.
 func captureLogs(t *testing.T) *lockedBuffer {
 	t.Helper()
 	out := &lockedBuffer{}

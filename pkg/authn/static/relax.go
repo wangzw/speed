@@ -11,10 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The directions a setting is moved in that relax a check. A name that may make
-// more failed attempts before it is held back, a window that returns its count
-// to zero sooner, a back-off that ends sooner: each lets a guess through that
-// the declared default would have refused.
+// The directions that relax a check: more failed attempts, a shorter window, a shorter back-off.
 const (
 	moveDown = "decrease"
 	moveUp   = "increase"
@@ -37,12 +34,9 @@ const (
 	relaxedOutcome = "relaxed"
 )
 
-// onSettingsChanged is the subscriber of the settings module's change event. A
-// change to one of this module's settings that moves it in the direction that
-// relaxes a check is a Warn and a best-effort audit record, and nothing else:
-// the settings store has no access control of its own and cannot be made to
-// refuse, so what this module guarantees is that the change is visible after it.
-// The handler is idempotent and never fails an event.
+// onSettingsChanged subscribes to settings.changed: a change relaxing one of this module's
+// settings writes a Warn and a best-effort audit record, and nothing else. The handler is
+// idempotent and never fails an event.
 func (b *backend) onSettingsChanged(ctx context.Context, evt event.Event) error {
 	var change settings.Change
 	if err := event.DecodePayload(evt.Payload, &change); err != nil {

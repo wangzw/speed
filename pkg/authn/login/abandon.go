@@ -8,7 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// abandonOwner is the collaborator holding a flow's private state; the first-factor branch is the reserved seam for a redirect method, not dead routing.
+// the first-factor branch of abandonOwner is the reserved seam for a redirect method, not dead routing.
 func (r *routes) abandonOwner(rec record) authn.MethodAbandoner {
 	switch rec.State {
 	case stateEnroll:

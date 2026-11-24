@@ -142,8 +142,6 @@ func TestTwoSubjectsOfOneProviderOnFirstLoginOpenTwoAccounts(t *testing.T) {
 	}
 }
 
-// createdBy is one creation path's account: the identifier it minted and the
-// login identifier or external subject that identifier must differ from.
 type createdBy struct {
 	path     string
 	id       authn.AccountID
@@ -505,9 +503,6 @@ func (standInTenantDescriptions) TenantDescriptionOf(_ context.Context, id strin
 	return authn.TenantDescription{Name: id}, nil
 }
 
-// noopMounter is the route surface the invitation module requires. No case here
-// sends a request, so a registration is a no-op and the handlers are never
-// reached.
 type noopMounter struct{}
 
 func (noopMounter) Public(string, string, gin.HandlerFunc, ...mountinternal.Option)   {}

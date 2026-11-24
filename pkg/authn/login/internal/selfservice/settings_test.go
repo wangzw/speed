@@ -64,7 +64,7 @@ func TestACountThatCannotBeReadUsesTheDefaultReportedOnce(t *testing.T) {
 // TestACountOutsideItsDomainUsesTheDefaultReportedOnce holds that an out-of-domain value reads as the default, logged once.
 func TestACountOutsideItsDomainUsesTheDefaultReportedOnce(t *testing.T) {
 	numbers := wideBudgets()
-	numbers[budgetAddressHourly] = 0 // below the domain's floor of 1
+	numbers[budgetAddressHourly] = 0
 	h := budgetHarness(t, numbers)
 
 	for i := 0; i < 5; i++ {
