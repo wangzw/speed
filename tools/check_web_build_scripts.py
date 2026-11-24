@@ -23,10 +23,8 @@ EXEMPT = frozenset({"@speed/test-utils", "demo-web"})
 def workspace_manifests(workspace_root: str) -> list[str]:
     """The package.json paths of the members `web/pnpm-workspace.yaml` lists.
 
-    The member globs are the `- <glob>` entries under `packages:`, read up to
-    the next key; each resolves against the workspace root, as pnpm resolves
-    it, so a member outside the root (`../...`) counts like any other. A glob
-    entry with no manifest beneath it lists no member.
+    The `- <glob>` entries under `packages:` resolve as pnpm resolves them. A
+    glob entry with no manifest beneath it lists no member.
     """
     with open(os.path.join(workspace_root, "pnpm-workspace.yaml"), encoding="utf-8") as handle:
         lines = handle.read().splitlines()

@@ -1120,13 +1120,7 @@ class TestCaseLimitsStayAtTheSharedDefault(GateCase):
 
 
 class TestTheJavascriptMask(GateCase):
-    """The hand-written mask reads JSX and fails closed at end of file.
-
-    Each shape is a line a token scan can misread as an unterminated
-    string, template or regex. The line below it is a wait that must still
-    be seen: a mask that swallows the rest of the file passes the gate
-    silently instead.
-    """
+    """The hand-written mask reads JSX and fails closed at end of file."""
 
     def assert_shape_reports(self, shape: str) -> None:
         self.write(
@@ -1431,14 +1425,7 @@ class TestTheJavascriptMask(GateCase):
 
 
 class TestTheWaitConditionExemption(GateCase):
-    """The wrapper takes the larger value, so its timeout is not a limit.
-
-    `waitForCondition` passes `Math.max(options.timeout ?? 0,
-    asyncUtilTimeout)`, so a caller's 0 or 500 cannot lower the budget. The
-    gate passes such a call, keeps reporting the raw Testing Library and
-    `vi.waitFor` forms, and refuses to run (exit 2) when the premise no
-    longer holds or the wrapper's file is missing.
-    """
+    """The wrapper takes the larger value, so its timeout is not a limit."""
 
     def test_a_wait_for_condition_timeout_of_zero_passes(self) -> None:
         """Test that a wait for condition timeout of zero passes."""
@@ -1732,14 +1719,7 @@ CORETEST_PATH = "github.com/vislake/speed/pkg/core/coretest"
 
 
 class TestCoretestIsReadWhenTheCaseRuns(GateCase):
-    """A coretest bound may not be evaluated before the test log starts.
-
-    The Go test log opens at `M.Run`, so a `GATE_TIME_SCALE` read from a
-    package-level declaration, an `init` body or `TestMain` never reaches
-    the value `go test` hashes into its cache key. Reachability is by name
-    across one directory, so a package-level call to a local helper that
-    reaches `coretest` any number of layers down is a finding too.
-    """
+    """A coretest bound must not be evaluated before the Go test log starts at M.Run."""
 
     def test_a_package_level_bound_is_a_finding(self) -> None:
         """A package-level var bound is a finding."""

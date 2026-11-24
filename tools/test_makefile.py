@@ -551,8 +551,7 @@ class LoopingLegTests(unittest.TestCase):
 
     def test_the_default_relative_packages_resolve_from_the_start_directory(self) -> None:
         """The UNCACHED_PACKAGES default is spelled relative to the repository
-        root, the base the module roster is read and spelled from, so a run
-        started in that root splits those packages with no override."""
+        root, so a run started there splits those packages with no override."""
         root = self.scratch / "start-root"
         module = root / "starters" / "demo" / "server"
         for name in ("cachedpkg", "treecheck", "e2e/factorseed"):
@@ -1208,14 +1207,7 @@ class LoopingLegTests(unittest.TestCase):
 
 
 class CheckSegmentTests(unittest.TestCase):
-    """The structure of `check`, the segments it runs and `web-check`'s phases.
-
-    The cases read the Makefile instead of running the target: `check` is the
-    commit gate, and a segment that no longer runs there runs nowhere else, so
-    the segment set is held to a written-out expectation rather than derived
-    from the file it is checking. The product dependencies between segments
-    and the timestamp marks are read from the same text.
-    """
+    """The structure of `check`, the segments it runs and `web-check`'s phases."""
 
     def setUp(self) -> None:
         text = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -1329,13 +1321,7 @@ class CheckSegmentTests(unittest.TestCase):
 
 
 class EntryPointTests(unittest.TestCase):
-    """The root Makefile's local and deployment entry points.
-
-    `make dev` is the local loop and `make fly` is the deployment; the old
-    `deploy` name is gone rather than aliased. `-n` prints the recipe without
-    running mise, air or flyctl, so the cases pin the entry points without
-    starting anything.
-    """
+    """The root Makefile's local and deployment entry points."""
 
     def make(self, target: str) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
@@ -1434,13 +1420,7 @@ class EntryPointTests(unittest.TestCase):
 
 
 class GateTimeScaleTests(unittest.TestCase):
-    """GATE_TIME_SCALE defaults to 1 and a caller's value reaches the Makefile.
-
-    The frontend suites multiply their wait limits by it, so its default is
-    part of what the gate relies on. The suite strips it from the make runs it
-    starts, like every other inherited Make variable, so a gate that sets a
-    scale does not change the default these cases read.
-    """
+    """GATE_TIME_SCALE defaults to 1 and a caller's value reaches the Makefile."""
 
     def scale(self, caller: str | None = None) -> str:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}

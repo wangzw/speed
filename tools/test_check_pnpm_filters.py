@@ -58,8 +58,6 @@ def manifest(name: str, build: str | None = None) -> str:
 
 
 class GateCase(unittest.TestCase):
-    """A scratch tree, written by the case and scanned by the gate."""
-
     def setUp(self) -> None:
         self.root = tempfile.mkdtemp(prefix="pnpm-filters-")
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)

@@ -127,10 +127,8 @@ func parse(args []string) (options, error) {
 }
 
 // configPathFromLocator gives the filesystem path a --config locator designates.
-// It accepts file:/path and file:///path with an empty host, file://localhost/path,
-// and the relative file:path; percent escapes are decoded. A bare path or another
-// host is refused. The rules repeat pkg/config/source/file's unexported localPath
-// rather than widening that transport.
+// It accepts file:/path, file:///path, file://localhost/path and file:relative,
+// decoding percent escapes; a bare path or another host is refused.
 func configPathFromLocator(locator string) (string, error) {
 	parsed, err := url.Parse(locator)
 	if err != nil {
@@ -280,9 +278,8 @@ func assemble(ctx context.Context, path string) (*core.Registry, error) {
 }
 
 // minimalConfig answers a document holding only the named namespaces. The
-// platform's loader refuses a key no carried module declares, so the service's
-// whole document would fail here. The database section must be nested, with dsn
-// and encryption-key both present.
+// platform's loader refuses a key no carried module declares. The database
+// section must be nested, with dsn and encryption-key both present.
 func minimalConfig(path string, namespaces []string) ([]byte, error) {
 	//nolint:gosec // G304: the path is the operator's -config, which is the file this command exists to read.
 	raw, err := os.ReadFile(path)

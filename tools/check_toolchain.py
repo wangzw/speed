@@ -14,11 +14,8 @@ import tomllib
 def _infra(message: str) -> None:
     """Report an infrastructure failure and exit 2.
 
-    The exit-code contract (module docstring): 2 = infrastructure error
-    (a source file missing or unparsable, a tool absent from .mise.toml),
-    and only 1 = drift. SystemExit alone cannot carry the distinction --
-    sys.exit("message") exits 1 -- so the message is printed to stderr
-    first and the bare code raised.
+    Only 1 means drift. SystemExit cannot carry the code -- sys.exit("msg")
+    exits 1 -- so the message goes to stderr first and the bare code is raised.
     """
     print(message, file=sys.stderr)
     raise SystemExit(2)
@@ -213,10 +210,8 @@ def main(argv: list[str] | None = None) -> int:
                 drifted += 1
 
     if missing:
-        # An expected tool absent from .mise.toml is an infrastructure
-        # failure per the module docstring's exit-code contract: the gate
-        # exists to prove the mirrors cannot drift, and a mirror that does
-        # not exist cannot be compared.
+        # A mirrored tool absent from .mise.toml is an infrastructure
+        # failure: a mirror that does not exist cannot be compared.
         print(
             f"error: {missing} expected tool(s) absent from .mise.toml -- "
             "every tool this gate's SOURCES list pins must appear in the "

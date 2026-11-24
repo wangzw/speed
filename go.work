@@ -5,12 +5,7 @@ use (
 	./starters/demo/server
 )
 
-// github.com/tjfoc/gmsm, reached through the Aliyun SMS SDK's credential
-// chain, predates module graph pruning and drags google.golang.org/genproto
-// v0.0.0-20190819201941 back into the workspace build list, where its
-// googleapis/api and googleapis/rpc packages shadow the split
-// google.golang.org/genproto/googleapis/* modules. Pointing that one version
-// at a post-split release makes its go.mod lift the selected version past the
-// pre-split one, so only the split modules provide those packages. Naming the
-// version keeps a later monolith release from being pinned to this one.
+// The Aliyun SMS SDK drags an old google.golang.org/genproto into the build
+// list, shadowing the split modules; this version-pinned replace makes its
+// go.mod lift that version past the pre-split one.
 replace google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55 => google.golang.org/genproto v0.0.0-20260819154853-08b0e4226688

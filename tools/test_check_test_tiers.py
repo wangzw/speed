@@ -75,12 +75,7 @@ class GateCase(unittest.TestCase):
             fh.write(text)
 
     def run_gate(self) -> tuple[int, str, str]:
-        """Run the gate over the scratch tree, capturing both streams.
-
-        The infrastructure path raises SystemExit rather than returning a
-        code, which is how the executable exits; catching it here is what
-        the command line does with it.
-        """
+        """Run the gate over the scratch tree and capture both streams."""
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             try:
@@ -142,11 +137,7 @@ class TestTheTagsAgreeWithTheLegs(GateCase):
 
 
 class TestAPlatformIsNotATierTag(GateCase):
-    """A GOOS or GOARCH term is met by the runner's platform, not by -tags.
-
-    The baseline workflow runs on ubuntu-latest, so linux/amd64 is the one
-    platform the scratch tree's legs execute on.
-    """
+    """A GOOS or GOARCH term is met by the runner's platform, not by -tags."""
 
     def test_a_linux_file_is_compiled_on_the_runner(self):
         """Test that a linux file is compiled on the runner."""

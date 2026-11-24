@@ -11,55 +11,29 @@ import sys
 # Directories whose contents are not this repository's own Go source.
 SKIPPED_DIRS = {".git", "node_modules", "testdata", "vendor"}
 
-# -- check 1 -----------------------------------------------------------------
 
-# A resolution of the logging capability. Both spellings in the tree share the
-# shape: a helper name, the capability, and a call. `optional[log.Logger]` is
-# the package-local take-or-absent helper; `core.Resolve[log.Logger]` is the
-# registry query. Matching the element type rather than the helper name keeps
-# a further helper, added later, under the same rule.
+# A resolution of the logging capability: a helper name, the capability, and a
+# call. Matching the element type rather than the helper name keeps a further
+# helper under the same rule.
 RESOLVES_LOGGER = re.compile(r"\b\w+\[log\.Logger\]\s*\(")
 
 # The declaration, written as the requirement token. A module descriptor
 # carries it as `{Token: (*log.Logger)(nil), Optional: true}`.
 DECLARES_LOGGER = re.compile(r"\(\*log\.Logger\)\(nil\)")
 
-# Packages known to resolve and declare the logging capability. The positive
-# control requires at least one, so a listing that lost every one of them came
-# from a scan that did not read the tree and the checks below would pass on an
-# empty set.
+# Packages known to resolve and declare the logging capability, so the positive
+# control can refuse a scan that read none of them.
 LOGGER_ANCHORS = ("pkg/settings", "pkg/db", "pkg/http", "pkg/authn/login")
 
-# -- check 2 -----------------------------------------------------------------
 
 # One sensitive item of the configuration schema. The flag is read as an item
 # only where the composite literal it opens is one of the two the tree declares
 # an item in; see ITEM_KEY_ENTRY and ITEM_TYPED_LITERAL below.
 SENSITIVE_ITEM = re.compile(r"\bSensitive:\s*true\b")
 
-# The two shapes a configuration item is written in, read off the text just
-# before the brace of its composite literal.
-#
-# A schema declares its items as the keyed entries of a map: `KEY: { ... }`,
-# with the key written before the brace, either as a quoted string or as the
-# package constant that names it. That is the shape every item in this tree has
-# -- `dsnKey: { Sensitive: true, ... }` inside `map[string]config.Item{...}`.
-# The key is read from the file as written and not from the masked code,
-# because a quoted key is a string literal and the masking blanks its contents.
-#
-# An item is also written as a literal of the item type -- `config.Item{...}`,
-# `settings.Item{...}`, or a bare `Item{...}` -- which is how the tree adds an
-# item by index assignment (`items[key] = config.Item{...}`, pkg/db/config.go).
-# Its key sits in the assignment rather than before the brace, so the type is
-# what marks the literal as an item.
-#
-# A `Sensitive: true` inside a composite literal of any other type is a field
-# of some other struct and not a configuration item. A response view that
-# masks a sensitive value writes exactly that: pkg/settings/admin's `viewOf`
-# returns `settingView{... Sensitive: true, Value: maskedValue}` to hide the
-# value. It declares no schema and holds no item, so it owes the redaction
-# registry nothing, and reading its flag as an unkeyed item is the false
-# positive this narrowing removes.
+# The two shapes a configuration item is written in, read just before the brace
+# of its literal: a keyed map entry (`KEY: { ... }`) or a literal of the item
+# type (`config.Item{...}`). A `Sensitive: true` in another type is not an item.
 ITEM_KEY_ENTRY = re.compile(r'("[^"]+"|[A-Za-z_]\w*)\s*:\s*\Z')
 ITEM_TYPED_LITERAL = re.compile(r"(?:[A-Za-z_]\w*\.)?Item\s*\Z")
 
@@ -71,14 +45,9 @@ STRING_CONST = re.compile(r'^\s*(?:const\s+)?([A-Za-z_]\w*)\s*=\s*"([^"]*)"', re
 # the package hands over: the redaction rule, a label, then the values.
 LITERAL_REGISTER = re.compile(r"\bliteral\.Register\(")
 
-# The Secrets hook that actually hands secret values to the factory, in the
-# shape the tree writes it: the Spec field typed `func(cfg *C) []string`, the
-# func literal that fills it (`Secrets: func(cfg *C) []string { ... }`), or an
-# identifier naming such a function (`Secrets: secrets`, where
-# `func secrets(cfg *C) []string` is declared in the package). What is matched
-# is the `[]string`-returning function type the value has to carry, not the
-# bare name: a field merely *named* Secrets -- a `settings{Secrets: true}`
-# decoy -- hands no value over and is not a hook.
+# The Secrets hook that hands secret values to the factory: the Spec field typed
+# `func(cfg *C) []string`, its func literal, or an identifier naming such a
+# function. A field merely named Secrets hands no value over.
 SECRETS_FUNC_FIELD = re.compile(r"\bSecrets\s+func\b[^\n]*\[\]string")
 SECRETS_FUNC_VALUE = re.compile(r"\bSecrets\s*:\s*func\b[^\n]*\[\]string")
 SECRETS_REF = re.compile(r"\bSecrets\s*:\s*([A-Za-z_]\w*)\b")
@@ -87,10 +56,8 @@ SECRETS_REF = re.compile(r"\bSecrets\s*:\s*([A-Za-z_]\w*)\b")
 # a `Secrets:` identifier reference must name to be a handoff.
 _DECLARES_STRING_FUNC = r"\bfunc\s+{name}\s*\([^)]*\)\s*\[\]string"
 
-# The token a redaction registration's label carries: per the module docstring
-# the label is a module-prefixed credential name, written `ModuleName+".x"` (or
-# `<recv>.ModuleName+".x"`). A registration that does not carry it is not this
-# package's own credential registration and cannot be tied to its items.
+# The module-prefixed credential-name token a redaction label carries, written
+# `ModuleName+".x"`; a registration without it is not this package's own.
 MODULE_NAME = re.compile(r"\bModuleName\b")
 
 # An `Items()` config provider, and a module descriptor. A package that
@@ -98,11 +65,8 @@ MODULE_NAME = re.compile(r"\bModuleName\b")
 PROVIDES_ITEMS = re.compile(r"\bfunc\s+Items\(")
 DECLARES_MODULE = re.compile(r"\bfunc\s+Module\(|\bNewModule\(")
 
-# The sensitive items whose value is a filesystem path and not the secret
-# itself, named by the package directory and the item's operator-facing key.
-# This is a named allow-list, not a scan of the key's shape: a key that ends
-# in `-file` is not exempt on its own, because a later item carrying such a
-# key could still hold the secret.
+# Sensitive items whose value is a filesystem path, named by package directory
+# and operator-facing key: a named allow-list, not a `-file` key-shape scan.
 PATH_ITEMS = {
     ("pkg/authn/sso/saml", "sp-key-file"),
     ("pkg/authn/token", "signing-key-file"),
@@ -110,7 +74,6 @@ PATH_ITEMS = {
 
 SENSITIVE_ANCHORS = ("pkg/db", "pkg/event/nats", "pkg/authn/login/github")
 
-# -- check 3 -----------------------------------------------------------------
 
 EGRESS_NEW = re.compile(r"\begress\.New\s*\(")
 EGRESS_TRANSPORT = re.compile(r"\bobservability\.Transport\(")
@@ -119,7 +82,6 @@ EGRESS_EXEMPT = "pkg/authn/login/internal/wechat"
 
 EGRESS_ANCHORS = ("pkg/authn/login/github", "pkg/authn/sso/oidc")
 
-# -- check 4 -----------------------------------------------------------------
 
 GLOBAL_OTEL = re.compile(
     r"\botel\.(?:Tracer|Meter|SetTracerProvider|GetTracerProvider|"
@@ -133,28 +95,19 @@ UPSTREAM_OTEL = re.compile(r'"go\.opentelemetry\.io/otel')
 
 
 class _InfrastructureError(Exception):
-    """Raised where the scan cannot run or drew an empty set.
-
-    Carried as an exception so a check deep in the call chain can report one
-    without a return code threaded through every helper; main catches it and
-    turns it into exit 2.
-    """
+    """Raised where the scan cannot run or drew an empty set; main turns it into
+    exit 2."""
 
 
 def _infra(message: str) -> None:
-    """Fail the scan because it did not read the tree it is about.
-
-    The exit-code contract (module docstring): 2 = the scan could not run or
-    drew an empty set, only 1 = a finding. The message names what is missing.
-    """
+    """Fail the scan because it did not read the tree: exit 2, where only 1 is a
+    finding."""
     raise _InfrastructureError(message)
 
 
-# One Go source file, read once. `text` is the file as written; `code` is the
-# same text with comments and the contents of string and rune literals blanked
-# out, so a call named in a comment or quoted in a string is not read as a
-# call site. The two strings have equal length and the same newlines, so a
-# match offset and a line number mean the same thing in either.
+# One Go source file, read once: `text` as written, and `code` with comments and
+# literal contents blanked. Equal length and newlines keep offsets and line
+# numbers aligned.
 class Source:
     __slots__ = ("rel", "pkgdir", "text", "code", "is_test")
 
@@ -273,10 +226,8 @@ def _matches(
 ) -> dict[str, list[tuple[str, int]]]:
     """Group every match of a pattern by package, as (file, line) pairs.
 
-    The pattern reads `code` by default, so a call named in a comment or a
-    string is not matched; an attribute of "text" reads the file as written,
-    which the import-path control needs because an import path lives in a
-    string.
+    The pattern reads `code` unless asked for "text", which the import-path
+    control needs because a path lives in a string.
     """
     found: dict[str, list[tuple[str, int]]] = {}
     for source in sources:
@@ -295,10 +246,8 @@ def _positive_control(
 ) -> None:
     """Refuse to report over a set that did not come from this tree.
 
-    A scan that found no call site has nothing to check and would pass on an
-    empty set. One that found call sites but none of the packages a fixed
-    anchor names came from a pattern that no longer matches the tree. Either
-    is an infrastructure error, not a clean run.
+    No call sites at all, or none of the packages a fixed anchor names, is an
+    infrastructure error, not a clean run.
     """
     if not derived:
         _infra(f"observability-readiness[{name}]: the scan found no call site, so the check "
@@ -447,11 +396,8 @@ def _declares_string_func(members: list[Source], name: str) -> bool:
 def _secrets_handoff(source: Source, members: list[Source]) -> bool:
     """Whether a source hands its secret values to the factory's Secrets hook.
 
-    The hook is the shape the tree writes: the Spec field typed
-    `func(cfg *C) []string`, the func literal that fills it, or an identifier
-    naming such a function. A field merely *named* Secrets -- a
-    `settings{Secrets: true}` decoy -- hands no value over and is not read as
-    one.
+    The hook is the `[]string`-returning shape above; a field merely named
+    Secrets hands nothing over.
     """
     code = source.code
     if SECRETS_FUNC_FIELD.search(code) or SECRETS_FUNC_VALUE.search(code):
@@ -463,23 +409,9 @@ def _secrets_handoff(source: Source, members: list[Source]) -> bool:
 
 
 def _registration_evidence(members: list[Source]) -> tuple[bool, int]:
-    """What a package hands to redaction registration.
-
-    Returns `(whole_set, explicit)`. `whole_set` is true when the package names
-    its secret values in a Secrets hook, or registers a variadic value list
-    (`values...`): both hand the whole set over and cover every item the
-    package declares. `explicit` counts the fixed value arguments of the
-    `literal.Register(rule, label, value, ...)` calls that are this package's
-    own credential registrations.
-
-    A registration is attributed to the items -- not merely summed -- by
-    requiring its label to be the module-prefixed credential name the module
-    docstring specifies: a label carrying `ModuleName`. An unrelated call in
-    the same package, a `literal.Register(rule, label, x, y)` whose label is
-    some other expression, registers some other credential and is not counted,
-    so it cannot inflate the value count and mask an item that has no rule. A
-    package with no such registration has registered nothing.
-    """
+    """What a package hands to registration: `(whole_set, explicit)`, where
+    `whole_set` covers every item via a Secrets hook or variadic registration and
+    `explicit` counts values in this package's `ModuleName` registrations."""
     whole = False
     explicit = 0
     for source in members:
@@ -513,26 +445,8 @@ def _package_consts(sources: list[Source]) -> dict[str, str]:
 def check_sensitive_redaction(sources: list[Source]) -> list[str]:
     """2. A Sensitive item whose value is the secret must be redacted.
 
-    The check is per item, not per package. A static text cannot be tied to
-    one item -- `literal.Register` takes the redaction rule, a module-prefixed
-    credential label and a variadic value list, none of which spells the item
-    key -- so the count is what is checked: a package must hand over at least
-    as many values as it declares Sensitive items, a `Secrets` hook or a
-    variadic registration covering every item and a fixed value list covering
-    its own number. When the count falls short, the items past it are
-    reported, because a value short of the count leaves an item no rule can be
-    shown to cover -- the per-item gap the package-level reading missed. The
-    trade-off is that the count is exact even where the identity of the
-    covered item is not, so the reported items are the excess by declaration
-    order and not a proven miss.
-
-    The items counted are the flags that mark a configuration item -- a keyed
-    entry of a schema map or a literal of the item type, the two shapes
-    `_item_literal` reads. A `Sensitive: true` on a struct of any other type
-    is a field of that struct and not an item: a package that only reports or
-    masks the sensitivity of a value it was handed declares no schema, so it
-    neither owes a registration nor is measured against one.
-    """
+    A package must hand over at least as many values as it declares Sensitive
+    items, and items past the count are reported; only the two item shapes count."""
     grouped = _pkgdirs(sources, include_tests=False)
     items: dict[str, list[tuple[str, int, str]]] = {}
     for source in sources:
@@ -591,13 +505,8 @@ def _registrar_registration(
     pkgdir: str,
     grouped: dict[str, list[Source]],
 ) -> tuple[bool, int] | None:
-    """The registration evidence of the package that mounts a shared unit.
-
-    A shared unit holds no module of its own; the package that mounts it via
-    `<unit>.Items()` is the one that registers its values. Returns that
-    package's `(whole_set, explicit)` evidence, or None when no package mounts
-    the unit with any registration of its own.
-    """
+    """The registration evidence of the package that mounts a shared unit, as
+    `(whole_set, explicit)`, or None when no package mounts it with one."""
     unit = os.path.basename(pkgdir)
     reference = re.compile(r"\b" + re.escape(unit) + r"\.Items\(")
     for other, members in grouped.items():
@@ -639,19 +548,15 @@ def check_egress_transport(sources: list[Source]) -> list[str]:
 
 
 def check_no_global_provider(sources: list[Source]) -> list[str]:
-    """4. pkg/ must not call a package-level entry of the upstream global.
+    """4. pkg/ must not call a package-level entry of the upstream otel global.
 
-    The entries are `otel.Tracer(`, `otel.Meter(` and the accessors that
-    install or read the process-wide provider (`SetTracerProvider`,
-    `GetTracerProvider`, `SetMeterProvider`, `GetMeterProvider`, `Handle`).
-    Test files are out of scope, the same as the other checks: an assertion
-    may name a call that production code must not make.
+    The entries are `otel.Tracer(`, `otel.Meter(` and the provider
+    accessors. Test files are out of scope.
     """
     non_test = [s for s in sources if not s.is_test]
-    # The control is the namespace being live: the tree reaches the upstream
-    # library, so a global entry would be that call and not a reference to a
-    # package that is never in scope. The import path lives in a string, so
-    # this reads the file as written and not the masked code.
+    # The control is the namespace being live: a global entry would be that
+    # call, not a reference to an uncalled package. The import path lives in a
+    # string, so this reads the file as written.
     if not _has_text(non_test, UPSTREAM_OTEL, attr="text"):
         _infra("observability-readiness[no-global-provider]: no file under pkg/ imports the "
                "upstream otel library, so the absence of a global entry is vacuous")

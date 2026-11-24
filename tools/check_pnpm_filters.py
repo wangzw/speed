@@ -30,10 +30,8 @@ SEPARATORS = {"&&", "||", ";", "|", "&", "|&", ";;"}
 def workspace_package_names(workspace_root: str) -> set[str]:
     """The package.json names of the members a pnpm-workspace.yaml lists.
 
-    The member globs are the `- <glob>` entries under `packages:`, read up
-    to the next key; each glob resolves against the workspace root, as pnpm
-    resolves it, and a member outside the root (`../...`) counts like any
-    other.
+    The `- <glob>` entries under `packages:` resolve against the workspace
+    root as pnpm resolves them; a member outside the root counts too.
     """
     with open(os.path.join(workspace_root, "pnpm-workspace.yaml"), encoding="utf-8") as handle:
         lines = handle.read().splitlines()

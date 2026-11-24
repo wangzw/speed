@@ -46,8 +46,8 @@ class State:
 def project_name(root: str | os.PathLike[str]) -> str:
     """Return the compose project name a checkout root derives.
 
-    The hash covers the resolved path, so a symlink and its target name the
-    same project, and two worktrees of one repository name different ones.
+    The hash covers the resolved path, so a symlink and its target agree
+    while two worktrees differ.
     """
     resolved = os.path.realpath(os.fspath(root))
     digest = hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:12]
@@ -57,8 +57,8 @@ def project_name(root: str | os.PathLike[str]) -> str:
 def allocate_ports(count: int = len(SERVICES)) -> list[int]:
     """Return `count` distinct ports free on 127.0.0.1.
 
-    Every socket stays bound until all of them have one, so the kernel cannot
-    hand the same port out twice in one allocation.
+    Every socket stays bound until all are allocated, so the kernel cannot
+    hand the same port out twice.
     """
     sockets: list[socket.socket] = []
     try:
@@ -83,9 +83,8 @@ def write_state(path: pathlib.Path, project: str, ports: list[int]) -> None:
 def read_state(path: pathlib.Path, root: str | os.PathLike[str] = ROOT) -> State | None:
     """Return the state file's contents, or None when it is not this stack's.
 
-    A file that is missing, malformed, carries an unexpected key, or names a
-    project other than the one this root derives is not a state file this
-    checkout may act on; `down` in particular must never guess a project.
+    A missing, malformed or foreign state file is not one this checkout may
+    act on; `down` must never guess a project.
     """
     try:
         text = path.read_text(encoding="utf-8")
@@ -162,9 +161,8 @@ def compose(
 def containers_healthy(output: str) -> bool:
     """Report whether every service is present, running and healthy.
 
-    `docker compose ps --format json` prints one JSON object per line on the
-    compose releases this repository runs, and a single array on some newer
-    ones, so both shapes are read.
+    `docker compose ps --format json` prints one object per line on the
+    releases this repository runs and an array on some newer ones.
     """
     found: dict[str, tuple[str, str]] = {}
     for line in output.splitlines():

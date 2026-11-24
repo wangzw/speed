@@ -83,12 +83,9 @@ import (
 	_ "github.com/vislake/speed/pkg/config/format/yaml"
 	_ "github.com/vislake/speed/pkg/config/source/file"
 
-	// The engines and the backends register themselves in init, so importing
-	// a package is what puts it in the available set. They are aliased rather
-	// than blank-imported because the stack table writes their names: each
-	// claims its capability exclusively, and the dependency closure never
-	// picks one implementation of an exclusive capability on the host's
-	// behalf.
+	// The engines and backends register themselves in init, so importing a
+	// package is what puts it in the available set. Aliased, not blank-imported:
+	// the stack table writes their names.
 	dbpostgres "github.com/vislake/speed/pkg/db/postgres"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	eventmemory "github.com/vislake/speed/pkg/event/memory"
@@ -526,10 +523,9 @@ func featureVocabulary(reg *core.Registry) ([]byte, error) {
 	return body, nil
 }
 
-// moduleOwner answers who ships the named module, decided by the Go package the
-// descriptor's first lifecycle callback lives in: a module under the platform's
-// module path is platform-owned, any other is application-owned. A module with
-// no callback is refused rather than guessed at.
+// moduleOwner answers who ships the named module by the Go package its
+// descriptor's first lifecycle callback lives in: under the platform's module
+// path it is platform-owned, any other application-owned; no callback is refused.
 func moduleOwner(reg *core.Registry, module string) (string, error) {
 	descriptor, found := reg.Lookup(module)
 	if !found {

@@ -325,11 +325,7 @@ SKIP_DRAFT = "github.event_name != 'pull_request' || !github.event.pull_request.
 
 
 def safe_condition(condition: str) -> bool:
-    """A condition that never skips a landing gate, bare or in `${{ }}`.
-
-    `always()` never skips. The draft condition skips only a draft pull
-    request, which cannot land; marking it ready runs the jobs.
-    """
+    """A condition that never skips a landing gate, bare or in `${{ }}`."""
     text = condition.strip()
     if text.startswith("${{") and text.endswith("}}"):
         text = text[3:-2].strip()
@@ -420,9 +416,8 @@ def gate_step_findings(workflow: str, gate_legs: set[str]) -> int:
 def invocations(jobs: dict[str, list[tuple[int, str]]]) -> list[tuple[str, str | None, list[str] | None, int]]:
     """Return (job, target, modules, line) for every make target ci.yml names.
 
-    `modules` is None when the command carries no `MODULES=` assignment, which
-    means the leg runs its whole module loop; a present but empty assignment
-    is an empty list, which covers nothing and is a finding.
+    `modules` is None when the command carries no `MODULES=`; a present but
+    empty assignment covers nothing and is a finding.
     """
     found: list[tuple[str, str | None, list[str] | None, int]] = []
     for job, scripts in jobs.items():

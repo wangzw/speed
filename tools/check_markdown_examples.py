@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
-"""check_markdown_examples.py -- compile/parse-check fenced ```go blocks in
-markdown prose (AGENTS.md, package READMEs).
+"""Compile/parse-check fenced ```go blocks in AGENTS.md and README.md prose.
 
-The corpus is the root AGENTS.md and README.md plus every AGENTS.md and
-README.md inside a module go.work lists; prose outside the workspace and any
-path under .git/, node_modules/ or vendor/ is not checked.
-
-Escape hatch: a block that genuinely cannot parse may carry
-`<!-- markdown-example: no-parse-check -->` on the line immediately before its
-opening fence. It is a per-block, git-diff-visible opt-out a reviewer sees in
-the same pull request, never a silent skip.
+The corpus is the root files and every module go.work lists; a block that cannot
+parse may carry `<!-- markdown-example: no-parse-check -->` before its fence.
 """
 
 from __future__ import annotations
@@ -26,20 +19,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Corpus discovery
-# ---------------------------------------------------------------------------
 
 _EXCLUDED_DIR_NAMES = {".git", "node_modules", "vendor"}
 
-# Directories never descended into that must be matched by exact
-# repo-relative path rather than basename: .claude/worktrees/ holds this
-# repository's git worktrees -- complete checkouts that carry their own
-# AGENTS.md/README trees, gitignored local machine state that never
-# exists in CI. Matched exactly, so a directory merely named worktrees/
-# is walked and .claude/skills/** stays walked like any other source
-# tree (a skill's own SKILL.md is not part of this corpus; an AGENTS.md
-# anywhere is, by the scope rule above).
+# Directories never descended into, matched by exact repo-relative path: a
+# checkout's own worktrees under .claude/worktrees/ carry complete AGENTS.md
+# trees that never exist in CI.
 NON_SCANNED_DIR_PATHS = frozenset({".claude/worktrees"})
 
 _SKIP_MARKER = "<!-- markdown-example: no-parse-check -->"
@@ -112,11 +97,10 @@ def read_workspace(root: Path) -> Workspace:
 
 
 def _in_scope(rel: str, module_dirs: frozenset[str]) -> bool:
-    """Whether rel (posix-style, relative to --root) is part of the corpus.
+    """Whether rel (posix, relative to --root) is part of the corpus.
 
-    Exactly: the root's own AGENTS.md and README.md, plus either file
-    inside a module the workspace lists. See this module's docstring
-    "CORPUS" section for why the workspace is the scope.
+    The corpus is the root's own AGENTS.md and README.md plus either file
+    inside a module the workspace lists.
     """
     base = os.path.basename(rel)
     if base not in _CORPUS_FILENAMES:
@@ -152,10 +136,9 @@ def discover_markdown_files(root: Path, module_dirs: frozenset[str]) -> list[str
 def discover_out_of_scope_go_blocks(
     root: Path, module_dirs: frozenset[str]
 ) -> dict[str, int]:
-    """Census only: how many ```go blocks sit in markdown this gate does
-    not check, counted per top-level directory -- reported by --survey so
-    the scope decision stays checkable rather than assumed. Never fed into
-    the pass/fail check."""
+    """Census only: how many ```go blocks sit in markdown this gate does not
+    check, per top-level directory, reported by --survey. Never affects the
+    pass/fail result."""
     counts: dict[str, int] = {}
     for dirpath, dirnames, filenames in os.walk(root):
         rel_dir = Path(dirpath).relative_to(root)
@@ -182,9 +165,6 @@ def discover_out_of_scope_go_blocks(
     return counts
 
 
-# ---------------------------------------------------------------------------
-# Fenced-block extraction
-# ---------------------------------------------------------------------------
 
 
 class GoBlock:
@@ -218,10 +198,8 @@ def extract_go_blocks(text: str) -> list[GoBlock]:
 
 def _preceded_by_skip_marker(lines: list[str], fence_index: int) -> bool:
     k = fence_index - 1
-    # Tolerate one blank line between the marker and the fence, but the
-    # marker itself must be the nearest non-blank line -- an escape hatch
-    # buried paragraphs above the block it claims to cover would not be
-    # the git-diff-visible, per-block thing this is meant to be.
+    # One blank line may separate the marker from the fence; the marker must be
+    # the nearest non-blank line, so the opt-out stays per-block and visible.
     while k >= 0 and lines[k].strip() == "":
         k -= 1
     return k >= 0 and lines[k].strip() == _SKIP_MARKER
@@ -238,9 +216,6 @@ def classify(body: str) -> str:
     return "fragment"
 
 
-# ---------------------------------------------------------------------------
-# Complete-block check: a real throwaway-module `go build` + `go vet`
-# ---------------------------------------------------------------------------
 
 _SPEED_IMPORT_RE = re.compile(r'"github\.com/vislake/speed/([^"]+)"')
 
@@ -253,16 +228,9 @@ _LOCAL_REPLACE_RE = re.compile(
 def _module_dirs_for_block(
     body: str, module_dirs: frozenset[str]
 ) -> tuple[set[str], set[str]]:
-    """Split this block's own github.com/vislake/speed/... imports into the
-    workspace modules that provide them, and the import paths no workspace
-    module does.
-
-    An import resolves to the longest workspace module directory that
-    prefixes it: ".../pkg/config/source/file" resolves to pkg/config,
-    source/file being a subpackage rather than a module of its own. No
-    list of module names lives here -- go.work is the list, and an import
-    it cannot account for is returned as unresolved rather than guessed
-    at."""
+    """Split this block's vislake/speed imports into the modules that provide
+    them and those no module does; the longest workspace module prefix wins, and
+    go.work is the list."""
     needed: set[str] = set()
     unresolved: set[str] = set()
     for match in _SPEED_IMPORT_RE.finditer(body):
@@ -361,22 +329,9 @@ def check_complete_block(
 
         env = dict(os.environ)
         env["GOWORK"] = "off"
-        # Deliberately NOT GOPROXY=off: the replace directives above already
-        # guarantee the repo's own vislake/speed modules resolve to this
-        # working tree regardless of GOPROXY (replace always wins over the
-        # proxy), so GOPROXY=off buys nothing for that goal -- it only blocks
-        # `go mod tidy` from fetching real third-party transitive
-        # dependencies (e.g. a platform module pulls in BurntSushi/toml,
-        # nicksnyder/go-i18n, golang.org/x/text, go-redis, minio-go) on a
-        # cold module cache, which would misreport an infrastructure/network
-        # problem as a documentation bug.
-        #
-        # GOFLAGS and GOMAXPROCS are inherited, never overwritten: the caller
-        # gives this gate its width (Makefile's repo-check runs it under
-        # GOMAXPROCS and a GOFLAGS carrying -p), and the go commands started
-        # below must take it. A go command ignores flags it does not know and
-        # a later occurrence of a flag wins, so appending -mod=mod here keeps
-        # the caller's -p and tags intact and still takes effect.
+        # NOT GOPROXY=off: replace already resolves the repo's own modules, and
+        # off would block `go mod tidy` fetching third-party dependencies.
+        # GOFLAGS and GOMAXPROCS are inherited; append -mod=mod, keep the rest.
         inherited_flags = env.get("GOFLAGS", "").strip()
         env["GOFLAGS"] = f"{inherited_flags} -mod=mod" if inherited_flags else "-mod=mod"
 
@@ -405,16 +360,10 @@ def check_complete_block(
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-# ---------------------------------------------------------------------------
-# Fragment check: gofmt -e against several throwaway wrappings
-# ---------------------------------------------------------------------------
 
-# Each wrapping is tried in turn; the first one gofmt -e accepts wins. A
-# bare function *signature* with no body is legal top-level Go (the grammar
-# permits FunctionDecl without a FunctionBody, the shape used for
-# assembly-implemented functions) which is why "top-level" alone already
-# covers the common "here is the shape of several methods" sketch, without
-# needing an interface wrapping for that case.
+# Each wrapping is tried in turn; the first gofmt -e accepts wins. A bare
+# function signature is legal top-level Go, so "top-level" already covers the
+# common sketch without an interface wrapping.
 _WRAPPINGS = [
     ("top-level", "package p\n{body}\n"),
     ("func-body", "package p\nfunc _() {{\n{body}\n}}\n"),
@@ -442,9 +391,6 @@ def check_fragment(gofmt_bin: str, body: str) -> tuple[bool, str, str]:
     return False, "", f"(first attempted: {first_strategy})\n{first_error}"
 
 
-# ---------------------------------------------------------------------------
-# Driver
-# ---------------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -129,10 +129,9 @@ func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
 	return product, nil
 }
 
-// IsMember implements authz.MembershipChecker: it reads the account membership
-// store, and a subject no account identifier can name is not a member. A
-// subject of the static credential table is a member: the deployment configured
-// that operator itself.
+// IsMember implements authz.MembershipChecker by reading the account membership
+// store; a subject no account identifier can name is not a member, while a
+// static credential subject is: the deployment configured that operator.
 func (p *tenancyProduct) IsMember(ctx context.Context, tenantID, account string) (bool, error) {
 	id, err := authn.ParseAccountID(account)
 	if err != nil {
@@ -144,12 +143,9 @@ func (p *tenancyProduct) IsMember(ctx context.Context, tenantID, account string)
 	return p.memberships.IsMember(ctx, id, tenantID)
 }
 
-// Identities implements authz.AccountIdentityReader: the display name and login
-// username come from the account store and the activity from the account's
-// state in this tenant, where a disabled account or a suspended membership is
-// inactive. An account this host cannot resolve is left out of the map rather
-// than reported inactive. A static credential subject is active with no display
-// name or username.
+// Identities implements authz.AccountIdentityReader from the account store and
+// the account's state here, where a disabled account or suspended membership is
+// inactive. An unresolvable account is left out; a static one is active, unnamed.
 func (p *tenancyProduct) Identities(ctx context.Context, tenantID string,
 	accounts []string,
 ) (map[string]authz.AccountIdentity, error) {
@@ -212,9 +208,8 @@ func usernameOf(identifiers []authn.Identifier) string {
 }
 
 // CheckMembershipRemoval implements authn.MembershipGuard: a personal tenant
-// refuses every removal, and an ordinary tenant refuses the one that would leave
-// it with no tenant-administrator binding. It counts bindings rather than active
-// memberships, because a suspended member's binding still exists.
+// refuses every removal, and an ordinary tenant the one leaving it without a
+// tenant-administrator binding. It counts bindings, not active memberships.
 func (p *tenancyProduct) CheckMembershipRemoval(ctx context.Context, id authn.AccountID, tenantID string) error {
 	if tenantpersonal.IsPersonalTenantID(tenantID) {
 		return fmt.Errorf("%w: the personal tenant %q is a single-member space",
@@ -310,12 +305,9 @@ func (settingsWriteGuard) Denied(_ context.Context, tenantID string) (bool, erro
 	return tenantpersonal.IsPersonalTenantID(tenantID), nil
 }
 
-// Provision implements tenant.Provisioner: it writes the tenant-admin role, its
-// governed grants, the roster row, the builtin mark, then the creator's
-// membership and binding. A failure before the roster row removes what this call
-// wrote; a failure after it leaves the tenant for the seed to reconcile, and a
-// lost race on the identifier answers ErrTenantExists and leaves the winner's
-// rows in place.
+// Provision implements tenant.Provisioner: the tenant-admin role, grants, roster
+// row, builtin mark, then creator's membership and binding. A failure before the
+// roster row rolls back; ErrTenantExists means a lost race left the winner's rows.
 func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator string) error {
 	if _, found, err := p.roster.Get(ctx, t.ID); err != nil {
 		return fmt.Errorf("%s: reading whether the tenant %q is registered: %w", tenancyModuleName, t.ID, err)
