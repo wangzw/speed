@@ -9,10 +9,8 @@ import (
 )
 
 // TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists holds the
-// convergence: a missing target grant is added, a held grant the caller lists as
-// retired is removed, and a held grant in neither list stays. It also holds that
-// the snapshot is reloaded and the change published once, and that a repeated
-// call over the same lists writes nothing and publishes nothing.
+// convergence: a missing target grant is added, a held grant the caller
+// lists as retired is removed, and a held grant in neither list stays.
 func TestReconcilingABuiltinTenantAdminConvergesOnlyTowardTheLists(t *testing.T) {
 	p := newProductOver(t)
 	bus := newRecordingBus()

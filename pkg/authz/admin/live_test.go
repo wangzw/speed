@@ -535,12 +535,10 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 	}
 }
 
-// TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission holds the
-// refusal of a management decision on the wire: the guard's own 403 — its
-// problem type, and a detail that never names the permission the route asked
-// for. The engine denies every query, so the handler's decision shortfall ends
-// the request before the manager is touched, and the query the guard put to the
-// engine names the role object and the read action.
+// TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission holds
+// the refusal of a management decision on the wire: the guard's own 403 —
+// its problem type, and a detail that never names the permission the route
+// asked for.
 func TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	assembly{enforcer: enforcer}.serve(t, func(l *live) {
@@ -565,12 +563,10 @@ func TestADeniedManagementRequestIsTheGuards403ShapeWithoutThePermission(t *test
 	})
 }
 
-// TestAnAllowedWriteReachesTheManagerEndToEnd holds the pass through the whole
-// chain: a caller the engine allows reaches the write handler, the mandatory
-// audit row lands, and the manager is called with the natural keys from the
-// path. A shortfall anywhere before the manager — a refusal, a missing route, a
-// body the handler cannot read — would answer something other than 204 and leave
-// the manager untouched.
+// TestAnAllowedWriteReachesTheManagerEndToEnd holds the pass through the
+// whole chain: a caller the engine allows reaches the write handler, the
+// mandatory audit row lands, and the manager is called with the natural keys
+// from the path.
 func TestAnAllowedWriteReachesTheManagerEndToEnd(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -593,10 +589,7 @@ func TestAnAllowedWriteReachesTheManagerEndToEnd(t *testing.T) {
 }
 
 // TestAManagerOutageIsA503NotADenial holds the closed mapping on the wire: a
-// manager whose store is down is a 503 and never a 403. Reading the outage as a
-// denial would turn a recoverable failure into a permanent permission
-// conclusion, and letting the write land would be worse; the engine allows, so
-// the guard is not what answers here.
+// manager whose store is down is a 503 and never a 403.
 func TestAManagerOutageIsA503NotADenial(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -619,10 +612,9 @@ func TestAManagerOutageIsA503NotADenial(t *testing.T) {
 	})
 }
 
-// TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute holds the endpoint
-// list: the management routes exist on the endpoint the module names and nowhere
-// else. The same request reaches a route on the configured endpoint and the
-// entry point's own 404 on the endpoint the module leaves out.
+// TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute holds the
+// endpoint list: the management routes exist on the endpoint the module
+// names and nowhere else.
 func TestAReferenceToAnEndpointOutsideTheAdminListCarriesNoRoute(t *testing.T) {
 	assembly{}.serve(t, func(l *live) {
 		configured := l.send(publicEndpoint, nethttp.MethodGet, permissionsPath, "", asAlice)
@@ -642,15 +634,9 @@ func withTenant(name string) func(*nethttp.Request) {
 	return func(r *nethttp.Request) { r.Header.Set("X-Tenant", name) }
 }
 
-// TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant holds
-// the domain a management decision is made in on a chain that resolves a tenant.
-// The tenant in a management path is the data the route acts on, so the decision
-// is made in the platform domain and is never steered by the tenant the request
-// resolved to. Making it in the request's own tenant would let a caller
-// authorized in one tenant reach another's roles, grants and bindings by naming
-// that tenant in the path: the resolver puts a different tenant on the context —
-// the header name maps to the identifier t-acme while the path names acme — and
-// the engine is still asked in the platform domain alone.
+// TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant
+// holds the domain a management decision is made in on a chain that resolves
+// a tenant.
 func TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })

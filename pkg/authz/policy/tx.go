@@ -10,25 +10,13 @@ import (
 	tenancy "github.com/vislake/speed/pkg/tenant"
 )
 
-// TxManager is the manager's transaction-aware write surface.
+// TxManager is the manager's transaction-aware write surface, for a caller that
+// already holds a transaction and must write policy rows inside it.
 //
-// The Manager writes open a transaction of this module's own, which is what the
-// management surface and the host's seeding steps want. An account's creation
-// is the other case: the roles, grants and bindings a new organization gets
-// have to be written in the account's transaction, so that a failure on either
-// side leaves neither. A caller that already holds a transaction takes these
-// methods instead.
-//
-// Each writes through the handle it is handed and nothing else, and returns the
-// work that belongs after the caller's transaction has committed: the snapshot
-// reload and the change event, in that order. The caller runs the closure once
-// it has committed. A closure run inside the transaction would reload a
-// snapshot that does not yet see the write, and announce a change that may
-// still roll back. A write that changed nothing returns a nil closure.
-//
-// A refusal is the same refusal the corresponding Manager method gives: the two
-// share their checks, so a caller switching between them does not change what
-// is accepted.
+// Each writes through the handle it is handed and returns the work that belongs
+// after the caller's transaction has committed: the snapshot reload and the
+// change event, in that order. A write that changed nothing returns a nil
+// closure. A refusal is the same refusal the corresponding Manager method gives.
 type TxManager interface {
 	// PutRoleTx is PutRole inside the caller's transaction.
 	PutRoleTx(ctx context.Context, tx *gorm.DB, r authz.RoleRecord) (after func(context.Context) error, err error)
@@ -43,8 +31,7 @@ type TxManager interface {
 	// transaction, and after is nil when it removed nothing.
 	ClearAccountBindingsTx(ctx context.Context, tx *gorm.DB, tenant, account string) (after func(context.Context) error, err error)
 	// DeleteTenantPolicyTx removes every role, grant and binding of one tenant
-	// inside the caller's transaction. It is the organization-deletion path: the
-	// tenant is becoming a tombstone, so the builtin mark does not protect its
+	// inside the caller's transaction. The builtin mark does not protect its
 	// tenant-admin role from this write, and the last-administrator floor does
 	// not apply. after is nil when the tenant held no policy row.
 	DeleteTenantPolicyTx(ctx context.Context, tx *gorm.DB, tenant string) (after func(context.Context) error, err error)

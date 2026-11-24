@@ -6,10 +6,8 @@ import (
 	"testing"
 )
 
-// TestTheAuditVocabularyIsPinned holds the literal values of the action names,
-// the outcome values and the detail keys this module writes. The behavior cases
-// read them back through the same constants that produce them, so only a table
-// that writes the literals down catches a renamed key or action.
+// TestTheAuditVocabularyIsPinned holds the literal values of the action
+// names, the outcome values and the detail keys this module writes.
 func TestTheAuditVocabularyIsPinned(t *testing.T) {
 	actions := map[string]string{
 		"role put":       actionRolePut,
@@ -71,11 +69,9 @@ func TestEachActionIDIsFresh(t *testing.T) {
 	}
 }
 
-// TestTheEmittedDetailKeysAreTheLiterals holds the keys the module writes on the
-// wire of the audit row without going through the module's own constants: a
-// consumer keying on "action_id" or "tenant" must find them. The behavior cases
-// read the detail through detailActionID and detailTenant, which move with a
-// renamed constant, so the literal keys are held here.
+// TestTheEmittedDetailKeysAreTheLiterals holds the keys the module writes on
+// the wire of the audit row without going through the module's own
+// constants: a consumer keying on "action_id" or "tenant" must find them.
 func TestTheEmittedDetailKeysAreTheLiterals(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))

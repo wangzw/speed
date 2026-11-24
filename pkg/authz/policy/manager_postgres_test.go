@@ -143,15 +143,8 @@ func leftoversOf(t *testing.T, f *fixture, table, tenant, role string) int64 {
 }
 
 // The check a grant write makes against its role must wait out a concurrent
-// delete of that role, so the grant cannot land on a role the delete removed.
-//
-// With the check taking the role's row lock it waits until the delete commits
-// and then reads the role as gone, refusing the grant with ErrUnknownRole; the
-// write's transaction ends with no row written, so nothing the engine decides
-// with outlives the role. A check that took no lock reads the still-present
-// (uncommitted-deleted) role as existing and writes the grant, which the delete
-// leaves behind — a grant the engine keeps deciding with for a role that no
-// longer exists.
+// delete of that role, so the grant cannot land on a role the delete
+// removed.
 func TestPutGrantWaitsForAConcurrentDeleteOfItsRole(t *testing.T) {
 	f := newPostgresFixture(t)
 	ctx := t.Context()

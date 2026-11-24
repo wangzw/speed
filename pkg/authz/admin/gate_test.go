@@ -81,13 +81,11 @@ func newGateRig(t *testing.T) *rig {
 	return newRig(t, authz.PermissionAccountRead)
 }
 
-// TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns holds the
-// registration gate on the whole write surface: an account whose
+// TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns holds
+// the registration gate on the whole write surface: an account whose
 // self-registration has not proved an email address is answered 403
-// contact-required, the guard is never asked, no audit row lands and no policy
-// table is touched. The same requests as a verified account do reach the
-// manager, which is what makes the refusal the gate's and not some other
-// check's.
+// contact-required, the guard is never asked, no audit row lands and no
+// policy table is touched.
 func TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns(t *testing.T) {
 	for _, name := range writeRouteNames {
 		t.Run(name, func(t *testing.T) {
@@ -160,11 +158,9 @@ func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 	}
 }
 
-// TestAServiceAccountAndAStaticSubjectAreExempt holds the two callers the gate
-// never consults: a service account, whose kind is the client-secret method, and
-// a static-table subject, which has no account row at all. Each writes while the
-// scripted state is pending, and neither causes a state read — the exemption is
-// decided on the identity, not inferred from an answer.
+// TestAServiceAccountAndAStaticSubjectAreExempt holds the two callers the
+// gate never consults: a service account, whose kind is the client-secret
+// method, and a static-table subject, which has no account row at all.
 func TestAServiceAccountAndAStaticSubjectAreExempt(t *testing.T) {
 	t.Run("a service account", func(t *testing.T) {
 		r := newGateRig(t)
@@ -220,11 +216,10 @@ func TestAnUnreadableSignupStateIs503(t *testing.T) {
 	}
 }
 
-// TestTheRegistrationGatePrecedesThePermissionDecision holds the order: a pending
-// caller that would also be refused by the guard — no permission, or an outage —
-// is answered contact-required, and the guard is never asked. Without the gate
-// the answer would be the guard's 403 or 503, so the case distinguishes the two
-// placements.
+// TestTheRegistrationGatePrecedesThePermissionDecision holds the order: a
+// pending caller that would also be refused by the guard — no permission,
+// or an outage — is answered contact-required, and the guard is never
+// asked.
 func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 	for name, script := range map[string]func(*rig){
 		"no permission": func(r *rig) { r.guard.allow = false },
@@ -253,8 +248,7 @@ func TestTheRegistrationGatePrecedesThePermissionDecision(t *testing.T) {
 
 // TestAnAccountWithNoSignupRecordWrites holds the sentinel's direction: an
 // account whose row is not there reads as no self-registration, so the write
-// reaches the manager rather than answering 403 or 503. The manager being called
-// is what makes the pass-through the gate's decision and not an earlier refusal's.
+// reaches the manager rather than answering 403 or 503.
 func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupNone, authn.ErrAccountNotFound)
@@ -274,9 +268,7 @@ func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 }
 
 // TestTheReadRoutesAreNotGated covers every read route of the surface: each
-// answers 200, reads no signup state and asks the guard once. The permissions
-// read is included because it is the one read with no tenant in its path, and the
-// grants, bindings and binding-of-account reads cover the tenant-scoped ones.
+// answers 200, reads no signup state and asks the guard once.
 func TestTheReadRoutesAreNotGated(t *testing.T) {
 	for _, route := range []struct {
 		name   string
@@ -305,11 +297,10 @@ func TestTheReadRoutesAreNotGated(t *testing.T) {
 	}
 }
 
-// TestTheGateRefusesBeforeTheBodyShape holds the order over the role write, the
-// one route whose body is prescreened before the entry point binds it: a pending
-// caller's malformed body is answered contact-required, not this module's
-// bad-request. Without the gate in front of the prescreen the answer would be a
-// 400 with the bad-request type, so the case distinguishes the two placements.
+// TestTheGateRefusesBeforeTheBodyShape holds the order over the role write,
+// the one route whose body is prescreened before the entry point binds it: a
+// pending caller's malformed body is answered contact-required, not this
+// module's bad-request.
 func TestTheGateRefusesBeforeTheBodyShape(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupPending, nil)
@@ -328,9 +319,8 @@ func TestTheGateRefusesBeforeTheBodyShape(t *testing.T) {
 }
 
 // TestTheGateReadsTheActorNotTheImpersonationTarget holds the subject of the
-// read: under an impersonation the state is the operator's (the actor), not the
-// target's. The two identities are distinct in the fixture, so reading the wrong
-// one is visible in the account the fake recorded.
+// read: under an impersonation the state is the operator's (the actor), not
+// the target's.
 func TestTheGateReadsTheActorNotTheImpersonationTarget(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupPending, nil)
@@ -352,14 +342,7 @@ func TestTheGateReadsTheActorNotTheImpersonationTarget(t *testing.T) {
 }
 
 // TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead holds the
-// exemption's two bases apart. A service account and a static subject are exempt
-// on the identity before any read (see TestAServiceAccountAndAStaticSubjectAreExempt);
-// an account created outside self-registration is exempt on its state, which
-// means the read happens and answers SignupNone. This case pins the second: the
-// write reaches the manager and the state was read once. The three management
-// faces decide the identity exemptions on the actor's kind and method; that is a
-// deliberate departure from authn.admin, which reads Accounts.Get to tell a
-// service account from a user and gates in the account's own request path.
+// exemption's two bases apart.
 func TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead(t *testing.T) {
 	r := newGateRig(t)
 	r.signup.answer(authn.SignupNone, nil)

@@ -9,16 +9,8 @@ import (
 )
 
 // checkPlatformDomain refuses to start when the roster holds no tenant whose
-// identifier is the platform domain.
-//
-// The platform domain carries the platform operations' roles, grants and
-// bindings, and it is a real roster tenant at the same time: the identifier
-// carries the same string as a tenant's would, so the platform policy rows are
-// that tenant's rows. An assembly with a roster and no such tenant has nowhere
-// for a platform decision to land, and a binding of the platform administrator
-// role would name an account no membership can place there, so the startup is
-// refused before the process serves. The check runs only in an assembly that has
-// a roster; a policy module with no tenant module has none to check.
+// identifier is the platform domain: the platform policy rows are that tenant's
+// rows. The check runs only in an assembly that has a roster.
 func checkPlatformDomain(ctx context.Context, roster tenant.Catalog) error {
 	_, found, err := roster.Get(ctx, tenant.ID(authz.PlatformDomain))
 	if err != nil {

@@ -32,10 +32,9 @@ func listRoles(t *testing.T, r *rig) []map[string]any {
 	return body.Roles
 }
 
-// TestTheRoleListViewDescribesEachRole holds the role view's description: the
-// operator's free text on a role the management surface created, and the
-// rendered description of a builtin role's key. The counts and the caller's
-// management capability are published with it.
+// TestTheRoleListViewDescribesEachRole holds the role view's description:
+// the operator's free text on a role the management surface created, and the
+// rendered description of a builtin role's key.
 func TestTheRoleListViewDescribesEachRole(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{
@@ -124,10 +123,9 @@ func TestPutRoleStoresTheFreeTextDescription(t *testing.T) {
 	}
 }
 
-// TestPutRoleIgnoresTheRemovedDescriptionKey holds the removal: the request no
-// longer declares description_key, so a client that still sends it reaches
-// nothing. The role is written with no key and no description, the removed
-// member is not a refusal.
+// TestPutRoleIgnoresTheRemovedDescriptionKey holds the removal: the request
+// no longer declares description_key, so a client that still sends it
+// reaches nothing.
 func TestPutRoleIgnoresTheRemovedDescriptionKey(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/ops",

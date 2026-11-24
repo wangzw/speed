@@ -29,11 +29,8 @@ func probeModule() core.Module {
 	}
 }
 
-// TestRegistryResolvesTheStubCapabilities drives an assembly to Init and asks it
-// for the two capabilities the probe requires. What it holds is the whole of the
-// skeleton: the registry resolves the supplied stubs by the tokens the probe
-// declared, the stubs are the very ones supplied, and the engine can be driven
-// once from inside the drive.
+// TestRegistryResolvesTheStubCapabilities drives an assembly to Init and
+// asks it for the two capabilities the probe requires.
 func TestRegistryResolvesTheStubCapabilities(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -80,10 +77,9 @@ func TestRegistryResolvesTheStubCapabilities(t *testing.T) {
 }
 
 // TestRegistryFailsWithoutAStandIn holds that the skeleton does not supply a
-// capability on its own: a required capability with no stand-in fails the drive,
-// which is what a host that left the deliverer out of its command gets. A
-// skeleton that quietly provided one would make every case pass whatever the
-// assembly held.
+// capability on its own: a required capability with no stand-in fails the
+// drive, which is what a host that left the deliverer out of its command
+// gets.
 func TestRegistryFailsWithoutAStandIn(t *testing.T) {
 	reg := authztest.Registry(t, `{}`, probeModule())
 	err := reg.Drive(context.Background(), core.Drive{
@@ -95,10 +91,8 @@ func TestRegistryFailsWithoutAStandIn(t *testing.T) {
 	}
 }
 
-// TestEnforcerDeniesUntilAnAnswerIsSet holds the fail-closed default: a fresh
-// Enforcer refuses, and so does one whose Answer was given nil. An engine with
-// no matching rule refuses, and a stand-in that allowed by default would let a
-// case pass on a decision it never recorded.
+// TestEnforcerDeniesUntilAnAnswerIsSet holds the fail-closed default: a
+// fresh Enforcer refuses, and so does one whose Answer was given nil.
 func TestEnforcerDeniesUntilAnAnswerIsSet(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -209,9 +203,8 @@ func TestCatalogAnswersTheMetadataItWasGiven(t *testing.T) {
 	}
 }
 
-// TestGateRecordsDeclarations holds that a declaration is read back as the kind
-// it was made: a required permission, or open, and never both. A route
-// redeclared flips its kind, as the interface's one required-or-open shape says.
+// TestGateRecordsDeclarations holds that a declaration is read back as the
+// kind it was made: a required permission, or open, and never both.
 func TestGateRecordsDeclarations(t *testing.T) {
 	g := authztest.NewGate()
 	g.Require("GET", "/accounts", authz.PermissionAccountRead)

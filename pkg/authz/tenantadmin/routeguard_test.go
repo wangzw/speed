@@ -21,11 +21,10 @@ func (r *rig) mountOn() *gin.Engine {
 	return e
 }
 
-// TestEveryRouteIsWrappedWithTheTenantAdminGuard holds that the mount applies
-// the guard to the whole closed set, and that it is the stricter one: the
-// shared identity guard would leave the platform domain addressable on a
-// surface that does not administer it. A route left unwrapped would be one a
-// caller authorized in another tenant could reach by naming that tenant.
+// TestEveryRouteIsWrappedWithTheTenantAdminGuard holds that the mount
+// applies the guard to the whole closed set, and that it is the stricter
+// one: the shared identity guard would leave the platform domain addressable
+// on a surface that does not administer it.
 func TestEveryRouteIsWrappedWithTheTenantAdminGuard(t *testing.T) {
 	r := newRig(t)
 	r.p.mount(newStubRouter("api"))
@@ -37,12 +36,11 @@ func TestEveryRouteIsWrappedWithTheTenantAdminGuard(t *testing.T) {
 	}
 }
 
-// TestThePathTenantGuardRefusesBeforeTheHandler holds the ordering the design
-// states: the path-tenant layer runs before the handler's own identity and
-// permission checks, so a request whose path tenant does not match the resolved
-// tenant is answered with the bare 404 and nothing downstream runs. The request
-// is anonymous, which shows the 404 is the tenant layer's and not the handler's
-// 401.
+// TestThePathTenantGuardRefusesBeforeTheHandler holds the ordering the
+// design states: the path-tenant layer runs before the handler's own
+// identity and permission checks, so a request whose path tenant does not
+// match the resolved tenant is answered with the bare 404 and nothing
+// downstream runs.
 func TestThePathTenantGuardRefusesBeforeTheHandler(t *testing.T) {
 	r := newRig(t)
 	r.routeGuard.refuseWith(http.StatusNotFound)

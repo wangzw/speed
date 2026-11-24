@@ -15,16 +15,7 @@ func TestSelfCheckAcceptsTheModelText(t *testing.T) {
 }
 
 // A model whose matcher lost a clause is refused, and every fixture that
-// disagrees is named. Each corruption removes exactly the clause one design
-// property rests on, so the check fails on a model that behaves other than the
-// design states rather than passing on any loadable text.
-//
-// The expected fixtures are the design's own properties: the two domain-isolation
-// fixtures catch a matcher blind to the binding's or the grant's domain, the
-// object and action fixtures catch a field compared by anything but equality,
-// and the repeat fixture catches a decision that is not a pure function. A model
-// that reaches across domains is caught by both domain fixtures, one per
-// corruption, so no single clause's loss escapes the check.
+// disagrees is named.
 func TestSelfCheckRefusesATamperedModel(t *testing.T) {
 	cases := []struct {
 		name     string

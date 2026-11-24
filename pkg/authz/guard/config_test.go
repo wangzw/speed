@@ -38,11 +38,9 @@ func withUndeclared(list, undeclared string) string {
 	return `{"authz":{"guard":{"endpoints":` + list + `,"undeclared":"` + undeclared + `"}}}`
 }
 
-// TestReadConfigFailsWithoutTheEndpointList holds that the key is required with
-// no default, and that the failure is the decoder's own, which names the path.
-// A command that takes this module in has to start it, so an unwritten list is
-// a startup failure and not a stance to stand down from: the routes would be
-// served with no authorization decision at all.
+// TestReadConfigFailsWithoutTheEndpointList holds that the key is required
+// with no default, and that the failure is the decoder's own, which names
+// the path.
 func TestReadConfigFailsWithoutTheEndpointList(t *testing.T) {
 	for name, body := range map[string]string{
 		"no section at all":        `{}`,
@@ -67,9 +65,8 @@ func TestReadConfigFailsWithoutTheEndpointList(t *testing.T) {
 	}
 }
 
-// TestReadConfigRefusesAnEndpointListItCannotRunOn holds the three shapes that
-// are authn.ErrInvalidConfig, each naming the key. This module has no failure
-// sentinel of its own, so an invalid list joins the authentication set.
+// TestReadConfigRefusesAnEndpointListItCannotRunOn holds the three shapes
+// that are authn.ErrInvalidConfig, each naming the key.
 func TestReadConfigRefusesAnEndpointListItCannotRunOn(t *testing.T) {
 	for name, list := range map[string]string{
 		"an empty list":            `[]`,
@@ -100,10 +97,7 @@ func TestReadConfigRefusesAnEndpointListItCannotRunOn(t *testing.T) {
 }
 
 // TestReadConfigRefusesAnEndpointNamedTwice holds the duplicate, with the
-// endpoint and the key in the message and the namespace once. The failure is
-// tenant.ErrDuplicateEndpoint, the sentinel the admission layer's own endpoint
-// list refuses a duplicate with: the design gives the two lists the same shape,
-// so a host tells the same mistake apart the same way in both.
+// endpoint and the key in the message and the namespace once.
 func TestReadConfigRefusesAnEndpointNamedTwice(t *testing.T) {
 	got, err := readConfigBody(t, endpointsOnly(`["public", "admin", "public"]`))
 	if err == nil {
@@ -123,10 +117,9 @@ func TestReadConfigRefusesAnEndpointNamedTwice(t *testing.T) {
 	}
 }
 
-// TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed holds the disposition: with
-// nothing written it is closed, the two written values read back, and every
-// other value is refused rather than read towards a disposition. A default of
-// open, or a value taken as consent, would switch the enforcement off.
+// TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed holds the disposition:
+// with nothing written it is closed, the two written values read back, and
+// every other value is refused rather than read towards a disposition.
 func TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed(t *testing.T) {
 	// Nothing written: the declared default, closed.
 	got, err := readConfigBody(t, endpointsOnly(`["public"]`))
@@ -185,12 +178,9 @@ func TestReadConfigAcceptsDistinctConcreteNames(t *testing.T) {
 	}
 }
 
-// TestTheGuardInputsAreReadFromThePrimarySourceAlone holds the declaration of
-// the two keys: the endpoint list required, and both items settable nowhere but
-// the primary source. The list decides what is enforced and the disposition
-// decides what happens to an undeclared route, so an environment variable or a
-// flag that could change either would be a way to switch the enforcement off
-// without touching the configuration file.
+// TestTheGuardInputsAreReadFromThePrimarySourceAlone holds the declaration
+// of the two keys: the endpoint list required, and both items settable
+// nowhere but the primary source.
 func TestTheGuardInputsAreReadFromThePrimarySourceAlone(t *testing.T) {
 	s := schema()
 	if s.Namespace != ModuleName {
@@ -221,10 +211,7 @@ func TestTheGuardInputsAreReadFromThePrimarySourceAlone(t *testing.T) {
 }
 
 // TestNoDefaultForTheEndpointListAndAClosedDefaultForUndeclared holds the
-// declared defaults: no list, and a closed disposition. A default list would
-// guard routes nobody named; a default of open would let an undeclared route
-// through. The zero resolved value is closed as well, so a value that never
-// went through the parse reads closed rather than open.
+// declared defaults: no list, and a closed disposition.
 func TestNoDefaultForTheEndpointListAndAClosedDefaultForUndeclared(t *testing.T) {
 	if len(configDefaults.Endpoints) != 0 {
 		t.Fatalf("the declared default list is %v, want none", configDefaults.Endpoints)

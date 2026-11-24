@@ -2,30 +2,11 @@
 // mounts GET /api/v1/authz/me/permissions, the read that answers which
 // permissions the calling principal holds. It delivers no capability of its own.
 //
-// The identity is the one the request's credential settled, read off the
-// request; no path parameter or body names a subject. The tenant is the one the
-// request resolved to, read through the same tenant seam the enforcement
-// middleware uses — an absent tenant leaves the tenant list empty rather than
-// falling back to the platform domain, because the two lists answer different
-// questions and a fallback would make one of them claim the other's grants.
-//
-// The route carries no permission: every authenticated caller may read its own
-// permissions, and a route that required one could be held only by callers that
-// already hold it, which is the question the read answers. It is declared open
-// on the route-declaration surface so the enforcement middleware lets it
-// through, and it requires authenticated admission: the endpoint it is mounted
-// on is one the gateway guards, so the gateway refuses a request with no
-// credential before a handler runs. A handler reached without an identity
-// answers the same 401 the other authenticated surfaces answer, with the
-// endpoint's realm, so the two layers agree on the shape.
-//
-// The permission read is the policy module's SubjectPermissions capability,
-// which answers from the process's policy snapshot and never scans the store.
-// A read that cannot answer is a 503 and never an empty set: an outage is not a
-// statement that the caller holds nothing.
-//
-// The routes are mounted on the endpoints the authz.self.endpoints list names,
-// and the start diagnostics name them.
+// The identity and tenant are read off the request; an absent tenant leaves the
+// tenant list empty rather than falling back to the platform domain. The route
+// carries no permission and is declared open, so any authenticated caller may
+// read its own permissions. A read that cannot answer is a 503, never an empty
+// set.
 package self
 
 import (
@@ -43,12 +24,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command that mounts the permission read.
+// ModuleName is this module's name in the registry.
 const ModuleName = "authz.self"
 
-// ConfigNamespace is where this module's input items are mounted. It is this
-// module's own name, as a registering module's namespace always is.
+// ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
 // The configuration item this module accepts, relative to its namespace, and
@@ -59,16 +38,11 @@ const (
 )
 
 // allEndpoints is the name that stands for every endpoint in an endpoint list.
-// This module's list refuses it: a permission read mounted on every endpoint
-// would be mounted on the endpoints no gateway guards, where nothing requires
-// the credential the read's answer belongs to.
+// This module's list refuses it.
 const allEndpoints = "*"
 
 // defaultEndpoint is the endpoint name this module's OpenAPI fragment is
-// declared against. The routes are mounted on every endpoint the
-// authz.self.endpoints list names — data read only at start — and a resource is
-// a static declaration fixed before configuration is read, so the fragment
-// carries this conventional name rather than the configured ones.
+// declared against, a static name rather than a configured one.
 const defaultEndpoint = "api"
 
 // openAPIFragment is this module's OpenAPI fragment, read at build time. It is
@@ -85,29 +59,11 @@ var authzSelfSpec = speedhttp.Spec{
 	Document: openAPIFragment,
 }
 
-// init registers this module with the process registry. Registration travels
-// with the import, which is what makes "does this command mount the permission
-// read" a question the host answers by importing this package and writing
-// ModuleName into the command.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The permission read is required. It is delivered exclusively by the policy
-// module, so the closure of a command that takes this one in does not pull that
-// module in: the host writes it down. The logger is optional, taken up so that
-// it is initialised first.
-//
-// The HTTP entry point and the route-declaration surface are taken up in Init
-// rather than declared: a command that mounts a route and has no entry point is
-// a failure to report at wiring time, and the declaration surface's absence is
-// legal — with no gate the route carries no declaration and a guarded endpoint
-// answers it as undeclared, which is why a command that mounts it should name
-// the enforcement module too.
-//
-// The stance is StateEnabled and never StateAuto: whether to mount the
-// permission read is a decision on the command tree, not a conclusion a
-// configuration can infer.
+// Module is the descriptor a host registers. The permission read is required;
+// the logger is optional. The HTTP entry point and the route-declaration surface
+// are taken up in Init, and the stance is StateEnabled and never StateAuto.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -150,30 +106,25 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. The callbacks are also
-// handed an instance a host supplied for the module, which can be any value that
-// delivers the capability; this module delivers none, so a supplied instance is
-// left alone.
+// productOf narrows an instance to this module's product. A supplied instance
+// of another shape is left alone: this module delivers no capability.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance. It holds the permission read and the
-// optional route-declaration surface taken up in Init.
+// product is the module's instance.
 type product struct {
 	permissions authz.SubjectPermissions
 
 	// gate is the route-declaration surface, nil when the assembly delivers
-	// none. When it is there, Init declares the route open on it so that a
-	// guarded endpoint lets the request reach the handler.
+	// none.
 	gate   authz.Gate
 	logger *slog.Logger
 
 	cfg resolved
 }
 
-// newProduct takes up what the descriptor requires.
 func newProduct(reg *core.Registry) (*product, error) {
 	permissions, err := core.Resolve[authz.SubjectPermissions](reg)
 	if err != nil {
@@ -194,9 +145,8 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}, nil
 }
 
-// optional takes up a capability whose absence is a legal assembly: the zero
-// value says it is absent, and any other failure to take it up ends the start,
-// because a capability that is there and cannot be taken up is not an absence.
+// optional takes up a capability whose absence is a legal assembly. Any other
+// failure to take it up ends the start.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -210,16 +160,9 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// wire runs in Init, where every instance exists. It takes up the optional
-// route-declaration surface and the logger, mounts the route on every
-// configured endpoint, declares it open, and writes the start diagnostic.
-//
-// The entry point is required: a command that mounts a route and has no entry
-// point has nothing to mount it on, and the failure names the module so the fix
-// — writing the entry point module's name into this command — is visible. Every
-// endpoint in the configured list is looked up before any route is registered,
-// so a name the entry point does not declare fails the startup naming that
-// endpoint rather than leaving a partial mounting behind.
+// wire runs in Init: it takes up the optional route-declaration surface and the
+// logger, mounts the route on every configured endpoint, declares it open, and
+// writes the start diagnostic.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -245,21 +188,12 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// diagnose writes the start diagnostic: the endpoints the permission read was
-// mounted on. The line is the module's own, so that a reader finds what the
-// read surface did without scanning a chain listing.
 func (p *product) diagnose() {
 	p.logger.Info(ModuleName+": the permission read is mounted", "endpoints", p.cfg.endpoints)
 }
 
-// schema declares this module's input items. The namespace is this module's own
-// name: two modules declaring one path is a startup failure even when only one
-// of them runs.
-//
-// The endpoint list takes the primary source alone. It decides where the route
-// is mounted, so an environment variable or a command-line argument that could
-// rewrite it would be a way to move it onto an endpoint from outside the
-// configuration file.
+// schema declares this module's input items. The endpoint list takes the
+// primary source alone.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -276,18 +210,12 @@ func schema() config.Schema {
 }
 
 // configDefaults is what this module is worth without a configuration file.
-//
-// There is no default for the endpoints: a list that mounted the read nowhere
-// would silently drop it, and guessing which endpoints should carry a
-// caller-facing read is a guess about what is exposed. A module that cannot
-// answer fails the startup, naming the key.
+// There is no default for the endpoints: the module that cannot answer fails
+// the startup, naming the key.
 var configDefaults = moduleConfig{}
 
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// Endpoints names the listening endpoints the permission read is mounted
-	// on, by the entry point's own names. The list is a set of concrete names:
-	// the name that stands for every endpoint is not accepted.
 	Endpoints []string `config:"endpoints"`
 }
 
@@ -297,10 +225,7 @@ type resolved struct {
 }
 
 // resolve turns decoded configuration into what the module runs on, refusing
-// what cannot be run on. A refusal names the key. The module has no failure
-// sentinel of its own — the authz set is closed over what the directory judges
-// for itself — so a shape it cannot run on is authn.ErrInvalidConfig, the
-// sentinel the management surface's own endpoint list refuses its shapes with.
+// what cannot be run on. A shape it cannot run on is authn.ErrInvalidConfig.
 func (c moduleConfig) resolve() (resolved, error) {
 	if len(c.Endpoints) == 0 {
 		return resolved{}, fmt.Errorf("%w: %s is empty. The permission read is mounted on the "+
@@ -330,8 +255,7 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return resolved{endpoints: c.Endpoints}, nil
 }
 
-// readConfig decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one configuration.
+// readConfig decodes this module's section and validates it.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

@@ -10,13 +10,9 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// TestGrantingAPermissionOutsideTheCatalogIsRefused holds the grant write's own
-// check: a permission the catalog does not hold is a 400 and the manager is not
-// called.
-//
-// The permission is one the translation has a row for, so the refusal is the
-// catalog's and not the translation's: an implementation that skipped the
-// catalog check would reach the manager.
+// TestGrantingAPermissionOutsideTheCatalogIsRefused holds the grant write's
+// own check: a permission the catalog does not hold is a 400 and the manager
+// is not called.
 func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
 	r := newRig(t) // the catalog declares no permission
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
@@ -33,13 +29,10 @@ func TestGrantingAPermissionOutsideTheCatalogIsRefused(t *testing.T) {
 	}
 }
 
-// TestGrantingATranslatedPermissionCallsPutGrantWithThePair holds the write's
-// translation: the permission named in the path reaches the manager as the
-// (resource, action) pair the engine matches on, alongside the tenant and role
-// from the path.
-//
-// The expected pair is read off the translation the handler shares rather than
-// written down here, so a hardcoded wrong pair in the handler is caught.
+// TestGrantingATranslatedPermissionCallsPutGrantWithThePair holds the
+// write's translation: the permission named in the path reaches the manager
+// as the (resource, action) pair the engine matches on, alongside the tenant
+// and role from the path.
 func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
@@ -66,10 +59,9 @@ func TestGrantingATranslatedPermissionCallsPutGrantWithThePair(t *testing.T) {
 	}
 }
 
-// TestAGrantOnABuiltinPositionIsRefused holds that a grant the manager refuses
-// because the role is builtin is a 409: the target exists but its permissions
-// cannot be changed. The manager judges the builtin role, so it is called and its
-// refusal is mapped.
+// TestAGrantOnABuiltinPositionIsRefused holds that a grant the manager
+// refuses because the role is builtin is a 409: the target exists but its
+// permissions cannot be changed.
 func TestAGrantOnABuiltinPositionIsRefused(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(authz.ErrBuiltinRole)
@@ -111,13 +103,10 @@ func TestDeletingAnAbsentGrantIsIdempotent(t *testing.T) {
 }
 
 // TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID
-// holds the grant write's audit order: the mandatory success row lands before
-// the action, so even a write the manager refuses leaves it, and the failed row
-// that closes the refusal is linked to it by the action identifier.
-//
-// That the mandatory row is written before the action is what its survival of a
-// refused action observes: an implementation that wrote it only after a
-// successful action would have one row here, not two.
+// holds the grant write's audit order: the mandatory success row lands
+// before the action, so even a write the manager refuses leaves it, and the
+// failed row that closes the refusal is linked to it by the action
+// identifier.
 func TestAWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(errors.New("the store is down"))

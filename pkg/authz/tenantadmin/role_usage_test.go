@@ -164,8 +164,7 @@ func TestTheRoleListReportsUsageAndManagement(t *testing.T) {
 }
 
 // TestThePermissionCatalogReportsGovernanceMetadata holds the catalog view's
-// group, dangerous and grantable members. The governed set is returned whole,
-// and grantable is the caller's own held set.
+// group, dangerous and grantable members.
 func TestThePermissionCatalogReportsGovernanceMetadata(t *testing.T) {
 	perms := []authz.Permission{authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage}
 	r := newRig(t, perms...)

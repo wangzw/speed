@@ -18,13 +18,7 @@ const (
 
 // TestAuthztestImportsTheRootPackageAlone is the executable form of the
 // packaging limit: authztest's non-test imports are the packages the fixture
-// needs and never the policy or enforcement subpackage. Those two import
-// authztest from their tests, so an import back would be a cycle; the stubs
-// exist so that it is never needed.
-//
-// The listing is go list's, read from the package's own directory, and a
-// positive control holds that it is reading this package: a listing that came
-// back empty would let the rule pass while looking at nothing.
+// needs and never the policy or enforcement subpackage.
 func TestAuthztestImportsTheRootPackageAlone(t *testing.T) {
 	imports := packageImports(t, ".")
 	if !contains(imports, authzRootPath) {

@@ -255,16 +255,10 @@ func TestTheStartupAcceptsARosterCarryingThePlatformDomain(t *testing.T) {
 }
 
 // A command that writes policy data in a permission's name reaches the
-// translation without the enforcement module and without an HTTP entry point:
-// the catalog this module delivers answers the (object, action) pair a
-// permission translates to, for a permission the capability carries and for one
-// a module declared of its own.
-//
-// The drive names no guard module, and that is the whole of what the case holds.
-// The enforcement module is where a decision reads the translation, and it
-// refuses to wire without an entry point — so while the translation was resolved
-// there, a bootstrap that seeds roles had to stand an entry point up to write a
-// grant. Its absence here is the fix.
+// translation without the enforcement module and without an HTTP entry
+// point: the catalog this module delivers answers the (object, action) pair
+// a permission translates to, for a permission the capability carries and
+// for one a module declared of its own.
 func TestTheCatalogTranslatesWithoutTheGuardModule(t *testing.T) {
 	declared := authz.Permission("crm.deal.read")
 	const declaredKey = "crm.permission.deal-read"

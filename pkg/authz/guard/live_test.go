@@ -490,12 +490,9 @@ func realmChallenge(endpoint string) string {
 	return `Bearer realm="` + endpoint + `", Cookie realm="` + endpoint + `"`
 }
 
-// TestAnOpenRouteIsLetThroughForAnyIdentity holds the first row of the design's
-// decision table on the chain: a route declared open is let through whatever the
-// request carries, and the engine is never asked. An identity on a guarded
-// endpoint, an anonymous request on the same endpoint through the gateway's
-// Exempt registration, and an anonymous request on the endpoint this module
-// guards alone all reach the handler.
+// TestAnOpenRouteIsLetThroughForAnyIdentity holds the first row of the
+// design's decision table on the chain: a route declared open is let through
+// whatever the request carries, and the engine is never asked.
 func TestAnOpenRouteIsLetThroughForAnyIdentity(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	run(t, chain{}, enforcer, func(l *live) {
@@ -521,12 +518,8 @@ func TestAnOpenRouteIsLetThroughForAnyIdentity(t *testing.T) {
 }
 
 // TestARequiredRouteWithNoIdentityIsTheGateways401Shape holds the design's
-// no-identity 401 on the chain, and that it is the same shape the gateway writes
-// for the same condition. On the endpoint this module guards alone the gateway is
-// absent, so this module is the layer that refuses; on the guarded endpoint the
-// gateway refuses first. Both answers are a 401 whose body carries no problem
-// type of this module's and whose challenge names the endpoint as its realm, the
-// two built by the same rule.
+// no-identity 401 on the chain, and that it is the same shape the gateway
+// writes for the same condition.
 func TestARequiredRouteWithNoIdentityIsTheGateways401Shape(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	run(t, chain{}, enforcer, func(l *live) {
@@ -579,12 +572,9 @@ func TestAnAllowedIdentityReachesTheHandlerOnTheChain(t *testing.T) {
 	})
 }
 
-// TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone holds that the middleware
-// has no platform-domain fallback: a request that resolved a tenant decides in
-// the tenant's domain alone. An engine that matched the platform domain and not
-// the tenant's is a 403 with exactly one query; a middleware that fell back to
-// the platform domain on a miss would put a second query and let the request
-// through instead.
+// TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone holds that the
+// middleware has no platform-domain fallback: a request that resolved a
+// tenant decides in the tenant's domain alone.
 func TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(q authz.Query) bool { return q.Domain == authz.PlatformDomain })
@@ -602,11 +592,9 @@ func TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone(t *testing.T) {
 }
 
 // TestTheHandlerGuardDecidesInTheTenantsOwnDomain holds that the handler API
-// reads the tenant off the request the way the middleware does: its query names
-// the tenant identifier the roster resolved, never the name and never the
-// platform domain while a tenant is on the request. The route is declared open,
-// so the middleware asks the engine nothing and the handler's query is the only
-// one.
+// reads the tenant off the request the way the middleware does: its query
+// names the tenant identifier the roster resolved, never the name and never
+// the platform domain while a tenant is on the request.
 func TestTheHandlerGuardDecidesInTheTenantsOwnDomain(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(q authz.Query) bool { return q.Domain == authz.Domain(tenantIdentifier) })
@@ -705,10 +693,9 @@ func TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen(t *testing.T) 
 
 // TestAGuardedEndpointDecidesAndAnEndpointLeftOutOfTheListDoesNot holds the
 // control the design gives the endpoint list: an endpoint this module names
-// carries its decisions, and an endpoint left out of the list carries none, so
-// the same route reaches its handler there with no authorization layer in front
-// of it. The request is anonymous on both, so the deciding endpoint answers this
-// module's no-identity 401 and the undecided one answers the handler.
+// carries its decisions, and an endpoint left out of the list carries none,
+// so the same route reaches its handler there with no authorization layer in
+// front of it.
 func TestAGuardedEndpointDecidesAndAnEndpointLeftOutOfTheListDoesNot(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	run(t, chain{}, enforcer, func(l *live) {

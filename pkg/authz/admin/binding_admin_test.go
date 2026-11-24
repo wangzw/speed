@@ -13,8 +13,7 @@ import (
 
 // TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit holds the
 // binding delete route's decision: the guard is asked for role.manage and a
-// shortfall ends the handler before the manager and before any audit row. A
-// delete whose permission check was weakened or dropped was invisible before.
+// shortfall ends the handler before the manager and before any audit row.
 func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -35,11 +34,9 @@ func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.
 	}
 }
 
-// TestDeletingABindingAsksForRoleManageAndLandsOneSuccessRow holds the delete
-// route's happy path: it asks for role.manage, calls DeleteBinding with the
-// tenant, the account and the role from the path, and writes exactly one success
-// row whose object is the account. Without this every decision past the empty
-// account was uncovered.
+// TestDeletingABindingAsksForRoleManageAndLandsOneSuccessRow checks that
+// deleting a binding demands role.manage and lands exactly one success audit
+// row naming the account.
 func TestDeletingABindingAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
@@ -65,10 +62,10 @@ func TestDeletingABindingAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	}
 }
 
-// TestDeletingABindingTheManagerRefusesIsMapped holds the delete route's failure
-// paths: a tenant mismatch is a 400, a store failure is a 503, and a refused
-// delete leaves a failed row linked to the mandatory one by the action id. A
-// delete that swallowed the manager's error would report success.
+// TestDeletingABindingTheManagerRefusesIsMapped holds the delete route's
+// failure paths: a tenant mismatch is a 400, a store failure is a 503, and a
+// refused delete leaves a failed row linked to the mandatory one by the
+// action id.
 func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 	t.Run("a tenant mismatch is a 400", func(t *testing.T) {
 		r := newRig(t)
@@ -103,11 +100,10 @@ func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 	})
 }
 
-// TestABindingWriteWhoseAuditDoesNotLandIsA503 holds the mandatory audit's grip
-// on the binding write: a row that does not land refuses the write with a 503
-// before the manager is called, so a change that could not be recorded is not
-// made. An implementation that ignored auditRequired's result would call the
-// manager here.
+// TestABindingWriteWhoseAuditDoesNotLandIsA503 holds the mandatory audit's
+// grip on the binding write: a row that does not land refuses the write with
+// a 503 before the manager is called, so a change that could not be recorded
+// is not made.
 func TestABindingWriteWhoseAuditDoesNotLandIsA503(t *testing.T) {
 	r := newRig(t)
 	r.audit.fail(errors.New("the audit store is down"))
@@ -188,10 +184,8 @@ func TestABindingReadWhoseManagerFailsIsMapped(t *testing.T) {
 }
 
 // TestTheBindingListViewCarriesEveryField holds the binding list's response
-// shape: the outer key is bindings, it carries one view per row, and each view's
-// fields are the tenant, the account and the role. A body that only
-// substring-carried the account and the role would not notice the two swapped
-// into each other's field, a renamed key, or an extra element.
+// shape: the outer key is bindings, it carries one view per row, and each
+// view's fields are the tenant, the account and the role.
 func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 	r := newRig(t)
 	r.manager.bindings = []authz.Binding{
@@ -217,9 +211,8 @@ func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 }
 
 // TestABindingWriteCarriesTheRoleAndTheAuditObject holds the binding write's
-// landing: the role from the path reaches the manager, and the mandatory row's
-// object is the account. A write that blanked the role before the manager, or
-// set the audit object to the tenant, fails here.
+// landing: the role from the path reaches the manager, and the mandatory
+// row's object is the account.
 func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
@@ -238,10 +231,9 @@ func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 	}
 }
 
-// TestTheBindingDecisionIsAskedInThePlatformDomain holds the domain a binding
-// route decides in: the platform domain, whatever tenant the path names. A route
-// that decided in the request's own tenant or in a fixed unknown domain fails
-// here.
+// TestTheBindingDecisionIsAskedInThePlatformDomain holds the domain a
+// binding route decides in: the platform domain, whatever tenant the path
+// names.
 func TestTheBindingDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	for name, drive := range map[string]func(*rig){
 		"the list": func(r *rig) {
@@ -263,11 +255,9 @@ func TestTheBindingDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused holds the rule
-// the manager cannot enforce because it reads no actor: a caller may not remove
-// its own tenant-admin binding. The refusal is a 403 written before the
-// mandatory audit and before the manager, so nothing is recorded and nothing is
-// deleted.
+// TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused holds the
+// rule the manager cannot enforce because it reads no actor: a caller may
+// not remove its own tenant-admin binding.
 func TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused(t *testing.T) {
 	const caller = "test-account"
 	r := newRig(t)

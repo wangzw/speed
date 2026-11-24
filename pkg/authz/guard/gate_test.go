@@ -11,10 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// A declaration is read back as the kind it was made: a required permission, or
-// open. A route declared to require a permission is covered and hands its
-// permission back; a route declared open is covered and reads open; a route
-// never declared carries neither.
+// A declaration is read back as the kind it was made: a required permission,
+// or open.
 func TestGateRecordsRequirementsAndOpenRoutes(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.PermissionAccountRead))
 	g.Require("GET", "/accounts", authz.PermissionAccountRead)
@@ -41,12 +39,9 @@ func TestGateRecordsRequirementsAndOpenRoutes(t *testing.T) {
 	}
 }
 
-// A declaration is one kind or the other, and redeclaring a route flips it: a
-// Require after an Open leaves only the requirement, an Open after a Require
-// leaves only the open registration. The cleared half must be gone from its own
-// read as well as from Covered, or the middleware would see a route that both
-// requires a permission and is open, and the route's meaning would depend on
-// which read it made first.
+// A declaration is one kind or the other, and redeclaring a route flips it:
+// a Require after an Open leaves only the requirement, an Open after a
+// Require leaves only the open registration.
 func TestGateDeclarationIsOneOrTheOther(t *testing.T) {
 	t.Run("a Require drops the open registration of the same route", func(t *testing.T) {
 		g := newGate(authztest.NewCatalog(authz.PermissionAccountRead))
@@ -76,9 +71,8 @@ func TestGateDeclarationIsOneOrTheOther(t *testing.T) {
 }
 
 // verify holds every declared permission to the catalog: a declaration of a
-// permission the catalog holds passes, and one the catalog does not hold fails
-// with ErrUnknownPermission, naming the route and the permission. An open
-// declaration names no permission and is never checked.
+// permission the catalog holds passes, and one the catalog does not hold
+// fails with ErrUnknownPermission, naming the route and the permission.
 func TestGateVerifyHoldsPermissionsToTheCatalog(t *testing.T) {
 	t.Run("a declared permission the catalog holds passes", func(t *testing.T) {
 		g := newGate(authztest.NewCatalog(authz.PermissionAccountRead, authz.PermissionAuditRead))
@@ -108,11 +102,9 @@ func TestGateVerifyHoldsPermissionsToTheCatalog(t *testing.T) {
 	})
 }
 
-// A route never declared carries no declaration of either kind, and the key is
-// the (method, path) pair: a method never declared on a declared path is as
-// undeclared as a path never seen. A gate that covered everything, or that
-// keyed a declaration by the path alone, would let a request through as
-// declared when it is not.
+// A route never declared carries no declaration of either kind, and the key
+// is the (method, path) pair: a method never declared on a declared path is
+// as undeclared as a path never seen.
 func TestGateLeavesAnUndeclaredRouteUncovered(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.PermissionAccountRead))
 	g.Require("GET", "/accounts", authz.PermissionAccountRead)
@@ -132,13 +124,8 @@ func TestGateLeavesAnUndeclaredRouteUncovered(t *testing.T) {
 	}
 }
 
-// verify holds every declaration to the catalog, not just the first it meets. A
-// gate with several in-catalog declarations and one outside the catalog reports
-// the failure whichever way the map is ordered; a verify that stopped after the
-// first declaration it saw would answer nil on most runs, when the out-of-catalog
-// one happened not to be first. The check is repeated because the range order of
-// a Go map varies run to run, so the case cannot be satisfied by luck; what it
-// holds is that the loop visits all of them.
+// verify holds every declaration to the catalog, not just the first it
+// meets.
 func TestGateVerifyChecksEveryDeclaration(t *testing.T) {
 	inCatalog := translation.Builtin()
 	catalog := authztest.NewCatalog(inCatalog...)
@@ -159,9 +146,9 @@ func TestGateVerifyChecksEveryDeclaration(t *testing.T) {
 }
 
 // A declared permission the catalog holds but the translation cannot express
-// fails verify the same way: the request path decides through the translation,
-// so such a route would deny every request forever with no startup symptom. The
-// check exists so the miss is a startup failure.
+// fails verify the same way: the request path decides through the
+// translation, so such a route would deny every request forever with no
+// startup symptom.
 func TestGateVerifyHoldsPermissionsToTheTranslation(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.Permission("authz.guard.test.untranslatable")))
 	g.Require("GET", "/x", authz.Permission("authz.guard.test.untranslatable"))
@@ -179,12 +166,8 @@ func TestGateVerifyHoldsPermissionsToTheTranslation(t *testing.T) {
 	}
 }
 
-// The declaration table is written by modules in the Init window and read on the
-// request path, so its reads and writes are taken under a lock. This case drives
-// writers and readers against one gate at once: under -race, dropping the lock
-// makes it fail, because concurrent access to its maps is then a data race. It
-// asserts no value — what it holds is the absence of a race, which only the race
-// detector can observe.
+// The declaration table is written by modules in the Init window and read on
+// the request path, so its reads and writes are taken under a lock.
 func TestTheGateIsSafeUnderConcurrentUse(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.PermissionAccountRead, authz.PermissionAuditRead))
 	const rounds = 300

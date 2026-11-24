@@ -55,10 +55,9 @@ func resolveDeclared(t *testing.T, rows map[authz.Permission]authz.Translation) 
 	t.Cleanup(translation.Reset)
 }
 
-// A module's declared row reaches the declaration check: a route that names the
-// module's permission passes it rather than failing the startup as a permission
-// the translation cannot express. The case first holds the same route refused
-// over the built-in rows alone, so the module's row is what makes the difference.
+// A module's declared row reaches the declaration check: a route that names
+// the module's permission passes it rather than failing the startup as a
+// permission the translation cannot express.
 func TestAModuleDeclaredPermissionIsAccepted(t *testing.T) {
 	if _, _, ok := translation.Lookup(declaredPermission); ok {
 		t.Fatal("the built-in translation already holds the module's permission, so the case cannot show the row being added")

@@ -8,11 +8,10 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// MembershipRemoved is the synchronous half of the platform-domain cascade: a
-// removal of the account's membership of the platform tenant withdraws every
-// binding the account holds there, and leaves its bindings elsewhere and every
-// other account's bindings alone. The membership.changed event stays as the
-// crash-window compensation, but the ordinary path no longer waits for it.
+// MembershipRemoved is the synchronous half of the platform-domain cascade:
+// a removal of the account's membership of the platform tenant withdraws
+// every binding the account holds there, and leaves its bindings elsewhere
+// and every other account's bindings alone.
 func TestMembershipRemovedWithdrawsThePlatformBindings(t *testing.T) {
 	p := newFixture(t).product
 	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.PlatformAdminRole), "acct-1", "tenant", "read")
@@ -35,10 +34,9 @@ func TestMembershipRemovedWithdrawsThePlatformBindings(t *testing.T) {
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 0)
 }
 
-// A membership removed in a business tenant clears that tenant's bindings and
-// leaves the account's bindings in every other tenant, the platform domain
-// included. The roles a member held where they served do not follow them out
-// and are not restored by a rejoin.
+// A membership removed in a business tenant clears that tenant's bindings
+// and leaves the account's bindings in every other tenant, the platform
+// domain included.
 func TestMembershipRemovedInABusinessTenantClearsItsOwnBindings(t *testing.T) {
 	p := newFixture(t).product
 	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.PlatformAdminRole), "acct-1", "tenant", "read")

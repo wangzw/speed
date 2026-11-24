@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// One tenant's removals are serialised: a second acquisition waits until the
-// first release runs.
+// TestTheInProcessTenantLockSerialisesOneTenant checks that a second acquisition
+// of one tenant waits until the first release runs.
 func TestTheInProcessTenantLockSerialisesOneTenant(t *testing.T) {
 	locks := NewInProcessTenantLock()
 	release, err := locks.Lock(context.Background(), "acme")
@@ -31,7 +31,8 @@ func TestTheInProcessTenantLockSerialisesOneTenant(t *testing.T) {
 	again()
 }
 
-// The lock is per tenant: one tenant's removal does not block another's.
+// TestTheInProcessTenantLockIsPerTenant checks that one tenant's removal does
+// not block another's.
 func TestTheInProcessTenantLockIsPerTenant(t *testing.T) {
 	locks := NewInProcessTenantLock()
 	releaseAcme, err := locks.Lock(context.Background(), "acme")
@@ -49,7 +50,8 @@ func TestTheInProcessTenantLockIsPerTenant(t *testing.T) {
 	releaseBeta()
 }
 
-// A release is idempotent: calling it twice cannot free a second acquisition.
+// TestTheInProcessTenantLockReleaseIsIdempotent checks that calling a release
+// twice cannot free a second acquisition.
 func TestTheInProcessTenantLockReleaseIsIdempotent(t *testing.T) {
 	locks := NewInProcessTenantLock()
 	release, err := locks.Lock(context.Background(), "acme")
@@ -71,8 +73,8 @@ func TestTheInProcessTenantLockReleaseIsIdempotent(t *testing.T) {
 	again()
 }
 
-// An empty tenant names no domain whose floor could be judged, so the lock
-// takes nothing: two acquisitions of it do not wait on each other.
+// TestTheInProcessTenantLockTakesNothingForAnEmptyTenant checks that an empty
+// tenant is never serialised.
 func TestTheInProcessTenantLockTakesNothingForAnEmptyTenant(t *testing.T) {
 	locks := NewInProcessTenantLock()
 	first, err := locks.Lock(context.Background(), "")

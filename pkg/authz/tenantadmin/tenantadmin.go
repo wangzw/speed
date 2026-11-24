@@ -3,26 +3,14 @@
 // binding routes under /api/v1/tenants/{tenant}/* and delivers no capability of
 // its own.
 //
-// The module is the tenant-domain counterpart of pkg/authz/admin. It reads and
-// writes the same policy tables through the same Manager and Catalog; the two
-// differ in the policy domain a route is decided in, the permission codes it
-// asks for and the anti-escalation rules it applies. Every route acts in the
-// tenant the path names, and the path tenant is held to the tenant the request
-// resolved to by the path-tenant layer the tenant capability delivers and this
-// module wraps each route with. This surface also refuses the platform domain:
-// it administers a tenant, and the platform domain is not one.
-//
-// The module grants itself no permission; it carries only the tenant role
-// vocabulary the catalog already declares. Every route is declared open on the
-// authorization middleware, so the middleware lets a request through to the
-// route's guard wrapper, which makes the decision in front of the typed
-// handler: it reads the caller from the request, asks the handler-internal
-// Guard for authz.tenant.role.read on a read or authz.tenant.role.manage on a
-// write in the path tenant's domain, and answers a shortfall before anything
-// else runs. A read that is allowed ends there; a write runs the registration
-// gate, its shape checks, every anti-escalation check, the optional host
-// WriteGuard, a mandatory audit row outside any transaction and before the
-// action, calls the manager, and maps a refusal to its answer.
+// It is the tenant-domain counterpart of pkg/authz/admin, reading and writing
+// the same policy tables through the same Manager and Catalog. Every route acts
+// in the tenant the path names, held to the request's resolved tenant and
+// refused on the platform domain. A route's guard wrapper asks for
+// authz.tenant.role.read on a read or authz.tenant.role.manage on a write; a
+// write then runs the registration gate, shape and anti-escalation checks, the
+// optional host WriteGuard, a mandatory audit row before the action, and the
+// manager.
 package tenantadmin
 
 import (
@@ -44,12 +32,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command that mounts the tenant management routes.
+// ModuleName is this module's name in the registry.
 const ModuleName = "authz.tenantadmin"
 
-// ConfigNamespace is where this module's input items are mounted. It is this
-// module's own name, as a registering module's namespace always is.
+// ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
 // The configuration item this module accepts, relative to its namespace, and
@@ -60,20 +46,11 @@ const (
 )
 
 // allEndpoints is the name that stands for every endpoint in an endpoint list.
-// This module's list refuses it: mounting the tenant management routes on every
-// endpoint, the public ones included, would put them where no tenant resolution
-// or tenant policy guard reaches.
+// This module's list refuses it.
 const allEndpoints = "*"
 
 // defaultEndpoint is the endpoint name this module's OpenAPI fragment is
-// declared against. The management routes are mounted on every endpoint
-// authz.tenantadmin.endpoints lists — data read only at start, which may name
-// several — and a resource is a static declaration fixed before configuration is
-// read, so the fragment carries a conventional name for the tenant management
-// surface rather than the configured ones. A declared endpoint name that no
-// endpoint carries is not an error: the declaration and the mounting are
-// separately maintained facts, in the same way as the declared paths and the
-// registered routes (pkg/http's Spec).
+// declared against, a static name rather than a configured one.
 const defaultEndpoint = "api"
 
 // openAPIFragment is this module's OpenAPI fragment, read at build time. It is
@@ -91,45 +68,17 @@ var tenantAdminSpec = speedhttp.Spec{
 	Document: openAPIFragment,
 }
 
-// init registers this module with the process registry. Registration travels
-// with the import, which is what makes "does this command mount the tenant
-// management routes" a question the host answers by importing this package and
-// writing ModuleName into the command.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
 // The policy manager, the permission catalog, the permission reader, the
 // membership checker, the handler-internal guard, the audit capability and the
-// registration-verification read are required. The manager and the catalog are
-// delivered exclusively by the policy module and the guard by the enforcement
-// module, so the closure of a command that takes this one in does not pull them
-// in: the host writes them down. The permission reader is what makes the
-// anti-escalation rule "a caller may not grant a permission it does not hold"
-// answerable, and the membership checker is what makes a binding address only a
-// tenant's active member; both absent is a startup failure, never a write that
-// proceeds on an empty answer. The audit capability being required is what
-// makes an assembly without one fail before any instance is built, and the
-// verification read is what lets a write refuse an account whose
-// self-registration has not proved an email address.
-//
-// The HTTP entry point, the tenant administration guard, the route-declaration
-// surface, the host write guard, the message localizer, the account identity
-// reader and the logger are taken up in Init: a command that mounts routes and
-// has no entry point is a failure to report at wiring time; a command with no
-// tenant administration guard cannot mount a tenant-scoped route and is
-// refused; the declaration surface's absence, the write guard's absence, the
-// localizer's absence and the identity reader's absence are all legal — the last
-// one makes a role's member count and its holders' activity unknown, never
-// zero or inactive.
-//
-// The outward declaration carries a speedhttp.Spec resource beside the schema:
-// it holds this module's OpenAPI fragment, which describes the tenant
-// management routes, for a reader that merges the fragments into one document.
-//
-// The stance is StateEnabled and never StateAuto: whether to mount the tenant
-// management routes is a decision on the command tree, not a conclusion a
-// configuration can infer.
+// registration-verification read are required. The HTTP entry point, the tenant
+// administration guard, the route-declaration surface, the host write guard, the
+// message localizer, the account identity reader and the logger are taken up in
+// Init; the tenant administration guard is required there. The stance is
+// StateEnabled and never StateAuto.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -147,9 +96,6 @@ func Module() core.Module {
 			schema(),
 			tenantAdminSpec,
 			operations,
-			// The tenant management surface: its routes are mounted whenever the
-			// module is in force and the process has an entry point, neither of
-			// which the module itself varies, so the feature is static.
 			feature.Spec{Name: "authz.tenantadmin"},
 		},
 
@@ -182,64 +128,37 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. The callbacks are also
-// handed an instance a host supplied for the module, which can be any value that
-// delivers the capability; this module delivers none, so a supplied instance is
-// left alone.
+// productOf narrows an instance to this module's product. A supplied instance of
+// another shape is left alone: this module delivers no capability.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok && p != nil
 }
 
-// product is the module's instance. It holds the required capabilities and the
-// optional route-declaration surface taken up in Init.
+// product is the module's instance.
 type product struct {
-	manager    authz.Manager
-	catalog    authz.Catalog
-	subject    authz.SubjectPermissions
-	membership authz.MembershipChecker
-	guard      guard.Guard
-	audit      audit.Audit
-	// verification reads how far the acting account's self-registration has
-	// got. A write route reads it before the permission decision, so an account
-	// that has not proved an email address cannot change policy data.
+	manager      authz.Manager
+	catalog      authz.Catalog
+	subject      authz.SubjectPermissions
+	membership   authz.MembershipChecker
+	guard        guard.Guard
+	audit        audit.Audit
 	verification authn.SignupVerification
 
-	// gate is the route-declaration surface, nil when the assembly delivers
-	// none. When it is there, Init declares every route open on it.
-	gate authz.Gate
-	// writeGuard is the optional host seam a role, grant or binding write asks
-	// before the mandatory audit and the manager. Nil means the assembly
-	// delivers none, and the writes run as they do without the seam.
+	gate       authz.Gate
 	writeGuard authz.WriteGuard
-	// localizer renders a permission's description into the request's language,
-	// nil when the assembly delivers no i18n engine. With none the catalog route
-	// answers an empty description.
-	localizer i18n.Localizer
-	// identities resolves the accounts a role's usage read names. It is the
-	// optional host seam: with none the role list reports an unknown member count
-	// and the role usage read reports an empty display name and an unknown
-	// activity state. A reader that cannot answer is a 503, never an empty set.
+	localizer  i18n.Localizer
 	identities authz.AccountIdentityReader
-	// names answers the name a tenant identifier is addressed by, nil when
-	// the assembly supplies no resolver. With none a view names no tenant and an
-	// audit detail carries no tenant, rather than exposing the internal
-	// identifier.
-	names authz.TenantNameResolver
-	// routeGuard is the tenant administration guard the tenant capability
-	// delivers under the pkg/http TenantAdminRouteGuard capability: the identity
-	// rule plus the refusal of the platform domain. Every route is wrapped with
-	// it at the mount, so the tenant its path names has to be the tenant the
-	// request resolved to and cannot be the platform domain, which is not a
-	// tenant this surface administers. Nil means the assembly delivers none,
-	// which a mount refuses.
+	names      authz.TenantNameResolver
+	// routeGuard is the tenant administration guard: the identity rule plus the
+	// refusal of the platform domain. Nil means the assembly delivers none, which
+	// a mount refuses.
 	routeGuard speedhttp.TenantAdminRouteGuard
 	logger     *slog.Logger
 
 	cfg resolved
 }
 
-// newProduct takes up what the descriptor requires.
 func newProduct(reg *core.Registry) (*product, error) {
 	manager, err := core.Resolve[authz.Manager](reg)
 	if err != nil {
@@ -290,9 +209,8 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}, nil
 }
 
-// optional takes up a capability whose absence is a legal assembly: the zero
-// value says it is absent, and any other failure to take it up ends the start,
-// because a capability that is there and cannot be taken up is not an absence.
+// optional takes up a capability whose absence is a legal assembly. Any other
+// failure to take it up ends the start.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -306,13 +224,9 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// wire runs in Init, where every instance exists. It takes up the optional
-// route-declaration surface and the logger, resolves the configured endpoints,
-// mounts the routes, declares them open, and writes the start diagnostic.
-//
-// The entry point is required: a command that mounts routes and has no entry
-// point has nothing to mount them on, and the failure names the module so the
-// fix — writing the entry point module's name into this command — is visible.
+// wire runs in Init: it takes up the optional capabilities and the logger,
+// resolves the configured endpoints, mounts the routes, declares them open, and
+// writes the start diagnostic.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -363,22 +277,14 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// diagnose writes the start diagnostic: the endpoints the management routes were
-// mounted on and the groups that were mounted.
 func (p *product) diagnose() {
 	p.logger.Info(ModuleName+": the tenant management routes are mounted",
 		"endpoints", p.cfg.endpoints,
 		"groups", managementGroups)
 }
 
-// schema declares this module's input items. The namespace is this module's own
-// name: two modules declaring one path is a startup failure even when only one
-// of them runs.
-//
-// The endpoint list takes the primary source alone. It decides where the
-// management routes are mounted, so an environment variable or a command-line
-// argument that could rewrite it would be a way to move them onto an endpoint
-// from outside the configuration file.
+// schema declares this module's input items. The endpoint list takes the primary
+// source alone.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -395,16 +301,12 @@ func schema() config.Schema {
 }
 
 // configDefaults is what this module is worth without a configuration file: the
-// API endpoint, which is the endpoint tenant resolution guards in the assembled
-// product. A deployment that mounts the tenant routes elsewhere writes its own
-// list; an explicitly empty list is refused rather than mounting them nowhere.
+// API endpoint. An explicitly empty list is refused rather than mounting the
+// routes nowhere.
 var configDefaults = moduleConfig{Endpoints: []string{"api"}}
 
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// Endpoints names the listening endpoints the tenant management routes are
-	// mounted on, by the entry point's own names. The list is a set of concrete
-	// names: the name that stands for every endpoint is not accepted.
 	Endpoints []string `config:"endpoints"`
 }
 
@@ -414,9 +316,7 @@ type resolved struct {
 }
 
 // resolve turns decoded configuration into what the module runs on, refusing
-// what cannot be run on. A refusal names the key. The module has no failure
-// sentinel of its own, so a shape it cannot run on is authn.ErrInvalidConfig,
-// the sentinel the platform management surface refuses its own shapes with.
+// what cannot be run on. A shape it cannot run on is authn.ErrInvalidConfig.
 func (c moduleConfig) resolve() (resolved, error) {
 	if len(c.Endpoints) == 0 {
 		return resolved{}, fmt.Errorf("%w: %s is empty. The tenant management routes are mounted on "+
@@ -447,8 +347,7 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return resolved{endpoints: c.Endpoints}, nil
 }
 
-// readConfig decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one configuration.
+// readConfig decodes this module's section and validates it.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

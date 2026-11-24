@@ -92,11 +92,11 @@ func TestBindingTheReservedRoleOutsideThePlatformDomainIsProtected(t *testing.T)
 	}
 }
 
-// TestBindingWithAnEmptyAccountIsRefused holds that the module refuses an empty
-// account on shape, after the decision and before the manager is called: a
-// binding addresses an account, and a request that names none is a 400 rather
-// than a write the manager would refuse without a code this module maps. Nothing
-// downstream runs — the manager is not called and no audit row is written.
+// TestBindingWithAnEmptyAccountIsRefused holds that the module refuses an
+// empty account on shape, after the decision and before the manager is
+// called: a binding addresses an account, and a request that names none is a
+// 400 rather than a write the manager would refuse without a code this
+// module maps.
 func TestBindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
@@ -135,17 +135,10 @@ func TestRemovingABindingWithAnEmptyAccountIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest holds that
-// a binding write that names no tenant forwards the empty tenant verbatim to the
-// manager — the module substitutes no domain for it — and maps the manager's
-// tenant-mismatch refusal to a 400.
-//
-// The empty tenant is refused where the design puts the check — the policy
-// adapter rejects a statement that names no tenant, and the manager reports it
-// as a tenant mismatch which the module maps to a 400. The manager the module
-// reads is a stand-in, so the case drives the refusal by making it fail; what it
-// holds of the module is the mapping and that the module hands the path's tenant
-// through untouched, empty included.
+// TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest holds
+// that a binding write that names no tenant forwards the empty tenant
+// verbatim to the manager — the module substitutes no domain for it —
+// and maps the manager's tenant-mismatch refusal to a 400.
 func TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrTenantMismatch)
@@ -168,13 +161,6 @@ func TestAnEmptyTenantOnABindingWriteIsForwardedAndRefusedAsABadRequest(t *testi
 
 // TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID
 // holds the write path's audit order and linkage on the binding route.
-//
-// The permitted row is written before the manager is called, so it is present
-// even when the manager then refuses the write: a refused write leaves two rows,
-// the mandatory success row and the failed row, and the two carry the same
-// action identifier. Were the mandatory row written only after a landed write, a
-// refused write would leave the failed row alone — which is what the two-row
-// count rules out.
 func TestABindingWriteWritesTheMandatoryRowBeforeTheActionAndAFailedRowLinksByActionID(t *testing.T) {
 	t.Run("a landed write leaves the mandatory success row", func(t *testing.T) {
 		r := newRig(t)

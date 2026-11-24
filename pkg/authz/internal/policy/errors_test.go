@@ -27,8 +27,7 @@ m = noSuchFunc(r.sub) && r.dom == p.dom
 `
 
 // A decision whose matcher cannot run is a failure, not a denial and not a
-// permission. The error is carried out and the answer is false, so that a
-// caller can tell an engine that failed from a policy that refused.
+// permission.
 func TestAllowedCarriesTheEnginesFailure(t *testing.T) {
 	m, err := casbinmodel.NewModelFromString(brokenMatcherModel)
 	if err != nil {
@@ -49,9 +48,8 @@ func TestAllowedCarriesTheEnginesFailure(t *testing.T) {
 	}
 }
 
-// A model text that does not parse is refused at load, with the parse failure
-// carried out and no snapshot beside it. A snapshot built from an empty model
-// would answer every query as if the policy were empty and hide the failure.
+// A model text that does not parse is refused at load, with the parse
+// failure carried out and no snapshot beside it.
 func TestLoadRefusesAMalformedModel(t *testing.T) {
 	snapshot, err := Load(t.Context(), openHandle(t), "this is not a model")
 	if err == nil {
@@ -62,9 +60,8 @@ func TestLoadRefusesAMalformedModel(t *testing.T) {
 	}
 }
 
-// A self-check whose fixtures cannot run reports every one of them and refuses
-// the text. Skipping a fixture that could not run would accept a model the
-// check never actually exercised.
+// A self-check whose fixtures cannot run reports every one of them and
+// refuses the text.
 func TestSelfCheckRefusesAModelItCannotRun(t *testing.T) {
 	err := SelfCheck("this is not a model")
 	if err == nil {

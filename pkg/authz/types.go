@@ -4,12 +4,7 @@
 // every consumer of a permission share.
 //
 // This package registers no module and imports nothing but the standard
-// library. It is imported by every consumer of a permission — the enforcement
-// point, the management surface and any host code that names a permission — so
-// a third-party library or a subpackage of this directory reached from here
-// would enter all of their closures. The policy subpackage is where the Casbin
-// engine and its storage live and the enforcement subpackage is where gin
-// lives; neither belongs here.
+// library.
 package authz
 
 import "time"
@@ -19,10 +14,7 @@ import "time"
 // and that pair is what the policy engine matches.
 //
 // The values align one-to-one with authn.Action: a constant here carries the
-// same string as the action of the same name, so the question the
-// authentication side asks and the permission this side stores are one
-// vocabulary. A published value is never renamed, and a new constant never
-// changes an existing one.
+// same string as the action of the same name.
 type Permission string
 
 // Role names a set of permissions within one policy domain. A role is granted a
@@ -37,12 +29,11 @@ type Domain string
 
 // PermissionSpec is what one module declares about the permissions it owns: the
 // list of them, which of those a tenant administrator may govern, and the i18n
-// key of the description shown for each. A module hands one of these to the
-// policy subpackage's catalog.
+// key of the description shown for each.
 //
 // TenantGoverned must be a subset of Permissions: a permission marked governed
 // and not declared is a startup ErrUnknownPermission. A declared permission not
-// in the subset is platform-only — no tenant administrator receives it.
+// in the subset is platform-only.
 type PermissionSpec struct {
 	Permissions     []Permission
 	TenantGoverned  []Permission
@@ -57,8 +48,7 @@ type PermissionSpec struct {
 // PermissionMeta is what a declaring module says about one permission beyond its
 // name and description: the group a management surface groups it under and
 // whether granting it is dangerous. A dangerous permission is one that widens
-// the grantee's power over other accounts or over the tenant's policy, which a
-// management surface calls out when an operator is about to grant it.
+// the grantee's power over other accounts or over the tenant's policy.
 type PermissionMeta struct {
 	Group     string
 	Dangerous bool
@@ -74,20 +64,13 @@ type Translation struct {
 // TranslationSpec is what one module declares about translating the permissions
 // it owns beyond the ones this capability carries: a row for each, naming the
 // (object, action) pair the engine matches on.
-//
-// The enforcement subpackage unions every registered module's rows with the rows
-// it carries itself to form the one translation the whole process decides by, so
-// a module that declares a permission of its own also declares how it
-// translates. A permission the union has no row for is one the enforcement
-// point cannot express, and a route that names it fails the startup.
 type TranslationSpec struct {
 	Rows map[Permission]Translation
 }
 
 // Query is one question put to the engine: whether Subject may do Action on
-// Object within Domain. Subject is an account's key; the pair (Object, Action)
-// comes from the permission-to-(resource, action) translation the enforcement
-// point holds, and Domain is a tenant identifier or the platform domain.
+// Object within Domain. Subject is an account's key, and Domain is a tenant
+// identifier or the platform domain.
 type Query struct {
 	Subject string
 	Domain  Domain
@@ -114,14 +97,11 @@ type Binding struct {
 
 // RoleRecord is one role of the role table as it is read and written. Builtin
 // marks a role the management surface may not delete or rewrite and whose
-// grants it may not change; it is set only by Manager.MarkRoleBuiltin and read
-// back as it stands. A builtin role's grants are extended only by
-// Seeder.SeedGrants and converged only by Reconciler.ReconcileGrants.
+// grants it may not change; only Manager.MarkRoleBuiltin sets it.
 //
 // DescriptionKey is the i18n key a host seeds into a builtin role; Description is
-// the free text the management surface writes. Both are stored, and a reader
-// prefers the description it can render: a builtin role with a key localises it,
-// while a role the management surface created carries the operator's own text.
+// the free text the management surface writes. A reader prefers the description
+// it can render.
 type RoleRecord struct {
 	Tenant         string
 	Role           Role
@@ -147,10 +127,9 @@ type GrantRecord struct {
 }
 
 // Grant is one permission grant a seeding step adds or removes from a role: the
-// (resource, action) pair the role holds. It is the input shape of
-// Seeder.SeedGrants and of Reconciler.ReconcileGrants, each of which names the
-// tenant and the role once for the whole set; a stored row is a GrantRecord,
-// which also carries the row's tenant, role and creation time.
+// (resource, action) pair the role holds. Seeder.SeedGrants and
+// Reconciler.ReconcileGrants name the tenant and the role once for the whole
+// set.
 type Grant struct {
 	Resource string
 	Action   string
@@ -158,10 +137,7 @@ type Grant struct {
 
 // AccountIdentity is what a host knows about one account, as the role-usage read
 // needs it: the display name and login username to show, and whether the account
-// is still active. The username is the account's user-facing login name, never
-// an identifier used as a fallback; a host that knows no username answers the
-// empty string. The capability holds no account table of its own, so a host
-// supplies all of it through AccountIdentityReader.
+// is still active. A host that knows no username answers the empty string.
 type AccountIdentity struct {
 	DisplayName string
 	Username    string

@@ -217,9 +217,7 @@ func TestTheWriteGuardIsTakenUpFromTheAssembly(t *testing.T) {
 }
 
 // TestTheWriteGuardIsAskedAfterTheShapeChecks holds the ordering the design
-// states: a request the route refuses on shape never reaches the seam. A guard
-// asked before the shape would let a malformed request observe the host's
-// policy, and would make the shape refusal depend on the seam's state.
+// states: a request the route refuses on shape never reaches the seam.
 func TestTheWriteGuardIsAskedAfterTheShapeChecks(t *testing.T) {
 	t.Run("an undeclared grant permission", func(t *testing.T) {
 		r := newRig(t)

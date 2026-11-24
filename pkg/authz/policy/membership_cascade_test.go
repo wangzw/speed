@@ -10,14 +10,8 @@ import (
 )
 
 // The platform administrator role exists only in the platform domain, and a
-// binding to it is refused for an account that is not an active member of that
-// tenant. Removing the membership afterwards therefore has to withdraw the
-// account's platform-domain bindings too: a binding that outlived its membership
-// would keep granting the role the write-side check refused to create.
-//
-// The cascade is driven by the membership change event, which is idempotent and
-// at least once. The case holds the event, not one delivery of it: the second
-// delivery must change nothing.
+// binding to it is refused for an account that is not an active member of
+// that tenant.
 func TestRemovingASystemMembershipRevokesThePlatformDomainBindings(t *testing.T) {
 	p := newFixture(t).product
 	bus := newRecordingBus()
@@ -125,11 +119,10 @@ func TestThePolicyModuleSubscribesToMembershipChanges(t *testing.T) {
 	}
 }
 
-// An explicit removal clears every binding the account holds in the tenant it
-// left, not only in the platform domain: a member who is removed from a business
-// tenant loses the roles that tenant gave them, while their roles elsewhere stay.
-// The lifecycle hook is the ordinary path; the event is the crash-window
-// compensation and runs the same statement.
+// An explicit removal clears every binding the account holds in the tenant
+// it left, not only in the platform domain: a member who is removed from a
+// business tenant loses the roles that tenant gave them, while their roles
+// elsewhere stay.
 func TestRemovingAMembershipClearsEveryBindingInItsTenant(t *testing.T) {
 	p := newFixture(t).product
 	seedPolicy(t, p, "acme", "alpha", "acct-1", "account", "read")
@@ -151,10 +144,9 @@ func TestRemovingAMembershipClearsEveryBindingInItsTenant(t *testing.T) {
 	assertBindingCount(t, p, "acme", "acct-1", 0)
 }
 
-// The membership.changed subscription is the compensation for a crash between
-// the removal's commit and the lifecycle hook, so it clears the tenant the
-// envelope names. A suspension is a state the member can be resumed from and
-// clears nothing.
+// The membership.changed subscription is the compensation for a crash
+// between the removal's commit and the lifecycle hook, so it clears the
+// tenant the envelope names.
 func TestAMembershipRemovalEventClearsTheTenantsBindings(t *testing.T) {
 	p := newFixture(t).product
 	bus := newRecordingBus()

@@ -55,8 +55,7 @@ func (r *rig) sendBody(e *gin.Engine, method, target string, body any, opts ...a
 }
 
 // TestTheRouteTableIsTheClosedSet holds the exact (method, path) set and the
-// permission each route asks for. The design fixes both; a route added, removed,
-// or moved under another permission fails here.
+// permission each route asks for.
 func TestTheRouteTableIsTheClosedSet(t *testing.T) {
 	want := map[mountedRoute]authz.Permission{
 		{http.MethodGet, "/api/v1/tenants/:tenant/permissions"}:                       authz.PermissionTenantRoleRead,

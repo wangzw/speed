@@ -49,14 +49,8 @@ func TestTheSuppliedTenantLockIsTheOneTheBindingDeleteTakes(t *testing.T) {
 }
 
 // A binding delete is one of the two paths that decide the tenant's
-// tenant-administrator floor, and it must take the same tenant lock an explicit
-// membership removal holds.
-//
-// The case stands for the removal path: it takes the lock, runs the cascade
-// that clearing the membership performs, and releases it. A binding delete that
-// ignored the lock would remove the other administrator while the cascade was
-// in flight; the domain would be left with neither binding even though each
-// path had seen enough of them.
+// tenant-administrator floor, and it must take the same tenant lock an
+// explicit membership removal holds.
 func TestABindingDeleteWaitsForTheMembershipRemovalLock(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()

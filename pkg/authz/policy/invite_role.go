@@ -11,23 +11,17 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// Grantable implements authn.InviteRolePolicy. It answers whether account may
-// grant role in tenant, with the rules a binding write applies: the platform
-// administrator may not be placed in a tenant domain, the caller must hold the
-// tenant's role-management permission, the role must exist, every permission the
-// role carries must be within the caller's held set, and the host's write guard
-// must admit the binding.
+// Grantable implements authn.InviteRolePolicy: it answers whether account may
+// grant role in tenant, with the rules a binding write applies. The platform
+// administrator may not be placed in a tenant domain; the caller must hold the
+// tenant's role-management permission, and every permission the role carries
+// must be within the caller's held set; the host's write guard must admit the
+// binding.
 //
-// The permission is judged before the role's existence. A caller that holds no
-// role-management permission is refused the same way for a role that exists and
-// one that does not, so the two answers cannot be used to learn which role names
-// a tenant has. The platform administrator is told first because its name is a
-// fixed one, not a secret of the tenant.
-//
-// An empty account is a host command: it may bind roles directly, so the
-// judgement is the role's own rules and the tenant's write guard, with no held
-// set to compare against. A held set that cannot be read is an error, never an
-// empty set.
+// The permission is judged before the role's existence, so the answers cannot
+// reveal which role names a tenant has. An empty account is a host command and
+// skips the held-set comparison. A held set that cannot be read is an error,
+// never an empty set.
 func (p *product) Grantable(ctx context.Context, tenant, account, role string) error {
 	if role == "" {
 		return nil
@@ -69,18 +63,14 @@ func (p *product) Grantable(ctx context.Context, tenant, account, role string) e
 	return p.requireWriteGuard(ctx, tenant)
 }
 
-// StillGrantable implements authn.InviteRolePolicy. It replays the issue-time
+// StillGrantable implements authn.InviteRolePolicy: it replays the issue-time
 // judgement against the inviter, because an invitation can outlive the standing
-// it was issued under: the inviter has to still be an active member of the
-// tenant, still hold the tenant's role-management permission, and still hold
-// every permission the role carries, and the role has to still exist and not be
-// the platform administrator. A membership that is suspended keeps its bindings,
-// so the held set alone would not notice that the inviter has left.
+// it was issued under. The inviter must still be an active member, still hold
+// the role-management permission and every permission the role carries, and the
+// role must still exist and not be the platform administrator.
 //
-// An empty inviter checks only that the role exists, because a host command
-// issued the invitation without an account whose standing could be replayed. A
-// judgement that cannot be read is an error, never a refusal: the caller treats
-// it as the review being unavailable rather than as a decision about the role.
+// An empty inviter checks only that the role exists. A judgement that cannot be
+// read is an error, never a refusal.
 func (p *product) StillGrantable(ctx context.Context, tenant, role, inviter string) error {
 	if role == "" {
 		return nil
@@ -122,8 +112,7 @@ func (p *product) StillGrantable(ctx context.Context, tenant, role, inviter stri
 }
 
 // BindRoleTx implements provisioning.RoleBinder: it writes one binding in the
-// transaction the acceptance hands it, with PutBindingTx's rules. The policy
-// snapshot reread and the change event are returned as the after-commit work.
+// transaction the acceptance hands it, with PutBindingTx's rules.
 func (p *product) BindRoleTx(ctx context.Context, tx *gorm.DB, tenant, account, role string) (func(context.Context) error, error) {
 	return p.PutBindingTx(ctx, tx, authz.Binding{
 		Tenant:    tenant,
@@ -134,8 +123,6 @@ func (p *product) BindRoleTx(ctx context.Context, tx *gorm.DB, tenant, account, 
 }
 
 // heldSet reads an account's effective permissions in one tenant as a set.
-// A read that fails is returned as it stands: an empty set is a conclusion, and
-// a failure is not one.
 func (p *product) heldSet(ctx context.Context, tenant, account string) (map[authz.Permission]bool, error) {
 	held, err := p.Held(ctx, authz.Domain(tenant), account)
 	if err != nil {
@@ -150,8 +137,7 @@ func (p *product) heldSet(ctx context.Context, tenant, account string) (map[auth
 }
 
 // requireGrantSubset refuses a role carrying a permission the held set does not
-// contain. It is the same rule the tenant management surface's binding write
-// applies, under the invitation's protected refusal.
+// contain.
 func (p *product) requireGrantSubset(ctx context.Context, tenant, role string, held map[authz.Permission]bool) error {
 	within, err := p.RoleSubsetHeld(ctx, tenant, authz.Role(role), held)
 	if err != nil {
@@ -164,9 +150,7 @@ func (p *product) requireGrantSubset(ctx context.Context, tenant, role string, h
 	return nil
 }
 
-// requireRoleExists refuses a role the tenant does not have. It is the same
-// refusal both judgements answer, and it runs only after every check that does
-// not depend on the role's name.
+// requireRoleExists refuses a role the tenant does not have.
 func (p *product) requireRoleExists(ctx context.Context, tenant, role string) error {
 	found, err := p.roleExists(ctx, tenant, role)
 	if err != nil {
@@ -178,9 +162,7 @@ func (p *product) requireRoleExists(ctx context.Context, tenant, role string) er
 	return nil
 }
 
-// requireWriteGuard asks the host whether the tenant protects its bindings. An
-// assembly with no write guard protects nothing, and a read that fails is the
-// judgement being unavailable rather than a pass.
+// requireWriteGuard asks the host whether the tenant protects its bindings.
 func (p *product) requireWriteGuard(ctx context.Context, tenant string) error {
 	if p.writeGuard == nil {
 		return nil
@@ -195,9 +177,7 @@ func (p *product) requireWriteGuard(ctx context.Context, tenant string) error {
 	return nil
 }
 
-// roleExists reports whether the tenant has a role row with this name. It is a
-// plain read: the invitation judgement runs before any transaction opens, so it
-// takes no row lock.
+// roleExists reports whether the tenant has a role row with this name.
 func (p *product) roleExists(ctx context.Context, tenant, role string) (bool, error) {
 	var rows []roleRow
 	err := p.crossing(ctx).Where("tenant_id = ? AND role = ?", tenant, role).Limit(1).Find(&rows).Error

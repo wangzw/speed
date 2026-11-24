@@ -57,9 +57,7 @@ func TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain(t *t
 }
 
 // TestPutBindingRefusesThePlatformAdministratorRoleOutsideThePlatformDomain
-// holds the same closure on the binding path. The role is refused by its domain
-// even though it was never created in that tenant, so the refusal names the
-// reserved role rather than an unknown one.
+// holds the same closure on the binding path.
 func TestPutBindingRefusesThePlatformAdministratorRoleOutsideThePlatformDomain(t *testing.T) {
 	f := newFixture(t)
 

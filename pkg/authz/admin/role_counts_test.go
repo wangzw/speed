@@ -10,11 +10,9 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheRoleListViewCountsActiveMembers holds the member count: it counts the
-// active accounts holding each role, leaves out an account the host does not
-// know, and reads the identities of every bound account in one batch. A role
-// with no active member is zero rather than null; the null value is reserved for
-// an assembly with no identity reader.
+// TestTheRoleListViewCountsActiveMembers holds the member count: it counts
+// the active accounts holding each role, leaves out an account the host does
+// not know, and reads the identities of every bound account in one batch.
 func TestTheRoleListViewCountsActiveMembers(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{
@@ -75,10 +73,9 @@ func TestTheMemberCountIsNullWithoutAnIdentityReader(t *testing.T) {
 	}
 }
 
-// TestARoleListWhoseIdentityReadFailsIsA503 holds the failure rule: an identity
-// read that cannot answer is a 503 with no role list, never a count of zero and
-// never an inactive set. A count of zero would tell a client that no member
-// holds the role, which is a conclusion the fault does not support.
+// TestARoleListWhoseIdentityReadFailsIsA503 holds the failure rule: an
+// identity read that cannot answer is a 503 with no role list, never a count
+// of zero and never an inactive set.
 func TestARoleListWhoseIdentityReadFailsIsA503(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -98,9 +95,8 @@ func TestARoleListWhoseIdentityReadFailsIsA503(t *testing.T) {
 }
 
 // TestCanManageFollowsTheCallersPlatformPermissions holds the hint: the role
-// list reads the caller's held permissions in the platform domain and reports
-// authz.role.manage. A caller holding only the read is false; a caller holding
-// the write is true.
+// list reads the caller's held permissions in the platform domain and
+// reports authz.role.manage.
 func TestCanManageFollowsTheCallersPlatformPermissions(t *testing.T) {
 	t.Run("the read alone is false", func(t *testing.T) {
 		r := newRig(t)
@@ -132,10 +128,8 @@ func TestCanManageFollowsTheCallersPlatformPermissions(t *testing.T) {
 	})
 }
 
-// TestAnUnreadableCallerPermissionSetIsA503 holds the failure rule: a permission
-// read that cannot answer is a 503, never can_manage=false. Hiding the controls
-// on a fault would tell the client a caller may not manage roles when the answer
-// was simply not readable.
+// TestAnUnreadableCallerPermissionSetIsA503 holds the failure rule: a
+// permission read that cannot answer is a 503, never can_manage=false.
 func TestAnUnreadableCallerPermissionSetIsA503(t *testing.T) {
 	r := newRig(t)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}

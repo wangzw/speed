@@ -12,12 +12,8 @@ import (
 // `go test` runs in.
 const fragmentPath = "openapi/authz.tenantadmin.json"
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment to
-// what the declarations generate. The skeleton declares no operation, so the
-// fragment is the empty API root; the case starts failing the moment a route is
-// declared and the fragment is not regenerated with it.
-//
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragment.
+// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment
+// to what the declarations generate.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
 	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
 	if err != nil {

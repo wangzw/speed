@@ -8,14 +8,10 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// The views the management routes answer with. Each is built field by field from
-// a root-package value and never handed through as it stands, so that a field
-// added to a record later does not reach a client by being there. The names are
-// exported because the OpenAPI fragment publishes them as components named after
-// the type.
-
 // AuthzAdminPermissionView is one declared permission as the catalog route shows
-// it.
+// it. The name is exported because the OpenAPI fragment names each component
+// after its Go type; keep it distinct from the tenant management surface's
+// views, since the merge refuses one component name carrying different content.
 type AuthzAdminPermissionView struct {
 	_ struct{} `description:"One permission the catalog declares."`
 
@@ -31,14 +27,7 @@ type AuthzAdminPermissionView struct {
 }
 
 // permissionViewOf builds one permission's view from the declared catalog and
-// the caller's held set. The description is the key the declaring module gave
-// the permission, rendered through the optional message localizer in the
-// request's locale. With no localizer assembled there is no text to render and
-// the field is empty; a permission whose declaring module gave no key has
-// nothing to render either. A key no catalog carries is written back as the key
-// by the localizer itself, so the field never says "no description" for a
-// module that gave one. The metadata is the declaring module's, and grantable is
-// the caller's own held set.
+// the caller's held set. With no localizer the description is empty.
 func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission, grantable bool) AuthzAdminPermissionView {
 	view := AuthzAdminPermissionView{Permission: string(perm), Grantable: grantable}
 	if meta, ok := p.catalog.Metadata(perm); ok {
@@ -54,10 +43,6 @@ func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission, g
 }
 
 // AuthzAdminRoleView is one role as the role routes show it.
-//
-// The description is the text a client shows: the operator's free text for a
-// role this surface created, and a builtin role's key rendered in the request's
-// language.
 type AuthzAdminRoleView struct {
 	_ struct{} `description:"One role of a tenant as the role routes report it."`
 
@@ -71,9 +56,6 @@ type AuthzAdminRoleView struct {
 	CreatedAt       time.Time `json:"created_at" required:"true" description:"When the role was written, as an RFC 3339 instant in UTC."`
 }
 
-// roleViewOf builds one role's view. permissionCount is the role's grant count;
-// memberCount is nil when the assembly delivers no identity reader; canManage is
-// the caller's platform-domain role.manage.
 func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permissionCount int, memberCount *int, canManage bool, tenantName string) AuthzAdminRoleView {
 	return AuthzAdminRoleView{
 		Tenant:          tenantName,
@@ -87,11 +69,8 @@ func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permission
 	}
 }
 
-// roleDescription renders the text a client shows for a role. A builtin role's
-// description is the localised text of the key the host seeded — the key itself
-// when no localizer is assembled, the i18n fallback; a builtin role with no key
-// answers its free text. A role the management surface created carries the
-// operator's free text as written.
+// roleDescription renders the text a client shows for a role: a builtin role's
+// key localised, or the operator's free text.
 func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) string {
 	if !r.Builtin {
 		return r.Description
@@ -105,10 +84,7 @@ func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) strin
 	return p.localizer.Localize(ctx, i18n.Key(r.DescriptionKey), nil)
 }
 
-// AuthzAdminGrantView is one permission grant as the grant routes show it. The
-// resource and the action are the pair the engine matches on; the permission a
-// route names is translated to it on the way in, and the view translates it
-// back so a client can name the grant without a local table.
+// AuthzAdminGrantView is one permission grant as the grant routes show it.
 type AuthzAdminGrantView struct {
 	_ struct{} `description:"One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on."`
 
@@ -120,9 +96,8 @@ type AuthzAdminGrantView struct {
 	CreatedAt  time.Time `json:"created_at" required:"true" description:"When the grant was written, as an RFC 3339 instant in UTC."`
 }
 
-// grantViewOf builds one grant's view. The permission is read back from the
-// catalog's reverse index; a pair no declared permission translates to leaves
-// the field empty and the pair itself on the view.
+// grantViewOf builds one grant's view. A pair no declared permission translates
+// to leaves the permission field empty and the pair on the view.
 func (p *product) grantViewOf(g authz.GrantRecord, tenantName string) AuthzAdminGrantView {
 	view := AuthzAdminGrantView{
 		Tenant:    tenantName,

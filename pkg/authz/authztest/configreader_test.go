@@ -26,9 +26,8 @@ func configProbeModule(name, namespace string) core.Module {
 }
 
 // TestConfigReaderServesTheLoadersValues holds that the reader is the real
-// loader's: a value in the body reaches a module that declared the item, and a
-// value the body leaves out reads as the declared default. A stand-in reader
-// that echoed the defaults, or the body, alone would fail one of the two.
+// loader's: a value in the body reaches a module that declared the item, and
+// a value the body leaves out reads as the declared default.
 func TestConfigReaderServesTheLoadersValues(t *testing.T) {
 	reader := authztest.ConfigReader(t, configProbeModule("probe", "probe"), `{"probe": {"greeting": "hello"}}`)
 	var got probeConfig

@@ -12,18 +12,8 @@ import (
 	"testing"
 )
 
-// TestTheSentinelSetIsClosed pins the root package's sentinels to the closed set
-// the design's failure table names. The table is the one list a caller judges a
-// failure against with errors.Is, so a sentinel added, dropped or renamed is a
-// change to a published surface and is a decision, not an addition — every
-// direction fails here.
-//
-// Each sentinel is taken up by name in the table below, so a rename or a removal
-// breaks the build rather than passing on the ones that remain; the set the
-// sources declare is then read back and held to exactly these names, so a
-// sentinel that joins the package without joining the table fails too. Two
-// sentinels that publish one message would be one failure a caller cannot tell
-// from another, so the messages are held distinct.
+// TestTheSentinelSetIsClosed checks that the package declares exactly the
+// sentinel names the failure table lists, with distinct messages.
 func TestTheSentinelSetIsClosed(t *testing.T) {
 	sentinels := []struct {
 		name string

@@ -182,10 +182,9 @@ func count(t *testing.T, handle *gorm.DB, table string) int64 {
 	return n
 }
 
-// A load reads every tenant's rows, because the deciding process holds all of
-// them; the cross-tenant mark the adapter binds at construction is what lets it.
-// The control half shows the mark is load-bearing: the same read with no mark
-// and no tenant is refused, not answered with all rows.
+// A load reads every tenant's rows, because the deciding process holds all
+// of them; the cross-tenant mark the adapter binds at construction is what
+// lets it.
 func TestLoadPolicyReadsEveryTenant(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)

@@ -38,14 +38,9 @@ func TestTheSqliteMigrationBuildsTheTenantKeyedTables(t *testing.T) {
 }
 
 // The second SQLite migration withdraws every copy of the platform
-// administrator role outside the platform domain: the role exists only in the
-// system tenant's domain, and an upgraded database still carries a copy in every
-// tenant domain that predates that rule.
-//
-// The case writes both what the migration must remove and what it must keep,
-// applies the file, and then applies it a second time to hold the deletes
-// idempotent: a migration the database driver runs again must not fail and must
-// not take anything else with it.
+// administrator role outside the platform domain: the role exists only in
+// the system tenant's domain, and an upgraded database still carries a copy
+// in every tenant domain that predates that rule.
 func TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain(t *testing.T) {
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
 	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")
@@ -58,10 +53,7 @@ func TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDoma
 }
 
 // The third SQLite migration adds the role's free-text description and the
-// (tenant, role, account) index the role-usage read pages by. The column
-// defaults to the empty string and refuses a null, so an existing row reads back
-// an empty description rather than a broken one; the index's column order is
-// what makes the cursor page a range read rather than a scan.
+// (tenant, role, account) index the role-usage read pages by.
 func TestTheSqliteRoleDescriptionMigrationAddsTheDescriptionAndRoleBindingIndex(t *testing.T) {
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
 	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")

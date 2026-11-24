@@ -96,10 +96,9 @@ func TestEveryWriteConsultsTheWriteGuard(t *testing.T) {
 	}
 }
 
-// TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager holds the deny direction:
-// the route answers 403 with the protected code and neither lands a mandatory
-// audit row nor reaches the manager. This is the mechanism a personal tenant is
-// refused by; the module does not decide that a tenant is personal itself.
+// TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager holds the deny
+// direction: the route answers 403 with the protected code and neither lands
+// a mandatory audit row nor reaches the manager.
 func TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager(t *testing.T) {
 	for _, c := range writeRouteCases() {
 		t.Run(c.name, func(t *testing.T) {

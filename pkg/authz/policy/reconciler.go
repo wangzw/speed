@@ -14,27 +14,16 @@ import (
 // ReconcileGrants converges a builtin tenant-admin role's grant set to grants
 // and removes from it only the grants named in retired that it currently holds.
 //
-// It acts on TenantAdminRole alone: another role is ErrReservedRole before any
-// row is read, because no other role's grant set is a host-owned target. A
-// TenantAdminRole that is not builtin is ErrReservedRole as well: its grants are
-// still the management surface's to change, and converging them here would take
-// that away without the mark that says the host owns them. An absent role is
-// ErrUnknownRole and an empty tenant ErrTenantMismatch.
+// It acts on a builtin TenantAdminRole alone: another role, or a tenant-admin
+// role that is not builtin, is ErrReservedRole before any row is read. An absent
+// role is ErrUnknownRole and an empty tenant ErrTenantMismatch.
 //
-// The additions and removals are one transaction. The role check takes the
-// role's row lock, so a concurrent delete and this convergence serialise. The
-// held set is read before anything is written: a pair listed in both grants and
-// retired is kept, because the target set is what the caller declares current
-// and the retired list is what this version withdraws.
-//
-// A pair outside grants and outside retired is left as it stands. It is not
-// removed by set difference: during a rolling deployment another replica may
-// still declare it, and deleting by difference would let the replicas erase each
-// other's grants.
-//
-// Once the transaction commits, this replica reloads its snapshot and publishes
-// authz.policy.changed. A call that writes nothing does neither, which is what
-// makes a repeated reconciliation over an unchanged target set free.
+// The additions and removals are one transaction, and the role check takes the
+// role's row lock. A pair outside grants and outside retired is left as it
+// stands: deleting by set difference would let replicas erase each other's
+// grants during a rolling deployment. Once the transaction commits, this replica
+// reloads its snapshot and publishes authz.policy.changed; a call that writes
+// nothing does neither.
 func (p *product) ReconcileGrants(ctx context.Context, tenant string, role authz.Role,
 	grants, retired []authz.Grant,
 ) (added, removed int, err error) {

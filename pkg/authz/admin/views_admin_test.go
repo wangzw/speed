@@ -7,11 +7,8 @@ import (
 	"testing"
 )
 
-// TestTheViewFieldSetsArePinned holds the exact JSON key set of every view the
-// management routes answer with. The catalog test checked the permissions view's
-// field set alone; the role, grant and binding views were only ever checked by a
-// substring of their values, so a renamed or an added field — even one that
-// trips the module's own no-opaque-id rule — could reach a client unnoticed.
+// TestTheViewFieldSetsArePinned holds the exact JSON key set of every view
+// the management routes answer with.
 func TestTheViewFieldSetsArePinned(t *testing.T) {
 	cases := map[string]struct {
 		view any

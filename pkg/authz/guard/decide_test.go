@@ -215,9 +215,7 @@ func TestTenantAccessDecidesFourWays(t *testing.T) {
 
 // A non-tenant-access action puts exactly one query, whatever its domain: an
 // account-level action whose decision names no tenant is decided in the
-// platform domain, and a tenant-level action in the tenant's own domain. A miss
-// in that one domain is a denial, and the engine is asked no second time —
-// authn.tenant.access is the only action with a query after a miss.
+// platform domain, and a tenant-level action in the tenant's own domain.
 func TestANonAccessActionDecidesInOneQuery(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -253,12 +251,8 @@ func TestANonAccessActionDecidesInOneQuery(t *testing.T) {
 	}
 }
 
-// The three impersonation actions decide in the platform domain whatever tenant
-// the decision names. The tenant an impersonation is confined to is the data the
-// action operates on, not the policy domain: a platform administrator needs no
-// grant in it, and a tenant administrator's role, held in the tenant domain,
-// carries no platform permission. The engine is asked once, in the platform
-// domain; a miss there denies and is not retried in the named tenant.
+// The three impersonation actions decide in the platform domain whatever
+// tenant the decision names.
 func TestImpersonationDecidesInThePlatformDomain(t *testing.T) {
 	for _, c := range []struct {
 		action authn.Action
@@ -309,10 +303,7 @@ func TestImpersonationDecidesInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// The subject is the effective account. Under an impersonation the decision is
-// made for the account the request is taken to be from, not for the account
-// whose hands are on the request: the engine is asked about the impersonated
-// account, so the operator's own permissions do not carry.
+// The subject is the effective account.
 func TestDecideTakesTheEffectiveAccount(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -410,12 +401,7 @@ func TestTheRegistryRefusesWithoutACatalog(t *testing.T) {
 	}
 }
 
-// A second provider of the decision seam fails the startup. The module delivers
-// authn.Decider exclusively and states StateEnabled, so two providers is not a
-// configuration resolution stands one of them down from: the seam has one
-// implementation, and which one answers must not be left to resolution order or
-// to a runtime ErrAmbiguousProvider. The stand-in claims nothing exclusively,
-// which is what the guard module's own exclusive claim has to catch.
+// A second provider of the decision seam fails the startup.
 func TestASecondDeciderFailsTheStartup(t *testing.T) {
 	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))

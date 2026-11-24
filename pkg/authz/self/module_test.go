@@ -19,9 +19,8 @@ import (
 // it and stores it, and no method is called before a request arrives.
 type seams struct{ authz.SubjectPermissions }
 
-// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the fragment to
-// the route the module's own Init registers. The two are separately maintained
-// facts, and the fragment is the only source a generated client is built from.
+// TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the fragment
+// to the route the module's own Init registers.
 func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	routecontract.Check(t, routecontract.Case{
 		Module:    Module(),

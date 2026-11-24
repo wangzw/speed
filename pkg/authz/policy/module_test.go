@@ -120,10 +120,7 @@ func holdReadsUntilCancelled(t *testing.T, handle *gorm.DB) {
 
 // Concurrent reloads are serialised: a load reads the whole table and then
 // installs it, and two loads running at once could install out of order and
-// leave a staler snapshot in place. The serialisation is observable from the
-// database, because a serialised reload path never has two statements in flight
-// at once. The first statement is held for a moment so that a second, unserialised
-// load has time to reach the table and be seen.
+// leave a staler snapshot in place.
 func TestConcurrentReloadsDoNotOverlap(t *testing.T) {
 	p := newProductOver(t)
 	ctx := t.Context()
