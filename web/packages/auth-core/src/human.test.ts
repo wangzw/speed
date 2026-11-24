@@ -15,6 +15,7 @@
 import { createHash } from 'node:crypto'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import {
   CAPTCHA_CHALLENGE,
   apiError,
@@ -34,9 +35,9 @@ import {
 } from './human.js'
 import { decodeBase64Url } from './pow.js'
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
-  vi.useRealTimers()
+  await restoreRealTimers()
 })
 
 /** The leading zero bits of a proof's hash, recomputed as the provider
