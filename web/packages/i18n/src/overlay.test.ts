@@ -1,9 +1,3 @@
-/**
- * overlay.ts behaviour: replacing an existing leaf, refusing an unknown
- * leaf (the upgrade-dropped-a-key failure that must surface loudly), and
- * supplying a whole new language whose completeness registration checks.
- */
-
 import { describe, expect, it } from 'vitest'
 import { createI18n } from './create.js'
 import { overlayResources } from './overlay.js'

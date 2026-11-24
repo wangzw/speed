@@ -1,10 +1,3 @@
-/**
- * Contract tests for registerNamespace: validation happens before any
- * mutation (failed registrations leave the instance untouched), parity and
- * coverage are enforced across the supported languages, and a namespace
- * registers exactly once per instance.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { createInstance } from 'i18next'
 import { createI18n, registerNamespace, type ResourceBundle } from './index'
@@ -28,7 +21,6 @@ function instanceWithSupported(
   return instance
 }
 
-/** The welcome resources minus one en-US leaf (parity must reject it). */
 function enUsMissingProfile(): Record<string, ResourceBundle> {
   const enUs = JSON.parse(JSON.stringify(welcomeResources['en-US'])) as Record<
     string,
@@ -87,8 +79,6 @@ describe('registerNamespace', () => {
 
   it('refuses invalid namespace names', () => {
     const instance = instanceWithSupported(['zh-CN'])
-    // Scoped npm names ('@speed/tokens') are not namespaces: a package
-    // registers under its base name, and the pattern admits no '@' or '/'.
     for (const name of ['1welcome', 'welcome space', 'weiß', '@speed/tokens']) {
       expect(
         () => registerNamespace(instance, name, { 'zh-CN': { a: 'x' } }),
@@ -189,9 +179,6 @@ describe('registerNamespace', () => {
 
   it('rejects a plural family missing a category a supported language can select', () => {
     const instance = instanceWithSupported(['zh-CN', 'en-US'])
-    // Both bundles ship only the "_other" form: identical leaf sets, so the
-    // parity check passes -- but en-US counts of 1 select "one", whose form
-    // is absent, and the renderer would spill the raw key.
     expect(() =>
       registerNamespace(instance, 'welcome', {
         'zh-CN': { item_other: 'N items' },
@@ -202,8 +189,6 @@ describe('registerNamespace', () => {
 
   it('rejects a plural family missing the only category zh-CN can select', () => {
     const instance = instanceWithSupported(['zh-CN', 'en-US'])
-    // The mirror-image shape: only "_one" ships. zh-CN's sole category is
-    // "other", so every count in zh-CN would spill the raw key.
     expect(() =>
       registerNamespace(instance, 'welcome', {
         'zh-CN': { item_one: '1 item' },
@@ -245,9 +230,6 @@ describe('registerNamespace', () => {
     expect(instance.t('greeting.hello', { ns: 'welcome', lng: 'zh-CN' })).toBe(
       'greeting.hello',
     )
-    // The deliberately missing key is reported through the host's recorder
-    // rather than the default console warning, and the record names the
-    // lookup that missed.
     expect(onMissingKey).toHaveBeenCalledWith({
       languages: ['zh-CN'],
       namespace: 'welcome',
@@ -275,15 +257,11 @@ describe('registerNamespace', () => {
       expect(() => registerNamespace(instance, 'welcome', welcomeResources)).toThrow(
         /synthetic mid-loop landing failure/,
       )
-      // The failed attempt rolled its landed bundles back and marked
-      // nothing: no half-registered namespace may survive the throw.
       expect(instance.hasResourceBundle('zh-CN', 'welcome')).toBe(false)
       expect(instance.hasResourceBundle('en-US', 'welcome')).toBe(false)
       expect(instance.t('greeting.hello', { ns: 'welcome', lng: 'zh-CN' })).toBe(
         'greeting.hello',
       )
-      // The deliberately missing key is reported through the host's recorder,
-      // never the default console warning.
       expect(onMissingKey).toHaveBeenCalledWith({
         languages: ['zh-CN'],
         namespace: 'welcome',
@@ -292,7 +270,6 @@ describe('registerNamespace', () => {
     } finally {
       instance.addResourceBundle = original
     }
-    // A retry is possible and lands the namespace completely.
     registerWelcome(instance)
     expect(instance.t('greeting.hello', { ns: 'welcome', lng: 'zh-CN' })).toBe(
       welcomeZh.greeting.hello,
@@ -300,7 +277,6 @@ describe('registerNamespace', () => {
     expect(instance.t('greeting.hello', { ns: 'welcome', lng: 'en-US' })).toBe(
       welcomeEn.greeting.hello,
     )
-    // The retry's lookups resolve, so the recorder saw the miss exactly once.
     expect(onMissingKey).toHaveBeenCalledTimes(1)
   })
 })

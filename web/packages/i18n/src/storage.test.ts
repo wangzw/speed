@@ -1,10 +1,3 @@
-/**
- * Contract tests for instance/storage binding: the binding is carried on the
- * instance itself -- and therefore on the descriptor-copy wrapper
- * useTranslation hands out -- resolvable afterwards, overridable by a later
- * bind.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   SPEED_LOCALE_STORAGE_KEY,
@@ -49,10 +42,6 @@ describe('storage binding', () => {
   })
 
   it('carries the binding onto a descriptor-copy wrapper of the instance', () => {
-    // react-i18next's useTranslation returns exactly this shape: a distinct
-    // object built from the original instance's own property descriptors.
-    // A switch driven through it must still find the binding: it is the one
-    // path that makes manual choices.
     const instance = { language: 'zh-CN' }
     const storage = new MemoryStorage()
     bindInstanceStorage(instance, storage, SPEED_LOCALE_STORAGE_KEY)

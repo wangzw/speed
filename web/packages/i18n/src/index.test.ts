@@ -1,12 +1,3 @@
-/**
- * Entry-point contract: exactly the documented runtime exports, nothing
- * more -- in particular no MUI surface leaks into the main entry (that
- * lives at @speed/i18n/mui-locale, isolated so non-MUI consumers never
- * pull the MUI tree). React bindings are part of the surface by design
- * (see index.ts), kept so component packages and hosts consume the whole
- * i18n layer through one @speed package.
- */
-
 import { describe, expect, it } from 'vitest'
 import * as i18nModule from './index'
 

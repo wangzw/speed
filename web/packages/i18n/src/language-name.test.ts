@@ -1,12 +1,3 @@
-/**
- * language-name.ts behaviour: the UI-language name of a tag through
- * Intl.DisplayNames, the base-language naming rule that ignores a region
- * variant unless the supported set carries two of them, and the raw-tag
- * fallback when the engine cannot answer. The expected values are computed
- * through Intl itself, so the test does not pin one ICU release's exact
- * wording.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { languageDisplayName } from './language-name.js'
 
@@ -29,16 +20,12 @@ describe('languageDisplayName', () => {
   })
 
   it('reads en-US as the base language name, not the region variant name', () => {
-    // The base-language name differs from the full-tag name in both UI
-    // languages ('English' vs 'American English', '英语' vs '美式英语'),
-    // which is what the current implementation must not return.
     for (const uiLanguage of ['en-US', 'zh-CN'] as const) {
       const baseName = displayName('en', uiLanguage)
       expect(languageDisplayName('en-US', uiLanguage, ['zh-CN', 'en-US'])).toBe(
         baseName,
       )
       expect(baseName).not.toBe(displayName('en-US', uiLanguage))
-      // An absent or empty supported set means no variants either.
       expect(languageDisplayName('en-US', uiLanguage, [])).toBe(baseName)
       expect(languageDisplayName('en-US', uiLanguage)).toBe(baseName)
     }

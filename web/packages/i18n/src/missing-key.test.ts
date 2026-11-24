@@ -1,8 +1,3 @@
-/**
- * Contract tests for the missing-key handlers: the visible default warning
- * and the factory that adapts the host's handler to i18next's signature.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   defaultMissingKeyHandler,

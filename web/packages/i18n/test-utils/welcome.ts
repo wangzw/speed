@@ -1,12 +1,3 @@
-/**
- * Shared test fixtures and instance factory for the i18n tests: a
- * deterministic createI18n (injected memory storage, no navigator
- * dependence) with the bilingual "welcome" namespace registered. The
- * bilingual resources live under test-utils/locales/ -- the CJK-bearing
- * files stay in a directory the repo's CJK scanner exempts; .ts sources
- * assert against imported fixtures instead of embedding literals.
- */
-
 import {
   createI18n,
   registerNamespace,
@@ -19,31 +10,22 @@ import { MemoryStorage } from './memory-storage'
 import welcomeEn from './locales/welcome/en-US.json'
 import welcomeZh from './locales/welcome/zh-CN.json'
 
-/** The bilingual welcome namespace, as registerNamespace expects it. */
 export const welcomeResources: Readonly<Record<string, ResourceBundle>> = {
   'zh-CN': welcomeZh as unknown as ResourceBundle,
   'en-US': welcomeEn as unknown as ResourceBundle,
 }
 
-/** Register the welcome namespace on an instance (throws on duplicate). */
 export function registerWelcome(instance: I18nInstance): void {
   registerNamespace(instance, 'welcome', welcomeResources)
 }
 
 export interface CreateTestI18nOptions {
-  /** Pre-seed the memory storage with a persisted choice. */
   readonly storedLanguage?: string | null
-  /** Defaults to [] so no test depends on the host's navigator. */
   readonly navigatorLanguages?: readonly string[]
   readonly profileLanguage?: string | null
   readonly onMissingKey?: (details: MissingKeyDetails) => void
 }
 
-/**
- * An instance with the welcome namespace registered, backed by an
- * assertable MemoryStorage. Language sources not mentioned default to
- * absent (no URL, no profile, no navigator languages).
- */
 export function createTestI18n(
   options: CreateTestI18nOptions = {},
 ): { instance: I18nInstance; storage: MemoryStorage } {

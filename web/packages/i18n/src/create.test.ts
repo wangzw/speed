@@ -1,16 +1,3 @@
-/**
- * Contract tests for createI18n and switchLanguage: negotiation inputs and
- * precedence, the discipline options init pins, the opt-in fallback
- * namespace (namespace fallback, never language fallback), persistence
- * semantics, and the end-to-end proof that a missing key in the loaded
- * language never renders another language's text (the no-silent-fallback
- * analogue of pkg/i18n, whose catalog never falls back across
- * languages).
- *
- * CJK assertions compare against the imported fixtures; no language
- * literals live in this file.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createInstance } from 'i18next'
 import {
@@ -29,7 +16,6 @@ import welcomeEn from '../test-utils/locales/welcome/en-US.json'
 import fallbackZh from '../test-utils/locales/fallback/zh-CN.json'
 import fallbackEn from '../test-utils/locales/fallback/en-US.json'
 
-/** Storage whose write always throws: persistence must stay best-effort. */
 class ThrowingWriteStorage implements StorageLike {
   getItem(key: string): string | null {
     void key
@@ -41,7 +27,6 @@ class ThrowingWriteStorage implements StorageLike {
   }
 }
 
-/** Storage whose read always throws: creation must fall back to no choice. */
 class ThrowingReadStorage implements StorageLike {
   getItem(key: string): string | null {
     throw new Error(`storage read denied for "${key}"`)
@@ -135,9 +120,6 @@ describe('createI18n negotiation', () => {
   })
 
   it('skips the URL source entirely when urlParameterName is null', () => {
-    // urlParameterName: null is the documented opt-out; it must not be
-    // coalesced onto the default parameter name, or a ?lang= override on
-    // the real URL would still outrank storage and the navigator.
     const storage = new MemoryStorage()
     storage.setItem(SPEED_LOCALE_STORAGE_KEY, 'en-US')
     const instance = createI18n({
@@ -150,10 +132,6 @@ describe('createI18n negotiation', () => {
   })
 
   it('never honors a "null"-named or empty-named parameter when the URL source is opted out', () => {
-    // URLSearchParams.get() coerces its argument and an empty name is a
-    // legal (if pathological) parameter, so ?null=en-US and ?=en-US must
-    // both stay inert once detection is disabled -- neither may select a
-    // language the negotiation chain would otherwise not pick.
     for (const search of ['?null=en-US', '?=en-US']) {
       const instance = createI18n({
         storage: new MemoryStorage(),
@@ -239,15 +217,10 @@ describe('createI18n negotiation', () => {
     expect(instance.options.fallbackLng).toBe(false)
     expect(instance.options.load).toBe('currentOnly')
     expect(instance.options.saveMissing).toBe(true)
-    // i18next extends a pinned supportedLngs with its internal "cimode"
-    // meta language at init; readSupportedLanguages filters it back out,
-    // and the underlying option array reflects the runtime extension.
     expect(instance.options.supportedLngs).toEqual(['zh-CN', 'en-US', 'cimode'])
     expect(typeof instance.options.missingKeyHandler).toBe('function')
   })
 
-  // i18next's own default is no fallback namespace; an unset option must
-  // stay indistinguishable from one that never existed.
   it('configures no fallback namespace when fallbackNamespaces is undefined', () => {
     const instance = createI18n({ storage: new MemoryStorage(), navigatorLanguages: [] })
     expect(instance.options.fallbackNS).toBe(false)
@@ -341,8 +314,6 @@ describe('interpolation', () => {
       'en-US': { line: 'Address: {{value}}' },
       'zh-CN': { line: 'Address: {{value}}' },
     })
-    // React renders the translated string as a text node and escapes it
-    // there, so the engine must not escape the value a second time.
     const value = `/console/a&b<c>"d'e`
     expect(instance.t('line', { ns: 'interpolation', value })).toBe(
       `Address: ${value}`,
@@ -417,10 +388,6 @@ describe('switchLanguage', () => {
   })
 
   it('persists through the descriptor-copy wrapper useTranslation returns', async () => {
-    // The manual switcher receives its instance from useTranslation, which
-    // hands out a distinct object built from the created instance's
-    // property descriptors. The binding must travel with it, or the one
-    // caller that makes manual choices never persists them.
     const { instance, storage } = createTestI18n({ storedLanguage: null })
     const wrapper = Object.create(
       Object.getPrototypeOf(instance),
@@ -432,10 +399,6 @@ describe('switchLanguage', () => {
   })
 
   it('warns visibly and still switches when the instance carries no binding', async () => {
-    // An instance nothing bound (a foreign instance that merely pins the
-    // supported set) has nowhere to persist to. Skipping that silently
-    // would lose the choice with no trace, so the warning is required and
-    // uses the same visible [speed-i18n] channel a failing store uses.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const unbound = createInstance()
     await unbound.init({
@@ -456,22 +419,13 @@ describe('switchLanguage', () => {
 
 describe('profile-language tier under late resolution', () => {
   it('applies a late-resolved profile without persisting, so a later profile change still wins on the next visit', async () => {
-    // The host resolves the profile locale only after creation (it comes
-    // from /me), so it applies it through switchLanguage -- and must use
-    // the non-persisting form, because the persisted slot is the
-    // manual-choice tier, which outranks the profile tier on every later
-    // visit.
     const storage = new MemoryStorage()
     const visitOne = createI18n({ storage, navigatorLanguages: [] })
     expect(visitOne.language).toBe('en-US')
     await switchLanguage(visitOne, 'zh-CN', null)
     expect(visitOne.language).toBe('zh-CN')
-    // The manual-choice slot stays untouched: no stale trace to shadow the
-    // tier when the profile changes.
     expect(storage.getItem(SPEED_LOCALE_STORAGE_KEY)).toBeNull()
 
-    // The profile changes on the server; the next visit feeds the current
-    // profile at creation and the profile tier speaks.
     const visitTwo = createI18n({
       storage,
       profileLanguage: 'zh-CN',
@@ -481,18 +435,11 @@ describe('profile-language tier under late resolution', () => {
   })
 
   it('persisting a profile application writes the manual slot, which outranks the profile tier on later visits', async () => {
-    // The trap the non-persisting recipe exists to prevent: applying the
-    // profile through switchLanguage's default writes the manual-choice
-    // slot, and the stored choice outranks the profile tier by design -- so
-    // a later profile change is shadowed in this browser until the manual
-    // slot is overwritten or cleared.
     const storage = new MemoryStorage()
     const visitOne = createI18n({ storage, navigatorLanguages: [] })
     await switchLanguage(visitOne, 'en-US')
     expect(storage.getItem(SPEED_LOCALE_STORAGE_KEY)).toBe('en-US')
 
-    // The profile changes to zh-CN, but the stored manual choice wins at
-    // the next visit's negotiation.
     const visitTwo = createI18n({
       storage,
       profileLanguage: 'zh-CN',
@@ -506,12 +453,9 @@ describe('missing-key discipline (no silent fallback across languages)', () => {
   it('never renders another language text for a key missing in the loaded language', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { instance, storage } = createTestI18n({ storedLanguage: null })
-    // The loaded language starts with the key present...
     expect(instance.t('greeting.hello', { ns: 'welcome' })).toBe(
       welcomeEn.greeting.hello,
     )
-    // ...then it goes missing in en-US only (zh-CN still has it, which is
-    // exactly the trap a cross-language fallback would silently fall into).
     instance.removeResourceBundle('en-US', 'welcome')
     await switchLanguage(instance, 'en-US')
     expect(warn).not.toHaveBeenCalled()
