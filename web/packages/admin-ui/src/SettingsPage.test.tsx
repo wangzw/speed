@@ -1,20 +1,3 @@
-/**
- * SettingsPage: the settings read-write page.
- *
- * Its read renders the settled items as a width-limited form (a sensitive
- * item's value arriving already masked from the server renders as-is), the
- * secondary navigation groups them by namespace and narrows the read, and
- * its sticky save bar drives the writes -- one PUT per changed item, a
- * remove calling the remove operation. A row whose layer holds no override
- * is marked as the declared default and carries no remove control; only an
- * overridden row can be removed, which `has_row` decides for a row written
- * as the empty string and for a sensitive row whose text is masked. A
- * refused write renders the
- * answer's code text (a value outside the domain reading the invalid-value
- * text); a landed save clears the item's draft; a refused save keeps it. A
- * refused read (403) renders the permission placeholder without a retry,
- * every other failure the retryable error placeholder.
- */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
@@ -38,7 +21,6 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** The pagination action labels MUI's zh-CN locale gives its own controls. */
 const NEXT_PAGE_LABEL =
   muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
     'next',
@@ -48,7 +30,6 @@ const PREVIOUS_PAGE_LABEL =
     'previous',
   ) ?? ''
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(
   template: string,
   values: Record<string, string>,
@@ -58,7 +39,6 @@ function text(
   )
 }
 
-/** The ui-kit data table's zh-CN copy-control label, for one value. */
 const COPY_VALUE_TEMPLATE = (
   uiKitResources['zh-CN'] as unknown as {
     readonly dataTable: { readonly copyValue: string }
@@ -82,7 +62,6 @@ const item: AdminSetting = {
   value: '5',
 }
 
-/** A declared item with no row on the selected layer: it resolves to its default. */
 const defaultItem: AdminSetting = {
   ...item,
   key: 'mail.limit',
@@ -91,10 +70,6 @@ const defaultItem: AdminSetting = {
   value: '3',
 }
 
-/**
- * A second declared item whose description and declared default are
- * different from `item`'s, so a cross-wired cell is observable.
- */
 const sessionItem: AdminSetting = {
   ...item,
   key: 'authn.session.absolute-lifetime',
@@ -107,12 +82,8 @@ const sessionItem: AdminSetting = {
   value: '24h',
 }
 
-/**
- * jsdom implements no layout, so `scrollIntoView` does not exist on
- * elements. The tests that observe the region's scroll install this spy;
- * the ones that only drive a failure rely on the call site guarding a
- * missing method.
- */
+// jsdom implements no layout, so elements have no scrollIntoView; the tests that
+// observe the region's scroll install this spy.
 function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   const spy = vi.fn()
   Object.defineProperty(Element.prototype, 'scrollIntoView', {
@@ -127,19 +98,12 @@ afterEach(() => {
   delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
 
-/** Escapes an emotion class name for use inside a regular expression. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/**
- * The `align-items` `element` declares inside its
- * `@media (min-width:<minWidth>px)` block (`0` for the `xs` branch, which
- * MUI emits under `@media (min-width:0px)`). jsdom renders no layout and
- * evaluates no media query, so a viewport-keyed `sx` value is only
- * observable in the generated stylesheet; scoping to this element's own
- * emotion class keeps the assertion a proof for this box.
- */
+// jsdom renders no layout and evaluates no media query, so a viewport-keyed sx
+// value is only observable in the generated stylesheet.
 function alignItemsAt(
   css: string,
   element: Element,
@@ -177,9 +141,6 @@ describe('SettingsPage', () => {
       name: text(zhCN.settings.removeAria, { key: 'mail.retry' }),
     })
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    // The namespace navigation and the row/toolbar actions are the same
-    // class of compact target; each gates up to the 44x44 floor on a
-    // coarse pointer.
     for (const control of [all, namespace, remove, refresh]) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
@@ -202,14 +163,10 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
 
-    // The default row resolves to its declared value and says so in words;
-    // the overridden row is marked as such.
     expect(await screen.findByDisplayValue('3')).toBeInTheDocument()
     expect(screen.getByText(zhCN.settings.state.default)).toBeInTheDocument()
     expect(screen.getByText(zhCN.settings.state.overridden)).toBeInTheDocument()
 
-    // Only the override has something to take back, so only its row carries
-    // a remove control; a default row renders none rather than a no-op.
     expect(
       screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.retry' }) }),
     ).toBeInTheDocument()
@@ -217,8 +174,6 @@ describe('SettingsPage', () => {
       screen.queryByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.limit' }) }),
     ).toBeNull()
 
-    // Both rows stay editable: writing a value over a default is the way a
-    // default row becomes overridden.
     expect(screen.getByRole('textbox', { name: 'mail.limit' })).toBeEnabled()
   })
 
@@ -237,8 +192,6 @@ describe('SettingsPage', () => {
       return row as HTMLElement
     }
 
-    // Each row carries its own declaration: a cell wired to another row's
-    // description or default leaves the row-scoped query empty.
     expect(within(rowOf('mail.retry')).getByText('Retry count')).toBeInTheDocument()
     expect(
       within(rowOf('mail.retry')).getByText(
@@ -259,8 +212,6 @@ describe('SettingsPage', () => {
   })
 
   it('shows the declared default on an overridden row, not its current value', async () => {
-    // `item` holds a row (its current value is 5) while its declaration is
-    // 3: the default line must report the declaration, not the override.
     const operations = createAdminOperations(
       makeAdminBackend({ listSettings: () => Promise.resolve([item]) }),
     )
@@ -280,9 +231,6 @@ describe('SettingsPage', () => {
   })
 
   it('leaves the default line out when the setting declares no default', async () => {
-    // A sensitive item arrives with an empty declared default. The page
-    // keeps the description but renders no default line at all, rather than
-    // a label over emptiness that would read as an empty value.
     const masked: AdminSetting = {
       ...item,
       key: 'mail.password',
@@ -316,9 +264,6 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     await screen.findByText(zhCN.settings.state.default)
 
-    // A short state label must not split across two rows when the table is
-    // squeezed. jsdom does no layout, so the proof is the declared
-    // `white-space: nowrap` on the rendered cells.
     for (const label of [
       zhCN.settings.state.default,
       zhCN.settings.state.overridden,
@@ -340,23 +285,12 @@ describe('SettingsPage', () => {
     const container = nav.parentElement
     expect(container).not.toBeNull()
 
-    // Below md the skeleton is a column, so the content area takes its
-    // cross size from the container's alignment: `flex-start` would size it
-    // to its min-content width and leave the table scrolling inside a
-    // sliver. jsdom lays nothing out, so the proof is the generated
-    // cross-axis alignment -- stretch at the base width, flex-start from md
-    // up where the row layout starts; the pixel-level measurement belongs
-    // to the browser pass.
     const css = emittedStyleText()
     expect(alignItemsAt(css, container as Element, 0)).toBe('stretch')
     expect(alignItemsAt(css, container as Element, 900)).toBe('flex-start')
   })
 
   it('caps the key line without capping the declaration beneath it', async () => {
-    // A prose description is what the whole-cell cap used to squeeze into
-    // a tall column of thin text: bounded to 160/200px it wrapped over
-    // many lines. The cap belongs to the identity line alone; the
-    // declaration wraps at the cell's available width.
     const longDescription =
       'Whether the mail carrier retries a refused message, measured against the delivery attempts recorded for that message and the configured retry window for this deployment.'
     const described: AdminSetting = { ...item, description: longDescription }
@@ -368,9 +302,6 @@ describe('SettingsPage', () => {
     const cell = key.closest('td')
     expect(cell).not.toBeNull()
 
-    // The key line carries the shared primary cap -- 160 below md, 200
-    // from md up -- and truncates inside it instead of widening the cell;
-    // the complete key stays on the copy control.
     expect(containerMaxWidthOf(key)).toEqual(
       new Map([
         [0, 160],
@@ -388,9 +319,6 @@ describe('SettingsPage', () => {
       }),
     ).toBeInTheDocument()
 
-    // The DataTable wrapper around the whole cell declares no cap, so the
-    // declaration beneath the key is not held to the primary width; the
-    // prose cell itself carries none either.
     const wrapper = cell?.firstElementChild
     expect(wrapper).not.toBeNull()
     expect(containerMaxWidthOf(wrapper as Element)).toEqual(new Map())
@@ -410,13 +338,8 @@ describe('SettingsPage', () => {
     const row = key.closest('tr')
     expect(row).not.toBeNull()
 
-    // The key cell stacks the identity over its declaration, so the row
-    // must not centre its other cells on the tall cell: MUI's TableCell
-    // inherits the row's vertical alignment, which is top here.
     expect(row).toHaveStyle({ verticalAlign: 'top' })
 
-    // The copy control aligns with the top of the cell content -- the key
-    // line -- rather than the vertical centre of the multi-line cell.
     const copy = within(row as HTMLElement).getByRole('button', {
       name: copyLabel('mail.retry'),
     })
@@ -426,9 +349,6 @@ describe('SettingsPage', () => {
   })
 
   it('marks a row written as the empty string as an override', async () => {
-    // An explicitly written empty string and a missing row both carry an
-    // empty `written`; only `has_row` tells them apart. The row is a real
-    // override, and the page must offer the way to remove it.
     const emptyText: AdminSetting = {
       ...item,
       key: 'authn.sms.allowed-prefixes',
@@ -466,10 +386,7 @@ describe('SettingsPage', () => {
     const { container } = renderWithProviders(<SettingsPage />, { operations })
     await screen.findByDisplayValue('0')
 
-    // A data table, not a single unbounded column...
     expect(container.querySelector('table')).not.toBeNull()
-    // ...whose first page holds the default ten rows, leaving the rest for
-    // the next page rather than running the whole set down the viewport.
     expect(screen.getAllByRole('textbox')).toHaveLength(10)
     expect(screen.queryByDisplayValue('11')).toBeNull()
   })
@@ -491,8 +408,6 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     expect(await screen.findByDisplayValue('********')).toBeInTheDocument()
 
-    // The server masks the text but reports the row: the page states the
-    // row is overridden and keeps its remove control.
     expect(screen.getByText(zhCN.settings.state.overridden)).toBeInTheDocument()
     await user.click(
       screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.password' }) }),
@@ -500,7 +415,6 @@ describe('SettingsPage', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
 
-    // The success confirmation names the setting that was removed.
     expect(
       await screen.findByText(text(zhCN.settings.removed, { key: 'mail.password' })),
     ).toBeInTheDocument()
@@ -542,8 +456,6 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     await screen.findByDisplayValue('5')
 
-    // The navigation offers the "all namespaces" entry plus each declared
-    // namespace (derived from the whole-set read).
     const nav = screen.getByRole('navigation', { name: zhCN.settings.nav.label })
     expect(within(nav).getByText(zhCN.settings.nav.all)).toBeInTheDocument()
     await user.click(within(nav).getByText('mail'))
@@ -566,8 +478,6 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     const input = await screen.findByDisplayValue('5')
 
-    // Nothing changed yet, so the save bar's action is unavailable and says
-    // why; it stays focusable rather than natively disabling itself.
     const save = screen.getByRole('button', { name: zhCN.settings.saveBar.save })
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).toHaveAccessibleDescription(zhCN.settings.saveBar.unchanged)
@@ -575,9 +485,7 @@ describe('SettingsPage', () => {
     await user.clear(input)
     await user.type(input, '9')
     await user.click(save)
-    // The route addresses the item by the namespace and the key rest.
     expect(writes).toContain('set:mail.retry=9')
-    // The landed save confirms itself in the page's standing status region.
     expect(await screen.findByText(zhCN.settings.saved)).toBeInTheDocument()
   })
 
@@ -597,17 +505,11 @@ describe('SettingsPage', () => {
     await screen.findByDisplayValue('5')
     const save = screen.getByRole('button', { name: zhCN.settings.saveBar.save })
 
-    // Nothing changed, so the action cannot run. It stays focusable, says it
-    // is unavailable, and names the reason; a natively disabled button would
-    // drop the focus of an operator who tabbed to it.
     save.focus()
     expect(save).toHaveFocus()
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).toHaveAccessibleDescription(zhCN.settings.saveBar.unchanged)
 
-    // Activation through the pointer and both keyboard keys is swallowed: no
-    // batch starts and no item is written. The click is refused by the
-    // control's own guard, before the save handler's empty-batch check runs.
     await user.click(save)
     expect(fireEvent.click(save)).toBe(false)
     await user.keyboard('{Enter}')
@@ -640,9 +542,6 @@ describe('SettingsPage', () => {
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
 
-    // The removal owns the scope's attempt; the save bar reports the shared
-    // scope without borrowing its progress or the no-change reason, which the
-    // scope's pending result has replaced.
     const save = screen.getByRole('button', {
       name: zhCN.settings.saveBar.save,
     })
@@ -683,9 +582,6 @@ describe('SettingsPage', () => {
     await user.type(limit, '7')
     await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
-    // One attempt for the whole batch: both PUTs are issued, and one
-    // confirmation names the kind of object that was saved -- never a
-    // success per item.
     await waitForCondition(() => {
       expect(writes).toEqual(['retry=9', 'limit=7'])
     })
@@ -695,8 +591,6 @@ describe('SettingsPage', () => {
 
   it('reports only the first batch failure, keeps its drafts and pages to it', async () => {
     const user = userEvent.setup()
-    // Thirteen rows: ten on the first page, three on the second, so moving
-    // the table to the first failed item is observable.
     const items: AdminSetting[] = Array.from({ length: 13 }, (_, index) => ({
       ...item,
       key: `mail.key-${index}`,
@@ -707,8 +601,6 @@ describe('SettingsPage', () => {
       makeAdminBackend({
         listSettings: () => Promise.resolve(items),
         setSetting: (input) => {
-          // Submission order follows the list order: the first failure is
-          // key-11, and key-12 fails too behind it with a different code.
           if (input.key === 'key-11') {
             return Promise.reject({ code: 'settings.invalid_value' })
           }
@@ -721,7 +613,6 @@ describe('SettingsPage', () => {
     )
     renderWithProviders(<SettingsPage />, { operations })
 
-    // Edit the two later rows on the second page...
     await user.click(await screen.findByRole('button', { name: NEXT_PAGE_LABEL }))
     const eleventh = await screen.findByRole('textbox', { name: 'mail.key-11' })
     await user.clear(eleventh)
@@ -729,29 +620,20 @@ describe('SettingsPage', () => {
     const twelfth = screen.getByRole('textbox', { name: 'mail.key-12' })
     await user.clear(twelfth)
     await user.type(twelfth, 'x12')
-    // ...and the first row back on the first page, then save from there.
     await user.click(screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL }))
     const first = await screen.findByRole('textbox', { name: 'mail.key-0' })
     await user.clear(first)
     await user.type(first, 'x0')
     await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
-    // The first failure in submission order is the one reported; the
-    // later failure's text stays out of the banner. The same text also
-    // stands in the failing row's helper, so the banner is addressed by
-    // its role rather than by text.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.settings.invalid_value,
     )
     expect(
       screen.queryByText(zhCN.errors.settings.bad_request),
     ).toBeNull()
-    // A partial landing is not a success.
     expect(screen.queryByText(zhCN.settings.saved)).toBeNull()
 
-    // The table moved to the page holding the first failed item, where
-    // both failed drafts are still on screen; the landed item's draft was
-    // cleared and dropped out of the pending count.
     expect(
       screen.getByRole('textbox', { name: 'mail.key-11' }),
     ).toHaveValue('x11')
@@ -761,8 +643,6 @@ describe('SettingsPage', () => {
     expect(screen.queryByRole('textbox', { name: 'mail.key-0' })).toBeNull()
     expect(screen.getByText(text(zhCN.settings.saveBar.pending, { count: '2' }))).toBeInTheDocument()
 
-    // Only the first failed row carries the marker, and its described-by
-    // target is the resolved reason -- the same text the region shows.
     const firstFailed = screen.getByRole('textbox', { name: 'mail.key-11' })
     expect(firstFailed).toHaveAttribute('aria-invalid', 'true')
     const hintId = firstFailed.getAttribute('aria-describedby')
@@ -772,21 +652,15 @@ describe('SettingsPage', () => {
     expect(hint?.textContent).toBe(
       screen.getByRole('alert').textContent,
     )
-    // The later failure behind it is not the row the result names.
     expect(
       screen.getByRole('textbox', { name: 'mail.key-12' }),
     ).toHaveAttribute('aria-invalid', 'false')
   })
 
   it('marks the first failed row inline and brings the region into view', async () => {
-    // No reduced-motion preference, so the scroll is animated.
     mockMatchMedia(false)
     const scrollIntoView = stubScrollIntoView()
     const user = userEvent.setup()
-    // The failing item sits on the table's third page: scheduling a batch
-    // from there is exactly the case where the region is far below the
-    // viewport. Changing a valid item on the same page proves the marker
-    // follows the failure, not the whole batch.
     const items: AdminSetting[] = Array.from({ length: 30 }, (_, index) => ({
       ...item,
       key: `mail.key-${index}`,
@@ -814,8 +688,6 @@ describe('SettingsPage', () => {
     await user.type(valid, 'ok')
     await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
 
-    // The row marker: the failing field is invalid and describes itself
-    // with the resolved message (never the raw code).
     await waitFor(() => expect(failed).toHaveAttribute('aria-invalid', 'true'))
     const describedBy = failed.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
@@ -823,29 +695,22 @@ describe('SettingsPage', () => {
     expect(hint).not.toBeNull()
     expect(hint).toHaveTextContent(zhCN.errors.settings.invalid_value)
 
-    // The region carries that same text -- one resolved source, two places.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.settings.invalid_value)
     expect(hint?.textContent).toBe(alert.textContent)
 
-    // The valid row in the same batch is not marked, and a partial landing
-    // is never a success.
     expect(valid).toHaveAttribute('aria-invalid', 'false')
     expect(screen.queryByText(zhCN.settings.saved)).toBeNull()
 
-    // The region was scrolled into view, clear of the sticky save bar.
     expect(scrollIntoView).toHaveBeenCalledWith({
       behavior: 'smooth',
       block: 'center',
     })
 
-    // The failed row itself is on screen: the table paged to it.
     expect(screen.getByRole('textbox', { name: 'mail.key-24' })).toHaveValue(
       'bad',
     )
 
-    // The described-by target is real and reachable, so the scan adds no
-    // finding the page did not already have.
     await expectNoAxeViolations()
   })
 
@@ -913,9 +778,6 @@ describe('SettingsPage', () => {
     await screen.findByRole('alert')
     expect(input).toHaveAttribute('aria-invalid', 'true')
 
-    // The marker belongs to one attempt's result: correcting the draft and
-    // landing the next attempt leaves neither the marker nor a failure
-    // banner behind.
     await user.clear(input)
     await user.type(input, '6')
     await user.click(screen.getByRole('button', { name: zhCN.settings.saveBar.save }))
@@ -958,7 +820,6 @@ describe('SettingsPage', () => {
       ).toHaveAttribute('aria-disabled', 'true'),
     )
 
-    // Paging is part of the save's context: the next page does not open.
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     expect(
       screen.getByRole('textbox', { name: 'mail.key-10' }),
@@ -1083,16 +944,11 @@ describe('SettingsPage', () => {
       screen.getByRole('button', { name: zhCN.settings.saveBar.save }),
     )
 
-    // The navigation changes the read the batch settles against: while the
-    // write is in flight its buttons stay focusable, say they are
-    // unavailable, and ignore pointer and keyboard activation.
     const nav = screen.getByRole('navigation', { name: zhCN.settings.nav.label })
     const mailButton = within(nav).getByRole('button', { name: 'mail' })
     await waitFor(() =>
       expect(mailButton).toHaveAttribute('aria-disabled', 'true'),
     )
-    // The button stays focusable: it carries the attribute, not a native
-    // disable that would drop a keyboard user's focus.
     expect(mailButton).not.toBeDisabled()
     mailButton.focus()
     expect(mailButton).toHaveFocus()
@@ -1137,9 +993,6 @@ describe('SettingsPage', () => {
       ),
     )
 
-    // The row removal shares the batch's scope. Its success replaces the
-    // result the marker describes, so the old marker must go with it
-    // rather than leave a red row with no reason.
     await user.click(
       screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.b' }) }),
     )
@@ -1148,8 +1001,6 @@ describe('SettingsPage', () => {
     expect(
       await screen.findByText(text(zhCN.settings.removed, { key: 'mail.b' })),
     ).toBeInTheDocument()
-    // The page behind the confirmation is reachable again only once the
-    // dialog has left; the role query waits for that.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(
       screen.getByRole('textbox', { name: 'mail.a' }),
@@ -1171,12 +1022,10 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     await screen.findByDisplayValue('5')
 
-    // The row's remove control names its own setting key.
     await user.click(screen.getByRole('button', { name: text(zhCN.settings.removeAria, { key: 'mail.retry' }) }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(writes).toContain('remove:mail.retry')
-    // The landed remove fills the page's status region and names the row.
     expect(
       await screen.findByText(text(zhCN.settings.removed, { key: 'mail.retry' })),
     ).toBeInTheDocument()
@@ -1200,7 +1049,6 @@ describe('SettingsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.settings.invalid_value,
     )
-    // A refused save keeps the draft for a retry.
     expect(input).toHaveValue('x')
   })
 
@@ -1241,8 +1089,6 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, { operations })
     await screen.findByDisplayValue('5')
 
-    // The selected read and the navigation read resolve to one query key
-    // with "all namespaces" chosen, so the mount issues one request.
     expect(seen).toEqual([undefined])
 
     await user.click(
@@ -1276,8 +1122,6 @@ describe('SettingsPage', () => {
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
     await waitFor(() => expect(seen.length).toBe(before + 2))
-    // The selected namespace's read and the navigation's whole-set read are
-    // distinct keys, so both go out.
     expect(seen.slice(before)).toEqual(['mail', undefined])
   })
 
@@ -1304,8 +1148,6 @@ describe('SettingsPage', () => {
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
 
-    // The refresh re-reads the settings but does not start a fresh form:
-    // the draft and the page the operator was reading stay.
     await waitFor(() => {
       expect(screen.getByRole('textbox', { name: 'mail.key-10' })).toHaveValue(
         '99',

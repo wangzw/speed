@@ -1,43 +1,7 @@
 /**
- * TenantRosterPage: the roster-administration page of the console.
- *
- * The platform side of the tenant story: it lists the whole roster (the
- * tenants the process serves) as a table (display name, name, status and
- * the row's write control) and enables or disables a tenant. Registration
- * is a page of its own (/tenants/new, TenantCreatePage), reached from the
- * page header's "register organization" link; a name is immutable after
- * creation, so the name cell is read-only and the page offers no rename
- * control. The name is what the request surface addresses the tenant by and
- * row's identity here: the row key, the detail link and the row's
- * accessible names all use it, never an internal identifier (the roster view
- * does not carry one). Switching the current session's tenant is the
- * tenant-side action and lives in @speed/tenancy-ui; managing the roster is
- * this page, and the two share neither a control nor a query key.
- *
- * Every read and write is an operation on the console operations bundle
- * -- the host binds the generated /api/v1/system/tenants operations to it -- so
- * the page builds no client and writes no query key. The row's state
- * renders from the roster's own spelling (active / disabled / deleted); a
- * value outside that closed set renders the generic label, never a raw
- * value. A disabled row also shows who disabled it (an operator or the
- * account's own state). A deleted row is a tombstone: its state is terminal,
- * so the row carries no write control at all. A failed list render settles
- * into the retryable error placeholder.
- *
- * Each row's enable/disable control is a scope of its own, with the region
- * and the inline marker inside that row, so one row's refusal never reads
- * as another row's. A refusal resolves through the admin-ui namespace's
- * whitelist (a roster collision reads the conflict text), never a raw key,
- * and brings its region into view.
- *
- * The page opens with ui-kit's PageHeader: the page title as the level-one
- * heading, a breadcrumb trail from the console to this page, and the
- * register link plus a refresh action that re-reads the roster. The refresh
- * action is unavailable while any row's status slot has a write in flight. It
- * bumps a refresh generation the rows watch, so every row clears its own
- * scope and inline marker without being remounted. The async section's
- * placeholders render at the next level down, so the heading order never
- * skips.
+ * TenantRosterPage lists the platform roster and enables or disables a
+ * tenant. A deleted tenant is a tombstone and carries no write control; the
+ * tenant name is the row's identity, never an internal identifier.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -76,14 +40,8 @@ import type { AdminTenant } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
 import { displayNameOf } from './TenantProfileFields.js'
 
-/**
- * The roster's closed status set, one bundle key each under
- * tenants.status. A value outside it renders the generic other label,
- * never a raw value.
- */
 const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 
-/** The status label for a roster value, guarding the closed set. */
 function statusLabel(
   status: string,
   t: (key: string) => string,
@@ -93,10 +51,6 @@ function statusLabel(
     : t('tenants.status.other')
 }
 
-/**
- * Who disabled a row, from the roster's own closed source set. Only called
- * for a disabled row: the source is absent on every other state.
- */
 function disabledByLabel(
   source: string | undefined,
   t: (key: string) => string,
@@ -106,23 +60,8 @@ function disabledByLabel(
     : t('tenants.disabledBy.operator')
 }
 
-/**
- * One row's write control: the enable/disable toggle.
- *
- * The row is its own feedback scope, with one slot and one region inside the
- * row, so a refusal in one row never shows in another row's region and a
- * success names this tenant. A failed action marks its own toggle with the
- * same resolved text the region shows.
- *
- * Every control here repeats across the rows, so the toggle carries the row's
- * own name in its accessible name -- a screen-reader user hears "disable
- * tenant acme", never a bare "disable" indistinguishable from the row above.
- *
- * The toggle saves on change, so it stays focusable while its write is in
- * flight: a natively disabled control would drop the focus the activation
- * gave it. It reports `aria-busy` and `aria-disabled` and swallows further
- * activation.
- */
+// The toggle saves on change and stays focusable while its write is in flight:
+// a natively disabled control would drop the focus the activation gave it.
 function TenantRowActions({
   tenant,
   refreshGeneration,
@@ -136,19 +75,13 @@ function TenantRowActions({
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const setStatus = operations.useSetTenantStatus()
-  // The row's own scope, with its region inside this row.
   const feedback = useWriteFeedback()
   const regionRef = useFailureScroll(feedback.outcome)
-  // Whether the current failure names this row's toggle, so the inline
-  // marker sits on the control that was refused.
   const [failed, setFailed] = useState(false)
   const resolveErrorText = useAdminUiErrorText()
   const failureText = failureTextOf(feedback.outcome, resolveErrorText)
   const statusErrorId = `tenant-status-error-${encodeURIComponent(tenant.name)}`
 
-  // The page's refresh action re-reads the roster and bumps the generation:
-  // this row then clears its scope and its inline marker, because a result
-  // written before the re-read would describe the page as it stood then.
   const generationRef = useRef(refreshGeneration)
   useEffect(() => {
     if (generationRef.current === refreshGeneration) {
@@ -159,9 +92,6 @@ function TenantRowActions({
     setFailed(false)
   }, [refreshGeneration, feedback.reset])
 
-  // The page's refresh action is unavailable while any scope in the page is
-  // writing, but this row's scope lives here; the row reports its slot up
-  // and withdraws it when it unmounts.
   useEffect(() => {
     onWritePendingChange(tenant.name, feedback.pending)
     return () => onWritePendingChange(tenant.name, false)
@@ -233,6 +163,7 @@ function TenantRowActions({
   )
 }
 
+/** Props of TenantRosterPage: the roster path and optional host columns. */
 export interface TenantRosterPageProps {
   /**
    * The roster's matched path, for the rows' detail links; absent leaves
@@ -240,14 +171,16 @@ export interface TenantRosterPageProps {
    */
   readonly basePath?: string
   /**
-   * Host columns inserted after the roster's own display name, name and
-   * status and before the row-actions column. A host column that repeats
-   * across rows takes its own ui-kit priority so a narrow container sheds
-   * it in a chosen order; the page does not choose for it.
+   * Host columns inserted after the roster's own fields and before the
+   * row-actions column. Each host column takes its own ui-kit priority; the
+   * page does not choose for it.
    */
   readonly extraColumns?: readonly DataTableColumn<AdminTenant>[]
 }
 
+/**
+ * TenantRosterPage lists the platform roster and enables or disables a tenant.
+ */
 export function TenantRosterPage({
   basePath,
   extraColumns,
@@ -255,9 +188,6 @@ export function TenantRosterPage({
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()
   const tenants = operations.useTenants()
-  // The names whose row scope has a write in flight. Each row reports its
-  // own slot up (see TenantRowActions), so the refresh action can disable
-  // for the union of every row's scope.
   const [pendingRowWrites, setPendingRowWrites] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   )
@@ -279,16 +209,8 @@ export function TenantRosterPage({
     [],
   )
 
-  // The refresh action resets every row scope (each row watches the bumped
-  // generation) and re-reads the roster. The lifecycle actions report their
-  // landed writes to a page-level scope -- a delete removes the row that
-  // carried the control -- so that scope is reset with the re-read too.
   const lifecycleFeedback = useWriteFeedback()
-  // The roster's list container: the focus target when a deletion leaves no
-  // adjacent row to take the departed control's place.
   const rosterListRef = useRef<HTMLDivElement | null>(null)
-  // The tenant a landed deletion took out, with the index its delete control
-  // held, so the adjacent row's delete control can take the focus.
   const deletionFocus = useRef<{
     readonly name: string
     readonly index: number
@@ -317,12 +239,6 @@ export function TenantRosterPage({
     },
   )
 
-  // The columns the table renders: a row's read-only fields and its write
-  // controls. Status carries a priority, so a narrow viewport sheds it
-  // before the display name, the name and the controls. When the host
-  // supplies the roster's own path (basePath), the display name links to
-  // that tenant's detail page, addressed by the row's name; without it the
-  // cell is plain text.
   const columns: DataTableColumn<AdminTenant>[] = [
     {
       id: 'displayName',
@@ -330,9 +246,7 @@ export function TenantRosterPage({
       cellWrap: 'nowrap',
       cellFullValue: (tenant) =>
         displayNameOf(tenant.display_name, tenant.name),
-      // The display name is the page's primary label; the shared cap bounds
-      // the cell content and its copy control together, and the complete
-      // value stays reachable through the title and the control.
+      // The shared cap bounds the content and its copy control together.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (tenant) => {
         const name = displayNameOf(tenant.display_name, tenant.name)
@@ -350,11 +264,6 @@ export function TenantRosterPage({
       header: t('tenants.column.name'),
       cellWrap: 'nowrap',
       cell: (tenant) => (
-        // The name is what the request surface addresses the tenant by and
-        // the row's stable identity: it never hides, and the shared
-        // primary-column cap keeps a long name from pushing the row's
-        // controls out of a narrow container. The full value rides the
-        // cell's title.
         <Typography
           variant="body2"
           noWrap
@@ -387,16 +296,12 @@ export function TenantRosterPage({
         </Box>
       ),
     },
-    // Host columns sit between the roster's own fields and the row's write
-    // controls, so the controls stay the last cell of every row.
     ...(extraColumns ?? []),
     {
       id: 'actions',
       align: 'right',
       header: t('tenants.column.actions'),
-      // A tombstone is read-only: deletion is terminal, so the status route
-      // cannot change it. The cell is empty and the row's write scope is
-      // never mounted.
+      // A tombstone cannot change state, so the row's write scope is not mounted.
       cell: (tenant) =>
         tenant.status === 'deleted' ? null : (
           <Box sx={{ display: 'flex', flexDirection: 'column', rowGap: 1 }}>
@@ -405,9 +310,6 @@ export function TenantRosterPage({
               refreshGeneration={refreshGeneration}
               onWritePendingChange={reportRowWritePending}
             />
-            {/* The lifecycle group is its own control group with its own
-                result area. A landed write reports to the page's scope,
-                because a delete takes this row out of the table. */}
             <TenantLifecycleActions
               tenant={tenant}
               onSuccess={lifecycleFeedback.succeed}
@@ -419,17 +321,14 @@ export function TenantRosterPage({
   ]
 
   const rows = tenants.data
-  // A landed deletion takes the row's lifecycle group out of the document,
-  // and with it the delete control that started the write. The same control
-  // on the next row takes the focus, else the previous row's, else the list
-  // container: it never falls back to the document body.
+  // A landed deletion removes the delete control that started the write: the
+  // next row's control takes focus, else the previous row's, else the list.
   useEffect(() => {
     const removed = deletionFocus.current
     if (removed === null) {
       return
     }
-    // A failed re-read never confirms the row left. Drop the record so a
-    // later read (a refresh, the retry) cannot move focus on its own.
+    // A failed re-read never confirms the row left.
     if (tenants.error !== null) {
       deletionFocus.current = null
       return
@@ -458,9 +357,7 @@ export function TenantRosterPage({
     }
     list.focus()
   }, [rows, tenants.error])
-  // A load with no data yet -- the first fetch in flight, or one parked
-  // by react-query's default networkMode 'online' while offline -- keeps
-  // the loading branch: isPending alone tracks "no answer yet".
+  // isPending covers the first fetch and one parked offline; both keep loading.
   const pending = tenants.isPending && rows === undefined
 
   return (
@@ -488,8 +385,6 @@ export function TenantRosterPage({
             )}
             <RefreshButton
               busy={pageRefresh.busy}
-              // A re-read mid-write would race the write: the control is
-              // disabled while any row's status slot has a write in flight.
               writePending={pendingRowWrites.size > 0}
               label={t('common.refresh')}
               onClick={pageRefresh.refresh}
@@ -499,8 +394,7 @@ export function TenantRosterPage({
         sx={{ mb: 2 }}
       />
 
-      {/* The lifecycle actions' page-level result: their row may leave the
-          table after a delete, so the confirmation cannot live in the row. */}
+      {/* A delete removes the row, so the lifecycle result cannot live in it. */}
       <WriteFeedbackRegion outcome={lifecycleFeedback.outcome} />
 
       <SectionCard flushContent>

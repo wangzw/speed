@@ -1,83 +1,7 @@
 /**
- * PermissionsPage: the platform console's authorization-administration page.
- *
- * The authorization surface is tenant-scoped: the roles, their grants and
- * the account bindings all live under one tenant
- * (/api/v1/system/tenants/:tenant/...). The page therefore opens with a
- * tenant selector (fed by the platform roster) and keeps every read
- * disabled until a tenant is chosen; the tenant is an argument of the
- * request, not the session's current tenant.
- *
- * The tenant scope is optionally controlled: `tenant` locks the page to the
- * given value and hides the selector, `defaultTenant` seeds the page's own
- * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
- * reports each re-selection made through the page's own selector.
- *
- * The page is the platform-staff surface only. It reads the platform
- * permission catalog, searches the platform account roster for the account
- * pickers, and resolves an account's identity through the platform account
- * read. The organization surface's roles page is a separate component: it
- * reads the tenant's own governed catalog and operations and never reaches
- * `/api/v1/system`.
- *
- * The page renders in five sections:
- *
- *  - the role catalog: list a tenant's roles, create or rewrite one, and
- *    remove one (removal revokes its grants and bindings with it);
- *  - the grants of the selected role: list them by the permission code the
- *    server reports, grant a permission from the catalog and revoke one;
- *  - the permission catalog: every permission the platform declares, for
- *    reference when granting;
- *  - the tenant's bindings: list them, bind a role to an account chosen
- *    through the account search picker and unbind one;
- *  - one account's held bindings, looked up by the account chosen through
- *    the same picker.
- *
- * Both binding tables render an account through the shared account identity
- * unit, keeping the recorded identifier as the column's full value; the
- * unbind control names the account by that same readable identity when the
- * account read answers one, and by the recorded identifier otherwise.
- *
- * A role row shows the role's description as the server reports it: the
- * operator's free text for a role this surface wrote, or a builtin role's
- * description rendered in the request's language. The role name is the key
- * a binding holds and is never renamed; the create form names a role (or
- * rewrites the description of the role that already carries the name). The
- * permission catalog and a grant row show the server-rendered description
- * as the primary text with the permission code beneath it, and a permission
- * the server marks dangerous carries a visible high-risk badge. The catalog is
- * grouped by the `group` the declaring modules report, folded into the shared
- * authorization, membership, identity, settings and "other" headings; an entry
- * the caller cannot grant is still listed and marked, while the grant picker
- * offers only the entries the caller may grant. An empty description leaves
- * the code as the only text. A grant the server cannot translate to a
- * permission code keeps its recorded resource/action spelling and cannot be
- * revoked. Granting a dangerous permission is confirmed through the same
- * two-step dialog the organization page uses.
- *
- * Every read and write is an operation on the console operations bundle,
- * so the page builds no client and writes no query key. A failed list
- * settles into a retryable placeholder, and a refused read into the
- * no-permission placeholder.
- *
- * Each control group reports its writes through its own feedback scope:
- * the role catalog (create and delete), the selected role's grants (grant
- * and revoke), the tenant's bindings (bind and unbind), and the
- * account-binding lookup (the unbind actions of its own table, which do
- * not borrow the bindings scope). A failure marks the affected row inline
- * with the same resolved text its region shows and brings that region into
- * view; a success names the changed role, permission or account and never
- * moves the page. The tenant seeds every scope, so changing it resets them
- * all and disables the tenant selector while any is in flight; the
- * selected role resets the grants scope, and the chosen account resets the
- * binding scope. The role deletion is confirmed through the shared
- * pending-confirmation dialog: it closes on the confirming click, and the
- * write's outcome lands in the role scope once the modal no longer hides
- * it. The page's refresh action re-reads every enabled read describing the
- * body, resets every scope and row marker first, and -- when a successful
- * roles read no longer lists the selected role -- clears the selection and
- * announces it in a standing status region. The page opens with ui-kit's
- * PageHeader.
+ * PermissionsPage is the platform console's authorization page: one tenant's
+ * roles, grants, catalog, bindings and one account's held bindings, all named
+ * by the tenant chosen through its selector.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -145,32 +69,18 @@ import type {
   AdminRole,
 } from './operations.js'
 
-/**
- * The id of the page's own "choose a tenant first" text. The disabled
- * refresh is described by it, so the explanation has one copy on the page.
- */
+// One copy of the "choose a tenant first" explanation, shared with the disabled refresh.
 const TENANT_HINT_ID = 'permissions-tenant-hint'
 
-/**
- * One permission's server-rendered description as its primary text with the
- * permission code beneath it, plus the high-risk badge when the server marks
- * the permission dangerous. The description arrives already rendered in the
- * request's language and is shown as received; an empty one leaves the code
- * as the only line. A grant the server cannot translate passes no catalog
- * entry, so its recorded resource/action spelling stands alone.
- *
- * The primary line alone is capped when the caller is a table cell: prose
- * stacks beneath it, and the cap must not squeeze that second line. The
- * grant picker's menu is not a table cell and keeps the full width.
- */
+// The server-rendered description as primary text with the code beneath it and a
+// high-risk badge. In a table cell only the primary line is capped, so the stacked
+// code is not squeezed.
 function PermissionLabel({
   entry,
   code,
   capIdentity = false,
 }: {
-  /** The catalog entry naming this permission, when the catalog has one. */
   readonly entry: AdminPermission | undefined
-  /** The spelling this surface shows when no description resolves. */
   readonly code: string
   readonly capIdentity?: boolean
 }) {
@@ -234,11 +144,7 @@ function PermissionLabel({
   )
 }
 
-/**
- * The catalog's entries folded into the fixed permission-group order the
- * shared vocabulary defines. A permission the declaring modules left ungrouped
- * falls into "other" rather than disappearing from the catalog.
- */
+// An ungrouped permission falls into "other" rather than disappearing.
 function groupCatalog(entries: readonly AdminPermission[]) {
   return PERMISSION_GROUPS.flatMap((group) => {
     const grouped = entries.filter(
@@ -248,12 +154,8 @@ function groupCatalog(entries: readonly AdminPermission[]) {
   })
 }
 
-/**
- * The unbind control of one binding row. Its accessible name names the
- * account by the readable identity the caller resolved, and by the recorded
- * identifier otherwise, so a reader hears the same account the row's cell
- * shows.
- */
+// Its accessible name uses the readable identity, or the recorded identifier
+// when none, so a reader hears the account the row's cell shows.
 function UnbindButton({
   binding,
   identity,
@@ -266,19 +168,12 @@ function UnbindButton({
   onClick,
 }: {
   readonly binding: AdminBinding
-  /** The account's resolved identity, or the neutral copy when none. */
   readonly identity: AccountIdentityValue
-  /** Whether this row's unbind write is in flight. */
   readonly busy: boolean
-  /** Whether another write in the scope keeps this control out of reach. */
   readonly unavailable: boolean
-  /** Whether this row is the one the scope's failure names. */
   readonly invalid: boolean
-  /** The id of the resolved failure text rendered in this row. */
   readonly describedBy?: string
-  /** The attribute naming this row's control for the unload focus hand-off. */
   readonly rowAttribute: string
-  /** This row's control ref, for the removal focus record. */
   readonly controlRef?: Ref<HTMLButtonElement>
   readonly onClick: (identity: AccountIdentityValue) => void
 }) {
@@ -305,8 +200,6 @@ function UnbindButton({
   )
 }
 
-/** The platform surface's unbind control: the account identity comes from
- * the platform account read. */
 function PlatformUnbindButton(
   props: Omit<Parameters<typeof UnbindButton>[0], 'identity'>,
 ) {
@@ -314,37 +207,32 @@ function PlatformUnbindButton(
   return <UnbindButton {...props} identity={{ name, username }} />
 }
 
-/** The key a binding row carries through the page's failure markers. */
 function bindingKey(binding: AdminBinding): string {
   return `${binding.account}:${binding.role}`
 }
 
-/** The id of one binding row's inline failure text within a scope. */
 function bindingErrorId(scope: string, binding: AdminBinding): string {
   return `permissions-${scope}-error-${encodeURIComponent(bindingKey(binding))}`
 }
 
-/** The role-scope control a write belongs to: the create form or one row. */
 type PendingRoleWrite =
   | { readonly kind: 'create' }
   | { readonly kind: 'remove'; readonly role: string }
 
-/** The grants-scope control a write belongs to. */
 type PendingGrantWrite =
   | { readonly kind: 'grant' }
   | { readonly kind: 'revoke'; readonly key: string }
 
-/** The bindings-scope control a write belongs to. */
 type PendingBindingWrite =
   | { readonly kind: 'bind' }
   | { readonly kind: 'unbind'; readonly key: string }
 
-/** A row a landed write will remove, with the position that row held. */
 interface RowRemoval {
   readonly value: string
   readonly index: number
 }
 
+/** Props of PermissionsPage: the tenant scope, optionally controlled by the host. */
 export interface PermissionsPageProps {
   /**
    * A controlled tenant scope: when given, the page's reads and writes name
@@ -361,7 +249,10 @@ export interface PermissionsPageProps {
   readonly onTenantChange?: (tenant: string) => void
 }
 
-/** The platform console's authorization-administration page. */
+/**
+ * PermissionsPage renders the platform console's authorization administration
+ * for the tenant chosen through its selector.
+ */
 export function PermissionsPage({
   tenant,
   defaultTenant,
@@ -394,39 +285,26 @@ function PermissionsPageBody({
   const tenant = controlledTenant ?? innerTenant
   const tenantControlled = controlledTenant !== undefined
   const [selectedRole, setSelectedRole] = useState('')
-  // A removal settles after the confirmation dialog has closed, and the
-  // operator may have moved to another role in between. The settlement
-  // judges the selection as it stands then, not the one the click captured
-  // in its closure.
+  // A removal settles after the dialog closed, so it judges the selection as it
+  // stands then, not the one the click captured.
   const selectedRoleRef = useRef(selectedRole)
   useEffect(() => {
     selectedRoleRef.current = selectedRole
   }, [selectedRole])
 
-  // Role create/rewrite draft. There is no builtin toggle: the mark is the
-  // host's to set when it seeds the role, and a role write carrying it is
-  // refused — see the create call below.
   const [roleName, setRoleName] = useState('')
   const [roleDescription, setRoleDescription] = useState('')
 
-  // Grant draft (the permission to grant to the selected role).
   const [grantPermission, setGrantPermission] = useState('')
 
-  // Binding draft.
   const [bindAccount, setBindAccount] = useState<AdminAccount | null>(null)
   const [bindRoleName, setBindRoleName] = useState('')
 
-  // The account whose held bindings are looked up.
   const [lookupAccount, setLookupAccount] = useState<AdminAccount | null>(null)
   const [lookupApplied, setLookupApplied] = useState('')
 
-  // The destructive action the shared confirmation dialog guards. The
-  // dialog closes on the confirming click; the write's outcome lands in
-  // the role scope after it closes.
   const confirm = usePendingConfirm()
 
-  // One scope per control group: the role catalog, the selected role's
-  // grants, the tenant's bindings, and the account-binding lookup.
   const roleFeedback = useWriteFeedback()
   const grantsFeedback = useWriteFeedback()
   const bindingsFeedback = useWriteFeedback()
@@ -440,17 +318,12 @@ function PermissionsPageBody({
   const bindingsSection = useSectionHeadingFocus()
   const lookupSection = useSectionHeadingFocus()
 
-  // The row each scope's failure names. The marker belongs to the row the
-  // region reports, and clearing it before an attempt starts keeps it from
-  // outliving the result it describes.
   const [failedRole, setFailedRole] = useState<string | null>(null)
   const [failedGrant, setFailedGrant] = useState<string | null>(null)
   const [failedBinding, setFailedBinding] = useState<string | null>(null)
   const [failedLookupBinding, setFailedLookupBinding] = useState<string | null>(
     null,
   )
-  // The control each scope's in-flight write belongs to: only that control
-  // reports busy, while its siblings in the same scope are unavailable.
   const [pendingRoleWrite, setPendingRoleWrite] =
     useState<PendingRoleWrite | null>(null)
   const [pendingGrantWrite, setPendingGrantWrite] =
@@ -460,26 +333,19 @@ function PermissionsPageBody({
   const [pendingLookupWrite, setPendingLookupWrite] = useState<string | null>(
     null,
   )
-  // The row a landed write removed, recorded when the attempt starts so the
-  // focus hand-off can name the row that moved up.
   const roleRemoval = useRef<RowRemoval | null>(null)
   const grantRemoval = useRef<RowRemoval | null>(null)
   const bindingRemoval = useRef<RowRemoval | null>(null)
   const lookupRemoval = useRef<RowRemoval | null>(null)
-  // Whether each scope's control held focus when its row left; only then
-  // does that scope's landing move it.
   const roleFocus = useRowRemovalFocus()
   const grantFocus = useRowRemovalFocus()
   const bindingFocus = useRowRemovalFocus()
   const lookupFocus = useRowRemovalFocus()
-  // Whether the last refresh's roles read dropped the selected role. The
-  // page announces it in one standing status region; choosing a role,
-  // changing the tenant or refreshing again clears it.
+  // Announced in one standing status region; choosing a role, changing the
+  // tenant or refreshing again clears it.
   const [roleGone, setRoleGone] = useState(false)
 
-  // The one resolver the regions bind: a row's inline marker resolves the
-  // same failure code through it, so the two can never carry different
-  // copy.
+  // The row's inline marker resolves through the same resolver as the region.
   const resolveErrorText = useAdminUiErrorText()
 
   const roles = operations.useRoles(tenant)
@@ -518,31 +384,23 @@ function PermissionsPageBody({
     lookupFeedback.pending
 
   const permissions = catalog.data ?? []
-  // The catalog entry that names a permission, for the readable primary text
-  // of a grant row and the dangerous mark. A grant the server cannot
-  // translate has no code and no entry, so the row keeps its recorded pair.
+  // A grant the server cannot translate has no code and no entry, so the row
+  // keeps its recorded pair.
   const permissionByCode = useMemo(
     () => new Map(permissions.map((entry) => [entry.permission, entry])),
     [permissions],
   )
-  // The catalog groups the declaring modules name, folded into the fixed
-  // order the shared permission vocabulary defines; a permission the modules
-  // left ungrouped is folded into "other" rather than dropped.
   const catalogGroups = useMemo(
     () => groupCatalog(permissions),
     [permissions],
   )
-  // The grant picker offers only permissions the caller may grant; the
-  // catalog itself still lists every declared permission.
   const grantablePermissions = useMemo(
     () => permissions.filter((entry) => entry.grantable),
     [permissions],
   )
 
-  // The one function the page-level context changes share -- the tenant
-  // change and the refresh action: it clears every slot and every row
-  // marker, so a cleared slot never leaves a control carrying
-  // `aria-invalid` and a description that no longer renders.
+  // Clears every slot and row marker, so no control keeps aria-invalid for text
+  // that no longer renders.
   const resetPageFeedback = useCallback(() => {
     roleFeedback.reset()
     grantsFeedback.reset()
@@ -559,12 +417,6 @@ function PermissionsPageBody({
     bindingsFeedback.reset,
     lookupFeedback.reset,
   ])
-  // A controlled tenant arrives as a prop, so the reset cannot wait for the
-  // page's own selector: any change of the argument every write names
-  // clears the slots and the row markers. The selection and the drafts name
-  // accounts and a role from the tenant being left, so they are cleared
-  // with them; otherwise a selection made under one tenant would stand
-  // against the next one's reads.
   useEffect(() => {
     resetPageFeedback()
     setSelectedRole('')
@@ -573,17 +425,11 @@ function PermissionsPageBody({
     setLookupApplied('')
   }, [tenant, resetPageFeedback])
 
-  // The refresh action re-reads every read describing the page body that is
-  // enabled at that moment: the roles, the permission catalog, the bindings,
-  // the selected role's grants (only with a role chosen) and the applied
-  // account's bindings (only with an account applied). The roster the
-  // selector is addressed by is not a body read and stays out.
   const pageRefresh = usePageRefresh(
     [
       pageRefreshRead('roles', roles, {
-        // A successful roles read that no longer lists the selected role
-        // clears the selection and announces it; a failed read keeps the
-        // selection, its stale marker tells the story.
+        // A successful read that no longer lists the selection clears it; a
+        // failed read keeps it, its stale marker telling the story.
         onSettled: (settled) => {
           if (settled.status !== 'success' || settled.data === undefined) {
             return
@@ -611,17 +457,12 @@ function PermissionsPageBody({
     resetPageFeedback,
   )
 
-  // The tenant is an argument of every write on the page, so a change
-  // clears every slot and every row marker: the old result would read as
-  // describing the new tenant.
   const changeTenant = (next: string) => {
     setInnerTenant(next)
     onTenantChange?.(next)
     resetPageFeedback()
   }
 
-  // The selected role drives the grants scope: another role's result would
-  // be read as this role's, so choosing one clears the slot.
   const selectRole = (role: string) => {
     setSelectedRole(role)
     setRoleGone(false)
@@ -641,8 +482,7 @@ function PermissionsPageBody({
     setFailedBinding(null)
   }
 
-  // The lookup scope follows the applied account, not the draft: applying
-  // another account resets it.
+  // The lookup scope follows the applied account, not the draft.
   const applyLookup = () => {
     lookupFeedback.reset()
     setFailedLookupBinding(null)
@@ -672,8 +512,7 @@ function PermissionsPageBody({
       title: t('permissions.roles.removeTitle'),
       message: t('permissions.roles.removeMessage', { role: role.role }),
       confirmLabel: t('permissions.roles.removeConfirm'),
-      // Deleting a role revokes its grants and bindings with it and cannot
-      // be undone from the interface: the heavier two-step arm.
+      // Role deletion revokes its grants and bindings and cannot be undone.
       doubleConfirm: true,
       run: () => {
         setFailedRole(null)
@@ -709,9 +548,6 @@ function PermissionsPageBody({
       return
     }
     const run = () => {
-      // The grant and the revoke share the grants scope: a new attempt starts
-      // from a clean result, so the refused row's marker and its inline reason
-      // do not outlive the result they described.
       setFailedGrant(null)
       setPendingGrantWrite({ kind: 'grant' })
       void grantsFeedback
@@ -729,9 +565,8 @@ function PermissionsPageBody({
         })
         .finally(() => setPendingGrantWrite(null))
     }
-    // A permission the catalog marks dangerous widens the grantee's power over
-    // other accounts or the tenant's policy: the deliberate two-step
-    // confirmation stands in front of it, as it does on the organization page.
+    // A dangerous permission widens power over other accounts or the policy, so
+    // it takes the deliberate two-step confirmation.
     if (permissionByCode.get(permission)?.dangerous === true) {
       confirm.ask({
         title: t('permissions.grants.dangerousTitle'),
@@ -805,9 +640,8 @@ function PermissionsPageBody({
       .finally(() => setPendingBindingWrite(null))
   }
 
-  // The bindings table and the lookup table keep separate scopes and row
-  // markers: an unbind in the lookup answers the operator's lookup, not the
-  // tenant-wide binding list, so its result lives under the lookup table.
+  // The lookup's unbind result lives under the lookup table, not the
+  // tenant-wide binding list.
   const unbind = (
     binding: AdminBinding,
     lookup: boolean,
@@ -873,10 +707,8 @@ function PermissionsPageBody({
 
   const roleRows = roles.data
 
-  // A landed write removes the row whose control started it; the same
-  // control on the next row takes focus, else the previous row's, else the
-  // section heading. A failed re-read never confirms the row left, so it
-  // drops the record instead of letting a later read move focus.
+  // A landed write removes its row: focus moves to the next row's control, else
+  // the previous row's, else the section heading. A failed re-read drops the record.
   useEffect(() => {
     const removed = roleRemoval.current
     if (removed === null) {
@@ -992,11 +824,8 @@ function PermissionsPageBody({
     lookupFocus.takeHeldFocus,
   ])
 
-  // A locked role refuses every write -- role rewrite and delete, and
-  // grant/revoke -- but not the reads. Only the server's builtin mark locks
-  // a role here: the platform surface has no host-protected role names. The
-  // selected role therefore opens read-only: the grants it holds are
-  // visible, and every write control that would name it is withheld.
+  // A builtin role refuses every write but no read; no host-protected role names
+  // exist on the platform surface.
   const roleLocked = (role: AdminRole): boolean => role.builtin
   const selectedRoleRow = roleRows?.find((role) => role.role === selectedRole)
   const selectedRoleLocked =
@@ -1008,12 +837,8 @@ function PermissionsPageBody({
       header: t('permissions.roles.column.role'),
       cellWrap: 'nowrap',
       cellFullValue: (role) => role.role,
-      // The role name is the table's primary identity and has no length
-      // bound in the console's contract (a tenant names its own roles).
-      // The shared whole-cell cap -- which counts the copy control --
-      // keeps the row actions on screen at the sm floor, where this
-      // column and the actions are all the roles table shows; the complete
-      // name stays on the cell title and copy control.
+      // The cap counts the copy control, keeping the row actions on screen at
+      // the sm floor; the complete name stays on the title and copy control.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (role) => <Typography variant="body2">{role.role}</Typography>,
     },
@@ -1029,12 +854,7 @@ function PermissionsPageBody({
       id: 'description',
       header: t('permissions.roles.column.description'),
       priority: 'medium',
-      // A free-text description wraps rather than truncating: the server
-      // renders a builtin role's text in the request's language and returns
-      // an operator's text as written, so there is no key to resolve here.
       cellWrap: 'wrap',
-      // The cap keeps the wrapped prose from widening the row past its
-      // tier's floor; the text itself stays complete on the cell.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (role) => role.description,
     },
@@ -1043,15 +863,9 @@ function PermissionsPageBody({
       align: 'right',
       header: t('permissions.roles.column.actions'),
       cellWrap: 'nowrap',
-      // A builtin role's grants and existence are fixed: the server refuses
-      // every write with authz.ErrBuiltinRole, but it refuses no read. The
-      // row therefore keeps a read-only entry that opens the grant list and
-      // drops the two write controls. A disabled button cannot be focused and
-      // drops out of the Tab order, so a tooltip or aria-describedby that
-      // depends on focus or hover is unreachable to keyboard-only users; it is
-      // still in the accessibility tree, though, and a control that can never
-      // succeed is not put in front of anyone. Visible text sits in every
-      // reader's order and carries the reason.
+      // A builtin role keeps a read-only "view grants" entry and drops the write
+      // controls. A disabled control's reason would be unreachable to keyboard
+      // users, so visible text carries it.
       cell: (role) => {
         const failed = failedRole === role.role
         const errorId = `permissions-role-error-${encodeURIComponent(role.role)}`
@@ -1141,13 +955,8 @@ function PermissionsPageBody({
     },
   ]
 
-  // A grant row takes the permission code the server reports for it as the
-  // key into the catalog, so "what is granted" and "what the catalog
-  // declares" read as one vocabulary: the catalog's description is the
-  // primary text and the code sits beneath it. A grant whose pair the server
-  // cannot translate carries an empty permission; the row falls back to the
-  // pair's own spelling, and its revoke is withheld -- the route names a
-  // permission by its code, and there is no code to send.
+  // A grant the server cannot translate carries an empty permission: the row falls
+  // back to resource/action, and its revoke is withheld because there is no code.
   const grantLabel = (grant: AdminGrant): string =>
     grant.permission !== ''
       ? grant.permission
@@ -1157,13 +966,8 @@ function PermissionsPageBody({
     {
       id: 'permission',
       header: t('permissions.grants.column.permission'),
-      // The readable description wraps; the code beneath it is unbroken but
-      // may break at its dots on a narrow tier.
       cellWrap: 'wrap',
       cellFullValue: grantLabel,
-      // The column declares no whole-cell cap -- that would squeeze the
-      // wrapped description -- so the identity line alone carries the
-      // shared cap (see PermissionLabel).
       cell: (grant) => (
         <PermissionLabel
           entry={permissionByCode.get(grant.permission)}
@@ -1173,8 +977,6 @@ function PermissionsPageBody({
       ),
     },
   ]
-  // A builtin role's grants are read-only: the revoke column is not part of
-  // its table, and the grant form above it is withheld as well.
   const grantRevokeColumn: DataTableColumn<AdminGrant> = {
     id: 'actions',
     align: 'right',
@@ -1185,10 +987,8 @@ function PermissionsPageBody({
       const key = `${grant.resource}:${grant.action}`
       const failed = failedGrant === key
       const errorId = `permissions-grant-error-${encodeURIComponent(key)}`
-      // A grant with no permission code cannot name the permission the
-      // revoke route takes. The control stays visible but unavailable, and
-      // the reason sits beneath it as text, so a reader who never focuses
-      // the control still gets the explanation.
+      // A grant with no code cannot name a revoke target; the control stays visible
+      // but unavailable, with the reason as text beneath it.
       const unmappedId = `permissions-grant-unmapped-${encodeURIComponent(key)}`
       const revokeBusy =
         pendingGrantWrite?.kind === 'revoke' && pendingGrantWrite.key === key
@@ -1249,11 +1049,6 @@ function PermissionsPageBody({
     {
       id: 'permission',
       header: t('permissions.catalog.column.permission'),
-      // The server-rendered description is the column's primary text and
-      // wraps; the code beneath it is unbroken but may break at its dots on
-      // a narrow tier. The column declares no whole-cell cap -- that would
-      // squeeze the wrapped text -- so the identity line alone carries the
-      // shared primary cap (see PermissionLabel).
       cellWrap: 'wrap',
       cellFullValue: (entry) => entry.permission,
       cell: (entry) => (
@@ -1263,9 +1058,8 @@ function PermissionsPageBody({
             code={entry.permission}
             capIdentity
           />
-          {/* A permission the caller does not hold is still listed; the mark
-              says it cannot be granted, so the absence from the picker reads
-              as a property of the caller rather than of the catalog. */}
+          {/* A permission the caller cannot grant is still listed and marked, so
+              its absence from the picker reads as the caller's limit. */}
           {!entry.grantable && (
             <Typography
               variant="caption"
@@ -1280,8 +1074,6 @@ function PermissionsPageBody({
     },
   ]
 
-  // Both binding tables render the same columns, but each row's result
-  // belongs to that table's own scope and marker.
   const bindingColumns = (
     lookup: boolean,
   ): DataTableColumn<AdminBinding>[] => {
@@ -1300,9 +1092,7 @@ function PermissionsPageBody({
         id: 'account',
         header: t('permissions.bindings.column.account'),
         cellWrap: 'nowrap',
-        // The account is the row's identity, so the shared primary cap keeps
-        // it inside the sm floor alongside the row actions. The opaque
-        // account id is neither shown nor offered as a copy value.
+        // The opaque account id is neither shown nor offered as a copy value.
         contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
         cell: (binding) => <AccountIdentity account={binding.account} />,
       },
@@ -1373,8 +1163,6 @@ function PermissionsPageBody({
         sx={{ mb: 2 }}
       />
 
-      {/* The standing role-disappeared announcement: mounted with the page,
-          filled only when a refresh's roles read drops the selection. */}
       <Box component="p" role="status" sx={visuallyHiddenSx}>
         {roleGone ? t('permissions.roles.selectionCleared') : ''}
       </Box>
@@ -1451,9 +1239,8 @@ function PermissionsPageBody({
                 value={roleDescription}
                 onChange={(event) => setRoleDescription(event.target.value)}
                 label={t('permissions.roles.create.descriptionLabel')}
-                // The server caps a role description at 500 characters and
-                // answers an over-long value with 400; the field stops the
-                // input at the same bound.
+                // The server caps a description at 500 characters; the field
+                // stops the input at the same bound.
                 slotProps={{ htmlInput: { maxLength: 500 } }}
               />
               <ActionButton
@@ -1554,10 +1341,8 @@ function PermissionsPageBody({
                       sx={{ minWidth: 240 }}
                       slotProps={{
                         select: {
-                          // The options carry the readable description above
-                          // the code; the closed control shows the chosen
-                          // code alone, so the field keeps its single-line
-                          // height and names the permission unambiguously.
+                          // Without this the closed control renders the selected
+                          // PermissionLabel and wraps; render the code alone.
                           renderValue: (value) => value as string,
                         },
                       }}

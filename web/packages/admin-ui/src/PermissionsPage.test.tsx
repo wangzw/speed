@@ -1,12 +1,3 @@
-/**
- * PermissionsPage: the authorization-administration page.
- *
- * It prompts for a tenant until one is chosen, then renders a tenant's
- * roles, the permission catalog and the bindings, and drives the role
- * create / delete, the grant / revoke, the bind / unbind and the
- * account-binding lookup through the bundle. A builtin role's grants open
- * read-only: its list is visible and every write control is withheld.
- */
 
 import { useState } from 'react'
 import type { ReactElement } from 'react'
@@ -39,7 +30,6 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(
   template: string,
   values: Record<string, string>,
@@ -49,22 +39,18 @@ function text(
   )
 }
 
-/** A matcher for a label that carries a locale string inside other text. */
 function contains(value: string): RegExp {
   return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 }
 
-/** The account reference a notice inserts for a resolved display name. */
 function byName(name: string): string {
   return text(zhCN.common.accountReference.name, { name })
 }
 
-/** The account reference a notice inserts for an identifier alone. */
 function byIdentifier(identifier: string): string {
   return text(zhCN.common.accountReference.identifier, { identifier })
 }
 
-/** The account reference a notice inserts when both resolve. */
 function byNameAndIdentifier(name: string, identifier: string): string {
   return text(zhCN.common.accountReference.nameWithIdentifier, {
     name,
@@ -74,7 +60,6 @@ function byNameAndIdentifier(name: string, identifier: string): string {
 
 const TENANT = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
-/** The zh-CN label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly confirmDialog: { readonly confirmAgainLabel: string }
@@ -122,7 +107,6 @@ function permission(
   }
 }
 
-/** A searchable account row: a display name beside an opaque id. */
 function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
   return {
     id: 'acc-1',
@@ -153,7 +137,6 @@ async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
-/** The titled section a heading opens, which holds its group's region. */
 function section(name: string): HTMLElement {
   const element = screen.getByRole('heading', { name }).closest('section')
   if (element === null) {
@@ -162,10 +145,6 @@ function section(name: string): HTMLElement {
   return element as HTMLElement
 }
 
-/**
- * jsdom implements no layout, so `scrollIntoView` does not exist on
- * elements. A test that observes a region's scroll installs this spy.
- */
 function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   const spy = vi.fn()
   Object.defineProperty(Element.prototype, 'scrollIntoView', {
@@ -180,11 +159,6 @@ afterEach(() => {
   delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
 
-/**
- * Asserts the header refresh is inert while a write is in flight: disabled
- * without the empty-scope explanation, and a forced activation issues no
- * roles read.
- */
 async function expectRefreshInert(
   listRoles: ReturnType<typeof vi.fn>,
   readsBefore: number,
@@ -201,7 +175,6 @@ async function expectRefreshInert(
   expect(listRoles).toHaveBeenCalledTimes(readsBefore)
 }
 
-/** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -218,10 +191,6 @@ function withAuthz(
   return createAdminOperations(
     makeAdminBackend({
       listTenants: () => Promise.resolve([TENANT]),
-      // The catalog carries permission CODES (the form the grant routes
-      // name a permission by); a grant row carries the resource:action pair
-      // the engine matches on, and the page maps it back to its code for
-      // the row label and the revoke.
       listPermissions: () =>
         Promise.resolve([
           permission('crm.deal.read'),
@@ -258,19 +227,13 @@ describe('PermissionsPage', () => {
     const operations = withAuthz({ listRoles })
     renderWithProviders(<PermissionsPage />, { operations })
 
-    // The roles read is disabled while no tenant is chosen; the refresh
-    // control follows it instead of issuing the read with an empty tenant.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).toHaveAttribute('aria-disabled', 'true')
-    // The disabled control is described by the page's own "choose a tenant
-    // first" text.
     const describedBy = refresh.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
       zhCN.permissions.needTenant.description,
     )
-    // A programmatic click exercises the guard directly: the control must
-    // stay inert even when reached from a script.
     fireEvent.click(refresh)
     await act(async () => {
       await Promise.resolve()
@@ -325,7 +288,6 @@ describe('PermissionsPage', () => {
     })
     expect(submit).toHaveAttribute('aria-disabled', 'true')
 
-    // Whitespace alone is not a name.
     await user.type(name, '   ')
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     await user.clear(name)
@@ -339,7 +301,6 @@ describe('PermissionsPage', () => {
         text(zhCN.permissions.roles.saved, { role: 'auditor' }),
       ),
     ).toBeInTheDocument()
-    // A landed create returns both fields to their initial values.
     expect(name).toHaveValue('')
     expect(description).toHaveValue('')
   })
@@ -427,8 +388,6 @@ describe('PermissionsPage', () => {
       const listRoles = vi.fn(() => Promise.resolve([role()]))
       const operations = withAuthz({ listRoles })
       renderWithProviders(<PermissionsPage />, { operations })
-      // The link that carried the tenant arrives with a selection already
-      // made: the roles read runs for it and the selector shows its name.
       expect(await screen.findByText('editor')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.permissions.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
@@ -439,7 +398,6 @@ describe('PermissionsPage', () => {
   })
 
   it('locks the scope to a controlled tenant and hides the selector', async () => {
-    // The URL names a different tenant: a controlled page ignores it.
     window.history.replaceState({}, '', '/admin/permissions?tenant=globex')
     try {
       const listRoles = vi.fn(() => Promise.resolve([role()]))
@@ -504,17 +462,12 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     expect(await screen.findByText('editor')).toBeInTheDocument()
     expect(screen.getByText('crm.deal.read')).toBeInTheDocument()
-    // The binding's account column shows the readable identity the account
-    // read answers, not the recorded id.
     expect(screen.getByText('Operator')).toBeInTheDocument()
   })
 
   it("keeps a read-only grants entry on a builtin role and drops its write controls", async () => {
     const user = userEvent.setup()
     const operations = withAuthz({
-      // The two rows differ in the flag alone, so the case distinguishes the
-      // gate from "no role has write controls": builtin true drops both write
-      // controls and keeps the read-only entry, builtin false keeps them.
       listRoles: () =>
         Promise.resolve([
           role({ role: 'platform-admin', builtin: true }),
@@ -524,14 +477,7 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     expect(await screen.findByText('platform-admin')).toBeInTheDocument()
-    // The reason is visible text, not a colour or a tooltip on a disabled
-    // control: a disabled button cannot be focused and drops out of the Tab
-    // order, so a tooltip or aria-describedby that depends on focus or hover is
-    // unreachable to keyboard-only users. The control is still in the
-    // accessibility tree; visible text sits in every reader's order.
     expect(screen.getByText(zhCN.permissions.roles.builtinLocked)).toBeInTheDocument()
-    // The server refuses writes on a builtin role, not reads: the row keeps
-    // an entry that opens the grants it holds.
     expect(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.viewGrantsAria, { role: 'platform-admin' }) }),
     ).not.toHaveAttribute('aria-disabled', 'true')
@@ -554,8 +500,6 @@ describe('PermissionsPage', () => {
     const operations = withAuthz({
       listRoles: () =>
         Promise.resolve([role({ role: 'platform-admin', builtin: true })]),
-      // The grant list must actually be loaded for the builtin role, or the
-      // absence of the write controls would prove nothing.
       listGrants: (tenant, role) =>
         Promise.resolve(
           role === 'platform-admin'
@@ -570,8 +514,6 @@ describe('PermissionsPage', () => {
         name: text(zhCN.permissions.roles.viewGrantsAria, { role: 'platform-admin' }),
       }),
     )
-    // The held grant is visible, spelled as the catalog spells it (the
-    // catalog lists the same text, so the section scopes the assertion).
     const grantsSection = screen
       .getByRole('heading', { name: zhCN.permissions.grants.title })
       .closest('section') as HTMLElement
@@ -579,7 +521,6 @@ describe('PermissionsPage', () => {
     expect(
       screen.getByText(zhCN.permissions.grants.builtinReadOnly),
     ).toBeInTheDocument()
-    // ...and neither the grant form nor the revoke action is offered.
     expect(screen.queryByLabelText(zhCN.permissions.grants.permissionLabel)).toBeNull()
     expect(screen.queryByRole('button', { name: zhCN.permissions.grants.add })).toBeNull()
     expect(
@@ -601,9 +542,6 @@ describe('PermissionsPage', () => {
     const catalogSection = screen.getByRole('heading', { name: zhCN.permissions.catalog.title }).closest('section')
     expect(grantsSection).not.toBeNull()
     expect(catalogSection).not.toBeNull()
-    // The grant row shows the catalog's permission code verbatim, so "what is
-    // granted" and "what the catalog declares" are one vocabulary; a pair
-    // spelling ("deal") would read as a different permission here.
     const grantText = (
       await within(grantsSection as HTMLElement).findByText('crm.deal.read')
     ).textContent
@@ -627,16 +565,12 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
 
-    // The directory keeps the code as its primary text and renders the
-    // server-rendered description as a second line in the same cell.
     const catalog = section(zhCN.permissions.catalog.title)
     const code = await within(catalog).findByText('crm.deal.read')
     const cell = code.closest('td')
     expect(cell).not.toBeNull()
     expect(within(cell as HTMLElement).getByText(described)).toBeInTheDocument()
 
-    // The grant picker's options carry the same pair; the closed control
-    // shows the chosen code alone, so the code stays primary there too.
     await user.click(
       screen.getByRole('button', {
         name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
@@ -650,9 +584,6 @@ describe('PermissionsPage', () => {
     })
     expect(within(option).getByText(described)).toBeInTheDocument()
     await user.click(option)
-    // The menu closes asynchronously, and until its listbox unmounts the
-    // label addresses both it and the combobox: wait the listbox out and
-    // name the combobox by role so the read cannot match two elements.
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
     const picker = screen.getByRole('combobox', {
       name: zhCN.permissions.grants.permissionLabel,
@@ -670,8 +601,6 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
 
-    // No second line: the code's own container holds the code and nothing
-    // else, and neither the cell nor the option carries a caption element.
     const catalog = section(zhCN.permissions.catalog.title)
     const code = await within(catalog).findByText('crm.deal.read')
     const cell = code.closest('td')
@@ -681,7 +610,6 @@ describe('PermissionsPage', () => {
       (cell as HTMLElement).querySelector(`.${typographyClasses.caption}`),
     ).toBeNull()
 
-    // The picker option is the bare code, and so is the closed control.
     await user.click(
       screen.getByRole('button', {
         name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
@@ -696,9 +624,6 @@ describe('PermissionsPage', () => {
     expect(option.querySelector(`.${typographyClasses.caption}`)).toBeNull()
     expect(option.textContent).toBe('crm.deal.read')
     await user.click(option)
-    // Same close transition as the described picker: the listbox still
-    // carries the label while the menu closes, so wait it out and address
-    // the combobox by role.
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
     expect(
       screen.getByRole('combobox', {
@@ -753,14 +678,11 @@ describe('PermissionsPage', () => {
       }),
     )
     const grants = section(zhCN.permissions.grants.title)
-    // The readable description is the row's primary text; the permission
-    // code the server reports stays beneath it.
     const cell = (await within(grants).findByText(described)).closest('td')
     expect(cell).not.toBeNull()
     expect(
       within(cell as HTMLElement).getByText('authz.tenant.role.manage'),
     ).toBeInTheDocument()
-    // The badge is text, so the mark never rests on color alone.
     expect(
       within(cell as HTMLElement).getByText(
         zhCN.permissions.catalog.dangerous,
@@ -791,8 +713,6 @@ describe('PermissionsPage', () => {
       }),
     )
 
-    // A dangerous permission asks before it is written: the add click opens
-    // the dialog and submits nothing.
     await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
     await user.click(
       await screen.findByRole('option', { name: contains('crm.deal.read') }),
@@ -800,8 +720,6 @@ describe('PermissionsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
     const dialog = await screen.findByRole('dialog')
     expect(granted).toEqual([])
-    // The heavier two-step arm: the first confirming click only arms the
-    // button, and the deliberate second click fires the write.
     await user.click(
       within(dialog).getByRole('button', {
         name: zhCN.permissions.grants.dangerousConfirm,
@@ -821,7 +739,6 @@ describe('PermissionsPage', () => {
     })
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    // A permission the server does not mark dangerous submits at once.
     await user.click(screen.getByLabelText(zhCN.permissions.grants.permissionLabel))
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
     await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
@@ -850,8 +767,6 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
 
     const catalog = section(zhCN.permissions.catalog.title)
-    // The catalog is grouped by the declaring module's group, in the shared
-    // order and with the shared headings.
     expect(
       await within(catalog).findByText(
         zhCN.permissions.catalog.group.authorization,
@@ -860,7 +775,6 @@ describe('PermissionsPage', () => {
     expect(
       within(catalog).getByText(zhCN.permissions.catalog.group.membership),
     ).toBeInTheDocument()
-    // An entry the caller cannot grant is still listed and marked.
     expect(
       await within(catalog).findByText('authn.member.read'),
     ).toBeInTheDocument()
@@ -868,7 +782,6 @@ describe('PermissionsPage', () => {
       within(catalog).getByText(zhCN.permissions.catalog.notGrantable),
     ).toBeInTheDocument()
 
-    // The grant picker offers only what the caller may grant.
     await user.click(
       screen.getByRole('button', {
         name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
@@ -933,8 +846,6 @@ describe('PermissionsPage', () => {
       name: text(zhCN.permissions.bindings.unbindAria, { account: 'Operator', role: 'viewer' }),
     })
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
-    // The grant revoke belongs to the selected role's grant list, which
-    // opens with the manage action.
     await user.click(manage)
     const revoke = await screen.findByRole('button', {
       name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.read' }),
@@ -955,8 +866,6 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    // The form offers no builtin control: the mark freezes a role for good and
-    // is the host's to set when it seeds the role, not the admin's.
     expect(screen.queryByRole('checkbox')).toBeNull()
     await user.type(screen.getByLabelText(zhCN.permissions.roles.create.roleLabel), 'auditor')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }))
@@ -965,8 +874,6 @@ describe('PermissionsPage', () => {
         { tenant: 'acme', role: 'auditor', description: '' },
       ])
     })
-    // The landed create fills the role scope's success region, naming the
-    // role it wrote.
     expect(await screen.findByText(text(zhCN.permissions.roles.saved, { role: 'auditor' }))).toBeInTheDocument()
   })
 
@@ -999,13 +906,9 @@ describe('PermissionsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
     await user.click(screen.getByRole('button', { name: text(zhCN.permissions.grants.revokeAria, { permission: 'crm.deal.read' }) }))
     await waitForCondition(() => {
-      // Grant and revoke name the permission by its CODE, symmetrically:
-      // the granted code is sent back on revoke through the catalog map.
       expect(granted).toEqual(['crm.deal.write'])
       expect(revoked).toEqual(['crm.deal.read'])
     })
-    // The landed revoke fills the grants scope's success region, naming the
-    // permission and the role it was revoked from.
     expect(
       await screen.findByText(text(zhCN.permissions.grants.revoked, { role: 'editor', permission: 'crm.deal.read' })),
     ).toBeInTheDocument()
@@ -1015,11 +918,6 @@ describe('PermissionsPage', () => {
     const user = userEvent.setup()
     const revoked: string[] = []
     const operations = withAuthz({
-      // The catalog's code is authn.mfa.reset, whose translated pair is
-      // factor/reset (pkg/authz's translation table is its own authority and
-      // is not a suffix of the code); the grant row carries that pair. The
-      // label and the revoke still name the code, resolved by the unique
-      // action.
       listPermissions: () => Promise.resolve([permission('authn.mfa.reset')]),
       listRoles: () => Promise.resolve([role()]),
       listGrants: () =>
@@ -1053,9 +951,6 @@ describe('PermissionsPage', () => {
     const user = userEvent.setup()
     const operations = withAuthz({
       listRoles: () => Promise.resolve([role()]),
-      // A pair this process no longer translates: the server reports no
-      // permission code for it, so the row shows the recorded spelling and
-      // the revoke route (which names a permission by its code) is withheld.
       listGrants: () =>
         Promise.resolve([
           grant({ permission: '', resource: 'retired', action: 'op' }),
@@ -1078,8 +973,6 @@ describe('PermissionsPage', () => {
       }),
     })
     expect(revoke).toHaveAttribute('aria-disabled', 'true')
-    // The reason is visible text beneath the unavailable control, not only
-    // a hover affordance a keyboard user cannot reach.
     const reason = within(grantsSection).getByText(
       zhCN.permissions.grants.revokeUnavailable,
     )
@@ -1105,12 +998,8 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Operator')
-    // A role alone is not a binding: the account must be chosen, and the
-    // picker holds no id until then.
     await user.type(screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }), 'viewer')
     expect(screen.getByRole('button', { name: zhCN.permissions.bindings.bind })).toHaveAttribute('aria-disabled', 'true')
-    // A display name finds the account; the write carries its id ("acc-2"),
-    // never the typed name.
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
     await user.click(screen.getByRole('button', { name: text(zhCN.permissions.bindings.unbindAria, { account: 'Operator', role: 'editor' }) }))
@@ -1118,8 +1007,6 @@ describe('PermissionsPage', () => {
       expect(bound).toEqual(['acc-2:viewer'])
       expect(unbound).toEqual(['editor'])
     })
-    // The landed unbind fills the bindings scope's success region, naming
-    // the account and the role it took away.
     expect(
       await screen.findByText(text(zhCN.permissions.bindings.unbound, { account: byName('Operator'), role: 'editor' })),
     ).toBeInTheDocument()
@@ -1133,13 +1020,9 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    // The cell renders the neutral copy, labelled unresolved rather than
-    // passed off as a resolved identity.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
     expect(cell).not.toHaveTextContent('acc-1')
-    // The unbind control names the account by the same neutral copy when no
-    // readable identity was resolved.
     expect(
       screen.getByRole('button', {
         name: text(zhCN.permissions.bindings.unbindAria, {
@@ -1160,10 +1043,6 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
 
     const bindings = section(zhCN.permissions.bindings.title)
-    // The refused lookup renders the recorded identifier in full, which
-    // otherwise sets the account column's width from its content. The
-    // account is the row's identity, so it takes the shared primary cap,
-    // which grows at md and counts the copy control in the budget.
     const accountMarker = await within(bindings).findByTitle(zhCN.common.accountUnresolved)
     const accountCell = accountMarker.closest('td')
     expect(containerMaxWidthOf(accountCell!.firstElementChild!)).toEqual(
@@ -1173,8 +1052,6 @@ describe('PermissionsPage', () => {
       ]),
     )
 
-    // The role is a long-text column that is not the primary identity: a
-    // flat cap that does not grow with the container.
     const roleCell = within(bindings).getByText('viewer').closest('td')
     expect(roleCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
     expect(containerMaxWidthOf(roleCell!.firstElementChild!)).toEqual(new Map())
@@ -1191,11 +1068,9 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    // No account chosen yet, so the lookup is not offered.
     expect(screen.getByRole('button', { name: zhCN.permissions.lookup.apply })).toHaveAttribute('aria-disabled', 'true')
     await chooseAccount(user, zhCN.permissions.lookup.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.lookup.apply }))
-    // The read is addressed by the account id, not the typed name.
     await waitForCondition(() => {
       expect(looked).toEqual(['acc-2'])
     })
@@ -1253,7 +1128,6 @@ describe('PermissionsPage', () => {
     await user.click(within(lookup).getByRole('button', { name: zhCN.permissions.lookup.retry }))
     expect(await within(lookup).findByText(zhCN.permissions.lookup.empty.title)).toBeInTheDocument()
     expect(reads).toBe(2)
-    // The retry's pending state withdraws the failure placeholder.
     expect(
       within(lookup).queryByText(zhCN.permissions.lookup.error.title),
     ).toBeNull()
@@ -1273,8 +1147,6 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     await screen.findByText('editor')
     await user.click(screen.getByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'editor' }) }))
-    // Deleting a role revokes its grants and bindings with it and cannot be
-    // undone: the heavier two-step guard -- the first click only arms.
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.permissions.roles.removeConfirm }))
     expect(removed).toEqual([])
@@ -1289,8 +1161,6 @@ describe('PermissionsPage', () => {
     await waitForCondition(() => {
       expect(removed).toEqual(['editor'])
     })
-    // The dialog closes on the confirming click, and the landed delete
-    // fills the role scope's success region after it closes.
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await screen.findByText(text(zhCN.permissions.roles.removed, { role: 'editor' }))).toBeInTheDocument()
   })
@@ -1307,7 +1177,6 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     await screen.findByRole('button', { name: text(zhCN.permissions.roles.removeAria, { role: 'beta' }) })
 
-    // The removal is confirmed while beta is the selected role.
     await user.click(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'beta' }) }),
     )
@@ -1325,8 +1194,6 @@ describe('PermissionsPage', () => {
     )
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    // While the deletion is in flight the operator moves to alpha. The
-    // settlement must clear a selection only if it still names beta.
     await user.click(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'alpha' }) }),
     )
@@ -1362,10 +1229,8 @@ describe('PermissionsPage', () => {
       within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
     )
 
-    // The dialog does not hold the write open: it closes on the confirming
-    // click, so the refusal lands in the role scope's region where it is
-    // readable rather than behind an aria-hidden modal. The same text marks
-    // the failed row inline, so the region is addressed by its role.
+    // The dialog closes on the confirming click, so the refusal lands in the
+    // visible region rather than behind an aria-hidden modal.
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authz.forbidden,
@@ -1392,7 +1257,6 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: zhCN.permissions.roles.retry })).toBeNull()
-    // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -1407,14 +1271,12 @@ describe('PermissionsPage', () => {
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
 
-    // The role catalog refuses the create.
     await user.type(screen.getByLabelText(zhCN.permissions.roles.create.roleLabel), 'auditor')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.roles.create.submit }))
     expect(await within(section(zhCN.permissions.roles.title)).findByRole('alert')).toHaveTextContent(
       zhCN.errors.authz.bad_request,
     )
 
-    // The grants group refuses the grant.
     await user.click(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }) }),
     )
@@ -1426,8 +1288,6 @@ describe('PermissionsPage', () => {
       zhCN.errors.authz.conflict,
     )
 
-    // Neither section carries the other's text, and no page-level banner
-    // aggregates them: the two regions are the only alerts.
     expect(within(section(zhCN.permissions.roles.title)).getByRole('alert')).toHaveTextContent(
       zhCN.errors.authz.bad_request,
     )
@@ -1473,7 +1333,6 @@ describe('PermissionsPage', () => {
     })
     await user.click(failed)
 
-    // The failing row carries the marker; the row beside it does not.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authz.forbidden,
     )
@@ -1484,7 +1343,6 @@ describe('PermissionsPage', () => {
     const hint = document.getElementById(hintId as string)
     expect(hint?.textContent).toBe(screen.getByRole('alert').textContent)
 
-    // The region under the table was brought into view, animated.
     expect(scrollIntoView).toHaveBeenCalledWith({
       behavior: 'smooth',
       block: 'center',
@@ -1519,9 +1377,6 @@ describe('PermissionsPage', () => {
     )
     expect(failed).toHaveAttribute('aria-invalid', 'true')
 
-    // The grant and the revoke share the grants scope: a new attempt starts
-    // from a clean result, so the refused row's marker and its inline reason
-    // do not outlive the result they described.
     await user.click(
       screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
     )
@@ -1556,7 +1411,6 @@ describe('PermissionsPage', () => {
     const lookup = section(zhCN.permissions.lookup.title)
     expect(await within(lookup).findByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(within(lookup).queryByRole('button', { name: zhCN.permissions.lookup.retry })).toBeNull()
-    // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -1577,8 +1431,6 @@ describe('PermissionsPage', () => {
     await user.click(await screen.findByRole('option', { name: 'crm.deal.write' }))
     await user.click(screen.getByRole('button', { name: zhCN.permissions.grants.add }))
 
-    // The selected role drives the grants scope, and the tenant drives
-    // every scope: both are out of reach while the grant is in flight.
     expect(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'viewer' }) }),
     ).toHaveAttribute('aria-disabled', 'true')
@@ -1595,7 +1447,6 @@ describe('PermissionsPage', () => {
       await screen.findByText(text(zhCN.permissions.grants.granted, { role: 'editor', permission: 'crm.deal.write' })),
     ).toBeInTheDocument()
 
-    // Another role means another context: the old confirmation goes.
     await user.click(
       screen.getByRole('button', { name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'viewer' }) }),
     )
@@ -1616,8 +1467,6 @@ describe('PermissionsPage', () => {
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
 
-    // The chosen account drives the bindings scope: it is disabled while
-    // the write it drives is in flight.
     expect(screen.getByLabelText(zhCN.permissions.bindings.accountLabel)).toBeDisabled()
 
     await act(async () => {
@@ -1633,7 +1482,6 @@ describe('PermissionsPage', () => {
       ),
     ).toBeInTheDocument()
 
-    // Choosing another account is another context: the confirmation goes.
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Operator', 'Operator')
     expect(
       screen.queryByText(
@@ -1663,9 +1511,8 @@ describe('PermissionsPage', () => {
     const bind = screen.getByRole('button', {
       name: zhCN.permissions.bindings.bind,
     })
-    // No account is chosen yet: the control is unavailable with a reason,
-    // not natively disabled, so it can hold focus and says why it cannot
-    // run. A forced activation writes nothing.
+    // The control is unavailable with a reason, not natively disabled, so it can
+    // hold focus and says why it cannot run.
     expect(bind).toHaveAttribute('aria-disabled', 'true')
     expect(bind).toHaveAccessibleDescription(
       zhCN.permissions.bindings.accountRequired,
@@ -1678,9 +1525,6 @@ describe('PermissionsPage', () => {
     })
     expect(bound).toEqual([])
 
-    // With the precondition met, activation starts the write. While it is
-    // in flight the control reports busy and keeps focus, and a further
-    // click, Enter or Space issues no second write.
     await user.type(
       screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }),
       'viewer',
@@ -1690,8 +1534,7 @@ describe('PermissionsPage', () => {
     expect(bind).toHaveAttribute('aria-busy', 'true')
     expect(bind).toHaveAttribute('aria-disabled', 'true')
     expect(bind).toHaveFocus()
-    // The role field is read-only, not natively disabled, while the write
-    // is in flight.
+    // The role field is read-only, not natively disabled, while the write runs.
     expect(
       screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }),
     ).toHaveAttribute('readonly')
@@ -1707,18 +1550,13 @@ describe('PermissionsPage', () => {
       pending.resolve()
       await pending.promise
     })
-    // The write settles, the fields clear and the precondition is unmet
-    // again; the control still holds focus.
     expect(bind).toHaveFocus()
   })
 
-  // Both binding writes name the account in the shared four shapes and never
-  // by its opaque id.
   const NOTICE_IDENTIFIERS: AdminAccount['identifiers'] = [
     { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
   ]
 
-  /** Drives one binding write with the given identity and returns its notice. */
   async function driveBindingNotice(
     user: ReturnType<typeof userEvent.setup>,
     action: 'bound' | 'unbound',
@@ -1784,8 +1622,6 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    // The unbind control resolves the row's account through the shared unit;
-    // wait for that read before the click captures the identity.
     await waitForCondition(() => expect(getAccount).toHaveBeenCalled())
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1887,14 +1723,9 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    // The bindings table also spells the role it binds, so the roles table
-    // is the one the role row is read from.
     await within(section(zhCN.permissions.roles.title)).findByText('editor')
     await screen.findByText('crm.deal.read')
 
-    // No role selected and no account applied: the grants read and the
-    // account-binding read are disabled, so the refresh must not issue
-    // them (they would run without their argument).
     expect(listGrants).not.toHaveBeenCalled()
     expect(listAccountBindings).not.toHaveBeenCalled()
     const rolesBefore = listRoles.mock.calls.length
@@ -1990,8 +1821,6 @@ describe('PermissionsPage', () => {
     const saved = text(zhCN.permissions.roles.saved, { role: 'auditor' })
     expect(await screen.findByText(saved)).toBeInTheDocument()
 
-    // The refresh is a context change: the confirmation written under the
-    // old table does not describe the re-read one.
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
@@ -2005,9 +1834,6 @@ describe('PermissionsPage', () => {
     const operations = withAuthz({
       listRoles: () => Promise.resolve([role()]),
     })
-    // A controlled page takes its tenant from the host, so the change
-    // arrives as a prop; the host-owned switch stands in for the host
-    // re-rendering the page under another tenant.
     function Harness(): ReactElement {
       const [tenant, setTenant] = useState('acme')
       return (
@@ -2034,8 +1860,6 @@ describe('PermissionsPage', () => {
     const saved = text(zhCN.permissions.roles.saved, { role: 'auditor' })
     expect(await screen.findByText(saved)).toBeInTheDocument()
 
-    // The tenant is an argument of every write: the confirmation written
-    // under the tenant left behind does not describe the new one.
     await user.click(screen.getByRole('button', { name: 'switch-tenant' }))
     await waitFor(() => {
       expect(screen.queryByText(saved)).toBeNull()
@@ -2062,8 +1886,6 @@ describe('PermissionsPage', () => {
       ),
     ).toBeInTheDocument()
 
-    // The role disappears elsewhere; the refresh's roles read answers
-    // without it.
     listed = []
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
@@ -2080,7 +1902,6 @@ describe('PermissionsPage', () => {
       await screen.findByText(zhCN.permissions.roles.empty.title),
     ).toBeInTheDocument()
 
-    // The next refresh clears the standing announcement.
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
@@ -2117,8 +1938,6 @@ describe('PermissionsPage', () => {
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
 
-    // A failed roles read keeps the selection; the stale marker reports
-    // the failure and the disappearance announcement stays silent.
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
     })
@@ -2145,7 +1964,6 @@ describe('PermissionsPage', () => {
   })
 })
 
-/** Arms and confirms the two-step delete dialog. */
 async function confirmRoleRemoval(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
@@ -2177,8 +1995,6 @@ function grantRevokeButton(code: string): HTMLElement {
   })
 }
 
-/** Asserts a sibling control is unavailable without being busy or naming a
- * reason of its own. */
 function expectSiblingUnavailable(control: HTMLElement): void {
   expect(control).toHaveAttribute('aria-disabled', 'true')
   expect(control).not.toHaveAttribute('aria-busy')
@@ -2213,8 +2029,6 @@ describe('PermissionsPage write attribution', () => {
     for (const button of [roleRemoveButton('alpha'), roleRemoveButton('beta')]) {
       expectSiblingUnavailable(button)
     }
-    // The create button owns the in-flight write; its own reason is gone.
-    // A forced activation on a sibling row starts no second write.
     const alpha = roleRemoveButton('alpha')
     fireEvent.click(alpha)
     alpha.focus()
@@ -2259,7 +2073,6 @@ describe('PermissionsPage write attribution', () => {
     expect(create).toHaveAttribute('aria-disabled', 'true')
     expect(create).not.toHaveAttribute('aria-busy')
 
-    // The sibling row does not open a second confirmation.
     fireEvent.click(beta)
     await act(async () => {
       await Promise.resolve()
@@ -2666,8 +2479,6 @@ describe('PermissionsPage unload focus', () => {
       binding({ account: 'acc-2', role: 'viewer' }),
     ]
     const operations = withAuthz({
-      // The identity read resolves each id to its own row, so the two
-      // unbind controls name different roles on the same account.
       getAccount: (query) =>
         Promise.resolve(
           query.id === 'acc-2'
@@ -2753,8 +2564,6 @@ describe('PermissionsPage unload focus', () => {
     await within(grantsSection).findByText('crm.deal.read')
 
     await user.click(grantRevokeButton('crm.deal.read'))
-    // The reader moves to a control of their own while the write is in
-    // flight; the settlement must not pull focus back to the table.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     refresh.focus()
     expect(refresh).toHaveFocus()

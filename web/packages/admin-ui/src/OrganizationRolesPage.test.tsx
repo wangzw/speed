@@ -1,20 +1,3 @@
-/**
- * The organization administrator's roles and permissions page.
- *
- * The cases pin the page's product shape: the role catalog and its
- * create/edit/delete controls, the read-only tiers (builtin, host-protected
- * and no-manage), the selected role's grants with the server-reported
- * permission driving revoke, the grantable filter and the high-risk
- * confirmation, the read-only usage section with its cursor paging and its
- * permission-gated members-page entry, the collapsed permission reference
- * with grouping and search, and both color modes' shared page shape.
- *
- * The operations bundle is the scripted admin-ui backend, so the tests
- * observe the parameters the reads carry and the exact write inputs rather
- * than stubbing the page's hooks. The session-backed permission gates are
- * driven through auth-core's attached session, the same seam the host uses.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -48,14 +31,12 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = 'acme'
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(template: string, values: Record<string, string | number> = {}): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
     String(values[key] ?? match),
   )
 }
 
-/** A promise the case settles by hand, so one write can be held in flight. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -129,8 +110,6 @@ const CATALOG: readonly AdminTenantPermission[] = [
   permission('legacy.read', 'Legacy read', 'not-a-group', false, false),
 ]
 
-/** The default catalog plus the tenant profile permissions the server groups
- * under `profile`, on top of the deliberately unknown `not-a-group` entry. */
 const PROFILE_CATALOG: readonly AdminTenantPermission[] = [
   ...CATALOG,
   permission('tenant.profile.read', 'Read the organization profile', 'profile'),
@@ -203,8 +182,6 @@ interface Scripted {
   readonly recorder: Recorder
 }
 
-/** The scripted backend: the default catalog, three roles, two holder pages
- * and recorded writes. A test overrides the member it exercises. */
 function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
   const recorder: Recorder = {
     roleReads: 0,
@@ -260,9 +237,6 @@ function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
   return { backend, recorder }
 }
 
-/** The tenant permissions the default render's session attaches: the page
- * may read roles and memberships, but every write decision still comes from
- * the server's `can_manage`. */
 const FULL_TENANT_PERMISSIONS = [
   'authz.tenant.role.read',
   'authz.tenant.role.manage',
@@ -278,7 +252,6 @@ function attachTenantPermissions(permissions: readonly string[] | null): void {
   )
 }
 
-/** The host's prefixed declaration, the shape the demo publishes. */
 const INVITATIONS_ROUTE: AdminRoute = {
   id: 'organization-invitations',
   path: '/organization/admin/invitations',
@@ -290,7 +263,6 @@ interface RenderOptions {
   readonly routes?: readonly AdminRoute[]
 }
 
-/** The titled section a heading opens, which holds that section's content. */
 function section(name: string): HTMLElement {
   const element = screen.getByRole('heading', { name }).closest('section')
   if (element === null) {
@@ -324,7 +296,6 @@ afterEach(() => {
   attachSession(createStepUpSession(ANONYMOUS_SNAPSHOT))
 })
 
-/** Waits past the two-step confirm's arming lockout. */
 async function waitForArmedConfirm(): Promise<void> {
   await act(async () => {
     await new Promise((resolve) =>
@@ -333,7 +304,6 @@ async function waitForArmedConfirm(): Promise<void> {
   })
 }
 
-/** Opens one role row's action menu. */
 async function openRowActions(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
@@ -345,7 +315,6 @@ async function openRowActions(
   )
 }
 
-/** Picks one item from the open row action menu. */
 async function chooseRowAction(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
@@ -366,7 +335,6 @@ describe('the role catalog', () => {
     expect(await screen.findByText(ROLE_AUDITOR.role)).toBeInTheDocument()
     expect(screen.getByText(ROLE_AUDITOR.description)).toBeInTheDocument()
     expect(screen.getByText('tenant-admin')).toBeInTheDocument()
-    // Two counts columns plus the builtin column.
     expect(
       screen.getAllByRole('columnheader', {
         name: zhCN.permissions.roles.column.permissions,
@@ -388,9 +356,6 @@ describe('the role catalog', () => {
     const table = await screen.findByRole('table')
     const row = within(table).getByText('support').closest('tr')
     expect(row).not.toBeNull()
-    // The role table's cell keeps the shared empty-value dash; the explicit
-    // "member state unavailable" sentence belongs to the usage summary, not
-    // to this cell.
     expect(
       within(row as HTMLElement).getByText(zhCN.common.emptyValue),
     ).toBeInTheDocument()
@@ -456,14 +421,11 @@ describe('the role catalog', () => {
     const submit = screen.getByRole('button', {
       name: zhCN.permissions.roles.create.submit,
     })
-    // The duplicate hint stands on the page; the unavailable button points
-    // at it rather than repeating the text.
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     expect(submit).toHaveAccessibleDescription(
       zhCN.permissions.roles.create.duplicate,
     )
 
-    // A precondition-unmet submit refuses click, Enter and Space alike.
     await user.click(submit)
     const field = screen.getByLabelText(zhCN.permissions.roles.create.roleLabel)
     await user.click(field)
@@ -558,7 +520,6 @@ describe('the role catalog', () => {
     expect(
       within(panel).getByText(zhCN.permissions.roles.description.title),
     ).toBeInTheDocument()
-    // The role name is shown read-only: it is the key bindings hold.
     expect(within(panel).getByLabelText(zhCN.permissions.roles.description.roleLabel)).toHaveValue(
       ROLE_AUDITOR.role,
     )
@@ -679,8 +640,6 @@ describe('the role catalog', () => {
       }),
     ).toBeNull()
 
-    // The server's builtin mark comes with can_manage=true; the role still
-    // opens read-only in the grants section.
     await user.click(
       screen.getByRole('button', {
         name: text(zhCN.permissions.roles.viewGrantsAria, {
@@ -696,8 +655,6 @@ describe('the role catalog', () => {
         name: zhCN.permissions.grants.permissionLabel,
       }),
     ).toBeNull()
-    // The builtin role holds a grant; the read-only tier renders no revoke
-    // control for it.
     const grantsSection = section(zhCN.permissions.grants.title)
     expect(
       await within(grantsSection).findByText('Read roles'),
@@ -734,7 +691,6 @@ describe('the role catalog', () => {
     expect(
       await screen.findByText(zhCN.permissions.grants.protectedReadOnly),
     ).toBeInTheDocument()
-    // The grant renders, its revoke control does not.
     const grantsSection = section(zhCN.permissions.grants.title)
     expect(await within(grantsSection).findByText('Read roles')).toBeInTheDocument()
     expect(
@@ -784,7 +740,6 @@ describe('the role catalog', () => {
         name: zhCN.permissions.grants.permissionLabel,
       }),
     ).toBeNull()
-    // The role's grant renders; its revoke control does not.
     const grantsSection = section(zhCN.permissions.grants.title)
     expect(await within(grantsSection).findByText('Read roles')).toBeInTheDocument()
     expect(
@@ -914,7 +869,6 @@ describe('the selected role grants', () => {
     await selectRole(user, ROLE_AUDITOR.role)
     const grantsSection = section(zhCN.permissions.grants.title)
 
-    // The readable name is primary; the code stays as secondary text.
     expect(await within(grantsSection).findByText('Read roles')).toBeInTheDocument()
     expect(
       within(grantsSection).getByText('authz.tenant.role.read'),
@@ -1087,7 +1041,6 @@ describe('the role usage section', () => {
     expect(
       screen.getByText(zhCN.permissions.usage.status.suspended),
     ).toBeInTheDocument()
-    // The read is the role-usage endpoint, one page of 50.
     expect(recorder.bindingReads[0]).toEqual({ limit: 50 })
   })
 
@@ -1101,7 +1054,6 @@ describe('the role usage section', () => {
     expect(
       await screen.findByText(zhCN.permissions.usage.memberCountUnavailable),
     ).toBeInTheDocument()
-    // The holder list is still rendered; the count is the only unknown.
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
   })
 
@@ -1183,7 +1135,6 @@ describe('the role usage section', () => {
       'href',
       '/organization/admin/invitations?role=audit%20team',
     )
-    // The entry is an addition, never a replacement for the holder list.
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
   })
 
@@ -1212,7 +1163,6 @@ describe('the permission catalog reference', () => {
       name: zhCN.permissions.catalog.expand,
     })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    // The section title is always discoverable; only its content is hidden.
     expect(
       screen.getByRole('heading', { name: zhCN.permissions.catalog.title }),
     ).toBeInTheDocument()
@@ -1234,7 +1184,6 @@ describe('the permission catalog reference', () => {
       screen.getByRole('button', { name: zhCN.permissions.catalog.collapse }),
     ).toHaveAttribute('aria-expanded', 'true')
 
-    // The groups render in the catalog's own order.
     const headings = screen
       .getAllByRole('heading', { level: 3 })
       .map((heading) => heading.textContent)
@@ -1301,8 +1250,6 @@ describe('the profile permission group', () => {
     )
 
     const catalog = section(zhCN.permissions.catalog.title)
-    // The shared order is unchanged and profile sits after the other tenant
-    // groups but ahead of the fallback group.
     const headings = within(catalog)
       .getAllByRole('heading', { level: 3 })
       .map((heading) => heading.textContent)
@@ -1316,7 +1263,6 @@ describe('the profile permission group', () => {
     expect(order.every((index) => index >= 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
 
-    // Both profile permissions render under the profile heading, not other.
     const profileHeading = within(catalog)
       .queryAllByRole('heading')
       .find(
@@ -1333,8 +1279,6 @@ describe('the profile permission group', () => {
     ).toBeInTheDocument()
     expect(within(profileSection).queryByText('legacy.read')).toBeNull()
 
-    // A permission naming a group the vocabulary does not carry still falls
-    // into other.
     const otherHeading = within(catalog)
       .queryAllByRole('heading')
       .find(
@@ -1371,9 +1315,8 @@ describe('the profile permission group', () => {
       within(listbox).getByText(profileLabel),
     ).toBeInTheDocument()
 
-    // An option's group is the nearest preceding ListSubheader. MUI clones
-    // every child, subheaders included, with role="option", so the class is
-    // the reliable boundary marker.
+    // MUI clones every child, subheaders included, with role="option", so the
+    // class is the reliable group boundary.
     const groupOf = (code: string): string => {
       const option = within(listbox).getByText(code).closest('[role="option"]')
       expect(option).not.toBeNull()
@@ -1414,7 +1357,6 @@ describe('the page-level writes and accessibility', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authz.conflict)
-    // The refused draft stays in the form for correction.
     expect(
       screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
     ).toHaveValue('reviewer')
@@ -1447,8 +1389,6 @@ describe('the page-level writes and accessibility', () => {
   })
 })
 
-/** Asserts a sibling control is unavailable without being busy or naming a
- * reason of its own. */
 function expectSiblingUnavailable(control: HTMLElement): void {
   expect(control).toHaveAttribute('aria-disabled', 'true')
   expect(control).not.toHaveAttribute('aria-busy')
@@ -1598,15 +1538,12 @@ describe('OrganizationRolesPage write attribution', () => {
       .closest('form')
     expect(form).not.toBeNull()
 
-    // An empty draft leaves the control unavailable; a programmatic submit
-    // is swallowed by the form-level guard.
     fireEvent.submit(form as HTMLFormElement)
     await act(async () => {
       await Promise.resolve()
     })
     expect(writes).toEqual([])
 
-    // A second submit while the first create is in flight sends nothing new.
     await user.type(
       screen.getByLabelText(zhCN.permissions.roles.create.roleLabel),
       'reviewer',

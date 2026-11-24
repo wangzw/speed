@@ -1,12 +1,5 @@
-/**
- * TenantRosterPage in a real browser: the roster table at the sm/md/lg
- * floor widths with fixed data. The invariant is horizontal containment
- * -- the page and the table's own scroll container stay inside their
- * widths -- which only a browser can measure (container queries, column
- * priorities and real font metrics all take part). A row's status switch
- * keeps the focus it was activated with while its write is in flight,
- * which a browser settles by its own focus rules.
- */
+// Container queries, column priorities and real font metrics are only
+// measurable in a browser, as are the browser's own focus rules.
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,8 +16,6 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-/** A promise the case settles by hand, so one request can be held in
- * flight across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -36,15 +27,12 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** One animation frame: the updated state has reached the DOM and the
- * browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -117,8 +105,6 @@ describe('TenantRosterPage write focus in Chromium', () => {
     })
     await user.click(toggle)
 
-    // A frame passes, so the browser has had its chance to move a focused
-    // control whose availability changed.
     await nextFrame()
     expect(
       toggle,
@@ -126,10 +112,8 @@ describe('TenantRosterPage write focus in Chromium', () => {
     ).toHaveFocus()
     expect(toggle).toHaveAttribute('aria-busy', 'true')
     expect(toggle).toHaveAttribute('aria-disabled', 'true')
-    // The controlled value does not move until the write's refetch settles.
     expect(toggle).toBeChecked()
 
-    // A second activation is swallowed, in a real browser as in jsdom.
     await user.click(toggle)
     expect(toggle).toBeChecked()
     expect(toggle).toHaveFocus()

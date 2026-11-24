@@ -1,8 +1,3 @@
-/**
- * SettingsPage in a real browser: the settings table at the sm/md/lg
- * floor widths with fixed data (keys and values of representative
- * length, including a long dotted key).
- */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import axe from 'axe-core'
@@ -18,7 +13,6 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-/** The key of the first scripted setting, the row the overflow case looks up. */
 const FIRST_SETTING_KEY = 'mail.retry'
 
 const SETTINGS: readonly AdminSetting[] = [
@@ -65,12 +59,7 @@ describe('SettingsPage horizontal overflow in Chromium', () => {
   }
 })
 
-/**
- * A prose description of the length the settings schema really declares
- * (the longest ones run past 300 characters). Inside the primary
- * identity's 160/200px cap it wraps into a very tall column of thin text;
- * the declaration must get the cell's own width instead.
- */
+// The settings schema's longest descriptions run past 300 characters.
 const LONG_DESCRIPTION =
   'Whether the mail carrier retries a message it refused, measured against the delivery attempts already recorded for that message and against the retry window this deployment configures, so a message is not retried forever and a transient refusal is still retried.'
 
@@ -87,14 +76,12 @@ const LONG_DESCRIPTION_ITEM: AdminSetting = {
   value: 'true',
 }
 
-/** The shipped en-US copy-control label for this row's key. */
 const COPY_LABEL = (
   uiKitResources['en-US'] as unknown as {
     readonly dataTable: { readonly copyValue: string }
   }
 ).dataTable.copyValue.replace('{{value}}', LONG_DESCRIPTION_ITEM.key)
 
-/** The vertical centre of a rendered element. */
 function centreY(element: Element): number {
   const rect = element.getBoundingClientRect()
   return (rect.top + rect.bottom) / 2
@@ -123,21 +110,12 @@ describe('SettingsPage declaration layout in Chromium', () => {
         ).toBeGreaterThan(0),
       )
 
-      // The declaration gets the cell's own width, not the primary
-      // identity's 160/200px cap it used to be held to (where this text
-      // measured ~130/170px). The key line keeps that cap alone.
       expect(description.getBoundingClientRect().width).toBeGreaterThan(200)
 
-      // Wrapping across the cell keeps the row a handful of prose lines
-      // tall instead of stacking the description down a narrow column.
       expect(row?.getBoundingClientRect().height ?? Infinity).toBeLessThan(
         300,
       )
 
-      // The tall key cell does not drop the controls to its middle: the
-      // copy control sits on the key line, and the value input starts at
-      // the row's top beside the key. Before the row was top-aligned the
-      // copy control measured ~83px below the key line here.
       const keyLine = screen.getByText(LONG_DESCRIPTION_ITEM.key)
       const copy = screen.getByRole('button', { name: COPY_LABEL })
       expect(Math.abs(centreY(copy) - centreY(keyLine))).toBeLessThan(12)
@@ -155,22 +133,9 @@ describe('SettingsPage declaration layout in Chromium', () => {
   }
 })
 
-/** The shipped Remove label for the overridden row the case renders. */
 const REMOVE_KEY = 'mail.retry'
 const REMOVE_LABEL = enUS.settings.removeAria.replace('{{key}}', REMOVE_KEY)
 
-/**
- * The row's Remove control carries the visible text "Remove" beside its
- * accessible name; WCAG 2.5.3 requires that text be part of the name. The
- * rule measures the visible text through a canvas, which jsdom cannot
- * provide, so this tier settles it for the one row shape that offers the
- * control.
- */
-/**
- * The theme's container surface painted onto a reference element, so the
- * cases compare against the role the page is supposed to use rather than
- * against values written into the test.
- */
 function ContainerSurfaceProbe() {
   const theme = useTheme()
   const role = theme.surface.container
@@ -188,14 +153,8 @@ function ContainerSurfaceProbe() {
   )
 }
 
-/**
- * The settings page's two blocks -- the namespace navigation and the
- * settings register -- are content sections: each renders through
- * `SectionCard` as a `<section>` painted with the theme's container role.
- * The register is a flush table section, so the table reaches the
- * section's rim. A hand-written outlined `Card` paints the same colors,
- * so only the section element and the flush geometry distinguish the two.
- */
+// Both blocks render through SectionCard as a section painted with the container
+// role; the register is flush, so its table reaches the rim.
 describe('SettingsPage content surfaces in Chromium', () => {
   it('renders both blocks on the container surface, the register flush', async () => {
     await page.viewport(1200, 900)
@@ -237,9 +196,6 @@ describe('SettingsPage content surfaces in Chromium', () => {
       expect(paint.borderTopLeftRadius).toBe(expected.borderTopLeftRadius)
     }
 
-    // Flush content: outside the 1px rim, the table touches every edge of
-    // the section, so the surface clips its corners rather than the table
-    // floating on a padded card.
     const tableRect = table!.getBoundingClientRect()
     const registerRect = register!.getBoundingClientRect()
     expect(Math.abs(tableRect.left - registerRect.left)).toBeLessThanOrEqual(1.5)
@@ -248,7 +204,6 @@ describe('SettingsPage content surfaces in Chromium', () => {
   })
 })
 
-/** One row the layer holds, so it carries a remove control. */
 function overridden(key: string): AdminSetting {
   const namespace = key.slice(0, key.indexOf('.'))
   return {
@@ -265,12 +220,10 @@ function overridden(key: string): AdminSetting {
   }
 }
 
-/** The row Remove control's accessible name for one key. */
 function removeLabel(key: string): string {
   return enUS.settings.removeAria.replace('{{key}}', key)
 }
 
-/** A promise the case settles by hand, so one write can be held in flight. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -282,15 +235,12 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** One animation frame: the updated state has reached the DOM and the
- * browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -312,7 +262,6 @@ function describeActiveElement(): string {
   return parts.join(' ')
 }
 
-/** Clicks a row's Remove control and confirms the dialog. */
 async function confirmRemove(key: string): Promise<HTMLElement> {
   const remove = await screen.findByRole('button', { name: removeLabel(key) })
   await userEvent.click(remove)
@@ -356,8 +305,6 @@ describe('SettingsPage write focus in Chromium', () => {
       expect(within(save).queryByRole('progressbar')).not.toBeInTheDocument(),
     )
 
-    // The landed batch cleared the drafts, so the action's precondition is
-    // gone: it stays where the operator left it, unavailable and explained.
     await waitFor(() => {
       expect(
         save,
@@ -402,12 +349,9 @@ describe('SettingsPage write focus in Chromium', () => {
         `focus after the confirmation closed; document.activeElement is ${describeActiveElement()}`,
       ).toHaveFocus()
     })
-    // The row's own removal is in flight: its control says so and still holds
-    // the focus the confirmation returned to it.
     expect(removeB).toHaveAttribute('aria-busy', 'true')
     expect(removeB).toHaveAttribute('aria-disabled', 'true')
-    // Wait out the confirmation's exit transition: while the dialog stands,
-    // the page behind it is hidden from role queries.
+    // While the dialog stands the page behind it is hidden from role queries.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     written.resolve()
@@ -513,8 +457,6 @@ describe('SettingsPage write focus in Chromium', () => {
       ).toBeNull(),
     )
 
-    // Nothing removable is left on the page, so focus lands on the settings
-    // table's named group container rather than the document body.
     await waitFor(() => {
       const active = document.activeElement as HTMLElement | null
       expect(
@@ -563,8 +505,6 @@ describe('SettingsPage write focus in Chromium', () => {
     })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    // The operator leaves the confirmation's landing place and settles on a
-    // control of their own while the removal is still in flight.
     const elsewhere = screen.getByRole('textbox', { name: 'mail.a' })
     elsewhere.focus()
     await nextFrame()
@@ -578,7 +518,6 @@ describe('SettingsPage write focus in Chromium', () => {
     )
     await nextFrame()
 
-    // The landed removal does not take the focus the operator chose.
     expect(
       elsewhere,
       `focus after the row was removed; document.activeElement is ${describeActiveElement()}`,

@@ -1,12 +1,3 @@
-/**
- * SsoPage: the SSO-provider administration page.
- *
- * It prompts for a tenant until one is chosen, lists a tenant's providers,
- * creates and updates a provider, claims a domain, and drives delete /
- * refresh-metadata / reverify-domains and the per-domain verify and remove
- * through the bundle.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, screen, within } from '@testing-library/react'
@@ -39,14 +30,12 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(template: string, values: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
     values[key] ?? match,
   )
 }
 
-/** The zh-CN confirm label ui-kit's confirm dialog shows. */
 const CONFIRM_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly confirmDialog: { readonly confirmLabel: string }
@@ -76,7 +65,6 @@ async function pickProvider(user: ReturnType<typeof userEvent.setup>): Promise<v
   await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
 }
 
-/** Opens one provider row's action menu. */
 async function openProviderActions(
   user: ReturnType<typeof userEvent.setup>,
   name = 'Acme IdP',
@@ -88,7 +76,6 @@ async function openProviderActions(
   )
 }
 
-/** Picks one item from an open provider row action menu. */
 async function chooseProviderAction(
   user: ReturnType<typeof userEvent.setup>,
   label: string,
@@ -98,7 +85,6 @@ async function chooseProviderAction(
   await user.click(await screen.findByRole('menuitem', { name: label }))
 }
 
-/** Picks one item from a declared domain row's action menu. */
 async function chooseDomainAction(
   user: ReturnType<typeof userEvent.setup>,
   domain: string,
@@ -112,7 +98,6 @@ async function chooseDomainAction(
   await user.click(await screen.findByRole('menuitem', { name: label }))
 }
 
-/** A provider write draft, with every value at the form's initial state. */
 function writeDraft(
   overrides: Partial<SsoProviderWriteDraft> = {},
 ): SsoProviderWriteDraft {
@@ -133,11 +118,6 @@ function writeDraft(
   }
 }
 
-/**
- * The body a provider write sends. An update names both username fields
- * explicitly, because the module keeps a field the body leaves out; a create
- * names them only under the combination that uses them.
- */
 describe('ssoProviderWriteBody', () => {
   it('sends a claim and its claim on a jit create', () => {
     expect(
@@ -272,8 +252,6 @@ describe('SsoPage', () => {
     const operations = withProviders({ listSsoProviders })
     renderWithProviders(<SsoPage />, { operations })
 
-    // No tenant means no provider read: the page prompts for one instead of
-    // issuing the read with an empty scope.
     await act(async () => {
       await Promise.resolve()
     })
@@ -288,9 +266,6 @@ describe('SsoPage', () => {
       )
       const operations = withProviders({ listSsoProviders })
       renderWithProviders(<SsoPage />, { operations })
-      // The link that carried the tenant arrives with a selection already
-      // made: the providers read runs for it and the selector shows its
-      // name.
       expect(await screen.findByText('Acme IdP')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.sso.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
@@ -321,9 +296,6 @@ describe('SsoPage', () => {
 
     const header = (label: string): Element =>
       screen.getByRole('columnheader', { name: label })
-    // The provider name is the primary identity: no priority, shared cap.
-    // Protocol and enabled stay to `md`, version is the first to go, and
-    // the row actions never hide.
     expect(columnVisibility(header(zhCN.sso.column.name))).toBeNull()
     expect(columnVisibility(header(zhCN.sso.column.protocol))).toEqual({
       hiddenAt: 0,
@@ -341,8 +313,6 @@ describe('SsoPage', () => {
 
     const nameCell = screen.getByText(name).closest('td')
     expect(nameCell).toHaveAttribute('title', name)
-    // The whole-cell wrapper carries the cap, so the copy control beside
-    // the name is counted inside it.
     expect(containerMaxWidthOf(nameCell!.firstElementChild!)).toEqual(
       new Map([
         [0, 160],
@@ -357,9 +327,6 @@ describe('SsoPage', () => {
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
-    // The write form is mounted with both mutations idle. React Query holds
-    // null on an idle mutation, and null means "no error" -- it must not be
-    // classified into an unknown-failure banner.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -377,8 +344,6 @@ describe('SsoPage', () => {
     for (const control of gated) {
       expect(hasCoarsePointerTouchTarget(control)).toBe(true)
     }
-    // The row's three writes now live in the menu; each item is still a
-    // coarse-pointer touch target.
     await openProviderActions(user)
     for (const item of await screen.findAllByRole('menuitem')) {
       expect(hasCoarsePointerTouchTarget(item)).toBe(true)
@@ -461,8 +426,6 @@ describe('SsoPage', () => {
       within(list).getByText(zhCN.sso.domains.state.unverified),
     ).toBeInTheDocument()
 
-    // Only an unverified domain offers verification; every declared domain
-    // offers removal.
     await user.click(
       within(list).getByRole('button', {
         name: text(zhCN.sso.domains.actionsAria, { domain: 'beta.example' }),
@@ -522,8 +485,6 @@ describe('SsoPage', () => {
 
     await chooseDomainAction(user, 'acme.example', zhCN.sso.domains.verify)
 
-    // The write re-reads the provider list, so the same row turns verified
-    // without a new one appearing.
     await waitForCondition(() => {
       const list = screen.getByRole('list', {
         name: zhCN.sso.domains.listLabel,
@@ -597,8 +558,6 @@ describe('SsoPage', () => {
       screen.getByRole('button', { name: zhCN.sso.domains.claim }),
     )
 
-    // The re-read list carries the new claim, unverified until its record is
-    // published and verified.
     const list = await screen.findByRole('list', {
       name: zhCN.sso.domains.listLabel,
     })
@@ -630,8 +589,6 @@ describe('SsoPage', () => {
       screen.getByRole('button', { name: zhCN.sso.domains.claim }),
     )
 
-    // The panel hands over the complete record: the operator publishes
-    // exactly this name and value and needs nothing else.
     const recordName = '_speed-authn.acme.example'
     const recordValue = 'speed-authn=tok-1'
     expect(await screen.findByText(recordName)).toBeInTheDocument()
@@ -682,8 +639,6 @@ describe('SsoPage', () => {
       screen.getByRole('button', { name: zhCN.sso.domains.claim }),
     )
 
-    // The module stores the trimmed domain, so the published record name
-    // must be the trimmed one as well.
     expect(
       await screen.findByText('_speed-authn.acme.example'),
     ).toBeInTheDocument()
@@ -740,7 +695,6 @@ describe('SsoPage', () => {
       }),
     )
 
-    // The claim is a closed set offered as a select, not free text.
     const claimField = screen.getByRole('combobox', {
       name: zhCN.sso.provider.usernameClaimLabel,
     })
@@ -819,9 +773,6 @@ describe('SsoPage', () => {
     await user.type(screen.getByLabelText(zhCN.sso.provider.clientSecretLabel), 'top-secret')
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
-    // A landed create returns the form to its initial state: every input is
-    // empty, the three-state selects read "unchanged", and the write-only
-    // client secret is cleared with the rest.
     await waitForCondition(() => {
       expect(screen.getByLabelText(zhCN.sso.provider.protocolLabel)).toHaveValue('')
       expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('')
@@ -853,7 +804,6 @@ describe('SsoPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }))
 
     expect(await screen.findByText(zhCN.errors.authn.forbidden)).toBeInTheDocument()
-    // The refused create keeps every field for correction.
     expect(screen.getByLabelText(zhCN.sso.provider.protocolLabel)).toHaveValue('oidc')
     expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('New IdP')
     expect(screen.getByLabelText(zhCN.sso.provider.provisioningLabel)).toHaveValue('preprovisioned')
@@ -1067,15 +1017,10 @@ describe('SsoPage', () => {
     await user.click(screen.getByLabelText(zhCN.sso.provider.editLabel))
     await user.click(await screen.findByRole('option', { name: 'Acme IdP' }))
 
-    // The provider read carries the configuration back, so the field starts
-    // from it instead of empty: the server refuses an empty config, and the
-    // operator should not have to retype one the provider already holds.
     expect(screen.getByLabelText(zhCN.sso.provider.configLabel)).toHaveValue(
       JSON.stringify(storedConfig, null, 2),
     )
 
-    // Saving unchanged succeeds -- no retype -- and the stored configuration
-    // travels with the write.
     await user.click(screen.getByRole('button', { name: zhCN.sso.provider.updateSubmit }))
     await waitForCondition(() => {
       expect(updates).toEqual([
@@ -1152,10 +1097,7 @@ describe('SsoPage', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
-    // The result lands under the provider list, not under the write form or
-    // the domain bar.
     expect(alert.closest('section')).toContainElement(screen.getByRole('table'))
-    // The refused row carries the same resolved text the region shows.
     const row = screen.getByText('Acme IdP').closest('tr')
     expect(row).not.toBeNull()
     const marker = (row as HTMLElement).querySelector(
@@ -1178,9 +1120,6 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
     await chooseProviderAction(user, zhCN.sso.refreshMetadata)
 
-    // The tenant admission layer's refusal names the enterprise sign-in and
-    // offers the re-login exit in the list region. No local factor dialog
-    // opens, so the exit is the only banner on the page.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
     expect(screen.getAllByRole('alert')).toHaveLength(1)
@@ -1216,8 +1155,6 @@ describe('SsoPage', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
-    // The result lands under the write form, not under the provider list or
-    // the domain bar.
     expect(alert.closest('section')).toContainElement(
       screen.getByLabelText(zhCN.sso.provider.nameLabel),
     )
@@ -1317,8 +1254,6 @@ describe('SsoPage', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
-    // The form's own scope: the region sits with the fields, not with the
-    // provider list or the domain bar.
     expect(alert.closest('section')).toContainElement(screen.getByLabelText(zhCN.sso.provider.nameLabel))
     expect(screen.getByLabelText(zhCN.sso.provider.nameLabel)).toHaveValue('New IdP')
 
@@ -1444,23 +1379,16 @@ describe('SsoPage', () => {
 
     const token = await screen.findByText('tok-1')
     expect(token.closest('[role="status"]')).not.toBeNull()
-    // The token is the panel's value line only: the message above it names
-    // the DNS step without interpolating the value, so it reads once and the
-    // live region announces it once.
     expect(screen.getAllByText('tok-1')).toHaveLength(1)
     expect(screen.getByText(zhCN.sso.domains.claimToken)).toBeInTheDocument()
     await expectNoAxeViolations()
 
-    // A second attempt in the domain scope resets its slot and settles as a
-    // failure; the token is page state, not slot state, and stays.
     await chooseDomainAction(user, 'acme.com', zhCN.sso.domains.verify)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
     expect(screen.getByText('tok-1')).toBeInTheDocument()
 
-    // The explicit close control names the tenant, provider and domain, and
-    // is the only way the value goes away.
     const close = screen.getByRole('button', {
       name: text(zhCN.sso.domains.claimTokenCloseAria, { tenant: 'acme', name: 'Acme IdP', domain: 'acme.com' }),
     })
@@ -1491,9 +1419,6 @@ describe('SsoPage', () => {
         'true',
       )
     })
-    // The form's own selector follows its scope and is natively disabled; the
-    // domain bar's selector is a sibling scope and stays operable. A native
-    // disable renders as `aria-disabled` on the select's combobox.
     expect(screen.getByLabelText(zhCN.sso.provider.editLabel)).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -1525,8 +1450,6 @@ describe('SsoPage', () => {
     await screen.findByText('Acme IdP')
 
     const claim = screen.getByRole('button', { name: zhCN.sso.domains.claim })
-    // No provider and no domain chosen: the precondition is unmet, and the
-    // control stays focusable with the reason as its accessible description.
     expect(claim).toHaveAttribute('aria-disabled', 'true')
     expect(claim).not.toBeDisabled()
     expect(claim).toHaveAccessibleDescription(
@@ -1538,7 +1461,6 @@ describe('SsoPage', () => {
     await user.keyboard(' ')
     expect(claimSsoDomain).not.toHaveBeenCalled()
 
-    // A provider alone is not enough; the domain is still empty.
     await pickProvider(user)
     expect(claim).toHaveAttribute('aria-disabled', 'true')
 
@@ -1575,8 +1497,6 @@ describe('SsoPage', () => {
     }
     expect(submit).not.toHaveAttribute('aria-disabled', 'true')
 
-    // An unparsable configuration marks the field and points the submit at
-    // the hint the field already renders.
     await user.type(
       screen.getByLabelText(zhCN.sso.provider.configLabel),
       '{{',

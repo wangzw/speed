@@ -1,24 +1,3 @@
-/**
- * OrganizationRolesPage in a real browser.
- *
- * The page stacks the role catalog, the selected role's grants, its
- * read-only usage and the collapsed permission catalog in one column. Their
- * geometry is settled only by a browser: every table declares
- * container-query column priorities and content caps, the role actions are
- * pinned to the trailing edge, and the catalog's content region is hidden
- * rather than unmounted. The cases below cover those facts at the sm/md/lg
- * floors:
- *
- *   - the page and every table keep their content inside their own width at
- *     600, 900 and 1200px, with a role selected so the grants and usage
- *     tables are mounted as well;
- *   - over-long role names, descriptions, permission codes and account
- *     identifiers stay inside the same floors;
- *   - the permission catalog starts collapsed, expands into its grouped
- *     reference tables and collapses again from its own action;
- *   - the dark theme paints the page's surface and keeps the same columns.
- */
-
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ReactNode } from 'react'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -125,9 +104,6 @@ function route(roleName: string): readonly AdminTenantGrant[] {
   return roleName === ROLE_AUDITOR.role ? [GRANT_READ] : []
 }
 
-/** The scripted backend the page runs against: two roles, the governed
- * catalog, one grant for the auditor and one holder page. A case swaps the
- * role list and catalog to place over-long values in the same tables. */
 function backend(
   roles: readonly AdminTenantRole[] = [ROLE_AUDITOR, ROLE_BUILTIN],
   catalog: readonly AdminTenantPermission[] = CATALOG,
@@ -141,9 +117,6 @@ function backend(
   })
 }
 
-/** A probe that reports the assembled theme's color mode and default
- * surface, so a dark-mode assertion compares against the theme rather than
- * against a color written into this test. */
 function ThemeProbe() {
   const theme = useTheme()
   return (
@@ -175,8 +148,6 @@ function renderPage(
   )
 }
 
-/** The selected role's grants and usage tables only mount once a role is
- * chosen, so a geometry case selects the first role before measuring. */
 async function selectRole(roleName: string): Promise<void> {
   const user = userEvent.setup()
   await user.click(
@@ -214,8 +185,6 @@ afterEach(() => {
   attachSession(createStepUpSession(ANONYMOUS_SNAPSHOT))
 })
 
-/** A promise the case settles by hand, so one request can be held in
- * flight across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -230,16 +199,12 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-/** One animation frame: the component's updated state has reached the DOM
- * and the browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message: tag, role and the
- * label or text a reader can map back to a control. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -261,10 +226,8 @@ function describeActiveElement(): string {
   return parts.join(' ')
 }
 
-/** Expands the collapsed permission catalog so its grouped reference tables
- * are laid out. A hidden subtree still mounts its MUI table containers, and
- * those have no width to measure; the geometry cases open the catalog first
- * so every rendered table is part of the check. */
+// A hidden subtree still mounts its MUI table containers, which have no width to
+// measure, so the geometry cases open the catalog first.
 async function expandCatalog(): Promise<void> {
   const user = userEvent.setup()
   await user.click(
@@ -356,13 +319,9 @@ describe('OrganizationRolesPage over-long values in Chromium', () => {
     await screen.findByText(LONG_ROLE)
     await selectRole(LONG_ROLE)
     await screen.findAllByText(LONG_PERMISSION)
-    // The binding row names its account by the display name the binding
-    // carries, never by the account id.
     await screen.findAllByText(LONG_HOLDER_NAME)
     await expandCatalog()
 
-    // The helper pins each table's own containment box to the sm, md and lg
-    // floors and requires the columns visible in that tier to fit.
     await expectNoHorizontalOverflow()
   })
 })
@@ -448,9 +407,6 @@ describe('OrganizationRolesPage write focus in Chromium', () => {
     })
     await user.click(save)
 
-    // The save button shows its progress indicator and at least one frame
-    // passes, so the browser has had its chance to move a focused control
-    // whose availability changed.
     await waitFor(() =>
       expect(within(save).getByRole('progressbar')).toBeInTheDocument(),
     )

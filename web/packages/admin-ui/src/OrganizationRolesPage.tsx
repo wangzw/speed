@@ -1,33 +1,7 @@
 /**
- * OrganizationRolesPage: the organization administrator's roles and
- * permissions page.
- *
- * The page owns the role itself and nothing that changes a member's
- * membership: it creates roles, edits their free-text descriptions,
- * removes them behind the heavier two-step confirmation, manages a
- * selected role's grants, and shows who holds the role read-only. Binding
- * and unbinding a role to an account belongs to the members page.
- *
- * The sections run top to bottom in the order the operator works in:
- *
- *  - the role catalog: roles, their descriptions, permission and active
- *    member counts, the builtin mark, and the row actions;
- *  - the selected role's grants: the readable permission name with the
- *    code beneath it, a visible high-risk badge, grant and revoke;
- *  - the selected role's usage: the active-member count, the holders with
- *    cursor paging, and -- only for a caller who may manage memberships --
- *    an entry into the members page filtered to this role;
- *  - the permission catalog: a collapsed reference area that expands into
- *    a grouped, searchable list.
- *
- * `can_manage` on the role rows is the server's answer to whether the
- * caller may write; a false answer hides every write control rather than
- * rendering a disabled one. The host's protected role names are locked the
- * way a builtin role is. A dangerous permission is granted only after the
- * confirmation dialog's deliberate second click.
- *
- * Every read and write runs through the organization operations bundle,
- * so the page builds no client and writes no query key.
+ * OrganizationRolesPage creates, edits and removes a tenant's roles and
+ * manages a selected role's grants; it shows the role's holders read-only.
+ * Binding a role to an account belongs to the members page.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -71,9 +45,7 @@ import {
 } from './internal/focus-after-removal.js'
 import { useSectionHeadingFocus } from './internal/section-heading-focus.js'
 
-/** The holder page size the usage read asks for. */
 const USAGE_PAGE_SIZE = 50
-/** The invitation/membership declaration the usage entry links to. */
 const INVITATIONS_ROUTE_ID = 'organization-invitations'
 
 export interface OrganizationRolesPageProps {
@@ -83,7 +55,6 @@ export interface OrganizationRolesPageProps {
   readonly protectedRoles?: readonly string[]
 }
 
-/** The cursor frame of the usage list, tagged with the role it belongs to. */
 interface UsagePageFrame {
   readonly tenant: string
   readonly role: string
@@ -91,13 +62,11 @@ interface UsagePageFrame {
   readonly page: number
 }
 
-/** The role-scope control a write belongs to. */
 type PendingRoleWrite =
   | { readonly kind: 'create' }
   | { readonly kind: 'description' }
   | { readonly kind: 'remove'; readonly role: string }
 
-/** The grants-scope control a write belongs to. */
 type PendingGrantWrite =
   | { readonly kind: 'grant' }
   | { readonly kind: 'revoke'; readonly key: string }
@@ -106,7 +75,6 @@ function firstUsagePage(tenant: string, role: string): UsagePageFrame {
   return { tenant, role, cursors: [''], page: 0 }
 }
 
-/** Why a role's grants are read-only, or null when they are writable. */
 function grantsLockNote(
   role: AdminTenantRole,
   protectedRoles: readonly string[],
@@ -158,24 +126,18 @@ export function OrganizationRolesPage({
   const grantsRegionRef = useFailureScroll(grantsFeedback.outcome)
   const grantsSectionFocus = useSectionHeadingFocus()
   const confirm = usePendingConfirm()
-  // The control each scope's in-flight write belongs to: only that control
-  // reports busy, while its siblings in the same scope are unavailable.
   const [pendingRoleWrite, setPendingRoleWrite] =
     useState<PendingRoleWrite | null>(null)
   const [pendingGrantWrite, setPendingGrantWrite] =
     useState<PendingGrantWrite | null>(null)
-  // The grant row a landed revoke removed, with the position it held.
   const grantRemoval = useRef<{
     readonly value: string
     readonly index: number
   } | null>(null)
-  // Whether the revoke control held focus when its row left; only then does
-  // the landing move it.
   const grantFocus = useRowRemovalFocus()
 
-  // The caller's session permission sets fail closed: no session, a
-  // pending read or an absent set reads as no permission. The server is
-  // still the authority; these gates only decide which controls render.
+  // The session permission sets fail closed and decide only which controls
+  // render; the server remains the authority.
   const sessionCanManageRoles = usePermission('tenant', 'authz.tenant.role.manage')
   const sessionCanManageMembers = usePermission(
     'tenant',
@@ -218,9 +180,8 @@ export function OrganizationRolesPage({
   )
   const roleRows = roles.data
 
-  // A landed revoke removes its row; the same control on the next grant
-  // takes focus, else the previous row's, else the grants heading. A failed
-  // re-read drops the record so a later read cannot move focus on its own.
+  // A landed revoke removes its row: focus moves to the next grant's control,
+  // else the previous row's, else the grants heading.
   useEffect(() => {
     const removed = grantRemoval.current
     if (removed === null) {
@@ -254,9 +215,8 @@ export function OrganizationRolesPage({
     grantsSectionFocus.focusHeading,
     grantFocus.takeHeldFocus,
   ])
-  // Creating the first role of a tenant has no row to read `can_manage`
-  // from, so the session's tenant set covers that one case; every other
-  // decision follows the server's per-row answer.
+  // The first role has no row to read `can_manage` from, so the session's
+  // tenant set covers that one case; every other decision follows the row.
   const canManage =
     roleRows === undefined
       ? false
@@ -281,8 +241,6 @@ export function OrganizationRolesPage({
     setDescriptionFailed(null)
   }, [roleFeedback.reset, grantsFeedback.reset])
 
-  // A controlled tenant arrives as a prop: every selection, draft and
-  // result names the tenant being left, so they are cleared with it.
   useEffect(() => {
     resetPageFeedback()
     setSelectedRole('')
@@ -345,8 +303,8 @@ export function OrganizationRolesPage({
       title: t('permissions.roles.removeTitle'),
       message: t('permissions.roles.removeMessage', { role: role.role }),
       confirmLabel: t('permissions.roles.removeConfirm'),
-      // Deleting a role revokes its grants and bindings with it and cannot
-      // be undone from the interface: the heavier two-step arm.
+      // Role deletion revokes its grants and bindings and cannot be undone, so
+      // it takes the two-step arm.
       doubleConfirm: true,
       run: () => {
         setFailedRole(null)

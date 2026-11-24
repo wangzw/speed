@@ -1,14 +1,3 @@
-/**
- * OrganizationSecurityPage: the organization surface's security and access
- * page.
- *
- * The page carries exactly the two tenant policies, each as a switch with
- * its status, effect and impact. A platform-enforced policy is an enabled
- * switch the tenant cannot turn off; turning a policy off asks through the
- * two-step confirmation; a switch saves on its own and rolls back when the
- * server refuses. A protected tenant renders no switch at all and says why.
- */
-
 import { act, cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -93,18 +82,14 @@ function renderPage({
   language = 'zh-CN',
 }: {
   readonly settings?: AdminTenantSettings
-  /** Counts or rewrites the read the page issues, retries included. */
   readonly listTenantSettings?: (
     answer: AdminTenantSettings,
   ) => Promise<AdminTenantSettings>
   readonly writeTenantSetting?: (
     input: AdminTenantSetSettingInput,
   ) => Promise<void>
-  /** The organization's SSO providers; the guard reads them. */
   readonly ssoProviders?: readonly AdminSsoProvider[]
-  /** Overrides the provider read itself, for its pending and failed states. */
   readonly listSsoProviders?: () => Promise<readonly AdminSsoProvider[]>
-  /** The session the page offers a sign-in exit through. */
   readonly session?: ReturnType<typeof createStepUpSession>
   readonly language?: string
 } = {}) {
@@ -148,10 +133,8 @@ describe('OrganizationSecurityPage', () => {
     expect(
       screen.queryByRole('button', { name: zhCN.settings.saveBar.save }),
     ).toBeNull()
-    // The internal keys never reach the page.
     expect(screen.queryByText(MFA.key)).toBeNull()
     expect(screen.queryByText(SSO.key)).toBeNull()
-    // Both admission policies apply from each member's next sign-in.
     expect(
       screen.getAllByText(
         new RegExp(zhCN.organization.security.effect.nextSignIn),
@@ -198,8 +181,6 @@ describe('OrganizationSecurityPage', () => {
       ),
     ).toBeInTheDocument()
 
-    // A platform-enforced policy has no confirmation entry: the switch is
-    // inert, so no activation can open the dialog.
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
@@ -211,9 +192,6 @@ describe('OrganizationSecurityPage', () => {
         settings: envelope([
           {
             ...MFA,
-            // No danger, so a swallowed activation cannot be mistaken for
-            // the confirmation dialog: without the guard the switch would
-            // save.
             danger: '',
             effective_value: 'true',
             platform_value: 'true',
@@ -236,8 +214,6 @@ describe('OrganizationSecurityPage', () => {
       expect(mfaSwitch).toBeChecked()
       expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
 
-      // The platform holds the value, so the tenant's activation reaches
-      // neither the write nor the controlled value, and opens no dialog.
       if (activation === 'a click') {
         await user.click(mfaSwitch)
       } else {
@@ -283,7 +259,6 @@ describe('OrganizationSecurityPage', () => {
     expect(dialog).toHaveTextContent(zhCN.organization.security.confirm.title.replace('{{title}}', MFA.title))
     expect(writes).toHaveLength(0)
 
-    // The first click only arms the guard.
     await user.click(
       screen.getByRole('button', { name: zhCN.common.confirm }),
     )
@@ -344,7 +319,6 @@ describe('OrganizationSecurityPage', () => {
     expect(mfaSwitch).toBeChecked()
     await user.click(mfaSwitch)
 
-    // No danger means no confirmation: the switch saves on its own.
     expect(screen.queryByRole('dialog')).toBeNull()
     await waitFor(() => expect(writes).toHaveLength(1))
     expect(writes[0]).toEqual({
@@ -355,11 +329,6 @@ describe('OrganizationSecurityPage', () => {
     })
   })
 
-  // Forward-compatible: the server's declaration validation admits only the
-  // empty value and "critical" today, so this value is not a reachable
-  // declaration. The case pins what the page does if that closed set grows: a
-  // danger that is not "critical" gets the ordinary single-step confirmation,
-  // not the two-step guard and not a silent save.
   it('asks once for a danger outside the current closed set (forward-compatible)', async () => {
     const user = userEvent.setup()
     const writes: unknown[] = []
@@ -388,9 +357,6 @@ describe('OrganizationSecurityPage', () => {
     })
     await user.click(mfaSwitch)
 
-    // A declared danger that is not "critical" would get the ordinary
-    // single-step confirmation, not the two-step guard. This server declares
-    // none today; the assertion is the page's forward-compatible branch.
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(writes).toHaveLength(0)
     await user.click(
@@ -419,8 +385,6 @@ describe('OrganizationSecurityPage', () => {
     expect(mfaSwitch).not.toBeChecked()
     await user.click(mfaSwitch)
 
-    // The switch follows the click before the server answers, and the
-    // request marks the control busy and inert.
     expect(mfaSwitch).toBeChecked()
     expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
     expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
@@ -440,8 +404,6 @@ describe('OrganizationSecurityPage', () => {
   it('keeps an in-flight row disabled while another row saves', async () => {
     const user = userEvent.setup()
     const resolvers = new Map<string, () => void>()
-    // The SSO row is first and operable only because an enabled provider
-    // exists; the second row is the MFA policy, which needs no provider.
     renderPage({
       settings: envelope([SSO, MFA]),
       ssoProviders: [providerFixture()],
@@ -468,13 +430,9 @@ describe('OrganizationSecurityPage', () => {
     expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
 
-    // The second row saves on its own while the first write is still in
-    // flight.
     await user.click(mfaSwitch)
     expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
-    // The first row stays inert: its request has not settled, and accepting
-    // another click would put two writes of one key in flight.
     expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(ssoSwitch).toHaveAttribute('aria-busy', 'true')
 
@@ -493,9 +451,6 @@ describe('OrganizationSecurityPage', () => {
     const writes: AdminTenantSetSettingInput[] = []
     let settle: () => void = () => undefined
     renderPage({
-      // The policy declares no danger, so the second activation has nowhere
-      // to hide: without the guard it would save immediately instead of
-      // pausing on a confirmation the case could mistake for a refusal.
       settings: envelope([{ ...MFA, danger: '' }]),
       writeTenantSetting: (input) => {
         writes.push(input)
@@ -514,16 +469,11 @@ describe('OrganizationSecurityPage', () => {
     await user.click(mfaSwitch)
 
     expect(writes).toHaveLength(1)
-    // The switch keeps the focus that activated it: the write in flight
-    // never makes it natively disabled.
     expect(document.activeElement).toBe(mfaSwitch)
     expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
     expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(mfaSwitch).toBeChecked()
 
-    // A second activation is swallowed: the controlled value does not move,
-    // no second write is issued, and no confirmation opens to explain the
-    // stillness.
     await user.click(mfaSwitch)
     expect(writes).toHaveLength(1)
     expect(mfaSwitch).toBeChecked()
@@ -539,8 +489,6 @@ describe('OrganizationSecurityPage', () => {
   it('blocks enabling require-sso until an enabled provider exists', async () => {
     renderPage()
 
-    // The provider read settles to "no enabled provider", which is what the
-    // notice states and what disables the switch.
     expect(
       await screen.findByText(zhCN.organization.security.sso.noProvider),
     ).toBeInTheDocument()
@@ -555,8 +503,6 @@ describe('OrganizationSecurityPage', () => {
     expect(ssoSwitch).toHaveAccessibleDescription(
       zhCN.organization.security.sso.noProvider,
     )
-    // The blocked switch is still reachable: the reason is associated with
-    // it rather than a native disable that would drop the focus.
     ssoSwitch.focus()
     expect(ssoSwitch).toHaveFocus()
   })
@@ -566,7 +512,6 @@ describe('OrganizationSecurityPage', () => {
       const user = userEvent.setup()
       const writes: AdminTenantSetSettingInput[] = []
       renderPage({
-        // No enabled provider, so the policy cannot be turned on.
         writeTenantSetting: (input) => {
           writes.push(input)
           return Promise.resolve()
@@ -583,8 +528,6 @@ describe('OrganizationSecurityPage', () => {
       expect(ssoSwitch).not.toBeChecked()
       expect(ssoSwitch).toHaveAttribute('aria-disabled', 'true')
 
-      // The blocked precondition swallows the activation: no write, and the
-      // controlled value stays off.
       if (activation === 'a click') {
         await user.click(ssoSwitch)
       } else {
@@ -599,7 +542,6 @@ describe('OrganizationSecurityPage', () => {
 
   it('keeps require-sso disabled while the provider read is pending', async () => {
     renderPage({
-      // The provider read never answers, so its state is still unknown.
       listSsoProviders: () => new Promise(() => undefined),
     })
 
@@ -615,7 +557,6 @@ describe('OrganizationSecurityPage', () => {
     expect(ssoSwitch).toHaveAccessibleDescription(
       zhCN.organization.security.sso.providersPending,
     )
-    // Pending is not the same fact as "no provider": no absence is claimed.
     expect(
       screen.queryByText(zhCN.organization.security.sso.noProvider),
     ).toBeNull()
@@ -642,7 +583,6 @@ describe('OrganizationSecurityPage', () => {
     expect(ssoSwitch).toHaveAccessibleDescription(
       zhCN.organization.security.sso.providersUnreadable,
     )
-    // The failure is not reported as "the organization has no provider".
     expect(
       screen.queryByText(zhCN.organization.security.sso.noProvider),
     ).toBeNull()
@@ -668,8 +608,6 @@ describe('OrganizationSecurityPage', () => {
         SSO.title,
       ),
     })
-    // The policy is on, so it stays possible to turn it off even though the
-    // organization has no provider.
     expect(ssoSwitch).toBeChecked()
     expect(ssoSwitch).not.toHaveAttribute('aria-disabled', 'true')
     expect(
@@ -690,7 +628,6 @@ describe('OrganizationSecurityPage', () => {
       session,
     })
 
-    // No retry clears the requirement; the exit names the fresh sign-in.
     expect(
       await screen.findByText(
         zhCN.errors.authn.insufficient_user_authentication,
@@ -716,14 +653,12 @@ describe('OrganizationSecurityPage', () => {
         zhCN.organization.security.readOnly.protected.description,
       ),
     ).toBeInTheDocument()
-    // The protected reason is not the transient one.
     expect(
       screen.queryByText(
         zhCN.organization.security.readOnly.unavailable.title,
       ),
     ).toBeNull()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
-    // The rows still render.
     expect(
       screen.getByRole('heading', { level: 3, name: MFA.title }),
     ).toBeInTheDocument()
@@ -740,9 +675,6 @@ describe('OrganizationSecurityPage', () => {
       },
     })
 
-    // The transient reason has its own explanation; the protected one would
-    // claim the deployment protects a tenant whose seam merely could not
-    // answer.
     expect(
       await screen.findByText(
         zhCN.organization.security.readOnly.unavailable.title,
@@ -765,8 +697,6 @@ describe('OrganizationSecurityPage', () => {
     ).toBeNull()
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
 
-    // Reading is still allowed, so the notice offers a re-read rather than
-    // sending the reader away.
     const before = reads
     expect(before).toBeGreaterThan(0)
     await user.click(
@@ -799,8 +729,6 @@ describe('OrganizationSecurityPage', () => {
     })
     await user.click(retry)
 
-    // The re-read in flight marks the button busy without taking it out of
-    // the Tab sequence, so the focus that activated it stays.
     await waitFor(() => expect(retry).toHaveAttribute('aria-busy', 'true'))
     expect(retry).toHaveAttribute('aria-disabled', 'true')
     expect(document.activeElement).toBe(retry)

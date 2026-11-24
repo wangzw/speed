@@ -1,25 +1,7 @@
 /**
- * TenantProfilePage: the organization's own profile page.
- *
- * The page reads one tenant's organization profile (GET
- * /api/v1/tenants/{tenant}/profile) and renders it as two cards. The
- * identity card is read-only: the name is fixed after creation, the state
- * is the platform's to change, and the creation time is a fact. The profile
- * card edits the four descriptive fields the organization owns -- display
- * name, description, contact email and website.
- *
- * The display name may be cleared. An empty display name is not an error:
- * every surface falls back to the name, and the field's placeholder shows
- * that name. A landed save calls the host's `onTenantUpdated`, so the
- * account menu and the breadcrumb -- which read the caller tenant list --
- * show the new name immediately instead of after their next read.
- *
- * The read renders through AdminAsyncSection, so a refusal is its own
- * placeholder (403, no retry), a 404 is the not-found placeholder with a
- * retry, and any other failure is the retryable one. The save reports
- * through one feedback scope whose region sits directly under the form; a
- * refused save resolves through the console's error whitelist and the draft
- * stays exactly as the operator typed it.
+ * TenantProfilePage reads one organization's profile as a read-only identity
+ * card plus an editable profile card. A cleared display name is valid and falls
+ * back to the tenant name.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -53,37 +35,27 @@ import {
 import type { TenantProfileFields } from './TenantProfileFields.js'
 import { TenantOwnership } from './TenantOwnership.js'
 
+/** Props of TenantProfilePage: the tenant, plus the host's update and departure hooks. */
 export interface TenantProfilePageProps {
   /** The organization the profile belongs to; every request names it. */
   readonly tenant: string
   /**
-   * The host's action after a profile save lands: it reloads the caller
-   * tenant list the account menu and the breadcrumb read, so the new
-   * display name is shown without waiting for their next read. Absent, the
-   * page only re-reads its own profile.
+   * The host's action after a save lands: reload the caller tenant list the
+   * account menu and breadcrumb read. Absent, the page only re-reads its own
+   * profile.
    */
   readonly onTenantUpdated?: () => void | Promise<unknown>
   /**
-   * The host's action after a deletion ends the caller's membership: leave
-   * the organization, reload the caller tenant list the account menu and the
-   * breadcrumb read, and show `message` on the destination. Absent, the page
-   * falls back to `onTenantUpdated` and keeps the message in the ownership
-   * card. A transfer changes ownership only and never departs.
+   * The host's action after a deletion ends the caller's membership: leave the
+   * organization, reload the caller tenant list and show `message`. Absent, the
+   * page falls back to `onTenantUpdated`.
    */
   readonly onOrganizationLeft?: (message: string) => void | Promise<unknown>
 }
 
-/** The roster's closed state set; a value outside it renders the generic
- * label, never a raw value. */
 const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 
-/**
- * How the identity card names the owner: the display name and the username
- * together, because a display name alone is ambiguous when two members share
- * one; either alone when the other is absent; and the neutral label when the
- * owner could not be resolved. The account identifier is never a fallback --
- * it is internal and the ownership decision is the only thing that reads it.
- */
+// The account identifier is never a fallback for the owner label; it is internal.
 function ownerLabelOf(
   ownerDisplayName: string,
   ownerUsername: string,
@@ -109,7 +81,6 @@ function statusLabel(status: string, t: (key: string) => string): string {
     : t('tenants.status.other')
 }
 
-/** The chip colour a roster state carries: served, paused, or gone. */
 function statusColorOf(
   status: string,
 ): 'success' | 'warning' | 'error' | 'default' {
@@ -125,8 +96,6 @@ function statusColorOf(
   }
 }
 
-/** One identity field: its label above its value, the way the account pages
- * stack theirs, rather than a two-column definition row. */
 function ProfileField({
   label,
   value,
@@ -151,12 +120,14 @@ function ProfileField({
 }
 
 
-/** The profile's four values as a stable signature, so a refetch that
- * answered the same values does not overwrite an operator's draft. */
 function profileSignature(profile: AdminTenantProfile): string {
   return JSON.stringify(profileFieldsOf(profile))
 }
 
+/**
+ * TenantProfilePage reads one organization's profile and renders a read-only
+ * identity card and an editable profile card.
+ */
 export function TenantProfilePage({
   tenant,
   onTenantUpdated,
@@ -167,15 +138,13 @@ export function TenantProfilePage({
   const formatTime = useFormatInstant()
   const profile = operations.useTenantProfile(tenant)
   const write = operations.useTenantProfileWrite()
-  // The profile card's one control group reports through one scope.
   const feedback = useWriteFeedback()
   const regionRef = useFailureScroll(feedback.outcome)
 
   const settled = profile.data
   const [draft, setDraft] = useState<TenantProfileFields | null>(null)
-  // The values the draft was last built from. A settled read whose values
-  // actually changed (a landed save, a refresh) replaces the draft; a
-  // background refetch with the same values leaves an edit in place.
+  // A settled read replaces the draft only when its values changed; a same-value
+  // background refetch leaves an edit in place.
   const appliedSignature = useRef('')
   useEffect(() => {
     if (settled === undefined) {
@@ -207,8 +176,7 @@ export function TenantProfilePage({
     const name = displayNameOf(next.displayName, settled.name)
     void feedback.run(async () => {
       await write.mutateAsync({ tenant, fields: next })
-      // The host re-reads the caller tenant list the menu and the breadcrumb
-      // read; a refusal there does not overturn the landed write.
+      // A refusal from the host hook does not overturn the landed write.
       await onTenantUpdated?.()
       return t('tenantProfile.form.savedNamed', { name })
     })
@@ -301,12 +269,9 @@ export function TenantProfilePage({
                       >
                         {settledProfile.name}
                       </Typography>
-                      {/* The chip's root is a generic element: an aria-label
-                          is prohibited there, and a generic element gets no
-                          accessible name from its contents. A visually hidden
-                          field name before it supplies the "Status:" the
-                          visible value alone cannot, so a screen reader hears
-                          which fact the value states. */}
+                      {/* The chip root accepts no aria-label and gets no
+                          accessible name from its contents, so a hidden field
+                          name supplies it. */}
                       <Box component="span" sx={visuallyHiddenSx}>
                         {t('tenantProfile.field.statusAria', {
                           label: t('tenantProfile.field.status'),
@@ -345,8 +310,6 @@ export function TenantProfilePage({
                 description={t('tenantProfile.form.description')}
               >
                 {deleted ? (
-                  // A tombstone is read-only: the profile can no longer be
-                  // written, so the page shows the stored values and no form.
                   <Box
                     component="dl"
                     sx={{

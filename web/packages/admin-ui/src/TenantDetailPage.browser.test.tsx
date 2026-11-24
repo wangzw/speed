@@ -1,14 +1,5 @@
-/**
- * TenantDetailPage in a real browser: the write controls the details page
- * starts must keep the focus that activated them.
- *
- * jsdom cannot tell a natively disabled control from an `aria-disabled` one,
- * so the status switch and the delete flow are proven focusable in Chromium,
- * where the real focusability rules apply. A landed deletion withdraws the
- * whole lifecycle card, so the case also proves the focus lands on the
- * summary heading that stays.
- */
-
+// jsdom cannot tell a natively disabled control from an aria-disabled one, so
+// these focus cases run in Chromium.
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
@@ -55,7 +46,6 @@ function text(
   )
 }
 
-/** The delete's confirmation: type the name, then run the two-step guard. */
 async function confirmDelete(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
@@ -108,7 +98,6 @@ describe('TenantDetailPage status write focus in Chromium', () => {
     expect(document.activeElement).toBe(toggle)
     expect(toggle).toHaveAttribute('aria-busy', 'true')
     expect(toggle).toHaveAttribute('aria-disabled', 'true')
-    // The controlled value does not move until the re-read settles.
     expect(toggle).toBeChecked()
 
     await act(async () => {

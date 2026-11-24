@@ -1,39 +1,6 @@
 /**
- * OrganizationSecurityPage: the organization surface's security and access
- * page.
- *
- * The tenant surface carries only the settings a tenant genuinely owns --
- * the admission policies that decide how its members sign in. The page
- * renders them as two switches in one "sign-in policies" section, never as
- * a key/value table: the declarations, their titles and descriptions come
- * from the server, and the page adds the status, the effect and the cost of
- * turning each policy off. The effect is the policy's real moment, not the
- * server's declared one: both policies apply from each member's next
- * sign-in, so a change never breaks the session that made it.
- *
- * A policy the platform holds on is read-only and drawn as an enabled but
- * unavailable switch: the platform value OR the tenant value decides the
- * effective one, so a tenant can never be looser than the platform floor.
- * Turning a policy off follows the declaration's danger: "critical" asks
- * through the danger dialog's two-step confirmation, a declaration that
- * carries no danger saves immediately, and any other value gets the
- * ordinary single-step confirmation. The server's closed set today is the
- * empty value and "critical"; the other-value branch is forward-compatible,
- * not a state the current server declares. Turning one on saves immediately. A
- * switch saves on its own and reports the result beside itself (a short
- * "saved" note, or the resolved refusal), so the page has no save bar and
- * no batch.
- *
- * A tenant the host's settings write seam protects is read-only as a whole.
- * The page says so above the section and renders no switch at all. The
- * envelope names why: "protected" means the seam refused the tenant, and
- * "unavailable" means the seam could not answer at all. The two are not the
- * same fact -- the deployment protects one tenant, while the other's write
- * claim is merely unknown for now -- so the notice says which one it is, and
- * only the transient one offers a re-read in place.
- *
- * Every read and write goes through the organization operations bundle, so
- * the page builds no client and writes no query key.
+ * The organization surface's security and access page: a tenant's admission
+ * policies rendered as switches.
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
@@ -72,12 +39,10 @@ export interface OrganizationSecurityPageProps {
   readonly tenant: string
 }
 
-/** What a row says about its own last write. */
 type RowFeedback =
   | { readonly kind: 'saved' }
   | { readonly kind: 'failure'; readonly text: string }
 
-/** The item's title, preferring the server's localized text. */
 function itemTitle({
   setting,
   t,
@@ -97,7 +62,6 @@ function itemTitle({
   return setting.key
 }
 
-/** The item's description, preferring the server's localized text. */
 function itemDescription({
   setting,
   t,
@@ -117,12 +81,8 @@ function itemDescription({
   return ''
 }
 
-/**
- * The sentence the effect field carries. The two tenant admission policies
- * apply from each member's next sign-in, a moment their declarations name as
- * the effect; the surface keeps mapping it by key so the sentence is
- * localized instead of echoing the raw value.
- */
+// Both admission policies effect at each member's next sign-in; mapping by key
+// keeps the sentence localized instead of echoing the raw value.
 function itemEffect({
   setting,
   t,
@@ -141,7 +101,6 @@ function itemEffect({
     : setting.effect
 }
 
-/** The sentence this policy's own loss means when it is turned off. */
 function itemImpact({
   setting,
   t,
@@ -158,11 +117,7 @@ function itemImpact({
   return t('organization.security.impact.generic')
 }
 
-/**
- * Splits the view's full key into the route's namespace and its own key
- * segment. The declaration joins the two with a dot, and the item segment
- * carries no dot of its own, so the last dot is the boundary.
- */
+// Splits a full key at its last dot: the item segment carries no dot of its own.
 function settingTarget(fullKey: string): {
   readonly namespace: string
   readonly key: string
@@ -183,14 +138,11 @@ interface SettingSwitchRowProps {
   readonly saving: boolean
   readonly readOnly: boolean
   readonly feedback: RowFeedback | null
-  /** Whether the policy is currently blocked from being turned on. */
   readonly blocked?: boolean
-  /** Why this policy cannot be turned on now, or undefined when it can. */
   readonly blockedReason?: string
   readonly onToggle: (next: boolean) => void
 }
 
-/** One policy: identity, status, what it does and the switch that sets it. */
 function SettingSwitchRow({
   setting,
   checked,
@@ -216,10 +168,8 @@ function SettingSwitchRow({
       ? 'success'
       : 'default'
   const effect = itemEffect({ setting, t })
-  // The switch saves on its own, so it stays focusable while its write is in
-  // flight or while a precondition holds it off: a natively disabled control
-  // would drop the focus the activation gave it. The guard swallows the
-  // change instead, and the controlled value does not move.
+  // The switch saves on its own and stays focusable while busy or blocked: a
+  // natively disabled control would drop the focus the activation gave it.
   const unavailable = setting.locked_by_platform || blocked === true
   const onChange = useActivationGuard(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -227,8 +177,6 @@ function SettingSwitchRow({
     },
     { busy: saving, unavailable },
   )
-  // The reason for the precondition is the text already rendered beside the
-  // switch: the platform's hold, or the row's own blocked explanation.
   const describedBy =
     [
       setting.locked_by_platform ? platformLockedId : undefined,
@@ -355,7 +303,11 @@ function SettingSwitchRow({
   )
 }
 
-/** The organization surface's security and access page. */
+/**
+ * OrganizationSecurityPage renders the tenant's admission policies as switches
+ * in one section, each saving on its own. A platform-held policy and a
+ * host-protected tenant are read-only.
+ */
 export function OrganizationSecurityPage({
   tenant,
 }: OrganizationSecurityPageProps) {
@@ -366,21 +318,14 @@ export function OrganizationSecurityPage({
   const write = operations.useTenantSettingsWrite()
   const confirm = usePendingConfirm()
   const session = useAdminSession()
-  // The tenant admission layer's multi-factor refusal cannot be cleared by
-  // any retry: the organization requires a fresh sign-in. The exit ends the
-  // session so the host's session gate returns to its sign-in surface.
-  // Without a session there is no exit to offer.
+  // The MFA refusal cannot be cleared by any retry: ending the session returns
+  // the host's session gate to its sign-in surface.
   const relogin = useCallback(() => {
     void session?.logout().catch(() => undefined)
   }, [session])
-  // Requiring SSO in an organization with no enabled provider locks every
-  // member out with no local factor able to clear the refusal, so the switch
-  // stays off until a provider is known to exist. A policy already on is
-  // never blocked: it must stay possible to turn it off. While the provider
-  // read is pending -- and when it fails, whose answer is unknown -- the
-  // switch stays off too, rather than treating "not known yet" as "none".
-  // A deployment that serves no SSO surface cannot be asked to enforce it
-  // either.
+  // Requiring SSO with no enabled provider locks every member out, so the switch
+  // stays off until a provider is known. A policy already on is never blocked,
+  // and a pending or failed provider read counts as not ready.
   const hasFeature = useAdminHasFeature()
   const ssoServed = hasFeature('authn.admin.sso')
   const ssoProviders = operations.useSsoProviders(tenant)
@@ -393,22 +338,15 @@ export function OrganizationSecurityPage({
           ? 'ready'
           : 'none'
 
-  // The switch value a write put on screen before the server answered. The
-  // entry is dropped when the settled read reports the same value, or when
-  // the write is refused.
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({})
-  // Every key with a write in flight. A single key is not enough: each switch
-  // saves on its own, so two writes can overlap, and the first one's row must
-  // stay disabled and busy while the second is in flight rather than becoming
-  // writable again and accepting a second, out-of-order write of its own key.
+  // A single key is not enough: switches save independently and can overlap, so
+  // a row stays busy while any write for it is in flight.
   const [savingKeys, setSavingKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   )
   const [feedback, setFeedback] = useState<Record<string, RowFeedback>>({})
   const savedTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
 
-  // The read is the page's only body read; the refresh re-reads it and
-  // clears the results that described the previous answer.
   const refresh = usePageRefresh(
     [pageRefreshRead('tenant-security', settings)],
     () => {
@@ -437,9 +375,7 @@ export function OrganizationSecurityPage({
     [],
   )
 
-  // The settled answer is the truth: an optimistic value it now agrees with
-  // leaves the page, so the switch follows the server without a second
-  // render of the old value.
+  // The settled answer is the truth: an optimistic value it agrees with is dropped.
   useEffect(() => {
     const settled = settings.data
     if (settled === undefined) {
@@ -502,8 +438,6 @@ export function OrganizationSecurityPage({
         }, 3000),
       )
     } catch (error) {
-      // The failure withdrew the optimistic value: the switch is back where
-      // the settled read says it was, and the row names the refusal.
       setOptimistic((previous) => {
         const left = { ...previous }
         delete left[setting.key]
@@ -530,12 +464,8 @@ export function OrganizationSecurityPage({
 
   const toggle = (setting: AdminTenantSetting, next: boolean): void => {
     if (!next) {
-      // The declaration decides the guard. A policy that declares no danger
-      // saves without a dialog; "critical" gets the two-step guard. Any other
-      // declared danger gets the ordinary single-step confirmation rather
-      // than being treated as harmless, but the server's closed set admits
-      // only the empty value and "critical" today, so that branch is
-      // forward-compatible rather than a reachable declaration.
+      // Any declared danger other than "critical" gets the single-step
+      // confirmation, never treated as harmless.
       if (setting.danger === '') {
         void apply(setting, false)
         return
@@ -561,10 +491,8 @@ export function OrganizationSecurityPage({
 
   const data = settings.data
   const pending = settings.isPending && data === undefined
-  // The server's closed set is "" (writable), "protected" and "unavailable".
-  // Any non-empty reason it does not name is treated as the durable one: a
-  // refusal is the answer that must stand if the client and server drift,
-  // never a transient state the page would invite the reader to retry.
+  // An unnamed non-empty reason counts as the durable one: a refusal must stand
+  // if the client and server drift, not invite a retry.
   const readOnly = data !== undefined && !data.writable
   const readOnlyReason: 'protected' | 'unavailable' =
     data?.read_only_reason === 'unavailable' ? 'unavailable' : 'protected'
@@ -586,8 +514,7 @@ export function OrganizationSecurityPage({
           variant="outlined"
           sx={{ mb: 2 }}
         >
-          {/* A notice is not a section heading: rendered as a heading it
-              would follow the page's h1 without the intervening levels. */}
+          {/* Not a heading: it would follow the h1 without intervening levels. */}
           <Typography variant="subtitle2" component="p">
             {t(`organization.security.readOnly.${readOnlyReason}.title`)}
           </Typography>

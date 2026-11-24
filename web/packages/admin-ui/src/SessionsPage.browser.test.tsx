@@ -1,10 +1,3 @@
-/**
- * SessionsPage in a real browser: the session table at the sm/md/lg
- * floor widths with fixed data. The page lists sessions only for a
- * chosen account, so the case drives the account picker the way an
- * operator does -- type, wait for the option, choose it -- rather than
- * reaching into page state.
- */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -45,8 +38,6 @@ const SESSIONS: readonly AdminAccountSession[] = [
   },
 ]
 
-/** A promise the case settles by hand, so one write can be held in flight
- * across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -58,7 +49,6 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** A short session row; the id is short enough to render whole. */
 function sessionRow(id: string): AdminAccountSession {
   return {
     id,
@@ -73,16 +63,10 @@ function sessionRow(id: string): AdminAccountSession {
   }
 }
 
-/** The accessible name of a row's revoke control in the active language. */
 function revokeName(id: string): string {
   return enUS.sessions.revokeAriaWithId.replace('{{id}}', id)
 }
 
-/**
- * Renders the page over a list the revoke drops the target from, then
- * revokes `target` through the dialog. Focus is returned to the button
- * that opened the dialog while the write is held in flight.
- */
 async function revokeRow(
   ids: readonly string[],
   target: string,
@@ -120,15 +104,11 @@ describe('SessionsPage revoke focus in Chromium', () => {
     const pending = deferred<void>()
     await revokeRow(['sess-a', 'sess-b', 'sess-c'], 'sess-b', pending.promise)
 
-    // The dialog's close hands focus back to the control that opened it,
-    // and the in-flight write must not take that place away.
     const revoke = screen.getByRole('button', { name: revokeName('sess-b') })
     await waitFor(() => expect(revoke).toHaveAttribute('aria-busy', 'true'))
     await waitFor(() => expect(revoke).toHaveFocus())
 
     pending.resolve()
-    // The landed revoke drops the row; the control it held is gone, so
-    // focus moves to the same control in the next row.
     await waitFor(() => expect(screen.queryByText('sess-b')).toBeNull())
     await waitFor(() =>
       expect(
@@ -156,8 +136,6 @@ describe('SessionsPage revoke focus in Chromium', () => {
     await revokeRow(['sess-a'], 'sess-a')
 
     await waitFor(() => expect(screen.queryByText('sess-a')).toBeNull())
-    // The row took the only revoke control with it, so focus lands on the
-    // heading that names the list.
     await waitFor(() => expect(document.activeElement).not.toBe(document.body))
     const heading = screen.getByRole('heading', {
       name: enUS.sessions.section.title,
@@ -182,8 +160,6 @@ describe('SessionsPage horizontal overflow in Chromium', () => {
       renderWithProviders(<SessionsPage />, { operations, language: 'en-US' })
 
       const user = userEvent.setup()
-      // The picker names the account by its display name and username; this
-      // account carries no username, so the display name alone is the label.
       await chooseAccount(user, enUS.sessions.accountLabel, 'Ada', 'Ada')
 
       await expectNoHorizontalOverflow()
