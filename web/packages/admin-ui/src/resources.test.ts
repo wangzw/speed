@@ -1,18 +1,6 @@
-/**
- * The admin-ui namespace bundle's shape contract.
- *
- * The two language files must carry identical leaf key sets -- a key in
- * one language and not the other is a missing translation the host would
- * otherwise discover at runtime -- and the namespace must be the bare
- * "admin-ui" registerNamespace keys it under. The bundle is read
- * through the exported adminUiResources so the test pins what ships,
- * not what the files happen to contain on disk.
- */
-
 import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_NAMESPACE, adminUiResources } from './resources.js'
 
-/** The dotted leaf key paths of a nested resource object. */
 function leafKeys(
   value: Record<string, unknown>,
   prefix = '',
@@ -29,7 +17,6 @@ function leafKeys(
   return keys
 }
 
-/** The dotted key paths and string values of a nested resource object. */
 function leafStrings(
   value: Record<string, unknown>,
   prefix = '',
@@ -72,8 +59,6 @@ describe('admin-ui resources', () => {
   })
 
   it('states a read failure as content that did not load, offering a retry', () => {
-    // A 429 or a 5xx is an answer: the retryable placeholder must not
-    // claim the server was silent, in either language.
     const errorDescriptions = (
       entries: ReadonlyArray<readonly [string, string]>,
     ): ReadonlyArray<readonly [string, string]> =>
@@ -86,8 +71,6 @@ describe('admin-ui resources', () => {
     )
     expect(en.length).toBeGreaterThan(0)
     expect(zh.length).toBe(en.length)
-    // One sentence for every surface: a surface that describes the failure
-    // its own way is how the wording drifts apart.
     const enSentence = en[0]?.[1] ?? ''
     for (const [key, text] of en) {
       expect(text, key).toBe(enSentence)

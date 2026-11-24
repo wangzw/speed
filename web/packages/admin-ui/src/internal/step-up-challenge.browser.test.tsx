@@ -1,16 +1,3 @@
-/**
- * StepUpChallenge's dialog layout in a real browser: the cancel and the
- * primary exit (restart/relogin) are one group, one spacing token apart,
- * with the primary closing the row at its right edge, and the dialog body
- * is one vertical stack whose theme gap keeps a failure alert clear of the
- * description above it and the step's first field below. The exits used to
- * render through MUI's DialogActions; that band already put 8px (one
- * spacing token) between adjacent buttons, but it owned the band's layout.
- * The exits now render through the shared action row with the same padding
- * the band used, so the gap and the right edge are the row's own. jsdom
- * lays nothing out, so only this tier can measure either.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -24,7 +11,6 @@ import { StepUpChallenge } from './step-up-challenge.js'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-/** The one spacing token an action row puts between adjacent controls. */
 const ACTION_GAP = 8
 
 const ACTIVE_FACTOR = {
@@ -65,8 +51,6 @@ describe('StepUpChallenge actions in Chromium', () => {
         { language: 'en-US' },
       )
 
-      // A failed start leaves no step: the failed code's banner, the
-      // restart primary and the cancel are the whole surface.
       await screen.findByRole('alert')
       const cancel = screen.getByRole('button', { name: enUS.common.cancel })
       const restart = screen.getByRole('button', { name: enUS.stepUp.restart })
@@ -76,8 +60,6 @@ describe('StepUpChallenge actions in Chromium', () => {
       expect(Math.abs(cancelBox.top - restartBox.top)).toBeLessThanOrEqual(1)
       expect(restartBox.left - cancelBox.right).toBeCloseTo(ACTION_GAP, 0)
 
-      // The exits belong to the row the row itself marks, and the primary
-      // closes that row at its right content edge.
       const row = restart.closest<HTMLElement>('[data-action-row]')
       expect(row).not.toBeNull()
       expect(cancel.closest('[data-action-row]')).toBe(row)
@@ -90,10 +72,6 @@ describe('StepUpChallenge actions in Chromium', () => {
   })
 
   it('leaves a visible gap between the failure alert and the first field', async () => {
-    // The dialog body is one vertical stack with a theme.spacing(2) gap:
-    // the failure alert must not sit flush against the description above
-    // it or the step's first field below. jsdom lays nothing out, so only
-    // this tier can measure the gap.
     await page.viewport(900, 900)
     bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -113,8 +91,6 @@ describe('StepUpChallenge actions in Chromium', () => {
             fields: [{ name: 'code', kind: 'code', required: true }],
           },
         }),
-      // A refused answer keeps the step, so the alert and the field stand
-      // together for the measurement.
       answerFlow: () =>
         Promise.reject(
           new ApiError({
@@ -135,8 +111,6 @@ describe('StepUpChallenge actions in Chromium', () => {
       { language: 'en-US' },
     )
 
-    // A challenge field is labelled by its own name (`code`, marked
-    // required).
     await user.type(await screen.findByLabelText(/code/i), '123456')
     await user.click(screen.getByRole('button', { name: enUS.stepUp.submit }))
 
@@ -146,17 +120,13 @@ describe('StepUpChallenge actions in Chromium', () => {
     const alertBox = alert.getBoundingClientRect()
     const descriptionBox = description.getBoundingClientRect()
     const fieldBox = field.getBoundingClientRect()
-    // One theme spacing token (8px x 2) is the smallest intended gap; the
-    // step form adds its own margin below the body stack.
+    // jsdom lays nothing out, so only this tier can measure the gap.
     expect(alertBox.height).toBeGreaterThan(0)
     expect(alertBox.top - descriptionBox.bottom).toBeGreaterThanOrEqual(16)
     expect(fieldBox.top - alertBox.bottom).toBeGreaterThanOrEqual(16)
   })
 })
 
-/** Whether the control is unavailable in either the natively disabled
- * form or the focusable aria-disabled form. The focus cases wait on this so
- * the state change is observed whichever way the control renders it. */
 function isUnavailable(control: HTMLElement): boolean {
   return (
     control.hasAttribute('disabled') ||
@@ -166,10 +136,6 @@ function isUnavailable(control: HTMLElement): boolean {
 
 describe('StepUpChallenge focus in Chromium', () => {
   it('keeps focus on the chosen factor while its answer is in flight', async () => {
-    // Clicking a factor starts the answer. Before the answer settles the
-    // option group must stop accepting another answer; the control that was
-    // clicked keeps the focus the click gave it, so the operator's place is
-    // not lost while the write runs.
     await page.viewport(900, 900)
     bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -213,9 +179,6 @@ describe('StepUpChallenge focus in Chromium', () => {
   })
 
   it('keeps focus on the submit while a throttled answer’s wait runs', async () => {
-    // A throttled answer keeps the step form and holds its submit until the
-    // wait elapses. The control that sent the answer keeps the focus the
-    // click gave it, so the operator does not have to find it again.
     await page.viewport(900, 900)
     bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
@@ -271,11 +234,6 @@ describe('StepUpChallenge focus in Chromium', () => {
     await user.type(await screen.findByLabelText(/code/i), '123456')
     const submit = screen.getByRole('button', { name: zhCN.stepUp.submit })
     await user.click(submit)
-    // The refusal's countdown is on screen and the submit is held. The case
-    // asserts the countdown text appears, not a particular remaining second:
-    // under the real clock the wait has already ticked by the time it is
-    // read, and pinning "30" would make the case depend on how long the
-    // browser took to get here.
     await screen.findByText(
       new RegExp(zhCN.throttle.countdown.replace('{{seconds}}', '\\d+')),
     )

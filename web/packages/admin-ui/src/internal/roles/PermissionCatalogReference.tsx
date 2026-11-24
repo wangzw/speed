@@ -1,13 +1,6 @@
 /**
- * PermissionCatalogReference: the page's bottom reference area.
- *
- * The section is collapsed by default but its titled section and its
- * content region stay mounted either way, so the page never loses a
- * discoverable section and an end-to-end scan can always find it. Expanded,
- * the catalog is searchable by permission code or readable description and
- * grouped the way the declaring modules group it; each entry leads with the
- * readable name, keeps the code as secondary information, marks a
- * dangerous permission visibly and says when the caller may not grant it.
+ * PermissionCatalogReference: the collapsed-by-default reference area; expanded,
+ * the catalog is searchable, grouped and marks dangerous permissions.
  */
 
 import { useId, useMemo, useState } from 'react'

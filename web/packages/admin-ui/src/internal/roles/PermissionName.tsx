@@ -1,14 +1,6 @@
 /**
- * PermissionName: one permission rendered the way the role page presents
- * it -- the catalog's readable description as the primary text, the
- * machine-readable code beneath it as secondary information, and a
- * visible "high risk" badge when the declaring module marks the
- * permission dangerous.
- *
- * A permission the catalog does not describe -- a grant left from a
- * vocabulary this process no longer carries -- falls back to the bare
- * code, or to the `resource/action` pair the grant carries, so the row is
- * never blank.
+ * PermissionName: description primary, code secondary, and a high-risk badge;
+ * an undescribed permission falls back to its code or `resource/action` pair.
  */
 
 import Box from '@mui/material/Box'
@@ -17,19 +9,13 @@ import Typography from '@mui/material/Typography'
 import { useAdminUiTranslation } from '../translation.js'
 
 export interface PermissionNameProps {
-  /** The permission code, or the `resource/action` fallback for a grant
-   * whose code the catalog cannot name. */
+  /** The permission code, or the `resource/action` fallback the catalog cannot name. */
   readonly code: string
-  /** The catalog's readable description; empty when the catalog knows no
-   * entry for the code. */
+  /** The catalog's readable description; empty when the catalog knows no entry. */
   readonly description?: string
   /** Whether the permission is dangerous, as the catalog reports it. */
   readonly dangerous?: boolean
-  /**
-   * Render the code as the primary line even when a description exists.
-   * The grant table keeps the readable name primary; a caller that must
-   * lead with the code (a diagnostic) can ask for it.
-   */
+  /** Render the code as the primary line even when a description exists. */
   readonly codeFirst?: boolean
 }
 
@@ -78,9 +64,7 @@ export function PermissionName({
   )
 }
 
-/** The permission groups, in the order the catalog reference presents
- * them. A group the declaring module named differently is folded into
- * `other` rather than dropped. */
+/** The permission groups in display order; an unknown group folds into `other`. */
 export const PERMISSION_GROUPS = [
   'authorization',
   'membership',

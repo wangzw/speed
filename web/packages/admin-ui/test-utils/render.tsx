@@ -1,60 +1,7 @@
 /**
- * Shared DOM-test harness for admin-ui tests.
- *
- * renderWithProviders mounts a unit under the tree a real host builds:
- * I18nextProvider (the pages' translations need) around AppThemeProvider
- * (theme + MUI locale linkage + CssBaseline) around TestTimeZoneProvider
- * (the display zone the pages format times in, TEST_TIME_ZONE unless the
- * suite names another) around QueryClientProvider (the console operations bundle's
- * hooks run on a query client) around an optional
- * AdminOperationsProvider. The client is fresh per call and
- * retries nothing: an operation the test scripts to fail surfaces its
- * error on the first attempt, not after react-query default retries, and
- * a mutation must not outlive its test.
- *
- * A test may supply its own operations bundle (see test-utils/operations)
- * to script the pages; omitting it leaves the pages on the shipped
- * adminOperations, so a suite can exercise the generated surface the
- * package binds (binding a request function through the api-sdk runtime
- * seam first).
- *
- * The i18n instance is created per call through the shared createTestI18n
- * with every namespace a rendered component reads registered: the
- * admin-ui namespace for this package's own strings, the ui-kit
- * namespace (the pages and the shell compose ui-kit components whose
- * built-in strings speak ui-kit-namespace keys), and the layout-kit
- * namespace (AdminShell renders @speed/layout-kit's AppShell frame,
- * whose banner skip link and nav landmark labels speak layout-kit-namespace
- * keys).
- *
- * The tree renders under the package's feature context by default, with
- * every feature present: a page test that does not care about gating sees
- * the whole page, not the fail-closed surface a provider-less render gets
- * in production. A gating test supplies its own predicate, and `null`
- * mounts no provider at all (the fail-closed default itself).
- *
- * The provider tree -- including whichever of the optional
- * AdminOperationsProvider, AdminSessionProvider and AdminFeatureProvider
- * the options mount, in the same nesting order -- is passed as the RTL
- * `wrapper` option, not wrapped around `ui` by hand: RTL re-wraps a
- * `rerender(ui)` call in the very same wrapper it rendered with, so a
- * rerendered unit stays inside the providers and React reconciles it in
- * place. A hand-wrapped tree instead gets REPLACED by the bare
- * rerendered `ui` (the wrapper was applied outside RTL's knowledge),
- * which unmounts the providers and remounts the unit -- a fresh instance
- * whose refs and state reset, and whose query, theme, operations, session
- * and feature context are rebuilt, on the first rerender.
- *
- * A test that really needs a fresh mount changes the unit's `key`: the
- * element type and position stay the same, so only the keyed unit
- * remounts, while the provider tree, its query client and its i18n
- * instance all survive -- the query cache keeps its entries. Unmounting
- * the tree with the result's `unmount` and calling renderWithProviders
- * again is the other way to start over, and it does start over: the new
- * call builds a fresh query client (the old cache is gone) and, when the
- * test passes no instance of its own, a fresh i18n instance. Pick the
- * first when only the unit should reset, the second when the whole
- * provider stack should.
+ * Shared DOM-test harness: renderWithProviders mounts a unit under the tree a
+ * real host builds (i18n, theme, display zone, query client and the optional
+ * console providers) as RTL's `wrapper`, so a rerender reconciles in place.
  */
 
 import { render } from '@testing-library/react'
@@ -91,30 +38,13 @@ import { AdminFeatureProvider } from '../src/internal/features.js'
 import { AdminSessionProvider } from '../src/internal/session.js'
 
 export interface RenderWithProvidersOptions extends BaseOptions {
-  /**
-   * The operations bundle the tree renders with. Optional: supplying one
-   * scripts the pages (see test-utils/operations); omitting it leaves
-   * them on the shipped adminOperations, which reach the generated
-   * @speed/api-sdk surface over whatever request function is bound.
-   */
+  /** The operations bundle the tree renders with; omitted leaves the shipped bundle. */
   readonly operations?: AdminOperations
-  /**
-   * The session the console's step-up-gated writes elevate. Optional:
-   * supplying one mounts AdminSessionProvider, so a write a test
-   * answers with a step-up refusal opens the re-auth dialog; omitting it
-   * leaves the pages with no session to elevate.
-   */
+  /** The session that mounts AdminSessionProvider; omitted leaves pages with none. */
   readonly session?: AuthSession
-  /**
-   * The feature answer the tree renders with. Omitted, every feature is
-   * present; `null` mounts no provider, so the context keeps its
-   * fail-closed default.
-   */
+  /** The feature answer; omitted means every feature present, `null` mounts no provider. */
   readonly hasFeature?: ((name: FeatureName) => boolean) | null
-  /**
-   * The theme's starting color mode; omitted, the provider's light default.
-   * A suite that renders both modes passes the mode it wants.
-   */
+  /** The theme's starting color mode; omitted, the provider's light default. */
   readonly defaultMode?: 'light' | 'dark' | 'system'
   /** The preset shelf the theme provider may switch between. */
   readonly presets?: readonly ThemePreset[]

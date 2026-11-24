@@ -1,21 +1,3 @@
-/**
- * The organization surface's tenant-scoped operations: the settings and role
- * members the organization bundle adds beside the invitations and SSO members.
- *
- * The read cases bind the shipped bundle's generated operations into the
- * request seam and record every URL: a tenant operation may address only
- * `/api/v1/tenants/{tenant}/...`, never a platform asset, and it must name
- * the tenant it was given. The key cases pin the tenant-scoped query-key
- * convention: the tenant is the key's outermost segment, a switch to
- * another tenant builds another key, and auth-core's eviction helper
- * removes exactly the departing tenant's subtree.
- *
- * The route and bundle-shape cases pin the declarations (`/roles` and
- * `/settings`, their tenant-domain permission codes and feature
- * dependencies) and the bundle's member set: the tenant members are the
- * bundle's, no platform member rides along.
- */
-
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -39,9 +21,6 @@ import type { AdminMember, AdminRole } from './operations.js'
 
 const TENANT = 'acme'
 
-/** The previous owner: an active member holding tenant-admin. A transfer
- * changes the owner column only, so this row is still the server's answer
- * after the write. */
 const PREVIOUS_OWNER: AdminMember = {
   tenant: TENANT,
   account: 'acc-1',
@@ -54,7 +33,6 @@ const PREVIOUS_OWNER: AdminMember = {
   sso_exempt: false,
 }
 
-/** The target: an active member that the transfer grants tenant-admin. */
 const NEW_OWNER: AdminMember = {
   ...PREVIOUS_OWNER,
   account: 'acc-2',
@@ -62,7 +40,6 @@ const NEW_OWNER: AdminMember = {
   username: 'bob',
 }
 
-/** The generated operation bodies the read probe's requests answer with. */
 function readResponder(call: ObservedCall): unknown {
   if (call.path === `/api/v1/tenants/${TENANT}/settings`) {
     return { settings: [], writable: true, read_only_reason: '' }
@@ -180,8 +157,6 @@ describe('the tenant operations address only tenant-addressed endpoints', () => 
     await user.click(screen.getByRole('button', { name: 'issueRole' }))
     await user.click(screen.getByRole('button', { name: 'resend' }))
     await waitFor(() => {
-      // The role rides in the issue body; the resend addresses the
-      // invitation's own route and carries no body of its own.
       expect(calls).toContainEqual({
         method: 'POST',
         path: `/api/v1/tenants/${TENANT}/invitations`,
@@ -348,8 +323,6 @@ describe('the tenant operations key their reads by tenant', () => {
         queryClient.getQueryData(['globex', '/api/v1/tenants/globex/roles']),
       ).toEqual({ roles: [] }),
     )
-    // The two tenants never share a key: the switch cannot reuse the
-    // previous tenant's rows.
     expect(
       queryClient.getQueryData(['acme', '/api/v1/tenants/acme/roles']),
     ).toEqual({ roles: [] })
@@ -365,10 +338,6 @@ describe('the tenant operations key their reads by tenant', () => {
 })
 
 describe('the inherited invitation, member and SSO reads key by tenant', () => {
-  // The generated keys of these reads name the tenant inside the path
-  // string, not as the key's outermost segment, so an organization read that
-  // forwards them verbatim shares no prefix with the tenant subtree the
-  // host evicts on a switch. The bundle wraps each in tenantQueryKey.
   function inheritedReadsResponder(call: ObservedCall): unknown {
     if (call.path.endsWith('/sso/providers/idp-1')) {
       return { provider: { id: 'idp-1' } }
@@ -424,8 +393,6 @@ describe('the inherited invitation, member and SSO reads key by tenant', () => {
         expect(queryClient.getQueryData(key)).toBeDefined()
       }
     })
-    // The bare generated key is not where the cache entry lives: a bare
-    // entry would be invisible to the tenant-prefixed eviction below.
     for (const bare of [
       '/api/v1/tenants/acme/invitations',
       '/api/v1/tenants/acme/members',
@@ -480,22 +447,17 @@ describe('the organization declarations for roles, settings and profile', () => 
       (route) => route.id === 'organization-roles',
     )
     expect(roles?.permission).toBe('authz.tenant.role.read')
-    // The role page's account pickers read the tenant's members through the
-    // membership endpoints, so the page needs that feature as well.
     expect(roles?.requires).toEqual(['authz.tenantadmin', 'authn.admin'])
     const settings = organizationAdminRoutes.find(
       (route) => route.id === 'organization-settings',
     )
     expect(settings?.permission).toBe('settings.tenant.read')
     expect(settings?.requires).toEqual(['settings.tenantadmin'])
-    // The profile page is the tenant profile module's own read: its
-    // permission and feature both name tenant.profile.
     const profile = organizationAdminRoutes.find(
       (route) => route.id === 'organization-profile',
     )
     expect(profile?.permission).toBe('tenant.profile.read')
     expect(profile?.requires).toEqual(['tenant.profile'])
-    // The organization declarations never name the platform roster feature.
     for (const route of organizationAdminRoutes) {
       expect(route.requires).not.toContain('tenant.admin')
     }
@@ -647,10 +609,6 @@ describe('the organization operations bundle', () => {
 })
 
 describe('the organization ownership writes', () => {
-  /** Every request the ownership probe makes, with a settled read pair. A
-   * request changes no owner column: the pending read is the one fact the
-   * write creates, and the member rows, including the previous owner's
-   * tenant-admin role, are unchanged. */
   function ownershipResponder(
     initialPending = false,
   ): (call: ObservedCall) => unknown {
@@ -777,16 +735,12 @@ describe('the organization ownership writes', () => {
         body: { account: 'acc-2' },
       }),
     )
-    // The request is recorded; ownership has not moved, so the profile is
-    // not re-read. The pending read is, and so is the member search the
-    // dialog consults.
     await waitFor(() => expect(pendingReads()).toBe(2))
     await waitFor(() => expect(memberReads()).toBe(2))
     expect(profileReads()).toBe(1)
     expect(screen.getByTestId('pending-request')).toHaveTextContent(
       'transfer-1',
     )
-    // The previous owner still holds tenant-admin and remains a member.
     expect(screen.getByTestId('member-rows')).toHaveTextContent(
       'acc-1:active:tenant-admin',
     )

@@ -1,30 +1,6 @@
 /**
- * AccountSelector: a searchable account picker for the write and lookup
- * forms that name an account.
- *
- * An operator identifies an account by its display name or one of its
- * login identifiers, not by its opaque id. The control is a combobox: the
- * operator types, the console reads accounts through the account list
- * operation (narrowed by a display-name prefix and by each identifier
- * prefix), and a chosen row hands its account id to the caller. Nothing is
- * read before the operator types, so opening the page never pulls the
- * account table.
- *
- * The searches are debounced and page-limited. A name prefix and the
- * identifier kinds (username, email, phone) are separate list reads, so
- * their answers are merged and de-duplicated by account id. The listing
- * refuses an identifier prefix that is shorter than three characters or
- * that its kind's shape does not take, so only the kinds this text can
- * name are read; a kind the server refuses anyway is treated as not
- * applicable rather than as a failure. A failed search -- a transport or
- * server failure -- is stated in the popup rather than shown as "no
- * matches". A read that answers more rows than it was asked for leaves a
- * next page unread; the control says so instead of pretending the merged
- * rows are the whole answer, and asks the operator to narrow the text.
- *
- * The combobox is keyboard operable end to end (arrow keys move through
- * the options, Enter selects, Escape closes) and takes its accessible name
- * from the label beside it.
+ * AccountSelector: a searchable picker reading accounts by display name or login
+ * identifier after typing, with debounced, page-limited merged searches.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -39,10 +15,8 @@ import { accountUsername, identityLabel } from './account-identity.js'
 import { useAdminOperations } from '../operations.js'
 import type { AdminAccount } from '../operations.js'
 
-/** How many rows each search read asks for. */
 const SEARCH_LIMIT = 20
 
-/** The pause between the last keystroke and the read it triggers. */
 const SEARCH_DEBOUNCE_MS = 250
 
 /** The shortest identifier prefix the account listing accepts. */
@@ -51,13 +25,10 @@ const MIN_IDENTIFIER_PREFIX_CHARS = 3
 /** The longest an email prefix may be; the listing's own bound is 254 bytes. */
 const EMAIL_PREFIX_MAX_BYTES = 254
 
-/** The username prefix shape the listing accepts, after folding. */
 const USERNAME_PREFIX_SHAPE = /^[a-z0-9][a-z0-9._-]{0,63}$/
 
-/** The phone prefix shape the listing accepts: the head of an E.164 number. */
 const PHONE_PREFIX_SHAPE = /^\+[1-9][0-9]{0,14}$/
 
-/** The rows the open search has settled, and its progress. */
 interface AccountSearchState {
   readonly rows: readonly AdminAccount[]
   readonly pending: boolean
@@ -73,11 +44,6 @@ const EMPTY_SEARCH: AccountSearchState = {
   truncated: false,
 }
 
-/**
- * The option's text: the display name with the login username beside it,
- * either alone, or the neutral copy when the account has neither. The opaque
- * account id never becomes the option text.
- */
 function accountOptionLabel(
   t: ReturnType<typeof useAdminUiTranslation>['t'],
   account: AdminAccount,
@@ -107,17 +73,8 @@ interface IdentifierReads {
 }
 
 /**
- * Which identifier reads the account listing accepts for this text.
- *
- * The listing normalizes a prefix before comparing it -- a username is
- * NFKC-folded and lower-cased, an email trimmed and lower-cased -- and
- * refuses a prefix shorter than three characters or one its kind's shape
- * does not take: a username of [a-z0-9._-] beginning with a letter or a
- * digit, an email of visible ASCII with at most one @, a phone the head of
- * an E.164 number. The rules are pkg/authn/account's; mirroring them here
- * keeps a search from issuing a read the route answers 400. Username and
- * phone are mutually exclusive shapes; an ASCII word is both a username
- * and an email prefix, so those two reads may both run.
+ * Which identifier reads the listing accepts for this text. The shapes mirror
+ * pkg/authn/account's rules, so a search never issues a read the route answers 400.
  */
 function identifierReadsFor(query: string): IdentifierReads {
   const username = query.normalize('NFKC').toLowerCase()
@@ -137,14 +94,6 @@ function identifierReadsFor(query: string): IdentifierReads {
   }
 }
 
-/**
- * Whether a read failed because the listing refused its shape: HTTP 400,
- * the answer the account listing gives a prefix it cannot read. That
- * refusal says the kind does not apply to this text; a transport failure,
- * a 5xx or any other answer says the search itself failed. The status is
- * read through ui-kit's `httpStatusOf`, which also recognizes the
- * `client.http.400` an envelope-less refusal is synthesized as.
- */
 function isShapeRefusal(error: unknown): boolean {
   return httpStatusOf(error) === 400
 }
@@ -157,19 +106,12 @@ export interface AccountSelectorProps {
   /** Called with the chosen account, or null when the choice is cleared. */
   readonly onChange: (account: AdminAccount | null) => void
   /**
-   * Whether the picker is disabled. This is a selection-shaped context
-   * control, so it stays natively disabled while a write into a scope the
-   * chosen account addresses is in flight: a change would reset that scope
-   * and leave a settling attempt describing the account left behind. The
-   * write is started from another control, so focus is not on the picker
-   * while it is disabled.
+   * Whether the picker is disabled. It stays natively disabled while a write
+   * into a scope the chosen account addresses is in flight; the write starts
+   * from another control, so focus is not on the picker.
    */
   readonly disabled?: boolean
-  /**
-   * Whether the combobox fills its container. A caller that places it in a
-   * narrow row (the sessions page's selector row) sets this so the row
-   * shrinks instead of wrapping; the stock form keeps its fixed minimum.
-   */
+  /** Whether the combobox fills its container, for a narrow row. */
   readonly fullWidth?: boolean
 }
 
@@ -296,10 +238,8 @@ export function AccountSelector({
 }
 
 /**
- * AccountSearch: the reads behind one account query. It is mounted only
- * while there is text to search, so an idle selector issues no request. A
- * display-name prefix and the identifier kinds the text can name are
- * separate reads; their pages are merged by account id.
+ * AccountSearch: the reads behind one account query, mounted only while there
+ * is text to search; the display-name and identifier pages are merged by id.
  */
 function AccountSearch({
   query,
@@ -351,17 +291,13 @@ function AccountSearch({
         }
       }
     }
-    // A read stops at SEARCH_LIMIT and hands back a cursor for the rest.
-    // The merged rows cannot tell the operator the search is exhausted, so
-    // any cursor is reported: they narrow the text rather than assume the
-    // first page is the answer.
+    // A read stops at SEARCH_LIMIT and hands back a cursor; any cursor means
+    // the merged rows are not the whole answer, so the operator narrows.
     const truncated = pages.some(
       (page) => page !== undefined && page.next_cursor !== '',
     )
-    // A kind the text cannot name is declared disabled, and a disabled
-    // query reports pending forever (pending with nothing fetching):
-    // progress is read from isLoading (pending and fetching) so it clears
-    // when no read is left.
+    // A disabled query reports pending forever, so progress is read from
+    // isLoading, which clears once no read is left.
     const pending =
       byName.isLoading ||
       byUsername.isLoading ||

@@ -1,24 +1,7 @@
 /**
- * request-rig.ts -- the scripted-request rig for the console's shipped
- * operations bundle.
- *
- * The shipped `adminOperations` reads and writes through the generated
- * @speed/api-sdk surface, whose every call forwards to the request
- * function bound into the runtime seam (bindRequestFn, the same seam a
- * host's real client fills). This rig binds a scripted function there and
- * records the request leg of each generated call (the HTTP method, the
- * path and the query parameters the generated call carried -- the
- * transport's serialization is its own, but the parameter *names and
- * values* a caller supplies reach the seam as `options.query`). A caller
- * that also needs the request body opts in with `recordBody`; the body is
- * not recorded by default, so an assertion written before bodies were
- * observable keeps comparing only the leg it names. It is how
- * the seam's own suite proves which endpoint each member drives, and how
- * a page's suite proves the parameters it sends, without an HTTP
- * transport.
- *
- * A scripted responder throws on an unpinned path, so a member wired to
- * the wrong endpoint fails the test rather than silently answering.
+ * The scripted-request rig for the shipped operations bundle: it binds a
+ * scripted request function into the api-sdk runtime seam and records each
+ * generated call's method, path and query (and body with `recordBody`).
  */
 
 import type { RequestFn, RequestOptions } from '@speed/api-client'
@@ -36,8 +19,7 @@ export interface ObservedCall {
   readonly body?: unknown
 }
 
-/** One scripted endpoint: the value the generated call resolves with
- * (the operation's typed body), keyed by the request leg. */
+/** One scripted endpoint, keyed by the request leg it answers. */
 export type AdminResponder = (call: ObservedCall) => unknown
 
 /** How a rig call records its request leg. */
@@ -46,10 +28,7 @@ export interface RequestRigOptions {
   readonly recordBody?: boolean
 }
 
-/**
- * Binds a scripted request function and returns the recorded calls. Each
- * call binds anew: the runtime seam is last-bind-wins by contract.
- */
+/** Binds a scripted request function and returns the recorded calls; the seam is last-bind-wins. */
 export function bindAdminRequest(
   respond: AdminResponder,
   rig: RequestRigOptions = {},

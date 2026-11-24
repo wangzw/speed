@@ -1,18 +1,4 @@
-/**
- * The console's invitation-link seam.
- *
- * The invitation surface issues an invitation whose acceptance token comes
- * back exactly once; the operator has to hand the invitee a link to the
- * host's acceptance landing (the demo host lands one at /invitations/:token).
- * The admin-ui package is host-agnostic -- it does not know that path --
- * so the host supplies a builder through the shell (AdminShell's
- * `invitationLink`), which the shell publishes to its routed pages through
- * this context; the invitation page reads it to show the issued link.
- *
- * With no provider (a page rendered on its own, as a unit test renders one)
- * the context is absent and the page falls back to showing the bare token,
- * so an issued acceptance token is never silently dropped.
- */
+/** The console's invitation-link seam. */
 
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'

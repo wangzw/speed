@@ -1,19 +1,3 @@
-/**
- * The organization lifecycle controls on the platform roster and the
- * tenant detail: transfer owner and delete organization.
- *
- * The entries are visible only to a caller whose platform permission set
- * holds `tenant.manage`, never on a personal organization, and never on a
- * tombstone. The transfer dialog has two target paths: the organization's
- * member selector when the caller's tenant permission set holds
- * `authn.membership.manage`, and the platform account selector otherwise.
- * The account path never pretends the chosen account is a member: the
- * endpoint still refuses a non-member with 409, and the dialog states that
- * refusal inline. Deletion asks for the organization's name and the
- * shared two-step danger confirmation, and renders the tombstone refusal as
- * the delete's own copy.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -38,14 +22,12 @@ import { chooseAccount } from '../test-utils/account-selector.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** The zh-CN label the shared confirm shows once its two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly confirmDialog: { readonly confirmAgainLabel: string }
   }
 ).confirmDialog.confirmAgainLabel
 
-/** A promise the case settles by hand, so one write can be held in flight. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -60,7 +42,6 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(
   template: string,
   values: Record<string, string>,
@@ -70,7 +51,6 @@ function text(
   )
 }
 
-/** Attaches the session the pages read their permission affordances from. */
 function attachPermissions({
   system,
   tenant = null,
@@ -86,7 +66,6 @@ function attachPermissions({
   )
 }
 
-/** One active member and one suspended member of `acme`. */
 const MEMBERS: readonly AdminMember[] = [
   {
     tenant: 'acme',
@@ -129,11 +108,6 @@ async function confirmTwice(
   )
 }
 
-/**
- * The delete's confirmation: type the organization's name, then run the
- * shared two-step guard. The confirming button is inert until the name
- * matches exactly.
- */
 async function confirmDelete(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
@@ -214,7 +188,6 @@ describe('platform tenant lifecycle entries', () => {
         }),
       ).toBeNull()
     }
-    // The business organization beside them still carries both.
     expect(
       screen.getByRole('button', {
         name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
@@ -258,8 +231,6 @@ describe('platform tenant lifecycle entries', () => {
         name: text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
       }),
     ).toBeInTheDocument()
-    // The dialog names itself by its title and describes the target paths
-    // by its lead paragraph.
     expect(dialog).toHaveAccessibleName(
       text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
     )
@@ -267,7 +238,6 @@ describe('platform tenant lifecycle entries', () => {
       zhCN.tenantLifecycle.transfer.description,
     )
 
-    // Only the active member is offered; the suspended membership is not.
     const memberInput = within(dialog).getByRole('combobox', {
       name: zhCN.tenantLifecycle.transfer.memberLabel,
     })
@@ -306,7 +276,6 @@ describe('platform tenant lifecycle entries', () => {
       ),
     ).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // A request changes no owner column, so the roster is not re-read.
     expect(reads).toBe(1)
   })
 
@@ -342,8 +311,6 @@ describe('platform tenant lifecycle entries', () => {
         }),
       ),
     ).toBeInTheDocument()
-    // A pending request is a precondition whose explanation already stands
-    // on the page: the control stays focusable and points at it.
     const transfer = screen.getByRole('button', {
       name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
     })
@@ -378,9 +345,6 @@ describe('platform tenant lifecycle entries', () => {
         screen.queryByText(zhCN.tenantLifecycle.transfer.pendingTitle),
       ).toBeNull(),
     )
-    // The panel that carried the cancel control is gone with the settled
-    // request; focus hands off to the control group that stays, never to the
-    // document body.
     expect(
       screen.getByRole('group', { name: zhCN.tenantLifecycle.sectionTitle }),
     ).toHaveFocus()
@@ -421,8 +385,6 @@ describe('platform tenant lifecycle entries', () => {
       }),
     )
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // The operator moves to another control before the request settles; the
-    // landing must not pull focus back to the group.
     const transfer = screen.getByRole('button', {
       name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
     })
@@ -513,9 +475,6 @@ describe('platform tenant lifecycle entries', () => {
     await confirmDelete(user, 'acme')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-    // The delete is in flight; the pending request's withdraw control stays
-    // focusable and unavailable, with no reason of its own: the write that
-    // blocks it is the visible delete, not a precondition to explain.
     const withdraw = screen.getByRole('button', {
       name: zhCN.tenantLifecycle.transfer.pendingCancel,
     })
@@ -558,8 +517,6 @@ describe('platform tenant lifecycle entries', () => {
       zhCN.tenantLifecycle.transfer.targetRequired,
     )
 
-    // Activation is swallowed for click, Enter and Space alike: no target
-    // is chosen, so the confirmation never opens and nothing is written.
     await user.click(submit)
     submit.focus()
     await user.keyboard('{Enter}')
@@ -570,7 +527,6 @@ describe('platform tenant lifecycle entries', () => {
       ),
     ).toBeNull()
     expect(writes).toEqual([])
-    // The dialog is the only one open, and the button kept its focus.
     expect(document.activeElement).toBe(submit)
   })
 
@@ -615,9 +571,6 @@ describe('platform tenant lifecycle entries', () => {
     await user.click(submit)
     await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
 
-    // The write runs behind the closed confirmation. The button that
-    // started it stays focusable and busy, and the member field it belongs
-    // to turns read-only instead of dropping out of the Tab sequence.
     await waitFor(() => expect(submit).toHaveAttribute('aria-busy', 'true'))
     expect(document.activeElement).toBe(submit)
     expect(member).toHaveAttribute('readonly')
@@ -626,7 +579,6 @@ describe('platform tenant lifecycle entries', () => {
     })
     expect(cancel).toHaveAttribute('aria-disabled', 'true')
     await user.click(cancel)
-    // The unavailable cancel swallowed the activation; the dialog stays.
     expect(
       screen.getByRole('heading', {
         name: text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
@@ -682,7 +634,6 @@ describe('platform tenant lifecycle entries', () => {
     await act(async () => {
       retry.resolve({ members: [...MEMBERS], next_cursor: '' })
     })
-    // The re-read landed, so the failure and its retry leave the page.
     await waitFor(() =>
       expect(
         screen.queryByText(zhCN.tenantLifecycle.transfer.membersFailed),
@@ -712,7 +663,6 @@ describe('platform tenant lifecycle entries', () => {
         },
       }),
     )
-    // tenant.manage without the member read: the account path.
     attachPermissions({ system: ['tenant.manage'] })
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
@@ -745,8 +695,6 @@ describe('platform tenant lifecycle entries', () => {
     )
     await confirmTwice(user, zhCN.tenantLifecycle.transfer.confirmLabel)
 
-    // The request carried the account; the server's non-member 409 stands
-    // inline in the still-open dialog.
     await waitFor(() => {
       expect(writes).toEqual([{ name: 'acme', account: 'acc-9' }])
     })
@@ -759,7 +707,6 @@ describe('platform tenant lifecycle entries', () => {
         name: text(zhCN.tenantLifecycle.transfer.title, { name: 'Acme' }),
       }),
     ).toBeInTheDocument()
-    // The account path never issued the member read.
     expect(memberReads).toBe(0)
   })
 
@@ -879,7 +826,6 @@ describe('platform tenant deletion', () => {
       }),
     )
     const dialog = await screen.findByRole('dialog')
-    // The impact copy is part of the confirmation.
     expect(
       within(dialog).getByText(zhCN.tenantLifecycle.deleteConfirm.message),
     ).toBeInTheDocument()
@@ -895,8 +841,6 @@ describe('platform tenant deletion', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Acme')).toBeNull())
     await waitFor(() => expect(reads).toBeGreaterThan(1))
-    // The last row took the delete control out of the document; focus lands
-    // on the roster's own container, which stays on screen.
     expect(
       screen.getByRole('group', { name: zhCN.tenants.title }),
     ).toHaveFocus()
@@ -991,8 +935,6 @@ describe('platform tenant deletion', () => {
     await user.click(remove)
     await confirmDelete(user, 'acme')
 
-    // The confirmation closed and the write runs; the control that started it
-    // keeps its focus instead of handing it to the document body.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(
       document.activeElement,
@@ -1038,9 +980,6 @@ describe('platform tenant deletion', () => {
         name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
       }),
     )
-    // The write lands but the re-read that confirms it fails. The failed
-    // read must drop the remembered row; otherwise a later successful read
-    // moves focus on its own.
     fail = true
     await confirmDelete(user, 'acme')
     await waitFor(() =>
@@ -1049,10 +988,6 @@ describe('platform tenant deletion', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     fail = false
 
-    // The stale list still shows the removed row. Focus its delete control,
-    // then re-read the roster: the control leaves with the old data and
-    // focus drops to the body, the one place a remembered deletion would
-    // take over.
     const stale = screen.getByRole('button', {
       name: text(zhCN.tenantLifecycle.deleteAria, { name: 'acme' }),
     })
@@ -1090,11 +1025,8 @@ describe('platform tenant deletion', () => {
       name: zhCN.tenantLifecycle.deleteConfirm.confirmLabel,
     })
 
-    // The empty field and a near miss both keep the guard closed; only the
-    // exact name opens it.
     expect(field).toHaveValue('')
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
-    // The typed-name guard explains itself on the confirming button.
     expect(confirm).toHaveAccessibleDescription(
       zhCN.tenantLifecycle.deleteConfirm.nameMismatch,
     )
@@ -1138,8 +1070,6 @@ describe('platform tenant deletion', () => {
     expect(alert).toHaveTextContent(
       zhCN.tenantLifecycle.deleteConfirm.failedConflict,
     )
-    // The registration-oriented conflict leaf would misdescribe the
-    // tombstone, so the delete's own copy stands instead.
     expect(alert).not.toHaveTextContent(zhCN.errors.tenant.conflict)
     expect(screen.getByText('Acme')).toBeInTheDocument()
   })
@@ -1249,8 +1179,6 @@ describe('tenant detail lifecycle', () => {
         }),
       }),
     ).toBeNull()
-    // The group renders no entry on a personal organization, so the page
-    // renders no card for it either -- not just no buttons inside one.
     expect(
       screen.queryByText(zhCN.tenantLifecycle.sectionTitle),
     ).toBeNull()
@@ -1267,8 +1195,6 @@ describe('tenant detail lifecycle', () => {
         name: text(zhCN.tenantLifecycle.transferAria, { name: 'acme' }),
       }),
     ).toBeNull()
-    // Without tenant.manage the group has nothing to show, and the card is
-    // absent rather than empty.
     expect(
       screen.queryByText(zhCN.tenantLifecycle.sectionTitle),
     ).toBeNull()
@@ -1332,8 +1258,6 @@ describe('tenant detail lifecycle', () => {
     await waitFor(() => {
       expect(writes).toEqual([{ name: 'acme', account: 'acc-2' }])
     })
-    // The request is recorded; the tenant's owner column is not, so the
-    // detail read stays settled and only the pending read converges.
     expect(
       await screen.findByText(zhCN.tenantLifecycle.transfer.pendingTitle),
     ).toBeInTheDocument()
@@ -1369,10 +1293,6 @@ describe('tenant detail lifecycle', () => {
     })
     expect(await screen.findByText(confirmation)).toBeInTheDocument()
 
-    // The delete invalidates the detail read, which settles as the
-    // tombstone; the page withdraws the lifecycle card with it. The
-    // confirmation lives at page level, so it survives that removal instead
-    // of flashing and vanishing with the card.
     expect(
       await screen.findByText(zhCN.tenants.status.deleted),
     ).toBeInTheDocument()
@@ -1380,8 +1300,6 @@ describe('tenant detail lifecycle', () => {
       screen.queryByText(zhCN.tenantLifecycle.sectionTitle),
     ).toBeNull()
     expect(screen.getByText(confirmation)).toBeInTheDocument()
-    // With the whole control group withdrawn, the page's summary heading is
-    // the stable landmark the departed control hands focus to.
     expect(
       screen.getByRole('heading', { name: zhCN.tenantDetail.summary }),
     ).toHaveFocus()

@@ -1,13 +1,3 @@
-/**
- * RefreshStatus: the refresh action group's update time and its live
- * completion region.
- *
- * The update time renders only once a read has settled, in the active
- * language and the harness's default display zone, with seconds and the
- * zone name. The `role="status"` region is mounted empty and fills when a
- * refresh has completed.
- */
-
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { TEST_TIME_ZONE } from '@speed/test-utils/render'
@@ -27,7 +17,6 @@ const EN = enUS.common as {
 
 const SETTLED_AT = Date.UTC(2026, 9, 15, 12, 0, 0)
 
-/** The long form the label renders in the harness's default zone. */
 function longTime(language: string): string {
   return new Intl.DateTimeFormat(language, {
     dateStyle: 'medium',

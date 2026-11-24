@@ -1,18 +1,3 @@
-/**
- * Compiles and executes the README's Quick start composition.
- *
- * The composition below mirrors README.md's: the bilingual i18n instance
- * with the ui-kit, layout-kit and admin-ui namespaces, the query
- * client, the console operations bundle the package ships
- * (`adminOperations`), and the provider stack around AdminShell with
- * the console's declarations. The only test-side addition is the
- * scripted request function bound into the api-sdk runtime seam (see
- * test-utils/request-rig), because the shipped bundle drives the
- * generated surface and a test has no backend. Everything else is the
- * documented composition verbatim, so the README cannot drift from the
- * API.
- */
-
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
@@ -51,8 +36,6 @@ const queryClient = new QueryClient({
 })
 
 export function AdminApp(): ReactElement {
-  // The host's route layer renders the matched declaration's view; the
-  // console's navigation is derived from the labelled declarations.
   const route = adminRoutes[0]
   return (
     <I18nextProvider i18n={i18n}>
@@ -79,8 +62,6 @@ describe('README quick start', () => {
       if (call.path === '/api/v1/system/tenants') {
         return { tenants: [{ name: 'acme', display_name: 'Acme', kind: 'business', status: 'active' }] }
       }
-      // The first page is the console dashboard, which also reads the
-      // newest audit activity.
       if (call.path === '/api/v1/system/audit/records') {
         return { entries: [], next: '' }
       }
@@ -88,10 +69,6 @@ describe('README quick start', () => {
     })
     render(<AdminApp />)
 
-    // The shell's own navigation (the console's `nav` landmark inside the
-    // layout-kit AppShell frame) is named; the roster page's PageHeader
-    // adds a second nav landmark (the breadcrumb trail), so target the
-    // shell's by its accessible name.
     const nav = screen.getByRole('navigation', {
       name: adminUiZhCN.shell.navLabel,
     })
@@ -112,7 +89,6 @@ describe('README quick start', () => {
       adminUiZhCN.sms.title,
       adminUiZhCN.audit.title,
     ])
-    // The first page is the console dashboard; its tenant KPI renders.
     expect(
       await screen.findByText(adminUiZhCN.dashboard.kpi.tenants),
     ).toBeInTheDocument()

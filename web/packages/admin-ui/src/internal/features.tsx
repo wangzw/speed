@@ -1,16 +1,4 @@
-/**
- * The console's feature-presence seam.
- *
- * The console shell receives the host's synchronous feature answer
- * (`hasFeature`) and publishes it to the pages it renders, the same way it
- * publishes its in-page navigation callback. The package itself never reads
- * the session or the feature state; a page that renders a feature-gated
- * control asks this hook, and the host decides what "present" means.
- *
- * With no provider (a page rendered on its own, as a unit test renders
- * one) every feature is absent: the fail-closed direction, so a control
- * whose feature was never supplied is hidden rather than shown.
- */
+/** The console's feature-presence seam. */
 
 import { createContext, useContext } from 'react'
 import type { ReactNode } from 'react'

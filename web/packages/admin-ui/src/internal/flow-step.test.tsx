@@ -1,19 +1,3 @@
-/**
- * FlowStep behaviour: the guarded factor-kind vocabulary of a flow step, the
- * TOTP enrolment block and the passkey ceremony's failure wording.
- *
- * What this suite pins: a factor option reads as its known kind's
- * translated name, a repeated kind distinguishes its entries by name
- * ("Kind · Name") and an unnamed entry from the second on by ordinal
- * ("Kind (2)"), and an unknown kind shows the kind as given; an enrollment
- * kind follows the same known/unknown rule. The package keeps its vocabulary locally
- * (auth-ui and account-ui keep their own copies), so this suite is the
- * admin-ui side of the registered sync obligation. The TOTP cases pin
- * the step's URI becoming the shipped panel's QR symbol and manual secret,
- * never text; the failure cases pin the already-registered remedy and the
- * generic sentence naming the ceremony it ran.
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
@@ -45,7 +29,6 @@ function render(
   return { ...rendered, onSubmit }
 }
 
-/** Installs a `navigator.credentials` stub, answering the restorer. */
 function installCredentials(credentials: unknown): () => void {
   const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
   Object.defineProperty(window.navigator, 'credentials', {
@@ -61,13 +44,11 @@ function installCredentials(credentials: unknown): () => void {
   }
 }
 
-/** A step whose options ask the browser for an assertion. */
 const ASSERT_STEP: AuthnStep = {
   kind: 'webauthn',
   options: { challenge: 'Y2hhbGxlbmdl' },
 }
 
-/** An assertion credential shaped as the browser's API returns one. */
 function assertionCredential(id: string) {
   return {
     id,
@@ -93,8 +74,6 @@ describe('FlowStep labels', () => {
       ],
     })
 
-    // Each kind is offered once, so the kind name is the whole label; the
-    // registration-time name does not replace it.
     expect(
       screen.getByRole('button', { name: zhCN.stepUp.factorKind.totp }),
     ).toBeTruthy()
@@ -105,9 +84,6 @@ describe('FlowStep labels', () => {
   })
 
   it('labels same-named factors of different kinds by their kinds', () => {
-    // Two factors whose registration-time names match must not render two
-    // identical buttons: the step answers "how do I prove it", so the kind
-    // is the label.
     render({
       kind: 'factor',
       factors: [
@@ -164,7 +140,6 @@ describe('FlowStep passkey ceremony', () => {
     try {
       render(ASSERT_STEP)
       const region = screen.getByRole('status')
-      // The region is inserted by the waiting state's first commit empty.
       expect(region.textContent).toBe('')
       await waitFor(() =>
         expect(region).toHaveTextContent(zhCN.stepUp.passkeyWaiting),
@@ -179,8 +154,6 @@ describe('FlowStep passkey ceremony', () => {
     const restore = installCredentials({ get, create: vi.fn() })
     try {
       render(ASSERT_STEP)
-      // The waiting state is the first thing the step shows: the Continue
-      // control never renders, because the assertion started itself.
       expect(await screen.findByText(zhCN.stepUp.passkeyWaiting)).toBeTruthy()
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
       expect(get).toHaveBeenCalledTimes(1)
@@ -189,11 +162,8 @@ describe('FlowStep passkey ceremony', () => {
     }
   })
 
+  // The sequence number distinguishes a re-sent challenge from an ordinary re-render.
   it('restarts the arrival ceremony when the server re-sends the same challenge', async () => {
-    // The challenge string alone does not identify a ceremony: the server can
-    // send the same challenge again in the next step. The sequence number
-    // advances with every reply the flow parks, so a re-sent challenge starts
-    // the ceremony again while an ordinary re-render leaves it alone.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
@@ -232,8 +202,6 @@ describe('FlowStep passkey ceremony', () => {
   })
 
   it('starts no assertion ceremony when a genuinely different step arrives', async () => {
-    // Only an assertion step starts on arrival. A different step the flow
-    // parks is not an assertion ceremony, whatever sequence it carries.
     const get = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get, create: vi.fn() })
     try {
@@ -282,8 +250,6 @@ describe('FlowStep passkey ceremony', () => {
     const restore = installCredentials({ get, create: vi.fn() })
     try {
       render(ASSERT_STEP)
-      // The waiting state is reachable without a click; cancel then fails
-      // at once and offers a retry that starts the ceremony again.
       await screen.findByText(zhCN.stepUp.passkeyWaiting)
       const user = userEvent.setup()
       await user.click(
@@ -292,8 +258,6 @@ describe('FlowStep passkey ceremony', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(
         zhCN.stepUp.passkeyCancelled,
       )
-      // The retry uses the one primary action mapping every action row
-      // shares, so the three retry surfaces cannot drift apart.
       const retry = screen.getByRole('button', { name: zhCN.stepUp.passkeyRetry })
       expect(retry).toHaveClass('MuiButton-contained')
       await user.click(retry)
@@ -305,8 +269,6 @@ describe('FlowStep passkey ceremony', () => {
   })
 
   it('waits for a click before a registration ceremony starts', async () => {
-    // A creation ceremony needs the user activation some browsers require,
-    // so a registration step stays parked until the viewer clicks.
     const create = vi.fn().mockReturnValue(new Promise(() => {}))
     const restore = installCredentials({ get: vi.fn(), create })
     try {
@@ -332,8 +294,6 @@ describe('FlowStep passkey ceremony', () => {
   })
 
   it('abandons the ceremony when the step unmounts', async () => {
-    // An unmounted step has no flow to answer, so the pending ceremony is
-    // given up: the signal the browser's API received is aborted.
     let received: { signal?: AbortSignal } | undefined
     const get = vi.fn((options: { signal?: AbortSignal }) => {
       received = options
@@ -343,7 +303,6 @@ describe('FlowStep passkey ceremony', () => {
     try {
       const { unmount } = render(ASSERT_STEP)
 
-      // The arrival started the ceremony; nothing was clicked.
       await screen.findByText(zhCN.stepUp.passkeyWaiting)
       expect(received?.signal?.aborted).toBe(false)
 
@@ -355,8 +314,6 @@ describe('FlowStep passkey ceremony', () => {
   })
 
   it('discards a late credential from an abandoned attempt', async () => {
-    // The cancelled attempt stays pending in the browser and settles later;
-    // its answer no longer matches the live attempt, so it travels nowhere.
     const settle: Array<(value: unknown) => void> = []
     const get = vi.fn(
       () =>
@@ -410,7 +367,6 @@ const TOTP_STEP: AuthnStep = {
   options: { otpauth_uri: OTPAUTH_URI },
 }
 
-/** A step whose options ask the browser to create a credential. */
 const REGISTER_STEP: AuthnStep = {
   kind: 'webauthn',
   options: {
@@ -426,8 +382,6 @@ describe('FlowStep TOTP enrolment', () => {
     const path = image.querySelector('path')?.getAttribute('d')
     expect(path).toBeTruthy()
 
-    // A different URI draws a different matrix: the symbol's payload is the
-    // step's otpauth_uri, not a fixed decoration.
     const other = render({
       kind: 'webauthn',
       options: {
@@ -506,8 +460,6 @@ describe('FlowStep TOTP enrolment', () => {
 
   it('passes axe with the manual disclosure open', async () => {
     const user = userEvent.setup()
-    // The scan needs the page heading context the dialog supplies in a real
-    // host: an isolated widget render has no h1 and fails page-has-heading-one.
     renderWithProviders(
       <>
         <h1>Verify it's you</h1>
@@ -524,8 +476,7 @@ describe('FlowStep TOTP enrolment', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.stepUp.totpManualToggle }),
     )
-    // Label in Name needs canvas text measurement, which jsdom lacks; the
-    // named browser case decides it.
+    // Label in Name needs canvas text measurement, which jsdom lacks; the browser case decides it.
     await expectNoAxeViolations({
       decidedInBrowser: 'flowStepManualDisclosure',
     })
@@ -534,10 +485,6 @@ describe('FlowStep TOTP enrolment', () => {
 
 describe('FlowStep passkey failure wording', () => {
   it('names the already-registered remedy when the device holds the credential', async () => {
-    // The server sends excludeCredentials for the account's existing passkeys,
-    // and an authenticator that already holds one refuses the creation with
-    // InvalidStateError. That answer names its own remedy instead of the
-    // generic failure the viewer would retry forever.
     const create = vi
       .fn()
       .mockRejectedValue(
@@ -578,8 +525,6 @@ describe('FlowStep passkey failure wording', () => {
   })
 
   it('names a failed assertion as a sign-in', async () => {
-    // A failed registration and a failed sign-in read differently, so the
-    // viewer is not told a sign-in failed while they were enrolling a factor.
     const restore = installCredentials({
       create: vi.fn(),
       get: vi.fn().mockRejectedValue(new Error('boom')),
@@ -595,7 +540,6 @@ describe('FlowStep passkey failure wording', () => {
   })
 })
 
-/** A factor step offering two kinds, so a case can watch one of them. */
 const FACTOR_STEP: AuthnStep = {
   kind: 'factor',
   factors: [
@@ -613,7 +557,6 @@ describe('FlowStep held actions', () => {
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
     expect(confirm).toHaveAccessibleDescription(zhCN.stepUp.codeRequired)
 
-    // The control stays focusable; activating it answers nothing.
     await user.click(confirm)
     expect(onSubmit).not.toHaveBeenCalled()
 
@@ -652,8 +595,6 @@ describe('FlowStep held actions', () => {
     })
     await user.click(totp)
 
-    // The option that was activated carries the progress state; the rest of
-    // the group refuses another answer without a reason of its own.
     expect(totp).toHaveAttribute('aria-busy', 'true')
     expect(sms).toHaveAttribute('aria-disabled', 'true')
     expect(sms).not.toHaveAttribute('aria-busy')
@@ -663,8 +604,6 @@ describe('FlowStep held actions', () => {
   })
 
   it('refuses an implicit submit from the field while the step is held', async () => {
-    // Enter in a field synthesizes a click on the form's submit button; the
-    // form's own guard refuses it as well, so no answer leaves.
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(
@@ -694,9 +633,6 @@ describe('FlowStep held actions', () => {
   })
 
   it('refuses a programmatic form submit while the step is held', () => {
-    // The submit button's own guard swallows the implicit submission it
-    // carries; the form's handler is guarded too, for a submit the button
-    // does not carry (a programmatic one, or a form without its button).
     const onSubmit = vi.fn()
     render(
       { kind: 'challenge', fields: [{ name: 'code', kind: 'code' }] },

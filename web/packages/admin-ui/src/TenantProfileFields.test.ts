@@ -1,11 +1,3 @@
-/**
- * The organization profile's shared field rules.
- *
- * The form and both surfaces read one shape, one wire conversion and one
- * local bound set; these cases pin the fallback and the bounds the server
- * would otherwise be the first to refuse.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   displayNameOf,
@@ -104,9 +96,6 @@ describe('validateTenantProfileFields', () => {
   })
 
   it('counts runes rather than UTF-16 units', () => {
-    // 100 emoji are 100 code points but 200 UTF-16 units: the server counts
-    // runes, so the client must too or it would refuse a value the server
-    // accepts.
     expect(
       validateTenantProfileFields({
         ...EMPTY,

@@ -1,52 +1,6 @@
 /**
- * The member management panel: one member's summary, role bindings and
- * membership writes.
- *
- * The page opens the panel from a member row's Manage control. The panel
- * reads the member's bindings through the tenant-scoped operations bundle
- * and offers three groups of writes:
- *
- *  - bind a role and unbind an existing one;
- *  - suspend or resume the membership;
- *  - remove the membership, behind the heavier double confirmation.
- *
- * The bind group offers only roles the member does not already hold; when
- * every role is held it says so instead of presenting an empty list. An
- * unbind asks for confirmation first: the role's permissions stop applying
- * immediately, the current account's own protected binding (the host's
- * protected role names, `tenant-admin` in the demo) cannot be taken away,
- * and the server refuses an unbind that would leave the tenant without its
- * last tenant-admin. The panel disables that own protected binding before
- * the request and shows the reason; it never asserts the last-admin floor
- * itself, which only the server can count.
- *
- * The role group degrades by the caller's tenant permissions, read through
- * @speed/auth-core's permission set:
- *
- *  - without `authz.tenant.role.read` the panel says so and reads no
- *    bindings, rendering no role control at all (fail-closed: an unknown
- *    or failed permission read is this tier);
- *  - with read but not `authz.tenant.role.manage` the bindings stay
- *    readable and every bind/unbind control is withheld;
- *  - with manage, the complete control set renders.
- *
- * Binding a role is checked before the request: the panel reads the
- * selected role's grants and compares each grant's server-reported
- * `permission` with the caller's own tenant permission set. The server is
- * the authority on what a grant means; the panel never reconstructs the
- * permission from the engine's (resource, action) pair. A grant the caller
- * does not hold blocks the bind, and so does a grant whose permission is
- * empty (a pair this process no longer translates): there is no code to
- * compare, so the panel fails closed and says the permission cannot be
- * confirmed. A failed grant read keeps the bind blocked and offers a retry
- * rather than defaulting to allowed. Unbinding is never blocked by this
- * check.
- *
- * All writes in the panel share one feedback scope. A failure both lands
- * in the scope and marks the control or binding row it was about; a
- * removal success is not written here -- the page owns the list's scope
- * and writes the message after the panel has animated out, when the page
- * behind it is reachable again.
+ * The member management panel: summary, bindings and membership writes; the role
+ * group degrades by permission and a bind is blocked on any out-of-set grant.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -86,22 +40,15 @@ import {
   useRowRemovalFocus,
 } from './focus-after-removal.js'
 
-/** The role permission tier the caller holds in this tenant. */
 type RoleTier = 'none' | 'read' | 'manage'
 
-/**
- * The texts that explain why the bind control cannot run. Each is the
- * paragraph the panel already renders for that state, so the control
- * points at it instead of repeating it; the missing role choice has no
- * standing text, so the control carries that reason itself.
- */
+/** The texts that explain why the bind control cannot run. */
 const SUSPENDED_BIND_NOTE_ID = 'member-panel-suspended-bind-note'
 const ROLE_CHECKING_ID = 'member-panel-role-checking'
 const ROLE_FAILED_ID = 'member-panel-role-failed'
 const ROLE_UNCONFIRMED_ID = 'member-panel-role-unconfirmed'
 const ROLE_BLOCKED_ID = 'member-panel-role-blocked'
-/** The note that explains why the current account cannot suspend or remove
- * its own membership; both controls point at it. */
+/** The note explaining why the current account cannot suspend or remove itself. */
 const SELF_NOTE_ID = 'member-panel-self-note'
 
 /** The write a failure belongs to, so the panel can mark that control. */
@@ -123,14 +70,10 @@ export interface MemberPanelProps {
   readonly onClose: () => void
   /** Reports the exit transition's end; the page drops the member then. */
   readonly onExited: () => void
-  /**
-   * Reports a successful removal with the message the list's scope should
-   * carry. The page writes it after the panel has exited.
-   */
+  /** Reports a successful removal with the message the list's scope should carry. */
   readonly onRemoved: (message: string) => void
 }
 
-/** The permission tier, read from the session's tenant permission set. */
 function roleTierOf(
   canRead: boolean,
   canManage: boolean,
@@ -156,9 +99,8 @@ export function MemberPanel({
   const canReadRoles = usePermission('tenant', 'authz.tenant.role.read')
   const selfAccount = auth.principal?.account_id
   const isSelf = selfAccount === member.account
-  // The host names the role a caller may not take away from itself; the
-  // server refuses that removal too, so the panel disables the control
-  // before the request instead of offering a write bound to fail.
+  // The host names the role a caller may not take away from itself; the panel
+  // disables it before the request instead of offering a write bound to fail.
   const protectedRoles = useOrganizationAdminProtectedRoles()
 
   const [selectedRole, setSelectedRole] = useState('')
@@ -176,12 +118,10 @@ export function MemberPanel({
     canReadRoles ? tenant : '',
     member.account,
   )
-  // The role list exists only where the role control does; the session's
-  // permission answer is the gate, not the read's failure.
+  // The role list exists only where the role control does.
   const roles = operations.useTenantRoles(canManageRoles ? tenant : '')
-  // A role the member already holds is not offered again. The exclusion
-  // reads only a settled bindings answer: a pending or failed read leaves
-  // every role available rather than presenting a wrong subset as truth.
+  // A held role is not offered again; the exclusion reads only a settled
+  // bindings answer.
   const boundRoles = useMemo(
     () => new Set((bindings.data ?? []).map((binding) => binding.role)),
     [bindings.data],
@@ -197,16 +137,13 @@ export function MemberPanel({
     availableRoles.length === 0
 
   const [failed, setFailed] = useState<FailedWrite | null>(null)
-  // The control the panel's in-flight write belongs to: only that control
-  // reports busy, while the other controls in the panel are unavailable.
+  // The control the in-flight write belongs to; the others are unavailable.
   const [pendingWrite, setPendingWrite] = useState<FailedWrite | null>(null)
   // The binding row a landed unbind removed, with the position it held.
   const unbindRemoval = useRef<{ role: string; index: number } | null>(null)
-  // Whether the unbind control held focus when its row left; only then does
-  // the landing move it.
+  // Whether the unbind control held focus when its row left.
   const unbindFocus = useRowRemovalFocus()
-  // The roles heading, made programmatically focusable: the stable target
-  // when an unbind leaves no adjacent binding row.
+  // The roles heading, the stable focus target when no binding row is adjacent.
   const rolesHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const feedback = useWriteFeedback()
   const regionRef = useFailureScroll(feedback.outcome)
@@ -214,9 +151,8 @@ export function MemberPanel({
   const failureText = failureTextOf(feedback.outcome, resolveErrorText)
   const confirm = usePendingConfirm()
 
-  // A landed unbind removes one binding row. The same control on the next
-  // row takes focus, else the previous row's, else the roles heading; a
-  // failed re-read drops the record so a later read cannot move focus.
+  // A landed unbind moves focus to the next row's control, else the previous
+  // row's, else the roles heading; a failed re-read drops the record.
   useEffect(() => {
     const removed = unbindRemoval.current
     if (removed === null) {
@@ -255,9 +191,7 @@ export function MemberPanel({
     ? t('members.status.active')
     : t('members.status.suspended')
 
-  // The bind control's unmet preconditions, in the order an operator meets
-  // them. A suspended member and every grant state already render their own
-  // explanation; the missing role choice has no standing text.
+  // The bind control's unmet preconditions, in the order an operator meets them.
   const bindExplanation: ActionButtonUnavailableExplanation | undefined =
     !member.active
       ? { unavailableDescribedBy: SUSPENDED_BIND_NOTE_ID }
@@ -350,12 +284,9 @@ export function MemberPanel({
   }
 
   /**
-   * Unbinding takes the role's permissions away at once, so it asks first.
-   * The panel can grant the role again afterwards; the confirmation guards
-   * the immediate loss, not an irreversible state. The confirmation also
-   * names the two refusals the operator cannot see from here: a caller's
-   * own tenant-admin binding is protected, and the server keeps a domain's
-   * last tenant-admin binding.
+   * Ask before unbinding: the role's permissions stop applying at once. The
+   * confirmation also names the two refusals the operator cannot see from here:
+   * a caller's own protected binding, and the tenant's last tenant-admin binding.
    */
   const requestUnbind = (role: string) => {
     confirm.ask({
@@ -449,9 +380,8 @@ export function MemberPanel({
           const refused =
             failed?.kind === 'unbind' && failed.role === binding.role
           const errorId = `binding-error-${encodeURIComponent(binding.role)}`
-          // The current account cannot take its own protected binding
-          // away; the server refuses it. The control is disabled with the
-          // reason shown rather than offered and refused on submit.
+          // The current account cannot take its own protected binding away;
+          // disable the control with the reason shown.
           const ownProtected =
             isSelf && protectedRoles.includes(binding.role)
           const ownProtectedId = `member-own-protected-${encodeURIComponent(
@@ -659,11 +589,8 @@ export function MemberPanel({
                   // A write in flight makes the choice read-only: it stays
                   // focusable and the bind button beside it holds the focus.
                   slotProps={{ input: { readOnly: feedback.pending } }}
-                  // The roles read in flight and the all-roles-bound state
-                  // keep the native `disabled`: neither is caused by an
-                  // action started on this control, and the read settles
-                  // before the panel offers the choice, so it never holds
-                  // focus at the moment it turns unavailable.
+                  // The roles read and the all-roles-bound state keep the native
+                  // `disabled`; neither is caused by an action on this control.
                   disabled={roles.isPending || allRolesBound}
                   sx={{ minWidth: 200 }}
                 >

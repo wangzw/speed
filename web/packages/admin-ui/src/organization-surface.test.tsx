@@ -1,16 +1,3 @@
-/**
- * The organization administration surface's exports: its declarations, the
- * frameless provider and breadcrumb context, and the page wrappers.
- *
- * The wrapper cases pin the tenant contract: the wrapper takes the current
- * tenant from the provider and hands it to the shared page as a controlled
- * tenant, so the page issues its reads at that tenant and does not mount
- * the roster-fed tenant selector. The provider cases pin that it renders
- * no frame of its own while publishing the organization contexts the pages
- * read, and that the breadcrumb context is preferred only where it is
- * installed.
- */
-
 import { describe, expect, it } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -47,8 +34,6 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = 'acme'
 
-/** A backend that records the tenant each tenant-scoped read was called
- * with, and records no platform read at all. */
 function recordingBackend(): {
   readonly backend: AdminBackend
   readonly readTenants: readonly string[]
@@ -80,11 +65,6 @@ function recordingBackend(): {
 
 const noFeatures = (): boolean => false
 
-/**
- * The platform bundle beside the organization bundle: the organization pages run
- * through the same generated operations, and the request record -- not the
- * bundle's shape -- proves they never reach a platform asset.
- */
 const fullOrganizationBundle = {
   ...adminOperations,
   ...organizationAdminOperations,
@@ -120,8 +100,6 @@ describe('organizationAdminRoutes', () => {
       ['authz.tenantadmin', 'authn.admin'],
       ['settings.tenantadmin'],
     ])
-    // The organization declarations never name the platform roster feature: the
-    // surface reads no roster and holds no tenant selector.
     for (const route of organizationAdminRoutes) {
       expect(route.requires).not.toContain('tenant.admin')
     }
@@ -142,8 +120,6 @@ describe('the organization page wrappers', () => {
       </OrganizationAdminProvider>,
     )
     await waitFor(() => expect(readTenants).toEqual([TENANT, TENANT]))
-    // The controlled tenant means the page never reads the platform roster
-    // for a selector; every read names the current tenant.
     expect(rosterReads()).toBe(0)
   })
 
@@ -163,9 +139,7 @@ describe('the organization page wrappers', () => {
         <OrganizationInvitationsPage />
       </OrganizationAdminProvider>,
     )
-    // The organization trail is the one the page header renders ...
     expect(await screen.findByText('Organization home')).toBeInTheDocument()
-    // ... and the platform console's own trail is not.
     expect(screen.queryByText(zhCN.shell.title)).toBeNull()
   })
 
@@ -208,18 +182,12 @@ describe('the organization page wrappers', () => {
           <Page />
         </OrganizationAdminProvider>,
       )
-      // The organization trail reaches every page through the shared page
-      // header, including the two pages that never read the context
-      // themselves.
       expect(await screen.findByText('Organization home')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.shell.title)).toBeNull()
     },
   )
 
   it('titles the organization roles page with the organization menu label', async () => {
-    // The roles page belongs to the organization surface, so its level-one
-    // title is `organization.nav.roles` -- the same key its menu entry
-    // reads -- rather than the platform console's `permissions.title`.
     const { backend } = recordingBackend()
     renderWithProviders(
       <OrganizationAdminProvider
@@ -292,8 +260,6 @@ describe('the organization page wrappers', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
     )
-    // The one-time token reaches the operator as the host's acceptance link,
-    // with the copy control the platform console's page renders.
     expect(
       await screen.findByText(
         zhCN.invitations.issued.link.replace(
@@ -354,8 +320,6 @@ describe('OrganizationAdminProvider', () => {
     expect(screen.getByTestId('routes')).toHaveTextContent(
       'organization-invitations,organization-sso,organization-roles,organization-settings',
     )
-    // The provider adds no frame: no main landmark and no navigation of its
-    // own appear around the probe.
     expect(container.querySelector('main')).toBeNull()
     expect(container.querySelector('nav')).toBeNull()
   })
@@ -365,7 +329,6 @@ describe('OrganizationAdminProvider', () => {
       useOrganizationAdminContext()
       return null
     }
-    // React logs the render error; the assertion is the throw itself.
     expect(() => render(<Bare />)).toThrow(/OrganizationAdminProvider/)
   })
 
@@ -447,20 +410,10 @@ describe('OrganizationAdminProvider', () => {
         'useWriteMember',
       ].sort(),
     )
-    // No platform roster member rides along.
     expect(organizationAdminOperations).not.toHaveProperty('useTenants')
   })
 })
 
-/**
- * The organization pages through the shipped generated bundle, with a request
- * seam that records every URL the render issued. The assertion is the
- * surface's defining promise: an organization page never reaches a platform
- * asset, and every tenant-addressed read names the current tenant. The full
- * `adminOperations` bundle is mounted deliberately -- the page must not
- * issue the platform account reads that bundle carries, so the request
- * record, not the bundle's shape, is what proves the scoping.
- */
 describe('the organization pages address only the current tenant', () => {
   interface Recorded {
     readonly paths: readonly string[]
@@ -517,12 +470,6 @@ describe('the organization pages address only the current tenant', () => {
     domains: [],
   }
 
-  /**
-   * Binds a request seam that answers every read either surface may issue.
-   * The platform account reads are answered on purpose: a page that regresses
-   * to them renders rather than failing to mount, so the recorded URLs show
-   * the platform path instead of hiding it behind a crash.
-   */
   function recordRequests(): Recorded {
     const paths: string[] = []
     bindAdminRequest((call) => {
@@ -571,22 +518,13 @@ describe('the organization pages address only the current tenant', () => {
 
   it('reads the invitations and members of the current tenant, never a platform account', async () => {
     const { paths } = renderPage('invitations')
-    // The member read's display name is the identity, so a resolved row is
-    // proof the member read settled. It appears in the name column and in
-    // each identity cell that resolves the same account.
     expect((await screen.findAllByText('Ada Lovelace')).length).toBeGreaterThan(0)
-    // The recorded set is exactly the tenant's three reads: the member and
-    // invitation lists, and the role read behind the member section's role
-    // filter. The member write form's platform account list is not mounted,
-    // and the identities cost no platform account read.
     expect([...paths].sort()).toEqual([
       `/api/v1/tenants/${TENANT}/invitations`,
       `/api/v1/tenants/${TENANT}/members`,
       `/api/v1/tenants/${TENANT}/roles`,
     ])
-    // The surface's defining promise: no platform asset is read.
     expect(paths.filter((path) => path.startsWith('/api/v1/system'))).toEqual([])
-    // Every tenant-addressed read names the tenant the host supplied.
     for (const path of paths) {
       expect(path.startsWith(`/api/v1/tenants/${TENANT}/`)).toBe(true)
     }

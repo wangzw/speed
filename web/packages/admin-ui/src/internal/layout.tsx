@@ -1,24 +1,13 @@
-/**
- * The console page-layout primitives: the detail page's main/side split.
- *
- * The detail page's skeleton -- a main column carrying the subject and a
- * fixed-width side column carrying its metadata -- is the same shape for
- * every detail page, so DetailLayout owns it: a flex row at wide widths
- * (main grows, side is fixed) that stacks to a single column below the
- * `md` breakpoint, the same viewport-driven split the shell uses.
- */
+/** The console page-layout primitives: the detail page's main/side split. */
 
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 
-/** The fixed side-column width at `md` and up (16rem ≈ 256px). */
 const SIDE_COLUMN_WIDTH = '16rem'
 
 export interface DetailLayoutProps {
-  /** The main column: the page's subject and its controls. */
   readonly main: ReactNode
-  /** The side column: the subject's metadata. */
   readonly side: ReactNode
 }
 
@@ -48,9 +37,7 @@ export function DetailLayout({ main, side }: DetailLayoutProps) {
 }
 
 export interface DefinitionRowProps {
-  /** The field's label. */
   readonly label: string
-  /** The field's value, rendered as text. */
   readonly value: ReactNode
 }
 

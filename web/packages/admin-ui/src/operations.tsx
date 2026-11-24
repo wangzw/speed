@@ -1,43 +1,6 @@
 /**
- * The console operations seam: the read hooks and write mutations the
- * console pages consume, shipped over the generated @speed/api-sdk
- * administration operations.
- *
- * The pages read and write through the operations bundle they get from
- * useAdminOperations -- a plain object whose members are the
- * react-query read hooks and write mutations of the administration
- * surfaces the pages render: the tenant roster, settings and audit
- * surfaces over /api/v1/system/tenants, /api/v1/system/settings and /api/v1/system/audit; the
- * account, session, impersonation, invitation and membership and SSO
- * surfaces over /api/v1/auth and /api/v1/system; and the SMS template surface over
- * /api/v1/system/sms. The bundle the package ships (adminOperations) is a thin
- * adapter over those generated operations: the reads run the generated
- * query options through useQuery with a `select` that flattens the page
- * envelope to the view rows, and the writes call the generated mutation
- * functions with one flat input, invalidating the list the write belongs
- * to through the generated key factories. The hooks run on the host's
- * QueryClient (the host supplies it as it supplies the rest of the React
- * tree), the mutations go through the same bound client, and a console
- * page never builds a QueryClient of its own and never hand-writes a
- * query key.
- *
- * AdminOperationsProvider overrides the shipped bundle: a host that
- * wants different wiring, or a suite that scripts one, mounts its own and
- * useAdminOperations answers with it. With no provider mounted the pages
- * read the shipped adminOperations, so a host that composes the console
- * over a bound @speed/api-sdk client needs no binding of its own.
- *
- * The view types below are the generated response rows themselves of each
- * surface (TenantAdminTenant, SettingsAdminSetting, AuditAdminRecord, the
- * authn and authz admin views, SmsAdminTemplate): the modules' OpenAPI
- * fragments declare their 2xx bodies, so orval emits the row shapes and
- * the console names each for its own surface rather than hand-writing a
- * parallel model. Only the write *inputs* stay hand-written -- they carry
- * route parameters beside the body, which no single generated type covers.
- *
- * The settings reads and writes target the global layer: the console is
- * the platform-staff surface, and the global layer is the platform's --
- * the tenant layer belongs to that tenant's own surface.
+ * The console operations seam: the read hooks and write mutations bound to the
+ * generated @speed/api-sdk operations, with the view types and write inputs.
  */
 
 import { createContext, useContext } from 'react'
@@ -196,23 +159,15 @@ import type { AdminTenantRole } from './organization-operations.js'
 import { profileWriteOf } from './TenantProfileFields.js'
 import type { TenantProfileFields } from './TenantProfileFields.js'
 
-/** The settings layer the console operates on: the global (platform)
- * layer, whose rows only platform staff may read and write. */
 const GLOBAL_LAYER = { layer: 'global' } as const
 
-/** One tenant as /api/v1/system/tenants shows it -- the generated row of
- * GET /api/v1/system/tenants, named for the console's own view. */
+/** One tenant as the roster read shows it. */
 export type AdminTenant = TenantAdminTenant
 
-/** The state a roster row reads as (the read side stays open -- an answer
- * outside the set renders the generic label rather than a raw value). The
- * generated TenantAdminTenantStatus enum: active, disabled or deleted. */
+/** The state a roster row reads as: active, disabled or deleted. */
 export type AdminTenantStatus = TenantAdminTenantStatus
 
-/** The state a status write may carry: active or disabled. Deletion is
- * terminal and has no route on this surface, so the write body's enum is
- * narrower than the response's -- the generated set-status body enum, not
- * the response one. */
+/** The state a status write may carry: active or disabled (deletion is terminal). */
 export type AdminSetTenantStatusValue = TenantAdminTenantsSetStatusBodyStatus
 
 /** One setting as /api/v1/system/settings shows it -- the generated row of
@@ -244,12 +199,11 @@ export type AdminMemberPage = AuthnAdminMemberList
 /** One page of SMS templates: the rows and the next-page cursor. */
 export type AdminSmsTemplatePage = SmsAdminTemplatesList200
 
-/** POST /api/v1/system/tenants body: a tenant not registered yet, with the
- * organization profile the registration form carries. The server mints the
- * internal identifier; the request names the tenant by its name only. The
- * four descriptive fields are omitted from the request when empty, because
- * the endpoint treats an absent field as "none" and rejects an empty
- * address. */
+/**
+ * The create-tenant body. The server mints the internal identifier; empty
+ * descriptive fields are omitted, because the endpoint treats absent as "none"
+ * and rejects an empty address.
+ */
 export interface AdminCreateTenantInput {
   readonly name: string
   readonly displayName: string
@@ -304,12 +258,8 @@ export interface AdminTenantQuery {
 }
 
 /**
- * PUT /api/v1/system/settings/:namespace/:key body: the new value's text.
- * `namespace` is the module that declared the item (a module name may
- * contain a dot), and `key` is the rest of the key under it -- the full
- * key is `<namespace>.<key>` -- because that is how the route addresses
- * the item. AdminSetting carries the full key and the namespace; a
- * caller writing a row splits the full key with `settingKeyRest`.
+ * The set-setting body. `namespace` may itself contain a dot, and `key` is the
+ * rest under it, so a full key is split with `settingKeyRest`.
  */
 export interface AdminSetSettingInput {
   readonly namespace: string
@@ -323,11 +273,7 @@ export interface AdminRemoveSettingInput {
   readonly key: string
 }
 
-/**
- * The `:key` route segment of a setting whose full key is `<namespace>.<key>`:
- * the rest of the key under the namespace. The namespace may itself contain
- * a dot, so the split is by the known namespace prefix, not the first dot.
- */
+/** The `:key` segment of a setting whose full key is `<namespace>.<key>`. */
 export function settingKeyRest(
   fullKey: string,
   namespace: string,
@@ -337,12 +283,6 @@ export function settingKeyRest(
     ? fullKey.slice(prefix.length)
     : fullKey
 }
-
-// --- Authorization surface (/api/v1/system) -------------------------------
-// The authorization administration surface is tenant-scoped: the role,
-// grant and binding routes all carry the tenant as a path segment, so
-// every read and write here names the tenant it acts on (the tenant an
-// operator picks on the page, not the session's current tenant).
 
 /** One permission the catalog declares (GET /api/v1/system/permissions). */
 export type AdminPermission = AuthzAdminPermissionView
@@ -357,11 +297,9 @@ export type AdminGrant = AuthzAdminGrantView
 export type AdminBinding = AuthzAdminBindingView
 
 /**
- * PUT .../roles/:role body: a role's declared shape. The role name is the key
- * a binding holds and is never renamed, so a write names an existing role or
- * creates one; `description` is the operator's free text. There is no builtin
- * field: the mark is the host's to set when it seeds the role, and the server
- * refuses a role write that carries it.
+ * The write-role body. The role name is the key bindings hold and is never
+ * renamed; there is no builtin field, since the server refuses a role write
+ * that carries it.
  */
 export interface AdminWriteRoleInput {
   readonly tenant: string
@@ -395,8 +333,6 @@ export interface AdminAccountBindingsQuery {
   /** The account to inspect; empty reads nothing (the read stays disabled). */
   readonly account: string | undefined
 }
-
-// --- Account surface (/api/v1/system/auth) --------------------------------------
 
 /** One account as /api/v1/system/auth shows it (GET /api/v1/system/auth/accounts). */
 export type AdminAccount = AuthnAdminAccount
@@ -453,12 +389,7 @@ export interface AdminRevokeSecretInput {
   readonly secret: string
 }
 
-/**
- * POST /api/v1/system/auth/accounts body: the fields a create names. It is the
- * generated request shape itself, so a field the module's fragment adds
- * reaches the page through this type with no parallel model to keep in
- * step.
- */
+/** POST .../accounts body: the generated create shape itself, with no parallel model. */
 export type AdminCreateAccountInput = AuthnAdminAccountCreate
 
 /** PATCH /api/v1/system/auth/accounts/:id: the account id beside the fields to change. */
@@ -491,13 +422,7 @@ export type AdminCreateSecretInput = AuthnAdminSecretCreate & {
   readonly id: string
 }
 
-// --- Invitation and membership surface (tenant-scoped) ------------------
-
-/**
- * One invitation of a tenant (GET .../tenants/:tenant/invitations): the
- * generated row itself, with the server-judged `state`, the granted role,
- * the inviter's resolved names and the nullable terminal instants.
- */
+/** One invitation of a tenant: the generated row with its server-judged state and names. */
 export type AdminInvitation = AuthnInviteInvitation
 
 /** The one-time handover an invitation issue or resend answers with: the
@@ -540,8 +465,6 @@ export type AdminSetMemberSSOExemptInput = AuthnAdminMemberSSOExempt & {
   readonly tenant: string
   readonly account: string
 }
-
-// --- SSO surface (/api/v1/tenants/:tenant/sso) --------------------------------------
 
 /** One SSO provider (GET .../tenants/:tenant/sso/providers, or .../providers/:id). */
 export type AdminSsoProvider = AuthnAdminProvider
@@ -598,8 +521,6 @@ export interface AdminRevokeSessionInput {
   readonly sessionId: string
 }
 
-// --- SMS template surface (/api/v1/system/sms) ----------------------------------
-
 /** One SMS template (GET /api/v1/system/sms/templates). */
 export type AdminSmsTemplate = SmsAdminTemplate
 
@@ -637,37 +558,20 @@ export interface AdminSetSmsTemplateEnabledInput {
  */
 export interface AdminAuditRecordsOptions {
   /**
-   * Keep the previous answer as placeholder data while a read under a
-   * different parameter set is in flight. The dashboard's platform-health
-   * window moves its start forward -- and so changes the query key -- while
-   * the numbers of the window it left stay rendered until the new window
-   * settles.
+   * Keep the previous answer as placeholder data while a read under a different
+   * key is in flight, so the dashboard's old window stays rendered.
    */
   readonly keepPrevious?: boolean
-  /**
-   * Whether the query client's automatic re-read when the tab becomes
-   * visible applies. The dashboard advances its window start on that signal
-   * and re-reads through the new key, so it turns the automatic re-read of
-   * the old key off.
-   */
+  /** Whether the automatic re-read on tab focus applies. */
   readonly refetchOnWindowFocus?: boolean
   /** The same for the connection coming back. */
   readonly refetchOnReconnect?: boolean
 }
 
 /**
- * The console's data operations, in react-query hook shape. Every read and
- * write member is a hook the pages call during render (on the host's
- * QueryClient); the audit export is the one action -- a page calls it on a
- * click, because mounting it as a query would fire an export on render.
- * adminOperations below binds them to the generated @speed/api-sdk
- * operations of the same shape, and a host or suite may bind its own.
- *
- * The members are grouped by administration surface. The reads whose
- * route carries a parameter (a tenant, a role, an account) take that
- * parameter so the query key namespaces by it; a read whose parameter is
- * undefined declares itself disabled rather than firing a malformed
- * request.
+ * The console's data operations, in react-query hook shape. The audit export is
+ * the one action rather than a hook. A read whose route parameter is undefined
+ * declares itself disabled instead of firing a malformed request.
  */
 export interface AdminOperations {
   /** GET /api/v1/system/tenants -- the whole roster, in the roster's order. */
@@ -696,17 +600,12 @@ export interface AdminOperations {
     unknown,
     AdminSetTenantProfileInput
   >
-  /** GET /api/v1/system/tenants/{tenant}/owner/requests/pending -- the
-   * organization's pending transfer request, or null. The read stays
-   * disabled until a tenant name is chosen. */
+  /** GET .../owner/requests/pending -- the pending transfer request, or null (disabled until a tenant). */
   readonly usePendingTenantOwner: (
     name: string | undefined,
     enabled?: boolean,
   ) => UseQueryResult<AdminTenantTransfer | null, unknown>
-  /** POST /api/v1/system/tenants/{tenant}/owner/requests -- ask one active
-   * member to take ownership. The server refuses a target that is not an
-   * active member of the organization (409); ownership changes only when
-   * the target confirms. */
+  /** POST .../owner/requests -- ask an active member to take ownership (a non-member is 409). */
   readonly useRequestTenantOwner: () => UseMutationResult<
     AdminTenantTransfer,
     unknown,
@@ -719,8 +618,7 @@ export interface AdminOperations {
     unknown,
     AdminCancelTenantOwnerTransferInput
   >
-  /** DELETE /api/v1/system/tenants/{tenant} -- write the organization's
-   * tombstone. Deletion is terminal; a tombstone is a 409. */
+  /** DELETE /api/v1/system/tenants/{tenant} -- write the tombstone (terminal; a tombstone is a 409). */
   readonly useDeleteTenant: () => UseMutationResult<
     void,
     unknown,
@@ -744,9 +642,7 @@ export interface AdminOperations {
   >
   /**
    * GET /api/v1/system/audit/records -- one page of audit records, newest first,
-   * narrowed by the filters the caller passes (since / until / action /
-   * cursor / limit). The read returns the page envelope (the entries and
-   * the next cursor), so the page can offer server-side pagination.
+   * narrowed by the filters; returns the page envelope for server-side paging.
    */
   readonly useAuditRecords: (
     params?: AuditAdminRecordsListParams,
@@ -757,18 +653,13 @@ export interface AdminOperations {
     query: AdminAuditRecordQuery,
   ) => UseQueryResult<AdminAuditRecord, unknown>
   /**
-   * GET /api/v1/system/audit/export -- every record the filters match as
-   * one NDJSON Blob. This is an action, not a hook: the page calls it once
-   * when the operator asks for a file, and it takes the filters only (no
-   * cursor and no page size -- the export is not a page). Optional, so a
-   * host bundle that predates the export keeps compiling; a page renders
-   * no export control when the member is absent.
+   * GET /api/v1/system/audit/export -- every matching record as one NDJSON Blob.
+   * An action, not a hook: a page calls it on a click. Optional, so a host bundle
+   * that predates it keeps compiling and a page renders no export control.
    */
   readonly exportAuditRecords?: (
     params?: AuditAdminRecordsExportParams,
   ) => Promise<Blob>
-
-  // --- Authorization surface (/api/v1/system, tenant-scoped) --------------
 
   /** GET /api/v1/system/permissions -- the whole permission catalog. */
   readonly usePermissions: () => UseQueryResult<
@@ -805,12 +696,9 @@ export interface AdminOperations {
   /** DELETE .../bindings/:account/:role -- unbind a role from an account. */
   readonly useUnbindRole: () => UseMutationResult<void, unknown, AdminBindingRef>
 
-  // --- Account surface (/api/v1/system/auth) ------------------------------------
-
   /**
-   * GET /api/v1/system/auth/accounts -- one page of accounts. `enabled` false
-   * declares the read disabled (no request) when the params do not name an
-   * applicable search.
+   * GET /api/v1/system/auth/accounts -- one page of accounts; `enabled` false
+   * declares the read disabled when the params do not name an applicable search.
    */
   readonly useAccounts: (
     params?: AuthnAdminAccountsListParams,
@@ -903,14 +791,9 @@ export interface AdminOperations {
     AdminCreateSecretInput
   >
 
-  // --- Impersonation surface (/api/v1/system/auth) ------------------------------
-
   /**
-   * GET /api/v1/system/tenants/{tenant}/impersonations -- one page of impersonation records.
-   * The read is tenant-scoped by a required query parameter, so it stays
-   * disabled while the caller names no tenant; `enabled` lets a page hold
-   * it further, for a session whose impersonation the gateway would refuse
-   * the read of.
+   * GET .../impersonations -- one page; disabled while no tenant is named, and
+   * `enabled` lets a page hold it further.
    */
   readonly useImpersonations: (
     params: AdminImpersonationListParams,
@@ -922,8 +805,6 @@ export interface AdminOperations {
     unknown,
     AdminImpersonationRef
   >
-
-  // --- Invitation surface (tenant-scoped) -------------------------------
 
   /** GET .../tenants/:tenant/invitations -- a tenant's invitations. */
   readonly useInvitations: (
@@ -943,9 +824,7 @@ export interface AdminOperations {
     unknown,
     AdminInvitationRef
   >
-  /** POST .../tenants/:tenant/invitations/:id/resend -- replace a pending
-   * invitation's token with a fresh one and deliver it again. The invitation
-   * keeps its id, deadline and role; the answer carries the one-time token. */
+  /** POST .../invitations/:id/resend -- replace a pending invitation's token; the answer carries it once. */
   readonly useResendInvitation: () => UseMutationResult<
     AdminIssuedInvitation,
     unknown,
@@ -953,18 +832,13 @@ export interface AdminOperations {
   >
   /**
    * GET /api/v1/tenants/:tenant/roles -- the target tenant's roles, with the
-   * server's per-role `can_manage` answer for that tenant. The platform
-   * invitation page reads it to gate its role control on the tenant the
-   * invitation names.
+   * server's per-role `can_manage` answer.
    */
   readonly useTenantRoles: (
     tenant: string,
   ) => UseQueryResult<readonly AdminTenantRole[], unknown>
 
-  // --- Membership surface (tenant-scoped) -------------------------------
-
-  /** GET .../tenants/:tenant/members -- one page of a tenant's members,
-   * with the cursor of the page that follows. */
+  /** GET .../tenants/:tenant/members -- one page of members, with the next cursor. */
   readonly useMembers: (
     tenant: string,
     params?: AuthnAdminMembersListParams,
@@ -983,8 +857,6 @@ export interface AdminOperations {
     unknown,
     AdminSetMemberSSOExemptInput
   >
-
-  // --- SSO surface (/api/v1/tenants/:tenant/sso) ------------------------------------
 
   /** GET .../tenants/:tenant/sso/providers -- a tenant's providers. */
   readonly useSsoProviders: (
@@ -1043,8 +915,6 @@ export interface AdminOperations {
     AdminClaimSsoDomainInput
   >
 
-  // --- SMS template surface (/api/v1/system/sms) --------------------------------
-
   /** GET /api/v1/system/sms/templates -- one page of templates. */
   readonly useSmsTemplates: (
     params?: SmsAdminTemplatesListParams,
@@ -1075,19 +945,12 @@ export interface AdminOperations {
   >
 }
 
-/**
- * The problem code a resend or revoke answers when the invitation already
- * moved to a terminal state (expired, revoked or accepted). The write did not
- * land, but the row's state has changed, so the list is re-read.
- */
+/** The code a resend or revoke answers when the invitation is already terminal. */
 export const INVITATION_TERMINAL_CODE = 'authn.invitation_terminal'
 
 /**
- * The resend mutation both invitation surfaces share. The invitation keeps its
- * row and deadline; only the token changes, so the list is re-read rather than
- * rewritten and the answer's token reaches the page for the one-time panel. The
- * surface supplies how its list is re-read, because the tenant-scoped queries
- * carry a tenant prefix the platform ones do not.
+ * The resend mutation shared by both invitation surfaces. Only the token changes,
+ * so the list is re-read; the surface supplies how its list is invalidated.
  */
 export function useResendInvitationMutation(
   invalidate: (
@@ -1102,8 +965,8 @@ export function useResendInvitationMutation(
     onSuccess: (_answer, input) => {
       invalidate(queryClient, input.tenant)
     },
-    // A terminal invitation answers 409 without resending; the list still
-    // shows it pending, so the re-read lets the server's state replace it.
+    // A terminal invitation answers 409 without resending; re-read so the
+    // server's state replaces the pending row.
     onError: (error, input) => {
       if (errorCodeOf(error) === INVITATION_TERMINAL_CODE) {
         invalidate(queryClient, input.tenant)
@@ -1113,11 +976,9 @@ export function useResendInvitationMutation(
 }
 
 /**
- * The shipped operations bundle: every member is the generated
- * @speed/api-sdk administration operation of the same shape, adapted to
- * the view shapes above. `useAdminOperations` answers with it whenever
- * no AdminOperationsProvider overrides it, so the console pages run on
- * the generated surface with no host-side wiring.
+ * The shipped operations bundle: every member is the generated @speed/api-sdk
+ * operation adapted to the view shapes above. `useAdminOperations` answers with
+ * it when no provider overrides it.
  */
 export const adminOperations: AdminOperations = {
   useTenants: () =>
@@ -1183,8 +1044,8 @@ export const adminOperations: AdminOperations = {
           profileWriteOf(input.fields),
         ).then(() => undefined),
       onSuccess: (_answer, input) => {
-        // The roster row carries the four fields, so both the list and the
-        // detail read are stale after a profile write.
+        // The roster row carries the four fields, so the list and detail reads
+        // are both stale.
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
         })
@@ -1213,9 +1074,8 @@ export const adminOperations: AdminOperations = {
           account: input.account,
         }).then((answer) => answer.request),
       onSuccess: (_answer, input) => {
-        // The request is recorded but the owner column has not moved. The
-        // pending read now carries it; the roster and detail reads stay as
-        // they are until the target confirms.
+        // The request is recorded, but the owner column has not moved: only the
+        // pending read is invalidated.
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsPendingTransferQueryKey(input.name),
         })
@@ -1242,8 +1102,8 @@ export const adminOperations: AdminOperations = {
       mutationFn: (input: AdminDeleteTenantInput) =>
         tenantAdminTenantsDelete(input.name),
       onSuccess: (_answer, input) => {
-        // The row is gone from the roster; the detail read still answers the
-        // tombstone, so both are re-read rather than dropped.
+        // The row leaves the roster; the detail read still answers the
+        // tombstone, so both are re-read.
         void queryClient.invalidateQueries({
           queryKey: getTenantAdminTenantsListQueryKey(),
         })
@@ -1254,10 +1114,8 @@ export const adminOperations: AdminOperations = {
     })
   },
 
-  // The filter picks between the all-namespaces read and the one-namespace
-  // read; both queries are declared every render and exactly one is enabled,
-  // so the pages never call a hook conditionally (the rules of hooks) and an
-  // unfiltered read never fires the per-namespace request.
+  // Both queries are declared every render and exactly one is enabled, so no
+  // hook is called conditionally and an unfiltered read fires no request.
   useSettings: (namespace) => {
     const all = useQuery({
       ...getSettingsAdminSettingsListQueryOptions({ ...GLOBAL_LAYER }),
@@ -1318,13 +1176,9 @@ export const adminOperations: AdminOperations = {
 
   exportAuditRecords: (params) => auditAdminRecordsExport(params),
 
-  // --- Authorization surface (/api/v1/system, tenant-scoped) --------------
-
   usePermissions: () => {
-    // The catalog's descriptions are rendered by the server in the request's
-    // language, so the language is part of what the answer is: keying the
-    // read on it makes a language switch re-read the catalog instead of
-    // leaving the previous language's text cached under the same key.
+    // The catalog's descriptions are rendered in the request's language, so the
+    // language is part of the answer and part of the key.
     const { i18n } = useAdminUiTranslation()
     return useQuery({
       ...getAuthzAdminPermissionsListQueryOptions({
@@ -1367,11 +1221,9 @@ export const adminOperations: AdminOperations = {
       mutationFn: (input: AdminRoleRef) =>
         authzAdminRolesDelete(input.tenant, input.role),
       onSuccess: (_answer, input) => {
-        // Removing a role revokes its grants and bindings with it (the
-        // generated route deletes all three), so the role list, the
-        // tenant's binding list and the role's grants are stale. The
-        // removal names no account, so every account-binding read under
-        // the tenant is stale too: the page may be querying any account.
+        // Removing a role revokes its grants and bindings, so the role list,
+        // the tenant's bindings and the role's grants are stale; the removal
+        // names no account, so every account-binding read under the tenant is too.
         void queryClient.invalidateQueries({
           queryKey: getAuthzAdminRolesListQueryKey(input.tenant),
         })
@@ -1455,8 +1307,6 @@ export const adminOperations: AdminOperations = {
     })
   },
 
-  // --- Account surface (/api/v1/system/auth) ------------------------------------
-
   useAccounts: (params, options) =>
     useQuery({
       ...getAuthnAdminAccountsListQueryOptions(params),
@@ -1512,10 +1362,8 @@ export const adminOperations: AdminOperations = {
       mutationFn: (input: AdminRemoveIdentifierInput) =>
         authnAdminAccountsRemoveIdentifier(input.id, input.identifier),
       onSuccess: (_answer, input) => {
-        // The identifier is not a column of the account rows, but it is
-        // what a login-identifier search matches on: removing one can drop
-        // the account out of the page the list is showing, symmetric with
-        // adding one.
+        // An identifier is what a login-identifier search matches on, so
+        // removing one can drop the account from the page the list shows.
         void queryClient.invalidateQueries({
           queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
         })
@@ -1530,8 +1378,8 @@ export const adminOperations: AdminOperations = {
       mutationFn: (input: AdminAccountRef) =>
         authnAdminAccountsResetMFA(input.id).then(() => undefined),
       onSuccess: (_answer, input) => {
-        // A reset drops every factor and revokes the account's sessions
-        // with them, so the factor and session reads are both stale.
+        // A reset drops every factor and revokes the account's sessions, so
+        // the factor and session reads are stale.
         void queryClient.invalidateQueries({
           queryKey: getAuthnAdminAccountsFactorsQueryKey(input.id),
         })
@@ -1628,9 +1476,8 @@ export const adminOperations: AdminOperations = {
           queryKey: getAuthnAdminAccountsGetQueryKey(input.id),
         })
         if (input.status === 'disabled') {
-          // Disabling an account clears its browser and token sessions, so
-          // the account's session read no longer matches the server.
-          // Enabling it revives no rows, so it leaves that read alone.
+          // Disabling clears the account's sessions, so that read is stale;
+          // enabling revives no rows and leaves it alone.
           void queryClient.invalidateQueries({
             queryKey: getAuthnAdminAccountsSessionsQueryKey(input.id),
           })
@@ -1706,8 +1553,6 @@ export const adminOperations: AdminOperations = {
     })
   },
 
-  // --- Impersonation surface (/api/v1/system/auth) ------------------------------
-
   useImpersonations: (params, options) =>
     useQuery({
       ...getAuthnAdminImpersonationsListQueryOptions(
@@ -1715,11 +1560,8 @@ export const adminOperations: AdminOperations = {
         { limit: params.limit, after: params.after },
       ),
       select: (page) => page.impersonations,
-      // The tenant is a required query parameter on the route, so an empty
-      // one would fire a request the module refuses as a shape it cannot
-      // read; the read stays disabled until the page names a tenant. A
-      // page also holds it while its own session is impersonating, where
-      // the gateway refuses the read.
+      // The tenant is a required query parameter, so an empty one would fire a
+      // request the module refuses; the read stays disabled until a tenant is named.
       enabled: params.tenant !== '' && (options?.enabled ?? true),
     }),
 
@@ -1736,8 +1578,6 @@ export const adminOperations: AdminOperations = {
     })
   },
 
-  // --- Invitation surface (tenant-scoped) -------------------------------
-
   useInvitations: (tenant, params) =>
     useQuery({
       ...getAuthnInviteListQueryOptions(tenant, params),
@@ -1748,9 +1588,8 @@ export const adminOperations: AdminOperations = {
   useIssueInvitation: () => {
     const queryClient = useQueryClient()
     return useMutation({
-      // The answer carries the acceptance token, which the page reads to
-      // show the invitee's link; it is handed out only once, so it must not
-      // be discarded here.
+      // The answer carries the acceptance token, handed out only once, so it
+      // must reach the page rather than be discarded.
       mutationFn: (input: AdminIssueInvitationInput) => {
         const body: AuthnInviteIssueBody = {
           email: input.email,
@@ -1779,8 +1618,8 @@ export const adminOperations: AdminOperations = {
           queryKey: getAuthnInviteListQueryKey(input.tenant),
         })
       },
-      // A terminal invitation answers 409 without being revoked; the list
-      // still shows it pending until the server's state is read again.
+      // A terminal invitation answers 409 without being revoked; re-read so
+      // the server's state replaces the pending row.
       onError: (error, input) => {
         if (errorCodeOf(error) === INVITATION_TERMINAL_CODE) {
           void queryClient.invalidateQueries({
@@ -1805,16 +1644,11 @@ export const adminOperations: AdminOperations = {
       enabled: tenant !== '',
     }),
 
-  // --- Membership surface (tenant-scoped) -------------------------------
-
   useMembers: (tenant, params) =>
     useQuery({
       ...getAuthnAdminMembersListQueryOptions(tenant, params),
-      // The page envelope is the read's answer: a caller needs the cursor the
-      // server reported, not only the rows it happened to receive. A search
-      // or a page change keeps the previous rows on screen while the
-      // next answer is in flight, so the table does not collapse to a
-      // skeleton on every keystroke and every page step.
+      // The page envelope is the answer (the caller needs the cursor); keeping
+      // the previous rows avoids a skeleton on every keystroke and page step.
       placeholderData: keepPreviousData,
       enabled: tenant !== '',
     }),
@@ -1861,8 +1695,6 @@ export const adminOperations: AdminOperations = {
       },
     })
   },
-
-  // --- SSO surface (/api/v1/tenants/:tenant/sso) ------------------------------------
 
   useSsoProviders: (tenant) =>
     useQuery({
@@ -1983,8 +1815,6 @@ export const adminOperations: AdminOperations = {
     })
   },
 
-  // --- SMS template surface (/api/v1/system/sms) --------------------------------
-
   useSmsTemplates: (params) =>
     useQuery({
       ...getSmsAdminTemplatesListQueryOptions(params),
@@ -2047,8 +1877,7 @@ export const adminOperations: AdminOperations = {
   },
 }
 
-/** Invalidates both binding readers a binding write leaves stale: the
- * tenant's whole list and the written account's own held bindings. */
+/** Invalidates both binding readers a write leaves stale: the tenant list and the account's own. */
 function invalidateBindings(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -2062,9 +1891,7 @@ function invalidateBindings(
   })
 }
 
-/** Invalidates every account-binding read under a tenant. A role removal
- * revokes bindings without naming the account a page queries, so the reads
- * are matched by the tenant's generated path rather than by account. */
+/** Invalidates every account-binding read under a tenant, matched by path. */
 function invalidateTenantAccountBindings(
   queryClient: ReturnType<typeof useQueryClient>,
   tenant: string,
@@ -2077,8 +1904,7 @@ function invalidateTenantAccountBindings(
   })
 }
 
-/** Invalidates every parametrized page of the accounts list: the generated
- * key factory with no params is a prefix of every parametrized read. */
+/** Invalidates every parametrized page of the accounts list. */
 function invalidateAccountLists(
   queryClient: ReturnType<typeof useQueryClient>,
 ): void {
@@ -2087,8 +1913,6 @@ function invalidateAccountLists(
   })
 }
 
-/** Invalidates a provider's detail read and the tenant's provider list: an
- * SSO write changes the provider's own row and its list entry together. */
 function invalidateSsoProvider(
   queryClient: ReturnType<typeof useQueryClient>,
   id: string,
@@ -2111,9 +1935,7 @@ function invalidateSmsTemplates(
   })
 }
 
-/** Invalidates both settings reads a write can leave stale: the
- * all-namespaces list and the written item's own namespace list. The keys
- * come from the generated factories, so they cannot drift from the reads. */
+/** Invalidates both settings reads a write can leave stale, from the generated factories. */
 function invalidateSetting(
   queryClient: ReturnType<typeof useQueryClient>,
   namespace: string,
@@ -2130,6 +1952,7 @@ function invalidateSetting(
 
 const AdminOperationsContext = createContext<AdminOperations | null>(null)
 
+/** The props of the console operations provider. */
 export interface AdminOperationsProviderProps {
   /** The operations bundle every console page under this provider reads through. */
   readonly operations: AdminOperations
@@ -2137,11 +1960,9 @@ export interface AdminOperationsProviderProps {
 }
 
 /**
- * Overrides the shipped console operations for the pages below it. A host
- * mounts one only to change the wiring; with none mounted the pages read
- * the shipped adminOperations. The value is expected to be stable across
- * renders (a module-level object or a memo), because the pages call its
- * hook members during render.
+ * Overrides the shipped operations for the pages below it. The value must be
+ * stable across renders (a module-level object or a memo), because the pages
+ * call its hook members during render.
  */
 export function AdminOperationsProvider({
   operations,
@@ -2154,10 +1975,7 @@ export function AdminOperationsProvider({
   )
 }
 
-/**
- * The operations bundle the pages read through: the enclosing provider's
- * when one is mounted, the shipped adminOperations otherwise.
- */
+/** The operations bundle: the provider's when mounted, the shipped `adminOperations` otherwise. */
 export function useAdminOperations(): AdminOperations {
   const operations = useContext(AdminOperationsContext)
   return operations ?? adminOperations

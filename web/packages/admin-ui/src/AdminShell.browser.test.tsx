@@ -1,20 +1,3 @@
-/**
- * AdminShell's header in a real browser: the platform frame under the
- * same band invariant as the tenant shell -- 375px and 430px, in en-US
- * and zh-CN, plus the md single row.
- *
- * The console is the second shell, not a copy of the first: its pages
- * resolve no tenant, so it renders no tenant switcher, no notification
- * bell and no console entry (the viewer is already in the console; its
- * exit is a link back to the tenant area). The controls it does render
- * are held to the same rule -- every one stays in the accessibility tree
- * with its name, enabled and non-zero-sized -- so a layout fix cannot win
- * a band by folding a control away.
- *
- * Host content is data in this fixture, as the surrounding host-content
- * fixtures document; the zh-CN set is the wider real-language text the
- * invariant has to hold for too.
- */
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
@@ -38,11 +21,6 @@ const ROUTES: readonly AdminRoute[] = [
 
 type Language = 'en-US' | 'zh-CN'
 
-/**
- * The host's header labels, per language. Host content, not copy this
- * shell renders -- data for the slots, exactly as a real host's own
- * translation bundle supplies it.
- */
 interface HostCopy {
   readonly brand: string
   readonly backToApp: string
@@ -65,12 +43,8 @@ const HOST_COPY: Readonly<Record<Language, HostCopy>> = {
   },
 }
 
-/** The operator's display name: the account avatar's accessible name. A
- * person's name is not translated, so both languages carry the same one. */
 const ACCOUNT = 'Ada Lovelace'
 
-/** One icon-form header control: the glyph is decorative, and the
- * accessible name is the part the shell has to keep reachable. */
 function GlyphButton({
   label,
   glyph,
@@ -85,10 +59,6 @@ function GlyphButton({
   )
 }
 
-/** The console's top bar: the brand plus the controls this shell actually
- * renders -- exit back to the tenant area, language switch, colour mode
- * and account avatar. No tenant switcher, no notification bell and no
- * console entry. */
 function adminHeaderShell(language: Language): ReactElement {
   const copy = HOST_COPY[language]
   return (
@@ -124,17 +94,12 @@ function adminHeaderShell(language: Language): ReactElement {
   )
 }
 
-/** The app-shell strings in the case's language: the drawer trigger's
- * accessible name is the shell's own copy, from layout-kit's bundle. */
 function shellCopy(language: Language): typeof layoutKitEnUS {
   return language === 'zh-CN' ? layoutKitZhCN : layoutKitEnUS
 }
 
-/** The tolerance a pair of controls on one band may differ by; see the
- * tenant shell's browser suite for the reasoning. */
 const BAND_TOLERANCE_PX = 4
 
-/** The number of vertical bands the header's content occupies. */
 function headerBands(): number {
   const header = screen.getByRole('banner')
   const toolbar = header.querySelector<HTMLElement>(`.${toolbarClasses.root}`)
@@ -162,8 +127,6 @@ function headerBands(): number {
   return bands
 }
 
-/** Every control the console shell renders, in the case's language. The
- * drawer trigger is the shell's own and exists only below md. */
 function expectEveryAdminControlReachable(
   language: Language,
   drawerTrigger: boolean,

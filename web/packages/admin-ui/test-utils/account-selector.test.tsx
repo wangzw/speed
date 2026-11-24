@@ -1,16 +1,3 @@
-/**
- * chooseAccount: the helper survives what a re-render does to the popup.
- *
- * The picker's search settles in several reads, so its option list can
- * re-render -- replacing the option nodes -- while a click's pointer
- * sequence is in flight; a click whose node was replaced never reaches
- * React, and the picker keeps the previous answer. While a new query is in
- * flight the popup stays open with no listbox at all, because MUI renders
- * the listbox only while there are options and the read keeps no previous
- * data. These cases drive the helper against such a picker: it must
- * re-read and click again, and it must wait out a popup that is open but
- * temporarily listless instead of reporting a refusal.
- */
 import { useState } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -20,13 +7,6 @@ import { chooseAccount } from './account-selector.js'
 const LABEL = 'Account'
 const OPTION = 'Ada (ada)'
 
-/**
- * A picker whose first `dropFirst` option clicks are swallowed, as a
- * re-render that replaces the option node can do. It then either takes the
- * next click or, with `closeAfterDrop`, closes the popup without taking
- * it. With `reloadAfterDrop` the popup stays open but its listbox goes
- * away for a moment, the way an in-flight query leaves it.
- */
 function Picker({
   dropFirst,
   closeAfterDrop = false,

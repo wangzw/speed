@@ -1,13 +1,3 @@
-/**
- * AdminProvider: the console's package-level contexts without the frame.
- *
- * The provider installs the same seams AdminShell installs, so a host
- * that renders a platform-staff frame of its own can put console pages
- * inside it. Each case reads one context back through the hook a page
- * uses and checks the supplied value -- or the documented fallback when
- * the prop is absent.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -32,12 +22,7 @@ const ROUTES: readonly AdminRoute[] = [
   { id: 'accounts', path: '/accounts', view: () => null },
 ]
 
-/**
- * Dispatches a click and cancels its default action at the document, after
- * React's delegated handler has run: jsdom implements no navigation, and
- * the cancellation keeps an uncancelled link click from logging
- * "Not implemented" without changing what the component saw.
- */
+/** Clicks with the default cancelled at the document: jsdom navigates nothing, so an uncancelled link click logs "Not implemented". */
 function clickWithoutNavigating(
   element: HTMLElement,
   init: MouseEventInit,
@@ -68,15 +53,10 @@ describe('AdminProvider', () => {
   })
 
   it('fails every feature closed without a supplied answer', () => {
-    // The provider requires hasFeature; this case pins the fail-closed
-    // direction of the context itself (a page rendered without any
-    // provider never sees a feature present).
     function Probe() {
       const hasFeature = useAdminHasFeature()
       return <span>{hasFeature('tenant.admin') ? 'present' : 'absent'}</span>
     }
-    // `null` mounts no feature provider: the harness's all-present default
-    // is a test convenience, and this case is about the context itself.
     renderWithProviders(<Probe />, { hasFeature: null })
     expect(screen.getByText('absent')).toBeInTheDocument()
   })
@@ -177,8 +157,6 @@ describe('AdminProvider', () => {
     )
     await userEvent.setup().click(screen.getByRole('button', { name: 'start' }))
     expect(starting).toHaveBeenCalledTimes(1)
-    // The provider hands the hook's return value straight back, so the
-    // page's release reaches the host's own function.
     expect(release).toHaveBeenCalledTimes(1)
   })
 
@@ -220,8 +198,6 @@ describe('AdminProvider', () => {
       </AdminProvider>,
     )
     const link = screen.getByRole('link', { name: 'go' })
-    // A modifier click belongs to the browser: the host's router is not
-    // told, and the link keeps its href.
     clickWithoutNavigating(link, { ctrlKey: true })
     expect(onNavigate).not.toHaveBeenCalled()
     expect(link).toHaveAttribute('href', '/tenants')

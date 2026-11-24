@@ -1,25 +1,3 @@
-/**
- * The admin-ui render harness keeps the provider tree, and the unit
- * inside it, mounted across a rerender.
- *
- * A rerender that replaces the root element unmounts the whole tree and
- * mounts a fresh one: the focused node is detached, its instance state is
- * gone, and the providers are rebuilt. These cases pin the harness to the
- * opposite behaviour -- RTL re-wraps the rerendered element in the same
- * `wrapper`, so React reconciles the unit in place. They guard the harness
- * itself, not any product unit.
- *
- * The theme probe reads a field only the speed theme carries
- * (`typography.fontFamilyMono`, added by createAppTheme and absent from
- * MUI's default theme), so a lost AppThemeProvider cannot pass by handing
- * back a structurally similar theme. The same probe records the query
- * client and the operations bundle the tree renders with: a lost
- * QueryClientProvider makes useQueryClient throw, and catching that lets
- * the probe record the absence as data, so the failure stays a clean
- * assertion; a lost AdminOperationsProvider silently falls back to the
- * shipped adminOperations, which the identity check catches.
- */
-
 import { useState } from 'react'
 import { screen } from '@testing-library/react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -58,7 +36,6 @@ type Snapshot = {
   readonly operations: AdminOperations
 }
 
-/** One snapshot per render, so the test compares the first with the last. */
 const snapshots: Snapshot[] = []
 
 function ThemeProbe({ label }: { readonly label: string }) {
@@ -76,7 +53,6 @@ function ThemeProbe({ label }: { readonly label: string }) {
   return <span data-testid="theme-probe">{label}</span>
 }
 
-/** The monospace stack the factory fills; MUI's default theme has none. */
 const SPEED_MONO = createAppTheme().theme.typography.fontFamilyMono
 
 beforeEach(() => {

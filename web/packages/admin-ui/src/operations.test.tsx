@@ -1,16 +1,3 @@
-/**
- * The operations seam: the shipped bundle's generated bindings, the
- * provider hook's fallback, and the key-splitting helper.
- *
- * `adminOperations` reads and writes through the generated
- * @speed/api-sdk surface; these tests bind a scripted request function
- * into the runtime seam and assert the endpoint each member drives, so a
- * member wired to the wrong operation fails here. With no
- * AdminOperationsProvider mounted, useAdminOperations answers with the
- * shipped adminOperations, so a page reads the generated surface with no
- * host-side binding.
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
@@ -43,8 +30,6 @@ describe('useAdminOperations', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     })
-    // No AdminOperationsProvider in the tree: the page reads the
-    // shipped adminOperations through the generated endpoint.
     render(
       <QueryClientProvider client={queryClient}>
         <Roster />
@@ -73,9 +58,6 @@ describe('adminOperations', () => {
   })
 
   it('re-reads the permission catalog when the interface language changes', async () => {
-    // The catalog's descriptions are rendered by the server in the request's
-    // language, so a language switch must reissue the read rather than leave
-    // the previous language's text cached under the same key.
     let answers = 0
     const calls = bindAdminRequest((call) => {
       if (call.path === '/api/v1/system/permissions') {
@@ -104,7 +86,6 @@ describe('adminOperations', () => {
       await switchLanguage(i18n, 'en-US')
     })
 
-    // The new key is a new read: the second answer replaces the first.
     expect(await screen.findByText('catalog.2')).toBeInTheDocument()
     expect(reads()).toBe(2)
   })
@@ -157,9 +138,6 @@ describe('adminOperations', () => {
       expect(calls).toContainEqual({
         method: 'POST',
         path: '/api/v1/system/tenants',
-        // The blank optional fields are omitted, not sent as empty
-        // strings: the endpoint reads an absent field as "none" and
-        // rejects an empty contact address.
         body: { name: 'acme', display_name: 'Acme Ltd' },
       })
     })
@@ -427,9 +405,6 @@ describe('adminOperations', () => {
     await screen.findByText('tenant:acme')
     expect(detailReads()).toBe(1)
     await user.click(screen.getByRole('button', { name: 'disable' }))
-    // The detail key ['/api/v1/system/tenants/acme'] is not prefixed by the
-    // list key ['/api/v1/system/tenants'], so the write must invalidate it
-    // on its own or the detail page keeps the pre-write value.
     await waitFor(() => {
       expect(detailReads()).toBeGreaterThan(1)
     })
@@ -442,8 +417,6 @@ describe('settingKeyRest', () => {
   })
 
   it('splits by the known namespace, not the first dot', () => {
-    // A module name may itself contain a dot (authn.session), so the
-    // split is by the namespace the caller passes.
     expect(settingKeyRest('authn.session.timeout', 'authn.session')).toBe(
       'timeout',
     )
@@ -454,18 +427,10 @@ describe('settingKeyRest', () => {
   })
 })
 
-/**
- * The administration surfaces' members, driven through the shipped bundle
- * over the scripted request rig, so a member wired to the wrong endpoint
- * fails here. A probe answers `{}` for every leg (the generated read's
- * `select` then yields undefined, which is enough to settle the read);
- * the assertion is on the recorded request legs.
- */
 function answer(): unknown {
   return {}
 }
 
-/** Mounts every tenant-scoped authorization read. */
 function AuthzReads() {
   const permissions = adminOperations.usePermissions()
   const roles = adminOperations.useRoles('acme')
@@ -481,7 +446,6 @@ function AuthzReads() {
   return <p>{settled ? 'ready' : 'loading'}</p>
 }
 
-/** Buttons firing every authorization write. */
 function AuthzWrites() {
   const writeRole = adminOperations.useWriteRole()
   const removeRole = adminOperations.useRemoveRole()
@@ -501,7 +465,6 @@ function AuthzWrites() {
   )
 }
 
-/** Mounts every account / session / impersonation read. */
 function AccountReads() {
   const accounts = adminOperations.useAccounts()
   const account = adminOperations.useAccount({ id: 'acc-1' })
@@ -515,7 +478,6 @@ function AccountReads() {
   return <p>{settled ? 'ready' : 'loading'}</p>
 }
 
-/** Buttons firing every account / session / impersonation write. */
 function AccountWrites() {
   const createAccount = adminOperations.useCreateAccount()
   const patchAccount = adminOperations.usePatchAccount()
@@ -551,7 +513,6 @@ function AccountWrites() {
   )
 }
 
-/** Mounts the invitation / membership / SSO reads. */
 function TenantReads() {
   const invitations = adminOperations.useInvitations('acme')
   const members = adminOperations.useMembers('acme')
@@ -561,7 +522,6 @@ function TenantReads() {
   return <p>{settled ? 'ready' : 'loading'}</p>
 }
 
-/** Buttons firing the invitation / membership / SSO writes. */
 function TenantWrites() {
   const issue = adminOperations.useIssueInvitation()
   const revoke = adminOperations.useRevokeInvitation()
@@ -597,7 +557,6 @@ function TenantWrites() {
   )
 }
 
-/** Mounts the SMS template read and its writes. */
 function SmsSurface() {
   const templates = adminOperations.useSmsTemplates()
   const register = adminOperations.useRegisterSmsTemplate()
@@ -675,7 +634,6 @@ describe('adminOperations administration surfaces', () => {
     }
     renderWithProviders(<Held />, { operations: adminOperations })
     expect(await screen.findByText('held')).toBeInTheDocument()
-    // Flush the queue so an accidental request would have been recorded.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -802,14 +760,6 @@ describe('adminOperations administration surfaces', () => {
   })
 })
 
-/**
- * The write contract: a successful write invalidates every read its result
- * changes, including reads outside the section that started it. Each probe
- * mounts the reads a write leaves stale and counts the request legs the
- * invalidation adds. A refetch is the observable proof that the generated
- * key matched; a spy on invalidateQueries would not prove the predicate
- * matched the cached key.
- */
 describe('adminOperations write invalidation', () => {
   it('re-reads every account-binding query under the tenant after a role removal', async () => {
     const user = userEvent.setup()
@@ -869,8 +819,6 @@ describe('adminOperations write invalidation', () => {
         expect(reads(path)).toBeGreaterThan(1)
       }
     })
-    // The removal names no account, so it invalidates by tenant; that
-    // bound is what leaves another tenant's account-binding read alone.
     expect(reads(paths.otherTenant)).toBe(1)
   })
 
@@ -949,16 +897,11 @@ describe('adminOperations write invalidation', () => {
     await waitFor(() => {
       expect(reads('/api/v1/system/auth/accounts/acc-1/sessions')).toBeGreaterThan(1)
     })
-    // The write is scoped to the account it disables.
     expect(reads('/api/v1/system/auth/accounts/acc-2/sessions')).toBe(1)
   })
 
   it('leaves the sessions read alone when a status write re-enables the account', async () => {
-    // Judging "no second read" needs the write's invalidation work to have
-    // settled; a fixed flush passes while a refetch it scheduled is still
-    // pending, so a refetch on a later tick would slip through. Fake timers
-    // let the case advance past a retry-scale delay, which flushes any
-    // invalidation the write scheduled for a later tick.
+    // Fake timers advance past a retry-scale delay, flushing invalidations scheduled for a later tick.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const user = userEvent.setup({
@@ -999,14 +942,9 @@ describe('adminOperations write invalidation', () => {
       expect(reads()).toBe(1)
       await user.click(screen.getByRole('button', { name: 'enable' }))
       await screen.findByText('settled')
-      // The write's onSuccess invalidates the reads its result changes; any
-      // refetch that invalidation starts must settle before the counter can
-      // rule a second read out.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2_000)
       })
-      // The settled state that carries the write's invalidation work is the
-      // query cache: no read may be in flight when the count is judged.
       await waitFor(() => {
         expect(queryClient.isFetching()).toBe(0)
         expect(
@@ -1057,7 +995,6 @@ describe('adminOperations write invalidation', () => {
       expect(reads('/api/v1/system/auth/accounts/acc-1/factors')).toBeGreaterThan(1)
       expect(reads('/api/v1/system/auth/accounts/acc-1/sessions')).toBeGreaterThan(1)
     })
-    // The reset is scoped to the account it resets.
     expect(reads('/api/v1/system/auth/accounts/acc-2/sessions')).toBe(1)
   })
 })

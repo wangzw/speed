@@ -1,22 +1,3 @@
-/**
- * The package manifest's dependency contract, pinned by the suite.
- *
- * The console renders over the host's React/MUI tree and reads its data
- * through react-query hooks the host supplies, so react, react-dom,
- * @mui/material, @emotion/* and @tanstack/react-query are peers; i18n,
- * ui-kit and layout-kit are regular dependencies. @speed/api-sdk is
- * declared a dependency per the admin-ui design (the contract phase
- * binds its generated /api/v1/system/tenants, /api/v1/system/settings and /api/v1/system/audit
- * operations to the console operations bundle), and is a
- * devDependency-visible workspace link today. @speed/layout-kit is the
- * shared frame: the console's AdminShell renders the platform
- * navigation inside AppShell rather than re-implementing the chrome.
- *
- * The manifest is read from disk, never imported as a module: vite
- * refuses to resolve a package's own package.json through the module
- * graph. Path derivation follows api-client's README-drift test.
- */
-
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,8 +28,6 @@ describe('package manifest', () => {
     expect(manifest.peerDependencies?.['react-dom']).toBe('^18.0.0 || ^19.0.0')
     expect(manifest.peerDependencies?.['@mui/material']).toBe('^9.5.0')
     expect(manifest.peerDependencies?.['@tanstack/react-query']).toBe('^5.0.0')
-    // The account-create form flows through ui-kit's form family, so the
-    // console drives react-hook-form directly and peers on it.
     expect(manifest.peerDependencies?.['react-hook-form']).toBe('^7.0.0')
   })
 

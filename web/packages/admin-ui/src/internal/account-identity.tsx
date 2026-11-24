@@ -1,40 +1,6 @@
 /**
- * One account identity rendered the way every console surface names an
- * account: its display name with its login username beside it, the username
- * alone when the account has no display name, the display name alone when it
- * has no username, and a neutral "account unavailable" when neither
- * resolves. The account's opaque identifier is the internal key -- a path
- * parameter and a row key -- and never visible text, a copy target, an
- * accessible name or a page title.
- *
- * The unit is shared by every surface that records an account: the audit
- * record's actor (the audit query, the dashboard's recent activity and the
- * audit detail), an impersonation record's actor and target (the record list
- * and the in-force panel of the operator's own session), an invitation's
- * inviter, a membership's account, and an authorization binding's account.
- *
- * `AccountIdentity` reads the account through the bound surface. The account
- * read is gated on authn.account.read, which a page's own read permission
- * does not imply, so a viewer refused the lookup sees the neutral copy with
- * a note that the identity could not be resolved, rather than the raw
- * identifier passed off as a resolved (or system) account. The read is also
- * gated on the authn.admin feature: a process that does not serve the
- * administration face never issues it, and the neutral copy carries the same
- * unresolved note. An answer of 404 is a different fact -- the identifier
- * names no account, deleted or never one -- and gets its own note, never the
- * permission or feature one. While the read is pending it shows the neutral
- * copy instead of a spinner, so the surface is never blank. The lookup is
- * keyed by the account id, so rows sharing an account -- and any re-render --
- * reuse one cached read.
- *
- * An audit record's object and detail are read differently. The journal marks
- * an object that names an account with the `account:` prefix, because an
- * account identifier and a session identifier have the same opaque shape; only
- * a marked object is resolved, and every other object renders as recorded. The
- * detail keys that name an account (`account`, `on_behalf_of` and the `by` of
- * an impersonation end or revoke) carry bare identifiers and are resolved by
- * key. An empty actor is a system row and renders empty; a static credential
- * subject (`static.` prefix) is a configured principal and renders as recorded.
+ * Account identity rendering shared by the console: display name and login
+ * username, either alone, or the neutral copy -- never the opaque account id.
  */
 
 import Box from '@mui/material/Box'
@@ -45,23 +11,14 @@ import { isNotFound } from './async-section.js'
 import { useAdminHasFeature } from './features.js'
 import { useAdminOperations, type AdminAccount } from '../operations.js'
 
-/** The admin-ui namespace's translation function. */
 type AdminTranslate = ReturnType<typeof useAdminUiTranslation>['t']
 
-/**
- * The three reference forms a notice inserts for a resolved identity. The
- * confirmation dialogs carry the same forms, so an account is named one way
- * across the console: `"Ada" (ada)` when both resolve, `"ada"` when only the
- * username does, and `"Ada"` when only the display name does. An identity
- * with neither resolves nothing and a notice uses its neutral sentence.
- */
 const ACCOUNT_REFERENCE_KEYS = {
   name: 'common.accountReference.name',
   username: 'common.accountReference.identifier',
   nameWithUsername: 'common.accountReference.nameWithIdentifier',
 } as const
 
-/** The identifier kind that names an account: the login username. */
 const USERNAME_KIND = 'username'
 
 /** The login username among an account's identifiers, when it carries one. */
@@ -76,11 +33,9 @@ export function accountUsername(
 }
 
 /**
- * The identity label for one account: `"Ada (ada)"` when both the display
- * name and the username resolve, `"ada"` when only the username does,
- * `"Ada"` when only the display name does, and `undefined` when neither
- * does. A second login identifier -- an email or a phone -- never stands in
- * for the username.
+ * The identity label for one account: `"Ada (ada)"`, `"ada"` or `"Ada"` as the
+ * parts resolve, `undefined` when neither does. An email or phone never stands
+ * in for the username.
  */
 export function identityLabel(
   name: string | undefined,
@@ -111,11 +66,7 @@ export function accountIdentityValue(
   }
 }
 
-/**
- * The label a surface shows for `identity`, or the neutral
- * `common.accountUnavailable` copy when it resolves neither a display name
- * nor a username. The opaque account id is never the label.
- */
+/** The label a surface shows for `identity`, or the neutral copy when nothing resolves. */
 export function accountLabel(
   t: AdminTranslate,
   identity: AccountIdentityValue,
@@ -127,10 +78,8 @@ export function accountLabel(
 }
 
 /**
- * The reference a notice inserts for `identity`: the display name with its
- * login username when both resolve, either alone otherwise, and `undefined`
- * when neither does. A notice must never fall back to the opaque account id
- * -- an operator cannot match it to a row.
+ * The reference a notice inserts for `identity`, or `undefined` when nothing
+ * resolves; it never falls back to the opaque account id.
  */
 export function accountReference(
   t: AdminTranslate,
@@ -160,10 +109,8 @@ export type AccountNoticeKeys = {
 }
 
 /**
- * A success notice that names an account: the named sentence with the
- * account reference in `{{account}}`, or the neutral sentence when the
- * identity resolved neither a display name nor a username. The opaque
- * account id never enters the copy.
+ * A success notice that names an account, or its neutral sentence when nothing
+ * resolves; the opaque account id never enters the copy.
  */
 export function accountNotice(
   t: AdminTranslate,
@@ -178,20 +125,9 @@ export function accountNotice(
 }
 
 /**
- * The account read's outcome for one identifier, for surfaces that need the
- * readable identity without rendering the unit -- a hidden annotation beside
- * the recorded value, or a confirmation that names the account, for one.
- * `name` is the display name when the read answers a non-empty one;
- * `username` is the login username among the identifiers the read carries,
- * so an account with no username resolves none -- an email or a phone never
- * stands in for it; `refused` says the read failed for a reason other than
- * the account not existing (a permission refusal, a transport failure); and
- * `missing` says the read was answered 404 -- the account was deleted, or
- * the identifier never named an account. `gated` says the read was never
- * issued because the authn.admin feature is absent -- the identity is
- * unresolved for that reason, which is neither a refusal nor a deletion. An
- * absent account issues no read: the caller has no identifier to resolve
- * yet.
+ * The account read's outcome for one identifier: `name`, `username`, `refused`
+ * (a failure other than 404), `missing` (404), and `gated` (the authn.admin
+ * feature is absent, so no read was issued). An absent identifier issues no read.
  */
 export function useAccountIdentity(account: string | undefined): {
   readonly name: string | undefined
@@ -202,9 +138,7 @@ export function useAccountIdentity(account: string | undefined): {
 } {
   const hasFeature = useAdminHasFeature()
   const operations = useAdminOperations()
-  // No feature, no read: the account administration face (and the identity
-  // lookup it carries) does not exist in this process. An absent identifier
-  // is equally not a lookup: there is nothing to resolve.
+  // No feature, no read; an absent identifier is equally not a lookup.
   const gated = !hasFeature('authn.admin')
   const read = operations.useAccount({
     id: gated || account === undefined || account === '' ? undefined : account,
@@ -221,11 +155,7 @@ export function useAccountIdentity(account: string | undefined): {
 
 /**
  * One account identifier rendered from the identity its own tenant-scoped
- * record carries, for the organization surface: the member read answers each
- * row's `display_name` and `username`, so the identity never needs the
- * platform account read that `AccountIdentity` issues. The four branches are
- * the same as everywhere else, and an absent pair renders the neutral copy
- * -- never the recorded identifier.
+ * record carries, so it never issues the platform account read.
  */
 export function TenantAccountIdentity({
   name,
@@ -280,9 +210,8 @@ function ResolvedAccountIdentity({ account }: { readonly account: string }) {
 }
 
 /**
- * The neutral identity copy. A note, when there is one, is the visible title
- * and a visually hidden annotation, so the marker reaches assistive
- * technology without becoming visible text beside the neutral sentence.
+ * The neutral identity copy. A note becomes the visible title and a visually
+ * hidden annotation, so it reaches assistive technology without visible text.
  */
 function NeutralIdentity({ note }: { readonly note?: string }) {
   const { t } = useAdminUiTranslation()
@@ -306,10 +235,9 @@ function NeutralIdentity({ note }: { readonly note?: string }) {
 }
 
 /**
- * The marker an audit object that names an account begins with. An object is
- * "type + identifier" throughout the table, and an account identifier has the
- * same opaque shape as a session's or an invitation's, so the journal states
- * the type: this prefix, then the identifier unchanged.
+ * The marker an audit object that names an account begins with: an account id
+ * has the same opaque shape as a session or invitation id, so the journal
+ * states the type.
  */
 export const ACCOUNT_OBJECT_PREFIX = 'account:'
 
@@ -319,10 +247,9 @@ export function isAccountObject(object: string): boolean {
 }
 
 /**
- * The account id an audit object names, or `undefined` when the object names
- * something else. Only the marker decides: a UUID-shaped value that carries no
- * marker is a session, an invitation or another identifier and is never sent
- * to the account read.
+ * The account id an audit object names, or `undefined` when it names something
+ * else. Only the marker decides; an unmarked UUID-shaped value is never sent to
+ * the account read.
  */
 export function accountObjectId(object: string): string | undefined {
   return isAccountObject(object)
@@ -331,38 +258,22 @@ export function accountObjectId(object: string): string | undefined {
 }
 
 /**
- * The prefix of a static credential subject's identifier (`static.operator`,
- * for one). It is a principal the deployment configured, not an account the
- * library holds, so it is named as recorded and no account read is issued for
- * it.
+ * The prefix of a static credential subject's identifier (`static.operator`): a
+ * configured principal, named as recorded, that issues no account read.
  */
 const STATIC_PRINCIPAL_PREFIX = 'static.'
 
-/** Whether an actor identifier names a configured static principal. */
 function isStaticPrincipal(value: string): boolean {
   return value.startsWith(STATIC_PRINCIPAL_PREFIX)
 }
 
-/**
- * The impersonation actions whose `by` detail is the account that ended or
- * revoked the grant. The factor events write `by` as the actor class (self,
- * admin, system), which is not an account and renders as recorded.
- */
+/** The impersonation actions whose `by` detail names the ending account. */
 const IMPERSONATION_BY_ACTIONS: ReadonlySet<string> = new Set([
   'authn.impersonation.end',
   'authn.impersonation.revoke',
 ])
 
-/**
- * Whether one audit detail value is an account identifier. `account` is the
- * binding and membership detail key and always names an account. The journal
- * writes `on_behalf_of` only from an impersonating identity, so it is always
- * an account id. `by` is one only on an impersonation end or revoke; the
- * factor events carry a class there instead.
- *
- * These are keyed detail fields, not objects: their values stay bare account
- * identifiers, without the object marker.
- */
+/** Whether one audit detail value is an account identifier (bare, unmarked by key). */
 export function auditDetailNamesAccount(action: string, key: string): boolean {
   if (key === 'account' || key === 'on_behalf_of') {
     return true
@@ -374,12 +285,8 @@ export function auditDetailNamesAccount(action: string, key: string): boolean {
 }
 
 /**
- * One audit record's object. Only an object that starts with the account
- * marker names an account; its remainder is the account id and is resolved
- * through the account read. Every other object -- a session id (the same
- * opaque shape as an account id), a tenant name, a role name, a permission
- * code -- renders as recorded, unchanged, with no read and no neutral
- * fallback.
+ * One audit record's object: only an object with the account marker is resolved
+ * through the account read; every other object renders as recorded.
  */
 export function AuditObjectIdentity({ object }: { readonly object: string }) {
   const account = accountObjectId(object)

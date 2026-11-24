@@ -1,13 +1,3 @@
-/**
- * AccountSelector: the searchable account picker.
- *
- * It issues no account read until the operator types; a typed name is
- * searched as a display-name prefix and as the identifier kinds its shape
- * can name; a choice hands the caller the account's id, by pointer or by
- * keyboard; an empty answer is stated as "no matches"; and a failed search
- * is stated rather than rendered as "no matches".
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
@@ -23,7 +13,6 @@ import {
 } from '../../test-utils/operations.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
-/** A caller-supplied field label fixture; the page owns this copy. */
 const ACCOUNT_LABEL = 'Account'
 
 function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
@@ -43,7 +32,6 @@ function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
   }
 }
 
-/** A controlled stand-in that records the account each choice hands over. */
 function Harness({
   onChoose,
 }: {
@@ -90,7 +78,6 @@ describe('AccountSelector', () => {
         limit: 20,
         display_name_prefix: 'Ada',
       })
-      // An ASCII word is both a username and an email prefix.
       for (const kind of ['username', 'email']) {
         expect(listAccounts).toHaveBeenCalledWith({
           limit: 20,
@@ -99,8 +86,6 @@ describe('AccountSelector', () => {
         })
       }
     })
-    // "Ada" is not the head of an E.164 number, so the listing would refuse
-    // that read: it is never issued.
     expect(listAccounts).not.toHaveBeenCalledWith(
       expect.objectContaining({ identifier_kind: 'phone' }),
     )
@@ -122,15 +107,11 @@ describe('AccountSelector', () => {
         display_name_prefix: 'Ab',
       })
     })
-    // Every identifier kind has a three-character floor on the listing.
     expect(listAccounts).toHaveBeenCalledTimes(1)
   })
 
   it('states an empty answer as no matches', async () => {
     const user = userEvent.setup()
-    // The listing refuses every identifier kind for a text with a space in
-    // it; the display-name prefix read is the only one it accepts and it
-    // finds nothing. The popup must say so rather than claim a failure.
     const listAccounts = vi.fn(
       (params?: { readonly identifier_kind?: string }) =>
         params?.identifier_kind === undefined
@@ -147,14 +128,12 @@ describe('AccountSelector', () => {
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada Lovelace')
-    // The display-name read is the only one issued; wait for it to settle
-    // before reading the popup, so the empty state is the settled one.
     await waitForCondition(() => expect(listAccounts).toHaveBeenCalledTimes(1))
+    // Wait for the display-name read to settle before reading the popup.
     await waitFor(() => {
       expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
     })
     expect(screen.queryByText(zhCN.accountSelector.failed)).toBeNull()
-    // Nothing was paged out either, so no narrowing hint is due.
     expect(
       screen.queryByText(zhCN.accountSelector.narrow),
     ).toBeNull()
@@ -178,10 +157,7 @@ describe('AccountSelector', () => {
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
-    // The name read plus the two applicable identifier reads.
     await waitForCondition(() => expect(listAccounts).toHaveBeenCalledTimes(3))
-    // Re-query rather than hold the element: the popup re-renders as the
-    // reads settle and a held node can be replaced between find and assert.
     await waitFor(() => {
       expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
     })
@@ -190,9 +166,6 @@ describe('AccountSelector', () => {
 
   it('reads a transport-synthesized 400 as not applicable, not as a failure', async () => {
     const user = userEvent.setup()
-    // A response with no readable problem envelope is answered by the
-    // transport as `client.http.<status>` rather than as an object carrying
-    // `status`; the refusal means the same thing.
     const listAccounts = vi.fn(
       (params?: { readonly identifier_kind?: string }) =>
         params?.identifier_kind === undefined
@@ -204,7 +177,6 @@ describe('AccountSelector', () => {
     )
     renderWithProviders(<Harness onChoose={() => {}} />, { operations })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
-    // The name read plus the two applicable identifier reads.
     await waitForCondition(() => expect(listAccounts).toHaveBeenCalledTimes(3))
     await waitFor(() => {
       expect(screen.getByText(zhCN.accountSelector.empty)).toBeInTheDocument()
@@ -226,8 +198,6 @@ describe('AccountSelector', () => {
     })
     await user.type(screen.getByLabelText(ACCOUNT_LABEL), 'Ada')
     await screen.findByRole('option', { name: 'Ada (ada)' })
-    // The combobox is operable without a pointer: arrow keys move through
-    // the options and Enter selects.
     await user.keyboard('{ArrowDown}{Enter}')
     expect(chosen.at(-1)?.id).toBe('acc-2')
   })
@@ -246,8 +216,6 @@ describe('AccountSelector', () => {
 
   it('asks the operator to narrow the search when a read leaves a next page', async () => {
     const user = userEvent.setup()
-    // Every read answers a full page; the merged rows are only the first
-    // page of each, so the control must not present them as the whole answer.
     const operations = createAdminOperations(
       makeAdminBackend({
         listAccounts: () =>
@@ -263,8 +231,6 @@ describe('AccountSelector', () => {
 
   it('names the in-flight progress and scans clean while searching', async () => {
     const user = userEvent.setup()
-    // A read that never settles holds the searching state open, the state
-    // the settled page scans never reach.
     const operations = createAdminOperations(
       makeAdminBackend({
         listAccounts: () => new Promise<never>(() => {}),

@@ -1,12 +1,6 @@
 /**
- * RoleTable: the role catalog's table.
- *
- * The table leads with the role name, then the description, the two counts
- * and the builtin mark, with the row actions pinned to the trailing edge.
- * A builtin role, a role the host protects and a role the caller may not
- * manage are all read-only: the row keeps a way to open the role's grants
- * and shows why the write controls are absent, because a disabled control
- * is not focusable and its reason would be unreachable to keyboard users.
+ * RoleTable: the role catalog. A builtin, host-protected or no-manage role is
+ * read-only but keeps view-grants and says why, since disabled controls are unreachable.
  */
 
 import Box from '@mui/material/Box'
@@ -42,8 +36,6 @@ export interface RoleTableProps {
   readonly onRemove: (role: AdminTenantRole) => void
 }
 
-/** Why a row is read-only: the server's builtin mark, the host's protected
- * list, or the caller's missing manage permission. */
 function lockedReason(
   role: AdminTenantRole,
   protectedRoles: readonly string[],

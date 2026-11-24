@@ -1,12 +1,4 @@
-/**
- * A navigation label bound to a admin-ui namespace key, resolved when
- * the label renders.
- *
- * It lets the console's module-level declarations and its group table
- * stay plain values -- the shape the registration seam wants -- while
- * their labels translate reactively with the host's language. Shared by
- * the page declarations (routes.tsx) and the group table (nav-groups.tsx).
- */
+/** A navigation label bound to an admin-ui namespace key, resolved when it renders. */
 
 import { useAdminUiTranslation } from './translation.js'
 

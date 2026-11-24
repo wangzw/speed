@@ -1,34 +1,6 @@
 /**
- * The console's page declarations -- the console surface's contribution
- * to the declarative registration seam.
- *
- * Each administration capability contributes one page declaration: a
- * path pattern, the page view, the permission code the page's data is
- * held to and a decorative navigation icon (the console shell derives
- * the platform navigation from the label and icon each declaration
- * carries). The declarations are collected by the application's
- * composition layer and handed to the route layer it chose; this package
- * imports no router and does no path matching, so a declaration is data
- * plus a view and nothing more.
- *
- * A declaration's label is a React element (AdminNavLabel) that
- * resolves its text through the admin-ui namespace when it renders:
- * the declarations themselves stay plain module-level values -- the shape
- * the registration seam wants -- while their navigation labels still
- * translate reactively with the host's language.
- *
- * The permission codes are the modules' own: the roster's reads are held
- * to tenant.read, the settings reads to settings.read, the audit query to
- * audit.read, the authorization surface to authz.role.read, the account
- * surface to authn.account.read, the session surface to authn.session.read,
- * the impersonation surface to authn.impersonation.read, the invitation
- * and membership surface to authn.membership.manage, the SSO surface to
- * authn.idp.manage and the SMS template surface to sms.template.read.
- * They are data the host reads to compose its own route guard (this
- * package never decides on them); a page whose writes carry a stronger
- * permission renders its write controls and lets the server refuse a
- * caller who lacks it, rather than hiding them -- the server is the
- * authority.
+ * The console's page declarations: path, view, permission code and icon, with
+ * labels resolved through the admin-ui namespace; the codes are host-read data.
  */
 
 import type { AdminRoute, AdminRouteTable } from './route.js'
@@ -61,17 +33,12 @@ import { InvitationsPage } from './InvitationsPage.js'
 import { SsoPage } from './SsoPage.js'
 import { SmsPage } from './SmsPage.js'
 
-/**
- * The console landing (the root) renders the dashboard; it reads the
- * platform roster and the audit trail, so it is held to tenant.read (its
- * audit panel refuses on its own when the viewer lacks audit.read).
- */
+/** The console landing: the dashboard at the root, held to tenant.read. */
 export const dashboardAdminRoutes: AdminRouteTable = [
   {
     id: 'dashboard',
     path: '/',
-    // The dashboard sits at the console root, so the matched path is the
-    // root its recent-activity rows append the audit detail path to.
+    // The dashboard sits at the console root; its rows append the audit detail path to it.
     view: (context) => <DashboardPage rootHref={context.path} />,
     label: <AdminNavLabel labelKey="dashboard.title" />,
     icon: <DashboardIcon />,
@@ -82,22 +49,17 @@ export const dashboardAdminRoutes: AdminRouteTable = [
 ] satisfies readonly AdminRoute[]
 
 /**
- * The console root derived from a matched detail path: the path with its
- * last two segments (the list segment and the name) removed. The console may
- * be mounted under a host-chosen prefix, so the root is computed from the
- * matched path rather than from a literal segment: '/tenants/abc' yields
- * '', '/admin/tenants/abc' yields '/admin'.
+ * The console root from a matched detail path: the last two segments removed,
+ * rather than a literal, since the console may be mounted under any prefix.
  */
 function adminRootOf(path: string): string {
   return path.split('/').slice(0, -2).join('/')
 }
 
 /**
- * The tenant pages: the roster, the standalone registration form and one
- * tenant's detail. The registration declaration is declared before the
- * detail pattern because '/tenants/new' would otherwise be read as a tenant
- * name; like the detail it is unlabelled (it is reached from the roster's
- * page header, not the navigation).
+ * The tenant pages: roster, standalone registration form and one tenant's
+ * detail. The registration declaration precedes the detail pattern so
+ * '/tenants/new' is not read as a tenant name; both are unlabelled.
  */
 export const tenantAdminRoutes: AdminRouteTable = [
   {
@@ -247,9 +209,8 @@ export const smsAdminRoutes: AdminRouteTable = [
 ] satisfies readonly AdminRoute[]
 
 /**
- * The audit pages: the query and one record's detail. The detail
- * declaration is unlabelled (reached from a row), and its view carries the
- * query's path so the detail page can link back.
+ * The audit pages: the query and one record's detail. The detail is unlabelled
+ * and its view carries the query's path so it can link back.
  */
 export const auditAdminRoutes: AdminRouteTable = [
   {
@@ -276,12 +237,7 @@ export const auditAdminRoutes: AdminRouteTable = [
   },
 ] satisfies readonly AdminRoute[]
 
-/**
- * The whole console page set: the administration pages in the order they
- * appear in the platform navigation. A host composing the console spreads
- * this into its route table (alongside any pages it adds itself), so the
- * console's own pages are registered in one place.
- */
+/** The whole console page set, in platform navigation order. */
 export const adminRoutes: AdminRouteTable = [
   ...dashboardAdminRoutes,
   ...tenantAdminRoutes,

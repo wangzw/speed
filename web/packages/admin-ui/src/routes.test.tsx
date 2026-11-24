@@ -1,13 +1,3 @@
-/**
- * The admin page declarations.
- *
- * Each administration capability contributes one declaration with its
- * path, its permission code and a navigation label; adminRoutes is the
- * whole set in navigation order; and rendering the declarations through
- * AdminShell shows the translated navigation labels (the label element
- * resolves its text in the host's language).
- */
-
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import type { AdminRoute } from './route.js'
@@ -38,7 +28,6 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const operations = createAdminOperations(makeAdminBackend())
 
-/** The path / permission each single-page declaration carries. */
 const declarations: readonly [string, string, string][] = [
   ['dashboard', dashboardAdminRoutes[0]?.path ?? '', 'tenant.read'],
   ['tenants', tenantAdminRoutes[0]?.path ?? '', 'tenant.read'],
@@ -64,10 +53,6 @@ describe('admin page declarations', () => {
   }
 
   it('keeps the platform permissions page separate from the organization roles page', () => {
-    // The platform console's permissions page is the system-domain one. The
-    // organization roles page is a declaration of the organization surface,
-    // not a member of the platform table, so its label and path never enter
-    // the platform navigation.
     const platform = permissionsAdminRoutes[0]
     expect(platform?.path).toBe('/permissions')
     expect(platform?.permission).toBe('authz.role.read')
@@ -87,9 +72,6 @@ describe('admin page declarations', () => {
   })
 
   it('carries the caller-session feature on the impersonation declaration', () => {
-    // The page holds no page-level gate for the caller-session surface: the
-    // declaration names the feature, and the host narrows the table by
-    // feature presence before it reaches the shell.
     expect(impersonationsAdminRoutes[0]?.requires).toContain(
       'authn.impersonation',
     )
@@ -104,9 +86,6 @@ describe('admin page declarations', () => {
   })
 
   it('resolves the tenant detail sibling links through the published declarations', async () => {
-    // The admin may be mounted under a host prefix, so the page looks the
-    // sibling up by declaration id instead of guessing a path from a
-    // literal segment.
     const detail = tenantAdminRoutes.find((route) => route.path === '/tenants/:name')
     expect(detail).toBeDefined()
     const view = detail?.view({
@@ -133,9 +112,6 @@ describe('admin page declarations', () => {
   })
 
   it('resolves a admin-relative sibling path against the matched admin root', async () => {
-    // A host that publishes admin-relative patterns makes the
-    // declaration's path resolve against the root the detail route computed
-    // from its matched path -- here the admin mounted under /admin.
     const published: readonly AdminRoute[] = [
       { id: 'permissions', path: '/permissions', view: () => null },
       { id: 'sso', path: '/sso', view: () => null },
@@ -163,9 +139,6 @@ describe('admin page declarations', () => {
   })
 
   it('resolves a admin-relative sibling path at the origin when the admin root is empty', async () => {
-    // A admin mounted at the origin has an empty root: its last two path
-    // segments are the list segment and the id, and a admin-relative
-    // pattern resolves to the path every host serves it at.
     const published: readonly AdminRoute[] = [
       { id: 'permissions', path: 'permissions', view: () => null },
     ]
@@ -218,8 +191,6 @@ describe('admin page declarations', () => {
   it('gives every navigation entry a decorative icon and leaves the detail routes icon-less', () => {
     for (const route of adminRoutes) {
       if (route.label === undefined) {
-        // A page that is reachable but not listed has no navigation entry,
-        // so it carries no navigation icon.
         expect(route.icon).toBeUndefined()
       } else {
         expect(route.icon).toBeDefined()
@@ -240,8 +211,6 @@ describe('admin page declarations', () => {
     for (const link of links) {
       const icon = link.querySelector('svg')
       expect(icon, `no icon in ${link.textContent ?? ''}`).not.toBeNull()
-      // Decorative: hidden from assistive tech, so the label alone names
-      // the entry.
       expect(icon).toHaveAttribute('aria-hidden', 'true')
       expect(icon).toHaveAttribute('focusable', 'false')
     }
@@ -270,13 +239,9 @@ describe('admin page declarations', () => {
       '/audit',
       '/audit/:id',
     ])
-    // The registration page and the detail routes are reachable but not
-    // listed in the navigation.
     for (const path of ['/tenants/new', '/tenants/:name', '/audit/:id']) {
       expect(adminRoutes.find((route) => route.path === path)?.label).toBeUndefined()
     }
-    // '/tenants/new' must be declared before '/tenants/:name', or the detail
-    // pattern would read the literal 'new' as a tenant name.
     expect(
       adminRoutes.findIndex((route) => route.path === '/tenants/new'),
     ).toBeLessThan(

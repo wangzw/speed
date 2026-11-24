@@ -1,13 +1,3 @@
-/**
- * RowActionMenu: a row's actions behind one trigger that stays focusable
- * while the menu is unavailable.
- *
- * Selecting an item starts the row's write and the host marks the menu
- * unavailable while it runs. The trigger held focus when the item was
- * selected, so it must keep focus -- not drop it to the document body --
- * and a second activation must not reopen the menu.
- */
-
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
@@ -18,15 +8,10 @@ import type { RowAction } from './row-action-menu.js'
 
 const TRIGGER = 'Actions for Ada'
 
-/** The trigger's accessible name is the row it belongs to. */
 function trigger(): HTMLElement {
   return screen.getByRole('button', { name: TRIGGER })
 }
 
-/**
- * A row whose first write marks the whole menu unavailable, as a host does
- * while the write it started is in flight.
- */
 function UnavailableAfterSelect({ initiallyDisabled = false }) {
   const [disabled, setDisabled] = useState(initiallyDisabled)
   const actions: readonly RowAction[] = [

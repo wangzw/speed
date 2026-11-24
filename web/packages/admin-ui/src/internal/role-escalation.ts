@@ -1,16 +1,6 @@
 /**
- * The role-assignment escalation pre-check shared by the member panel's bind
- * control and the invitation issue form's role selector.
- *
- * Both surfaces offer to hand a role to someone else, so both must first
- * prove they are not handing out more than the caller already holds. The
- * check reads the selected role's grants from the server (the engine is the
- * authority on what a grant means; the client never reconstructs it) and
- * compares each grant's permission code with the caller's own tenant set.
- * Three outcomes fail closed: the read is pending, the read failed, or a
- * grant carries no permission code. A grant the caller does not hold blocks
- * the write. The selected role's own grants answer is returned so the
- * calling surface can offer a retry after a failed read.
+ * The role-assignment escalation pre-check: compares the selected role's grants
+ * with the caller's tenant set and fails closed on pending, failed or codeless reads.
  */
 
 import { useMemo } from 'react'
@@ -37,11 +27,10 @@ export interface RoleEscalationCheck {
   readonly escalationBlocked: boolean
 }
 
-/**
- * The escalation pre-check for `selectedRole` in `tenant`. The grants read
- * stays disabled while the caller cannot manage roles or no role is
- * selected.
- */
+  /**
+   * The escalation pre-check for `selectedRole` in `tenant`; the grants read
+   * stays disabled while the caller cannot manage roles or no role is selected.
+   */
 export function useRoleEscalationCheck(
   tenant: string,
   selectedRole: string,
@@ -49,8 +38,8 @@ export function useRoleEscalationCheck(
   const operations = useOrganizationAdminOperations()
   const auth = useAuthState()
   const canManageRoles = usePermission('tenant', 'authz.tenant.role.manage')
-  // The permission set is what the check compares against; an absent set or
-  // an unauthenticated session reads as empty, which fails every grant.
+  // An absent permission set or unauthenticated session reads as empty,
+  // which fails every grant.
   const permissionSet =
     auth.state === 'authenticated' ? auth.permissionSets.tenant : null
   const callerPermissions = useMemo(
@@ -63,8 +52,7 @@ export function useRoleEscalationCheck(
     canManageRoles && roleSelected ? selectedRole : undefined,
   )
   // `isPending` alone is the loading signal: an errored query also has
-  // `data === undefined`, so testing the data would keep the surface in its
-  // checking state after the read already failed.
+  // `data === undefined`, so testing the data would keep the surface checking.
   const grantsPending = canManageRoles && roleSelected && grants.isPending
   const grantsFailed =
     canManageRoles && roleSelected && !grantsPending && grants.isError
