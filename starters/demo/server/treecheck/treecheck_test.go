@@ -9,9 +9,9 @@ import (
 	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
-// hostBinary is the compiled program the contract cases run.
 var hostBinary string
 
+// TestMain builds the program once and runs the contract cases.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "treecheck")
 	if err != nil {

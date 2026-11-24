@@ -1,12 +1,5 @@
 package main
 
-// The SMS side of the notification fixture: the type carries the closed channel
-// set's sms member and names the template the rollout journey registers, and a
-// recipient is addressed on the external channel their account can actually be
-// reached on. A recipient with a proved phone is addressed by sms; one with only
-// an email address falls back to email, and sms is removed from that recipient's
-// effective set rather than attempted with the email address as its destination.
-
 import (
 	"context"
 	"errors"
@@ -29,10 +22,8 @@ const (
 	e2eSMSTestPhone = "+15551234567"
 )
 
-// TestE2ENotificationDeclaresSMSAndItsTemplateBinding holds the declaration
-// side of the rollout journey: the demo notification type's default channels include sms,
-// its recipient-visible whitelist admits the destination the sms channel reads,
-// and its catalog names the template the journey registers in every language.
+// TestE2ENotificationDeclaresSMSAndItsTemplateBinding holds that the type's
+// default channels include sms and its catalog names the journey's template.
 func TestE2ENotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 	t.Parallel()
 	var declared *notification.TypeSpec
@@ -73,11 +64,8 @@ func TestE2ENotificationDeclaresSMSAndItsTemplateBinding(t *testing.T) {
 	}
 }
 
-// TestE2ENoticePlansTheExternalChannelFromTheAccount holds the per-recipient
-// choice: a proved phone whose template the registry holds for the language is
-// the destination and sms the external channel; without a held template the
-// account falls back to its email address, or to in-app alone when it has none;
-// an account with only an email address falls back to email without sms.
+// TestE2ENoticePlansTheExternalChannelFromTheAccount holds that a proved phone with a held template is
+// the sms destination, otherwise the account falls back to email or to in-app alone.
 func TestE2ENoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	t.Parallel()
 	phone := authn.Identifier{
@@ -167,12 +155,8 @@ func TestE2ENoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	}
 }
 
-// TestE2ENoticeSkipsSMSWithoutASendableTemplate drives the decision through
-// notify: a member with a proved phone and an email address whose SMS template
-// the registry cannot resolve is dispatched on in-app and email, and sms is
-// removed from the effective set before the pipeline reads it. The registry is
-// asked first, so a server that never registered the rollout template does not
-// attempt sms at all.
+// TestE2ENoticeSkipsSMSWithoutASendableTemplate holds that an unresolvable template leaves sms out of
+// the effective set before the pipeline reads it.
 func TestE2ENoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 	t.Parallel()
 	templates := &stubE2ESMSTemplates{err: fmt.Errorf("%w: no template", sms.ErrRejected)}
@@ -231,11 +215,8 @@ func TestE2ENoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
 	}
 }
 
-// TestE2ENoticeKeepsSMSForATemplateThePlatformRefuses holds the other side
-// of the selection rule: a template the registry holds for the language but the
-// platform's sending gate refuses (disabled, awaiting review, or the sending
-// switch off) is still chosen, so the delivery pipeline records the refusal.
-// The fixture must not turn the platform's gate into a silent channel swap.
+// TestE2ENoticeKeepsSMSForATemplateThePlatformRefuses holds that a template the sending gate refuses
+// is still chosen, so the pipeline records the refusal.
 func TestE2ENoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
 	t.Parallel()
 	templates := &stubE2ESMSTemplates{
@@ -280,9 +261,8 @@ func TestE2ENoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
 	}
 }
 
-// TestE2ENoticeSendsSMSWithASendableTemplate holds the other direction: when
-// the registry resolves the type's template in the recipient's language, the
-// phones address is the destination and sms stays in the effective set.
+// TestE2ENoticeSendsSMSWithASendableTemplate holds that a resolvable template makes the proved phone
+// the destination and keeps sms in the effective set.
 func TestE2ENoticeSendsSMSWithASendableTemplate(t *testing.T) {
 	t.Parallel()
 	prefs := &stubE2EPrefs{
@@ -327,8 +307,6 @@ func TestE2ENoticeSendsSMSWithASendableTemplate(t *testing.T) {
 	}
 }
 
-// stubE2ESMSTemplates answers Resolve with the error the case set and keeps
-// the message it was asked about. A nil error is a sendable template.
 type stubE2ESMSTemplates struct {
 	err     error
 	message sms.Message
@@ -339,8 +317,6 @@ func (s *stubE2ESMSTemplates) Resolve(m sms.Message) (sms.Resolved, error) {
 	return sms.Resolved{}, s.err
 }
 
-// stubE2EAccounts answers Identifiers; the embedded interface makes the
-// other reads unreachable without listing them.
 type stubE2EAccounts struct {
 	authn.Accounts
 	identifiers []authn.Identifier
@@ -350,7 +326,6 @@ func (s stubE2EAccounts) Identifiers(context.Context, authn.AccountID) ([]authn.
 	return s.identifiers, nil
 }
 
-// stubE2EPrefs answers the effective set and records the write.
 type stubE2EPrefs struct {
 	notification.Preferences
 	effective []notification.Channel
@@ -366,7 +341,6 @@ func (s *stubE2EPrefs) Set(_ context.Context, _, _ string, channels []notificati
 	return s.written, nil
 }
 
-// stubE2EDispatcher records the submitted dispatch.
 type stubE2EDispatcher struct {
 	notification.Dispatcher
 	dispatch *notification.Dispatch
@@ -377,7 +351,6 @@ func (s *stubE2EDispatcher) Dispatch(_ context.Context, d notification.Dispatch)
 	return "job-1", nil
 }
 
-// stubE2EResolver answers the run's default language.
 type stubE2EResolver struct {
 	i18n.Resolver
 	locale string
@@ -385,7 +358,6 @@ type stubE2EResolver struct {
 
 func (s stubE2EResolver) Default() i18n.Locale { return i18n.Locale(s.locale) }
 
-// stubE2EProfile answers the language an account carries.
 type stubE2EProfile struct {
 	i18n.Profile
 	locale i18n.Locale
@@ -399,7 +371,6 @@ func (s stubE2EProfile) TimeZoneFor(context.Context, string) (string, bool, erro
 	return "", false, nil
 }
 
-// failingE2EProfile is a profile whose preference read fails.
 type failingE2EProfile struct{}
 
 func (failingE2EProfile) LocaleFor(context.Context, string) (i18n.Locale, bool, error) {
@@ -410,12 +381,8 @@ func (failingE2EProfile) TimeZoneFor(context.Context, string) (string, bool, err
 	return "", false, nil
 }
 
-// TestE2ENoticeGoesOutInTheRecipientsStoredLanguage holds the language
-// source: the dispatch's locale is the recipient's stored preference, not the
-// language of the request context. The worker runs with no request at all and
-// the direct control runs under the recipient's own request, so a shared rule
-// that read the request language would send the notice in the browser's
-// language instead of the account's.
+// TestE2ENoticeGoesOutInTheRecipientsStoredLanguage holds that the dispatch locale is the recipient's
+// stored preference, not the request's language.
 func TestE2ENoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 	t.Parallel()
 	dispatcher := &stubE2EDispatcher{}
@@ -445,11 +412,8 @@ func TestE2ENoticeGoesOutInTheRecipientsStoredLanguage(t *testing.T) {
 	}
 }
 
-// TestE2ENoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference holds
-// the other side: an account that stores no preference receives the notice in
-// the run's default, still regardless of the request's language. The default is
-// a third language, neither the request's nor "en-US", so an implementation
-// that hard-coded English fails this case.
+// TestE2ENoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference holds that an account with no
+// preference receives the notice in the run's default.
 func TestE2ENoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *testing.T) {
 	t.Parallel()
 	dispatcher := &stubE2EDispatcher{}
@@ -479,7 +443,6 @@ func TestE2ENoticeFallsBackToTheDefaultLanguageWithoutAStoredPreference(t *testi
 	}
 }
 
-// recordingLogs keeps the records the notifier writes.
 type recordingLogs struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -497,11 +460,8 @@ func (r *recordingLogs) Handle(_ context.Context, rec slog.Record) error {
 func (r *recordingLogs) WithAttrs([]slog.Attr) slog.Handler { return r }
 func (r *recordingLogs) WithGroup(string) slog.Handler      { return r }
 
-// TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails holds the
-// state a failed read is: the notice goes out in the run's default, the
-// dispatch still happens, and a warning names the notice's declared type and
-// tenant without the recipient's identifier anywhere in its fields. The default
-// is a third language, so a hard-coded "en-US" fails this case too.
+// TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails holds that a failed read still
+// dispatches in the default and warns without the recipient's identifier.
 func TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) {
 	t.Parallel()
 	dispatcher := &stubE2EDispatcher{}
@@ -559,8 +519,6 @@ func TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) 
 	if got, _ := attrValue(warned[0], "type"); got != demoNotificationTypeKey {
 		t.Errorf("the warning names type %q, want %q", got, demoNotificationTypeKey)
 	}
-	// The tenant the call was made for is the one the line names, and it never
-	// falls back to the recipient.
 	if tenant, found := attrValue(warned[0], "tenant"); !found || tenant != "acme" {
 		t.Errorf("the warning names tenant %q found=%t, want the tenant the notice was dispatched for, %q",
 			tenant, found, "acme")
@@ -568,8 +526,6 @@ func TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) 
 	if _, found := attrValue(warned[0], "account"); found {
 		t.Errorf("the warning carries the recipient's identifier; the line names the notice, not the person")
 	}
-	// The identifier stays out of every field, not just the one it used to sit
-	// in: cause and recipient carry values too.
 	warned[0].Attrs(func(attribute slog.Attr) bool {
 		if strings.Contains(attribute.Value.String(), "acct-unreadable") {
 			t.Errorf("the warning's %q attribute carries the recipient's identifier", attribute.Key)
@@ -578,10 +534,8 @@ func TestE2ENoticeFallsBackToTheDefaultWhenThePreferenceReadFails(t *testing.T) 
 	})
 }
 
-// TestE2ENoticeAsksEveryProfileAfterAFailedRead holds that a failed read in
-// one profile does not end the search: a later profile's stored preference
-// decides the dispatch, and exactly one warning is written. The fallback is a
-// third language, so answering with the resolver's default fails this case too.
+// TestE2ENoticeAsksEveryProfileAfterAFailedRead holds that a later profile's preference decides after
+// one read fails, with exactly one warning.
 func TestE2ENoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	t.Parallel()
 	dispatcher := &stubE2EDispatcher{}
@@ -635,10 +589,8 @@ func TestE2ENoticeAsksEveryProfileAfterAFailedRead(t *testing.T) {
 	})
 }
 
-// TestE2ENoticePrunesOnlyUnaddressableChannels holds the write the fixture
-// makes before a dispatch: it removes a channel the recipient cannot be
-// addressed on and never adds one back, so a recipient's stored choice survives
-// every window.
+// TestE2ENoticePrunesOnlyUnaddressableChannels holds that the pre-dispatch write drops an
+// unaddressable channel and never adds one back.
 func TestE2ENoticePrunesOnlyUnaddressableChannels(t *testing.T) {
 	t.Parallel()
 	noPhone := demoNoticePlan{
@@ -689,7 +641,6 @@ func TestE2ENoticePrunesOnlyUnaddressableChannels(t *testing.T) {
 	}
 }
 
-// containsString reports whether values holds want.
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
@@ -699,7 +650,6 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-// sameChannels reports whether two channel sets are equal element by element.
 func sameChannels(a, b []notification.Channel) bool {
 	if len(a) != len(b) {
 		return false

@@ -12,11 +12,7 @@ import (
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
 )
 
-// TestTheCallerTenantReadIsOnTheAccountEndpoint holds the route and the
-// contract together: the account endpoint answers the read for an authenticated
-// caller, and the served document declares the operation against that endpoint.
-// Either one alone would pass over a module that mounted the route somewhere
-// the fragment does not describe, or declared it without mounting it.
+// TestTheCallerTenantReadIsOnTheAccountEndpoint holds the route and the served contract together.
 func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
@@ -76,9 +72,8 @@ func TestTheCallerTenantReadIsOnTheAccountEndpoint(t *testing.T) {
 	}
 }
 
-// TestThePersonalAssemblyCarriesTheCallerTenantRead holds the ruling that an
-// assembly carrying personal tenants must also name tenant.self: the caller's
-// tenant list is where an account reads the space its account creation built.
+// TestThePersonalAssemblyCarriesTheCallerTenantRead holds that an assembly with personal tenants also
+// names tenant.self.
 func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	t.Parallel()
 	if !slices.Contains(baselineServe, tenantself.ModuleName) {
@@ -86,9 +81,6 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 			"cannot list the caller's own membership", tenantself.ModuleName)
 	}
 
-	// The personal assembly answers the read through the program: the seeded
-	// account reads its own personal tenant, which the account's creation
-	// transaction built before the first request arrives.
 	base, token := seededServe(t, "")
 	read := send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet,
 		base+"/api/v1/auth/me/tenants", nil,
@@ -110,8 +102,6 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 		t.Errorf("the seeded account answered %d tenant(s), want its one personal tenant:\n%s",
 			len(answer.Tenants), read.body)
 	}
-	// The host's resolver names the caller's own space personal; the platform
-	// read passes that answer through.
 	if len(answer.Tenants) == 1 && answer.Tenants[0].Kind != string(tenant.KindPersonal) {
 		t.Errorf("the personal tenant's kind is %q, want personal:\n%s",
 			answer.Tenants[0].Kind, read.body)

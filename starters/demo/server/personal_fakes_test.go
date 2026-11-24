@@ -1,11 +1,5 @@
 package main
 
-// The stand-in seams several demo test suites share: the roster, the
-// memberships, the policy manager and its grants, the seeding surface, the
-// audit recorder and the step log. The personal-tenant module itself lives in
-// pkg/tenant/personal; these remain because the tenant and self-service
-// creation suites drive the host's seams over them.
-
 import (
 	"context"
 	"fmt"
@@ -19,19 +13,12 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// fakeRoster is the tenant.Catalog the unit cases use. Get and Create are the
-// rows' store, and lagging hides a row Get would otherwise find, standing for a
-// snapshot that predates it. EnterRegistered clears that; every other method
-// panics through the embedded nil interface if a case ever reaches one.
 type fakeRoster struct {
 	tenant.Catalog
 
-	mu      sync.Mutex
-	rows    map[tenant.ID]tenant.Tenant
-	lagging map[tenant.ID]bool
-	// ownerless makes Get report a row without its owner, standing for a read
-	// that predates an ownership transfer. SetOwnerIfEmpty still sees the row's
-	// real owner.
+	mu        sync.Mutex
+	rows      map[tenant.ID]tenant.Tenant
+	lagging   map[tenant.ID]bool
 	ownerless []tenant.ID
 	createErr error
 	creates   int
@@ -53,9 +40,6 @@ func newFakeRoster() *fakeRoster {
 	}
 }
 
-// SetStatusByAccount is the roster's account-driven transition: a disable is
-// written only from active and an enable only from a disable the account made,
-// so an operator's disable is left standing. A tombstone is ErrTenantDeleted.
 func (r *fakeRoster) SetStatusByAccount(_ context.Context, id tenant.ID, s tenant.Status) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -89,9 +73,6 @@ func (r *fakeRoster) SetStatusByAccount(_ context.Context, id tenant.ID, s tenan
 	return nil
 }
 
-// Delete writes the tombstone. An identifier no row carries is ErrInvalidTenant,
-// a tombstone is no work, and the name and the disable source are left as they
-// are.
 func (r *fakeRoster) Delete(_ context.Context, id tenant.ID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -126,9 +107,6 @@ func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, 
 	return row, found, nil
 }
 
-// SetOwner writes the owner the seed names for a tenant whose row it found
-// without one. An absent row and a tombstone are refused as the roster refuses
-// them.
 func (r *fakeRoster) SetOwner(_ context.Context, id tenant.ID, owner string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -144,9 +122,6 @@ func (r *fakeRoster) SetOwner(_ context.Context, id tenant.ID, owner string) err
 	return nil
 }
 
-// SetOwnerIfEmpty writes the owner only while the row still carries none, as
-// the roster's conditional repair does. An owner that arrived since the caller's
-// read stands.
 func (r *fakeRoster) SetOwnerIfEmpty(_ context.Context, id tenant.ID, owner string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -180,8 +155,6 @@ func (r *fakeRoster) Create(_ context.Context, t tenant.Tenant) error {
 	return nil
 }
 
-// List returns the rows the roster holds, ordered by identifier, as the real
-// catalog does.
 func (r *fakeRoster) List(_ context.Context) ([]tenant.Tenant, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -206,7 +179,6 @@ func (r *fakeRoster) EnterRegistered(ctx context.Context, id tenant.ID) (context
 	return ctx, nil
 }
 
-// fakeMemberships is the authn.Memberships the unit cases use.
 type fakeMemberships struct {
 	authn.Memberships
 
@@ -225,9 +197,6 @@ func newFakeMemberships() *fakeMemberships {
 	return &fakeMemberships{rows: map[authn.AccountID][]authn.Membership{}}
 }
 
-// Members lists one page of a tenant's memberships in account order, the way
-// the account module does: After is the last account identifier of the page
-// before.
 func (m *fakeMemberships) Members(_ context.Context, tenantID string, query authn.MemberQuery) ([]authn.Membership, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -258,7 +227,6 @@ func (m *fakeMemberships) Members(_ context.Context, tenantID string, query auth
 	return append([]authn.Membership(nil), all...), nil
 }
 
-// Remove deletes one membership.
 func (m *fakeMemberships) Remove(_ context.Context, id authn.AccountID, tenantID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -271,8 +239,6 @@ func (m *fakeMemberships) Remove(_ context.Context, id authn.AccountID, tenantID
 	return nil
 }
 
-// RemoveMembershipForDeletion deletes one membership without asking a guard, as
-// the account module's account-deletion path does.
 func (m *fakeMemberships) RemoveMembershipForDeletion(ctx context.Context, id authn.AccountID, tenantID string) error {
 	return m.Remove(ctx, id, tenantID)
 }
@@ -315,8 +281,6 @@ func (m *fakeMemberships) Put(_ context.Context, membership authn.Membership) er
 	return nil
 }
 
-// IsMember reads one membership's active state, the way the account module
-// does: an absent row and a suspended one both answer false.
 func (m *fakeMemberships) IsMember(_ context.Context, id authn.AccountID, tenantID string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -328,7 +292,6 @@ func (m *fakeMemberships) IsMember(_ context.Context, id authn.AccountID, tenant
 	return false, nil
 }
 
-// Membership reads one membership row.
 func (m *fakeMemberships) Membership(_ context.Context, tenantID string, id authn.AccountID) (authn.Membership, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -340,8 +303,6 @@ func (m *fakeMemberships) Membership(_ context.Context, tenantID string, id auth
 	return authn.Membership{}, false, nil
 }
 
-// fakeGrants is the grant table the manager and the seeding surface share, as
-// the two share one in the process: the lifecycle reads what the seam seeded.
 type fakeGrants struct {
 	mu   sync.Mutex
 	sets map[string]map[authz.Role]map[authz.Grant]struct{}
@@ -351,7 +312,6 @@ func newFakeGrants() *fakeGrants {
 	return &fakeGrants{sets: map[string]map[authz.Role]map[authz.Grant]struct{}{}}
 }
 
-// held returns the grants a role holds, for a case to assert on.
 func (g *fakeGrants) held(tenantID string, role authz.Role) []authz.Grant {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -362,7 +322,6 @@ func (g *fakeGrants) held(tenantID string, role authz.Role) []authz.Grant {
 	return out
 }
 
-// fakeManager is the authz.Manager the unit cases use.
 type fakeManager struct {
 	authz.Manager
 
@@ -449,8 +408,6 @@ func (m *fakeManager) PutRole(_ context.Context, record authz.RoleRecord) error 
 	return nil
 }
 
-// MarkRoleBuiltin sets the builtin mark on an existing role; an absent role is
-// ErrUnknownRole, and an already-builtin role is no work.
 func (m *fakeManager) MarkRoleBuiltin(_ context.Context, tenantID string, role authz.Role) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -501,7 +458,6 @@ func (m *fakeManager) PutBinding(_ context.Context, binding authz.Binding) error
 	return nil
 }
 
-// Bindings lists every binding of a tenant.
 func (m *fakeManager) Bindings(_ context.Context, tenantID string) ([]authz.Binding, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -512,9 +468,6 @@ func (m *fakeManager) Bindings(_ context.Context, tenantID string) ([]authz.Bind
 	return append([]authz.Binding(nil), m.bindings[tenantID]...), nil
 }
 
-// DeleteBinding removes one binding, and removing one that is not there is no
-// work. The last tenant-administrator binding of a domain is refused, as the
-// policy manager refuses it.
 func (m *fakeManager) DeleteBinding(_ context.Context, tenantID, account string, role authz.Role) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -551,9 +504,6 @@ func (m *fakeManager) DeleteBinding(_ context.Context, tenantID, account string,
 	return nil
 }
 
-// ClearAccountBindings removes one account's bindings within a tenant, the
-// host's account-deletion path that the last-tenant-administrator rule does not
-// constrain.
 func (m *fakeManager) ClearAccountBindings(_ context.Context, tenantID, account string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -573,8 +523,6 @@ func (m *fakeManager) ClearAccountBindings(_ context.Context, tenantID, account 
 	return nil
 }
 
-// DeleteRole removes a role with its grants and bindings. A builtin role is
-// refused with authz.ErrBuiltinRole; a role that is not there is no work.
 func (m *fakeManager) DeleteRole(_ context.Context, tenantID string, role authz.Role) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -611,8 +559,6 @@ func (m *fakeManager) DeleteRole(_ context.Context, tenantID string, role authz.
 	return nil
 }
 
-// fakeSeeder is the authz.Seeder the unit cases use. It writes into the same
-// grant table the manager reads.
 type fakeSeeder struct {
 	authz.Seeder
 
@@ -651,8 +597,6 @@ func (s *fakeSeeder) SeedGrants(_ context.Context, tenantID string, role authz.R
 	return added, nil
 }
 
-// stepLog records the order writes reached the stand-ins, so a case can pin a
-// fixed sequence across seams that are separate objects.
 type stepLog struct {
 	mu    sync.Mutex
 	steps []string
@@ -676,8 +620,6 @@ func (l *stepLog) snapshot() []string {
 	return append([]string(nil), l.steps...)
 }
 
-// recordedAudit is the audit.Audit the unit cases use. It keeps every accepted
-// entry and whether the context carried an identity, and fails on demand.
 type recordedAudit struct {
 	mu         sync.Mutex
 	entries    []audit.Entry
@@ -701,7 +643,6 @@ func (a *recordedAudit) Record(ctx context.Context, e audit.Entry) error {
 	return nil
 }
 
-// rows answers the entries accepted so far.
 func (a *recordedAudit) rows() []audit.Entry {
 	a.mu.Lock()
 	defer a.mu.Unlock()

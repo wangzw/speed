@@ -30,9 +30,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// roleAcceptanceAssembly is the group of modules one acceptance case drives:
-// the invitation module over the real policy and account modules, with the
-// database and the two accounts every case starts from.
 type roleAcceptanceAssembly struct {
 	invitations invite.Invites
 	memberships authn.Memberships
@@ -43,11 +40,6 @@ type roleAcceptanceAssembly struct {
 	invitee     authn.Account
 }
 
-// withRoleAcceptanceAssembly brings up one assembly and runs use at the start
-// stage. The timeout is the deadlock detector: the role review reads the policy
-// tables before the acceptance's transaction opens, and a review that read from
-// inside the transaction would wait on the single connection for the whole
-// bound.
 func withRoleAcceptanceAssembly(t *testing.T, use func(context.Context, *roleAcceptanceAssembly)) {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "role-acceptance.db")
@@ -76,11 +68,6 @@ func withRoleAcceptanceAssembly(t *testing.T, use func(context.Context, *roleAcc
 		reg.Register(m)
 		names = append(names, m.Name)
 	}
-	// The gateway module is in the assembly for its configuration declarations
-	// alone: the instance handed to it is a no-op, so its own mount checks do not
-	// run. The entry point, the path-tenant guard, the tenant description read
-	// and the tenant roster read are stand-ins; the point of the case is the
-	// policy and account modules.
 	reg.Supply(roleAcceptanceGate{}, gate.ModuleName)
 	for _, m := range []core.Module{
 		roleAcceptanceStandIn("stand-in.role-router", (*speedhttp.Router)(nil), roleAcceptanceRouter{}),
@@ -145,9 +132,6 @@ func withRoleAcceptanceAssembly(t *testing.T, use func(context.Context, *roleAcc
 				return fmt.Errorf("making the inviter a member: %w", err)
 			}
 
-			// The inviter holds a role with the tenant's role management, and the
-			// invited role carries a permission the inviter holds, so the subset
-			// rule passes on both the issue and the acceptance.
 			if err := manager.PutRole(ctx, authz.RoleRecord{
 				Tenant: "acme", Role: "manager", DescriptionKey: "demo.role.manager",
 			}); err != nil {
@@ -191,9 +175,6 @@ func withRoleAcceptanceAssembly(t *testing.T, use func(context.Context, *roleAcc
 	}
 }
 
-// oneConnection holds the database to a single connection from here on, so an
-// acceptance that reads the policy tables from inside its transaction waits on
-// itself until the case's timeout.
 func oneConnection(t *testing.T, database db.Database) {
 	t.Helper()
 	sqlDB, err := database.DB().DB()
@@ -203,11 +184,8 @@ func oneConnection(t *testing.T, database db.Database) {
 	sqlDB.SetMaxOpenConns(1)
 }
 
-// TestTheRoleAcceptanceAssemblyAcceptsARoleThroughTheRealPolicyAndAccountModules holds
-// the success path: a member who holds role management issues an invitation
-// that carries a role within their own held set, and the invited account
-// accepts it, ending with the membership and the binding written by the real
-// account and policy modules in one transaction.
+// TestTheRoleAcceptanceAssemblyAcceptsARoleThroughTheRealPolicyAndAccountModules
+// holds that an invitation within the inviter's held set is accepted.
 func TestTheRoleAcceptanceAssemblyAcceptsARoleThroughTheRealPolicyAndAccountModules(t *testing.T) {
 	t.Parallel()
 	withRoleAcceptanceAssembly(t, func(ctx context.Context, a *roleAcceptanceAssembly) {
@@ -242,11 +220,8 @@ func TestTheRoleAcceptanceAssemblyAcceptsARoleThroughTheRealPolicyAndAccountModu
 	})
 }
 
-// TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterLeftTheTenant holds the
-// acceptance review over the real policy module: the inviter's membership is
-// suspended after the invitation was issued, their binding and held set stay
-// as they were, and the acceptance must still refuse to bind the role. The
-// invitation is revoked and neither the membership nor the binding is written.
+// TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterLeftTheTenant holds that a suspended
+// inviter's invitation is refused and revoked.
 func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterLeftTheTenant(t *testing.T) {
 	t.Parallel()
 	withRoleAcceptanceAssembly(t, func(ctx context.Context, a *roleAcceptanceAssembly) {
@@ -257,8 +232,6 @@ func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterLeftTheTenant(t
 		if err != nil {
 			t.Fatalf("issuing the invitation: %v", err)
 		}
-		// The suspension leaves the policy binding in place, which is why the
-		// held set alone cannot judge the inviter's standing.
 		if putErr := a.memberships.Put(ctx, authn.Membership{
 			Account: a.inviter.ID, Tenant: "acme", Active: false, Source: "admin",
 		}); putErr != nil {
@@ -287,12 +260,8 @@ func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterLeftTheTenant(t
 	})
 }
 
-// TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterAccountIsDisabled
-// holds the acceptance review against an account-level disable: disabling the
-// inviter's account leaves the membership and the policy bindings in place, so
-// the member and held-set checks still pass. The acceptance must read the
-// inviter's account and refuse the role anyway. The invitation is revoked and
-// neither the membership nor the binding is written.
+// TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterAccountIsDisabled holds that a disabled
+// inviter's invitation is refused and revoked.
 func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterAccountIsDisabled(t *testing.T) {
 	t.Parallel()
 	withRoleAcceptanceAssembly(t, func(ctx context.Context, a *roleAcceptanceAssembly) {
@@ -303,8 +272,6 @@ func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterAccountIsDisabl
 		if err != nil {
 			t.Fatalf("issuing the invitation: %v", err)
 		}
-		// A disabled account keeps its memberships and its policy bindings, so
-		// nothing the policy module reads has changed.
 		if statusErr := a.admin.SetStatus(ctx, a.inviter.ID, authn.StatusDisabled, authn.ReasonAdmin); statusErr != nil {
 			t.Fatalf("disabling the inviter's account: %v", statusErr)
 		}
@@ -331,7 +298,6 @@ func TestTheRoleAcceptanceAssemblyRefusesAnInvitationWhoseInviterAccountIsDisabl
 	})
 }
 
-// bindingsOf reads one account's bindings in the tenant.
 func bindingsOf(t *testing.T, a *roleAcceptanceAssembly, id authn.AccountID) []authz.Binding {
 	t.Helper()
 	bindings, err := a.manager.BindingsOf(t.Context(), "acme", string(id))
@@ -341,7 +307,6 @@ func bindingsOf(t *testing.T, a *roleAcceptanceAssembly, id authn.AccountID) []a
 	return bindings
 }
 
-// containsRole reports whether the bindings include the role.
 func containsRole(bindings []authz.Binding, role authz.Role) bool {
 	for _, b := range bindings {
 		if b.Role == role {
@@ -351,12 +316,8 @@ func containsRole(bindings []authz.Binding, role authz.Role) bool {
 	return false
 }
 
-// quoteJSON renders a string as a JSON string literal.
 func quoteJSON(value string) string { return fmt.Sprintf("%q", value) }
 
-// roleAcceptanceStandIn is a module that declares one capability token for an
-// instance the case supplies, so the registry resolves it without the real
-// implementation.
 func roleAcceptanceStandIn(name string, token core.Token, instance any) core.Module {
 	return core.Module{
 		Name:     name,
@@ -365,9 +326,6 @@ func roleAcceptanceStandIn(name string, token core.Token, instance any) core.Mod
 	}
 }
 
-// roleAcceptanceMembershipCheckerModule answers the policy module's membership
-// question from the real membership store, which is the seam the acceptance
-// review asks whether the inviter is still an active member.
 func roleAcceptanceMembershipCheckerModule() core.Module {
 	return core.Module{
 		Name:     "stand-in.role-membership-checker",
@@ -383,7 +341,6 @@ func roleAcceptanceMembershipCheckerModule() core.Module {
 	}
 }
 
-// roleAcceptanceMembershipChecker is the membership seam over the real store.
 type roleAcceptanceMembershipChecker struct{ reader authn.Memberships }
 
 func (c roleAcceptanceMembershipChecker) IsMember(ctx context.Context, tenant, account string) (bool, error) {
@@ -394,8 +351,6 @@ func (c roleAcceptanceMembershipChecker) IsMember(ctx context.Context, tenant, a
 	return c.reader.IsMember(ctx, id, tenant)
 }
 
-// roleAcceptanceRouter declares the endpoints the routes are mounted on and
-// binds nothing: this case drives the modules' interfaces, not their handlers.
 type roleAcceptanceRouter struct{}
 
 func (roleAcceptanceRouter) Endpoints() []string { return []string{"account", "api", "system"} }
@@ -408,38 +363,28 @@ func (roleAcceptanceRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
 	return nil, fmt.Errorf("%w: %q", speedhttp.ErrUnknownEndpoint, name)
 }
 
-// roleAcceptanceEndpoint accepts registrations without binding a route.
 type roleAcceptanceEndpoint struct{}
 
 func (roleAcceptanceEndpoint) Route(string, string, ...gin.HandlerFunc) {}
 func (roleAcceptanceEndpoint) Use(speedhttp.Middleware)                 {}
 func (roleAcceptanceEndpoint) Accepting() bool                          { return true }
 
-// roleAcceptanceGate is the gateway the mount module registers its access
-// levels on. This case makes no request, so every registration is a no-op.
 type roleAcceptanceGate struct{}
 
 func (roleAcceptanceGate) Exempt(string, string, string)       {}
 func (roleAcceptanceGate) Optional(string, string, string)     {}
 func (roleAcceptanceGate) Impersonable(string, string, string) {}
 
-// roleAcceptanceRouteGuard admits every request to the tenant-scoped groups.
 type roleAcceptanceRouteGuard struct{}
 
 func (roleAcceptanceRouteGuard) Guard(next gin.HandlerFunc) gin.HandlerFunc { return next }
 
-// roleAcceptanceTenantDescriptions answers every tenant as an ordinary one, so
-// the invitation module can name it and does not treat it as the system tenant.
 type roleAcceptanceTenantDescriptions struct{}
 
 func (roleAcceptanceTenantDescriptions) TenantDescriptionOf(_ context.Context, id string) (authn.TenantDescription, error) {
 	return authn.TenantDescription{Name: id, DisplayName: id}, nil
 }
 
-// roleAcceptanceRoster is the tenant roster stand-in the policy module starts
-// over. It carries the platform domain, which the startup check requires, and
-// the working tenant, whose owner column is empty, so an account is judged to
-// own no organization.
 type roleAcceptanceRoster struct{ tenant.Catalog }
 
 func (roleAcceptanceRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {

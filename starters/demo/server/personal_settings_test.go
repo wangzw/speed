@@ -1,28 +1,13 @@
 package main
 
-// A personal tenant's settings surface refuses a write from the account's own
-// tenant administrator. The personal domain belongs to the host that built it,
-// and its administrator holds no settings permission, so the authorization
-// layer refuses the write before the store is asked.
-//
-// This case covers that authorization-layer refusal: the request never reaches
-// the host's settingsWriteGuard, which would answer with its own protected-write
-// problem. The guard itself is covered by
-// TestTheSettingsWriteGuardRefusesAPersonalDomainWrite in tenancy_test.go and
-// TestAWriteSettingsRefusalIsProtected in pkg/settings/tenantadmin.
-
 import (
 	"encoding/json"
 	"net/http"
 	"testing"
 )
 
-// TestThePersonalTenantSettingsWriteIsRefused drives the assembled program: the
-// seeded account signs in, finds its personal tenant, and writes one admission
-// setting under it. The authorization layer refuses the write with 403 before
-// the host's settings write guard is reached. The same write under an ordinary
-// business tenant the operator administers answers 204, so the refusal belongs
-// to the personal domain rather than to the route.
+// TestThePersonalTenantSettingsWriteIsRefused holds that the authorization layer refuses a personal
+// tenant's settings write 403 while the same write under an ordinary tenant answers 204.
 func TestThePersonalTenantSettingsWriteIsRefused(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "")
@@ -48,8 +33,6 @@ func TestThePersonalTenantSettingsWriteIsRefused(t *testing.T) {
 		t.Errorf("the refusal type is %q, want urn:speed:authz:forbidden", problem.Type)
 	}
 
-	// The same write is allowed under an ordinary business tenant the operator
-	// administers, so the refusal above is the personal domain's alone.
 	operator := signIn(t, base, seedIdentifier, seedPassword)
 	allowed := send(t, client, http.MethodPut,
 		base+"/api/v1/tenants/"+demoTenant+"/settings/tenant.admission/require-mfa",

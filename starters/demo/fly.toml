@@ -1,38 +1,17 @@
-# The demo program on Fly.io: one Machine, one volume, the sqlite stack.
-#
-# That stack is the deployment's whole topology. Its database is a file, its
-# key-value store and event bus are in the process. The image runs the deploy
-# assembly: the baseline plus the SMTP mail carrier, the email verification code
-# sender over it, and the Google and GitHub login methods, so registration can
-# send real codes and either provider can sign a person in. The volume is what
-# keeps the seeded operator, the tenants, the token signing key, the object
-# store and the SQLite file across deploys and machine stops; the sqlite-memory
-# stack would lose all of them with the process.
-#
-# One-time setup, the secrets the entrypoint requires and the deploy command
-# are in AGENTS.md under "Deploying to Fly.io". A fork changes `app` and the
-# volume's `source` together, and creates a volume of that name in the primary
-# region.
 
 app = "vislake-speed-demo"
 primary_region = "sin"
 
 [build]
-  # Relative to this file. The build context is the repository root, which the
-  # deploy command passes as its working directory; see Dockerfile.
   dockerfile = "Dockerfile"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # The demo idles between visits, and a stopped Machine keeps its volume, so
-  # an idle deployment costs nothing.
   auto_stop_machines = "stop"
   auto_start_machines = true
   min_machines_running = 0
 
-  # A rolling deploy gates on this check. "/" is the embedded bundle's entry
-  # document, so a 200 also says the frontend build reached the binary.
   [[http_service.checks]]
     path = "/"
     method = "GET"
@@ -40,11 +19,6 @@ primary_region = "sin"
     timeout = "5s"
     grace_period = "20s"
 
-# The operations endpoint publishes the readiness signal the program is built
-# around: /ready answers only once every part of the assembly has answered. It
-# is on a listener of its own and is not a service, so the check is a top-level
-# one. Top-level checks report Machine health and gate nothing; the check above
-# is the routing gate.
 [checks.ready]
   type = "http"
   port = 8083

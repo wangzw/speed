@@ -1,49 +1,6 @@
-# The end-to-end assembly's configuration: the demo program built with the
-# `e2e` build tag, on the sqlite stack. It is an override document like the six
-# under testdata/ — the platform topology comes from the compiled-in defaults.go
-# — plus the sections the journeys read: the social login methods, the SMS
-# family with its template management page, and the carrier selections that
-# point both channels at their log carriers. It lives outside testdata so the
-# six baselines stay untouched. It carries fake credentials on purpose: nothing
-# here reaches a provider or a carrier.
-#
-# The `e2e` tag changes only the embedded front-end bundle (dist/ becomes
-# dist-e2e); the capability roster is the default one. Run both commands from
-# starters/demo/server, so that every relative path in this file — the token
-# signing key, the object store's root, the database — resolves:
-#
-#   go -C starters/demo/server build -tags e2e -o demo-e2e .
-#   env -C starters/demo/server ./demo-e2e --config file:e2e/config.yaml sqlite seed
-#   env -C starters/demo/server ./demo-e2e --config file:e2e/config.yaml sqlite serve
-#
-# The seed run is idempotent and needed once: it writes the operator account,
-# the tenant, and the runtime settings this assembly cannot start without —
-# authn.sms.allowed-prefixes above all, whose declared default admits no number.
-#
-# The database is ./var/e2e.db, relative to starters/demo/server. The assembly
-# shares the var/ directory with the baseline (the token signing key is
-# var/token-signing-key.pem) but not its database file, so an end-to-end run
-# neither reads nor writes the state a baseline run keeps in var/demo.db.
-#
-# The SMS verification code is never fixed here. The SMS module generates it and
-# the log SMS carrier writes it to the process log; search the server output for
-# "log sms: a verification code was sent" and read its verification_code field.
-# (The attribute is not named "code" because that name is a registered sensitive
-# key of the process, and the logging layer would mask the value.)
-#
-# The email verification code works the same way. authn.emailcode renders it into
-# the authn.email.verify messages and the log mail carrier writes each rendered
-# message to the process log; search for "log mail: a message was sent" and read
-# its verification_code field, which the carrier leaves out of a message that
-# carried no code.
-#
-# No mounting key is repeated here: the loader accepts a required item from the
-# compiled-in document, whose mounting table is complete.
 
 http:
   listeners:
-    # One listener carries the API, the frontend and the operations probes;
-    # the endpoint claims that route them come from the compiled-in document.
     backend:
       address: "127.0.0.1:8080"
   cors:
@@ -52,8 +9,6 @@ http:
         allow-origins:
           - "https://app.demo.test"
 
-# The operations surface's document metadata. Its endpoint is part of the
-# platform topology and comes from defaults.go.
 ops:
   title: demo
   version: 0.1.0
@@ -68,26 +23,13 @@ authn:
   gate:
     mount:
       public-url: "http://localhost:8080"
-  # The management console's SSO provider page. The provider group is mounted
-  # only when authn.admin.sso.enabled is true; a baseline or deployment leaves
-  # it off, and the console then offers no SSO page. The tenant-admin and
-  # enterprise SSO journeys register providers through this page, so this
-  # assembly turns it on.
   admin:
     sso:
       enabled: true
-  # The four social methods. The identifiers and secrets are fake and exist so
-  # the methods start and build an authorization URL. Against the Google block's
-  # public defaults below no callback is expected; the end-to-end harness
-  # replaces those three endpoint items with the local identity provider it
-  # starts, which completes a real round trip.
   login:
     google:
       client-id: "e2e-google-client"
       client-secret: "e2e-google-secret"
-      # The method's own defaults, written out so the end-to-end harness can
-      # replace them with the provider it starts. A person running this file by
-      # hand keeps the public provider and the system roots.
       issuer: "https://accounts.google.com"
       allow-loopback: false
       root-ca-file: ""
@@ -100,29 +42,12 @@ authn:
     wechat-web:
       app-id: "e2e-wechat-web-app"
       app-secret: "e2e-wechat-web-secret"
-  # The enterprise SSO capability's outbound seams. The assembly includes
-  # authn.sso.oidc, and a spec that drives the enterprise journey points these
-  # three items at the local fixtures the end-to-end harness starts:
-  # dns-resolver at the UDP stub that answers the test domain's TXT name,
-  # oidc-ca-file at the CA that signed the local provider's certificate, and
-  # allow-private-egress on because that provider answers on loopback. They are
-  # the deployment defaults here: the relaxation off and both seams empty. A
-  # deployment keeps them that way — the TXT lookup takes the system resolver
-  # and the enterprise OIDC egress trusts the system roots alone.
   sso:
     allow-private-egress: false
     dns-resolver: ""
     oidc-ca-file: ""
-    # The enterprise OIDC method is compiled into every build and stands itself
-    # down unless a run names it. This assembly offers the enterprise entry on
-    # every sign-in surface, so it is on here; a baseline or deployment leaves
-    # it off.
     oidc:
       enabled: true
-    # The enterprise SAML method is compiled into every build by
-    # capabilityModules and stands itself down unless a run names it. This
-    # assembly drives the SAML journey against its local identity provider, so
-    # it is on here; a baseline or deployment leaves it off.
     saml:
       enabled: true
   token:
@@ -135,50 +60,17 @@ authn:
       rp-name: demo
       origins:
         - "http://localhost:8080"
-  # The human-verification gate stays off on both surfaces. This assembly sends
-  # SMS and email codes through carriers that write to the log, and the
-  # end-to-end tier drives those sends; a proof requirement would put a
-  # challenge in front of every one of them. The declared defaults are the proof
-  # of work on the non-phone surface and the captcha on the phone surface; both
-  # modes are stated here so this assembly stays off whatever those defaults
-  # become, without a matching change to this file. The phone surface guards the
-  # SMS sends and the other surface every send that does not address a phone
-  # number.
   humanverify:
     mode: off
     phone-mode: off
-  # The invitation notice. authn.invitemail joins this origin to the public
-  # acceptance landing (/invitations/<token>) and renders the notice.
-  # mail.carrier: log below reaches no recipient, so the invitation channel
-  # treats it as not configured: every issue reports not_configured and the
-  # console's one-time panel hands out the link, which lands on this assembly's
-  # own acceptance page.
   invitemail:
     accept-base-url: "http://localhost:8080"
 
-# The SMS sending family. sms.registry holds the templates the SMS module sends
-# its codes under; the login, second-factor and enrollment names and the
-# parameter pair are the contract the module checks at startup. The reset
-# template is the optional member: declaring it is what publishes the SMS
-# channel of the anonymous password reset, and without it this assembly would
-# serve the email channel alone. Each carries kind: verification because these
-# messages carry the code a recipient proves — the kind the log carrier reads
-# when it decides whether a line is a verification code or a notice. The codes
-# are the carrier's identifiers, which for the log sender are labels it writes
-# to the log. Each template declares both interface languages: a flow carries
-# the language the browser announced, and the module resolves it against what
-# the template declares, so a zh-CN interface sends under the zh-CN code.
-# The walkthrough reads its codes out of the process log, so both channels
-# select the log carrier explicitly.
 mail:
   carrier: log
 sms:
   carrier: log
   registry:
-    # The vendor's review state is read back per template on this interval, so
-    # a runtime template's configured verdict is visible on the next list
-    # refresh instead of after the declared minute. The poll is a read of the
-    # carrier's own state; the declared default is unchanged.
     poll-interval: 200ms
     templates:
       authn.code.login:
@@ -199,100 +91,47 @@ sms:
         codes:
           en-US: "e2e-enroll"
           zh-CN: "e2e-enroll-zh"
-      # The anonymous password reset's SMS channel. Optional in the module's
-      # contract; declared here so this assembly offers both reset channels and
-      # the SMS journey can read its code from the log.
       authn.code.reset:
         kind: verification
         params: ["code", "ttl_minutes"]
         codes:
           en-US: "e2e-reset"
           zh-CN: "e2e-reset-zh"
-  # The log carrier answers the vendor's per-template review. A configured
-  # verdict answers first, so a runtime template registered under a code the
-  # map names reads that state. The rollout journey's English code is approved
-  # and its Chinese code has no entry, which leaves the language pending; the
-  # other codes no run registers stay pending too.
   log:
     approvals:
       demo-notice-en:
         state: approved
-  # The SMS template page. The baseline imports sms.admin for its OpenAPI
-  # fragment and names it on no command, so a normal deployment serves no page;
-  # this assembly mounts the management routes on the admin endpoint so the
-  # console's navigation offers the page. The template set it manages is the
-  # registry above, and sms.log answers the vendor's per-template review.
   admin:
     endpoints: [admin]
 
-# The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:
     root: "./var/objects"
 
 seed:
   accounts:
-    # The impersonation journey's operator: a platform administrator that is not
-    # a member of the target tenant. The walkthrough itself is in AGENTS.md.
     - identifier: operator@demo.test
       username: operator
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
-    # The impersonation journey's target: an enabled, unprotected member of acme
-    # that holds no platform-domain permission. It is a member through the
-    # members list below and is never the operator's own account. It is seeded as
-    # a username with neither a proved phone number nor an email address on
-    # purpose: the notification fixture addresses every member that has one, and
-    # an extra destination in acme would change the delivery counts that fixture
-    # asserts.
     - identifier: member
       password: member-dev-secret
       display-name: Demo Member
   tenants:
-    # The target is the tenant's administrator as well as its member. The
-    # operator is deliberately absent: the impersonation requirement is a target
-    # inside the tenant and an initiator who is not a member and holds no
-    # permission there. The end-to-end harness adds the platform operator as a
-    # second administrator on every server except the impersonation journey's,
-    # because those servers' tenant-addressed console pages decide in acme's own
-    # policy domain. Impersonation itself is decided in the platform domain, so
-    # its server keeps the seed as written here.
     - name: acme
       admins:
         - member
   members:
-    # The target account's membership. The operator is deliberately not among
-    # the members: the impersonation requirement is a target inside the tenant
-    # and an operator outside it.
     - tenant: acme
       account: member
   settings:
-    # Signup open, so a first login through SMS can open an account and the
-    # methods listing reports signup.enabled.
     - key: "authn.account.signup"
       value: "open"
-    # Name-and-password registration is open, and the email channel that makes
-    # its email verifiable is assembled (authn.emailcode over mail.log). The
-    # registration itself sends no mail; the code goes out when the signed-in
-    # account adds its address.
     - key: "authn.account.password-signup"
       value: "open"
-    # The anonymous password reset is open. This assembly carries both channels
-    # -- authn.emailcode over mail.log, and authn.sms over sms.log with the
-    # optional authn.code.reset template declared above -- so the sign-in
-    # surface offers the forgot-password entry and the reset page offers the
-    # channel choice. The declared default is closed.
     - key: "authn.login.password-reset"
       value: "open"
-    # The email verification code budgets, widened so a walkthrough can ask for
-    # several codes without waiting out a window. They stay inside the domains
-    # authn.login declares (1-60 an hour and 1-200 a day per inbox, 1-60 an hour
-    # and 1-1000 a day per account, 1-10000 an hour and 1-100000 a day per
-    # source, 1-1000000 an hour for the deployment), and the resend interval is
-    # lowered to its floor so a person can ask again quickly. The
-    # deployment-wide hourly budget stays the effective ceiling for an hour's
-    # sends whatever the per-source and per-account values say.
     - key: "authn.login.email-per-address-hourly"
       value: "60"
     - key: "authn.login.email-per-address-daily"
@@ -313,41 +152,14 @@ seed:
       value: "30m"
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"
-    # The impersonation start's freshness window, lowered to the setting's
-    # floor of one minute. The walkthrough signs in with password and TOTP,
-    # waits out the floor, and then starts an impersonation whose start is
-    # refused for freshness and replayed after a step-up with SMS. The declared
-    # default is five minutes and the domain is one minute to thirty; a
-    # deployment keeps the declared default.
     - key: "authn.impersonation.max-auth-age"
       value: "1m"
-    # The official-account entry is assembled but not offered. The method
-    # descriptor never reaches /auth/methods, so the sign-in page renders no
-    # 微信（公众号）button; the web QR code entry stays.
     - key: "authn.login.disabled-methods"
       value: '["wechat.mp"]'
-    # The numbers the SMS method may send to. The declared default is the empty
-    # table, which admits no number at all; these two prefixes are what make +1
-    # and +86 numbers reachable in the end-to-end run.
     - key: "authn.sms.allowed-prefixes"
       value: '["+1","+86"]'
-    # The SMS resend interval, lowered to its floor like the email one above. A
-    # walkthrough that signs a second device in with the same number asks for a
-    # second code while the first send's window is still open; the declared
-    # minute would make that device wait it out at every signing.
     - key: "authn.sms.resend-interval"
       value: "30s"
-    # The SMS per-source budgets, raised to their domain ceilings like the email
-    # ones above so a walkthrough is not throttled. They stay inside the domains
-    # authn.sms declares (1-10000 an hour and 1-100000 a day for one source
-    # address). The new dimensions are raised with them: a run reaches many
-    # different numbers from the one loopback source, so the declared default of
-    # 20 distinct destinations an hour would refuse it, and the attempt window
-    # stays above the number of sends a walkthrough that deliberately drives
-    # refusals makes. The deployment's global hourly budgets
-    # (authn.sms.global-hourly-login, -mfa and -enroll) remain the effective
-    # ceiling for an hour's sends, so a per-source value above them raises
-    # nothing.
     - key: "authn.sms.per-source-hourly"
       value: "10000"
     - key: "authn.sms.per-source-daily"
@@ -358,15 +170,6 @@ seed:
       value: "100000"
     - key: "authn.sms.per-source-attempt-hourly"
       value: "100000"
-    # The address shield's numbers, widened for the end-to-end run. Every
-    # request in this assembly comes from one loopback address, and it is
-    # driven by the journey tier's several browser contexts and by a walkthrough
-    # that deliberately makes refused requests. The declared defaults (four
-    # tokens a second, a burst of eighty, twenty extra tokens for a refusal)
-    # therefore shut the whole source out with a 429 before it reaches the
-    # backend, which is traffic these assemblies are meant to admit. The layer
-    # stays assembled -- it is not removed from the endpoint -- and only its
-    # thresholds move; a deployment keeps the declared defaults.
     - key: "ratelimit.address-rate"
       value: "1000"
     - key: "ratelimit.address-burst"
@@ -374,18 +177,10 @@ seed:
     - key: "ratelimit.address-penalty"
       value: "0"
 
-# The notification fixture is compiled into every build and stands itself down
-# unless a run names it. This assembly dispatches the notice, so the switch is
-# on; the baseline and a deployment leave it off.
 demo:
   notification:
     enabled: true
 
-# The scheduler's tick. The notification fixture declares a periodic dispatch
-# and every window it runs is expanded per tenant; a two-second tick makes a
-# tenant created during a walkthrough start receiving notices promptly instead
-# of waiting out the declared one-minute tick. Nothing else in this assembly
-# declares a schedule, so the frequent tick costs nothing.
 jobs:
   scheduler:
     tick: 2s

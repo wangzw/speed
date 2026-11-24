@@ -1,9 +1,5 @@
 package main
 
-// The enterprise SSO assembly: the OIDC login method, the two outbound seams
-// the end-to-end harness points at its local fixtures, and the deployment
-// default the e2e configuration keeps when nothing points them.
-
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -23,17 +19,10 @@ import (
 	"time"
 )
 
-// e2eSSOSeamsBlock is the e2e configuration's enterprise SSO block with
-// the deployment defaults: the loopback relaxation off and both outbound seams
-// empty. The end-to-end harness replaces this block whole when a spec asks for
-// the local fixtures, so the block is one needle in both places.
 const e2eSSOSeamsBlock = `    allow-private-egress: false
     dns-resolver: ""
     oidc-ca-file: ""`
 
-// testResolverAddress binds a loopback UDP socket and answers its address as a
-// resolver would be named. Nothing answers through it: a start reads the
-// address and validates its shape, and the TXT lookup is a request-time path.
 func testResolverAddress(t *testing.T) string {
 	t.Helper()
 	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -44,10 +33,6 @@ func testResolverAddress(t *testing.T) string {
 	return conn.LocalAddr().String()
 }
 
-// testCAFile mints a self-signed CA and writes its PEM to a file of the case's
-// own. The enterprise OIDC method appends the file's certificates to the system
-// roots as it starts, so a named but unreadable or empty file fails the start;
-// this is the smallest file that is a real deployment's extra root.
 func testCAFile(t *testing.T) string {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -74,12 +59,8 @@ func testCAFile(t *testing.T) string {
 	return path
 }
 
-// TestE2ERunStartsWithTheEnterpriseSSOSeams runs the binary over the
-// e2e configuration with the enterprise SSO block pointed at a resolver
-// address, a CA file and the loopback relaxation the local fixtures need. The
-// run reaches its ready record, the login discovery lists the enterprise method
-// the assembly now carries, and the startup diagnostics report the relaxation on
-// the SSO module's own item — the evidence that the module read this section.
+// TestE2ERunStartsWithTheEnterpriseSSOSeams holds that a run over seams pointed at the local fixtures
+// reaches ready, lists the enterprise method, and reports the loopback relaxation.
 func TestE2ERunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
 	t.Parallel()
 	binary := e2eBinary(t)
@@ -129,11 +110,8 @@ func TestE2ERunStartsWithTheEnterpriseSSOSeams(t *testing.T) {
 	}
 }
 
-// TestE2ERunStartsWithTheEnterpriseSSOSeamsUnset holds the deployment
-// default: the e2e configuration leaves both seams empty and the loopback
-// relaxation off, and a run over it still reaches its ready record. The values
-// are read as the binary's own configuration layer resolves them, then the
-// binary is started over the same file.
+// TestE2ERunStartsWithTheEnterpriseSSOSeamsUnset holds that the deployment default of empty seams and
+// no relaxation still reaches ready.
 func TestE2ERunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 	t.Parallel()
 	var sso struct {
@@ -161,11 +139,8 @@ func TestE2ERunStartsWithTheEnterpriseSSOSeamsUnset(t *testing.T) {
 	}
 }
 
-// TestE2ERunServesTheSAMLLoginMethod runs the binary over the e2e
-// configuration and reads the login discovery: the enterprise SAML method is
-// listed beside the enterprise OIDC one. authn.sso.saml is in every build's
-// capability ceiling and stands itself down unless its switch is on, so the
-// method's presence is what shows the e2e configuration reached the assembly.
+// TestE2ERunServesTheSAMLLoginMethod holds that the login discovery lists the enterprise SAML method
+// beside OIDC.
 func TestE2ERunServesTheSAMLLoginMethod(t *testing.T) {
 	t.Parallel()
 	binary := e2eBinary(t)

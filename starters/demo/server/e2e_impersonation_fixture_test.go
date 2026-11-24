@@ -1,10 +1,5 @@
 package main
 
-// The impersonation fixture's two configuration values and the step-up branch
-// they make reachable. The factor the fixture needs seasoned is written by
-// server/e2e/factorseed, so this file only holds what the configuration states
-// and what the product offers a session that already proved TOTP.
-
 import (
 	"net/http"
 	"testing"
@@ -12,11 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestTheE2EConfigurationNarrowsTheMFAWindows holds the two setting values the
-// fixture depends on: authn.mfa.sensitive-min-age is the one-hour floor that
-// lets a backdated factor count as seasoned, and authn.impersonation.max-auth-age
-// is the one-minute floor that makes a fresh sign-in stale soon enough to reach
-// the step-up.
+// TestTheE2EConfigurationNarrowsTheMFAWindows holds the one-hour sensitive minimum and the one-minute
+// impersonation freshness window.
 func TestTheE2EConfigurationNarrowsTheMFAWindows(t *testing.T) {
 	t.Parallel()
 	var seed seedInput
@@ -36,10 +28,8 @@ func TestTheE2EConfigurationNarrowsTheMFAWindows(t *testing.T) {
 	}
 }
 
-// TestTheStepUpAfterTOTPSignInOffersSMSWithoutTOTP holds the branch the fixture
-// exists to reach: a session that proved TOTP is asked to strengthen itself, and
-// the offered factors are the ones it did not prove. SMS is offered and TOTP is
-// not, so the step-up can complete the impersonation the freshness rule refused.
+// TestTheStepUpAfterTOTPSignInOffersSMSWithoutTOTP holds that a session that proved TOTP is offered
+// SMS and not TOTP.
 func TestTheStepUpAfterTOTPSignInOffersSMSWithoutTOTP(t *testing.T) {
 	t.Parallel()
 	base, token := e2eRecordsServer(t)

@@ -5,25 +5,14 @@ import (
 	"testing"
 )
 
-// e2eDifferentialConfigBody renders the e2e configuration for a differential
-// child: the listener, database, signing key and object store move under a
-// temporary root, and every other value is the assembly's own. It is the
-// configuration side of the case below, so the switches it turns on are the
-// ones the removal is measured over.
 func e2eDifferentialConfigBody(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
 	return e2eConfigBody(t, t.TempDir(),
 		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]), dsn)
 }
 
-// TestTheE2EConfigurationLowersTheRouteCountOfItsSwitches holds the baseline
-// route-count exemptions to the configuration they were written for. The
-// baseline template leaves authn.sso.saml and sms.admin off, so dropping
-// either changes no route count and the exemption table records a vacuous
-// removal. The e2e configuration turns both on: SAML mounts its metadata
-// route, and sms.admin names the admin endpoint in its endpoints item. Over
-// that configuration each removal has to lower an endpoint's route count, so
-// an exemption carried across from the baseline would be false here.
+// TestTheE2EConfigurationLowersTheRouteCountOfItsSwitches holds that over the
+// e2e configuration each exempted module's removal lowers an endpoint's count.
 func TestTheE2EConfigurationLowersTheRouteCountOfItsSwitches(t *testing.T) {
 	t.Parallel()
 	groups := []variantGroup{
@@ -37,10 +26,6 @@ func TestTheE2EConfigurationLowersTheRouteCountOfItsSwitches(t *testing.T) {
 	}
 }
 
-// assertRouteCountsLowered holds a removal that no exemption may excuse: every
-// endpoint the removed modules describe loses routes. A configuration that
-// keeps the count unchanged reddens this assertion, which is what proves the
-// baseline's exemption does not hold for it.
 func assertRouteCountsLowered(t *testing.T, group variantGroup, before, after map[string]chainLine) {
 	t.Helper()
 	measured := false

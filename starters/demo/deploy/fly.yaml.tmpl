@@ -1,30 +1,3 @@
-# The configuration the Fly.io deployment runs on: an override document over
-# the platform defaults compiled into the binary (server/defaults.go).
-#
-# The entrypoint (entrypoint.sh beside this file) renders the placeholders
-# below at container start and writes the result to /data/config.yaml. Every
-# placeholder is either derived from the Machine's own environment or read from
-# a Fly secret, so no credential lives in this file or in the image. The
-# deployment's stack is the sqlite one: the database, the key-value store and
-# the event bus are the process's own, and the volume mounted at /data is what
-# keeps the database, the token signing key and the object store across
-# deploys.
-#
-# The values with no placeholder are this deployment's choices, not
-# credentials: the listeners bind every address because Fly's proxy and health
-# checker connect over the Machine's private network, and the working directory
-# is /data so the relative paths below all land on the volume.
-#
-# The mounting table — which capability mounts on which endpoint, and the
-# endpoints the guards cover — is carried in full by the compiled-in document,
-# required items included, so this file states none of that. The endpoint claim
-# table is the exception: the compiled default puts every endpoint, the ops
-# probes included, on the backend listener, and this deployment keeps the
-# operations surface on a listener of its own so the readiness check in
-# fly.toml can probe it at 0.0.0.0:8083. The table is written whole because
-# http.endpoints is a container leaf. What remains below is what differs
-# between deployments: the topology this one reaches the world at, the paths on
-# its volume, and its credentials.
 
 http:
   listeners:
@@ -51,16 +24,8 @@ http:
     web:
       listener: backend
       prefixes: ["/"]
-  # Fly's proxy is the only peer whose forwarded headers are believed. Fly
-  # appends the app's own Anycast address as the rightmost X-Forwarded-For
-  # entry, so the client address is read from Fly-Client-IP instead. The
-  # trusted network is the proxy's hop into the Machine, not 6PN (fdaa::/16):
-  # a peer arriving over 6PN is another Machine, not the proxy.
   trusted-proxies: ["172.16.0.0/16"]
   remote-ip-headers: ["Fly-Client-IP"]
-  # The api endpoint's CORS policy. The frontend and the API share one origin
-  # here, so no cross-origin request is expected; the public origin is named
-  # as the starting point for a deployment that splits the two.
   cors:
     endpoints:
       api:
@@ -80,16 +45,7 @@ observability:
 authn:
   gate:
     mount:
-      # The origin the deployment is reached at from outside. It is the origin
-      # a browser signs in from and the origin the WebAuthn relying party is
-      # bound to; the entrypoint derives it from the Machine's app name, or
-      # takes it from the DEMO_PUBLIC_URL secret for a custom domain.
       public-url: "__PUBLIC_ORIGIN__"
-  # The two social login methods the image assembles. Each section is an OAuth
-  # application registered with the provider; the entrypoint renders both from
-  # Fly secrets. The redirect URI registered with the provider is the public
-  # origin, the capability's base path and the method's own callback path:
-  # __PUBLIC_ORIGIN__/api/v1/auth/callback/google and .../github.
   login:
     google:
       client-id: "__GOOGLE_CLIENT_ID__"
@@ -97,43 +53,16 @@ authn:
     github:
       client-id: "__GITHUB_CLIENT_ID__"
       client-secret: "__GITHUB_CLIENT_SECRET__"
-  # The token signing key. The program generates one at this path on its first
-  # run and keeps it afterwards; the path is relative to the working directory
-  # (/data), so the key survives a redeploy with the volume.
   token:
     signing-key-file: var/token-signing-key.pem
   mfa:
     totp:
-      # The site name an authenticator app shows beside the account.
       issuer: Speed Demo
     webauthn:
-      # The relying party id is a domain and carries no scheme or port.
       rp-id: "__PUBLIC_DOMAIN__"
-      # The site name the browser shows beside the account in a WebAuthn
-      # prompt.
       rp-name: Speed Demo
       origins:
         - "__PUBLIC_ORIGIN__"
-  # The human-verification gate has two surfaces, each with a mode of its own.
-  # The phone surface guards the SMS sends (login, second factor, enrollment and
-  # the anonymous reset's SMS channel); the other surface guards every send that
-  # does not address a phone number. The demo defaults the phone surface to the
-  # self-hosted captcha and the other surface to the self-hosted proof of work,
-  # so it sends without a Cloudflare account and renders no credential here.
-  # Both self-hosted mechanisms need nothing but the mode.
-  #
-  # Turnstile is the production option. To run it on either surface, set
-  # DEMO_HUMANVERIFY_MODE (the other surface) or DEMO_HUMANVERIFY_PHONE_MODE (the
-  # phone surface) to turnstile and supply the widget's public site key and the
-  # secret that authenticates siteverify: DEMO_TURNSTILE_SITE_KEY and
-  # DEMO_TURNSTILE_SECRET_KEY. The entrypoint requires the two credentials only
-  # when a selected surface is turnstile. The hostname the widget must have run
-  # on is always this deployment's own public domain, so it takes the same
-  # placeholder the WebAuthn relying party does. The action the widget is
-  # rendered with is DEMO_TURNSTILE_ACTION, defaulting to login, and the answer
-  # the provider gives is checked against it. Set a surface's mode to off to
-  # run no gate there; a deployment that only wants Turnstile can leave the
-  # surface it does not use off.
   humanverify:
     mode: "__HUMANVERIFY_MODE__"
     phone-mode: "__HUMANVERIFY_PHONE_MODE__"
@@ -142,10 +71,6 @@ authn:
     hostname: "__PUBLIC_DOMAIN__"
     action: "__TURNSTILE_ACTION__"
 
-# The mail carrier the registration flow sends verification codes through.
-# The image is built with the deploy tag, which adds mail.smtp and
-# authn.emailcode to the baseline. Every value is a Fly secret rendered by the
-# entrypoint; the carrier is real, so a registration sends a real message.
 mail:
   smtp:
     host: "__SMTP_HOST__"
@@ -155,15 +80,6 @@ mail:
     password: "__SMTP_PASSWORD__"
     from: "__SMTP_FROM__"
 
-# The SMS sending family. The carrier is the log carrier: this deployment holds
-# no vendor account, so every message -- a verification code included -- is
-# written to the process output, where `flyctl logs` reads it. The registry
-# declares the templates the authentication module sends under: the three
-# required names (login, second factor, enrollment) and the optional reset one,
-# whose presence is what publishes the SMS channel of the anonymous password
-# reset. Each code is a label the log carrier writes, not a vendor identifier,
-# and both interface languages are declared so a flow sends under the language
-# the browser announced.
 sms:
   carrier: log
   registry:
@@ -193,25 +109,11 @@ sms:
           en-US: "demo-reset"
           zh-CN: "demo-reset-zh"
 
-# The object store's bytes, under the volume.
 objectstore:
   fs:
     root: "./objects"
 
-# The deployment's first account. Every account is created with a username, so
-# an entry whose identifier is an address names one too: the username is the
-# name the password login accepts, while the address is written unproved and is
-# neither a login way nor a default contact until its holder proves and selects
-# it. The deployment starts with no business tenant: the seed registers the
-# system tenant itself, and the operator administers the platform rather than a
-# tenant of its own. The seed command is idempotent: a second run leaves an
-# existing account, role, grant or binding as it stands, so the entrypoint can
-# run it on every start.
 seed:
-  # The platform defaults document names the walkthrough tenant a bare run
-  # starts from. A deployment names no business tenant, and the tenant list is a
-  # container leaf the configuration file replaces whole, so the empty list here
-  # is what keeps that tenant out of every deployment.
   tenants: []
   accounts:
     - identifier: "__OPERATOR_EMAIL__"
@@ -220,37 +122,15 @@ seed:
       display-name: Demo Operator
       platform-admin: true
   settings:
-    # The anonymous username-and-password registration is open; the account
-    # is usable immediately and proves its email address afterwards.
     - key: "authn.account.password-signup"
       value: "open"
-    # A first social or phone login opens an account too. The account carries
-    # only the provider's display name: the address the provider reports is not
-    # written, and an address that matches one an account already holds answers
-    # link-required instead of entering or opening an account. With this switch
-    # closed, only an account that already holds the binding could sign in with
-    # Google, GitHub or a phone number.
     - key: "authn.account.signup"
       value: "open"
-    # The E.164 prefixes the SMS method may send to. The declared default is the
-    # empty table, which admits no number at all, so this list is what makes the
-    # phone sign-in reachable; a number outside it is refused with
-    # unsupported-region. Add a prefix before offering the deployment to a
-    # region it does not name.
     - key: "authn.sms.allowed-prefixes"
       value: '["+1","+86"]'
-    # The anonymous password reset is open on both channels: the email one this
-    # deployment's mail carrier delivers (authn.emailcode provides the reset
-    # seam beside the verification one), and the SMS one the family above
-    # carries through the declared authn.code.reset template. The declared
-    # default is closed.
     - key: "authn.login.password-reset"
       value: "open"
 
-# The engine. The database file is on the volume; the encryption key seals the
-# columns a module encrypts at rest. The key is a secret and must stay the same
-# for the life of the volume: rotating it makes the sealed columns unreadable,
-# and the module's own retirement list is the way to change it.
 db:
   sqlite:
     dsn: "./demo.db"

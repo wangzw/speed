@@ -1,44 +1,15 @@
-# The postgres stack: PostgreSQL for the database, the key-value store and the
-# event bus all at once. One server carries every backend, which is the
-# smallest deployment that needs no in-process store. Bring it up with the
-# compose file beside this one:
-#
-#   docker compose -f starters/demo/compose.yaml up -d postgres
-#   go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres migrate
-#   go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres serve
-#
-# This file is an override document. The platform topology — the endpoint table
-# and every capability's mounting — is compiled into the binary
-# (server/defaults.go) and layered below this file, so what is written here is
-# what a deployment chooses: addresses, origins, the export destination, the
-# seed and the backend section at the bottom. Only the backend section differs
-# between the six stack files.
-#
-# No mounting key is repeated here: the loader accepts a required item from the
-# compiled-in document, whose mounting table is complete. A copy changes the
-# table in defaults.go, not in this file.
-#
 # The values marked DEV are development defaults a copy must replace before
-# serving real traffic (AGENTS.md lists them together).
 
 http:
   listeners:
     backend:
       address: "127.0.0.1:8081"
-  # The CORS layer guards the api endpoint. This stack serves the frontend
-  # bundle from the same listener as the API, so a browser reaching the API from
-  # the page needs no CORS headers and this policy is not exercised here. It is
-  # kept as the starting point for a deployment that serves the frontend from an
-  # origin of its own: point allow-origins at the origins the product is served
-  # from.
   cors:
     endpoints:
       api:
         allow-origins:
           - "https://app.demo.test"
 
-# The operations surface's document metadata. Its endpoint is part of the
-# platform topology and comes from defaults.go.
 ops:
   title: demo
   version: 0.1.0
@@ -49,16 +20,11 @@ observability:
   otel:
     service-name: demo
 
-# The identity system's deployment values: the origin this deployment is
-# reached at, the token signing key, and the relying party the step-up is bound
-# to. The gateway's endpoint list and the account mount are platform topology
-# and come from defaults.go.
 authn:
   gate:
     mount:
       public-url: "http://localhost:8081"
   # DEV: the token signing key. Replace it with your own key material before a
-  # deployment serves real traffic.
   token:
     signing-key-file: var/token-signing-key.pem
   mfa:
@@ -70,35 +36,22 @@ authn:
       origins:
         - "http://localhost:8081"
 
-# The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:
     root: "./var/objects"
 
-# The first account, the tenants this deployment serves, and the platform role
-# a copy starts with. The seed command is idempotent.
 seed:
   # DEV: the initial operator's login name and password, and whether it
-  # administers the platform. Replace both before a deployment serves real
-  # traffic.
   accounts:
     - identifier: operator
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
-  # The business tenants the deployment serves, each with the accounts that
   # administer it. DEV: replace with the tenants this deployment actually
-  # serves and their administrators.
   tenants:
     - name: acme
       admins:
         - operator
-  # Lowered to the domain minimum for local demonstration: impersonation
-  # requires a non-SMS factor that has been active for at least
-  # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a
-  # freshly enrolled factor ineligible for a day. Production keeps the
-  # declared default; seed writes a value only while the global layer holds
-  # no explicit row for the key.
   settings:
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"

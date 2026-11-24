@@ -1,16 +1,5 @@
 package main
 
-// The host's per-tenant lock for the tenant-administrator floor. The host's
-// MembershipGuard and the policy module's MembershipGuard both take it, and the
-// policy module takes the same object as its authz.TenantLock, so its binding
-// delete and both guards exclude each other: two concurrent removals cannot both
-// pass the floor's check and leave the tenant with no administrator.
-//
-// SQLite has no lock a second process can see, so the lock is an in-process
-// per-tenant semaphore. PostgreSQL takes a session-level advisory lock, which
-// serialises every replica that shares the database. Replicas that do not share
-// it are not serialised; that is the assembly's non-guarantee.
-
 import (
 	"context"
 	"database/sql"
@@ -23,17 +12,14 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// tenantLockNamespace keeps this host's advisory locks apart from every other
-// advisory lock in the same database.
 const tenantLockNamespace = "host.tenancy.membership-removal"
 
 // tenantLockTimeout bounds the release and the fallback close, not the wait for
 // the lock: the caller's context bounds that.
 const tenantLockTimeout = 5 * time.Second
 
-// tenantRemovalLock is the host guard's lock implementation. It is one instance
-// per process and safe for concurrent use. dialect selects the mechanism; the
-// database handle is read only for the advisory lock.
+// Replicas that do not share the database are not serialised; that is the
+// assembly's non-guarantee.
 type tenantRemovalLock struct {
 	database db.Database
 	dialect  db.Dialect
@@ -49,8 +35,6 @@ func newTenantRemovalLock(database db.Database) *tenantRemovalLock {
 	}
 }
 
-// lock serialises the removals of one tenant, by the engine behind the
-// delivered handle.
 func (l *tenantRemovalLock) lock(ctx context.Context, tenant string) (func(), error) {
 	if tenant == "" {
 		return func() {}, nil
@@ -66,7 +50,6 @@ func (l *tenantRemovalLock) lock(ctx context.Context, tenant string) (func(), er
 	}
 }
 
-// localLock is the in-process per-tenant semaphore.
 func (l *tenantRemovalLock) localLock(ctx context.Context, tenant string) (func(), error) {
 	l.mu.Lock()
 	semaphore, found := l.byTenant[tenant]
@@ -86,8 +69,6 @@ func (l *tenantRemovalLock) localLock(ctx context.Context, tenant string) (func(
 	}
 }
 
-// advisoryLock takes the database's session-level advisory lock on a connection
-// pinned until the release runs.
 func (l *tenantRemovalLock) advisoryLock(ctx context.Context, tenant string) (func(), error) {
 	pool, err := l.database.DB().DB()
 	if err != nil {
@@ -110,7 +91,7 @@ func (l *tenantRemovalLock) advisoryLock(ctx context.Context, tenant string) (fu
 
 // releaseTenantLock unlocks and returns the connection. A failed unlock marks
 // the connection bad, so database/sql closes its session and the server drops
-// the lock with it rather than letting another request inherit it.
+// the lock with it.
 func releaseTenantLock(conn *sql.Conn, key int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), tenantLockTimeout)
 	defer cancel()
@@ -120,8 +101,6 @@ func releaseTenantLock(conn *sql.Conn, key int64) {
 	_ = conn.Close()
 }
 
-// tenantLockKey is the 64-bit key of a tenant's advisory lock, namespaced to
-// this host's guard.
 func tenantLockKey(tenant string) int64 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(tenantLockNamespace))
@@ -134,14 +113,11 @@ func tenantLockKey(tenant string) int64 {
 
 // Lock implements authn.MembershipGuard and authz.TenantLock: it takes the
 // tenant's removal lock so the guard's check and the removal's commit are one
-// serialised step. The policy module takes this same object as its
-// authz.TenantLock, so its binding delete and its own guard wait on the lock
-// this host supplies rather than on a second lock of their own.
+// serialised step.
 func (p *tenancyProduct) Lock(ctx context.Context, tenant string) (func(), error) {
 	return p.removalLock.lock(ctx, tenant)
 }
 
 // MembershipLock implements authn.SharedMembershipLock: it names this product,
-// which is the one lock object both guards and the policy module's binding
-// delete take, so the account module takes it once for a removal.
+// the one lock object both guards and the policy module's binding delete take.
 func (p *tenancyProduct) MembershipLock() any { return p }

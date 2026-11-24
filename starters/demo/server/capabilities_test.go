@@ -1,9 +1,5 @@
 package main
 
-// The compile-time ceiling: every capability the program can ever run is
-// registered in this binary. A capability that is not imported cannot be
-// enabled at run time, so the import set is the ceiling.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -15,11 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestDefaultBuildCompilesEveryCapability holds the ceiling: each name in
-// capabilityModules is registered in the binary. Before the capability roster
-// became unconditional, the social methods, the SMS family, the mail carriers,
-// the verification code sender and the notification fixture were compiled only
-// under deploy, so this lookup failed for them.
+// TestDefaultBuildCompilesEveryCapability holds that each name in capabilityModules is registered in
+// this binary.
 func TestDefaultBuildCompilesEveryCapability(t *testing.T) {
 	t.Parallel()
 	if len(capabilityModules) == 0 {
@@ -42,11 +35,8 @@ func TestDefaultBuildCompilesEveryCapability(t *testing.T) {
 	}
 }
 
-// TestTheLogCarriersAreInEveryBuild holds requirement 2 of the carrier
-// selection design: the two log carriers are ordinary capability modules,
-// compiled in and named for a serve run, not test-only support. A deployment
-// can therefore configure them, and every run reaches them through the same
-// roster.
+// TestTheLogCarriersAreInEveryBuild holds that both log carriers are compiled in as ordinary
+// capability modules and named for a serve run.
 func TestTheLogCarriersAreInEveryBuild(t *testing.T) {
 	t.Parallel()
 	named := make(map[string]bool, len(capabilityModules))
@@ -64,10 +54,8 @@ func TestTheLogCarriersAreInEveryBuild(t *testing.T) {
 	}
 }
 
-// TestTheDefaultBuildCarriesTheInvitationNotifier holds the invitation email
-// channel in the ceiling: it is compiled into every build and named for serve,
-// so a deployment that sets its accept base URL sends the notice and a bare run
-// reports not_configured, without a separate binary.
+// TestTheDefaultBuildCarriesTheInvitationNotifier holds that the invitation email channel is compiled
+// in and named for serve in every build.
 func TestTheDefaultBuildCarriesTheInvitationNotifier(t *testing.T) {
 	t.Parallel()
 	if _, ok := core.ProcessRegistry.Lookup(invitemail.ModuleName); !ok {
@@ -82,11 +70,8 @@ func TestTheDefaultBuildCarriesTheInvitationNotifier(t *testing.T) {
 		invitemail.ModuleName)
 }
 
-// TestDefaultBuildNamesTheDeployCapabilities holds the names the deployment
-// variant contributed: the deployment's mail and social paths and the extra
-// capabilities are all in the default build's ceiling now, and a rename in any
-// package fails here instead of silently dropping a capability from every
-// build.
+// TestDefaultBuildNamesTheDeployCapabilities holds the names the deployment variant contributed to be
+// in the default build's ceiling.
 func TestDefaultBuildNamesTheDeployCapabilities(t *testing.T) {
 	t.Parallel()
 	named := make(map[string]bool, len(capabilityModules))
@@ -118,11 +103,8 @@ func TestDefaultBuildNamesTheDeployCapabilities(t *testing.T) {
 	}
 }
 
-// TestTheDefaultRunOffersNoSAMLSignIn serves the default assembly over a
-// configuration that never names the SAML switch and reads the login discovery.
-// The method is compiled into every build, but its own Prepare keeps it out of
-// a run whose configuration does not turn it on, so the default deployment
-// offers no SAML entry.
+// TestTheDefaultRunOffersNoSAMLSignIn holds that the default run, whose configuration never names the
+// SAML switch, offers no SAML entry.
 func TestTheDefaultRunOffersNoSAMLSignIn(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")

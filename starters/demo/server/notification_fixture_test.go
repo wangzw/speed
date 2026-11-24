@@ -1,11 +1,5 @@
 package main
 
-// The notification fixture's run-time decision: the type is part of the
-// compile-time ceiling, and whether this run dispatches it is stated by the
-// fixture's own enable switch. These cases drive the real configuration loader,
-// because the switch being absent must read the same way there as it does in a
-// run.
-
 import (
 	"os"
 	"path/filepath"
@@ -17,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// fixtureReader loads the configuration of a run whose primary source is body.
-// The registry holds only the loader's own modules and the fixture, so the case
-// is not affected by another module's declaration.
 func fixtureReader(t *testing.T, body string) config.Reader {
 	t.Helper()
 	if body == "" {
@@ -44,7 +35,6 @@ func fixtureReader(t *testing.T, body string) config.Reader {
 	return reader
 }
 
-// prepareFixture drives the fixture's Prepare over the reader.
 func prepareFixture(t *testing.T, reader config.Reader) (core.Enablement, error) {
 	t.Helper()
 	reg := core.New()
@@ -54,9 +44,8 @@ func prepareFixture(t *testing.T, reader config.Reader) (core.Enablement, error)
 	return demoNotificationModule().Prepare(t.Context(), reg)
 }
 
-// TestTheNotificationFixtureStandsDownWhenNotEnabled holds the unconfigured
-// case: without the switch, the owner of the notice is absent from the run and
-// the startup succeeds.
+// TestTheNotificationFixtureStandsDownWhenNotEnabled holds that without the switch the notice is
+// absent and the startup succeeds.
 func TestTheNotificationFixtureStandsDownWhenNotEnabled(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -93,9 +82,8 @@ func TestTheNotificationFixtureRunsWhenEnabled(t *testing.T) {
 	}
 }
 
-// TestTheNotificationFixtureRefusesAHostWithNoReader holds that a missing
-// reader is a host omission, not an unconfigured fixture: it fails the start
-// rather than reading as "off" and losing the fixture in silence.
+// TestTheNotificationFixtureRefusesAHostWithNoReader holds that a missing reader fails the start
+// rather than reading as off.
 func TestTheNotificationFixtureRefusesAHostWithNoReader(t *testing.T) {
 	t.Parallel()
 	reg := core.New()

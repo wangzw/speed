@@ -10,22 +10,15 @@ import (
 	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
-// deployTemplatePath and entrypointPath are the two deployment files the
-// entrypoint cases read, relative to this package's directory.
 const (
 	deployTemplatePath = "../../deploy/fly.yaml.tmpl"
 	entrypointPath     = "../../deploy/entrypoint.sh"
 )
 
-// placeholderPattern matches the placeholder tokens deploy/fly.yaml.tmpl holds
-// for the entrypoint to render.
 var placeholderPattern = regexp.MustCompile(`__[A-Z][A-Z0-9_]*__`)
 
-// TestTheEntrypointRendersEveryDeploymentTemplatePlaceholder holds the two
-// deploy files together. A placeholder the template carries and the entrypoint
-// does not replace would reach the container as itself; the render helper the
-// other cases use fills the placeholders on its own, so the wiring between the
-// script and the template is asserted here.
+// TestTheEntrypointRendersEveryDeploymentTemplatePlaceholder holds every placeholder of
+// deploy/fly.yaml.tmpl to a replacement in deploy/entrypoint.sh.
 func TestTheEntrypointRendersEveryDeploymentTemplatePlaceholder(t *testing.T) {
 	t.Parallel()
 	template, err := os.ReadFile(deployTemplatePath)
@@ -49,10 +42,6 @@ func TestTheEntrypointRendersEveryDeploymentTemplatePlaceholder(t *testing.T) {
 	}
 }
 
-// entrypointEnvironment is the environment the human-verification block of
-// deploy/entrypoint.sh runs with: the closed child environment plus PATH, which
-// the script's commands need, the inputs the script requires before the modes,
-// and the case's overrides.
 func entrypointEnvironment(overrides map[string]string) []string {
 	values := map[string]string{
 		"FLY_APP_NAME":              "demo-test",
@@ -80,10 +69,6 @@ func entrypointEnvironment(overrides map[string]string) []string {
 	return env
 }
 
-// entrypointModes is what the human-verification block of the entrypoint
-// decided for one environment: the mechanism on each surface, the Turnstile
-// credentials and action it rendered, and the diagnostic when it refused the
-// environment.
 type entrypointModes struct {
 	mode      string
 	phoneMode string
@@ -94,12 +79,6 @@ type entrypointModes struct {
 	err       error
 }
 
-// runEntrypointModes runs the human-verification block of the real
-// deploy/entrypoint.sh. The script is read and cut at the line that creates the
-// volume's directories, and its five answers are printed there. Everything the
-// block depends on — the origin, the required secrets, both surface modes, the
-// Turnstile credential rule and the action — therefore runs the way the
-// container runs it, while the case leaves the filesystem alone.
 func runEntrypointModes(t *testing.T, overrides map[string]string) entrypointModes {
 	t.Helper()
 	raw, err := os.ReadFile(entrypointPath)
@@ -137,10 +116,8 @@ func runEntrypointModes(t *testing.T, overrides map[string]string) entrypointMod
 	return got
 }
 
-// TestTheEntrypointDefaultsEachHumanVerificationSurface holds the container
-// entrypoint's defaults: the non-phone surface runs the self-hosted proof of
-// work and the phone surface the self-hosted captcha, so the demo gates every
-// send without a Cloudflare account and renders no credential.
+// TestTheEntrypointDefaultsEachHumanVerificationSurface holds that the non-phone surface defaults to
+// proof of work and the phone surface to captcha.
 func TestTheEntrypointDefaultsEachHumanVerificationSurface(t *testing.T) {
 	t.Parallel()
 	got := runEntrypointModes(t, nil)
@@ -162,9 +139,8 @@ func TestTheEntrypointDefaultsEachHumanVerificationSurface(t *testing.T) {
 	}
 }
 
-// TestTheEntrypointRendersTheConfiguredTurnstileAction holds the action the
-// entrypoint places in the rendered section: DEMO_TURNSTILE_ACTION when the
-// environment names one, and the login default otherwise.
+// TestTheEntrypointRendersTheConfiguredTurnstileAction holds DEMO_TURNSTILE_ACTION when named and the
+// login default otherwise.
 func TestTheEntrypointRendersTheConfiguredTurnstileAction(t *testing.T) {
 	t.Parallel()
 	got := runEntrypointModes(t, map[string]string{"DEMO_TURNSTILE_ACTION": "login-sms"})
@@ -176,10 +152,8 @@ func TestTheEntrypointRendersTheConfiguredTurnstileAction(t *testing.T) {
 	}
 }
 
-// TestTheEntrypointRequiresTurnstileCredentialsPerSelectedSurface holds the
-// entrypoint's credential rule: the site key and the secret are required when
-// either surface selects turnstile, and are not rendered when neither does,
-// even when both are present in the environment.
+// TestTheEntrypointRequiresTurnstileCredentialsPerSelectedSurface holds that the two credentials are
+// required exactly when a surface selects turnstile.
 func TestTheEntrypointRequiresTurnstileCredentialsPerSelectedSurface(t *testing.T) {
 	t.Parallel()
 	credentials := map[string]string{
@@ -187,8 +161,6 @@ func TestTheEntrypointRequiresTurnstileCredentialsPerSelectedSurface(t *testing.
 		"DEMO_TURNSTILE_SECRET_KEY": "turnstile-secret",
 	}
 
-	// A self-hosted pair renders no credential even when the environment
-	// carries one.
 	selfHosted := map[string]string{
 		"DEMO_HUMANVERIFY_MODE":       "pow",
 		"DEMO_HUMANVERIFY_PHONE_MODE": "captcha",
@@ -205,8 +177,6 @@ func TestTheEntrypointRequiresTurnstileCredentialsPerSelectedSurface(t *testing.
 			"either surface reads them", got.siteKey, got.secretKey)
 	}
 
-	// Either surface selecting turnstile makes both credentials a startup
-	// requirement.
 	for _, surface := range []string{"DEMO_HUMANVERIFY_MODE", "DEMO_HUMANVERIFY_PHONE_MODE"} {
 		for _, missing := range []string{"DEMO_TURNSTILE_SITE_KEY", "DEMO_TURNSTILE_SECRET_KEY"} {
 			env := map[string]string{surface: "turnstile"}
@@ -229,7 +199,6 @@ func TestTheEntrypointRequiresTurnstileCredentialsPerSelectedSurface(t *testing.
 		}
 	}
 
-	// With both surfaces on Turnstile, the two credentials are rendered once.
 	got = runEntrypointModes(t, map[string]string{
 		"DEMO_HUMANVERIFY_MODE":       "turnstile",
 		"DEMO_HUMANVERIFY_PHONE_MODE": "turnstile",

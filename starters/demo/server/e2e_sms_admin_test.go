@@ -1,12 +1,5 @@
 package main
 
-// The SMS management page: sms.admin is named for the serve roster, and the
-// running binary publishes its feature. The feature document is what the
-// console's navigation reads before it offers the page, so publishing the name
-// is the condition the walkthrough's browser needs. The baseline template names no
-// admin endpoint for sms.admin, so this case also holds the boundary that keeps
-// the page out of a normal deployment.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -17,18 +10,13 @@ import (
 	smsadmin "github.com/vislake/speed/pkg/sms/admin"
 )
 
-// The e2e manifest's member account. The operator the manifest seeds carries
-// the impersonation fixture's two second factors when a case writes them, so a
-// password alone does not complete its sign-in; the member has none, and the
-// feature document asks only for an authenticated caller.
 const (
 	e2eFeatureAccount  = "member"
 	e2eFeaturePassword = "member-dev-secret"
 )
 
-// TestE2EServesTheSMSAdminPage holds the roster entry and the published
-// feature: the module is in the capability ceiling every build carries, and a
-// running binary answers GET /api/v1/features with sms.admin.
+// TestE2EServesTheSMSAdminPage holds that sms.admin is in the ceiling and a running binary publishes
+// its feature.
 func TestE2EServesTheSMSAdminPage(t *testing.T) {
 	t.Parallel()
 	if !slices.Contains(capabilityModules, smsadmin.ModuleName) {

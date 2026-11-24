@@ -17,13 +17,10 @@ import (
 	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
-// genLimit bounds one gen run: the command starts no server and binds no port.
 func genLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// runGen runs the compiled program's gen command in a directory of its own on
-// the compiled-in defaults, and answers its two streams and exit error.
 func runGen(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), genLimit())
@@ -41,18 +38,12 @@ func runGen(t *testing.T, args ...string) (string, string, error) {
 	return stdout.String(), stderr.String(), err
 }
 
-// committedMergedDocumentPath is the merged document artifact the repository
-// commits, relative to this package's directory.
 const committedMergedDocumentPath = "../../../../contracts/api.json"
 
-// committedMergedDocumentTitle is the info.title the committed artifact is
-// written with: the title in the regeneration command web/orval.config.ts
-// documents. The version is the program's own, which gen uses when the command
-// line names none.
 const committedMergedDocumentTitle = "speed"
 
-// TestCommittedMergedDocument checks that the committed merged document matches,
-// byte for byte, what this binary's gen command writes.
+// TestCommittedMergedDocument checks that the committed merged document matches byte for byte what
+// this binary's gen command writes.
 func TestCommittedMergedDocument(t *testing.T) {
 	t.Parallel()
 	out := filepath.Join(t.TempDir(), "api.json")
@@ -76,9 +67,6 @@ func TestCommittedMergedDocument(t *testing.T) {
 	}
 }
 
-// firstByteDifference names the first byte two documents disagree on, with a
-// short excerpt of each, so a stale artifact reports the operation that changed
-// rather than dumping both documents into the failure.
 func firstByteDifference(generated, committed []byte) string {
 	common := min(len(generated), len(committed))
 	for index := range common {
@@ -91,7 +79,6 @@ func firstByteDifference(generated, committed []byte) string {
 		len(generated), len(committed), common)
 }
 
-// excerpt is the bytes around index, as a string, at most about eighty long.
 func excerpt(document []byte, index int) string {
 	const context = 40
 	start := max(index-context, 0)
@@ -99,12 +86,8 @@ func excerpt(document []byte, index int) string {
 	return string(document[start:end])
 }
 
-// committedVocabularyPath is the feature vocabulary artifact the repository
-// commits, beside the merged document. It is relative to this package's
-// directory.
 const committedVocabularyPath = "../../../../contracts/features.json"
 
-// vocabularyEntry is one declaration as contracts/features.json carries it.
 type vocabularyEntry struct {
 	Name        string `json:"name"`
 	Module      string `json:"module"`
@@ -112,8 +95,8 @@ type vocabularyEntry struct {
 	Conditional bool   `json:"conditional"`
 }
 
-// TestCommittedFeatureVocabulary checks that the committed feature vocabulary
-// matches what gen writes with --features, entry for entry.
+// TestCommittedFeatureVocabulary checks that the committed feature vocabulary matches what gen writes
+// with --features, entry for entry.
 func TestCommittedFeatureVocabulary(t *testing.T) {
 	t.Parallel()
 	out := filepath.Join(t.TempDir(), "features.json")
@@ -147,11 +130,6 @@ func TestCommittedFeatureVocabulary(t *testing.T) {
 		t.Errorf("the committed feature vocabulary is out of step with what gen --features writes:\n"+
 			"committed: %+v\nwritten: %+v", committed.Features, written.Features)
 	}
-	// The ownership split is the reason the artifact carries an owner at all:
-	// a host module's declaration is application-owned so the platform package
-	// does not register its name, and a module under pkg/ is platform-owned.
-	// The comparison above already holds every entry to this criterion; these
-	// two anchors name the property so a reader sees what the split is for.
 	const ownerPlatform = "platform"
 	owners := make(map[string]string, len(committed.Features))
 	for _, entry := range committed.Features {

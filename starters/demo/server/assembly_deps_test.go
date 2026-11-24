@@ -10,11 +10,8 @@ import (
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// TestTheDemoAssemblyProvidesWhatTheInvitationModuleRequires holds the
-// dependency the invitation module declares: it requires the tenant description
-// resolver, and in the demo's roster the catalog module is what delivers it. A
-// serve run names both, so the dependency is satisfied without the host writing
-// it down a second time.
+// TestTheDemoAssemblyProvidesWhatTheInvitationModuleRequires holds that the catalog module satisfies
+// the invitation module's tenant description requirement.
 func TestTheDemoAssemblyProvidesWhatTheInvitationModuleRequires(t *testing.T) {
 	t.Parallel()
 	invitation, ok := core.ProcessRegistry.Lookup(invite.ModuleName)

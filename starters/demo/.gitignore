@@ -1,39 +1,13 @@
-# Runtime state a copy produces: the object store's local root (objectstore.fs),
-# created at the path the configuration names when the first object is written,
-# and the token signing key the program generates on its first run. Both land
-# beside the Go module the program runs from and belong to a deployment, not to
-# the source tree.
 /server/var/
 
-# Air's working directory: the binary it rebuilds and the build log. A local
-# development artifact, never source. See server/.air.toml.
 /server/tmp/
 
-# The local development configuration the repository's .env selects through
-# DEMO_CONFIG. It carries the social credentials once they are filled, so it
-# stays out of the tree; server/local.yaml.example is the tracked template.
 /server/local.yaml
 
-# The frontend's build outputs, which no checkout commits: the installed
-# dependency tree and the built bundle. Everything a build writes under
-# server/dist is ignored, so building the frontend leaves the working tree
-# clean. server/dist has to hold at least one file for go:embed to compile (the
-# Go program embeds dist/), so server/dist/placeholder.txt is tracked -- the one
-# file a build never touches, force-added despite this rule. See web/README.md.
 /web/node_modules/
 /server/dist/
-# The end-to-end tier's own bundle, a build product like dist. It has the same
-# need for one tracked file: an e2e-tagged build embeds server/dist-e2e, and
-# go:embed refuses a directory with no files, so server/dist-e2e/placeholder.txt
-# is committed -- force-added despite this rule and kept in place by the
-# harness's clean step. The exception below re-admits that one file while
-# everything a build writes stays ignored.
 /server/dist-e2e/*
 !/server/dist-e2e/placeholder.txt
 
-# The compiled server binary: a `go build` (or `go run`'s cached build) run in
-# server/ leaves it beside the module, named for the package. It is a build
-# artifact, not source. The e2e configuration's manual command builds the same
-# program under the `demo-e2e` name beside it.
 /server/demo
 /server/demo-e2e

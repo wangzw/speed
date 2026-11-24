@@ -1,8 +1,5 @@
 package main
 
-// The deployment template's placeholders, held to the configuration namespaces
-// the capabilities read.
-
 import (
 	"slices"
 	"testing"
@@ -12,17 +9,11 @@ import (
 	googlelogin "github.com/vislake/speed/pkg/authn/login/google"
 )
 
-// socialCredentials is the part of a social method's section these cases read:
-// the OAuth application's identifier and secret.
 type socialCredentials struct {
 	ClientID     string `config:"client-id"`
 	ClientSecret string `config:"client-secret"`
 }
 
-// deployHTTPSection is the part of the deployment template's http section
-// these cases read. The endpoint entry names every member the template writes,
-// because pkg/config decodes a container element whole and refuses a member no
-// field answers for.
 type deployHTTPSection struct {
 	Listeners map[string]struct {
 		Address string `config:"address"`
@@ -34,13 +25,8 @@ type deployHTTPSection struct {
 	} `config:"endpoints"`
 }
 
-// TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener holds the
-// deployment's own claim table: the compiled defaults put the operations
-// probes on the backend listener, and the deployment keeps them on the
-// operations listener so fly.toml's readiness check — GET /ready on port 8083
-// — reaches the endpoint it names. The template therefore writes the endpoint
-// table whole (http.endpoints is a container leaf), and this case reads the
-// effective configuration the rendered template produces.
+// TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener holds that the rendered template keeps
+// the probes on the operations listener, so fly.toml's readiness check reaches them.
 func TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener(t *testing.T) {
 	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
@@ -64,11 +50,8 @@ func TestTheDeployTemplateKeepsTheReadinessOnTheOperationsListener(t *testing.T)
 	}
 }
 
-// TestTheDeployTemplateCarriesTheSocialCredentials holds the deployment
-// template, rendered the way deploy/entrypoint.sh renders it, to the sections
-// the two social login methods read. A method whose required items are empty
-// fails the startup, so the placeholders have to land under the namespaces the
-// methods decode: authn.login.google and authn.login.github.
+// TestTheDeployTemplateCarriesTheSocialCredentials holds that the rendered template lands the two
+// social methods' credentials under their namespaces.
 func TestTheDeployTemplateCarriesTheSocialCredentials(t *testing.T) {
 	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
@@ -91,14 +74,12 @@ func TestTheDeployTemplateCarriesTheSocialCredentials(t *testing.T) {
 	}
 }
 
-// totpSection is the part of the TOTP factor's section these cases read.
 type totpSection struct {
 	Issuer string `config:"issuer"`
 }
 
-// TestTheDeployTemplateNamesTheSiteInTheAuthenticator holds the site name the
-// deployment template writes into the otpauth address, which an authenticator
-// app shows beside the account.
+// TestTheDeployTemplateNamesTheSiteInTheAuthenticator holds that the rendered template writes the site
+// name into the otpauth address.
 func TestTheDeployTemplateNamesTheSiteInTheAuthenticator(t *testing.T) {
 	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
@@ -109,18 +90,14 @@ func TestTheDeployTemplateNamesTheSiteInTheAuthenticator(t *testing.T) {
 	}
 }
 
-// webauthnSection is the part of the WebAuthn factor's section these cases
-// read. The section's other two items are named because pkg/config decodes a
-// container element whole and refuses a member no field answers for.
 type webauthnSection struct {
 	RPID    string   `config:"rp-id"`
 	RPName  string   `config:"rp-name"`
 	Origins []string `config:"origins"`
 }
 
-// TestTheDeployTemplateNamesTheSiteInThePasskeyPrompt holds the site name the
-// deployment template writes as the relying party's display name, which the
-// browser's WebAuthn prompt shows beside the account.
+// TestTheDeployTemplateNamesTheSiteInThePasskeyPrompt holds that the rendered template writes the site
+// name as the relying party's display name.
 func TestTheDeployTemplateNamesTheSiteInThePasskeyPrompt(t *testing.T) {
 	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
@@ -131,10 +108,6 @@ func TestTheDeployTemplateNamesTheSiteInThePasskeyPrompt(t *testing.T) {
 	}
 }
 
-// humanverifySection is the part of the human-verification module's section the
-// deployment template carries: the two surface modes, the widget's public site
-// key, the siteverify secret, the hostname the widget must have run on and the
-// action the widget is rendered with.
 type humanverifySection struct {
 	Mode      string `config:"mode"`
 	PhoneMode string `config:"phone-mode"`
@@ -144,15 +117,8 @@ type humanverifySection struct {
 	Action    string `config:"action"`
 }
 
-// TestTheDeployTemplateCarriesTheHumanVerificationSection holds the deployment
-// template to the section the human-verification module decodes. The entrypoint
-// defaults the non-phone surface to pow and the phone surface to captcha, and
-// requires the Turnstile credentials only when a selected surface is turnstile;
-// the template still has to place both modes, the credentials, the expected
-// hostname and the widget's action under the namespace the module reads, so a
-// deployment that turns the mechanism on finds them where it looks. The render
-// names a different mode on each surface, so the two placeholders are shown to
-// be wired to their own item and not to one another.
+// TestTheDeployTemplateCarriesTheHumanVerificationSection holds that the rendered template places both
+// modes, the Turnstile credentials, the hostname and the action under the namespace the module reads.
 func TestTheDeployTemplateCarriesTheHumanVerificationSection(t *testing.T) {
 	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))
@@ -172,10 +138,6 @@ func TestTheDeployTemplateCarriesTheHumanVerificationSection(t *testing.T) {
 	}
 }
 
-// smsSection is the part of the deployment template's SMS section these cases
-// read. The template entry names every member of the module's template spec,
-// because pkg/config decodes a container element whole and refuses a member no
-// field answers for.
 type smsSection struct {
 	Carrier  string `config:"carrier"`
 	Registry struct {
@@ -189,13 +151,8 @@ type smsSection struct {
 	} `config:"registry"`
 }
 
-// TestTheDeployTemplateCarriesTheSMSCarrier holds the deployment template to
-// the SMS family the phone sign-in runs on: the log carrier, so no vendor
-// account is needed, and every template the authentication module requires
-// plus the optional reset one. The template is rendered the way
-// deploy/entrypoint.sh renders it and loaded through the same pkg/config entry
-// point the binary uses, so a deployment that runs the template carries the
-// carrier and templates this case asserts.
+// TestTheDeployTemplateCarriesTheSMSCarrier holds that the rendered template selects the log carrier
+// and declares the required and reset templates.
 func TestTheDeployTemplateCarriesTheSMSCarrier(t *testing.T) {
 	t.Parallel()
 	locator := writeConfigFile(t, renderDeployTemplate(t))

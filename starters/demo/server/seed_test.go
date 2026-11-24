@@ -32,10 +32,6 @@ import (
 	tenantpersonal "github.com/vislake/speed/pkg/tenant/personal"
 )
 
-// roleManager answers the manager calls the seed's role steps make. The
-// embedded interface is nil on purpose: a call this case does not expect panics
-// rather than passing silently, so the fixture stays honest about what it
-// exercises.
 type roleManager struct {
 	authz.Manager
 	roles  []authz.RoleRecord
@@ -57,9 +53,8 @@ func (m *roleManager) MarkRoleBuiltin(_ context.Context, _ string, role authz.Ro
 	return nil
 }
 
-// The role is created without the builtin mark: it is marked only once the
-// grants are in place, so the mark cannot freeze a role before the grants that
-// give it meaning exist.
+// TestSeedCreatesTheAdministratorRoleWithoutTheMark holds that the role is created without the builtin
+// mark.
 func TestSeedCreatesTheAdministratorRoleWithoutTheMark(t *testing.T) {
 	t.Parallel()
 	manager := &roleManager{}
@@ -83,12 +78,8 @@ func TestSeedCreatesTheAdministratorRoleWithoutTheMark(t *testing.T) {
 	}
 }
 
-// The mark is what keeps the role — which holds every declared permission — off
-// the console's delete control. Without it the console offers a deletion that
-// locks the operator out of every console page. It is set through the manager's
-// marking method, not by rewriting the record: a role write carrying the mark
-// is refused, and the rewrite would also touch the description and the
-// creation time the step has no business changing.
+// TestSeedMarksTheAdministratorRoleBuiltin holds that the mark is set through the manager's marking
+// method once the grants are in place.
 func TestSeedMarksTheAdministratorRoleBuiltin(t *testing.T) {
 	t.Parallel()
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -112,8 +103,8 @@ func TestSeedMarksTheAdministratorRoleBuiltin(t *testing.T) {
 	}
 }
 
-// A builtin role that is already there is left alone: a second seed writes
-// nothing.
+// TestSeedLeavesAnExistingBuiltinRoleAlone holds that a second seed writes nothing for a role already
+// builtin.
 func TestSeedLeavesAnExistingBuiltinRoleAlone(t *testing.T) {
 	t.Parallel()
 	manager := &roleManager{roles: []authz.RoleRecord{
@@ -128,9 +119,6 @@ func TestSeedLeavesAnExistingBuiltinRoleAlone(t *testing.T) {
 	}
 }
 
-// grantSeeder answers the seeding call seedGrants makes. The number added and
-// the error are fixed by the case, so the case pins what the seed reports and
-// what it hands the seeding surface.
 type grantSeeder struct {
 	authz.Seeder
 	tenant    string
@@ -148,9 +136,6 @@ func (s *grantSeeder) SeedGrants(_ context.Context, tenant string, role authz.Ro
 	return s.added, s.err
 }
 
-// recordingReconciler is a stand-in authz.Reconciler. It records every call and
-// answers the counts the case fixes, so a case can hold what the seed handed the
-// convergence surface without a policy store.
 type recordingReconciler struct {
 	authz.Reconciler
 	calls   []reconcileCall
@@ -159,7 +144,6 @@ type recordingReconciler struct {
 	err     error
 }
 
-// reconcileCall is one recorded convergence request.
 type reconcileCall struct {
 	tenant  string
 	role    authz.Role
@@ -176,8 +160,6 @@ func (r *recordingReconciler) ReconcileGrants(_ context.Context, tenant string, 
 	return r.added, r.removed, r.err
 }
 
-// fixedCatalog is a catalog holding the permissions it is given, each with the
-// (resource, action) pair it translates to, and the governed subset it is given.
 type fixedCatalog struct {
 	pairs    map[authz.Permission][2]string
 	governed map[authz.Permission]bool
@@ -221,8 +203,6 @@ func (c fixedCatalog) ObjectAction(permission authz.Permission) (string, string,
 	return pair[0], pair[1], true
 }
 
-// PermissionOf reverses the pairs this catalog was given, the way the real
-// catalog's reverse index does.
 func (c fixedCatalog) PermissionOf(object, action string) (authz.Permission, bool) {
 	for permission, pair := range c.pairs {
 		if pair[0] == object && pair[1] == action {
@@ -232,25 +212,18 @@ func (c fixedCatalog) PermissionOf(object, action string) (authz.Permission, boo
 	return "", false
 }
 
-// DescriptionKey answers no key: these cases exercise the seeding surface, which
-// reads the declared set and the translation, never a permission's description.
 func (c fixedCatalog) DescriptionKey(permission authz.Permission) (string, bool) {
 	_, ok := c.pairs[permission]
 	return "", ok
 }
 
-// Metadata answers no governance metadata: the seeding surface reads the
-// declared set and the translation, never a permission's governance metadata.
 func (c fixedCatalog) Metadata(permission authz.Permission) (authz.PermissionMeta, bool) {
 	_, ok := c.pairs[permission]
 	return authz.PermissionMeta{}, ok
 }
 
-// A permission declared after the builtin mark reaches the role through the
-// seeding surface: seedGrants hands every translated declared permission to
-// SeedGrants, which is the one write that adds to a builtin role. The number
-// the surface reports added is what the seed prints, so a grown set and an
-// unchanged one are distinguished by the surface's own answer.
+// TestSeedGrantsSeedsEveryDeclaredPermission holds that every translated declared permission reaches
+// SeedGrants and the added count is reported.
 func TestSeedGrantsSeedsEveryDeclaredPermission(t *testing.T) {
 	t.Parallel()
 	seeder := &grantSeeder{added: 2}
@@ -280,9 +253,8 @@ func TestSeedGrantsSeedsEveryDeclaredPermission(t *testing.T) {
 	}
 }
 
-// The seeding write's failure is reported with the domain and the role it
-// named, and the surface's own error survives the wrapping: swallowing it would
-// turn a failed seed into a role silently short of a permission.
+// TestSeedReportsASeedingFailure holds that a seeding failure names the domain and role and preserves
+// the surface's error.
 func TestSeedReportsASeedingFailure(t *testing.T) {
 	t.Parallel()
 	refusal := errors.New("authz/policy: the table is unavailable")
@@ -304,10 +276,8 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 	}
 }
 
-// TestTheAdministrationRolesTakeDifferentGrantSets holds the seeding split:
-// platform-admin takes every declared pair, tenant-admin takes the governed set
-// exactly, and the version's retired set is the declared permissions that are
-// not governed.
+// TestTheAdministrationRolesTakeDifferentGrantSets holds that platform-admin takes every declared pair
+// and tenant-admin exactly the governed set.
 func TestTheAdministrationRolesTakeDifferentGrantSets(t *testing.T) {
 	t.Parallel()
 	catalog := fixedCatalog{
@@ -340,9 +310,8 @@ func TestTheAdministrationRolesTakeDifferentGrantSets(t *testing.T) {
 	}
 }
 
-// TestTheSeedDoesNotConvergeWhenTheAuditRowFails holds the mandatory row: a
-// convergence whose audit row cannot be written does not run, so a builtin
-// role's grant set is never changed without its record.
+// TestTheSeedDoesNotConvergeWhenTheAuditRowFails holds that a convergence whose audit row cannot be
+// written does not run.
 func TestTheSeedDoesNotConvergeWhenTheAuditRowFails(t *testing.T) {
 	t.Parallel()
 	reconciler := &recordingReconciler{}
@@ -358,9 +327,8 @@ func TestTheSeedDoesNotConvergeWhenTheAuditRowFails(t *testing.T) {
 	}
 }
 
-// TestTheSeedRecordsTheConvergenceBeforeAsking holds the order the caller owes
-// the reconciler: the success row is written first, then the convergence is
-// asked for the tenant and role it names.
+// TestTheSeedRecordsTheConvergenceBeforeAsking holds that the success row is written before the
+// reconciler is asked.
 func TestTheSeedRecordsTheConvergenceBeforeAsking(t *testing.T) {
 	t.Parallel()
 	reconciler := &recordingReconciler{}
@@ -384,10 +352,6 @@ func TestTheSeedRecordsTheConvergenceBeforeAsking(t *testing.T) {
 	}
 }
 
-// memberConfig extends the configuration template's seed section with a
-// members list and points the stack at a database in a file, so that what the
-// seed command writes outlives its process and the case can read it back
-// through the account module.
 func memberConfig(t *testing.T, dsn, members string) string {
 	t.Helper()
 	body := configBody(t, freePorts(t, listenerCount), dsn)
@@ -399,10 +363,6 @@ func memberConfig(t *testing.T, dsn, members string) string {
 	return writeConfigFile(t, replaced)
 }
 
-// withMemberships opens the database a seed run wrote through the real
-// account module and the real engine, and runs check while the assembly is
-// up: a read after Drive returns would find the database closed. What the
-// check sees is the product seam a caller of pkg/authn sees, not the table.
 func withMemberships(t *testing.T, dsn string,
 	check func(context.Context, authn.Accounts, authn.Memberships),
 ) {
@@ -413,11 +373,6 @@ func withMemberships(t *testing.T, dsn string,
 		})
 }
 
-// withSeededAccounts is withMemberships with the administrative write surface
-// added, for a case that changes the database the way an operator does — the
-// adoption cases remove an identifier from the account page. It opens through
-// the real account module and the real engine, and runs check while the
-// assembly is up.
 func withSeededAccounts(t *testing.T, dsn string,
 	check func(context.Context, authn.Accounts, authn.AccountAdmin, authn.Memberships),
 ) {
@@ -428,9 +383,6 @@ func withSeededAccounts(t *testing.T, dsn string,
 	reg.Register(config.Module())
 	reg.Register(sqlite.Module())
 	reg.Register(authnaccount.Module())
-	// The account module requires a provisioning seam, and this case drives the
-	// account store without the host's personal-tenant policy. The stand-in is
-	// the documented assembly for that: it records the calls and writes nothing.
 	reg.Register(provisioningtest.Module())
 	reg.Supply(reader, config.ModuleName)
 	err := reg.Drive(t.Context(), core.Drive{
@@ -458,9 +410,6 @@ func withSeededAccounts(t *testing.T, dsn string,
 	}
 }
 
-// createTenantInRoster registers a tenant in the database a seed run wrote,
-// through the real roster module, standing for a tenant another replica opened.
-// It runs while the assembly is up, as withMemberships does.
 func createTenantInRoster(t *testing.T, dsn, id string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"tenant":{"catalog":{}}}`, dsn)
@@ -488,9 +437,6 @@ func createTenantInRoster(t *testing.T, dsn, id string) {
 	}
 }
 
-// deleteTenantInRoster writes the tombstone of a tenant the database already
-// holds, through the real roster module, standing for a tenant an operator
-// deleted. It runs while the assembly is up, as withMemberships does.
 func deleteTenantInRoster(t *testing.T, dsn, id string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"tenant":{"catalog":{}}}`, dsn)
@@ -516,9 +462,6 @@ func deleteTenantInRoster(t *testing.T, dsn, id string) {
 	}
 }
 
-// withRawHandle opens the database a seed run wrote and runs check with its
-// handle, for a case that has to read a table no seam of this test's assembly
-// exposes. It runs while the assembly is up, as withMemberships does.
 func withRawHandle(t *testing.T, dsn string, check func(context.Context, *gorm.DB)) {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}}}`, dsn)
@@ -544,16 +487,11 @@ func withRawHandle(t *testing.T, dsn string, check func(context.Context, *gorm.D
 	}
 }
 
-// operatorID is the account identifier the configuration's operator was
-// seeded with.
 func operatorID(t *testing.T, ctx context.Context, accounts authn.Accounts) authn.AccountID {
 	t.Helper()
 	return accountIDByName(t, ctx, accounts, "operator")
 }
 
-// memberID is the account identifier of the configuration's second account,
-// the one the seed.members cases use: it administers no tenant, so a membership
-// the operator removes is not reconciled back as an administrator's.
 func memberID(t *testing.T, ctx context.Context, accounts authn.Accounts) authn.AccountID {
 	t.Helper()
 	return accountIDByName(t, ctx, accounts, "ops")
@@ -568,8 +506,7 @@ func accountIDByName(t *testing.T, ctx context.Context, accounts authn.Accounts,
 	return id
 }
 
-// A members entry writes an active membership through the membership seam, so
-// IsMember answers true for the account and the tenant afterwards.
+// TestSeedWritesAnActiveMembership holds that a members entry writes an active membership.
 func TestSeedWritesAnActiveMembership(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "members.db")
@@ -601,9 +538,7 @@ func TestSeedWritesAnActiveMembership(t *testing.T) {
 	})
 }
 
-// A member marked suspended is written, and it reads as suspended: the row is
-// there with Active false, so a later resume is an update rather than a
-// creation.
+// TestSeedWritesASuspendedMembership holds that a suspended entry is written with Active false.
 func TestSeedWritesASuspendedMembership(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "suspended.db")
@@ -639,8 +574,8 @@ func TestSeedWritesASuspendedMembership(t *testing.T) {
 	})
 }
 
-// A member list the seed cannot write fails the command before it writes
-// anything, and the message names the entry that has to be corrected.
+// TestSeedRefusesAMemberListItCannotWrite holds that an unnameable entry fails the command before it
+// writes anything.
 func TestSeedRefusesAMemberListItCannotWrite(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -685,8 +620,8 @@ func TestSeedRefusesAMemberListItCannotWrite(t *testing.T) {
 	}
 }
 
-// Running the same seed twice writes each membership once: the second run
-// finds the row, reports it skipped and adds no duplicate.
+// TestSeedMembershipsAreIdempotent holds that a second run finds each membership and adds no
+// duplicate.
 func TestSeedMembershipsAreIdempotent(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "idempotent.db")
@@ -720,9 +655,8 @@ func TestSeedMembershipsAreIdempotent(t *testing.T) {
 	})
 }
 
-// A membership an operator suspended through the management surface stays
-// suspended: an account that already exists is not reconciled to the declared
-// state, so the operator's decision survives every restart.
+// TestSeedLeavesAnOperatorsSuspendedMembershipSuspended holds that an existing account's suspended
+// membership survives.
 func TestSeedLeavesAnOperatorsSuspendedMembershipSuspended(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "suspended-by-operator.db")
@@ -766,9 +700,8 @@ func TestSeedLeavesAnOperatorsSuspendedMembershipSuspended(t *testing.T) {
 	})
 }
 
-// A membership the operator removed is not written again: once the account
-// exists, its memberships are runtime state, so a missing row is the operator's
-// deletion and not a gap for the seed to fill.
+// TestSeedDoesNotWriteBackAMembershipTheOperatorRemoved holds that a missing membership of an existing
+// account is not written again.
 func TestSeedDoesNotWriteBackAMembershipTheOperatorRemoved(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "removed.db")
@@ -806,9 +739,8 @@ func TestSeedDoesNotWriteBackAMembershipTheOperatorRemoved(t *testing.T) {
 	})
 }
 
-// The seed never rewrites a membership row, so the source and SSO exemption
-// another writer set — an invitation's, or the operator's through the
-// management surface — survive a later run along with the state.
+// TestSeedLeavesAMembershipsSourceAndExemptionAlone holds that an existing row's source and SSO
+// exemption survive.
 func TestSeedLeavesAMembershipsSourceAndExemptionAlone(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "source-kept.db")
@@ -853,8 +785,7 @@ func TestSeedLeavesAMembershipsSourceAndExemptionAlone(t *testing.T) {
 	})
 }
 
-// A seed section with no members list is what every existing configuration
-// holds, and it still seeds: the members item is optional.
+// TestSeedWithoutAMembersListStillSeeds holds that the optional members list may be absent.
 func TestSeedWithoutAMembersListStillSeeds(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "no-members.db")
@@ -869,11 +800,8 @@ func TestSeedWithoutAMembersListStillSeeds(t *testing.T) {
 	}
 }
 
-// The settings have to be in force when the seeded accounts are written, so
-// the seed writes them before the accounts. The declared minimum is the
-// domain's floor, so the proof raises it: with twelve in force the seeded
-// eight-character password is refused, where writing the account first would
-// have accepted it under the default.
+// TestSeedAppliesTheSettingsBeforeCreatingAccounts holds that a setting in force refuses the seed's
+// account password, which proves it is written first.
 func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
 	t.Parallel()
 	body := configBody(t, freePorts(t, listenerCount), ":memory:")
@@ -898,10 +826,6 @@ func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
 	}
 }
 
-// tenantSettingsConfig extends the configuration template's seed section with a
-// settings list under the demo tenant and points the stack at a database in a
-// file, so that what the seed command writes outlives its process and the case
-// can read it back through the settings module.
 func tenantSettingsConfig(t *testing.T, dsn, entry string) string {
 	t.Helper()
 	body := configBody(t, freePorts(t, listenerCount), dsn)
@@ -913,12 +837,6 @@ func tenantSettingsConfig(t *testing.T, dsn, entry string) string {
 	return writeConfigFile(t, replaced)
 }
 
-// withSettings opens the database a seed run wrote through the real settings
-// module and the real engine, and runs check while the assembly is up: a read
-// after Drive returns would find the database closed. The tenant admission
-// module is registered for its declaration alone — it takes no part in the
-// drive — so its two per-tenant switches are in the key table and a read
-// resolves them under their declared type, the way a consumer's does.
 func withSettings(t *testing.T, dsn string,
 	check func(context.Context, settings.Store),
 ) {
@@ -950,9 +868,8 @@ func withSettings(t *testing.T, dsn string,
 	}
 }
 
-// A settings list under seed.tenants is written into that tenant's layer, not
-// the global one: the tenant reads the value, a global read keeps the declared
-// default, and the row carries the tenant's own column.
+// TestSeedWritesATenantSettingIntoThatTenantsLayer holds that a tenant setting lands in that tenant's
+// layer, not the global one.
 func TestSeedWritesATenantSettingIntoThatTenantsLayer(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "tenant-setting.db")
@@ -992,9 +909,8 @@ func TestSeedWritesATenantSettingIntoThatTenantsLayer(t *testing.T) {
 	})
 }
 
-// A tenant entry with no settings list writes nothing into that tenant's layer,
-// and the global layer keeps what the global list put there: the new list is
-// optional and leaves the existing behaviour alone.
+// TestSeedWithoutTenantSettingsWritesNothingToTheTenantLayer holds that a tenant entry with no
+// settings writes nothing.
 func TestSeedWithoutTenantSettingsWritesNothingToTheTenantLayer(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "no-tenant-settings.db")
@@ -1028,9 +944,8 @@ func TestSeedWithoutTenantSettingsWritesNothingToTheTenantLayer(t *testing.T) {
 	})
 }
 
-// A tenant setting key no declaration covers fails the command and names the
-// key, exactly as the global list's unknown key does: the write goes through the
-// settings module rather than the table.
+// TestSeedRefusesATenantSettingKeyTheRegistryDoesNotDeclare holds that an undeclared tenant key fails
+// and is named.
 func TestSeedRefusesATenantSettingKeyTheRegistryDoesNotDeclare(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "bad-tenant-setting.db")
@@ -1048,9 +963,8 @@ func TestSeedRefusesATenantSettingKeyTheRegistryDoesNotDeclare(t *testing.T) {
 	}
 }
 
-// A tenant with no administrator would be a tenant nobody can enter: the
-// tenant-admin binding is the only way to hold that role. The command refuses
-// the list before writing anything.
+// TestSeedRefusesATenantWithoutAnAdministrator holds that a tenant listing no administrator is refused
+// before anything is written.
 func TestSeedRefusesATenantWithoutAnAdministrator(t *testing.T) {
 	t.Parallel()
 	in := seedInput{
@@ -1066,10 +980,7 @@ func TestSeedRefusesATenantWithoutAnAdministrator(t *testing.T) {
 	}
 }
 
-// A configured tenant's name becomes its identifier and the name URLs address
-// it by, so it has to be a slug: a name the old identifier domain admitted
-// would pass configuration and then fail at the roster, after the command had
-// started writing.
+// TestSeedRefusesATenantNameOutsideTheSlugForm holds that a tenant name that is not a slug is refused.
 func TestSeedRefusesATenantNameOutsideTheSlugForm(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"Acme_Corp", "a.b", "ab"} {
@@ -1088,8 +999,8 @@ func TestSeedRefusesATenantNameOutsideTheSlugForm(t *testing.T) {
 	}
 }
 
-// An administrator has to be one of the declared accounts: the binding would
-// otherwise name an account no seed run can write.
+// TestSeedRefusesAnAdministratorItCannotName holds that an administrator must be one of the declared
+// accounts.
 func TestSeedRefusesAnAdministratorItCannotName(t *testing.T) {
 	t.Parallel()
 	in := seedInput{
@@ -1105,8 +1016,8 @@ func TestSeedRefusesAnAdministratorItCannotName(t *testing.T) {
 	}
 }
 
-// A system administrator is named by a login name the account list carries:
-// the membership and binding would otherwise point at an account no run writes.
+// TestSeedRefusesASystemAdministratorItCannotName holds that a system administrator must be a declared
+// account.
 func TestSeedRefusesASystemAdministratorItCannotName(t *testing.T) {
 	t.Parallel()
 	in := seedInput{
@@ -1124,7 +1035,8 @@ func TestSeedRefusesASystemAdministratorItCannotName(t *testing.T) {
 	}
 }
 
-// One account cannot administer the system tenant twice.
+// TestSeedRefusesASystemAdministratorTwice holds that one account cannot administer the system tenant
+// twice.
 func TestSeedRefusesASystemAdministratorTwice(t *testing.T) {
 	t.Parallel()
 	in := seedInput{
@@ -1140,10 +1052,8 @@ func TestSeedRefusesASystemAdministratorTwice(t *testing.T) {
 	}
 }
 
-// TestSeedWritesTheSystemAdministratorsMembershipAndTenantAdminBinding holds
-// the reason the list exists: an account named only under seed.system-admins
-// becomes an active member of the system tenant and holds its tenant-admin
-// role, and nothing writes the platform-administrator role for it.
+// TestSeedWritesTheSystemAdministratorsMembershipAndTenantAdminBinding holds that a seed.system-admins
+// entry gets a system membership and tenant-admin binding and never platform-admin.
 func TestSeedWritesTheSystemAdministratorsMembershipAndTenantAdminBinding(t *testing.T) {
 	t.Parallel()
 	memberships := newFakeMemberships()
@@ -1174,10 +1084,8 @@ func TestSeedWritesTheSystemAdministratorsMembershipAndTenantAdminBinding(t *tes
 	}
 }
 
-// TestSeedRefusesAConfigurationWithNoPlatformAdministrator holds the deployment
-// floor: a copy with no platform administrator would start a console nobody can
-// reach, so the command refuses the account list and names the entries to
-// correct.
+// TestSeedRefusesAConfigurationWithNoPlatformAdministrator holds that an account list with nobody
+// marked platform-admin is refused.
 func TestSeedRefusesAConfigurationWithNoPlatformAdministrator(t *testing.T) {
 	t.Parallel()
 	original := configBody(t, freePorts(t, listenerCount), ":memory:")
@@ -1201,9 +1109,8 @@ func TestSeedRefusesAConfigurationWithNoPlatformAdministrator(t *testing.T) {
 	}
 }
 
-// TestSeedRefusesTheSystemTenantInTheTenantList holds the system tenant apart
-// from the configured ones: the command registers it itself, and a list entry
-// naming it would let the run claim it administers a row it already wrote.
+// TestSeedRefusesTheSystemTenantInTheTenantList holds that a tenant list naming the system tenant is
+// refused.
 func TestSeedRefusesTheSystemTenantInTheTenantList(t *testing.T) {
 	t.Parallel()
 	in := seedInput{
@@ -1225,9 +1132,8 @@ func TestSeedRefusesTheSystemTenantInTheTenantList(t *testing.T) {
 	}
 }
 
-// TestSeedRefusesAPersonalPrefixedTenantInTheTenantList holds the personal
-// domain apart from the configured business tenants: personal tenants come from
-// account creation, and a configured one would be a second, unmanaged copy.
+// TestSeedRefusesAPersonalPrefixedTenantInTheTenantList holds that a tenant list naming a
+// personal-prefixed tenant is refused.
 func TestSeedRefusesAPersonalPrefixedTenantInTheTenantList(t *testing.T) {
 	t.Parallel()
 	in := seedInput{
@@ -1249,10 +1155,8 @@ func TestSeedRefusesAPersonalPrefixedTenantInTheTenantList(t *testing.T) {
 	}
 }
 
-// TestSeedWritesAMissingAdministratorsMembershipOnEveryRun holds the
-// reconciliation of seed.tenants[].admins: unlike seed.members, a missing
-// administrator membership is a gap the seed fills, not an operator's removal
-// it preserves.
+// TestSeedWritesAMissingAdministratorsMembershipOnEveryRun holds that a missing administrator
+// membership is filled rather than preserved.
 func TestSeedWritesAMissingAdministratorsMembershipOnEveryRun(t *testing.T) {
 	t.Parallel()
 	memberships := newFakeMemberships()
@@ -1290,9 +1194,8 @@ func TestSeedWritesAMissingAdministratorsMembershipOnEveryRun(t *testing.T) {
 	}
 }
 
-// TestSeedLeavesASuspendedAdministratorsMembershipSuspended holds the other
-// side of reconciliation: an existing row is the operator's state, so the seed
-// neither resumes it nor writes the binding its suspension makes ineffective.
+// TestSeedLeavesASuspendedAdministratorsMembershipSuspended holds that an existing suspended
+// membership is neither resumed nor bound.
 func TestSeedLeavesASuspendedAdministratorsMembershipSuspended(t *testing.T) {
 	t.Parallel()
 	memberships := newFakeMemberships()
@@ -1320,9 +1223,8 @@ func TestSeedLeavesASuspendedAdministratorsMembershipSuspended(t *testing.T) {
 	}
 }
 
-// TestSeedAddsAMissingAdministratorsBindingOnEveryRun holds the binding half of
-// the reconciliation: the tenant-admin binding is added when it is missing and
-// a second run writes nothing.
+// TestSeedAddsAMissingAdministratorsBindingOnEveryRun holds that a missing tenant-admin binding is
+// added and a second run writes nothing.
 func TestSeedAddsAMissingAdministratorsBindingOnEveryRun(t *testing.T) {
 	t.Parallel()
 	grants := newFakeGrants()
@@ -1344,10 +1246,8 @@ func TestSeedAddsAMissingAdministratorsBindingOnEveryRun(t *testing.T) {
 	}
 }
 
-// TestSeedRestoresARemovedTenantAdministratorsMembership runs the
-// reconciliation through the program: the administrator's membership and
-// binding are runtime state the seed reconciles on every run, unlike a
-// seed.members row.
+// TestSeedRestoresARemovedTenantAdministratorsMembership holds that the seed reconciles a declared
+// administrator's membership and binding on every run.
 func TestSeedRestoresARemovedTenantAdministratorsMembership(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "admin-restored.db")
@@ -1379,17 +1279,8 @@ func TestSeedRestoresARemovedTenantAdministratorsMembership(t *testing.T) {
 	})
 }
 
-// TestSeedFailsOnASystemNameConflict holds the upgrade case where a business
-// tenant already holds the name "system": the system tenant's identifier is
-// free, so the read finds nothing, and Create refuses the name. Treating that
-// refusal as "the tenant exists" skips the row the policy module requires and
-// fails the startup later, far from the cause; the seed reports the conflict
-// and names the tenant it was registering.
-// TestSeedTenantWritesTheConfiguredOwner pins the owner a seeded tenant carries:
-// the profile surface reads it from the roster row, so a row seeded without one
-// renders "the organization owner" in place of the administrator's name. A row
-// that predates the rule is repaired, and an owner already standing is left
-// alone.
+// TestSeedTenantWritesTheConfiguredOwner holds that a seeded tenant carries the configured owner,
+// repairing a row that predates the rule.
 func TestSeedTenantWritesTheConfiguredOwner(t *testing.T) {
 	t.Parallel()
 
@@ -1436,10 +1327,8 @@ func TestSeedTenantWritesTheConfiguredOwner(t *testing.T) {
 	}
 }
 
-// TestSeedTenantLeavesATransferThatLandsDuringTheRepair holds the race the
-// conditional write closes: the read sees an ownerless row, an ownership
-// transfer lands before the repair writes, and the seed must leave that owner
-// standing rather than overwrite it with the configured one.
+// TestSeedTenantLeavesATransferThatLandsDuringTheRepair holds that an ownership transfer landing
+// before the repair is not overwritten.
 func TestSeedTenantLeavesATransferThatLandsDuringTheRepair(t *testing.T) {
 	t.Parallel()
 
@@ -1447,8 +1336,6 @@ func TestSeedTenantLeavesATransferThatLandsDuringTheRepair(t *testing.T) {
 	roster.rows["acme"] = tenant.Tenant{
 		ID: "acme", Name: "acme", Status: tenant.StatusActive, OwnerAccount: "acct-transferred",
 	}
-	// Get reports the row without its owner, as a read that predates the
-	// transfer does; the repair still sees the owner the row carries.
 	roster.ownerless = []tenant.ID{"acme"}
 
 	if err := seedTenant(t.Context(), roster, "acme", "acct-seed"); err != nil {
@@ -1459,6 +1346,8 @@ func TestSeedTenantLeavesATransferThatLandsDuringTheRepair(t *testing.T) {
 	}
 }
 
+// TestSeedFailsOnASystemNameConflict holds that a business tenant already holding the name "system"
+// fails the seed with the conflict named.
 func TestSeedFailsOnASystemNameConflict(t *testing.T) {
 	t.Parallel()
 	roster := newFakeRoster()
@@ -1476,8 +1365,8 @@ func TestSeedFailsOnASystemNameConflict(t *testing.T) {
 	}
 }
 
-// The first administrator is written first, so it is the tenant's first
-// administrator: the binding order is the list's order.
+// TestSeedBindsTheTenantAdministratorsInTheDeclaredOrder holds that the binding order is the
+// configured list's order.
 func TestSeedBindsTheTenantAdministratorsInTheDeclaredOrder(t *testing.T) {
 	t.Parallel()
 	manager := &orderManager{}
@@ -1501,9 +1390,8 @@ func TestSeedBindsTheTenantAdministratorsInTheDeclaredOrder(t *testing.T) {
 	}
 }
 
-// TestSeedMarksADeclaredTenantsExistingRoleBuiltin holds the repair of a
-// declared tenant: an existing non-builtin role keeps its row, receives the
-// declared grants it lacks, and is marked builtin on the run.
+// TestSeedMarksADeclaredTenantsExistingRoleBuiltin holds that an existing non-builtin role keeps its
+// row, gains missing grants and is marked builtin.
 func TestSeedMarksADeclaredTenantsExistingRoleBuiltin(t *testing.T) {
 	t.Parallel()
 	grants := newFakeGrants()
@@ -1540,13 +1428,8 @@ func TestSeedMarksADeclaredTenantsExistingRoleBuiltin(t *testing.T) {
 	}
 }
 
-// TestSeedRepairsAnUndeclaredTenantsAdministration holds the roster-wide
-// repair: a tenant the configuration does not list — one another replica
-// opened, or one an earlier deployment left with an unfrozen role — gets its
-// tenant-admin role, its grants and the builtin mark on the next seed run.
-// Membership and bindings stay limited to the administrators seed.tenants
-// declares, because the configuration names no administrator for a tenant it
-// does not list.
+// TestSeedRepairsAnUndeclaredTenantsAdministration holds that a roster tenant the configuration does
+// not list still gets its role, grants and builtin mark.
 func TestSeedRepairsAnUndeclaredTenantsAdministration(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "roster-repair.db")
@@ -1577,10 +1460,8 @@ func TestSeedRepairsAnUndeclaredTenantsAdministration(t *testing.T) {
 	}
 }
 
-// TestSeedRepairsEveryNonPersonalTenantInTheRoster holds the scope of the
-// roster-wide repair: every non-personal tenant gets its role, grants and
-// builtin mark, whether or not the configuration lists it, while a personal
-// domain is left entirely to the host.
+// TestSeedRepairsEveryNonPersonalTenantInTheRoster holds that every non-personal tenant is repaired
+// while a personal domain is left to the host.
 func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	t.Parallel()
 	personal := tenantpersonal.IDPrefix + "acct-1"
@@ -1591,8 +1472,6 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	for _, id := range domains {
 		name := id
 		if id == personal {
-			// A personal tenant's name is the account's username, never the
-			// derived identifier.
 			name = "alice"
 		}
 		roster.rows[tenant.ID(id)] = tenant.Tenant{
@@ -1637,9 +1516,8 @@ func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
 	}
 }
 
-// TestSeedLeavesADeletedTenantAlone holds the terminal state on the seed path:
-// the roster keeps returning a tombstone, and the repair must not recreate the
-// roles, grants and builtin mark the deletion removed.
+// TestSeedLeavesADeletedTenantAlone holds that a tombstone's roles, grants and builtin mark are not
+// recreated.
 func TestSeedLeavesADeletedTenantAlone(t *testing.T) {
 	t.Parallel()
 	roster := newFakeRoster()
@@ -1676,13 +1554,8 @@ func TestSeedLeavesADeletedTenantAlone(t *testing.T) {
 	}
 }
 
-// TestSeedConvergesAnExistingTenantToTheGovernedSet holds the upgrade path: a
-// tenant the roster already holds keeps its builtin tenant-admin role, and a
-// seed run gives that role every governed grant it is missing while asking the
-// reconciler to retire only the declared permissions that are no longer
-// governed. This version adds no permission to the governed set, so the case
-// pins the seed's target to the catalog's own set rather than to a second list
-// written out here.
+// TestSeedConvergesAnExistingTenantToTheGovernedSet holds that an existing tenant-admin role gains
+// every governed grant and retires only the declared permissions that are no longer governed.
 func TestSeedConvergesAnExistingTenantToTheGovernedSet(t *testing.T) {
 	t.Parallel()
 	roster := newFakeRoster()
@@ -1736,10 +1609,8 @@ func TestSeedConvergesAnExistingTenantToTheGovernedSet(t *testing.T) {
 	}
 }
 
-// TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog holds the seed's builtin
-// role keys to the catalog the i18n engine renders them from: the two keys the
-// seed writes have an entry in every locale, and the catalog carries no key the
-// seed never writes.
+// TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog holds the seed's builtin role keys to the i18n
+// catalog in every locale.
 func TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog(t *testing.T) {
 	t.Parallel()
 	want := map[string]bool{
@@ -1771,9 +1642,6 @@ func TestTheSeedRoleDescriptionKeysMatchTheRoleCatalog(t *testing.T) {
 	}
 }
 
-// roleCatalogBytes answers the role catalog compiled into this binary for one
-// locale, so a changed file changes the package hash and the cached result
-// cannot outlive it.
 func roleCatalogBytes(t *testing.T, locale string) []byte {
 	t.Helper()
 	for _, catalog := range core.Resources[i18n.Catalog](core.ProcessRegistry) {
@@ -1790,10 +1658,8 @@ func roleCatalogBytes(t *testing.T, locale string) []byte {
 	return nil
 }
 
-// TestSeedLeavesAPersonalDomainsRoleUnfrozen holds the host's personal-domain
-// exception on the seed's path: a declared personal-prefixed tenant receives
-// its role and grants, and the role is not marked builtin, because the host
-// revokes grants outside the allowlist through the manager.
+// TestSeedLeavesAPersonalDomainsRoleUnfrozen holds that a declared personal-prefixed tenant gets its
+// role and grants but no builtin mark.
 func TestSeedLeavesAPersonalDomainsRoleUnfrozen(t *testing.T) {
 	t.Parallel()
 	domain := tenantpersonal.IDPrefix + "acct-1"
@@ -1824,7 +1690,6 @@ func TestSeedLeavesAPersonalDomainsRoleUnfrozen(t *testing.T) {
 	}
 }
 
-// orderManager records the administration writes in order.
 type orderManager struct {
 	authz.Manager
 	order []string
@@ -1855,7 +1720,6 @@ func (m *orderManager) PutBinding(_ context.Context, b authz.Binding) error {
 	return nil
 }
 
-// orderSeeder records a seeding call in the manager's order.
 type orderSeeder struct {
 	authz.Seeder
 	manager *orderManager
@@ -1866,9 +1730,8 @@ func (s *orderSeeder) SeedGrants(context.Context, string, authz.Role, []authz.Gr
 	return 0, nil
 }
 
-// TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress holds that every account is
-// created with a username, so an entry whose login name is an address must name
-// one, and the command refuses before writing anything.
+// TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress holds that an email entry with no username is
+// refused before anything is written.
 func TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress(t *testing.T) {
 	t.Parallel()
 	emailOnly := seedAccount{Identifier: "operator@example.com", Password: "operator-dev-secret"}
@@ -1896,10 +1759,8 @@ func TestSeedRefusesAnAccountThatNamesOnlyAnEmailAddress(t *testing.T) {
 	}
 }
 
-// TestSeedSkipsEveryPathIntoATombstone holds the terminal state on every seed
-// path, not only the roster-wide role repair: a configured tenant that is a
-// tombstone gains no administrator membership, no binding and no settings row,
-// and the run itself still succeeds.
+// TestSeedSkipsEveryPathIntoATombstone holds that a tombstone gains no administrator membership,
+// binding or settings row and the run still succeeds.
 func TestSeedSkipsEveryPathIntoATombstone(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "tombstone-seed.db")
@@ -1914,8 +1775,6 @@ func TestSeedSkipsEveryPathIntoATombstone(t *testing.T) {
 	}
 	config := writeConfigFile(t, replaced)
 
-	// The database a deleted organization leaves behind: the roster carries the
-	// tombstone, and none of the rows the deletion removed is there.
 	createTenantInRoster(t, dsn, "demo")
 	deleteTenantInRoster(t, dsn, "demo")
 

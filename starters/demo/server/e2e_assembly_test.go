@@ -1,9 +1,5 @@
 package main
 
-// Shared helpers for the cases that drive the demo server over the e2e
-// configuration (server/e2e/config.yaml). The program is the ordinary binary
-// TestMain built; the e2e build tag changes only the embedded front end.
-
 import (
 	"context"
 	"crypto/hmac"
@@ -32,47 +28,25 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
-// The operator the e2e configuration seeds. The password is the development
-// credential the file publishes. The account signs in with its username: the
-// seeded email is an assertion the administrator made, not a way the holder
-// chose, so it is not a login name.
 const (
 	e2eOperatorUsername = "operator"
 	e2eOperatorEmail    = "operator@demo.test"
 	e2eOperatorPassword = "operator-dev-secret"
 
-	// e2eOperatorTOTPSeed is the base32 seed the cases write for the
-	// operator's TOTP factor. It is fixed on purpose: a person walking the
-	// journey imports it into an authenticator app (issuer Speed Demo, account
-	// the operator id, SHA-1, six digits, thirty-second period).
 	e2eOperatorTOTPSeed = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 
-	// e2eOperatorPhone is the phone the SMS factor binds in the cases that
-	// need a second kind.
 	e2eOperatorPhone = "+15551234567"
 
-	// e2eImpersonationSecretEpoch is the TOTP period the factor is generated
-	// with; a code is computed for the current step.
 	e2eImpersonationSecretEpoch = 30
 )
 
-// e2eOperatorFactorAge is how far into the past the cases activate the
-// operator's TOTP factor. It is well past authn.mfa.sensitive-min-age, which the
-// e2e configuration lowers to its one-hour floor, so the impersonation gate
-// reads the factor as seasoned without an hour of waiting.
 const e2eOperatorFactorAge = 2 * time.Hour
 
-// e2eBinary answers the program the cases drive. TestMain builds it once;
-// there is no tagged variant.
 func e2eBinary(t *testing.T) string {
 	t.Helper()
 	return hostBinary
 }
 
-// e2eConfig writes the e2e configuration with the listener address a case
-// chooses and with its relative paths under a directory of the case's own: the
-// file's own values would bind a fixed port and write into the source tree. The
-// token signing key is minted at the path the written file names.
 func e2eConfig(t *testing.T, backendAddress string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -85,12 +59,6 @@ func e2eConfig(t *testing.T, backendAddress string) string {
 	return path
 }
 
-// e2eConfigBody returns the e2e configuration with the listener address a
-// case chooses, its token signing key and object store under root, and the
-// database locator the caller gives. It is the assembly's own file —
-// server/e2e/config.yaml — because every module it names reads its
-// configuration from it: a case that runs the assembly over a baseline template
-// starts modules whose required items have no value.
 func e2eConfigBody(t *testing.T, root, backendAddress, dsn string) string {
 	t.Helper()
 	document, err := os.ReadFile(filepath.Join("e2e", "config.yaml"))
@@ -104,9 +72,6 @@ func e2eConfigBody(t *testing.T, root, backendAddress, dsn string) string {
 	body := string(document)
 	for _, edit := range [][2]string{
 		{`address: "127.0.0.1:8080"`, fmt.Sprintf("address: %q", backendAddress)},
-		// The needles carry the YAML key: the file's header comments name the
-		// same paths, and replacing the first occurrence would leave the
-		// configured locator pointing into the source tree.
 		{`dsn: "./var/e2e.db"`, fmt.Sprintf("dsn: %q", dsn)},
 		{`signing-key-file: var/token-signing-key.pem`, fmt.Sprintf("signing-key-file: %q", key)},
 		{`root: "./var/objects"`, fmt.Sprintf("root: %q", filepath.Join(root, "objects"))},
@@ -119,8 +84,6 @@ func e2eConfigBody(t *testing.T, root, backendAddress, dsn string) string {
 	return body
 }
 
-// seedE2E runs the seed command over the configuration the case wrote, so
-// the run that follows finds the rows the assembly needs.
 func seedE2E(t *testing.T, binary, config string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), commandLimit())
@@ -132,18 +95,11 @@ func seedE2E(t *testing.T, binary, config string) {
 	}
 }
 
-// startE2E runs the serve command the way demo_test's start runs it: through
-// the same child type, so its standard error is captured the same way and a
-// bind failure is recognisable on both.
 func startE2E(t *testing.T, binary, config string) *process {
 	t.Helper()
 	return startProcess(t, binary, "", []string{"--config", config, "sqlite", serveCommand}, nil)
 }
 
-// seedE2EOperatorFactors writes the operator's TOTP and SMS factors through
-// the mfa test-support package, aged past the sensitive minimum, and answers the
-// plaintext TOTP seed. A factor enrolled through the product is activated now; a
-// backdated row is what the impersonation journey needs.
 func seedE2EOperatorFactors(t *testing.T, configPath string) string {
 	t.Helper()
 	var secret string
@@ -153,9 +109,6 @@ func seedE2EOperatorFactors(t *testing.T, configPath string) string {
 			if err != nil {
 				t.Fatalf("looking up the seeded operator: %v", err)
 			}
-			// The impersonation start requires a proved contact on the initiator.
-			// Prove the address the seed wrote and a phone number, the same writes
-			// a completed code flow performs.
 			proveE2EIdentifier(t, ctx, accounts, admin, id, authn.IdentifierEmail, e2eOperatorEmail)
 			proveE2EIdentifier(t, ctx, accounts, admin, id, authn.IdentifierPhone, e2eOperatorPhone)
 
@@ -187,8 +140,6 @@ func seedE2EOperatorFactors(t *testing.T, configPath string) string {
 	return secret
 }
 
-// proveE2EIdentifier proves one identifier on the account through the
-// account module's own AddIdentifier, the write a completed code flow performs.
 func proveE2EIdentifier(t *testing.T, ctx context.Context, accounts authn.Accounts,
 	admin authn.AccountAdmin, id authn.AccountID, kind authn.IdentifierKind, value string,
 ) {
@@ -212,11 +163,6 @@ func proveE2EIdentifier(t *testing.T, ctx context.Context, accounts authn.Accoun
 	}
 }
 
-// withE2EDatabase opens the database the e2e configuration names through
-// the real database and account modules and runs check while the assembly is
-// up: a read after Drive returns would find the handle released. The encryption
-// key is read from the configuration file, so a case cannot silently use a
-// different one from the seed run.
 func withE2EDatabase(t *testing.T, configPath string,
 	check func(context.Context, db.Database, authn.Accounts, authn.AccountAdmin),
 ) {
@@ -228,8 +174,6 @@ func withE2EDatabase(t *testing.T, configPath string,
 	reg.Register(config.Module())
 	reg.Register(sqlite.Module())
 	reg.Register(authnaccount.Module())
-	// The account module requires a provisioning seam. This case drives the
-	// account store alone; the stand-in records the calls and writes nothing.
 	reg.Register(provisioningtest.Module())
 	reg.Supply(reader, config.ModuleName)
 	err := reg.Drive(t.Context(), core.Drive{
@@ -248,9 +192,6 @@ func withE2EDatabase(t *testing.T, configPath string,
 			if err != nil {
 				return err
 			}
-			// The handle is released here rather than left to the process, so
-			// the serve that follows opens the same file with nothing else
-			// holding it.
 			if sqlDB, dbErr := database.DB().DB(); dbErr == nil {
 				defer func() { _ = sqlDB.Close() }()
 			}
@@ -263,9 +204,6 @@ func withE2EDatabase(t *testing.T, configPath string,
 	}
 }
 
-// e2eEncryptionKey reads the database encryption key out of the e2e
-// configuration, so the case opens the seeded rows with the key they were
-// sealed under.
 func e2eEncryptionKey(t *testing.T, configPath string) string {
 	t.Helper()
 	raw, err := os.ReadFile(configPath)
@@ -287,7 +225,6 @@ func e2eEncryptionKey(t *testing.T, configPath string) string {
 	return ""
 }
 
-// e2eFlowReply is the part of a flow reply the cases read.
 type e2eFlowReply struct {
 	Seq   int    `json:"seq"`
 	State string `json:"state"`
@@ -300,9 +237,6 @@ type e2eFlowReply struct {
 	} `json:"next"`
 }
 
-// signInWithTOTP runs a password login completed with the TOTP factor and
-// answers the access token. The code is computed from secret at the moment of
-// the verification step.
 func signInWithTOTP(t *testing.T, base, identifier, password, secret string) string {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
@@ -383,8 +317,6 @@ func signInWithTOTP(t *testing.T, base, identifier, password, secret string) str
 	return token.AccessToken
 }
 
-// decodeE2EFlow parses a flow reply and fails the case when the body is not
-// one.
 func decodeE2EFlow(t *testing.T, body []byte) e2eFlowReply {
 	t.Helper()
 	var flow e2eFlowReply
@@ -394,9 +326,6 @@ func decodeE2EFlow(t *testing.T, body []byte) e2eFlowReply {
 	return flow
 }
 
-// e2eTOTPCode computes the six-digit code for secret at at, by the
-// parameters the factor registers with: HMAC-SHA1, a thirty-second step and six
-// digits. The secret is the base32 seed the register stored.
 func e2eTOTPCode(t *testing.T, secret string, at time.Time) string {
 	t.Helper()
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))

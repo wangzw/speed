@@ -1,10 +1,5 @@
 package main
 
-// The program-level cases for the self-service creation module: the host
-// assembles it rather than implementing it, the route's hourly bound answers,
-// the switch withdraws both the route and the feature, and the real account,
-// roster, policy, settings and key-value modules answer behind it.
-
 import (
 	"bytes"
 	"database/sql"
@@ -18,17 +13,14 @@ import (
 	tenantselfcreate "github.com/vislake/speed/pkg/tenant/selfcreate"
 )
 
-// TestTheSelfServiceCreationRouteRateLimits runs the default assembly: the
-// seeded tenant's name is a 409, three creations are admitted, the fourth is
-// the hourly refusal, and the feature document carries org.create.
+// TestTheSelfServiceCreationRouteRateLimits runs the default assembly: a taken
+// name is a 409, three creations pass, the fourth is the hourly refusal.
 func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "")
 	client := &http.Client{Timeout: probeTimeout()}
 	headers := map[string]string{"Authorization": "Bearer " + token}
 
-	// The seeded business tenant already carries the name, and the roster's one
-	// namespace answers identifier-unavailable.
 	held := send(t, client, http.MethodPost, base+"/api/v1/orgs",
 		map[string]string{"name": "demo", "display_name": "Demo"}, headers)
 	if held.status != http.StatusConflict {
@@ -69,9 +61,8 @@ func TestTheSelfServiceCreationRouteRateLimits(t *testing.T) {
 	}
 }
 
-// TestTheSelfServiceCreationRouteIsAbsentWhenTheSwitchIsOff runs the program
-// with org.create.enabled false: the route is a 404, and the feature is
-// absent.
+// TestTheSelfServiceCreationRouteIsAbsentWhenTheSwitchIsOff holds that org.create.enabled false makes
+// the route a 404 and the feature absent.
 func TestTheSelfServiceCreationRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "org:\n  create:\n    enabled: false\n")
@@ -98,8 +89,6 @@ func TestTheSelfServiceCreationRouteIsAbsentWhenTheSwitchIsOff(t *testing.T) {
 	}
 }
 
-// creationTables are the tables the creation path can write. A refusal that
-// comes before the attempt is counted leaves every one of them as it was.
 var creationTables = []string{
 	"tenants",
 	"authn_memberships",
@@ -109,13 +98,8 @@ var creationTables = []string{
 	"audit_entries",
 }
 
-// TestBothCreationRefusalsWriteNoRows runs the default assembly and reaches
-// both of its bounds. The seeded hourly bound answers first: three creations are
-// admitted and the fourth is the hourly refusal. The bound is then raised to ten
-// through the platform settings surface, two more creations fill the
-// five-organization cap, and the sixth is the organization refusal. Each refusal
-// is measured over the six tables the creation path writes, before and after:
-// neither adds a row.
+// TestBothCreationRefusalsWriteNoRows reaches the hourly refusal and then the five-organization cap,
+// and holds that neither writes a row in the six tables.
 func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
 	t.Parallel()
 	base, token, dsn := seededServeWithDatabase(t, "")
@@ -127,7 +111,6 @@ func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
 			map[string]string{"name": name, "display_name": name}, headers)
 	}
 
-	// The seeded hourly bound of three admits three creations.
 	for i := range 3 {
 		if res := create(fmt.Sprintf("team-%d", i)); res.status != http.StatusCreated {
 			t.Fatalf("creation %d answered %d, want 201:\n%s", i, res.status, res.body)
@@ -143,8 +126,6 @@ func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
 	}
 	assertRowCounts(t, dsn, beforeHourly, "the hourly refusal")
 
-	// Raise the hourly bound so the organization cap is the next refusal. The
-	// write is the platform surface an operator uses, not a test hook.
 	operator := signIn(t, base, seedIdentifier, seedPassword)
 	raised := send(t, client, http.MethodPut,
 		base+"/api/v1/system/settings/"+tenantselfcreate.SettingsNamespace+"/max-per-hour?layer=global",
@@ -154,7 +135,6 @@ func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
 		t.Fatalf("raising the hourly bound answered %d, want 204:\n%s", raised.status, raised.body)
 	}
 
-	// Two more creations bring the account to five active organizations.
 	for i := 3; i < 5; i++ {
 		if res := create(fmt.Sprintf("team-%d", i)); res.status != http.StatusCreated {
 			t.Fatalf("creation %d answered %d, want 201:\n%s", i, res.status, res.body)
@@ -171,9 +151,6 @@ func TestBothCreationRefusalsWriteNoRows(t *testing.T) {
 	assertRowCounts(t, dsn, beforeOrganization, "the organization-limit refusal")
 }
 
-// tableRowCounts reads the row count of every table the creation path writes.
-// The connection is read-only and the cases read it between requests, so it
-// observes the rows the last answered request left.
 func tableRowCounts(t *testing.T, dsn string) map[string]int64 {
 	t.Helper()
 	database, err := sql.Open("sqlite", "file:"+dsn+"?mode=ro")
@@ -193,8 +170,6 @@ func tableRowCounts(t *testing.T, dsn string) map[string]int64 {
 	return counts
 }
 
-// assertRowCounts holds every table the creation path writes to the counts taken
-// before the refusal, naming the refusal in every failure.
 func assertRowCounts(t *testing.T, dsn string, before map[string]int64, what string) {
 	t.Helper()
 	after := tableRowCounts(t, dsn)
@@ -205,9 +180,7 @@ func assertRowCounts(t *testing.T, dsn string, before map[string]int64, what str
 	}
 }
 
-// TestThePersonalRouteIsNotMounted runs the default assembly: the personal
-// tenant is written inside the account's transaction, so the account endpoint
-// mounts no personal-tenant route and a POST there is the endpoint's own 404.
+// TestThePersonalRouteIsNotMounted holds that the account endpoint mounts no personal-tenant route.
 func TestThePersonalRouteIsNotMounted(t *testing.T) {
 	t.Parallel()
 	base, token := seededServe(t, "")
@@ -219,8 +192,6 @@ func TestThePersonalRouteIsNotMounted(t *testing.T) {
 	}
 }
 
-// jsonContains reports whether a response body carries the text, so a case can
-// name a problem code without decoding the whole problem document.
 func jsonContains(body []byte, text string) bool {
 	return bytes.Contains(body, []byte(text))
 }

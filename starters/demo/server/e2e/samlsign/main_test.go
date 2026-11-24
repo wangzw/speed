@@ -19,9 +19,6 @@ import (
 	dsig "github.com/russellhaering/goxmldsig"
 )
 
-// writeIdentityProvider writes a throwaway RSA key and its self-signed
-// certificate as the key.pem and cert.pem the command reads, and returns the
-// directory and the certificate.
 func writeIdentityProvider(t *testing.T) (string, *x509.Certificate) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -61,10 +58,8 @@ const unsignedResponse = `<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2
 	`xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_r1" Version="2.0" ` +
 	`IssueInstant="2026-11-16T00:00:00Z"><saml:Issuer>https://idp.example/entity</saml:Issuer></samlp:Response>`
 
-// TestTheSignedResponseValidatesAgainstTheCertificate runs the command the way
-// the harness does and validates what it wrote with the library the product
-// validates with: a response the command signed is accepted under the
-// certificate it was given and refused under another.
+// TestTheSignedResponseValidatesAgainstTheCertificate holds that a signed response validates under the
+// given certificate and is refused under another.
 func TestTheSignedResponseValidatesAgainstTheCertificate(t *testing.T) {
 	dir, cert := writeIdentityProvider(t)
 	_, other := writeIdentityProvider(t)
@@ -95,8 +90,8 @@ func TestTheSignedResponseValidatesAgainstTheCertificate(t *testing.T) {
 	}
 }
 
-// TestTheCommandRefusesWhatItCannotSign holds the failure answers: no directory
-// named, and a document that is not XML.
+// TestTheCommandRefusesWhatItCannotSign holds the refusal for no directory and for a document that is
+// not XML.
 func TestTheCommandRefusesWhatItCannotSign(t *testing.T) {
 	dir, _ := writeIdentityProvider(t)
 	if err := run(nil, strings.NewReader(unsignedResponse), &bytes.Buffer{}); err == nil {
