@@ -1,13 +1,6 @@
 // Package log delivers the mail sending seam by writing each message to the
-// process log.
-//
-// It reaches no relay. It exists so a deployment that configures no other mail
-// carrier still has a working mail channel, and so a local walkthrough can read
-// a verification code out of the process output. It is the fallback carrier:
-// it runs when no other carrier was explicitly enabled, and core's exclusive
-// resolution stands it down as soon as one was. A run that selects it by name
-// gets it too. Either way it warns at startup, because the body — and the
-// verification code in it — leaves the process through the log stream.
+// process log. It is the fallback carrier and warns at startup that the body
+// reaches the log stream.
 package log
 
 import (
@@ -24,26 +17,20 @@ import (
 // configuration namespace takes.
 const ModuleName = "mail.log"
 
-// ConfigNamespace is where this module's input items are mounted. It declares
-// no carrier item of its own; it declares the selection item mail.carrier.
+// ConfigNamespace is where this module's input items are mounted; it declares the
+// selection item mail.carrier rather than a carrier item of its own.
 const ConfigNamespace = ModuleName
 
 // CarrierName is what this sender answers Name with and the name mail.carrier
 // uses for it.
 const CarrierName = "log"
 
-// moduleConfig is the empty configuration this carrier accepts: it needs no
-// credential and no endpoint, and every message goes to the process log.
 type moduleConfig struct{}
 
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// Fallback marks it as the carrier of last resort. DeclaresSelection makes it
-// the one module that declares mail.carrier, which is what lets a run name a
-// carrier explicitly; it is declared here because this carrier is compiled into
-// every build.
+// Module is the descriptor a host registers. It is the fallback carrier and the
+// one module that declares mail.carrier.
 func Module() core.Module {
 	return mail.NewModule(mail.Spec[moduleConfig]{
 		ModuleName:        ModuleName,
@@ -59,10 +46,6 @@ func Module() core.Module {
 	})
 }
 
-// open builds the sender and emits the startup warning. The warning belongs
-// here rather than in Send: a run whose operator never sees a message still
-// needs to know the channel writes bodies to the log, and the log stream can
-// leave the machine through collection or export.
 func open(ctx context.Context, _ *moduleConfig) (mail.Sender, error) {
 	logger := speedlog.FromContext(ctx)
 	logger.Warn(
@@ -79,16 +62,12 @@ type Sender struct {
 
 var _ mail.Sender = Sender{}
 
-// Name is the carrier's own name.
+// Name reports the carrier this sender is.
 func (Sender) Name() string { return CarrierName }
 
-// Send writes the rendered message to the process log. No value here is chosen
-// by this package: the code was drawn by the login module and rendered by
-// authn.emailcode.
-//
-// The code is reported under verification_code rather than code, because the
-// gateway registers "code" as a sensitive key name for the process and the
-// logging layer would mask a value logged under it.
+// Send writes the rendered message to the process log. The code is reported under
+// verification_code because the gateway registers "code" as a sensitive key name
+// and the logging layer would mask a value logged under it.
 func (s Sender) Send(_ context.Context, m mail.Message) (mail.Receipt, error) {
 	logger := s.logger
 	if logger == nil {
@@ -105,8 +84,7 @@ func (s Sender) Send(_ context.Context, m mail.Message) (mail.Receipt, error) {
 }
 
 // VerificationCode reads the six-digit code out of the rendered bodies, the
-// plain text first. It reports an empty string when no body carries one; a
-// longer run of digits is not a code and is not reported.
+// plain text first; it reports "" when no body carries one.
 func VerificationCode(bodies ...string) string {
 	for _, body := range bodies {
 		if code := SixDigitRun(body); code != "" {

@@ -13,13 +13,10 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 )
 
-// passwordSentinel is a value no other text in these cases holds, so finding it
-// anywhere is the leak this file is about.
 const passwordSentinel = "s3cr3t-smtp-password-sentinel-1f2e3d4c"
 
-// TestAConfigurationErrorNeverRepeatsThePassword holds the discipline that a
-// module holding a secret keeps it out of the text of every failure on the way
-// to a runnable configuration, whichever item the failure actually names.
+// TestAConfigurationErrorNeverRepeatsThePassword checks that no configuration
+// failure repeats the password.
 func TestAConfigurationErrorNeverRepeatsThePassword(t *testing.T) {
 	cases := map[string]map[string]any{
 		"an unknown tls value":          {"tls": "plaintext", "username": "the-user", "password": passwordSentinel},
@@ -39,9 +36,8 @@ func TestAConfigurationErrorNeverRepeatsThePassword(t *testing.T) {
 	}
 }
 
-// TestASendErrorNeverRepeatsThePassword holds the other half at send time: a
-// relay that refuses the message answers with a code, never with anything this
-// module wrote, so the password reaches no error text.
+// TestASendErrorNeverRepeatsThePassword checks that a refused send names a reply
+// code and never the password, though AUTH did carry it to the relay.
 func TestASendErrorNeverRepeatsThePassword(t *testing.T) {
 	srv := newFakeServer(t, modePlain, func(s *fakeServer) { s.rejectRCPTCode = "550" })
 	s := newTestSender(t, srv, func(cfg *moduleConfig) {
@@ -56,16 +52,12 @@ func TestASendErrorNeverRepeatsThePassword(t *testing.T) {
 	if strings.Contains(err.Error(), passwordSentinel) {
 		t.Errorf("the failure %q repeats the password", err)
 	}
-	// The password did reach the relay, which is the point of AUTH, so its
-	// absence from the error is a choice about what is written and not about
-	// what is sent.
 	if auth := srv.lastAuth(t); auth.authUser != "the-user" || auth.authPass != passwordSentinel {
 		t.Errorf("the relay read %q/%q, want the configured identity",
 			auth.authUser, auth.authPass)
 	}
 }
 
-// capturingRedaction records the rules registered with it.
 type capturingRedaction struct {
 	names   []string
 	matches []log.Matcher
@@ -78,14 +70,12 @@ func (c *capturingRedaction) AddPattern(name string, match log.Matcher) {
 	c.matches = append(c.matches, match)
 }
 
-// capturingLogger is a logging capability that records redaction registrations.
 type capturingLogger struct{ red *capturingRedaction }
 
 func (l *capturingLogger) Named(string) *slog.Logger { return slog.Default() }
 
 func (l *capturingLogger) Redaction() log.Redaction { return l.red }
 
-// providingLoggerModule is a logging capability a drive can construct.
 func providingLoggerModule(red *capturingRedaction) core.Module {
 	return core.Module{
 		Name:     "stand-in.logger",
@@ -94,9 +84,8 @@ func providingLoggerModule(red *capturingRedaction) core.Module {
 	}
 }
 
-// TestThePasswordIsRegisteredAsARedactionRule holds that the AUTH secret leaves
-// the factory as a literal redaction rule, so a password that turns up in any
-// log line of the process is masked.
+// TestThePasswordIsRegisteredAsARedactionRule checks that the AUTH secret becomes
+// a literal redaction rule that masks it in a log line.
 func TestThePasswordIsRegisteredAsARedactionRule(t *testing.T) {
 	red := &capturingRedaction{}
 	reg := registryWithReader(t, body(t, section(map[string]any{

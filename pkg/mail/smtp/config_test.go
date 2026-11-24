@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 )
 
-// section renders this module's section out of the two required items and the
-// given override.
 func section(override map[string]any) map[string]any {
 	out := map[string]any{
 		"host": "relay.example.com",
@@ -28,7 +26,6 @@ func section(override map[string]any) map[string]any {
 	return out
 }
 
-// body renders a whole configuration document holding this module's section.
 func body(t *testing.T, s map[string]any) string {
 	t.Helper()
 	doc := map[string]any{"mail": map[string]any{"smtp": s}}
@@ -39,9 +36,6 @@ func body(t *testing.T, s map[string]any) string {
 	return string(encoded)
 }
 
-// readBody loads a document with the real configuration loader and decodes this
-// module's section, then judges it the way Prepare does: the error the module
-// would refuse the startup with.
 func readBody(t *testing.T, document string) (resolved, error) {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
@@ -55,8 +49,8 @@ func readBody(t *testing.T, document string) (resolved, error) {
 	return cfg.resolve()
 }
 
-// TestACompleteSectionResolves is the control: the two required items and the
-// defaults resolve into the connection settings the module runs on.
+// TestACompleteSectionResolves checks that the required items and the defaults
+// resolve into the connection settings and allowed sender set.
 func TestACompleteSectionResolves(t *testing.T) {
 	got, err := readBody(t, body(t, section(nil)))
 	if err != nil {
@@ -73,9 +67,8 @@ func TestACompleteSectionResolves(t *testing.T) {
 	}
 }
 
-// TestEachIncompleteSectionIsRefused holds that a section with the other item
-// set but host or from missing is half-configured: a startup failure naming the
-// missing item, not a carrier that silently cannot send.
+// TestEachIncompleteSectionIsRefused checks that a section missing host or from is
+// refused with the missing item named.
 func TestEachIncompleteSectionIsRefused(t *testing.T) {
 	for _, item := range []string{"host", "from"} {
 		t.Run(item, func(t *testing.T) {
@@ -90,8 +83,8 @@ func TestEachIncompleteSectionIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnUnknownTLSValueIsRefused holds that the posture is one of the three named
-// and a value outside the set is a startup failure naming the item.
+// TestAnUnknownTLSValueIsRefused checks that a posture outside the three named
+// values is refused naming the item.
 func TestAnUnknownTLSValueIsRefused(t *testing.T) {
 	_, err := readBody(t, body(t, section(map[string]any{"tls": "plaintext"})))
 	if !errors.Is(err, mail.ErrInvalidConfig) {
@@ -102,10 +95,7 @@ func TestAnUnknownTLSValueIsRefused(t *testing.T) {
 	}
 }
 
-// TestEachTLSValueIsAccepted holds the control: every value a host may write
-// resolves. The values are spelled out rather than taken from this package's own
-// constants, because they are the configuration contract a host writes down: a
-// renamed constant that every other case followed silently fails here.
+// TestEachTLSValueIsAccepted checks that every spelled-out posture resolves.
 func TestEachTLSValueIsAccepted(t *testing.T) {
 	for _, value := range []string{"starttls", "implicit", "none"} {
 		t.Run(value, func(t *testing.T) {
@@ -120,8 +110,8 @@ func TestEachTLSValueIsAccepted(t *testing.T) {
 	}
 }
 
-// TestAUsernameWithNoPasswordIsRefused holds that AUTH is all-or-nothing: an
-// identity with no secret is a startup failure rather than a silent no-AUTH.
+// TestAUsernameWithNoPasswordIsRefused checks that an AUTH identity without a
+// secret is a startup failure.
 func TestAUsernameWithNoPasswordIsRefused(t *testing.T) {
 	_, err := readBody(t, body(t, section(map[string]any{"username": "the-user"})))
 	if !errors.Is(err, mail.ErrInvalidConfig) {
@@ -132,8 +122,8 @@ func TestAUsernameWithNoPasswordIsRefused(t *testing.T) {
 	}
 }
 
-// TestASenderThatDoesNotParseIsRefused holds that the default sender is checked
-// at startup, naming the item and not repeating the address.
+// TestASenderThatDoesNotParseIsRefused checks that an unparseable default sender
+// is refused without the address repeating.
 func TestASenderThatDoesNotParseIsRefused(t *testing.T) {
 	const bad = "not-an-address"
 	_, err := readBody(t, body(t, section(map[string]any{"from": bad})))
@@ -145,8 +135,8 @@ func TestASenderThatDoesNotParseIsRefused(t *testing.T) {
 	}
 }
 
-// TestAnAllowedSenderThatDoesNotParseIsRefused holds that every additional
-// allowed sender is checked at startup too.
+// TestAnAllowedSenderThatDoesNotParseIsRefused checks that every additional
+// allowed sender is checked at startup.
 func TestAnAllowedSenderThatDoesNotParseIsRefused(t *testing.T) {
 	_, err := readBody(t, body(t, section(map[string]any{"from-allowed": []string{"fine@example.com", "bad"}})))
 	if !errors.Is(err, mail.ErrInvalidConfig) {
@@ -157,9 +147,8 @@ func TestAnAllowedSenderThatDoesNotParseIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheSchemaDeclaresTheSensitiveAndContainerItems holds the declaration: the
-// password is sensitive, the allowed set and the two required items carry their
-// flags, and the default port and posture come from the prototype.
+// TestTheSchemaDeclaresTheSensitiveAndContainerItems checks the password's
+// sensitivity, the item flags and the prototype defaults.
 func TestTheSchemaDeclaresTheSensitiveAndContainerItems(t *testing.T) {
 	resources := Module().Resources
 	if len(resources) != 2 {
@@ -187,9 +176,8 @@ func TestTheSchemaDeclaresTheSensitiveAndContainerItems(t *testing.T) {
 	}
 }
 
-// TestTheAllowedSetComparesOnTheAddrSpec holds that a display name does not
-// change whether a sender is accepted: the string's addr-spec is what is
-// checked.
+// TestTheAllowedSetComparesOnTheAddrSpec checks that a display name does not
+// change whether a sender is accepted.
 func TestTheAllowedSetComparesOnTheAddrSpec(t *testing.T) {
 	got, err := readBody(t, body(t, section(map[string]any{
 		"from-allowed": []string{"Alias <" + otherSender + ">"},

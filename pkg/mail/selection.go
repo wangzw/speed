@@ -10,44 +10,29 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The mail capability runs exactly one carrier at run time, chosen by the
-// explicit selection item mail.carrier. Several carriers may be compiled into
-// one binary; the selection is a run-time decision, not a build-time one.
 const (
 	// SelectionNamespace is the configuration section the selection item lives
 	// under.
 	SelectionNamespace = "mail"
 	// SelectionItem is the item naming the carrier to run.
 	SelectionItem = "carrier"
-	// SelectionNone switches the capability off: no carrier runs, the log
-	// fallback included, and a module that requires the sending seam stands
-	// itself down.
+	// SelectionNone switches the capability off.
 	SelectionNone = "none"
 )
 
 // CarrierName is the resource a carrier module declares to state the name the
-// selection item uses for it, and the name it answers Name with.
-//
-// The declaration is how a carrier's own Prepare can tell a selection that
-// names a carrier this binary does not carry from one that names a compiled
-// carrier that merely is not this one. It is a resource rather than a method
-// because Prepare runs before any carrier is constructed.
+// selection item uses for it.
 type CarrierName struct {
-	// Name is the carrier's name in the selection item, such as "smtp" or
-	// "log".
+	// Name is the carrier's name in the selection item, such as "smtp" or "log".
 	Name string
 }
 
-// selectionConfig is the shape the selection item decodes into.
 type selectionConfig struct {
 	Carrier string `config:"carrier"`
 }
 
-// SelectionSchema is the input-item declaration the log carrier mounts, so a
-// run can write mail.carrier. The log carrier declares it because it is
-// compiled into every build; a binary carrying a vendor carrier without the
-// log carrier accepts no selection and auto-selects the sole configured
-// carrier.
+// SelectionSchema is the input-item declaration the log carrier mounts so a run
+// can write mail.carrier.
 func SelectionSchema() config.Schema {
 	return config.Schema{
 		Namespace: SelectionNamespace,
@@ -61,9 +46,7 @@ func SelectionSchema() config.Schema {
 	}
 }
 
-// ReadSelection reads mail.carrier. An absent item is the empty string, which
-// asks for automatic selection: a configured carrier runs, and the log carrier
-// is the fallback when none is.
+// ReadSelection reads mail.carrier; an absent item asks for automatic selection.
 func ReadSelection(reader config.Reader) (string, error) {
 	var cfg selectionConfig
 	if err := reader.Decode(SelectionNamespace, &cfg); err != nil {
@@ -73,16 +56,10 @@ func ReadSelection(reader config.Reader) (string, error) {
 }
 
 // OffBySelection reports whether mail.carrier switches the capability off, and
-// the reason a module that depends on the sending seam states when it does. A
-// module that requires the seam takes this up in Prepare: with the capability
-// off there may be no provider at all, and a dependent that tried to resolve it
-// in New would fail the startup instead of standing itself down.
+// the stand-down reason a dependent module states.
 func OffBySelection(reg *core.Registry) (bool, string, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if errors.Is(err, core.ErrMissingProvider) {
-		// An assembly with no configuration reader has no selection to read, so
-		// the capability is not switched off by one. The carriers still judge the
-		// selection where they read their own configuration.
 		return false, "", nil
 	}
 	if err != nil {
@@ -113,12 +90,6 @@ func CarrierNames(reg *core.Registry) []string {
 	return names
 }
 
-// selectionFrom reads the selection and checks that a name it gives is one a
-// compiled carrier answers to.
-//
-// An unknown name is an error rather than a run that quietly carries no
-// carrier: a typo in mail.carrier would otherwise leave the capability off
-// while every dependency stood down as though the deployment had chosen none.
 func selectionFrom(reg *core.Registry, carrierName string) (string, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -145,20 +116,9 @@ func selectionFrom(reg *core.Registry, carrierName string) (string, error) {
 		ErrInvalidConfig, selected, carried, SelectionNone)
 }
 
-// stanceFor turns the selection item and this carrier's own configuration into
-// the stance the module states in Prepare.
-//
-// The selection wins over the carrier's configuration: a carrier the selection
-// does not name stands down without being judged, so a deployment can write a
-// half-finished section for a carrier it is not running. A carrier the
-// selection does name has to be runnable, and a configuration gap there is an
-// error rather than a silent absence.
-//
-// With no selection, a carrier that judges itself configured states
-// StateEnabled. The fallback carrier states StateAuto instead: it runs only
-// when no other provider was explicitly enabled, and core's exclusive
-// resolution stands it down when one was. That is what makes the log carrier
-// the channel of last resort without a second coordination mechanism.
+// stanceFor turns the selection item and this carrier's configuration into the
+// stance the module states in Prepare. A carrier the selection names must be
+// runnable; the fallback carrier states StateAuto.
 func (s Spec[C]) stanceFor(reg *core.Registry) (core.Enablement, error) {
 	selected, err := selectionFrom(reg, s.CarrierName)
 	if err != nil {

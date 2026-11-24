@@ -8,14 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 )
 
-// assemble turns a rendered message into the carrier's own message: the header
-// block, the one or two alternative bodies and the attachments.
-//
-// A failure here is a caller defect — an address the carrier's parser refuses
-// where the package's own accepted it, a reader that fell over mid-attachment —
-// and reaches no carrier, so it is a rejection and not an uncertain case. The
-// underlying text is dropped rather than wrapped: it can repeat an address or a
-// slice of the message, which is the one thing a rejection may not carry.
+// assemble turns a rendered message into the carrier's own message; a failure
+// here is a caller defect, so it is a rejection.
 func assemble(m mail.Message, from string) (*gomail.Msg, error) {
 	msg := gomail.NewMsg()
 
@@ -53,10 +47,8 @@ func assemble(m mail.Message, from string) (*gomail.Msg, error) {
 	return msg, nil
 }
 
-// setBodies writes the one or two bodies. With both present the message is a
-// multipart/alternative laid out plain-text first, then HTML, which is the order
-// a reader that understands only one of them renders: the alternative order is
-// most-fallback first.
+// setBodies writes the one or two bodies, plain text first in a
+// multipart/alternative so a reader that understands one of them renders it.
 func setBodies(msg *gomail.Msg, m mail.Message) {
 	switch {
 	case m.Text != "" && m.HTML != "":
@@ -69,8 +61,6 @@ func setBodies(msg *gomail.Msg, m mail.Message) {
 	}
 }
 
-// attach reads each attachment to the end into the message. An empty
-// ContentType is left for the library to default to application/octet-stream.
 func attach(msg *gomail.Msg, files []mail.Attachment) error {
 	for _, file := range files {
 		var opts []gomail.FileOption
@@ -84,7 +74,6 @@ func attach(msg *gomail.Msg, files []mail.Attachment) error {
 	return nil
 }
 
-// rejected is the caller-defect shape every assembly failure takes.
 func rejected(what string) error {
 	return fmt.Errorf("%w: %s: %s", mail.ErrRejected, carrierName, what)
 }

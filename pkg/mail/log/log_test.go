@@ -16,7 +16,6 @@ import (
 	maillog "github.com/vislake/speed/pkg/mail/log"
 )
 
-// capture is a logging capability that writes every record to a buffer.
 type capture struct{ buf *bytes.Buffer }
 
 func (c *capture) Named(name string) *slog.Logger {
@@ -26,14 +25,11 @@ func (c *capture) Named(name string) *slog.Logger {
 
 func (c *capture) Redaction() speedlog.Redaction { return noRedaction{} }
 
-// noRedaction accepts registrations and masks nothing; these cases hold the
-// warning, not the redaction layer.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)                   {}
 func (noRedaction) AddPattern(string, speedlog.Matcher) {}
 
-// loggerModule provides the logging capability over buf.
 func loggerModule(buf *bytes.Buffer) core.Module {
 	return core.Module{
 		Name:     "test.logger",
@@ -44,8 +40,6 @@ func loggerModule(buf *bytes.Buffer) core.Module {
 	}
 }
 
-// absentCarrier is a non-fallback carrier whose section is wholly unset, so it
-// stands itself down and leaves the log carrier as the only candidate.
 func absentCarrier() core.Module {
 	prototype := struct{}{}
 	return mail.NewModule(mail.Spec[struct{}]{
@@ -62,7 +56,6 @@ func absentCarrier() core.Module {
 	})
 }
 
-// drive runs an assembly over body and answers the registry it built.
 func drive(t *testing.T, body string, buf *bytes.Buffer, participants ...string) *core.Registry {
 	t.Helper()
 	modules := []core.Module{maillog.Module(), loggerModule(buf), absentCarrier()}
@@ -82,9 +75,8 @@ func drive(t *testing.T, body string, buf *bytes.Buffer, participants ...string)
 	return reg
 }
 
-// TestTheLogCarrierIsTheFallbackAndWarns holds requirements 2 and 3: with no
-// other carrier enabled the log carrier runs, and it writes a warning saying
-// the channel puts messages into the process log.
+// TestTheLogCarrierIsTheFallbackAndWarns checks that with no other carrier enabled
+// the log carrier runs and warns that messages reach the process log.
 func TestTheLogCarrierIsTheFallbackAndWarns(t *testing.T) {
 	var buf bytes.Buffer
 	reg := drive(t, `{}`, &buf,
@@ -106,11 +98,8 @@ func TestTheLogCarrierIsTheFallbackAndWarns(t *testing.T) {
 	}
 }
 
-// TestTheFallbackCarrierWritesTheMessageToTheProcessLog holds the channel
-// itself: a message handed to the sender the fallback resolves to lands in the
-// process log, recipient, subject, body and verification code included. Without
-// it the fallback would be a warning about a channel nothing proves carries
-// anything.
+// TestTheFallbackCarrierWritesTheMessageToTheProcessLog checks that a message sent
+// through the fallback lands in the process log with its code.
 func TestTheFallbackCarrierWritesTheMessageToTheProcessLog(t *testing.T) {
 	var buf bytes.Buffer
 	reg := drive(t, `{}`, &buf,
@@ -139,9 +128,8 @@ func TestTheFallbackCarrierWritesTheMessageToTheProcessLog(t *testing.T) {
 	}
 }
 
-// TestSelectionNoneLeavesNoCarrierAndNoWarning holds requirement 4: none switches
-// the capability off without falling back, and no carrier is constructed, so no
-// warning claims a log channel is running.
+// TestSelectionNoneLeavesNoCarrierAndNoWarning checks that the none selection
+// leaves no carrier and writes no warning about a log channel.
 func TestSelectionNoneLeavesNoCarrierAndNoWarning(t *testing.T) {
 	var buf bytes.Buffer
 	reg := drive(t, `{"mail":{"carrier":"none"}}`, &buf,

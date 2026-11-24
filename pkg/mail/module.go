@@ -12,85 +12,45 @@ import (
 )
 
 // Spec is what a carrier subpackage hands this package to become a module.
-//
-// It is the whole of what a carrier contributes. Everything else — the exclusive
-// delivery of the Sender, mounting the input-item declaration under a namespace
-// of the carrier's own, resolving the optional logging capability, registering
-// the carrier's credentials as literal redaction rules and releasing nothing,
-// since a sender holds only an in-process dedupe table — is this package's,
-// shared by every carrier.
-//
-// The type parameter is the carrier's own configuration carrier. Each carrier
-// accepts different items — a host, a port, an application identity — so there is
-// no shared carrier to hand here.
 type Spec[C any] struct {
-	// ModuleName is this carrier's name in the registry: its identity in the
-	// startup diagnostics and in an enablement lookup.
+	// ModuleName is this carrier's name in the registry.
 	ModuleName string
 	// CarrierName is this carrier's name in the mail.carrier selection item and
-	// the name its Sender answers Name with. It is the name a deployment writes
-	// to choose this carrier, so it is stable across module renames.
+	// the name its Sender answers Name with.
 	CarrierName string
 	// Fallback marks the carrier that runs when no other carrier was explicitly
 	// enabled and no configured carrier claimed the capability. The log carrier
-	// sets it: it writes every message to the process log, so it is the channel
-	// of last resort, never a silent replacement for a configured carrier.
+	// sets it.
 	Fallback bool
-	// DeclaresSelection makes this carrier declare the mail.carrier item. One
-	// carrier declares it and the rest read it; the factory refuses a second
-	// declaration rather than letting two modules claim one path. The log
-	// carrier sets it, because it is compiled into every build.
+	// DeclaresSelection makes this carrier declare the mail.carrier item; one
+	// carrier declares it and the rest read it. The log carrier sets it.
 	DeclaresSelection bool
-	// ConfigNamespace is where this carrier's input items are mounted in the
-	// config data. It has to be one of its own: the configuration manifest is
-	// collected from every registered module, a run's disabled ones included, so
-	// two carriers declaring input items on one path conflict as soon as a host
-	// imports both.
+	// ConfigNamespace is where this carrier's input items are mounted, and it has
+	// to be one of its own.
 	ConfigNamespace string
-	// Config is a pointer to this carrier's input-item prototype: the struct
-	// config fills, carrying the values an absent key takes. The schema reads the
-	// accepted keys and their defaults from it.
+	// Config is a pointer to this carrier's input-item prototype, carrying the
+	// values an absent key takes.
 	Config *C
 	// Items describes each declared item, keyed by its path within the namespace.
 	Items map[string]config.Item
-	// Stance judges this carrier's own configuration, before the selection item
-	// is applied. It states StateEnabled when the carrier is configured enough
-	// to run, StateDisabled with a reason when the section is wholly unset, and
-	// returns an error when the section is half-configured or holds a value the
-	// carrier cannot run on. Half-configured means some of the items that make
-	// up a usable carrier are present and others are missing; an error names
-	// what is wrong, and the startup fails with it.
+	// Stance judges this carrier's own configuration before the selection item is
+	// applied: StateEnabled when it can run, StateDisabled when the section is
+	// wholly unset, and an error when it is half-configured.
 	Stance func(cfg *C) (core.Enablement, error)
 	// Secrets returns the values this carrier holds that have to be registered as
-	// literal redaction rules, so a credential that turns up in any log line of
-	// the process is masked. It is the carrier's way to name a credential without
-	// importing the literal package: this package registers what it returns.
-	//
-	// It is optional; a carrier with no credential of its own leaves it nil.
+	// literal redaction rules. It is optional.
 	Secrets func(cfg *C) []string
 	// Open builds this carrier from the decoded configuration.
 	Open func(ctx context.Context, cfg *C) (Sender, error)
 }
 
-// NewModule builds a carrier's module descriptor.
-//
-// A defective Spec panics here rather than being reported: a subpackage fills it
-// in at init, so the fault is in this repository's own code, shows up
-// deterministically on the first run of any host that imports it, and leaves a
-// host nothing to handle.
+// NewModule builds a carrier's module descriptor. A defective Spec panics here,
+// because the fault is in this repository's own code.
 func NewModule[C any](spec Spec[C]) core.Module {
 	spec.check()
 	return core.Module{
-		Name: spec.ModuleName,
-		// Optional, because a sender has to work in an assembly that never took
-		// logging in; declared, because a carrier's credential is registered as a
-		// literal redaction rule and an assembly with logging has to have it built
-		// first.
-		Requires: []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
-		// Exclusive, because two carriers behind one capability is not a
-		// configuration this package could serve: a consumer would hand its
-		// messages to whichever one resolution happened to leave standing, and two
-		// at once therefore fail the startup instead.
+		Name:      spec.ModuleName,
+		Requires:  []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
 		Provides:  []core.Provision{{Token: (*Sender)(nil), Exclusive: true}},
 		Resources: spec.resources(),
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
@@ -104,10 +64,6 @@ func NewModule[C any](spec Spec[C]) core.Module {
 			if err := spec.registerSecrets(reg, cfg); err != nil {
 				return nil, err
 			}
-			// The logging capability is optional and already ordered ahead when it
-			// exists; injecting its logger lets a carrier that writes to the log by
-			// design — the fallback carrier — reach the configured destination
-			// instead of the process default.
 			if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 				ctx = log.WithLogger(ctx, delivered.Named(spec.ModuleName))
 			}
@@ -116,9 +72,6 @@ func NewModule[C any](spec Spec[C]) core.Module {
 	}
 }
 
-// check refuses a Spec that cannot produce a working module. Each condition is
-// one this package would otherwise meet much later and much further from its
-// cause.
 func (s Spec[C]) check() {
 	switch {
 	case s.ModuleName == "":
@@ -142,8 +95,6 @@ func (s Spec[C]) check() {
 	}
 }
 
-// resources is what this carrier declares: its own input items, its selection
-// name, and — on the one carrier that does — the selection item itself.
 func (s Spec[C]) resources() []any {
 	declared := []any{s.schema(), CarrierName{Name: s.CarrierName}}
 	if s.DeclaresSelection {
@@ -152,8 +103,6 @@ func (s Spec[C]) resources() []any {
 	return declared
 }
 
-// schema is this carrier's input-item declaration, mounted under its own
-// namespace.
 func (s Spec[C]) schema() config.Schema {
 	return config.Schema{
 		Namespace: s.ConfigNamespace,
@@ -162,13 +111,6 @@ func (s Spec[C]) schema() config.Schema {
 	}
 }
 
-// read hands back a fresh copy of the prototype with the carrier's own section
-// decoded into it.
-//
-// The copy matters because Prepare and New each read, and a shared carrier would
-// have the second read writing over the first one's values. Decode leaves a
-// field no source gave a value for as it found it, so the copy is what carries
-// the defaults into the result.
 func (s Spec[C]) read(reg *core.Registry) (*C, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -183,15 +125,6 @@ func (s Spec[C]) read(reg *core.Registry) (*C, error) {
 	return cfg, nil
 }
 
-// registerSecrets registers the carrier's credentials as literal redaction rules
-// with the logging capability, when it names any and the assembly carries one.
-//
-// A credential has no shape to match, so the only thing known about it is the
-// value; without a rule it would be masked only where the code remembered to,
-// and a request that failed would carry it into a log line. The registration
-// runs in New, before any Named logger binds an attribute, which is the timing a
-// redaction rule needs. With no logging capability there is no log to protect,
-// and the absence is told apart from a failed lookup by the sentinel.
 func (s Spec[C]) registerSecrets(reg *core.Registry, cfg *C) error {
 	if s.Secrets == nil {
 		return nil

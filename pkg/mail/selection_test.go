@@ -11,17 +11,14 @@ import (
 	"github.com/vislake/speed/pkg/internal/configtest"
 )
 
-// pickConfig is the empty configuration the selection cases' carriers accept.
 type pickConfig struct{}
 
-// pickSender is a carrier that answers the seam and does nothing.
 type pickSender struct{}
 
 func (pickSender) Name() string { return "pick" }
 
 func (pickSender) Send(context.Context, Message) (Receipt, error) { return Receipt{}, nil }
 
-// pickModule builds a carrier whose stance the case controls.
 func pickModule(moduleName, carrierName string, fallback bool, stance func(*pickConfig) (core.Enablement, error)) core.Module {
 	prototype := pickConfig{}
 	return NewModule(Spec[pickConfig]{
@@ -37,18 +34,14 @@ func pickModule(moduleName, carrierName string, fallback bool, stance func(*pick
 	})
 }
 
-// configured is the stance of a carrier that is ready to run.
 func configured(*pickConfig) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// unconfigured is the stance of a carrier whose section is wholly absent.
 func unconfigured(*pickConfig) (core.Enablement, error) {
 	return core.Enablement{State: core.StateDisabled, Reason: "the section is unset"}, nil
 }
 
-// pickRegistry builds a registry with a real configuration reader over body and
-// the given carrier modules registered.
 func pickRegistry(t *testing.T, body string, modules ...core.Module) *core.Registry {
 	t.Helper()
 	declared := append([]core.Module{{
@@ -65,9 +58,8 @@ func pickRegistry(t *testing.T, body string, modules ...core.Module) *core.Regis
 	return reg
 }
 
-// TestSelectionRefusesAnUnknownCarrierName holds requirement 5: a name that no
-// compiled carrier answers to is a startup error naming the value and the
-// capability, not a run that quietly carries no carrier.
+// TestSelectionRefusesAnUnknownCarrierName checks that a name no compiled carrier
+// answers to is a startup error naming the value and the compiled carriers.
 func TestSelectionRefusesAnUnknownCarrierName(t *testing.T) {
 	smtp := pickModule("mail.pick.smtp", "smtp", false, configured)
 	reg := pickRegistry(t, `{"mail":{"carrier":"ses"}}`, smtp)
@@ -86,9 +78,8 @@ func TestSelectionRefusesAnUnknownCarrierName(t *testing.T) {
 	}
 }
 
-// TestTwoEnabledCarriersFailNamingBothModules holds requirement 6: with no
-// selection and two configured carriers, resolution refuses the run and names
-// both modules.
+// TestTwoEnabledCarriersFailNamingBothModules checks that two configured carriers
+// with no selection fail resolution naming both modules.
 func TestTwoEnabledCarriersFailNamingBothModules(t *testing.T) {
 	first := pickModule("mail.pick.one", "one", false, configured)
 	second := pickModule("mail.pick.two", "two", false, configured)
@@ -112,9 +103,8 @@ func TestTwoEnabledCarriersFailNamingBothModules(t *testing.T) {
 	}
 }
 
-// TestSelectionNoneStandsEveryCarrierDown holds requirement 4: none switches
-// the capability off, and every carrier — the fallback included — stands down
-// with a reason.
+// TestSelectionNoneStandsEveryCarrierDown checks that the none selection stands
+// every carrier down, the fallback included.
 func TestSelectionNoneStandsEveryCarrierDown(t *testing.T) {
 	primary := pickModule("mail.pick.primary", "primary", false, configured)
 	fallback := pickModule("mail.pick.fallback", "log", true, configured)
@@ -135,9 +125,8 @@ func TestSelectionNoneStandsEveryCarrierDown(t *testing.T) {
 	}
 }
 
-// TestExplicitSelectionStandsTheOtherCarrierDown holds requirement 1: a carrier
-// the selection does not name stands down with a reason, without its own
-// configuration being judged.
+// TestExplicitSelectionStandsTheOtherCarrierDown checks that a carrier the
+// selection does not name stands down without its own configuration being judged.
 func TestExplicitSelectionStandsTheOtherCarrierDown(t *testing.T) {
 	primary := pickModule("mail.pick.primary", "primary", false, configured)
 	fallback := pickModule("mail.pick.fallback", "log", true, configured)
@@ -159,9 +148,8 @@ func TestExplicitSelectionStandsTheOtherCarrierDown(t *testing.T) {
 	}
 }
 
-// TestFallbackStatesAutoWithoutASelection holds the fallback half of the
-// mechanism: with no selection it states StateAuto, so core stands it down when
-// another carrier is explicitly enabled and leaves it running when none is.
+// TestFallbackStatesAutoWithoutASelection checks that the fallback carrier states
+// StateAuto when no selection names a carrier.
 func TestFallbackStatesAutoWithoutASelection(t *testing.T) {
 	primary := pickModule("mail.pick.primary", "primary", false, unconfigured)
 	fallback := pickModule("mail.pick.fallback", "log", true, configured)

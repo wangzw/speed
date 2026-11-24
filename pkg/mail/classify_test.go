@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// TestClassifyUsesTheTableAndDefaultsToUncertain holds the two facts of the
-// exact-code helper: a code the table names becomes its sentinel, and any other
-// code becomes the uncertain sentinel, with the code carried into the text.
+// TestClassifyUsesTheTableAndDefaultsToUncertain checks that a table code becomes
+// its sentinel and any other code becomes ErrUncertain, with the code in the text.
 func TestClassifyUsesTheTableAndDefaultsToUncertain(t *testing.T) {
 	table := map[string]error{"Rejected": ErrRejected, "Throttled": ErrThrottled}
 
@@ -28,8 +27,8 @@ func TestClassifyUsesTheTableAndDefaultsToUncertain(t *testing.T) {
 	}
 }
 
-// TestTheUncertainShapesWrapTheSentinel holds that the two ready-made shapes are
-// both uncertain and both name the carrier.
+// TestTheUncertainShapesWrapTheSentinel checks that Unsettled and NoStatus both
+// wrap ErrUncertain and name the carrier.
 func TestTheUncertainShapesWrapTheSentinel(t *testing.T) {
 	for _, err := range []error{Unsettled("carrier"), NoStatus("carrier")} {
 		if !errors.Is(err, ErrUncertain) {

@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-// TestTheExportedSurfaceIsTheDocumentedOne holds the surface this package's doc
-// promises: the seam, the message and its parts, the receipt, the carrier
-// factory, the classification helpers and the four sentinels — and nothing of a
-// template mechanism or a carrier SDK, which this capability does not have.
+// TestTheExportedSurfaceIsTheDocumentedOne checks that the exported surface holds
+// the documented declarations and no template or carrier SDK.
 func TestTheExportedSurfaceIsTheDocumentedOne(t *testing.T) {
 	cmd := exec.Command("go", "doc", "-all", ".")
 	var stderr bytes.Buffer

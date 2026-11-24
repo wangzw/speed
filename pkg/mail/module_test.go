@@ -9,20 +9,16 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// stubName is the module name the cases register the stub carrier under.
 const stubName = "mail.stub"
 
-// stubConfig is a carrier configuration that accepts nothing.
 type stubConfig struct{}
 
-// stubSender is a carrier that answers the seam and does nothing.
 type stubSender struct{}
 
 func (stubSender) Name() string { return "stub" }
 
 func (stubSender) Send(context.Context, Message) (Receipt, error) { return Receipt{}, nil }
 
-// validSpec is self-consistent; a case blanks one field of it.
 func validSpec() Spec[stubConfig] {
 	prototype := stubConfig{}
 	return Spec[stubConfig]{
@@ -37,11 +33,10 @@ func validSpec() Spec[stubConfig] {
 	}
 }
 
-// stubModule is the descriptor the stub carrier registers.
 func stubModule() core.Module { return NewModule(validSpec()) }
 
-// TestNewModulePanicsOnADefectiveSpec holds that a Spec missing any part it
-// cannot build a module without panics at registration, naming the part.
+// TestNewModulePanicsOnADefectiveSpec checks that a Spec missing a required part
+// panics naming it.
 func TestNewModulePanicsOnADefectiveSpec(t *testing.T) {
 	cases := map[string]struct {
 		blank    func(*Spec[stubConfig])
@@ -63,9 +58,8 @@ func TestNewModulePanicsOnADefectiveSpec(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorClaimsTheSenderExclusively holds the shape the module
-// factory builds: the mail.Sender claimed for this module alone, so a command
-// names exactly one carrier, and the logging capability taken up optionally.
+// TestTheDescriptorClaimsTheSenderExclusively checks that the descriptor claims
+// the sending seam exclusively and takes up logging optionally.
 func TestTheDescriptorClaimsTheSenderExclusively(t *testing.T) {
 	m := NewModule(validSpec())
 	if m.Name != stubName {
@@ -88,7 +82,6 @@ func TestTheDescriptorClaimsTheSenderExclusively(t *testing.T) {
 	}
 }
 
-// assertPanics fails the case unless fn panics with a string naming mentions.
 func assertPanics(t *testing.T, mentions string, fn func()) {
 	t.Helper()
 	defer func() {

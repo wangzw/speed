@@ -6,13 +6,9 @@ import (
 	"testing"
 )
 
-// TestValidateJudgesEachRuleBothDirections walks the rules one by one: a
-// well-formed message and each variation of it that is legal are accepted, and
-// each variation that breaks exactly one rule is refused with ErrRejected naming
-// the field at fault.
+// TestValidateJudgesEachRuleBothDirections checks each rule of Validate: a legal
+// variation is accepted and one breaking a rule is refused.
 func TestValidateJudgesEachRuleBothDirections(t *testing.T) {
-	// edit starts from a message valid on every rule and applies one change, so a
-	// case isolates the rule it is about.
 	edit := func(mut func(*Message)) Message {
 		m := Message{
 			To:      []string{"Alice Example <alice@example.com>"},
@@ -116,8 +112,6 @@ func TestValidateJudgesEachRuleBothDirections(t *testing.T) {
 			m.Attachments = []Attachment{{Name: "f\x7f.txt", Data: strings.NewReader("x")}}
 		}), mentions: "Name"},
 
-		// A tab is the one control character allowed in a field that becomes a
-		// header line: it is ordinary whitespace there and cannot end a line.
 		{name: "a subject with a tab is accepted", m: edit(func(m *Message) {
 			m.Subject = "hi\tthere"
 		}), accepted: true},
@@ -147,10 +141,8 @@ func TestValidateJudgesEachRuleBothDirections(t *testing.T) {
 	}
 }
 
-// TestValidateNamesTheFieldNotTheValue is the security half of the refusals: the
-// address and the subject that caused a rejection must not survive into the
-// error text, because a value that can reach a header must not be able to write
-// one through a log line either.
+// TestValidateNamesTheFieldNotTheValue checks that a rejected address and subject
+// do not survive into the error text.
 func TestValidateNamesTheFieldNotTheValue(t *testing.T) {
 	const (
 		addr    = "no-such-address-sentinel"

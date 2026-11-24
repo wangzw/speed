@@ -12,9 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 )
 
-// registryWithReader builds a registry with a real configuration reader over a
-// document, supplied under the config module's name, which is what a module that
-// reads configuration needs before its Prepare runs.
 func registryWithReader(t *testing.T, document string) *core.Registry {
 	t.Helper()
 	reader := configtest.Reader(t, document, Module())
@@ -24,9 +21,8 @@ func registryWithReader(t *testing.T, document string) *core.Registry {
 	return reg
 }
 
-// TestTheDescriptorDeliversTheSenderExclusively holds the shape the factory
-// builds: the mail.Sender claimed for this module alone, so a command names
-// exactly one carrier, and the logging capability taken up optionally.
+// TestTheDescriptorDeliversTheSenderExclusively checks that the descriptor claims
+// mail.Sender exclusively and takes up logging optionally.
 func TestTheDescriptorDeliversTheSenderExclusively(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -49,8 +45,8 @@ func TestTheDescriptorDeliversTheSenderExclusively(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledForARunnableConfiguration holds that a sound
-// configuration lets the module state it runs.
+// TestPrepareStatesEnabledForARunnableConfiguration checks that a sound
+// configuration makes the module state it runs.
 func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	reg := registryWithReader(t, body(t, section(nil)))
 	got, err := Module().Prepare(t.Context(), reg)
@@ -62,8 +58,8 @@ func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	}
 }
 
-// TestPrepareRefusesAnUnsoundConfiguration holds the startup gate: a section the
-// carrier cannot run on stops the assembly before anything is constructed.
+// TestPrepareRefusesAnUnsoundConfiguration checks that a section the carrier
+// cannot run on fails Prepare.
 func TestPrepareRefusesAnUnsoundConfiguration(t *testing.T) {
 	reg := registryWithReader(t, body(t, section(map[string]any{"tls": "plaintext"})))
 	_, err := Module().Prepare(t.Context(), reg)
@@ -72,9 +68,8 @@ func TestPrepareRefusesAnUnsoundConfiguration(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeliversTheSenderThroughTheRegistry drives a real registry through
-// this module's descriptor to Init, resolves the sending seam from the product
-// and names it.
+// TestTheModuleDeliversTheSenderThroughTheRegistry checks that the registry
+// resolves the carrier's sender and names it.
 func TestTheModuleDeliversTheSenderThroughTheRegistry(t *testing.T) {
 	reg := registryWithReader(t, body(t, section(nil)))
 	reg.Register(Module())

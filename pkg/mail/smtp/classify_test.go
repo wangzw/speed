@@ -8,12 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/mail"
 )
 
-// TestTheReplyClassTableCoversEachClassAndDefaultsToUncertain holds the two
-// halves of the classification table at its boundaries: every code inside a
-// negative class carries that class's sentinel, and a code outside both classes
-// falls to the uncertain sentinel rather than to either. The table is built from
-// the class rather than written out code by code, so the boundaries are where a
-// change to the rule would show.
+// TestTheReplyClassTableCoversEachClassAndDefaultsToUncertain checks the reply
+// class table's boundaries, with other codes falling to ErrUncertain.
 func TestTheReplyClassTableCoversEachClassAndDefaultsToUncertain(t *testing.T) {
 	cases := []struct {
 		code int
