@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
@@ -132,7 +133,7 @@ describe('NotificationStreamProvider', () => {
       expect(opened.length).toBeGreaterThanOrEqual(2)
       expect(opened[1]?.path).toBe(STREAM_PATH)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -168,7 +169,7 @@ describe('NotificationStreamProvider', () => {
       expect(opened).toHaveLength(2)
       expect(opened[1]?.path).toBe(STREAM_PATH)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -203,7 +204,7 @@ describe('NotificationStreamProvider', () => {
     expect(opened).toHaveLength(1)
   })
 
-  it('stops reconnecting after the admission layer refuses with a bare 404', () => {
+  it('stops reconnecting after the admission layer refuses with a bare 404', async () => {
     vi.useFakeTimers()
     try {
       const { opened, opener } = fakeOpener()
@@ -227,11 +228,11 @@ describe('NotificationStreamProvider', () => {
       })
       expect(opened).toHaveLength(1)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
-  it('reads the refusal off the answer status, not only an ApiError code', () => {
+  it('reads the refusal off the answer status, not only an ApiError code', async () => {
     vi.useFakeTimers()
     try {
       const { opened, opener } = fakeOpener()
@@ -253,11 +254,11 @@ describe('NotificationStreamProvider', () => {
       })
       expect(opened).toHaveLength(1)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
-  it("keeps reconnecting after the module's own typed 404", () => {
+  it("keeps reconnecting after the module's own typed 404", async () => {
     vi.useFakeTimers()
     try {
       const { opened, opener } = fakeOpener()
@@ -281,7 +282,7 @@ describe('NotificationStreamProvider', () => {
       })
       expect(opened).toHaveLength(2)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
