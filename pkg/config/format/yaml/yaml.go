@@ -1,8 +1,4 @@
-// Package yaml parses the YAML configuration format, the one package in the
-// module that carries a third-party dependency. Importing the package is all a
-// host does with it:
-//
-//	import _ "github.com/vislake/speed/pkg/config/format/yaml"
+// Package yaml parses YAML configuration documents; it is the one place in the configuration module that carries a third-party parser.
 package yaml
 
 import (
@@ -20,7 +16,6 @@ import (
 // ModuleName is the name this parser registers under.
 const ModuleName = "config.format.yaml"
 
-// The tags this parser judges keys by.
 const (
 	stringTag = "!!str"
 	mergeTag  = "!!merge"
@@ -38,13 +33,8 @@ var _ config.Format = format{}
 
 type format struct{}
 
-// Name reports the format name this parser is selected by.
 func (format) Name() string { return "yaml" }
 
-// Unmarshal decodes a YAML document into a tree of string-keyed maps. It walks
-// the document tree so a non-string key anywhere is refused; values keep the
-// types YAML resolves them to. A document carrying nothing is an empty
-// configuration.
 func (format) Unmarshal(data []byte) (map[string]any, error) {
 	decoder := yamlv3.NewDecoder(bytes.NewReader(data))
 
@@ -83,7 +73,6 @@ func (format) Unmarshal(data []byte) (map[string]any, error) {
 	}
 }
 
-// refuseSecondDocument rejects a stream carrying more than one document.
 func refuseSecondDocument(decoder *yamlv3.Decoder) error {
 	var extra yamlv3.Node
 	switch err := decoder.Decode(&extra); {
@@ -96,8 +85,7 @@ func refuseSecondDocument(decoder *yamlv3.Decoder) error {
 		"one document. Remove the --- separator and merge the settings into one", extra.Line)
 }
 
-// converter walks the document tree, remembering the nodes on the current path
-// so a self-referencing alias does not recurse forever.
+// converter walks the document tree while remembering the current path, because an alias may point back into it.
 type converter struct {
 	onPath map[*yamlv3.Node]bool
 }
@@ -106,7 +94,6 @@ func newConverter() *converter {
 	return &converter{onPath: map[*yamlv3.Node]bool{}}
 }
 
-// value converts one node to the value it stands for.
 func (c *converter) value(node *yamlv3.Node) (any, error) {
 	if c.onPath[node] {
 		return nil, fmt.Errorf("line %d: an anchor holds itself through an alias, and a value "+
@@ -144,8 +131,6 @@ func (c *converter) value(node *yamlv3.Node) (any, error) {
 	return nil, nil
 }
 
-// mapping converts a mapping node, refusing every key that is not a string and
-// every key given twice.
 func (c *converter) mapping(node *yamlv3.Node) (map[string]any, error) {
 	out := make(map[string]any, len(node.Content)/2)
 	lines := make(map[string]int, len(node.Content)/2)
@@ -169,8 +154,6 @@ func (c *converter) mapping(node *yamlv3.Node) (map[string]any, error) {
 	return out, nil
 }
 
-// stringKey gives the key a node names, refusing anything that is not a plain
-// string.
 func stringKey(node *yamlv3.Node) (string, error) {
 	resolved := node
 	seen := map[*yamlv3.Node]bool{}
@@ -196,7 +179,6 @@ func stringKey(node *yamlv3.Node) (string, error) {
 	return resolved.Value, nil
 }
 
-// resolveAlias gives the node an alias points at.
 func resolveAlias(node *yamlv3.Node) (*yamlv3.Node, error) {
 	if node.Alias == nil {
 		return nil, fmt.Errorf("line %d: the alias *%s refers to an anchor that is not defined",

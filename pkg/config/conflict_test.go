@@ -11,13 +11,10 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// declaring returns a module that carries one input item declaration, which is
-// how a module joins the manifest.
 func declaring(name string, s Schema) core.Module {
 	return core.Module{Name: name, Resources: []any{s}}
 }
 
-// identifying returns a module that carries the host identity.
 func identifying(name string, h HostIdentity) core.Module {
 	return core.Module{Name: name, Resources: []any{h}}
 }
@@ -35,9 +32,6 @@ func collect(t *testing.T, modules ...core.Module) *manifest {
 	return m
 }
 
-// loadOver collects the declarations of the modules into a loader, its
-// diagnostics discarded. Every case that needs values rather than the
-// manifest alone goes through it.
 func loadOver(t *testing.T, modules ...core.Module) *loader {
 	t.Helper()
 	reg := core.New()
@@ -51,8 +45,6 @@ func loadOver(t *testing.T, modules ...core.Module) *loader {
 	return l
 }
 
-// givePrimary puts a parsed primary source into a loader, checked the way
-// ReadPrimary checks it and without a transport to go through.
 func givePrimary(t *testing.T, l *loader, content map[string]any) error {
 	t.Helper()
 	if err := validatePrimary(l.m, content); err != nil {
@@ -61,10 +53,6 @@ func givePrimary(t *testing.T, l *loader, content map[string]any) error {
 	return l.v.MergeConfigMap(content)
 }
 
-// giveFlags registers the arguments of the named modules on a flag set and
-// parses a command line against them. Binding is what makes the command-line
-// layer reachable at all: an item no level registered has no argument, and
-// the layer answers for none of its values.
 func giveFlags(t *testing.T, l *loader, participants []string, args ...string) error {
 	t.Helper()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
@@ -78,8 +66,6 @@ func giveFlags(t *testing.T, l *loader, participants []string, args ...string) e
 	return nil
 }
 
-// collectRejects collects a manifest that is expected to be refused as a
-// conflict, and checks that both parties are named.
 func collectRejects(t *testing.T, parties []string, modules ...core.Module) error {
 	t.Helper()
 	reg := core.New()
@@ -109,8 +95,7 @@ type ttlCarrier struct {
 	TTL string
 }
 
-// TestPathPrefixIntersectionConflict checks that a path that is a prefix of
-// another is refused as a conflict.
+// TestPathPrefixIntersectionConflict checks that path prefix intersection conflict.
 func TestPathPrefixIntersectionConflict(t *testing.T) {
 	scalar := struct{ Redis string }{}
 	nested := struct{ PoolSize int }{}
@@ -123,9 +108,7 @@ func TestPathPrefixIntersectionConflict(t *testing.T) {
 	}
 }
 
-// TestPathPrefixIntersectionConflictEitherWayRound puts the deeper path in the
-// module that sorts first, so the intersection is found with the ancestor
-// already in the manifest rather than the other way round.
+// TestPathPrefixIntersectionConflictEitherWayRound checks that path prefix intersection conflict either way round.
 func TestPathPrefixIntersectionConflictEitherWayRound(t *testing.T) {
 	nested := struct{ PoolSize int }{}
 	scalar := struct{ Redis string }{}
@@ -135,8 +118,7 @@ func TestPathPrefixIntersectionConflictEitherWayRound(t *testing.T) {
 	)
 }
 
-// TestIdenticalPathConflict checks that two modules declaring the same path
-// conflict.
+// TestIdenticalPathConflict checks that identical path conflict.
 func TestIdenticalPathConflict(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "cache.addr"},
 		declaring("alpha", Schema{Namespace: "cache", Mounts: []Mount{{Value: &addrCarrier{}}}}),
@@ -144,10 +126,7 @@ func TestIdenticalPathConflict(t *testing.T) {
 	)
 }
 
-// TestMutuallyExclusiveImplementationsSharingAPathConflict pins the reach of
-// the manifest: it is collected from every registered module, including the
-// ones this run will not enable, so two implementations of one capability
-// conflict even though only one of them ever runs.
+// TestMutuallyExclusiveImplementationsSharingAPathConflict checks that mutually exclusive implementations sharing a path conflict.
 func TestMutuallyExclusiveImplementationsSharingAPathConflict(t *testing.T) {
 	collectRejects(t, []string{"cache.memory", "cache.remote", "cache.ttl"},
 		declaring("cache.memory", Schema{Namespace: "cache", Mounts: []Mount{{Value: &ttlCarrier{}}}}),
@@ -155,8 +134,7 @@ func TestMutuallyExclusiveImplementationsSharingAPathConflict(t *testing.T) {
 	)
 }
 
-// TestSameNamespaceDisjointPathsAllowed checks that two modules may share a
-// namespace with disjoint paths.
+// TestSameNamespaceDisjointPathsAllowed checks that same namespace disjoint paths allowed.
 func TestSameNamespaceDisjointPathsAllowed(t *testing.T) {
 	m := collect(t,
 		declaring("alpha", Schema{Namespace: "cache", Mounts: []Mount{{Value: &addrCarrier{}}}}),
@@ -169,9 +147,7 @@ func TestSameNamespaceDisjointPathsAllowed(t *testing.T) {
 	}
 }
 
-// TestOverlappingMountPathsAllowed holds the criteria to the paths items
-// expand to: a root mount beside a named one is the ordinary shape of several
-// mounts, not a conflict.
+// TestOverlappingMountPathsAllowed checks that overlapping mount paths allowed.
 func TestOverlappingMountPathsAllowed(t *testing.T) {
 	root := addrCarrier{}
 	nested := struct{ PoolSize int }{}
@@ -186,8 +162,7 @@ func TestOverlappingMountPathsAllowed(t *testing.T) {
 	}
 }
 
-// TestFlagLongNameConflict checks that two modules declaring the same long
-// flag name conflict.
+// TestFlagLongNameConflict checks that flag long name conflict.
 func TestFlagLongNameConflict(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "listen"},
 		declaring("alpha", Schema{
@@ -201,8 +176,7 @@ func TestFlagLongNameConflict(t *testing.T) {
 	)
 }
 
-// TestFlagShortNameConflict checks that two modules declaring the same short
-// flag name conflict.
+// TestFlagShortNameConflict checks that flag short name conflict.
 func TestFlagShortNameConflict(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "l"},
 		declaring("alpha", Schema{
@@ -216,8 +190,7 @@ func TestFlagShortNameConflict(t *testing.T) {
 	)
 }
 
-// TestEnvNameConflictDerivedVsPinned checks that a derived and a pinned
-// environment variable name conflict.
+// TestEnvNameConflictDerivedVsPinned checks that env name conflict derived vs pinned.
 func TestEnvNameConflictDerivedVsPinned(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "MYAPP_A__ADDR"},
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
@@ -229,8 +202,7 @@ func TestEnvNameConflictDerivedVsPinned(t *testing.T) {
 	)
 }
 
-// TestEnvNameConflictTwoPinned checks that two pinned environment variable
-// names conflict.
+// TestEnvNameConflictTwoPinned checks that env name conflict two pinned.
 func TestEnvNameConflictTwoPinned(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "NO_COLOR"},
 		declaring("alpha", Schema{
@@ -244,7 +216,7 @@ func TestEnvNameConflictTwoPinned(t *testing.T) {
 	)
 }
 
-// TestReservedFlagConfig checks that a module may not declare --config.
+// TestReservedFlagConfig checks that reserved flag config.
 func TestReservedFlagConfig(t *testing.T) {
 	collectRejects(t, []string{"alpha", "config"},
 		declaring("alpha", Schema{
@@ -254,7 +226,7 @@ func TestReservedFlagConfig(t *testing.T) {
 	)
 }
 
-// TestReservedFlagHelp checks that a module may not declare --help.
+// TestReservedFlagHelp checks that reserved flag help.
 func TestReservedFlagHelp(t *testing.T) {
 	err := collectRejects(t, []string{"alpha", "help"},
 		declaring("alpha", Schema{
@@ -267,8 +239,7 @@ func TestReservedFlagHelp(t *testing.T) {
 	}
 }
 
-// TestReservedShortHelpFlag pins the short name the command-line library
-// puts on every command.
+// TestReservedShortHelpFlag checks that reserved short help flag.
 func TestReservedShortHelpFlag(t *testing.T) {
 	err := collectRejects(t, []string{"alpha", "h"},
 		declaring("alpha", Schema{
@@ -281,8 +252,7 @@ func TestReservedShortHelpFlag(t *testing.T) {
 	}
 }
 
-// TestReservedEnvConfig checks that a module may not claim the config
-// locator variable.
+// TestReservedEnvConfig checks that reserved env config.
 func TestReservedEnvConfig(t *testing.T) {
 	carrier := struct{ Config string }{}
 	collectRejects(t, []string{"alpha", "MYAPP_CONFIG"},
@@ -291,9 +261,7 @@ func TestReservedEnvConfig(t *testing.T) {
 	)
 }
 
-// TestReservedEnvConfigAppliesToPinnedNames pins the reserved name to the name
-// itself rather than to how the item arrived at it: pinning <PREFIX>_CONFIG
-// hijacks the config locator exactly as deriving it does.
+// TestReservedEnvConfigAppliesToPinnedNames checks that reserved env config applies to pinned names.
 func TestReservedEnvConfigAppliesToPinnedNames(t *testing.T) {
 	collectRejects(t, []string{"alpha", "MYAPP_CONFIG"},
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
@@ -304,9 +272,7 @@ func TestReservedEnvConfigAppliesToPinnedNames(t *testing.T) {
 	)
 }
 
-// TestPinnedLocatorNameWithoutPrefixIsAllowed guards the rule from reaching
-// past its own premise: with no prefix there is no <PREFIX>_CONFIG to collide
-// with, and the whole environment path of the locator is off.
+// TestPinnedLocatorNameWithoutPrefixIsAllowed checks that pinned locator name without prefix is allowed.
 func TestPinnedLocatorNameWithoutPrefixIsAllowed(t *testing.T) {
 	m := collect(t, declaring("alpha", Schema{
 		Mounts: []Mount{{Value: &addrCarrier{}}},
@@ -317,8 +283,7 @@ func TestPinnedLocatorNameWithoutPrefixIsAllowed(t *testing.T) {
 	}
 }
 
-// TestDuplicateHostIdentityConflict checks that two HostIdentity
-// declarations conflict.
+// TestDuplicateHostIdentityConflict checks that duplicate host identity conflict.
 func TestDuplicateHostIdentityConflict(t *testing.T) {
 	collectRejects(t, []string{"host", "second-host"},
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
@@ -326,9 +291,7 @@ func TestDuplicateHostIdentityConflict(t *testing.T) {
 	)
 }
 
-// TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect pins the names
-// the environment layer reads to the set a POSIX shell can export: letters,
-// digits and underscores, not beginning with a digit.
+// TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect checks that an environment variable name a shell cannot set is a schema defect.
 func TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect(t *testing.T) {
 	for _, prefix := range []string{"crm-app", "my app", "APP=1", "1APP"} {
 		reg := core.New()
@@ -365,8 +328,7 @@ func TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect(t *testing.T) {
 	}
 }
 
-// TestHostIdentityReachesDerivation checks that the host prefix reaches
-// derived environment variable names.
+// TestHostIdentityReachesDerivation checks that host identity reaches derivation.
 func TestHostIdentityReachesDerivation(t *testing.T) {
 	m := collect(t,
 		identifying("host", HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///etc/myapp.yaml"}),
@@ -380,9 +342,7 @@ func TestHostIdentityReachesDerivation(t *testing.T) {
 	}
 }
 
-// TestConflictMessageStableAcrossRegistrationOrders holds the two parties of a
-// conflict to a fixed order: resources arrive in module-name order, so the
-// message does not depend on which module happened to register first.
+// TestConflictMessageStableAcrossRegistrationOrders checks that conflict message stable across registration orders.
 func TestConflictMessageStableAcrossRegistrationOrders(t *testing.T) {
 	alpha := declaring("alpha", Schema{Namespace: "cache", Mounts: []Mount{{Value: &addrCarrier{}}}})
 	zeta := declaring("zeta", Schema{Namespace: "cache", Mounts: []Mount{{Value: &addrCarrier{}}}})
@@ -397,10 +357,7 @@ func TestConflictMessageStableAcrossRegistrationOrders(t *testing.T) {
 	}
 }
 
-// TestASectionAndAnInputItemMayNotShareAPath holds that a namespace one
-// module declares and an input item another declares cannot land on the same
-// path: the source would have to read one path as a value for one module and
-// a section for the other.
+// TestASectionAndAnInputItemMayNotShareAPath checks that a section and an input item may not share a path.
 func TestASectionAndAnInputItemMayNotShareAPath(t *testing.T) {
 	item := struct{ Sub string }{}
 	collectRejects(t, []string{"alpha", "beta", "cache.sub"},
@@ -409,9 +366,7 @@ func TestASectionAndAnInputItemMayNotShareAPath(t *testing.T) {
 	)
 }
 
-// TestASectionAndAnInputItemConflictEitherWayRound puts the item in the module
-// that sorts first, so the collision is found when the section is declared
-// rather than when the item is added.
+// TestASectionAndAnInputItemConflictEitherWayRound checks that a section and an input item conflict either way round.
 func TestASectionAndAnInputItemConflictEitherWayRound(t *testing.T) {
 	item := struct{ Sub string }{}
 	first := collectRejects(t, []string{"alpha", "zeta", "cache.sub"},

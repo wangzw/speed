@@ -9,9 +9,6 @@ import (
 	"testing"
 )
 
-// envSeedAccount is the struct-list element the cases below give as JSON: the
-// shape a seeded account would have, with two members the decoder has to match
-// by the name each field publishes.
 type envSeedAccount struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
@@ -29,9 +26,6 @@ type envContainerOptions struct {
 	Numbered map[int]string
 }
 
-// envContainerLoader declares one module under the server namespace, with the
-// prototype's values as the defaults and the items map naming the origins under
-// test.
 func envContainerLoader(t *testing.T, defaults envContainerOptions, items map[string]Item) *loader {
 	t.Helper()
 	return loadOver(t,
@@ -53,8 +47,7 @@ func decodeEnvContainerOptions(t *testing.T, l *loader) envContainerOptions {
 	return opts
 }
 
-// TestScalarListComesFromTheEnvironment pins the first container shape: a
-// list of scalars is given as a JSON array and lands in the field whole.
+// TestScalarListComesFromTheEnvironment checks that scalar list comes from the environment.
 func TestScalarListComesFromTheEnvironment(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LISTEN", `["127.0.0.1", "2001:db8::1"]`)
 	defaults := envContainerOptions{Listen: []netip.Addr{netip.MustParseAddr("192.0.2.1")}}
@@ -68,9 +61,7 @@ func TestScalarListComesFromTheEnvironment(t *testing.T) {
 	}
 }
 
-// TestStructListComesFromTheEnvironment pins the second shape: the JSON is
-// an array of objects, and each member is matched by the name its field
-// publishes.
+// TestStructListComesFromTheEnvironment checks that struct list comes from the environment.
 func TestStructListComesFromTheEnvironment(t *testing.T) {
 	items := map[string]Item{"seeds": {Origins: OriginPrimary | OriginEnv}}
 
@@ -114,8 +105,7 @@ func TestStructListComesFromTheEnvironment(t *testing.T) {
 	})
 }
 
-// TestMapComesFromTheEnvironment pins the third shape: a map takes its whole
-// value from the variable's JSON object.
+// TestMapComesFromTheEnvironment checks that map comes from the environment.
 func TestMapComesFromTheEnvironment(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LABELS", `{"tier":"Cold","Zone":"EU-West"}`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -128,9 +118,7 @@ func TestMapComesFromTheEnvironment(t *testing.T) {
 	}
 }
 
-// TestContainerVariableFailuresNameTheVariableAndItem pins the diagnostic of a
-// value that is not JSON or does not fit the field: it says which variable was
-// read and which item it was for.
+// TestContainerVariableFailuresNameTheVariableAndItem checks that container variable failures name the variable and item.
 func TestContainerVariableFailuresNameTheVariableAndItem(t *testing.T) {
 	cases := map[string]string{
 		"invalid JSON":       `["127.0.0.1",`,
@@ -156,9 +144,7 @@ func TestContainerVariableFailuresNameTheVariableAndItem(t *testing.T) {
 	}
 }
 
-// TestEmptyContainerVariableMeansTheEmptyContainer pins the reading an empty
-// variable gets for the shapes that have one: the empty list and the empty
-// map, not the prototype's value left in place.
+// TestEmptyContainerVariableMeansTheEmptyContainer checks that empty container variable means the empty container.
 func TestEmptyContainerVariableMeansTheEmptyContainer(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LISTEN", "")
 	t.Setenv("MYAPP_SERVER__LABELS", "")
@@ -179,8 +165,7 @@ func TestEmptyContainerVariableMeansTheEmptyContainer(t *testing.T) {
 	}
 }
 
-// TestEmptyContainerVariableForAStructIsRefused pins the other half of the
-// empty-variable rule.
+// TestEmptyContainerVariableForAStructIsRefused checks that empty container variable for a struct is refused.
 func TestEmptyContainerVariableForAStructIsRefused(t *testing.T) {
 	item := &manifestItem{
 		module:  "server",
@@ -204,8 +189,7 @@ func TestEmptyContainerVariableForAStructIsRefused(t *testing.T) {
 	}
 }
 
-// TestSensitiveContainerFailureDoesNotRepeatTheValue pins that a sensitive
-// container's diagnostic keeps the value out.
+// TestSensitiveContainerFailureDoesNotRepeatTheValue checks that sensitive container failure does not repeat the value.
 func TestSensitiveContainerFailureDoesNotRepeatTheValue(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__SEEDS", `[{"email":"ada@example.com","age":"s3cr3t-age"}]`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -230,8 +214,7 @@ func TestSensitiveContainerFailureDoesNotRepeatTheValue(t *testing.T) {
 	}
 }
 
-// TestContainerKeysAreKeptAsTheJSONWroteThem pins that the keys of a map
-// container keep their case and their punctuation.
+// TestContainerKeysAreKeptAsTheJSONWroteThem checks that container keys are kept as the JSON wrote them.
 func TestContainerKeysAreKeptAsTheJSONWroteThem(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LABELS", `{"Zone":"EU-West","TierName":"Cold","a.b c/d":"special","Ünïcode":"u"}`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -250,8 +233,7 @@ func TestContainerKeysAreKeptAsTheJSONWroteThem(t *testing.T) {
 	}
 }
 
-// TestEnvContainerReplacesTheWholeValue pins the override rule: the variable
-// is the container, not a patch on one.
+// TestEnvContainerReplacesTheWholeValue checks that env container replaces the whole value.
 func TestEnvContainerReplacesTheWholeValue(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LISTEN", `["203.0.113.1"]`)
 	defaults := envContainerOptions{
@@ -275,8 +257,7 @@ func TestEnvContainerReplacesTheWholeValue(t *testing.T) {
 	}
 }
 
-// TestContainerJSONRejectsARepeatedKey pins the first JSON rule the standard
-// decoder does not give.
+// TestContainerJSONRejectsARepeatedKey checks that container JSON rejects a repeated key.
 func TestContainerJSONRejectsARepeatedKey(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LABELS", `{"tier":"cold","tier":"hot"}`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -294,8 +275,7 @@ func TestContainerJSONRejectsARepeatedKey(t *testing.T) {
 	}
 }
 
-// TestContainerJSONRejectsNull pins that a null is refused wherever it
-// stands.
+// TestContainerJSONRejectsNull checks that container JSON rejects null.
 func TestContainerJSONRejectsNull(t *testing.T) {
 	cases := map[string]struct {
 		variable string
@@ -326,9 +306,7 @@ func TestContainerJSONRejectsNull(t *testing.T) {
 	}
 }
 
-// TestContainerJSONRejectsWhitespaceOnly pins that whitespace is not a second
-// spelling of the empty variable: an empty variable already means the empty
-// container, so a value holding nothing but spaces is a mistake to report.
+// TestContainerJSONRejectsWhitespaceOnly checks that container JSON rejects whitespace only.
 func TestContainerJSONRejectsWhitespaceOnly(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LISTEN", " \n\t ")
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -344,8 +322,7 @@ func TestContainerJSONRejectsWhitespaceOnly(t *testing.T) {
 	}
 }
 
-// TestContainerJSONRejectsContentAfterTheValue pins that the variable holds
-// one JSON value and nothing else.
+// TestContainerJSONRejectsContentAfterTheValue checks that container JSON rejects content after the value.
 func TestContainerJSONRejectsContentAfterTheValue(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LISTEN", `["127.0.0.1"] ["192.0.2.1"]`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -361,9 +338,7 @@ func TestContainerJSONRejectsContentAfterTheValue(t *testing.T) {
 	}
 }
 
-// TestContainerJSONShapeMustFitTheItem pins that a value of the wrong top-level
-// shape is refused by the conversion rather than silently ignored: a list item
-// takes a JSON array, and an object is not one.
+// TestContainerJSONShapeMustFitTheItem checks that container JSON shape must fit the item.
 func TestContainerJSONShapeMustFitTheItem(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__LISTEN", `{"addr":"127.0.0.1"}`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -379,8 +354,7 @@ func TestContainerJSONShapeMustFitTheItem(t *testing.T) {
 	}
 }
 
-// TestContainerJSONRejectsANonStringMapKey pins that a map whose key type is
-// not a string cannot take a JSON object.
+// TestContainerJSONRejectsANonStringMapKey checks that container JSON rejects a non string map key.
 func TestContainerJSONRejectsANonStringMapKey(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__NUMBERED", `{"1":"one"}`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -398,8 +372,7 @@ func TestContainerJSONRejectsANonStringMapKey(t *testing.T) {
 	}
 }
 
-// TestContainerJSONKeepsANumberAtItsWrittenWidth pins that a number reaches
-// the conversion layer holding every digit it was written with.
+// TestContainerJSONKeepsANumberAtItsWrittenWidth checks that container JSON keeps a number at its written width.
 func TestContainerJSONKeepsANumberAtItsWrittenWidth(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__SEEDS", `[{"email":"ada@example.com","big":9007199254740993}]`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -415,9 +388,7 @@ func TestContainerJSONKeepsANumberAtItsWrittenWidth(t *testing.T) {
 	}
 }
 
-// TestCommandLineOutranksTheEnvironment pins the order the layers keep: a
-// command-line argument wins over the environment, which wins over the
-// primary source, which wins over the defaults.
+// TestCommandLineOutranksTheEnvironment checks that command line outranks the environment.
 func TestCommandLineOutranksTheEnvironment(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__ADDR", ":9090")
 	defaults := envContainerOptions{Addr: ":8080"}

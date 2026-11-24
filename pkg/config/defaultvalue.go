@@ -10,16 +10,10 @@ import (
 	"unicode/utf8"
 )
 
-// listSeparator is how the environment and the command line give a list of
-// strings. It carries no escape: an element holding a comma has to come from the
-// primary config source.
 const listSeparator = ","
 
 var durationType = reflect.TypeFor[time.Duration]()
 
-// flagDefaultString is the default the command-line library is handed. A
-// sensitive item, one whose value stands for being unset, and a required item no
-// document supplies hand over nothing.
 func flagDefaultString(item *manifestItem) string {
 	if item.item.Sensitive || (item.item.Required && !item.documented) ||
 		meansUnset(reflect.ValueOf(item.def)) {
@@ -31,7 +25,6 @@ func flagDefaultString(item *manifestItem) string {
 	return formatDefault(item)
 }
 
-// isZeroDefault reports whether a default is the zero value of its type.
 func isZeroDefault(def any) bool {
 	v := reflect.ValueOf(def)
 	if !v.IsValid() {
@@ -40,7 +33,6 @@ func isZeroDefault(def any) bool {
 	return v.IsZero()
 }
 
-// placeholder is the value placeholder of an item. A boolean has none.
 func placeholder(item *manifestItem) string {
 	if item.item.Placeholder != "" {
 		return item.item.Placeholder
@@ -51,12 +43,8 @@ func placeholder(item *manifestItem) string {
 	return "VALUE"
 }
 
-// requiredMarker tells an argument nobody may omit from an optional one.
 const requiredMarker = "(required)"
 
-// flagUsage is the text the command-line library prints beside an argument,
-// carrying the marker when the item is required and this command will ask for
-// it.
 func flagUsage(item *manifestItem, runs bool) string {
 	if !runs || !item.item.Required || item.documented {
 		return item.item.Description
@@ -67,9 +55,6 @@ func flagUsage(item *manifestItem, runs bool) string {
 	return item.item.Description + " " + requiredMarker
 }
 
-// formatDefault renders the declared default in the form a reader can type
-// back: 5m rather than a count of nanoseconds, a,b rather than [a b]. The shapes
-// are decided in the order the conversion on the way in decides them.
 func formatDefault(item *manifestItem) string {
 	v := reflect.ValueOf(item.def)
 	if item.kind == kindStringList {
@@ -78,8 +63,6 @@ func formatDefault(item *manifestItem) string {
 	return quoteForCommandLine(formatScalarDefault(v))
 }
 
-// formatStringList renders a list in the flat comma-separated form the command
-// line gives it. An element holding a comma has no flat form.
 func formatStringList(v reflect.Value) string {
 	if !v.IsValid() {
 		return ""
@@ -91,8 +74,6 @@ func formatStringList(v reflect.Value) string {
 	return strings.Join(parts, listSeparator)
 }
 
-// listElementText renders one element of a list default, reading it out of the
-// interface it arrived in.
 func listElementText(v reflect.Value) string {
 	for v.Kind() == reflect.Interface {
 		if v.IsNil() {
@@ -103,8 +84,6 @@ func listElementText(v reflect.Value) string {
 	return fmt.Sprint(v.Interface())
 }
 
-// formatScalarDefault renders a single value in the form the command line would
-// give it.
 func formatScalarDefault(v reflect.Value) string {
 	for v.Kind() == reflect.Pointer && !meansUnset(v) {
 		v = v.Elem()
@@ -134,8 +113,6 @@ func formatScalarDefault(v reflect.Value) string {
 	return residualDefault(v)
 }
 
-// meansUnset reports whether a field's current value stands for "nobody
-// supplied one" rather than for a value of its own.
 func meansUnset(v reflect.Value) bool {
 	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -146,9 +123,6 @@ func meansUnset(v reflect.Value) bool {
 	return false
 }
 
-// textForm renders a value through its own text output form. The value is
-// copied into an addressable one first, so a method on the pointer receiver is
-// reached.
 func textForm(v reflect.Value) (string, bool) {
 	held := reflect.New(v.Type())
 	held.Elem().Set(v)
@@ -163,21 +137,14 @@ func textForm(v reflect.Value) (string, bool) {
 	return string(text), true
 }
 
-// residualDefault renders a value that has no form a reader could type back,
-// using Go's own printed form.
 func residualDefault(v reflect.Value) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// bareOnACommandLine holds the punctuation that stands for itself in an unquoted
-// word. It is written as what is allowed, since an incomplete enumeration of
-// harmful characters would let the shell rewrite a value.
+// bareOnACommandLine holds the punctuation that stands for itself in an unquoted word.
 const bareOnACommandLine = "_@%+=:,./-"
 
-// quoteForCommandLine renders text as one word of a POSIX command line: what the
-// program receives in argv is this text again, byte for byte. Text carrying a
-// character with no printable form is given Go's escaped form; empty text or
-// text outside the bare set is wrapped in single quotes.
+// quoteForCommandLine renders text as one word of a POSIX command line, so the program receives exactly that text in argv.
 func quoteForCommandLine(text string) string {
 	if !printableText(text) {
 		return strconv.Quote(text)
@@ -188,7 +155,6 @@ func quoteForCommandLine(text string) string {
 	return text
 }
 
-// bareRune reports whether one character stands for itself in an unquoted word.
 func bareRune(r rune) bool {
 	switch {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
@@ -197,8 +163,6 @@ func bareRune(r rune) bool {
 	return strings.ContainsRune(bareOnACommandLine, r)
 }
 
-// printableText reports whether every character of the text has a printable
-// form.
 func printableText(text string) bool {
 	for i := 0; i < len(text); {
 		r, size := utf8.DecodeRuneInString(text[i:])

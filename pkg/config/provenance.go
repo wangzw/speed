@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-// ReportSensitive writes one line per sensitive input item, naming the item and
-// the source its value came from. The value itself is never written.
 func (l *loader) ReportSensitive() {
 	items := slices.Clone(l.m.items)
 	slices.SortFunc(items, func(a, b *manifestItem) int { return strings.Compare(a.path, b.path) })
@@ -57,16 +55,11 @@ func EffectiveLayer(r Reader, path string) (Layer, error) {
 	return lr.l.provenanceOf(item).layer, nil
 }
 
-// provenance is one answer about where an item's value comes from: the layer a
-// caller can ask for, and the name a diagnostic gives that layer.
 type provenance struct {
 	layer  Layer
 	origin string
 }
 
-// provenanceOf answers which layer gave the item its effective value, asking the
-// layers in Decode's order: command line, environment, primary source, then the
-// default layer.
 func (l *loader) provenanceOf(item *manifestItem) provenance {
 	if flag := l.bound[item.path]; flag != nil && flag.Changed {
 		return provenance{layer: LayerCommandLine, origin: "the command line"}
@@ -88,14 +81,10 @@ func (l *loader) provenanceOf(item *manifestItem) provenance {
 	return provenance{layer: LayerDefault, origin: "its declared default"}
 }
 
-// source names the layer the item's value comes from, never the value.
 func (l *loader) source(item *manifestItem) string {
 	return l.provenanceOf(item).origin
 }
 
-// given reports whether any source above the defaults layer gave the item a
-// value: the primary config source, the command line or the environment. The
-// prototype never counts.
 func (l *loader) given(item *manifestItem) bool {
 	if l.v.InConfig(item.path) {
 		return true
@@ -107,8 +96,6 @@ func (l *loader) given(item *manifestItem) bool {
 	return set
 }
 
-// documentGiven reports whether the host defaults document names the item's path
-// with a value. It is judged on its own, not as a leg of given.
 func (l *loader) documentGiven(item *manifestItem) bool {
 	value, found := primaryValue(l.defaults, item.path)
 	return found && value != nil

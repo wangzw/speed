@@ -6,12 +6,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// boolNoOptDefVal is what a boolean argument written without a value means.
 const boolNoOptDefVal = "true"
 
-// magicValueTypes are the type names the layering tool reads a changed argument
-// by; a placeholder spelled as one of these would take the value away from this
-// module's own conversion.
+// magicValueTypes are the type names the layering tool switches on to read a changed argument.
 var magicValueTypes = map[string]bool{
 	"int": true, "int8": true, "int16": true, "int32": true, "int64": true,
 	"bool": true, "stringSlice": true, "stringArray": true, "boolSlice": true,
@@ -19,9 +16,6 @@ var magicValueTypes = map[string]bool{
 	"stringToString": true, "stringToInt": true,
 }
 
-// newFlagValue chooses the command-line form of one leaf and the value its
-// argument means when written without one. Every form starts out holding the
-// rendered default for the help output.
 func newFlagValue(item *manifestItem) (pflag.Value, string) {
 	if booleanLeaf(item.typ) {
 		return &boolValue{text: flagDefaultString(item)}, boolNoOptDefVal
@@ -32,8 +26,6 @@ func newFlagValue(item *manifestItem) (pflag.Value, string) {
 	return &rawValue{text: flagDefaultString(item), placeholder: placeholder(item)}, ""
 }
 
-// listValue is the command-line form of a list of strings: a repeated argument
-// accumulates onto what came before it, separated by listSeparator.
 type listValue struct {
 	text        string
 	placeholder string
@@ -55,8 +47,6 @@ func (v *listValue) Set(s string) error {
 
 func (v *listValue) Type() string { return v.placeholder }
 
-// rawValue holds the text of an argument and converts nothing; conversion
-// belongs to Decode.
 type rawValue struct {
 	text        string
 	placeholder string
@@ -69,9 +59,6 @@ func (v *rawValue) Set(s string) error { v.text = s; return nil }
 
 func (v *rawValue) Type() string { return v.placeholder }
 
-// boolValue is the form of a leaf whose argument may be written without a
-// value. It checks the text it is given rather than leaving it to the layering
-// tool, which would read --verbose=maybe as false and say nothing.
 type boolValue struct {
 	text string
 }
@@ -91,7 +78,6 @@ func (v *boolValue) Set(s string) error {
 
 func (v *boolValue) Type() string { return "bool" }
 
-// errBoolValue is what a boolean argument reports for text that is not one.
 type errBoolValue struct{ text string }
 
 func (e errBoolValue) Error() string {

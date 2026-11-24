@@ -20,9 +20,6 @@ type cacheOptions struct {
 	Nodes  []redisOptions
 }
 
-// cacheLoader declares one module under the cache namespace with a scalar, a
-// duration, a map and a list of structs, which covers every shape a layer has
-// to deal with.
 func cacheLoader(t *testing.T, items map[string]Item) *loader {
 	t.Helper()
 	defaults := cacheOptions{
@@ -37,7 +34,6 @@ func cacheLoader(t *testing.T, items map[string]Item) *loader {
 	}))
 }
 
-// decodeCacheOptions decodes the cache mount and fails the test if it cannot.
 func decodeCacheOptions(t *testing.T, l *loader) cacheOptions {
 	t.Helper()
 	var opts cacheOptions
@@ -47,10 +43,7 @@ func decodeCacheOptions(t *testing.T, l *loader) cacheOptions {
 	return opts
 }
 
-// TestPrimaryOverridesLeafWiseNotSubtree pins that the primary source
-// overrides declared leaves one by one: the key set of a section comes from
-// the declarations, so giving one key must not knock its siblings back to
-// their zero values.
+// TestPrimaryOverridesLeafWiseNotSubtree checks that primary overrides leaf wise not subtree.
 func TestPrimaryOverridesLeafWiseNotSubtree(t *testing.T) {
 	l := cacheLoader(t, nil)
 	if err := givePrimary(t, l, map[string]any{
@@ -71,9 +64,7 @@ func TestPrimaryOverridesLeafWiseNotSubtree(t *testing.T) {
 	}
 }
 
-// TestContainerReplacedWholesale pins the other half of the rule: a map and a
-// list of structs have no keys in the manifest, so there is no leaf-wise merge
-// to make and the value is replaced entirely.
+// TestContainerReplacedWholesale checks that container replaced wholesale.
 func TestContainerReplacedWholesale(t *testing.T) {
 	l := cacheLoader(t, nil)
 	if err := givePrimary(t, l, map[string]any{
@@ -96,9 +87,7 @@ func TestContainerReplacedWholesale(t *testing.T) {
 	}
 }
 
-// TestKeysInsideContainerLeafNotValidated pins that a map's own keys do not
-// take part in the unknown-key check: they are the user's data, not names
-// this module owns.
+// TestKeysInsideContainerLeafNotValidated checks that keys inside container leaf not validated.
 func TestKeysInsideContainerLeafNotValidated(t *testing.T) {
 	l := cacheLoader(t, nil)
 	err := givePrimary(t, l, map[string]any{
@@ -111,9 +100,7 @@ func TestKeysInsideContainerLeafNotValidated(t *testing.T) {
 	}
 }
 
-// TestStructContainerUnknownMemberIsRefusedFromThePrimarySource pins that
-// the file side is as strict as the environment side about a member of a
-// struct inside a container.
+// TestStructContainerUnknownMemberIsRefusedFromThePrimarySource checks that struct container unknown member is refused from the primary source.
 func TestStructContainerUnknownMemberIsRefusedFromThePrimarySource(t *testing.T) {
 	l := cacheLoader(t, nil)
 	if err := givePrimary(t, l, map[string]any{
@@ -135,8 +122,7 @@ func TestStructContainerUnknownMemberIsRefusedFromThePrimarySource(t *testing.T)
 	}
 }
 
-// TestUnknownKeyNotInManifest checks that a key no module declares is
-// refused.
+// TestUnknownKeyNotInManifest checks that unknown key not in manifest.
 func TestUnknownKeyNotInManifest(t *testing.T) {
 	l := cacheLoader(t, nil)
 	//nolint:misspell // "addres" is the test input, not prose: this case pins
@@ -154,10 +140,7 @@ func TestUnknownKeyNotInManifest(t *testing.T) {
 	}
 }
 
-// TestUnknownKeyUnderAnItemLessNamespaceIsRefusedByItsFullPath pins that a
-// namespace a module declares stays a section even when no input item sits
-// under it: a source that still writes a key there is refused by that key's
-// full path, not by the namespace alone.
+// TestUnknownKeyUnderAnItemLessNamespaceIsRefusedByItsFullPath checks that unknown key under an item less namespace is refused by its full path.
 func TestUnknownKeyUnderAnItemLessNamespaceIsRefusedByItsFullPath(t *testing.T) {
 	l := loadOver(t, declaring("cache", Schema{Namespace: "cache.sub"}))
 	err := givePrimary(t, l, map[string]any{
@@ -171,10 +154,7 @@ func TestUnknownKeyUnderAnItemLessNamespaceIsRefusedByItsFullPath(t *testing.T) 
 	}
 }
 
-// TestAValueAtAnItemLessNamespaceIsRefused holds the other shape at an
-// item-less section: a source that puts a scalar on the declared namespace
-// itself is refused, because the namespace is a section holding input items
-// rather than an input item of its own.
+// TestAValueAtAnItemLessNamespaceIsRefused checks that a value at an item less namespace is refused.
 func TestAValueAtAnItemLessNamespaceIsRefused(t *testing.T) {
 	l := loadOver(t, declaring("cache", Schema{Namespace: "cache.sub"}))
 	err := givePrimary(t, l, map[string]any{
@@ -191,9 +171,7 @@ func TestAValueAtAnItemLessNamespaceIsRefused(t *testing.T) {
 	}
 }
 
-// TestKeyNotAcceptedFromPrimary is the second kind of unknown key, and the
-// error text has to tell it from the first: the manifest has this key, and
-// the item does not take the primary source.
+// TestKeyNotAcceptedFromPrimary checks that key not accepted from primary.
 func TestKeyNotAcceptedFromPrimary(t *testing.T) {
 	l := cacheLoader(t, map[string]Item{"addr": {Origins: OriginFlag, FlagName: "cache-addr"}})
 	err := givePrimary(t, l, map[string]any{"cache": map[string]any{"addr": "redis:6379"}})
@@ -206,8 +184,7 @@ func TestKeyNotAcceptedFromPrimary(t *testing.T) {
 	}
 }
 
-// TestOnePathGivenTwiceIsRefused covers a primary source that writes the
-// same path once as a key holding the dots and once nested.
+// TestOnePathGivenTwiceIsRefused checks that one path given twice is refused.
 func TestOnePathGivenTwiceIsRefused(t *testing.T) {
 	for name, content := range map[string]map[string]any{
 		"scalar": {"cache.addr": "flat:1", "cache": map[string]any{"addr": "nested:1"}},
@@ -239,8 +216,7 @@ func TestOnePathGivenTwiceIsRefused(t *testing.T) {
 	}
 }
 
-// TestSectionGivenAValue covers the shape error the other way round: the path
-// is a section holding input items, and the source put a value on it.
+// TestSectionGivenAValue checks that section given a value.
 func TestSectionGivenAValue(t *testing.T) {
 	l := cacheLoader(t, nil)
 	err := givePrimary(t, l, map[string]any{"cache": "just a string"})
@@ -252,8 +228,7 @@ func TestSectionGivenAValue(t *testing.T) {
 	}
 }
 
-// TestPrimaryValueTypeMismatch pins where a value that does not fit its
-// field is refused.
+// TestPrimaryValueTypeMismatch checks that primary value type mismatch.
 func TestPrimaryValueTypeMismatch(t *testing.T) {
 	l := cacheLoader(t, nil)
 	if err := givePrimary(t, l, map[string]any{"cache": map[string]any{"ttl": "abc"}}); err != nil {
@@ -269,10 +244,7 @@ func TestPrimaryValueTypeMismatch(t *testing.T) {
 	}
 }
 
-// TestProvenanceRecordsLayer pins the record the required rule stands on: the
-// three sources are asked one by one, and the default layer is not among them,
-// so a value nobody gave and a value that happens to be the zero one stay
-// apart.
+// TestProvenanceRecordsLayer checks that provenance records layer.
 func TestProvenanceRecordsLayer(t *testing.T) {
 	l := cacheLoader(t, nil)
 	item := l.m.byPath["cache.addr"]
@@ -287,9 +259,7 @@ func TestProvenanceRecordsLayer(t *testing.T) {
 	}
 }
 
-// TestNoPrimarySourceStillYieldsDefaults pins that configuration exists
-// without a primary source: assembly is driven by the configuration, not by
-// the config source.
+// TestNoPrimarySourceStillYieldsDefaults checks that no primary source still yields defaults.
 func TestNoPrimarySourceStillYieldsDefaults(t *testing.T) {
 	l := cacheLoader(t, nil)
 	opts := decodeCacheOptions(t, l)
@@ -301,9 +271,7 @@ func TestNoPrimarySourceStillYieldsDefaults(t *testing.T) {
 	}
 }
 
-// TestDefaultsDoNotAliasThePrototype pins that a decoded value cannot be used
-// to write back into the struct a module declared, which two registries may
-// share.
+// TestDefaultsDoNotAliasThePrototype checks that defaults do not alias the prototype.
 func TestDefaultsDoNotAliasThePrototype(t *testing.T) {
 	defaults := cacheOptions{Labels: map[string]string{"tier": "hot"}}
 	l := loadOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))

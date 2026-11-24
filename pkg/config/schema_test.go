@@ -2,9 +2,7 @@ package config
 
 import "testing"
 
-// TestZeroOriginsMeansPrimaryAndEnv pins the reading of the zero value: an
-// item that says nothing about its origins takes the primary source and the
-// environment, which is what keeps the great majority of items out of Items.
+// TestZeroOriginsMeansPrimaryAndEnv checks that zero origins means primary and env.
 func TestZeroOriginsMeansPrimaryAndEnv(t *testing.T) {
 	if got, want := (Item{}).Origins.resolved(), OriginPrimary|OriginEnv; got != want {
 		t.Fatalf("the zero Origins resolves to %b, want %b", got, want)
@@ -26,8 +24,7 @@ func TestZeroOriginsMeansPrimaryAndEnv(t *testing.T) {
 	}
 }
 
-// TestExplicitOriginsReplaceTheDefault checks that declared origins replace
-// the default set.
+// TestExplicitOriginsReplaceTheDefault checks that explicit origins replace the default.
 func TestExplicitOriginsReplaceTheDefault(t *testing.T) {
 	type carrier struct {
 		Addr string

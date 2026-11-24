@@ -8,14 +8,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// BindLayer registers the arguments of one command on its flag set: the items of
-// the modules named here that declared the command line as an origin. running
-// names the ones among them this command actually runs; an item of a
-// declaration-only module is not marked required.
-//
-// An item holds one value for the whole tree, bound to the layering tool once,
-// and each command that carries it shows a face of its own so the help output
-// can differ.
 func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 	takes := make(map[string]bool, len(taking))
 	for _, name := range taking {
@@ -39,8 +31,6 @@ func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 	return nil
 }
 
-// argumentOf gives the one argument an item is across the tree, defining it and
-// binding it to the layering tool the first time it is asked for.
 func (l *loader) argumentOf(item *manifestItem) (*pflag.Flag, error) {
 	if arg, defined := l.bound[item.path]; defined {
 		return arg, nil
@@ -63,8 +53,6 @@ func (l *loader) argumentOf(item *manifestItem) (*pflag.Flag, error) {
 	return arg, nil
 }
 
-// faceOf is the argument as one command shows it: the same name, the same
-// default and the same value, under the usage text that command's help prints.
 func faceOf(arg *pflag.Flag, usage string) *pflag.Flag {
 	return &pflag.Flag{
 		Name:        arg.Name,
@@ -76,7 +64,7 @@ func faceOf(arg *pflag.Flag, usage string) *pflag.Flag {
 	}
 }
 
-// sharedValue is the value of a face: it is the argument's own.
+// Setting a face marks the argument given as well as changing its value, because the argument is what the layering tool and the required rule read.
 type sharedValue struct {
 	arg *pflag.Flag
 }
@@ -94,10 +82,6 @@ func (v sharedValue) Set(s string) error {
 	return nil
 }
 
-// ClassifyParseError puts what the command-line library reported under this
-// module's sentinels, reading the library's error types rather than their text.
-// collected names the modules the parsed command reached for their declarations
-// alone. Anything it does not recognise is returned as it stands.
 func (l *loader) ClassifyParseError(err error, collected []string) error {
 	var unknown *pflag.NotExistError
 	if errors.As(err, &unknown) {
@@ -123,8 +107,6 @@ func (l *loader) ClassifyParseError(err error, collected []string) error {
 	return err
 }
 
-// unknownFlagError tells the three ways an argument the command line gives can
-// fail to reach an item apart, each with its own fix.
 func (l *loader) unknownFlagError(unknown *pflag.NotExistError, collected []string) error {
 	written, item := l.writtenAs(unknown)
 	if item == nil {
@@ -151,9 +133,6 @@ func (l *loader) unknownFlagError(unknown *pflag.NotExistError, collected []stri
 		ErrUnknownKey, written, item.module, item.path)
 }
 
-// writtenAs renders the name as it appeared on the command line and looks it
-// up in the manifest. A name in a group of short names is written on its own,
-// since that is the name the manifest indexes.
 func (l *loader) writtenAs(unknown *pflag.NotExistError) (string, *manifestItem) {
 	name := unknown.GetSpecifiedName()
 	if unknown.GetSpecifiedShortnames() != "" {

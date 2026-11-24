@@ -1,14 +1,4 @@
-// Package config loads the inputs an assembly needs before anything else
-// exists: the values that are required before a database is reachable.
-//
-// A module declares the input items it accepts as a Schema resource. config
-// merges every declaration into one manifest, derives the environment variable
-// names and command-line arguments from it, reads the primary source, and hands
-// each module its own values back through Reader.
-//
-// The root package carries the declarations, the manifest and the command tree,
-// and defines the Source and Format extension points. Concrete transports and
-// formats live in subpackages.
+// Package config collects the input items every registered module declares, layers the command line, the environment, the primary source and the host defaults document into one startup snapshot, and hands each module its own values back. It assembles the host's command tree and registers the config module.
 package config
 
 // Schema is the resource type a module declares to state which input items it

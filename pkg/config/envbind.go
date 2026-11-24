@@ -6,9 +6,6 @@ import (
 	"strings"
 )
 
-// envValue is the value the environment gives an item, read out of the snapshot
-// taken when loading began, and whether it gives one. An empty variable counts
-// as a value.
 func (l *loader) envValue(item *manifestItem) (string, bool) {
 	if item.envName == "" {
 		return "", false
@@ -17,8 +14,6 @@ func (l *loader) envValue(item *manifestItem) (string, bool) {
 	return value, set
 }
 
-// ReportUnclaimed writes out the variables under the host's prefix that no input
-// item reads. They are a diagnostic and not a failure.
 func (l *loader) ReportUnclaimed() {
 	for _, ignored := range unclaimedEnvVariables(l.m, l.env) {
 		if item := ignored.declared; item != nil {
@@ -32,7 +27,6 @@ func (l *loader) ReportUnclaimed() {
 	}
 }
 
-// environMap turns the NAME=VALUE form into a lookup. A later entry wins.
 func environMap(environ []string) map[string]string {
 	values := make(map[string]string, len(environ))
 	for _, entry := range environ {
@@ -45,16 +39,11 @@ func environMap(environ []string) map[string]string {
 	return values
 }
 
-// unclaimedEnv is one variable under the prefix that no input item reads.
 type unclaimedEnv struct {
-	name string
-	// declared is the input item whose path derives this variable name, when one
-	// is declared and does not read the environment.
+	name     string
 	declared *manifestItem
 }
 
-// unclaimedEnvVariables lists the variables under the prefix that no input item
-// reads, in name order.
 func unclaimedEnvVariables(m *manifest, values map[string]string) []unclaimedEnv {
 	if m.host.Prefix == "" {
 		return nil
@@ -76,8 +65,6 @@ func unclaimedEnvVariables(m *manifest, values map[string]string) []unclaimedEnv
 	return unclaimed
 }
 
-// envUnreachableByName indexes the declared input items that do not read the
-// environment by the variable name their path derives.
 func (m *manifest) envUnreachableByName() map[string]*manifestItem {
 	if m.host.Prefix == "" {
 		return nil

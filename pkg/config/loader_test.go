@@ -19,14 +19,9 @@ type loadOptions struct {
 	Salutate string
 }
 
-// loaderSetup is a registry carrying a host identity, one declaring module, a
-// transport and a format, together with the diagnostics stream and the
-// transport's call counter.
 type loaderSetup struct {
-	reg    *core.Registry
-	stderr *strings.Builder
-	// fetches counts what the transport was asked for, which is how a case
-	// shows that something happened before the primary source was read.
+	reg     *core.Registry
+	stderr  *strings.Builder
 	fetches *int
 }
 
@@ -51,9 +46,6 @@ func newLoaderSetup(t *testing.T, host HostIdentity, content map[string]any, ext
 	return loaderSetup{reg: reg, stderr: &strings.Builder{}, fetches: &fetches}
 }
 
-// load runs the whole staged load the way the command tree runs it: collect,
-// register the arguments of the participating modules, parse, locate, read the
-// primary source, report, hand out the reader.
 func (s loaderSetup) load(t *testing.T, args []string) (Reader, error) {
 	t.Helper()
 	l, err := newLoader(s.reg, s.stderr)
@@ -86,10 +78,7 @@ func decodeCache(t *testing.T, r Reader) loadOptions {
 	return opts
 }
 
-// TestLoadAppliesEveryLayerInOrder pins the whole stack: the declared
-// defaults, then the primary source, then the environment, then the command
-// line, each overriding the one below it and no layer touching what a higher
-// one already settled.
+// TestLoadAppliesEveryLayerInOrder checks that load applies every layer in order.
 func TestLoadAppliesEveryLayerInOrder(t *testing.T) {
 	t.Setenv("MYAPP_CACHE__SALUTATE", "from-env")
 	t.Setenv("MYAPP_CACHE__ADDR", "from-env:2")
@@ -113,8 +102,7 @@ func TestLoadAppliesEveryLayerInOrder(t *testing.T) {
 	}
 }
 
-// TestNoPrimarySourceStillLoads pins that a run with no locator at all is a
-// legal configuration, the other layers carrying it on their own.
+// TestNoPrimarySourceStillLoads checks that no primary source still loads.
 func TestNoPrimarySourceStillLoads(t *testing.T) {
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil)
 	r, err := s.load(t, nil)
@@ -129,7 +117,7 @@ func TestNoPrimarySourceStillLoads(t *testing.T) {
 	}
 }
 
-// TestLocatorFromEnvVar pins the middle leg of the locator's three steps.
+// TestLocatorFromEnvVar checks that locator from env var.
 func TestLocatorFromEnvVar(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	s := newLoaderSetup(t,
@@ -145,8 +133,7 @@ func TestLocatorFromEnvVar(t *testing.T) {
 	}
 }
 
-// TestLocatorKeysNotInConfigData pins that the two reserved names stay out
-// of the config data.
+// TestLocatorKeysNotInConfigData checks that locator keys not in config data.
 func TestLocatorKeysNotInConfigData(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, map[string]any{})
@@ -166,8 +153,7 @@ func TestLocatorKeysNotInConfigData(t *testing.T) {
 	}
 }
 
-// TestConflictDetectedBeforeFetch pins that collection comes first: two
-// modules claiming the same path stop the startup before anything is read.
+// TestConflictDetectedBeforeFetch checks that conflict detected before fetch.
 func TestConflictDetectedBeforeFetch(t *testing.T) {
 	clash := declaring("other", Schema{
 		Namespace: "cache",
@@ -187,10 +173,7 @@ func TestConflictDetectedBeforeFetch(t *testing.T) {
 	}
 }
 
-// TestUnknownEnvDiagnosticsOnStderr pins the one origin that reports rather
-// than fails, and the shape of the line it writes: it leads with the party
-// that produced it, since several writers share a stream the host cannot
-// redirect.
+// TestUnknownEnvDiagnosticsOnStderr checks that unknown env diagnostics on stderr.
 func TestUnknownEnvDiagnosticsOnStderr(t *testing.T) {
 	t.Setenv("MYAPP_SERVICE_HOST", "10.0.0.1")
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil)
@@ -206,8 +189,7 @@ func TestUnknownEnvDiagnosticsOnStderr(t *testing.T) {
 	}
 }
 
-// TestPrimarySourceUnknownKeyStopsTheStartup pins that the checks reach
-// through the whole load, not only the unit that validates a source.
+// TestPrimarySourceUnknownKeyStopsTheStartup checks that primary source unknown key stops the startup.
 func TestPrimarySourceUnknownKeyStopsTheStartup(t *testing.T) {
 	s := newLoaderSetup(t,
 		HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///app.yaml"},
@@ -220,9 +202,7 @@ func TestPrimarySourceUnknownKeyStopsTheStartup(t *testing.T) {
 	}
 }
 
-// TestLoadWithoutACommandTree pins the exported entry: every registered
-// module takes part, the arguments are one flat set, and what comes back is
-// a reader over the same layers a command tree would have produced.
+// TestLoadWithoutACommandTree checks that load without a command tree.
 func TestLoadWithoutACommandTree(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	s := newLoaderSetup(t,
@@ -242,9 +222,7 @@ func TestLoadWithoutACommandTree(t *testing.T) {
 	}
 }
 
-// TestLoadTakesEveryRegisteredModuleIn pins what makes Load an entry of its
-// own: the question a command answers -- which modules this run assembles --
-// does not arise, so the arguments are one flat set over the whole registry.
+// TestLoadTakesEveryRegisteredModuleIn checks that load takes every registered module in.
 func TestLoadTakesEveryRegisteredModuleIn(t *testing.T) {
 	reg := treeRegistry(t, &treeRun{}, nil)
 	r, err := Load(t.Context(), reg, []string{"--cache-addr=given", "--logging-addr=also"})
@@ -259,8 +237,7 @@ func TestLoadTakesEveryRegisteredModuleIn(t *testing.T) {
 	}
 }
 
-// TestLoadReturnsTheReaderWithoutSupplyingIt pins that loading and supplying
-// are two steps.
+// TestLoadReturnsTheReaderWithoutSupplyingIt checks that load returns the reader without supplying it.
 func TestLoadReturnsTheReaderWithoutSupplyingIt(t *testing.T) {
 	reg := treeRegistry(t, &treeRun{}, nil)
 	r, err := Load(t.Context(), reg, nil)
@@ -282,8 +259,7 @@ func TestLoadReturnsTheReaderWithoutSupplyingIt(t *testing.T) {
 	}
 }
 
-// TestPrimarySourceReadTwiceIsAProgrammingError pins the guard on the one
-// primary source a run has.
+// TestPrimarySourceReadTwiceIsAProgrammingError checks that primary source read twice is a programming error.
 func TestPrimarySourceReadTwiceIsAProgrammingError(t *testing.T) {
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, map[string]any{})
 	l, err := newLoader(s.reg, s.stderr)

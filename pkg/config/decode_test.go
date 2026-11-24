@@ -15,18 +15,13 @@ type decodeOptions struct {
 	TTL  time.Duration
 }
 
-// readerOver builds the loader of a run and the reader over it. Nothing is
-// given to any layer, so what a case adds afterwards is the whole of what the
-// defaults are covered by.
 func readerOver(t *testing.T, modules ...core.Module) (*reader, *loader) {
 	t.Helper()
 	l := loadOver(t, modules...)
 	return l.Reader().(*reader), l
 }
 
-// TestDecodeYieldsDefaultsIntoZeroStruct pins that the defaults travel through
-// the config data's base layer: the caller passes a zero struct and still gets
-// what the module declared.
+// TestDecodeYieldsDefaultsIntoZeroStruct checks that decode yields defaults into zero struct.
 func TestDecodeYieldsDefaultsIntoZeroStruct(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379", TTL: 5 * time.Minute}
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
@@ -40,8 +35,7 @@ func TestDecodeYieldsDefaultsIntoZeroStruct(t *testing.T) {
 	}
 }
 
-// TestDecodeDoesNotConsultMountPrototype pins that collection is the only
-// time the prototype is read.
+// TestDecodeDoesNotConsultMountPrototype checks that decode does not consult mount prototype.
 func TestDecodeDoesNotConsultMountPrototype(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
@@ -57,9 +51,7 @@ func TestDecodeDoesNotConsultMountPrototype(t *testing.T) {
 	}
 }
 
-// TestPrototypeSharedAcrossRegistriesIsIsolated pins that two registries using
-// one prototype decode independently: the prototype carries the shape and the
-// defaults, never the values of a run.
+// TestPrototypeSharedAcrossRegistriesIsIsolated checks that prototype shared across registries is isolated.
 func TestPrototypeSharedAcrossRegistriesIsIsolated(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
 	declaration := declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}})
@@ -87,8 +79,7 @@ func TestPrototypeSharedAcrossRegistriesIsIsolated(t *testing.T) {
 	}
 }
 
-// TestDecodeUnknownPathLeavesTargetUntouched pins that a path nobody
-// declared is not an error.
+// TestDecodeUnknownPathLeavesTargetUntouched checks that decode unknown path leaves target untouched.
 func TestDecodeUnknownPathLeavesTargetUntouched(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
@@ -107,7 +98,6 @@ type requiredOptions struct {
 	Token string
 }
 
-// requiredSetup declares one required item and one ordinary one.
 func requiredSetup(t *testing.T) (*reader, *loader) {
 	t.Helper()
 	defaults := requiredOptions{Addr: "unset-but-not-empty"}
@@ -123,8 +113,7 @@ func requiredSetup(t *testing.T) (*reader, *loader) {
 	)
 }
 
-// TestRequiredMissingAcrossThreeLayers checks that a required item missing
-// from every layer is ErrMissingRequired.
+// TestRequiredMissingAcrossThreeLayers checks that required missing across three layers.
 func TestRequiredMissingAcrossThreeLayers(t *testing.T) {
 	r, _ := requiredSetup(t)
 
@@ -138,9 +127,7 @@ func TestRequiredMissingAcrossThreeLayers(t *testing.T) {
 	}
 }
 
-// TestDefaultLayerDoesNotSatisfyRequired pins the rule the whole judgment
-// stands on: the carrier struct always has a value, so counting it would
-// make a required item and one that took the zero value the same thing.
+// TestDefaultLayerDoesNotSatisfyRequired checks that default layer does not satisfy required.
 func TestDefaultLayerDoesNotSatisfyRequired(t *testing.T) {
 	r, l := requiredSetup(t)
 	if got := l.v.Get("remote.addr"); got != "unset-but-not-empty" {
@@ -152,11 +139,8 @@ func TestDefaultLayerDoesNotSatisfyRequired(t *testing.T) {
 	}
 }
 
-// TestRequiredSatisfiedByOneLayerAlone checks that any one layer satisfies a
-// required item.
+// TestRequiredSatisfiedByOneLayerAlone checks that required satisfied by one layer alone.
 func TestRequiredSatisfiedByOneLayerAlone(t *testing.T) {
-	// The environment is given before the loader is built, as it is for a
-	// run: it is read once, when loading begins.
 	for name, give := range map[string]func(*testing.T) *reader{
 		"the primary source": func(t *testing.T) *reader {
 			r, l := requiredSetup(t)
@@ -192,8 +176,7 @@ func TestRequiredSatisfiedByOneLayerAlone(t *testing.T) {
 	}
 }
 
-// TestRequiredNotCheckedGlobally pins that the judgment happens at Decode
-// rather than in one sweep over the manifest.
+// TestRequiredNotCheckedGlobally checks that required not checked globally.
 func TestRequiredNotCheckedGlobally(t *testing.T) {
 	otherDefaults := requiredOptions{}
 	r, _ := readerOver(t,
@@ -220,9 +203,7 @@ type portOnly struct {
 	Port int
 }
 
-// TestDecodeIgnoresOtherModulesKeysInSameNamespace pins that the walk is over
-// the target rather than over the manifest, which is what lets two modules
-// share a namespace as long as their paths stay disjoint.
+// TestDecodeIgnoresOtherModulesKeysInSameNamespace checks that decode ignores other modules keys in same namespace.
 func TestDecodeIgnoresOtherModulesKeysInSameNamespace(t *testing.T) {
 	r, _ := readerOver(t,
 		declaring("first", Schema{Namespace: "shared", Mounts: []Mount{{Value: &addrOnly{Addr: "a:1"}}}}),
@@ -246,8 +227,7 @@ func TestDecodeIgnoresOtherModulesKeysInSameNamespace(t *testing.T) {
 	}
 }
 
-// TestDecodeWritesEveryLayer pins that Decode reads the topmost layer that
-// gave a value, mount path and all.
+// TestDecodeWritesEveryLayer checks that decode writes every layer.
 func TestDecodeWritesEveryLayer(t *testing.T) {
 	type nested struct {
 		PoolSize int
@@ -275,8 +255,7 @@ func TestDecodeWritesEveryLayer(t *testing.T) {
 	}
 }
 
-// TestDecodeNeedsAPointerToStruct pins that a target Decode cannot write
-// into panics instead of returning.
+// TestDecodeNeedsAPointerToStruct checks that decode needs a pointer to struct.
 func TestDecodeNeedsAPointerToStruct(t *testing.T) {
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &decodeOptions{}}}}))
 
@@ -289,10 +268,6 @@ func TestDecodeNeedsAPointerToStruct(t *testing.T) {
 		"a pointer to a scalar": {target: new(int), names: "*int"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			// An illegal target is a programming error at the call site: it
-			// is unrelated to data, it shows up on first execution, and the
-			// host has nothing to handle. It therefore panics rather than
-			// returning a sentinel a host would be invited to inspect.
 			defer func() {
 				raised := recover()
 				if raised == nil {
@@ -309,18 +284,12 @@ func TestDecodeNeedsAPointerToStruct(t *testing.T) {
 	}
 }
 
-// cyclicTarget is a carrier that reaches itself. Collection refuses a declared
-// one, so a cycle can only arrive through a target the caller assembled for
-// itself and handed to Decode.
 type cyclicTarget struct {
 	Addr string
 	Next *cyclicTarget
 }
 
-// TestDecodeRefusesATargetThatCyclesBack pins that the walk over the target
-// stops on a back edge, and that it stops by panicking: the carrier is
-// assembled at the call site, so a cycle in it is that site's programming
-// error rather than anything the host could act on.
+// TestDecodeRefusesATargetThatCyclesBack checks that decode refuses a target that cycles back.
 func TestDecodeRefusesATargetThatCyclesBack(t *testing.T) {
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &decodeOptions{}}}}))
 
@@ -340,8 +309,7 @@ func TestDecodeRefusesATargetThatCyclesBack(t *testing.T) {
 	_ = r.Decode("cache", &target)
 }
 
-// TestDecodeReadsAnInlinedEmbeddedField pins that the expansion and the
-// decode walk derive one and the same path for an embedded field.
+// TestDecodeReadsAnInlinedEmbeddedField checks that decode reads an inlined embedded field.
 func TestDecodeReadsAnInlinedEmbeddedField(t *testing.T) {
 	type inlineTarget struct {
 		EmbeddedOptions
@@ -362,8 +330,7 @@ func TestDecodeReadsAnInlinedEmbeddedField(t *testing.T) {
 	}
 }
 
-// TestContainerKeepsTheKeysTheSourceWrote pins that the inner keys of a
-// container leaf reach the module as the source wrote them.
+// TestContainerKeepsTheKeysTheSourceWrote checks that container keeps the keys the source wrote.
 func TestContainerKeepsTheKeysTheSourceWrote(t *testing.T) {
 	type holder struct {
 		Labels map[string]string `config:"labels"`
@@ -395,9 +362,7 @@ func TestContainerKeepsTheKeysTheSourceWrote(t *testing.T) {
 	}
 }
 
-// TestContainerElementTakesItsJSONTagAsWritten pins the leg of the
-// field-name rule that only a container element exercises: a field naming
-// itself with a json tag is written in the source under that tag.
+// TestContainerElementTakesItsJSONTagAsWritten checks that container element takes its JSON tag as written.
 func TestContainerElementTakesItsJSONTagAsWritten(t *testing.T) {
 	type tier struct {
 		TierName string `json:"tierName"`
@@ -435,9 +400,7 @@ func TestContainerElementTakesItsJSONTagAsWritten(t *testing.T) {
 	}
 }
 
-// TestSourceWritingNothingLeavesEveryLeafItsDefault pins that a key the
-// source wrote with no value behind it is not a value it gave, whatever kind
-// of leaf stands there.
+// TestSourceWritingNothingLeavesEveryLeafItsDefault checks that source writing nothing leaves every leaf its default.
 func TestSourceWritingNothingLeavesEveryLeafItsDefault(t *testing.T) {
 	type holder struct {
 		Labels map[string]string `config:"labels"`
@@ -473,9 +436,7 @@ func TestSourceWritingNothingLeavesEveryLeafItsDefault(t *testing.T) {
 	}
 }
 
-// TestContainerKeepsItsKeysWhenThePathIsWrittenFlat pins that a source
-// writing a path as one dotted key reaches the same value as one writing it
-// nested.
+// TestContainerKeepsItsKeysWhenThePathIsWrittenFlat checks that container keeps its keys when the path is written flat.
 func TestContainerKeepsItsKeysWhenThePathIsWrittenFlat(t *testing.T) {
 	type holder struct {
 		Labels map[string]string `config:"labels"`
@@ -503,8 +464,7 @@ func TestContainerKeepsItsKeysWhenThePathIsWrittenFlat(t *testing.T) {
 	}
 }
 
-// TestOneHolderCannotWriteIntoAnother pins the promise decodeInto states: a
-// container arrives as a copy.
+// TestOneHolderCannotWriteIntoAnother checks that one holder cannot write into another.
 func TestOneHolderCannotWriteIntoAnother(t *testing.T) {
 	type holder struct {
 		Anys map[string]any `config:"anys"`

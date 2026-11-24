@@ -39,6 +39,8 @@ type Reader interface {
 	//
 	// A required item no source gave is ErrMissingRequired when its module is one
 	// this run takes in at run level; the required items of other modules are not
-	// judged.
+	// judged. Decode panics, rather than returning an error, when target is not a
+	// pointer, is nil, or is a struct that is cyclic: that is a programming error
+	// at the call site.
 	Decode(path string, target any) error
 }

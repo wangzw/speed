@@ -1,7 +1,4 @@
-// Package json parses the JSON configuration format, on the standard library
-// alone. Importing the package is all a host does with it:
-//
-//	import _ "github.com/vislake/speed/pkg/config/format/json"
+// Package json parses JSON configuration documents with the standard library alone.
 package json
 
 import (
@@ -32,13 +29,8 @@ var _ config.Format = format{}
 
 type format struct{}
 
-// Name reports the format name this parser is selected by.
 func (format) Name() string { return "json" }
 
-// Unmarshal decodes a JSON document into a tree of string-keyed maps. An integer
-// literal arrives as an integer; any other number as a float64. A repeated key,
-// data after the document, and a non-mapping top level are refused. A document
-// holding null is an empty configuration.
 func (format) Unmarshal(data []byte) (map[string]any, error) {
 	w := &walker{data: data, dec: stdjson.NewDecoder(bytes.NewReader(data))}
 	w.dec.UseNumber()
@@ -68,13 +60,11 @@ func (format) Unmarshal(data []byte) (map[string]any, error) {
 	}
 }
 
-// walker reads one document off the decoder's token stream.
 type walker struct {
 	data []byte
 	dec  *stdjson.Decoder
 }
 
-// value reads the value that starts at the next token.
 func (w *walker) value() (any, error) {
 	tok, err := w.dec.Token()
 	if err != nil {
@@ -92,8 +82,6 @@ func (w *walker) value() (any, error) {
 	return tok, nil
 }
 
-// number gives a number the Go value that holds what the document wrote: an int
-// when the integer literal fits one, otherwise a wider or floating type.
 func number(n stdjson.Number) (any, error) {
 	text := n.String()
 	if !strings.ContainsAny(text, ".eE") {
@@ -110,8 +98,6 @@ func number(n stdjson.Number) (any, error) {
 	return n.Float64()
 }
 
-// object reads the members of an object whose opening brace has been read,
-// refusing a key given twice.
 func (w *walker) object() (map[string]any, error) {
 	out := map[string]any{}
 	lines := map[string]int{}
@@ -139,7 +125,6 @@ func (w *walker) object() (map[string]any, error) {
 	return out, nil
 }
 
-// array reads the elements of an array whose opening bracket has been read.
 func (w *walker) array() ([]any, error) {
 	out := []any{}
 	for w.dec.More() {
@@ -155,7 +140,6 @@ func (w *walker) array() ([]any, error) {
 	return out, nil
 }
 
-// line is the line the decoder has read up to, counted from one.
 func (w *walker) line() int {
 	return 1 + bytes.Count(w.data[:w.dec.InputOffset()], []byte("\n"))
 }

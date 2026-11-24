@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// layerLoader declares one item that accepts every source, so a case can put a
-// value on one layer at a time and ask which layer took effect.
 func layerLoader(t *testing.T) *loader {
 	t.Helper()
 	return loadOver(t,
@@ -25,8 +23,7 @@ func layerLoader(t *testing.T) *loader {
 	)
 }
 
-// TestEffectiveLayerReportsTheDefaultLayer pins the bottom of the stack: an
-// item no source gave a value keeps the layer its prototype declared.
+// TestEffectiveLayerReportsTheDefaultLayer checks that effective layer reports the default layer.
 func TestEffectiveLayerReportsTheDefaultLayer(t *testing.T) {
 	layer, err := EffectiveLayer(layerLoader(t).Reader(), "cache.addr")
 	if err != nil {
@@ -37,8 +34,7 @@ func TestEffectiveLayerReportsTheDefaultLayer(t *testing.T) {
 	}
 }
 
-// TestEffectiveLayerReportsThePrimarySource pins the layer under the
-// environment and the command line.
+// TestEffectiveLayerReportsThePrimarySource checks that effective layer reports the primary source.
 func TestEffectiveLayerReportsThePrimarySource(t *testing.T) {
 	l := layerLoader(t)
 	givePrimaryWhole(t, l, map[string]any{"cache": map[string]any{"addr": "from-file"}})
@@ -51,8 +47,7 @@ func TestEffectiveLayerReportsThePrimarySource(t *testing.T) {
 	}
 }
 
-// TestEffectiveLayerReportsTheEnvironment pins the layer between the primary
-// source and the command line.
+// TestEffectiveLayerReportsTheEnvironment checks that effective layer reports the environment.
 func TestEffectiveLayerReportsTheEnvironment(t *testing.T) {
 	t.Setenv("MYAPP_CACHE__ADDR", "from-env")
 	layer, err := EffectiveLayer(layerLoader(t).Reader(), "cache.addr")
@@ -64,7 +59,7 @@ func TestEffectiveLayerReportsTheEnvironment(t *testing.T) {
 	}
 }
 
-// TestEffectiveLayerReportsTheCommandLine pins the top of the stack.
+// TestEffectiveLayerReportsTheCommandLine checks that effective layer reports the command line.
 func TestEffectiveLayerReportsTheCommandLine(t *testing.T) {
 	l := layerLoader(t)
 	if err := giveFlags(t, l, []string{"cache"}, "--cache-addr=from-flag"); err != nil {
@@ -79,9 +74,7 @@ func TestEffectiveLayerReportsTheCommandLine(t *testing.T) {
 	}
 }
 
-// TestEffectiveLayerRejectsAPathNoModuleDeclares pins that an undeclared path
-// is an error: it has no input item, so no layer gave it a value and the
-// default layer would be an answer about something that does not exist.
+// TestEffectiveLayerRejectsAPathNoModuleDeclares checks that effective layer rejects a path no module declares.
 func TestEffectiveLayerRejectsAPathNoModuleDeclares(t *testing.T) {
 	layer, err := EffectiveLayer(layerLoader(t).Reader(), "cache.missing")
 	if err == nil {
@@ -95,10 +88,7 @@ func TestEffectiveLayerRejectsAPathNoModuleDeclares(t *testing.T) {
 	}
 }
 
-// TestEffectiveLayerReportsOnlyTheLayerOfASensitiveItem pins that a sensitive
-// item is answerable: the query returns the layer and nothing that could carry
-// the value, which is what lets an operator place a credential without reading
-// it.
+// TestEffectiveLayerReportsOnlyTheLayerOfASensitiveItem checks that effective layer reports only the layer of a sensitive item.
 func TestEffectiveLayerReportsOnlyTheLayerOfASensitiveItem(t *testing.T) {
 	t.Setenv("MYAPP_VAULT__PIN", secret)
 	l := loadOver(t,

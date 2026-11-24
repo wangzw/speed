@@ -13,9 +13,6 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 )
 
-// decodeHook is the chain of conversions this module puts on top of the decoding
-// library, in the order a value is decided: section keys, duration, exact
-// numbers, text-decoding types, then scalar text, then the flat list form.
 func decodeHook() mapstructure.DecodeHookFunc {
 	return mapstructure.ComposeDecodeHookFunc(
 		containerKeyHook,
@@ -27,15 +24,10 @@ func decodeHook() mapstructure.DecodeHookFunc {
 	)
 }
 
-// decodeInto writes one source value into one target field, naming the path and
-// the target type on failure. The target is filled through a fresh value, so a
-// container arrives as a copy.
 func decodeInto(path string, raw any, target reflect.Value) error {
 	return decodeValue(path, raw, target, false)
 }
 
-// decodeIntoStrict writes a JSON value the environment gave into one target
-// field, matching a member name exactly rather than case-insensitively.
 func decodeIntoStrict(path string, raw any, target reflect.Value) error {
 	return decodeValue(path, raw, target, true)
 }
@@ -66,9 +58,6 @@ func decodeValue(path string, raw any, target reflect.Value, exactNames bool) er
 	return nil
 }
 
-// containerKeyHook addresses the fields of a struct inside a container by the
-// same names the manifest expansion derives. It carries the one leg the decoder
-// has no setting for: a field named by a json tag.
 func containerKeyHook(from, to reflect.Value) (any, error) {
 	data := from.Interface()
 	if to.Kind() != reflect.Struct || decodesFromText(to.Type()) {
@@ -86,9 +75,6 @@ func containerKeyHook(from, to reflect.Value) (any, error) {
 	return out, nil
 }
 
-// renameSectionKeys rewrites one section in place for one struct type. A
-// section that writes both of a field's two names is refused rather than
-// renamed. chain holds the struct types on the way in, so a cycle ends.
 func renameSectionKeys(t reflect.Type, section map[string]any, chain []reflect.Type) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
@@ -127,8 +113,6 @@ func renameSectionKeys(t reflect.Type, section map[string]any, chain []reflect.T
 	return nil
 }
 
-// decoderKey is the name the decoder looks one field up by: the config tag
-// when there is one, the field name in lower kebab case otherwise.
 func decoderKey(f reflect.StructField) string {
 	if tag, ok := f.Tag.Lookup("config"); ok {
 		if value, _, _ := strings.Cut(tag, ","); value != "" {
@@ -138,9 +122,6 @@ func decoderKey(f reflect.StructField) string {
 	return camelToKebab(f.Name)
 }
 
-// inlinedStruct reports the struct an anonymous field contributes to the
-// enclosing section without a name of its own, which is the embedding
-// semantics of encoding/json and the one the decoder is configured for.
 func inlinedStruct(f reflect.StructField, tagged bool) (reflect.Type, bool) {
 	if !f.Anonymous || tagged || decodesFromText(f.Type) {
 		return nil, false
@@ -155,10 +136,6 @@ func inlinedStruct(f reflect.StructField, tagged bool) (reflect.Type, bool) {
 	return t, true
 }
 
-// durationHook keeps time.Duration on the string form alone: a bare number is
-// refused, since it would read as nanoseconds to the machine. A type defined
-// over time.Duration follows the integer rules unless it implements
-// encoding.TextUnmarshaler.
 func durationHook(from, to reflect.Type, data any) (any, error) {
 	if to != durationType || from == durationType {
 		return data, nil
@@ -183,12 +160,9 @@ func durationHook(from, to reflect.Type, data any) (any, error) {
 	return data, nil
 }
 
-// exactNumberHook holds every number written into a numeric field to one that
-// survives the trip. The library would truncate, wrap, overflow to infinity or
-// round it silently; these checks refuse those outcomes.
 func exactNumberHook(from, to reflect.Type, data any) (any, error) {
 	if to == durationType {
-		return data, nil // settled by durationHook
+		return data, nil
 	}
 	v := reflect.ValueOf(data)
 	switch to.Kind() {
@@ -215,9 +189,6 @@ func exactNumberHook(from, to reflect.Type, data any) (any, error) {
 	return data, nil
 }
 
-// fitWholeFloat writes a float into an integer field when it holds a whole
-// number the field's type can hold. The range is checked on the float before
-// conversion, since converting an out-of-range float is implementation-defined.
 func fitWholeFloat(f float64, to reflect.Type) (any, error) {
 	if f != math.Trunc(f) {
 		return nil, fmt.Errorf("%v is not a whole number this field can hold", f)
@@ -239,8 +210,6 @@ func fitWholeFloat(f float64, to reflect.Type) (any, error) {
 	}
 }
 
-// fitInteger writes a whole number into the target's own type, refusing a
-// value the type cannot hold and a negative one where the type has no sign.
 func fitInteger(n int64, to reflect.Type) (any, error) {
 	out := reflect.New(to).Elem()
 	switch to.Kind() {
@@ -261,7 +230,6 @@ func fitInteger(n int64, to reflect.Type) (any, error) {
 	return out.Interface(), nil
 }
 
-// fitUnsigned writes a whole number with no sign into the target's own type.
 func fitUnsigned(u uint64, to reflect.Type) (any, error) {
 	out := reflect.New(to).Elem()
 	switch to.Kind() {
@@ -279,9 +247,6 @@ func fitUnsigned(u uint64, to reflect.Type) (any, error) {
 	return out.Interface(), nil
 }
 
-// fitFloat writes a float into the target's own float type when the field reads
-// it back as the same number, never storing a value as its neighbour. A float
-// whose nearest float32 is an infinity is refused before conversion.
 func fitFloat(f float64, to reflect.Type) (any, error) {
 	out := reflect.New(to).Elem()
 	if to.Kind() == reflect.Float32 && math.Abs(f) >= float32Infinite && !math.IsInf(f, 0) {
@@ -295,19 +260,14 @@ func fitFloat(f float64, to reflect.Type) (any, error) {
 	return out.Interface(), nil
 }
 
-// float32Infinite is the smallest magnitude whose nearest float32 is an
-// infinity: halfway between math.MaxFloat32 and 2^128.
+// float32Infinite is the smallest magnitude whose nearest float32 is an infinity.
 const float32Infinite = 0x1p128 - 0x1p103
 
-// readsBackAs reports whether a float held at a narrower precision, written in
-// that precision's shortest form, reads back as want.
 func readsBackAs(held float64, to reflect.Type, want float64) bool {
 	back, err := strconv.ParseFloat(strconv.FormatFloat(held, 'g', -1, to.Bits()), 64)
 	return err == nil && back == want
 }
 
-// fitIntegerAsFloat writes a whole number into a float field when the field's
-// type holds it exactly.
 func fitIntegerAsFloat(n int64, to reflect.Type) (any, error) {
 	out := reflect.New(to).Elem()
 	if to.Kind() == reflect.Float32 {
@@ -322,8 +282,6 @@ func fitIntegerAsFloat(n int64, to reflect.Type) (any, error) {
 	return out.Interface(), nil
 }
 
-// fitUnsignedAsFloat is fitIntegerAsFloat for a whole number with no sign,
-// whose range reaches past the largest signed value.
 func fitUnsignedAsFloat(u uint64, to reflect.Type) (any, error) {
 	out := reflect.New(to).Elem()
 	if to.Kind() == reflect.Float32 {
@@ -338,9 +296,6 @@ func fitUnsignedAsFloat(u uint64, to reflect.Type) (any, error) {
 	return out.Interface(), nil
 }
 
-// textScalarHook reads the flat string form the environment and the command line
-// give into a boolean or a number. It is not the library's weakly typed mode,
-// which would also render a number into a string field.
 func textScalarHook(from, to reflect.Type, data any) (any, error) {
 	if from.Kind() != reflect.String || to == durationType {
 		return data, nil

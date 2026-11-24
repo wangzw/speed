@@ -9,9 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// secretOptions carries one sensitive item of every shape a failed conversion
-// can quote: a number read from text, a type that reads itself from text, a
-// container, and a boolean argument.
 type secretOptions struct {
 	Pin      int
 	Upstream netip.Addr
@@ -19,7 +16,6 @@ type secretOptions struct {
 	Debug    bool
 }
 
-// secret is the text every case gives, and the text no failure may carry.
 const secret = "hunter2-secret"
 
 func secretLoader(t *testing.T) *loader {
@@ -45,8 +41,7 @@ func secretLoader(t *testing.T) *loader {
 	)
 }
 
-// TestASensitiveValueStaysOutOfItsFailure pins that a value an item marks
-// sensitive is not written into the error its conversion fails with.
+// TestASensitiveValueStaysOutOfItsFailure checks that a sensitive value stays out of its failure.
 func TestASensitiveValueStaysOutOfItsFailure(t *testing.T) {
 	check := func(t *testing.T, err error, class error) {
 		t.Helper()
@@ -86,10 +81,6 @@ func TestASensitiveValueStaysOutOfItsFailure(t *testing.T) {
 	})
 }
 
-// sensitiveReporter builds the vault module over a diagnostics stream the case
-// can read, so the startup report can be judged line by line. The items cover
-// the two sources a sensitive value ordinarily comes from: an environment
-// variable (a platform secret) and a declared default.
 func sensitiveReporter(t *testing.T) (*loader, *strings.Builder) {
 	t.Helper()
 	stderr := &strings.Builder{}
@@ -111,10 +102,7 @@ func sensitiveReporter(t *testing.T) (*loader, *strings.Builder) {
 	return l, stderr
 }
 
-// TestASensitiveContainerFromTheEnvironmentIsDecoded pins that marking an item
-// sensitive bars it from nothing: a platform secret is delivered as an
-// environment variable, and a container given as JSON there is read like any
-// other container.
+// TestASensitiveContainerFromTheEnvironmentIsDecoded checks that a sensitive container from the environment is decoded.
 func TestASensitiveContainerFromTheEnvironmentIsDecoded(t *testing.T) {
 	t.Setenv("MYAPP_VAULT__TOKENS", `{"api":7}`)
 	var opts secretOptions
@@ -126,9 +114,7 @@ func TestASensitiveContainerFromTheEnvironmentIsDecoded(t *testing.T) {
 	}
 }
 
-// TestSensitiveItemsReportTheirSourceAndNotTheirValue pins the startup
-// report: every sensitive item names the source its value came from, and no
-// line carries the value.
+// TestSensitiveItemsReportTheirSourceAndNotTheirValue checks that sensitive items report their source and not their value.
 func TestSensitiveItemsReportTheirSourceAndNotTheirValue(t *testing.T) {
 	t.Setenv("MYAPP_VAULT__PIN", "424242")
 	t.Setenv("MYAPP_VAULT__TOKENS", `{"api":7}`)
@@ -151,8 +137,7 @@ func TestSensitiveItemsReportTheirSourceAndNotTheirValue(t *testing.T) {
 	}
 }
 
-// TestSensitiveItemReportNamesThePrimarySource pins the other source a
-// sensitive value comes from: the primary config source.
+// TestSensitiveItemReportNamesThePrimarySource checks that sensitive item report names the primary source.
 func TestSensitiveItemReportNamesThePrimarySource(t *testing.T) {
 	l, stderr := sensitiveReporter(t)
 	givePrimaryWhole(t, l, map[string]any{
@@ -168,9 +153,7 @@ func TestSensitiveItemReportNamesThePrimarySource(t *testing.T) {
 	}
 }
 
-// TestLoadReportsSensitiveSources pins that the report is part of the
-// startup hosts already run, rather than a helper each caller has to
-// remember.
+// TestLoadReportsSensitiveSources checks that load reports sensitive sources.
 func TestLoadReportsSensitiveSources(t *testing.T) {
 	t.Setenv("MYAPP_VAULT__TOKENS", `{"api":7}`)
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil,
@@ -197,9 +180,7 @@ func TestLoadReportsSensitiveSources(t *testing.T) {
 	}
 }
 
-// TestAnItemThatIsNotSensitiveKeepsItsValueInTheFailure is the other half:
-// the value is what tells the operator which of their settings is wrong, and
-// only a sensitive item gives that up.
+// TestAnItemThatIsNotSensitiveKeepsItsValueInTheFailure checks that an item that is not sensitive keeps its value in the failure.
 func TestAnItemThatIsNotSensitiveKeepsItsValueInTheFailure(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__RETRIES", "three")
 	var opts envOptions

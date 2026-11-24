@@ -16,9 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// parser builds the format the way the configuration module gets it, out of
-// the module's resources, so the tests exercise what a host actually ends up
-// with rather than a value this package hands itself.
 func parser(t *testing.T) config.Format {
 	t.Helper()
 	reg := core.New()
@@ -30,16 +27,14 @@ func parser(t *testing.T) config.Format {
 	return found[0].Value
 }
 
-// TestName checks the format name the parser reports.
+// TestName checks that name.
 func TestName(t *testing.T) {
 	if got := parser(t).Name(); got != "json" {
 		t.Errorf("Name() = %q, want %q", got, "json")
 	}
 }
 
-// TestNestedObject pins the shape the conversion layer is written against:
-// nested objects become nested map[string]any, a number written as an integer
-// arrives as an int, as it does from YAML, and any other number as a float64.
+// TestNestedObject checks that nested object.
 func TestNestedObject(t *testing.T) {
 	got, err := parser(t).Unmarshal([]byte(`{"cache":{"redis":{"pool-size":4,"ratio":0.5,"cap":1e3,"addr":"localhost:6379"}}}`))
 	if err != nil {
@@ -60,9 +55,7 @@ func TestNestedObject(t *testing.T) {
 	}
 }
 
-// TestNonObjectTopLevelRejected covers the documents that parse as JSON and
-// still cannot be a configuration: the top level carries the keys, so anything
-// but a mapping has nowhere to put them.
+// TestNonObjectTopLevelRejected checks that non object top level rejected.
 func TestNonObjectTopLevelRejected(t *testing.T) {
 	for name, data := range map[string]string{
 		"array":  `[1, 2]`,
@@ -82,8 +75,7 @@ func TestNonObjectTopLevelRejected(t *testing.T) {
 	}
 }
 
-// TestNullDocumentIsEmpty fixes the reading that a source carrying nothing is
-// a legal run rather than a failure: the layers below it decide every value.
+// TestNullDocumentIsEmpty checks that null document is empty.
 func TestNullDocumentIsEmpty(t *testing.T) {
 	got, err := parser(t).Unmarshal([]byte(`null`))
 	if err != nil {
@@ -94,7 +86,7 @@ func TestNullDocumentIsEmpty(t *testing.T) {
 	}
 }
 
-// TestDuplicateKeyRejected covers an object that gives one key twice.
+// TestDuplicateKeyRejected checks that duplicate key rejected.
 func TestDuplicateKeyRejected(t *testing.T) {
 	for name, data := range map[string]string{
 		"section":   `{"app": {"level": "info", "port": 1}, "app": {"level": "debug"}}`,
@@ -114,7 +106,7 @@ func TestDuplicateKeyRejected(t *testing.T) {
 	}
 }
 
-// TestTrailingDataRejected covers bytes after the document.
+// TestTrailingDataRejected checks that trailing data rejected.
 func TestTrailingDataRejected(t *testing.T) {
 	for _, data := range []string{`{"a": 1} {"a": 2}`, `{"a": 1} x`, `{"a": 1}]`} {
 		if got, err := parser(t).Unmarshal([]byte(data)); err == nil {
@@ -123,9 +115,7 @@ func TestTrailingDataRejected(t *testing.T) {
 	}
 }
 
-// TestKeysAndValuesSurviveTheWalk pins the tree for the shapes a config file is
-// made of, so that the walk that detects duplicates hands on exactly what the
-// document says.
+// TestKeysAndValuesSurviveTheWalk checks that keys and values survive the walk.
 func TestKeysAndValuesSurviveTheWalk(t *testing.T) {
 	got, err := parser(t).Unmarshal([]byte(`{"a": {"b": [1, "x", true, null, {"c": []}], "d": {}}, "e\"f": "g"}`))
 	if err != nil {
@@ -143,8 +133,6 @@ func TestKeysAndValuesSurviveTheWalk(t *testing.T) {
 	}
 }
 
-// memorySource hands the configuration module a fixed document as the primary
-// source, so a case can load it the way a host does.
 type memorySource struct{ data string }
 
 func (memorySource) Scheme() string { return "mem" }
@@ -153,8 +141,7 @@ func (s memorySource) Fetch(context.Context, *url.URL) ([]byte, string, error) {
 	return []byte(s.data), "json", nil
 }
 
-// TestIntegersKeepEveryDigit pins that an integer a JSON document writes is
-// the integer a module decodes.
+// TestIntegersKeepEveryDigit checks that integers keep every digit.
 func TestIntegersKeepEveryDigit(t *testing.T) {
 	type counters struct{ N int64 }
 	load := func(document string) (int64, error) {
@@ -190,24 +177,19 @@ func TestIntegersKeepEveryDigit(t *testing.T) {
 	if got, err := load(`{"counters": {"n": 9223372036854775808}}`); !errors.Is(err, config.ErrTypeMismatch) {
 		t.Errorf("a value one past the int64 range decoded to %d with %v, want ErrTypeMismatch", got, err)
 	}
-	// A number written with a fraction or an exponent is still a number an
-	// integer field takes when it is whole.
 	if got, err := load(`{"counters": {"n": 1e3}}`); err != nil || got != 1000 {
 		t.Errorf("1e3 decoded to %d with %v, want 1000", got, err)
 	}
 }
 
-// TestMalformedDocumentRejected checks that a malformed document is refused.
+// TestMalformedDocumentRejected checks that malformed document rejected.
 func TestMalformedDocumentRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte(`{"a": }`)); err == nil {
 		t.Fatal("Unmarshal() succeeded on malformed JSON, want an error")
 	}
 }
 
-// TestModuleNameIsTheRegisteredName pins the constant a host writes on its
-// command tree to name this module, as in IncludeDeclarations: it is the name
-// the module registers under, so a rename changes both and every host that
-// wrote the constant follows.
+// TestModuleNameIsTheRegisteredName checks that module name is the registered name.
 func TestModuleNameIsTheRegisteredName(t *testing.T) {
 	if got := json.Module().Name; got != json.ModuleName {
 		t.Errorf("the module registers as %q and exports %q as its name", got, json.ModuleName)
@@ -217,9 +199,7 @@ func TestModuleNameIsTheRegisteredName(t *testing.T) {
 	}
 }
 
-// TestRegistersAsFormatResource proves the blank-import contract: importing
-// the package puts the parser in the process registry, where the
-// configuration module finds it by resource type alone.
+// TestRegistersAsFormatResource checks that registers as format resource.
 func TestRegistersAsFormatResource(t *testing.T) {
 	var found []core.Resource[config.Format]
 	for _, res := range core.Resources[config.Format](core.ProcessRegistry) {
@@ -235,15 +215,9 @@ func TestRegistersAsFormatResource(t *testing.T) {
 	}
 }
 
-// TestJSONFormatAddsNoParsingLibrary is the executable form of what
-// splitting the two parsers buys: a host that configures itself in JSON does
-// not carry the YAML parser, which shares a go.mod with this package and is
-// one import away from arriving unnoticed.
+// TestJSONFormatAddsNoParsingLibrary checks that JSON format adds no parsing library.
 func TestJSONFormatAddsNoParsingLibrary(t *testing.T) {
 	reached := dependenciesOf(t, ".")
-	// The positive control. This package is in its own dependency listing,
-	// and a listing that lost it came from a load that did not happen --
-	// every judgement below would then pass over nothing.
 	if !reached[rootPackage+"/format/json"] {
 		t.Fatalf("the dependency listing does not hold %s/format/json, so what it read is "+
 			"not this package's dependency face", rootPackage)
@@ -263,14 +237,11 @@ func TestJSONFormatAddsNoParsingLibrary(t *testing.T) {
 	}
 }
 
-// repoPrefix is this repository's own module path, and rootPackage the
-// configuration package this one registers itself with.
 const (
 	repoPrefix  = "github.com/vislake/speed/"
 	rootPackage = repoPrefix + "pkg/config"
 )
 
-// dependenciesOf lists the packages a `go list -deps` target reaches.
 func dependenciesOf(t *testing.T, target string) map[string]bool {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-deps", target).CombinedOutput()
@@ -289,8 +260,6 @@ func dependenciesOf(t *testing.T, target string) map[string]bool {
 	return reached
 }
 
-// stdlibPackage reports whether a package path names a package of the standard
-// library, whose first path element never carries a dot.
 func stdlibPackage(pkg string) bool {
 	first, _, _ := strings.Cut(pkg, "/")
 	return !strings.Contains(first, ".")

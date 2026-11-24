@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// TestSentinelSetMatchesDesignTable holds the sentinel set to the one the
-// design states, by name.
+// TestSentinelSetMatchesDesignTable checks that sentinel set matches design table.
 func TestSentinelSetMatchesDesignTable(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrMalformedLocator":     ErrMalformedLocator,

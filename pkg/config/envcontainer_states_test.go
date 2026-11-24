@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// envTaggedMember names one field with both a config tag and a json tag, so a
-// case can hold which one the container decoder answers to.
 type envTaggedMember struct {
 	Wire string `config:"wire-name" json:"json-name"`
 }
@@ -16,8 +14,6 @@ type envTaggedOptions struct {
 	Members []envTaggedMember
 }
 
-// envTaggedLoader declares the server mount whose list container carries the
-// double-tagged member.
 func envTaggedLoader(t *testing.T) *loader {
 	t.Helper()
 	defaults := envTaggedOptions{}
@@ -33,10 +29,7 @@ func envTaggedLoader(t *testing.T) *loader {
 	)
 }
 
-// TestContainerJSONRejectsARepeatedKeyAtAnyDepth pins that the repeated-key
-// rule is the parser's, not the top-level object's: an object inside a list
-// element is read by the same walk, so a key given twice there is refused
-// too.
+// TestContainerJSONRejectsARepeatedKeyAtAnyDepth checks that container JSON rejects a repeated key at any depth.
 func TestContainerJSONRejectsARepeatedKeyAtAnyDepth(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__SEEDS", `[{"email":"ada@example.com","email":"grace@example.com"}]`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -54,9 +47,7 @@ func TestContainerJSONRejectsARepeatedKeyAtAnyDepth(t *testing.T) {
 	}
 }
 
-// TestContainerMemberNamesAnswerToTheConfigTagFirst pins the member-name
-// rule when a field carries both tags: the config tag is the name, and the
-// json tag does not become a second accepted spelling.
+// TestContainerMemberNamesAnswerToTheConfigTagFirst checks that container member names answer to the config tag first.
 func TestContainerMemberNamesAnswerToTheConfigTagFirst(t *testing.T) {
 	t.Run("the config tag names the member", func(t *testing.T) {
 		t.Setenv("MYAPP_SERVER__MEMBERS", `[{"wire-name":"x"}]`)
