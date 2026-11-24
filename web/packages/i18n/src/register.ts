@@ -1,52 +1,15 @@
 /**
- * Namespace registration: the counterpart of pkg/i18n's
- * Builder.AddModule. One namespace per package, registered once per
- * instance, validated completely before anything is added.
- *
- * Validation is the discipline, mirroring the Go catalog's rules:
- *
- *  - language tags must be canonical and belong to the instance's
- *    supported set -- an unknown-language resource would be dead weight,
- *    so it is refused;
- *  - every supported language must be present, because a namespace that
- *    speaks fewer languages than the host would silently force the
- *    missing-language render-as-key path on users of the others;
- *  - all provided languages must carry the same leaf key set (parity with
- *    a reference language, sorted for deterministic messages), so a key
- *    can never exist in one language and silently miss in another;
- *  - leaves must be strings; nesting uses plain records only.
- *  - an empty-string leaf is refused: an "" translation renders as silence
- *    and never fires the missing-key discipline, so at runtime it is
- *    indistinguishable from a dropped key -- the mirror image of the Go
- *    catalog, which refuses empty translations outright;
- *  - plural forms are the i18next suffix convention: `key_one`/`key_other`
- *    leaves, resolved by count per language. A family of such leaves must
- *    cover every count category the instance's supported languages can
- *    select (`Intl.PluralRules` decides), because a count whose form is
- *    absent renders the raw key. Bundles carry identical leaf sets, so the
- *    forms one language needs ship in every language's bundle -- including
- *    forms a language itself never selects (zh-CN carries `_one` forms so
- *    en-US counts of 1 have theirs).
- *
- * Registration is atomic end to end: any validation failure throws before
- * a single resource lands, a failure while a bundle is being added rolls
- * the already-landed bundles back and leaves the namespace unregistered (a
- * retry is a fresh registration), and the registered mark is set only
- * after every bundle landed. A namespace registers exactly once per
- * instance (that catches double-init in tests and SSR).
+ * Namespace registration: one namespace per package, registered once per instance
+ * and validated completely before anything lands (coverage, identical leaf sets,
+ * non-empty leaves, plural coverage); a failure while adding rolls back.
  */
 
-/** The CLDR cardinal plural categories, in canonical order. */
 const PLURAL_CATEGORIES = ['zero', 'one', 'two', 'few', 'many', 'other'] as const
 
-/** `key_<category>` suffixes i18next resolves by count. */
 const PLURAL_SUFFIXES = PLURAL_CATEGORIES.map((category) => `_${category}`)
 
-/** A plural family: one logical key plus the category forms it ships. */
 interface PluralFamily {
-  /** The dot-joined key the family renders under (a `t("...")` call names this). */
   readonly path: string
-  /** The categories the family carries, in PLURAL_CATEGORIES order. */
   readonly forms: string[]
 }
 
@@ -61,13 +24,9 @@ export interface ResourceBundle {
 const NAMESPACE_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/
 
 /**
- * Namespaces already registered per instance.
- *
- * Carried on the instance itself, under a registry-wide symbol, for the same
- * reason the locale storage binding is (see storage.ts): a framework wrapper
- * built from the instance's own property descriptors copies the mark, while a
- * module-level WeakMap keyed on object identity would miss it -- and a second
- * copy of this module would miss the WeakMap even for the same object.
+ * Namespaces already registered per instance, carried as an own property under
+ * a registered symbol so a descriptor-copying wrapper and a second module copy
+ * both see it.
  */
 const REGISTERED_NAMESPACES = Symbol.for('@speed/i18n/registered-namespaces')
 
@@ -94,12 +53,6 @@ function describeLeaf(value: unknown): string {
   return `a ${typeof value}`
 }
 
-/**
- * Collect a bundle's leaf paths into `leaves`, refusing empty-string
- * leaves. Exported for the platform-error registration, which validates a
- * host-supplied language against the packaged bundle even when the
- * packaged languages are not part of the instance's supported set.
- */
 export function collectLeafPaths(
   bundle: ResourceBundle,
   prefix: string,
@@ -131,14 +84,6 @@ export function collectLeafPaths(
   }
 }
 
-/**
- * The count categories `language` can select, in CLDR order. i18next
- * resolves a plural leaf per count through Intl.PluralRules -- the same
- * resolution this validator consults -- so a language whose categories
- * cannot be resolved (a structurally legal tag Intl refuses) cannot have
- * its plural coverage validated at all; that is reported loudly rather
- * than assumed.
- */
 function pluralCategoriesOf(language: string): string[] {
   let selectable: readonly string[]
   try {
@@ -154,21 +99,12 @@ function pluralCategoriesOf(language: string): string[] {
   return PLURAL_CATEGORIES.filter((category) => selectableSet.has(category))
 }
 
-/**
- * The plural families a leaf set declares: a leaf whose final segment ends
- * in a `_<category>` suffix is one form of the family named by the rest of
- * its path. Because the parity check has already forced identical leaf
- * sets across languages, every language declares the same families with
- * the same forms; the reference language's set decides. Sorted by family
- * path so failure messages are deterministic.
- */
 function pluralFamiliesOf(paths: Set<string>): PluralFamily[] {
   const formsByFamily = new Map<string, string[]>()
   for (const path of paths) {
     const leafName = path.slice(path.lastIndexOf('.') + 1)
     for (const suffix of PLURAL_SUFFIXES) {
-      // leafName.length > suffix.length keeps a leaf named exactly "_one"
-      // (or a bare category word) out: a form names a family, never itself.
+      // A form names a family, never itself: the leaf must be longer than the suffix.
       if (leafName.endsWith(suffix) && leafName.length > suffix.length) {
         const familyPath = path.slice(0, path.length - suffix.length)
         let forms = formsByFamily.get(familyPath)
@@ -202,19 +138,9 @@ function listSample(paths: Set<string>): string {
 }
 
 /**
- * Register a package's translations under a namespace on the instance.
- *
- * resources maps canonical language tags to bundles; every key must be a
- * language the instance supports, and every supported language must be
- * present with the same leaf key set (see the module docs). Leaf values
- * must be non-empty strings. Plural forms -- leaves whose name ends in a
- * `_<category>` suffix, resolved per count -- must additionally cover the
- * count categories every supported language can select, or a count
- * somewhere would render the raw key. Throws -- before mutating anything --
- * when any of that fails, or when the namespace is already registered on
- * this instance. A failure while a bundle is being added rolls the
- * already-landed bundles back, so the namespace is never left
- * half-registered and any retry is a fresh registration.
+ * Registers a package's translations under a namespace. Refuses, before mutating
+ * anything, an unsupported or missing language, mismatched leaf sets, empty
+ * leaves, incomplete plural families, a bad name or a second registration.
  */
 export function registerNamespace(
   instance: I18nInstance,
@@ -309,13 +235,7 @@ export function registerNamespace(
     }
   }
 
-  // Plural coverage, after parity: identical leaf sets mean every language
-  // ships the same families with the same forms, so one family set serves
-  // all languages -- but only when it covers what each language's plural
-  // resolution can select. A count whose category form is absent renders
-  // the raw key (the renderer's missing-key path, never another language's
-  // text -- still the no-silent-fallback discipline, but a bundle gap that
-  // registration can catch and must not ship).
+  // Identical leaf sets mean one family set serves all languages; it must cover every count category each can select.
   const families = pluralFamiliesOf(leafSets.get(referenceLanguage)!)
   if (families.length > 0) {
     const selectableByLanguage = new Map(
@@ -360,9 +280,6 @@ export function registerNamespace(
       instance.addResourceBundle(language, namespace, resources[language]!, true, true)
     }
   } catch (error) {
-    // Roll back the bundles that landed so the failed attempt leaves no
-    // trace; the namespace stays unregistered and a retry is a fresh
-    // registration.
     for (const language of languageKeys) {
       if (instance.hasResourceBundle(language, namespace)) {
         instance.removeResourceBundle(language, namespace)
@@ -371,8 +288,6 @@ export function registerNamespace(
     throw error
   }
 
-  // The registered mark lands only after every bundle did: a namespace
-  // that failed mid-loop must never be reported as registered.
   const instanceNamespaces = registered ?? new Set<string>()
   instanceNamespaces.add(namespace)
   markNamespaces(instance, instanceNamespaces)

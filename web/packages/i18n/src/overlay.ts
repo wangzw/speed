@@ -1,20 +1,7 @@
 /**
- * Resource overlays: a host enriching a package's shipped bundles before
- * registration.
- *
- * The overlay maps language tags to partial bundles. An overlay for a
- * language the base bundle carries is deep-merged into it: a leaf that
- * exists in the base is replaced, and a leaf that does not exist is an
- * error -- an overlay written against an older key set would otherwise
- * silently add a key the rest of the languages do not carry, and an
- * upgrade that dropped a key would leave the overlay pointing at nothing.
- * A language the base does not carry is taken whole (a host supplying a
- * language the package does not ship); its completeness -- every key and
- * every plural form the language needs -- is validated later by
- * `registerNamespace`, together with the rest of the namespace.
- *
- * The base and the overlay are never mutated: the result is fresh, so a
- * package's exported resources stay exactly what it shipped.
+ * Resource overlays: a host enriching shipped bundles before registration. An
+ * existing language is merged leaf by leaf (a missing leaf is an error); a new
+ * language is taken whole and validated at registration.
  */
 
 import type { ResourceBundle } from './register.js'
@@ -22,7 +9,6 @@ import type { ResourceBundle } from './register.js'
 /** Resolved language resources: one bundle per language. */
 export type ResourceOverlay = Readonly<Record<string, ResourceBundle>>
 
-/** A bundle being built: the writable counterpart of ResourceBundle. */
 interface MutableBundle {
   [segment: string]: string | MutableBundle
 }
@@ -41,12 +27,6 @@ function describe(value: unknown): string {
   return typeof value === 'object' ? 'an object' : `a ${typeof value}`
 }
 
-/**
- * A deep copy of a bundle, refusing anything that is neither a string leaf
- * nor a plain record. The overlay path never introduces a new leaf into an
- * existing bundle, but a whole new language arrives as-is and is copied
- * with the same shape check registration would apply.
- */
 function cloneBundle(
   language: string,
   bundle: ResourceBundle,
@@ -70,12 +50,6 @@ function cloneBundle(
   return copy
 }
 
-/**
- * Merges one overlay bundle into one base bundle, in place on `target` (a
- * fresh clone of the base). Every leaf the overlay names must already
- * exist as a leaf; a subtree the overlay introduces must already exist as
- * a record.
- */
 function mergeBundle(
   language: string,
   target: MutableBundle,
@@ -116,11 +90,7 @@ function mergeBundle(
   }
 }
 
-/**
- * Deep-merges `overlay` into `base` per language, returning fresh
- * resources. Replacing a leaf the base does not carry throws; adding a
- * whole new language is allowed and validated at registration.
- */
+/** Deep-merges `overlay` into `base` per language, returning fresh resources. */
 export function overlayResources(
   base: ResourceOverlay,
   overlay: ResourceOverlay,

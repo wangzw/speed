@@ -1,14 +1,3 @@
-/**
- * wall-clock.ts behaviour: converting between a named zone's wall clock and
- * an instant, including the two daylight-saving transition shapes.
- *
- * The transition cases are the point. A spring-forward gap must answer null
- * (those wall clocks never happen), a fall-back overlap must answer the
- * earlier instant deterministically, and neither may throw. Invalid input
- * -- an unknown zone, an unparseable instant, an out-of-range field, a
- * calendar overflow such as 31 February -- answers null as well.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   instantToWallClock,
@@ -16,7 +5,6 @@ import {
   type WallClock,
 } from './wall-clock.js'
 
-/** Asserts a Date and returns its ISO string, failing on null. */
 function iso(date: Date | null): string {
   expect(date).not.toBeNull()
   return (date as Date).toISOString()
@@ -159,8 +147,6 @@ describe('wallClockToInstant', () => {
 
 describe('daylight-saving transitions', () => {
   it('answers null for a spring-forward gap', () => {
-    // 2026-03-08: New York clocks jump 02:00 EST to 03:00 EDT, so 02:00
-    // through 02:59:59 never happen.
     expect(
       wallClockToInstant({ year: 2026, month: 3, day: 8, hour: 2, minute: 0 }, 'America/New_York'),
     ).toBeNull()
@@ -172,19 +158,16 @@ describe('daylight-saving transitions', () => {
   it('maps the readings on either side of a spring-forward gap', () => {
     expect(
       iso(wallClockToInstant({ year: 2026, month: 3, day: 8, hour: 1, minute: 30 }, 'America/New_York')),
-    ).toBe('2026-03-08T06:30:00.000Z') // EST, UTC-5
+    ).toBe('2026-03-08T06:30:00.000Z') 
     expect(
       iso(wallClockToInstant({ year: 2026, month: 3, day: 8, hour: 3, minute: 30 }, 'America/New_York')),
-    ).toBe('2026-03-08T07:30:00.000Z') // EDT, UTC-4
+    ).toBe('2026-03-08T07:30:00.000Z') 
   })
 
   it('resolves a fall-back overlap to the earlier instant', () => {
-    // 2026-11-01: New York clocks fall back 02:00 EDT to 01:00 EST, so
-    // 01:00 through 01:59:59 happen twice. The earlier occurrence is EDT.
     expect(
       iso(wallClockToInstant({ year: 2026, month: 11, day: 1, hour: 1, minute: 30 }, 'America/New_York')),
     ).toBe('2026-11-01T05:30:00.000Z')
-    // Both instants read back as the same wall clock: the overlap is real.
     expect(instantToWallClock('2026-11-01T05:30:00Z', 'America/New_York')).toEqual({
       year: 2026,
       month: 11,
@@ -204,7 +187,6 @@ describe('daylight-saving transitions', () => {
   })
 
   it('resolves a fall-back overlap to the later instant when asked', () => {
-    // The same repeated 01:30, read as an upper bound: EST at 06:30Z.
     expect(
       iso(
         wallClockToInstant(
@@ -217,13 +199,9 @@ describe('daylight-saving transitions', () => {
   })
 
   it('resolves an east-of-UTC fall-back overlap to the earlier instant', () => {
-    // 2026-10-25: Berlin clocks fall back 03:00 CEST to 02:00 CET, so
-    // 02:00 through 02:59:59 happen twice. The earlier occurrence is CEST
-    // (UTC+2), one hour before the later CET occurrence.
     expect(
       iso(wallClockToInstant({ year: 2026, month: 10, day: 25, hour: 2, minute: 30 }, 'Europe/Berlin')),
     ).toBe('2026-10-25T00:30:00.000Z')
-    // Both instants read back as the same wall clock: the overlap is real.
     expect(instantToWallClock('2026-10-25T01:30:00Z', 'Europe/Berlin')).toEqual({
       year: 2026,
       month: 10,
@@ -235,9 +213,6 @@ describe('daylight-saving transitions', () => {
   })
 
   it('resolves a half-hour fall-back overlap to the earlier instant', () => {
-    // 2026-04-05: Lord Howe clocks fall back 02:00 +11 to 01:30 +10:30, so
-    // 01:30 through 01:59:59 happen twice. The earlier occurrence is the
-    // daylight offset, UTC+11.
     expect(
       iso(wallClockToInstant({ year: 2026, month: 4, day: 5, hour: 1, minute: 45 }, 'Australia/Lord_Howe')),
     ).toBe('2026-04-04T14:45:00.000Z')
@@ -279,7 +254,6 @@ describe('invalid readings', () => {
   })
 
   it('answers null for a calendar overflow instead of normalizing it', () => {
-    // 2026 is not a leap year; 29 February 2028 is.
     expect(
       wallClockToInstant({ year: 2026, month: 2, day: 29, hour: 12, minute: 0 }, 'UTC'),
     ).toBeNull()

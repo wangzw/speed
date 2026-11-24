@@ -1,36 +1,7 @@
 /**
- * Instance creation and the language switch.
- *
- * createI18n is the single way to obtain an i18n instance in this package.
- * It runs the negotiation chain from languages.ts against the supported
- * set, then configures the i18next instance so that the missing-key
- * discipline holds by construction:
- *
- *  - supportedLngs pins the language set; fallbackLng: false and load:
- *    "currentOnly" make cross-language fallback impossible; a missing key
- *    resolves to the key itself.
- *  - saveMissing: true is required for i18next v26 to dispatch its
- *    missingKeyHandler at all; the handler is always installed (the host's
- *    onMissingKey, or the package's visible default warning), so a missing
- *    key is never silent.
- *  - initAsync: false keeps init synchronous (v26 defers by default): the
- *    negotiated language is decided and the instance is ready by the time
- *    createI18n returns, which tests and SSR-rendered first paint rely on.
- *  - fallbackNamespaces is opt-in and unset by default: when a host passes
- *    it, i18next consults those namespaces (in the same negotiated
- *    language) for a key the called namespace lacks -- the platform-errors
- *    bundle rides this; when it is undefined, no fallbackNS is configured
- *    and resolution is exactly what it was before the option existed.
- *  - interpolation.escapeValue: false: React renders a translated string
- *    as a text node and escapes it itself, so the engine must insert
- *    interpolated values verbatim. i18next's default HTML escaping would
- *    double-escape them -- a path or tenant name containing "&", "<" or
- *    "/" would reach the page as "&amp;", "&lt;" or "&#x2F;". The package
- *    renders into React only, so no layer here consumes HTML.
- *
- * Every negotiable input is injectable (searchParams, storage,
- * navigatorLanguages) and the DOM is only touched through guarded reads, so
- * tests and non-browser hosts stay deterministic.
+ * Instance creation and the language switch. createI18n negotiates the start
+ * language and pins the i18next options that make the missing-key discipline
+ * hold.
  */
 
 import { createInstance, type i18n as I18nInstance } from 'i18next'
@@ -54,98 +25,35 @@ import { missingKeyHandlerFactory, type MissingKeyDetails } from './missing-key.
 /** Customize the language the instance starts with, or how it is decided. */
 export interface CreateI18nOptions {
   /**
-   * Canonical tags the instance may speak. Defaults to
-   * DEFAULT_SUPPORTED_LANGUAGES (zh-CN, en-US). Every registration must
-   * cover this whole set, so keep it in lockstep with the language
-   * resources the platform actually ships. Entries must already be in the
-   * package's canonical spelling (hyphen-separated, trimmed; see
-   * normalizeLanguageTag) -- creation refuses anything else, naming the
-   * canonical form, because a non-canonical entry could never be matched
-   * by a canonicalized negotiation source and would be dead weight.
-   *
-   * This set is also the acceptable set of the signed-in account's
-   * language preference: the stored preference drives backend-rendered
-   * content (verification messages, notification emails, invitations),
-   * which renders in the deployment's catalog languages -- the locales
-   * the shipped platform modules carry (a locales/ directory under pkg/)
-   * -- and a
-   * preference outside them is refused with 400 authn.invalid_locale. A
-   * host extending this option beyond the platform's shipped set must
-   * first confirm the backend can render the extra languages, or the
-   * option could only ever fail. The default set is a build-time
-   * constant; distributing the deployment's optional languages through
-   * public configuration is the future convergence path for it.
+   * Canonical tags the instance may speak; defaults to zh-CN and en-US. Each entry
+   * must already be canonical, and a stored preference outside this set is refused
+   * with 400 authn.invalid_locale.
    */
   readonly supportedLanguages?: readonly string[]
-  /**
-   * Negotiation fallback when every source misses; must be a member of
-   * supportedLanguages. Defaults to DEFAULT_LANGUAGE (en-US), the platform
-   * default every locale chain in the stack terminates at. An unknown
-   * browser language resolves here deliberately -- see README's "Language
-   * negotiation" -- but a missing translation key never falls back across
-   * languages (see "Missing keys").
-   */
+  /** Negotiation fallback when every source misses; must be a member of supportedLanguages. */
   readonly defaultLanguage?: string
-  /**
-   * URL parameter carrying an explicit language override. Defaults to
-   * "lang". Pass null or an empty string (not undefined) to disable
-   * reading the URL. When searchParams is not injected, the current
-   * location's query string is read through a guarded access, so absence
-   * of a DOM never throws.
-   */
+  /** URL parameter carrying a language override; defaults to "lang". Pass null or an empty string to disable it. */
   readonly urlParameterName?: string | null
   /** Injected URL parameters (tests, non-browser hosts). */
   readonly searchParams?: URLSearchParams | null
-  /**
-   * Storage the chosen language persists to and is read from. Defaults to
-   * the browser's localStorage through a guarded access (null in Node).
-   * Pass null explicitly to run without persistence.
-   */
+  /** Storage the chosen language persists to; defaults to the guarded browser localStorage, and null runs without persistence. */
   readonly storage?: StorageLike | null
   /** Override the key the choice is persisted under. Defaults to SPEED_LOCALE_STORAGE_KEY. */
   readonly storageKey?: string
   /**
-   * Signed-in user's profile locale, resolved by the host before instance
-   * creation. The platform ships no profile feature yet: hosts that can
-   * resolve a profile locale pass it here and it outranks the browser
-   * (the URL parameter and a persisted manual choice still outrank it,
-   * in the negotiation chain's order). When the profile resolves only
-   * after creation (its usual source, a /me round trip), apply it through
-   * the non-persisting form of switchLanguage -- switchLanguage(instance,
-   * locale, null) -- never the persisting default: the persisted slot is
-   * the manual-choice tier, which outranks the profile tier on later
-   * visits, so a persisted profile application would freeze that language
-   * against later profile changes (README, "Applying the profile language
-   * after creation").
+   * Signed-in user's profile locale, resolved by the host before creation.
+   * Apply a profile that resolves later through `switchLanguage(instance,
+   * locale, null)`: the persisting form would shadow the profile tier.
    */
   readonly profileLanguage?: string | null
-  /**
-   * Browser language preferences. Defaults to the global navigator
-   * languages through a guarded read. Pass an explicit list (or []) in
-   * tests and other deterministic contexts.
-   */
+  /** Browser language preferences; defaults to the guarded navigator languages. */
   readonly navigatorLanguages?: readonly string[]
-  /**
-   * Called with details whenever a translation key is missing. Defaults to
-   * the package's visible console warning (defaultMissingKeyHandler).
-   */
+  /** Called with details whenever a translation key is missing; defaults to the console warning. */
   readonly onMissingKey?: (details: MissingKeyDetails) => void
   /**
-   * Namespaces i18next consults when the namespace a lookup names carries
-   * no such key (i18next's `fallbackNS`). Undefined -- the default --
-   * leaves the option unset, so resolution is exactly what it was before
-   * this option existed. The platform-error bundle is the intended value:
-   * hosts register @speed/i18n/platform-errors and pass
-   * [PLATFORM_ERRORS_NAMESPACE], so a backend error code with no text in a
-   * package's own namespace resolves to the module catalog's own words
-   * instead of the raw key.
-   *
-   * This is namespace fallback, never language fallback: every consulted
-   * namespace resolves in the same negotiated language (fallbackLng stays
-   * false and load stays "currentOnly"), so the no-silent-cross-language
-   * guarantee is untouched. A key no consulted namespace carries still
-   * renders as the key itself and fires the missing-key handler; a key a
-   * fallback namespace answers is a hit and does not.
+   * Namespaces i18next consults when a lookup's namespace lacks the key. This
+   * is namespace fallback, never language fallback; undefined leaves the
+   * option unset.
    */
   readonly fallbackNamespaces?: readonly string[]
 }
@@ -192,13 +100,6 @@ function readGlobalLocalStorage(): StorageLike | null {
   return null
 }
 
-/**
- * Read the persisted choice, protected like every other storage access in
- * this package: storage can throw on read (blocked cookies, opaque
- * origins, a misbehaving host store), and a choice that cannot be read
- * means "no stored language" -- negotiation proceeds without it, and
- * instance creation never fails over storage.
- */
 function readStoredLanguage(storage: StorageLike, key: string): string | null {
   try {
     return storage.getItem(key)
@@ -216,12 +117,7 @@ function readGlobalNavigatorLanguages(): readonly string[] {
   return raw.filter((entry): entry is string => typeof entry === 'string')
 }
 
-/**
- * Create the host i18n instance: negotiate the start language, pin the
- * supported set with the discipline options above, bind persistence, and
- * return a react-i18next-ready instance (initReactI18next is installed, so
- * the returned instance is what I18nextProvider and useTranslation expect).
- */
+/** Creates the host i18n instance: negotiates the start language, pins the discipline options, binds persistence. */
 export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
   const supportedLanguages = options.supportedLanguages ?? DEFAULT_SUPPORTED_LANGUAGES
   if (supportedLanguages.length === 0) {
@@ -264,12 +160,7 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
   const storedLanguage =
     storage === null ? null : readStoredLanguage(storage, storageKey)
 
-  // undefined means the default parameter name "lang"; null or an empty
-  // string opts the URL source out of the negotiation chain entirely. The
-  // opt-out must not be coalesced onto "lang" (the ?? would turn
-  // urlParameterName: null into an active ?lang= reader), and it must not
-  // reach readUrlLanguage either -- URLSearchParams.get() coerces its
-  // argument, so a raw null would honor a literal ?null=... parameter.
+  // null/empty opts the URL source out; coalescing onto "lang" would re-enable it, and a raw null would honor a literal ?null=.
   const urlLanguage =
     options.urlParameterName === null || options.urlParameterName === ''
       ? null
@@ -286,10 +177,7 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
 
   const instance = createInstance()
   instance.use(initReactI18next)
-  // The missing-key discipline must hold without the host asking for it:
-  // saveMissing gates i18next v26's missingKeyHandler dispatch, so it stays
-  // on; with our handler always installed, no backend saveMissing path can
-  // engage (this package registers in-memory resources only).
+  // saveMissing gates i18next v26's missingKeyHandler dispatch; this package registers in-memory resources only.
   void instance.init({
     lng: detected,
     supportedLngs: [...supportedLanguages],
@@ -298,13 +186,8 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
     saveMissing: true,
     missingKeyHandler: missingKeyHandlerFactory(options.onMissingKey),
     initAsync: false,
-    // React escapes a translated string when it renders it as a text
-    // node; escaping the interpolated values here as well would show the
-    // entities to the user (a path's "/" becomes "&#x2F;").
+    // React escapes a translated text node itself; escaping again would show the entities to the user.
     interpolation: { escapeValue: false },
-    // Omitted entirely when the host did not opt in: i18next's own default
-    // is no fallback namespace, so an unset option and an absent one are
-    // one configuration.
     ...(options.fallbackNamespaces === undefined
       ? {}
       : { fallbackNS: [...options.fallbackNamespaces] }),
@@ -314,40 +197,9 @@ export function createI18n(options: CreateI18nOptions = {}): I18nInstance {
 }
 
 /**
- * Persist the choice when it came from the manual override UI. The target
- * language must be a member of the instance's supported set; anything else
- * throws instead of silently switching somewhere.
- *
- * Ordering and failure semantics: the choice is written to storage first,
- * then the instance switches. The write is protected -- persistence is a
- * best-effort convenience (storage can be quota-full, disabled or throwing
- * in embedded contexts), so a storage failure is reported as a visible
- * `[speed-i18n]` console warning and never fails or aborts the switch. The
- * promise therefore resolves exactly when the instance language changed,
- * and a rejection always means the switch did not happen: the instance is
- * still on its previous language. (A changeLanguage failure after a
- * successful write leaves the user's expressed choice stored, which the
- * next visit honors.)
- *
- * The optional storage argument is three-state: undefined uses the storage
- * bound at creation, null persists nothing, and a StorageLike persists to
- * that store instead. Reads and writes always go through the binding's key.
- * A bound storage of null (the host opted out at creation) persists nothing
- * and says nothing; an instance that carries no binding at all -- nothing
- * createI18n produced -- has no store to write either, but that is reported
- * through the same visible `[speed-i18n]` warning: a choice that quietly
- * fails to survive a reload is the hardest kind of persistence defect to
- * notice.
- *
- * Which state a caller means is intent, not mechanics. The persisting
- * states belong to the manual language-switch UI: the stored slot is the
- * manual-choice tier of the negotiation chain, and a manual choice is the
- * most recent user intent. A language applied because a server-side
- * profile resolved -- never a manual choice -- must use null, or the
- * write shadows the profile tier on every later visit: the stored choice
- * outranks the profile by design, so a later profile change could never
- * win the negotiation in that browser (README, "Applying the profile
- * language after creation").
+ * Persists the choice from the manual override UI; the target must be supported
+ * and the write is best-effort (a failure only warns). `storage`: undefined uses
+ * the creation binding, null persists nothing, a StorageLike persists there.
  */
 export async function switchLanguage(
   instance: I18nInstance,
@@ -375,19 +227,12 @@ export async function switchLanguage(
     persistChoice(effectiveStorage, binding?.key ?? SPEED_LOCALE_STORAGE_KEY, target)
   }
   await instance.changeLanguage(target)
-  // Reported after the switch settles: the warning says the switch happened
-  // but the choice will not survive a reload, which is only true if it did.
+  // Reported after the switch settles: the warning is only true if the switch happened.
   if (effectiveStorage === null && storage === undefined && binding === null) {
     warnUnboundStorage(target)
   }
 }
 
-/**
- * Write the persisted choice. Protected by design: a storage failure must
- * never surface as a failed language change, so the failure is reported
- * through the package's visible console warning (like the missing-key
- * handler) and the switch proceeds.
- */
 function persistChoice(storage: StorageLike, key: string, language: string): void {
   try {
     storage.setItem(key, language)
@@ -400,12 +245,6 @@ function persistChoice(storage: StorageLike, key: string, language: string): voi
   }
 }
 
-/**
- * Report a switch whose persistence had nowhere to go: the instance carries
- * no binding, so there is no store to write and the choice cannot survive a
- * reload. Reported like a failing store -- a visible warning, never a failed
- * switch -- because this case would otherwise leave no trace at all.
- */
 function warnUnboundStorage(language: string): void {
   console.warn(
     `[speed-i18n] could not persist the language choice "${language}": the instance ` +

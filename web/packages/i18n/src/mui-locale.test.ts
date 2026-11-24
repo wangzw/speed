@@ -1,8 +1,3 @@
-/**
- * Contract tests for the MUI locale linkage: canonical language tag to the
- * MUI localization object, identity-stable, throwing on unknown tags.
- */
-
 import { describe, expect, it } from 'vitest'
 import { zhCN, enUS } from '@mui/material/locale'
 import { muiLocaleFor } from './mui-locale'

@@ -1,18 +1,3 @@
-/**
- * The missing-key discipline: a translation key that does not exist must
- * never silently render another language's text, and it must be visible.
- *
- * Mechanics: createI18n pins supportedLngs, disables cross-language
- * fallback (fallbackLng: false, load: "currentOnly") and installs a
- * missingKeyHandler, so a missing key renders as the key itself and fires
- * this package's handler -- the visible warning below by default, whatever
- * the host passes as onMissingKey otherwise. registerNamespace's parity and
- * coverage checks are the companion guarantee: keys cannot go missing in
- * one language while another has them. This mirrors pkg/i18n's
- * design (never let the underlying catalog silently fall back across
- * languages); see README.md's "Missing keys".
- */
-
 /** Everything the handler knows about one missing translation key. */
 export interface MissingKeyDetails {
   /** Canonical language tags the lookup ran for. */
@@ -34,10 +19,6 @@ export function defaultMissingKeyHandler(details: MissingKeyDetails): void {
   )
 }
 
-/**
- * Adapt the host's onMissingKey option (or the default handler) to
- * i18next's missingKeyHandler signature.
- */
 export function missingKeyHandlerFactory(
   onMissingKey?: (details: MissingKeyDetails) => void,
 ): (lngs: readonly string[], namespace: string, key: string) => void {

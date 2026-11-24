@@ -1,21 +1,11 @@
-/**
- * MUI locale linkage: translate a canonical language tag to the MUI
- * localization object createTheme consumes (createTheme(theme, zhCN)).
- * Isolated in its own module so the main entry never imports @mui/material
- * -- consumers without MUI get a working @speed/i18n instance without
- * pulling the MUI tree.
- */
+/** MUI locale linkage: a canonical language tag to the MUI localization object; isolated so the main entry never imports @mui/material. */
 
 import { zhCN, enUS, type Localization } from '@mui/material/locale'
 
 /** The MUI localization object type (re-exported for host convenience). */
 export type MuiLocale = Localization
 
-/**
- * The MUI localization for a canonical language tag. Throws on unknown
- * tags: a silently wrong locale (English text inside a Chinese UI) is
- * worse than an immediate error at theme-assembly time.
- */
+/** The MUI localization for a canonical language tag; throws on an unknown tag. */
 export function muiLocaleFor(language: string): MuiLocale {
   switch (language) {
     case 'zh-CN':

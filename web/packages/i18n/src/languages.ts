@@ -1,37 +1,18 @@
 /**
- * Canonical language codes and the negotiation chain that picks a start
- * language for a new i18n instance.
- *
- * The chain, in priority order: URL parameter, manually persisted choice,
- * the signed-in user's profile locale, navigator languages, then the
- * default language (en-US).
- * Every source that matches no supported language is skipped; the default
- * language wins only when every source misses, and the default is always a
- * member of the supported set -- an unknown language never selects anything
- * (createI18n validates the default up front). Matching is by canonical tag
- * (case-insensitive, exact first), then by language-subtag relaxation in
- * both directions: a bare request selects a supported tag of the same
- * language when unique ("en" selects "en-US" only when no other supported
- * tag shares the primary subtag), and a subtagged request selects a
- * supported bare tag of the same language ("ja-JP" selects supported "ja":
- * once the request's region is unknown to the platform, its language is
- * exactly what the bare tag names).
+ * Canonical language tags and the negotiation chain (URL parameter, stored
+ * choice, profile locale, navigator, default). Matching is exact, then
+ * bidirectional subtag relaxation that never crosses languages.
  */
 
 /** The canonical language tags the platform ships. */
 export const DEFAULT_SUPPORTED_LANGUAGES = ['zh-CN', 'en-US'] as const
 
-/** Negotiation default: an unknown language resolves to en-US, the platform default every chain terminates at. */
+/** Negotiation default: an unknown language resolves to en-US. */
 export const DEFAULT_LANGUAGE = 'en-US'
 
-/** True when the input parses as a BCP-47-style tag the negotiator can reason about. */
 const TAG_PATTERN = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/
 
-/**
- * Canonicalize a raw language string, or null when it is not a usable tag.
- * Underscores become hyphens ("zh_CN" -> "zh-CN"); casing is preserved and
- * compared case-insensitively, so "EN-us" still matches "en-US".
- */
+/** Canonicalizes a raw language string, or null when it is not a usable tag; underscores become hyphens. */
 export function normalizeLanguageTag(input: string): string | null {
   const trimmed = input.trim()
   if (!TAG_PATTERN.test(trimmed)) {
@@ -41,14 +22,9 @@ export function normalizeLanguageTag(input: string): string | null {
 }
 
 /**
- * Match a candidate against the supported set, or null when nothing
- * supports it. Exact canonical match first (case-insensitive); otherwise
- * language-subtag relaxation, two-directional: a subtagged request
- * ("ja-JP") selects a supported bare tag of the same language, and a bare
- * request ("en") selects the unique supported tag carrying its primary
- * subtag. Relaxation never crosses languages: every match shares the
- * candidate's primary subtag, and an ambiguous full-tag match stays
- * refused.
+ * Matches a candidate against the supported set, or null; exact canonical
+ * first, then two-directional language-subtag relaxation that never crosses
+ * languages.
  */
 export function matchSupportedLanguage(
   candidate: string,
@@ -66,8 +42,6 @@ export function matchSupportedLanguage(
   }
   const primary = lower.split('-')[0] ?? lower
   if (lower.includes('-')) {
-    // The request names a region the platform may not ship; a supported
-    // bare tag of the same language is the request's language exactly.
     for (const language of supported) {
       if (language.toLowerCase() === primary) {
         return language
@@ -80,25 +54,15 @@ export function matchSupportedLanguage(
   return matches.length === 1 ? matches[0]! : null
 }
 
-/** A source feeding the negotiation chain, in priority order. */
 export interface DetectLanguageOptions {
   readonly supportedLanguages: readonly string[]
-  /** Negotiation fallback; must be a member of supportedLanguages. */
   readonly defaultLanguage: string
-  /** URL parameter value, already extracted; null/empty when absent. */
   readonly urlLanguage?: string | null
-  /** Manually persisted choice, already extracted; null/empty when absent. */
   readonly storedLanguage?: string | null
-  /** Signed-in user profile locale, resolved by the host; null/empty when absent. */
   readonly profileLanguage?: string | null
-  /** Navigator language preferences, most preferred first. */
   readonly navigatorLanguages?: readonly string[]
 }
 
-/**
- * Run the negotiation chain and return the language to start with: the
- * first source that matches a supported language, else defaultLanguage.
- */
 export function detectLanguage(options: DetectLanguageOptions): string {
   const { supportedLanguages, defaultLanguage } = options
   const candidates = [
@@ -119,7 +83,6 @@ export function detectLanguage(options: DetectLanguageOptions): string {
   return defaultLanguage
 }
 
-/** Minimal structural view of an i18next instance's supported-language option. */
 export interface SupportedLanguagesCarrier {
   readonly options: {
     readonly supportedLngs?: unknown
@@ -127,16 +90,8 @@ export interface SupportedLanguagesCarrier {
 }
 
 /**
- * Read the supported-language set an instance was created with. Returns []
- * when the instance declares none -- the state registerNamespace and
- * switchLanguage both refuse, because per-language coverage and
- * no-cross-language-fallback guarantees are only meaningful against a
- * pinned set (createI18n always pins one).
- *
- * i18next internally extends a pinned supportedLngs with "cimode" (its
- * render-the-key-as-is meta language); that entry is a runtime escape
- * hatch, not a language the platform ships, so it is filtered out here --
- * coverage and switch validation must not demand cimode bundles.
+ * Reads the supported-language set an instance was created with, filtering
+ * i18next's internal `cimode`; returns [] when none is declared.
  */
 export function readSupportedLanguages(
   instance: SupportedLanguagesCarrier,

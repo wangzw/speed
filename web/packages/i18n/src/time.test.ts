@@ -1,13 +1,3 @@
-/**
- * time.ts behaviour: the three-tier display-timezone chain (stored
- * preference -> browser -> UTC), its Intl guards, and instant formatting.
- * The guard cases are the point: a stored value the engine rejects must
- * fall through the chain, never throw into a render, and an environment
- * whose Intl cannot answer must degrade to the terminal tier. Formatting
- * assertions compare against Intl's own output for the documented style
- * pair, so the test pins the wiring rather than a locale's exact wording.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import {
   formatInstant,
@@ -15,8 +5,6 @@ import {
   resolveTimeZone,
 } from './time.js'
 
-/** Runs fn with Intl.DateTimeFormat stubbed to throw on every
- * construction (the environment-cannot-answer shape), restoring after. */
 function withBrokenDateTimeFormat(fn: () => void): void {
   const broken = function (): Intl.DateTimeFormat {
     throw new RangeError('test: Intl.DateTimeFormat unavailable')
@@ -29,9 +17,6 @@ function withBrokenDateTimeFormat(fn: () => void): void {
   }
 }
 
-/** Runs fn with the browser's reported zone replaced, restoring after.
- * Only the browser-zone read is affected: constructing a formatter still
- * validates its zone, so the stored and terminal tiers stay live. */
 function withBrowserZone(zone: string, fn: () => void): void {
   const spy = vi
     .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
@@ -69,9 +54,6 @@ describe('resolveTimeZone', () => {
   const device = browserTimeZone()
 
   it('runs with a browser zone distinct from the terminal tier', () => {
-    // The vitest config pins a non-UTC TZ. On a UTC runner the middle-tier
-    // cases below would hold equally for an implementation that skips
-    // straight to UTC, so the distinction is asserted once here.
     expect(device).not.toBe('UTC')
   })
 
@@ -95,12 +77,6 @@ describe('resolveTimeZone', () => {
   })
 
   it('lands on UTC when the browser reports a zone the engine rejects', () => {
-    // Only the browser-zone read is broken here. A stored value the
-    // engine accepts still wins; otherwise the chain must reject the
-    // browser's unusable answer and land on the terminal tier. Breaking
-    // every Intl construction instead would skip the stored and browser
-    // tiers together, so the case could not tell the middle tier's guard
-    // from its absence.
     withBrowserZone('Mars/Olympus', () => {
       expect(resolveTimeZone('Asia/Tokyo')).toBe('Asia/Tokyo')
       expect(resolveTimeZone('Mars/Olympus')).toBe('UTC')

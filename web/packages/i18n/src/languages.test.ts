@@ -1,8 +1,3 @@
-/**
- * Contract tests for language-tag normalization, supported-set matching and
- * the negotiation chain precedence.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_LANGUAGE,

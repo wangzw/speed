@@ -1,10 +1,3 @@
-/**
- * Platform error bundle tests: registration and its refusals, the
- * fallback-namespace wiring, and the property the bundle exists to hold
- * -- backend-only content (an invitation email, a notification template,
- * an SMS body) is unreachable as error copy.
- */
-
 import { createInstance } from 'i18next'
 import { describe, expect, it, vi } from 'vitest'
 import { createI18n, type MissingKeyDetails } from './index'
@@ -24,7 +17,6 @@ type Bundle = { readonly errors: Record<string, string> }
 const zhBundle = bundleZh as unknown as Bundle
 const enBundle = bundleEn as unknown as Bundle
 
-/** The bundle's text for a code; throws instead of asserting on undefined. */
 function codeText(bundle: Bundle, code: string): string {
   const text = bundle.errors[code]
   if (text === undefined) {
@@ -51,8 +43,6 @@ describe('registerPlatformErrors', () => {
   it('registers the bundle and answers a package lookup through the fallback', () => {
     const instance = createPlatformI18n()
     const expected = codeText(enBundle, 'authn.invalid_credentials')
-    // Direct namespace lookup, and the fallback path the host wires: the
-    // welcome fixture carries no errors section.
     expect(instance.t(`platform-errors:errors.authn.invalid_credentials`)).toBe(expected)
     expect(instance.t('welcome:errors.authn.invalid_credentials')).toBe(expected)
   })
@@ -92,7 +82,6 @@ describe('platformErrorResources', () => {
 })
 
 describe('registerPlatformErrors with host-supplied languages', () => {
-  /** A whole-language bundle with the packaged key set and a marker per code. */
   const frResources: Readonly<Record<string, ResourceBundle>> = {
     'fr-FR': {
       errors: Object.fromEntries(
@@ -189,11 +178,6 @@ describe('the bundle contents', () => {
   })
 
   it('never carries a backend content entry', () => {
-    // The red line: these ids exist in the modules' catalogs but no Go
-    // source constructs them, so there is no code for a client to look
-    // them up with -- invitation email copy, a notification template, an
-    // SMS body. A lookup misses visibly (the key renders as itself and
-    // the missing-key handler fires) rather than resolving the content.
     const onMissingKey = vi.fn()
     const instance = createPlatformI18n({ onMissingKey })
     const contentIds = [
@@ -220,11 +204,6 @@ describe('the bundle contents', () => {
   })
 
   it('names the ratelimit refusal without a wait only a Retry-After can supply', () => {
-    // A surface that did not read a Retry-After resolves this leaf without
-    // options, and i18next escapes nothing by default, so a placeholder in
-    // it would reach the reader literally. The seconds sentence belongs to
-    // each surface's own throttle.retryAfter leaf, used only when a wait is
-    // known.
     expect(codeText(enBundle, 'ratelimit.throttled')).not.toMatch(/\{\{.*\}\}/)
     expect(codeText(zhBundle, 'ratelimit.throttled')).not.toMatch(/\{\{.*\}\}/)
   })

@@ -1,10 +1,3 @@
-/**
- * The error-code text convention: a listed code resolves to its own
- * leaf under the errors section, anything unlisted to the shared
- * unknown fallback, and the resolver is bound to the passed translation
- * function and whitelist alone.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import {
   CLIENT_TRANSPORT_ERROR_CODES,
@@ -42,7 +35,6 @@ describe('createErrorTextResolver', () => {
   })
 })
 
-/** A translation function that records the key and options it receives. */
 function recordingTranslate(): {
   t: (key: string, options?: { readonly status?: string }) => string
   calls: Array<{ key: string; options?: { readonly status?: string } }>

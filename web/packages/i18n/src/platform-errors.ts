@@ -1,36 +1,7 @@
 /**
- * The platform error-copy bundle and its registration.
- *
- * The bundle is the client-side text for the problem codes the backend can
- * write: a refusal's kind is the RFC 9457 problem `type`
- * `urn:speed:<module>:<code>`, and the api-client derives the
- * `<module>.<code>` key this bundle carries from it. The key set is held to
- * that writable set by `tools/check_platform_errors.py`, which derives it
- * from the Go source and runs in `make repo-check`; the legacy codes the web
- * packages still name are the gate's explicit `KEPT` list, not a second
- * hand-maintained catalog. Backend-only content (invitation emails,
- * notification templates, SMS bodies, seed copy) has no problem code to be
- * looked up with and is therefore absent by construction. Keys are the
- * `errors` section the packages' resolvers already navigate, one flat dotted
- * apperr code per leaf (`errors.authn.invalid_credentials`), so
- * `t('errors.' + code)` resolves through i18next's own deepFind without a
- * lookup helper.
- *
- * Isolated in its own subpath so the main entry's export table stays
- * exactly as documented (the ./mui-locale precedent: a consumer that
- * never resolves a backend code never pulls this bundle). A host
- * registers it once at bootstrap and names it as the instance's fallback
- * namespace, which is what lets a code a package's own namespace does
- * not cover resolve to the module catalog's words instead of the raw
- * key:
- *
- *   const i18n = createI18n({ fallbackNamespaces: [PLATFORM_ERRORS_NAMESPACE] })
- *   registerPlatformErrors(i18n)
- *
- * A host whose instance supports a language the package does not ship
- * passes that whole language's bundle as the second argument; the
- * exported `platformErrorResources` is the shipped pair, for a host that
- * overlays it (see `overlayResources`) before registering.
+ * The platform error-copy bundle: `errors.<module>.<code>` leaves held to the
+ * writable set by `tools/check_platform_errors.py`. It ships as the
+ * ./platform-errors subpath, registered once as the fallback namespace.
  */
 
 import type { i18n as I18nInstance } from 'i18next'
@@ -52,7 +23,6 @@ export const platformErrorResources: Readonly<Record<string, ResourceBundle>> = 
   'en-US': enUS as ResourceBundle,
 }
 
-/** A short, deterministic leaf-path listing for a failure message. */
 function listPaths(paths: readonly string[]): string {
   const shown = paths.slice(0, 5).map((path) => `"${path}"`)
   return paths.length <= 5
@@ -60,17 +30,7 @@ function listPaths(paths: readonly string[]): string {
     : `${shown.join(', ')} and ${paths.length - 5} more`
 }
 
-/**
- * Refuse a bundle that does not carry the packaged platform-error key set.
- *
- * A host registering an overlaid `platformErrorResources` (see
- * `overlayResources`) goes through the same lookup table as the package,
- * so a leaf the package drops or a code the host invents would render as a
- * raw key at runtime. The comparison is against the packaged en-US bundle,
- * not another registered language, so an instance whose supported set omit
- * the shipped pair is still checked. `language` only names the bundle in
- * the message.
- */
+/** Refuses a bundle that does not carry the packaged platform-error key set. */
 export function assertPlatformErrorBundleKeySet(
   language: string,
   bundle: ResourceBundle,
@@ -101,21 +61,8 @@ export function assertPlatformErrorBundleKeySet(
 }
 
 /**
- * Register the platform error bundle on the instance.
- *
- * Registration goes through registerNamespace, so the bundle's
- * validation is the package's own: every language present, identical leaf
- * sets, non-empty strings. `extra` supplies whole languages the package
- * does not carry: an instance whose supported set is wider than the
- * shipped pair registers only when every supported language is supplied.
- * An extra bundle must carry the same key set as the packaged bundle: it
- * is compared against the packaged reference directly (so an instance whose
- * supported set omits the packaged pair is still checked), and the
- * registration parity check then enforces the same key set across every
- * registered language. An extra entry for a language the package already
- * carries is refused, because whole-language supply and per-leaf override
- * are different operations (a host changing an existing language's text
- * overlays the exported resources instead).
+ * Registers the platform error bundle on the instance; `extra` supplies whole
+ * languages the package does not carry, each held to the packaged key set.
  */
 export function registerPlatformErrors(
   instance: I18nInstance,
@@ -153,9 +100,6 @@ export function registerPlatformErrors(
         `supported languages [${supported.join(', ')}].`,
     )
   }
-  // A supplied bundle is always compared to the packaged reference, not
-  // only to the other registered languages: an instance whose supported
-  // set omits the packaged pair still needs the whole code table.
   for (const language of extraLanguages) {
     const bundle = extra[language]
     if (bundle === undefined) {
