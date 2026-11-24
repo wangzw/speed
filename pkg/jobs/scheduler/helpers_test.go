@@ -15,12 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// tenantID names a tenant identifier in the cases.
 type tenantID = tenant.ID
 
-// tenantKey is the context key the fake roster marks a tenant with. It stands in
-// for the marking the real roster does, so a fake queue can read back which
-// tenant an enqueue was scoped to.
 type tenantKey struct{}
 
 func tenantOf(ctx context.Context) tenant.ID {
@@ -28,9 +24,6 @@ func tenantOf(ctx context.Context) tenant.ID {
 	return id
 }
 
-// fakeQueue stands in for the queue. It records every accepted enqueue and,
-// like the real queue's (tenant_id, idempotency_key) unique index, converges a
-// repeated (tenant, key) to one job.
 type fakeQueue struct {
 	mu       sync.Mutex
 	accepted []enqueued
@@ -87,7 +80,6 @@ func (q *fakeQueue) acceptedJobs() []enqueued {
 	return append([]enqueued(nil), q.accepted...)
 }
 
-// fakeHandlers stands in for the registration face with a fixed type set.
 type fakeHandlers struct {
 	types []string
 }
@@ -97,8 +89,6 @@ func handlersFor(types ...string) *fakeHandlers { return &fakeHandlers{types: ty
 func (h *fakeHandlers) Register(jobs.Handler) error { return nil }
 func (h *fakeHandlers) Registered() []string        { return append([]string(nil), h.types...) }
 
-// fakeCatalog stands in for the roster: it holds the tenants and marks an active
-// one on the context, refusing a disabled one the way the real roster does.
 type fakeCatalog struct {
 	tenants []tenant.Tenant
 	listErr error
@@ -165,14 +155,10 @@ func (c *fakeCatalog) EnterRegistered(ctx context.Context, id tenant.ID) (contex
 	return context.WithValue(ctx, tenantKey{}, id), nil
 }
 
-// discardLogger is a logger that writes nothing, so a case's output stays clean.
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// waitFor polls cond until it holds, failing the case if it does not within a
-// second. A case that drives start has to wait this way: the ticker runs on its
-// own goroutine.
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(coretest.Scale(time.Second))
@@ -184,8 +170,6 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-// newTestScheduler builds a scheduler over the fakes with a pinned clock, so a
-// case derives a window without waiting for a ticker.
 func newTestScheduler(q jobs.Queue, h jobs.Handlers, c tenant.Catalog, tick time.Duration, now time.Time, schedules ...jobs.Schedule) *scheduler {
 	at := now
 	return &scheduler{
@@ -199,16 +183,10 @@ func newTestScheduler(q jobs.Queue, h jobs.Handlers, c tenant.Catalog, tick time
 	}
 }
 
-// The core modules the descriptor cases drive.
-
-// noConfig is the reader a host supplies when nothing is configured. It decodes
-// nothing, which leaves the module's zero configuration in place — a zero tick,
-// which is the trigger off.
 type noConfig struct{}
 
 func (noConfig) Decode(string, any) error { return nil }
 
-// configWith is a reader that hands the module a fixed tick.
 type configWith struct{ tick time.Duration }
 
 func (c configWith) Decode(_ string, target any) error {
@@ -226,8 +204,6 @@ func providingQueue(q jobs.Queue) core.Module {
 	}
 }
 
-// providingQueueExplicitly delivers the queue and states StateEnabled, so that
-// another exclusive provider stating StateAuto stands down over it.
 func providingQueueExplicitly(q jobs.Queue) core.Module {
 	return core.Module{
 		Name:     "test.queue",
@@ -239,9 +215,6 @@ func providingQueueExplicitly(q jobs.Queue) core.Module {
 	}
 }
 
-// alsoProvidesQueue delivers the queue exclusively without stating a stance, and
-// declares schedules. Paired with providingQueueExplicitly it stands down, which
-// makes it a participant that resolution disables.
 func alsoProvidesQueue(name string, schedules ...jobs.Schedule) core.Module {
 	res := make([]any, 0, len(schedules))
 	for _, s := range schedules {
@@ -271,8 +244,6 @@ func providingCatalog(c tenant.Catalog) core.Module {
 	}
 }
 
-// declaringSchedules is a module that only declares the schedules, which is what
-// a business module does with the periodic work it owns.
 func declaringSchedules(name string, schedules ...jobs.Schedule) core.Module {
 	res := make([]any, 0, len(schedules))
 	for _, s := range schedules {

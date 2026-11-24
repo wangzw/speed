@@ -10,9 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/jobs"
 )
 
-// A job that is enqueued runs: the executor claims it, enters its tenant, hands
-// it to the handler registered for its type and settles it as succeeded, and a
-// succeeded terminal event carries the job's identifier.
+// TestAJobRunsAndSettles checks that an enqueued job runs, settles as succeeded,
+// and publishes its terminal event.
 func TestAJobRunsAndSettles(t *testing.T) {
 	for _, e := range engines {
 		t.Run(e.name, func(t *testing.T) {
@@ -40,8 +39,6 @@ func TestAJobRunsAndSettles(t *testing.T) {
 				if got.attempts != 1 || got.result != "done" || got.claimedBy != "" {
 					t.Errorf("the settled row is %+v, want one attempt, the handler's result and no claim", got)
 				}
-				// The handler ran under the job's own tenant, which the
-				// executor entered from the row.
 				if order := rec.order(); len(order) != 1 || order[0] != "acme" {
 					t.Errorf("the handler ran under the tenants %v, want the job's own", order)
 				}
@@ -60,9 +57,8 @@ func TestAJobRunsAndSettles(t *testing.T) {
 	}
 }
 
-// A job left running by a replica that stopped answering is taken over once its
-// claim runs out: the row is running with an expiry that has passed, and an
-// executor claims it through the same due-ness predicate and runs it.
+// TestALeftoverRunningJobIsTakenOverAfterItsClaimExpires checks that a running
+// row whose claim expired is claimed and run.
 func TestALeftoverRunningJobIsTakenOverAfterItsClaimExpires(t *testing.T) {
 	for _, e := range engines {
 		t.Run(e.name, func(t *testing.T) {
@@ -76,17 +72,12 @@ func TestALeftoverRunningJobIsTakenOverAfterItsClaimExpires(t *testing.T) {
 			}).drive(t, func(_ context.Context, reg *core.Registry) error {
 				q := queueOf(t, reg)
 				acme := tenantCtx(t, reg, "acme")
-				// Due far out, so the executor does not claim it on its own:
-				// this row is the leftover, not a fresh job.
 				id, err := q.Enqueue(acme, jobs.Task{Type: jobType},
 					jobs.WithScheduledAt(time.Now().Add(time.Hour)))
 				if err != nil {
 					t.Errorf("enqueuing the job: %v", err)
 					return errCaseFailed
 				}
-				// What a replica that claimed the job and stopped answering
-				// leaves behind: running, held by a token nobody carries, and
-				// due again because its claim ran out.
 				past := time.Now().Add(-time.Minute).UnixMilli()
 				update(t, reg, "UPDATE jobs SET status = 'running', claimed_by = ?, claim_expires_at = ?, "+
 					"available_at = ? WHERE id = ?", "dead-replica", past, past, string(id))
@@ -109,11 +100,8 @@ func TestALeftoverRunningJobIsTakenOverAfterItsClaimExpires(t *testing.T) {
 	}
 }
 
-// Executors claiming at the same instant take each due job once: a job that is
-// handed to a handler twice while its first claim is still good would be run
-// twice by one process, which no replica failure accounts for. The row's
-// available_at moves to the claim's expiry, so a row another executor has just
-// taken is not due to this one.
+// TestConcurrentExecutorsClaimAJobOnce checks that executors claiming at the same
+// instant take each due job once.
 func TestConcurrentExecutorsClaimAJobOnce(t *testing.T) {
 	for _, e := range engines {
 		t.Run(e.name, func(t *testing.T) {
@@ -128,8 +116,6 @@ func TestConcurrentExecutorsClaimAJobOnce(t *testing.T) {
 			}).drive(t, func(_ context.Context, reg *core.Registry) error {
 				q := queueOf(t, reg)
 				acme := tenantCtx(t, reg, "acme")
-				// All come due at one instant, so every executor's first claim
-				// sees the same set of due jobs.
 				at := time.Now().Add(300 * time.Millisecond)
 				ids := make([]jobs.JobID, 0, 12)
 				for i := 0; i < 12; i++ {
@@ -159,8 +145,8 @@ func TestConcurrentExecutorsClaimAJobOnce(t *testing.T) {
 	}
 }
 
-// A failed job backs off and runs again; one that fails past its retry limit
-// goes to dead_letter and publishes a dead_letter event.
+// TestFailureBacksOffAndThenGoesToDeadLetter checks that a failed job backs off
+// and retries until its retry limit sends it to dead_letter.
 func TestFailureBacksOffAndThenGoesToDeadLetter(t *testing.T) {
 	rec := &recorder{
 		typ:  jobType,
@@ -169,9 +155,7 @@ func TestFailureBacksOffAndThenGoesToDeadLetter(t *testing.T) {
 	events := &sink{}
 	e := engines[0]
 	e.on(t, host{
-		bus: true,
-		// A base far in the future keeps the retried job where it landed, so
-		// the backoff it recorded is observable.
+		bus:   true,
 		jobs:  withJobs(map[string]any{retryBaseItem: "1h", retryMaxItem: "1h"}),
 		extra: []core.Module{consumer(rec), events.module()},
 	}).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -213,15 +197,12 @@ func TestFailureBacksOffAndThenGoesToDeadLetter(t *testing.T) {
 	})
 }
 
-// An execution that runs past the job's own timeout is a failed execution even
-// when its handler reports nothing: the queue settles it as a failure, and the
-// job is retried.
+// TestAnExecutionPastItsTimeoutFails checks that an execution past the job's
+// timeout is settled as a failure.
 func TestAnExecutionPastItsTimeoutFails(t *testing.T) {
 	rec := &recorder{typ: jobType, sleep: 300 * time.Millisecond}
 	e := engines[0]
 	e.on(t, host{
-		// A base far in the future keeps the retried job where it landed, so
-		// the outcome of the timed-out execution is observable.
 		jobs:  withJobs(map[string]any{retryBaseItem: "1h", retryMaxItem: "1h"}),
 		extra: []core.Module{consumer(rec)},
 	}).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -247,8 +228,8 @@ func TestAnExecutionPastItsTimeoutFails(t *testing.T) {
 	})
 }
 
-// The stop stage claims nothing more, and gives back every row an executor
-// still holds, so another executor or the next start may claim them at once.
+// TestStopGivesBackTheRowsAnExecutorHolds checks that the stop stage gives back
+// every row an executor still holds.
 func TestStopGivesBackTheRowsAnExecutorHolds(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
@@ -285,8 +266,6 @@ func TestStopGivesBackTheRowsAnExecutorHolds(t *testing.T) {
 			return errCaseFailed
 		}
 		given := stateOf(t, reg, id)
-		// Due-ness is judged against the database's clock, the one the release
-		// wrote, not the host's.
 		if given.status != string(jobs.StatusPending) || given.available > dbNowMilli(t, reg) {
 			t.Errorf("the given-back row is %+v, want it pending and due at once", given)
 		}
@@ -294,8 +273,8 @@ func TestStopGivesBackTheRowsAnExecutorHolds(t *testing.T) {
 	})
 }
 
-// Claims rotate across tenants: among the jobs that are due at one instant, one
-// tenant's rows do not lead every batch.
+// TestClaimsRotateAcrossTenants checks that claims rotate so one tenant's rows do
+// not lead every batch.
 func TestClaimsRotateAcrossTenants(t *testing.T) {
 	for _, e := range engines {
 		t.Run(e.name, func(t *testing.T) {
@@ -311,8 +290,6 @@ func TestClaimsRotateAcrossTenants(t *testing.T) {
 				q := queueOf(t, reg)
 				alpha := tenantCtx(t, reg, "alpha")
 				beta := tenantCtx(t, reg, "beta")
-				// All four come due at one instant, so the tenant key is what
-				// decides the order among them.
 				at := time.Now().Add(300 * time.Millisecond)
 				for i := 0; i < 3; i++ {
 					if _, err := q.Enqueue(alpha, jobs.Task{Type: jobType, Payload: []byte("alpha")},
@@ -341,8 +318,8 @@ func TestClaimsRotateAcrossTenants(t *testing.T) {
 	}
 }
 
-// With no event bus the terminal events are not published, and the jobs run and
-// settle exactly as they otherwise would.
+// TestJobsRunWithNoEventBus checks that without a bus the jobs still run and
+// settle, with no event published.
 func TestJobsRunWithNoEventBus(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	e := engines[0]
@@ -369,8 +346,8 @@ func TestJobsRunWithNoEventBus(t *testing.T) {
 		})
 }
 
-// A terminal event whose publish obligation is still open is published again by
-// a later round, and the row records the publish once the bus accepted it.
+// TestAnUnpublishedTerminalEventIsPublishedAgain checks that a reopened publish
+// obligation is taken up again by a later round.
 func TestAnUnpublishedTerminalEventIsPublishedAgain(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	events := &sink{}
@@ -391,8 +368,6 @@ func TestAnUnpublishedTerminalEventIsPublishedAgain(t *testing.T) {
 			t.Errorf("the job's terminal event was never published")
 			return errCaseFailed
 		}
-		// Reopen the publish obligation, as a replica that published and then
-		// died before recording it leaves behind.
 		update(t, reg, "UPDATE jobs SET terminal_published_at = NULL WHERE id = ?", string(id))
 		if !eventually(func() bool {
 			return len(events.ofType(SucceededEventType)) >= 2 && stateOf(t, reg, id).published != nil

@@ -27,18 +27,13 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// engine is one database capability this module is exercised on.
 type engine struct {
 	name     string
 	database core.Module
-	// section is the key the engine's input items sit under in the db namespace.
-	section string
-	locate  func(t *testing.T) string
+	section  string
+	locate   func(t *testing.T) string
 }
 
-// engines lists the capabilities this build runs the cases on. PostgreSQL is
-// appended by the tagged file, which is also where its locator lives: without
-// the tag it is not in the list, and no untagged case names it.
 var engines = []engine{
 	{
 		name:     "sqlite",
@@ -48,9 +43,6 @@ var engines = []engine{
 	},
 }
 
-// quickJobs is what the cases run the queue by: the construction values the
-// configuration file carries, and the runtime tunables the harness seeds into a
-// settings store, on a scale a case can wait out.
 func quickJobs() map[string]any {
 	return map[string]any{
 		pollIntervalItem:  "15ms",
@@ -63,15 +55,12 @@ func quickJobs() map[string]any {
 	}
 }
 
-// withJobs overrides one or more items of the quick configuration.
 func withJobs(overrides map[string]any) map[string]any {
 	out := quickJobs()
 	maps.Copy(out, overrides)
 	return out
 }
 
-// constructionSection keeps the items the queue is constructed with, which are
-// the ones the configuration file carries.
 func constructionSection(items map[string]any) map[string]any {
 	out := map[string]any{}
 	for item, value := range items {
@@ -83,8 +72,6 @@ func constructionSection(items map[string]any) map[string]any {
 	return out
 }
 
-// runtimeRows turns the runtime tunables a case names into the rows a settings
-// store holds, keyed by their full paths.
 func runtimeRows(t *testing.T, items map[string]any) map[string]any {
 	t.Helper()
 	rows := map[string]any{}
@@ -108,8 +95,6 @@ func runtimeRows(t *testing.T, items map[string]any) map[string]any {
 	return rows
 }
 
-// deliversSettings reports whether the assembly already supplies a settings
-// store.
 func deliversSettings(modules []core.Module) bool {
 	for _, module := range modules {
 		for _, provision := range module.Provides {
@@ -121,7 +106,6 @@ func deliversSettings(modules []core.Module) bool {
 	return false
 }
 
-// standIn is a module supplying one instance under the given capabilities.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, token := range tokens {
@@ -134,9 +118,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// queueStore is the settings store a case runs the queue against: it holds the
-// runtime values the case named as written rows, so the loop reads them the way
-// it reads a deployment's.
 type queueStore struct {
 	mu     sync.Mutex
 	values map[string]any
@@ -149,8 +130,6 @@ func newQueueStore(values map[string]any) *queueStore {
 	return &queueStore{values: values}
 }
 
-// Get decodes one stored row into the caller's target. A key with no row is
-// ErrUnknownKey, and a row of another type is ErrTypeMismatch.
 func (s *queueStore) Get(_ settings.Layer, key string, target any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -170,8 +149,6 @@ func (s *queueStore) Get(_ settings.Layer, key string, target any) error {
 	return nil
 }
 
-// Set stores the written value, so a case may change a tunable while the queue
-// runs.
 func (s *queueStore) Set(_ context.Context, w settings.Write) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -179,7 +156,6 @@ func (s *queueStore) Set(_ context.Context, w settings.Write) error {
 	return nil
 }
 
-// Delete removes a stored row; a row that is not there is not an error.
 func (s *queueStore) Delete(_ context.Context, _ settings.Layer, key, _ string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -187,12 +163,8 @@ func (s *queueStore) Delete(_ context.Context, _ settings.Layer, key, _ string) 
 	return nil
 }
 
-// List reports nothing: this store is a source of values rather than a
-// surface over them.
 func (s *queueStore) List(context.Context, settings.Layer) ([]settings.Entry, error) { return nil, nil }
 
-// Declared reports nothing for the same reason; a declaration is the module's
-// own schema.
 func (s *queueStore) Declared() []settings.DeclaredItem { return nil }
 
 func (s *queueStore) WrittenAt(settings.Layer, string) (time.Time, bool, error) {
@@ -210,9 +182,6 @@ func (s *queueStore) Read(key string, reads ...settings.LayerRead) ([]settings.L
 	return results, nil
 }
 
-// host is one assembled run of this module: the engine and the database it sits
-// on, whether an event bus takes part, the configuration section of jobs.db,
-// whatever extra modules a case takes in, and the stage the run reaches.
 type host struct {
 	database core.Module
 	section  string
@@ -223,7 +192,6 @@ type host struct {
 	depth    core.Stage
 }
 
-// on builds a host on an engine over a fresh database of that engine's own.
 func (e engine) on(t *testing.T, h host) host {
 	h.database = e.database
 	h.section = e.section
@@ -231,13 +199,6 @@ func (e engine) on(t *testing.T, h host) host {
 	return h
 }
 
-// drive loads the configuration the way a host loads it, drives a registry to
-// the run's depth, and runs action there.
-//
-// A configuration that cannot be loaded fails the case, because that is the
-// case's own mistake. The action reports through t.Errorf and returns an error
-// to end the drive, so the drive still shuts down and the pools it opened are
-// released.
 func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	dir := t.TempDir()
@@ -262,10 +223,6 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 		modules = append(modules, memory.Module())
 	}
 	modules = append(modules, h.extra...)
-	// A run with no settings store of its own gets one holding the runtime
-	// tunables the case names, so the loop reads the values the case wrote
-	// rather than the declared defaults. A run that assembles the real module
-	// gets no stand-in: its cases write the values they want.
 	if !deliversSettings(modules) {
 		modules = append(modules, standIn("stand-in.settings",
 			newQueueStore(runtimeRows(t, h.jobs)), (*settings.Store)(nil)))
@@ -312,12 +269,8 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	}
 }
 
-// errCaseFailed ends a drive whose case has already reported what went wrong.
 var errCaseFailed = errors.New("the case failed")
 
-// consumer is a module standing in for a business module that has jobs to run:
-// it registers the handlers a case gives it in its own Init, so the handler set
-// is fixed before the queue starts.
 func consumer(handlers ...jobs.Handler) core.Module {
 	return core.Module{
 		Name:     "test.consumer",
@@ -338,13 +291,11 @@ func consumer(handlers ...jobs.Handler) core.Module {
 	}
 }
 
-// sink is a subscriber that records the terminal events it receives.
 type sink struct {
 	mu       sync.Mutex
 	received []event.Event
 }
 
-// module subscribes this sink to every terminal event type in its Init.
 func (s *sink) module() core.Module {
 	return core.Module{
 		Name:     "test.sink",
@@ -368,14 +319,12 @@ func (s *sink) module() core.Module {
 	}
 }
 
-// events lists what the sink received.
 func (s *sink) events() []event.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]event.Event(nil), s.received...)
 }
 
-// ofType lists the identifiers of the events of one type the sink received.
 func (s *sink) ofType(typ string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -388,24 +337,15 @@ func (s *sink) ofType(typ string) []string {
 	return out
 }
 
-// recorder is a handler that counts its calls and records the runs, optionally
-// blocking or failing on a call the case steers.
 type recorder struct {
-	typ string
-	mu  sync.Mutex
-	// runs is what each call saw, in order.
-	runs []run
-	// fail reports whether this call fails; nil accepts every call.
-	fail func(call int, job *jobs.Job) error
-	// hold, when set, names the channel each call waits on before it returns,
-	// or until its context ends. A nil channel lets the call through.
-	hold func(call int) <-chan struct{}
-	// sleep, when set, is how long each call takes regardless of its context,
-	// standing in for a handler that does not heed the deadline.
+	typ   string
+	mu    sync.Mutex
+	runs  []run
+	fail  func(call int, job *jobs.Job) error
+	hold  func(call int) <-chan struct{}
 	sleep time.Duration
 }
 
-// run is one recorded execution.
 type run struct {
 	job     jobs.JobID
 	kind    string
@@ -442,14 +382,12 @@ func (r *recorder) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 	return jobs.Result{Data: []byte("done")}, nil
 }
 
-// called is how many times the handler ran.
 func (r *recorder) called() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.runs)
 }
 
-// callsOf is how many times one job's handler ran.
 func (r *recorder) callsOf(id jobs.JobID) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -462,7 +400,6 @@ func (r *recorder) callsOf(id jobs.JobID) int {
 	return n
 }
 
-// payloads lists the payloads of the runs, in execution order.
 func (r *recorder) payloads() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -473,7 +410,6 @@ func (r *recorder) payloads() []string {
 	return out
 }
 
-// order lists the tenants of the runs, in execution order.
 func (r *recorder) order() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -484,8 +420,6 @@ func (r *recorder) order() []string {
 	return out
 }
 
-// tenantCtx registers a tenant in the roster and returns a context that
-// belongs to it.
 func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	t.Helper()
 	cam, err := core.Resolve[tenant.Catalog](reg)
@@ -504,7 +438,6 @@ func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	return ctx
 }
 
-// queueOf resolves the queue face.
 func queueOf(t *testing.T, reg *core.Registry) jobs.Queue {
 	t.Helper()
 	q, err := core.Resolve[jobs.Queue](reg)
@@ -514,8 +447,6 @@ func queueOf(t *testing.T, reg *core.Registry) jobs.Queue {
 	return q
 }
 
-// productOf resolves the module's own product, for a case that drives the stop
-// stage itself.
 func product(t *testing.T, reg *core.Registry) *queue {
 	t.Helper()
 	q, err := core.Resolve[jobs.Queue](reg)
@@ -529,7 +460,6 @@ func product(t *testing.T, reg *core.Registry) *queue {
 	return typed
 }
 
-// state is what a job row holds, read directly.
 type state struct {
 	status    string
 	attempts  int
@@ -541,7 +471,6 @@ type state struct {
 	cancel    bool
 }
 
-// stateOf reads one job row past every filter.
 func stateOf(t *testing.T, reg *core.Registry, id jobs.JobID) state {
 	t.Helper()
 	database, err := core.Resolve[db.Database](reg)
@@ -578,7 +507,6 @@ func stateOf(t *testing.T, reg *core.Registry, id jobs.JobID) state {
 	return out
 }
 
-// rowCount is how many rows the jobs table holds.
 func rowCount(t *testing.T, reg *core.Registry) int64 {
 	t.Helper()
 	database, err := core.Resolve[db.Database](reg)
@@ -593,9 +521,6 @@ func rowCount(t *testing.T, reg *core.Registry) int64 {
 	return n
 }
 
-// dbNowMilli reads the database's own clock, the one the claim judges due-ness
-// by, so a case can write a row that is due against it rather than against the
-// host clock the engine may trail by a millisecond.
 func dbNowMilli(t *testing.T, reg *core.Registry) int64 {
 	t.Helper()
 	database, err := core.Resolve[db.Database](reg)
@@ -609,8 +534,6 @@ func dbNowMilli(t *testing.T, reg *core.Registry) int64 {
 	return now
 }
 
-// update runs one raw statement against the jobs table, for a case steering a
-// row directly.
 func update(t *testing.T, reg *core.Registry, statement string, args ...any) {
 	t.Helper()
 	database, err := core.Resolve[db.Database](reg)
@@ -622,10 +545,8 @@ func update(t *testing.T, reg *core.Registry, statement string, args ...any) {
 	}
 }
 
-// settle bounds how long a case waits for the queue to reach a state.
 const settle = 10 * time.Second
 
-// eventually polls cond until it holds or the settle bound runs out.
 func eventually(cond func() bool) bool {
 	deadline := time.Now().Add(settle)
 	for time.Now().Before(deadline) {

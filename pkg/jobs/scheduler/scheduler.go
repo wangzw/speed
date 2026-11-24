@@ -1,26 +1,7 @@
 // Package scheduler is the periodic-trigger module, registered as
 // jobs.scheduler. It reads the periodic declarations business modules place in
-// their own resources and, on every window start, enqueues one job per window
-// per tenant, so that one run of the platform enqueues exactly one job per
-// window however many replicas are running.
-//
-// It only ticks and enqueues; it does not execute jobs. Claiming, executing,
-// the lease, backoff and dead-lettering belong to jobs.db. This module knows no
-// job type: a Schedule's Type is a string another module defines, and it is
-// handed to Queue.Enqueue unchanged.
-//
-// It has no table of its own. The window idempotency key lands on the job row's
-// idempotency_key, and "one enqueue per window" is given by the queue's
-// (tenant_id, idempotency_key) uniqueness: a repeated enqueue of one window
-// returns the existing job's identifier rather than writing a second row. No
-// leader election and no distributed lock is involved — every replica runs its
-// own ticker and the window key converges their enqueues.
-//
-// It does not run per-replica loops. A loop that each replica runs for itself —
-// refreshing an in-process snapshot, sweeping expired rows, rotating a file,
-// polling an external state — belongs to the module that needs it, as its own
-// ticker. This module carries only the triggers whose effect must converge
-// across replicas.
+// their resources and, on every window start, enqueues one job per window per
+// tenant.
 package scheduler
 
 import (
@@ -40,47 +21,29 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command that drives the periodic triggers.
+// ModuleName is this module's name in the registry.
 const ModuleName = "jobs.scheduler"
 
 // ConfigNamespace is where this module's input items are mounted, which is the
 // module name.
 const ConfigNamespace = ModuleName
 
-// The sentinels a caller decides on with errors.Is.
 var (
-	// ErrInvalidSchedule reports a periodic declaration whose shape is not
-	// valid: an empty Key, an empty Type, or a non-positive Interval. New
-	// refuses to build the module and names the declaration.
+	// ErrInvalidSchedule reports a periodic declaration whose shape is not valid:
+	// an empty Key, an empty Type, or a non-positive Interval.
 	ErrInvalidSchedule = errors.New("jobs.scheduler: a schedule declaration is not a valid shape")
 	// ErrDuplicateSchedule reports two declarations in force that share a Key.
-	// Within one window and one tenant they would derive the same idempotency
-	// key, so one job would swallow the other. New refuses to build the module
-	// and names both.
 	ErrDuplicateSchedule = errors.New("jobs.scheduler: two schedule declarations share a key")
 	// ErrMissingHandler reports a declaration whose Type has no registered
-	// handler. Start refuses to start and names the declaration.
+	// handler.
 	ErrMissingHandler = errors.New("jobs.scheduler: a schedule's type has no registered handler")
 )
 
-// init registers this module with the process registry. Importing the package
-// is what puts the periodic trigger in a binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// It delivers no capability: it is a member of the assembly that drives a
-// ticker, taken up only by being named in a command, and it appears in no
-// core.Resolve[T] call site. The queue and the registration face are required
-// and hard — this module enqueues through the one and validates its declaration
-// types through the other — and the tenant roster is required too, because
-// every declaration is expanded per the tenants the roster holds. The logging
-// capability is optional: this module's records are its own diagnostics, and a
-// host with no logging still gets a working trigger whose failures reach the
-// process default logger. The configuration reader is not declared here; the
-// host supplies it before the drive begins, the way every module that reads its
-// own section takes it up.
+// Module is the descriptor a host registers. It delivers no capability; the
+// queue, the registration face and the tenant roster are required, and the
+// logger is optional.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -92,9 +55,6 @@ func Module() core.Module {
 		},
 		Resources: []any{schema()},
 
-		// Prepare decodes this module's own configuration. A tick at or below
-		// zero is a host turning the trigger off, which is a legal
-		// configuration rather than a failure.
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)
 			if err != nil {
@@ -106,17 +66,10 @@ func Module() core.Module {
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 
-		// New takes up what the descriptor requires and freezes the set of
-		// declarations this run will tick. The declarations are collected, and
-		// filtered by the participating set, once: they are fixed at
-		// registration time and do not change for the life of the process.
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newScheduler(reg)
 		},
 
-		// Start checks that every declaration's type has a registered handler,
-		// then starts the ticker. It fails the startup when a type is missing,
-		// rather than letting a window go by with no handler to run it.
 		Start: func(ctx context.Context, _ *core.Registry, instance any) error {
 			s, ok := productOf(instance)
 			if !ok {
@@ -136,15 +89,10 @@ func Module() core.Module {
 			return nil
 		},
 
-		// Nothing to release: this module holds no table, no handle and no
-		// other resource. The ticker is stopped by Stop.
 		Close: func(_ context.Context, _ *core.Registry, _ any) error { return nil },
 	}
 }
 
-// scheduler is the module's product. Its declaration set and its dependencies
-// are read-only once New has built it, so the tick goroutine shares no mutable
-// state between ticks.
 type scheduler struct {
 	queue     jobs.Queue
 	handlers  jobs.Handlers
@@ -153,30 +101,17 @@ type scheduler struct {
 	tick      time.Duration
 	schedules []jobs.Schedule
 
-	// now reads the current time. It is time.Now in production and is replaced
-	// in a case that has to pin a window.
 	now func() time.Time
 
-	// cancel and done hold the running ticker's stop mechanism. They are nil
-	// while the ticker is off: before Start, after Stop, and whenever the
-	// configured tick is at or below zero.
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
-// productOf narrows an instance to this module's product. An instance of
-// another shape is one the host supplied for this module, such as a stand-in
-// built for a case, and the callbacks leave it alone.
 func productOf(instance any) (*scheduler, bool) {
 	s, ok := instance.(*scheduler)
 	return s, ok && s != nil
 }
 
-// readerOf takes up the configuration reader.
-//
-// A reader that is not there means the host never supplied one as the instance
-// of the config module, which is the host's omission rather than something to
-// read as "nothing was configured".
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -185,8 +120,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// newScheduler takes up what the descriptor requires, collects the
-// declarations this run will tick, and assembles the product.
 func newScheduler(reg *core.Registry) (*scheduler, error) {
 	reader, err := readerOf(reg)
 	if err != nil {
@@ -225,12 +158,6 @@ func newScheduler(reg *core.Registry) (*scheduler, error) {
 	return s, nil
 }
 
-// takeLogger picks up the logging capability if the assembly has one.
-//
-// It is optional on purpose: this module's records are its own diagnostics — an
-// enqueue that failed, a roster read that failed — and a host that never
-// assembled logging still gets a working trigger whose records reach the
-// process default logger.
 func (s *scheduler) takeLogger(reg *core.Registry) {
 	delivered, err := core.Resolve[log.Logger](reg)
 	if err != nil {
@@ -239,18 +166,6 @@ func (s *scheduler) takeLogger(reg *core.Registry) {
 	s.logger = delivered.Named(ModuleName)
 }
 
-// collectSchedules gathers every schedule declaration in reach and freezes it
-// into the set this run ticks, refusing the declarations that cannot be
-// honoured.
-//
-// The set is filtered by the participating set once. core.Resources walks every
-// registered module and filters nothing — core interprets no resource and so
-// cannot know which set this one is drawn from — so the filter is this module's
-// own. A declaration describes work to do, and its effect depends on the
-// declaring module being driven and its handler being registered: a module that
-// was only named statically is not built, has no handler, and its declaration
-// must not fire. A module the host put every declaration in force for is
-// collected as though it were running.
 func collectSchedules(reg *core.Registry) ([]jobs.Schedule, error) {
 	declared := core.Resources[jobs.Schedule](reg)
 	out := make([]jobs.Schedule, 0, len(declared))
@@ -274,13 +189,6 @@ func collectSchedules(reg *core.Registry) ([]jobs.Schedule, error) {
 	return out, nil
 }
 
-// inForce reports whether a module's declarations are within reach of this
-// consumption point, whose domain is the participating set.
-//
-// The host's override comes first: a module it took in with every declaration
-// in force is collected whether or not it runs. Otherwise the module has to be
-// participating, and a participant resolution stood down over an exclusive
-// claim is the assembly's own denial of it, so its declarations drop out.
 func inForce(reg *core.Registry, module string) bool {
 	if reg.AllResourcesInForce(module) {
 		return true
@@ -294,8 +202,6 @@ func inForce(reg *core.Registry, module string) bool {
 	return true
 }
 
-// validate refuses a declaration whose shape cannot be honoured, naming the
-// module that declared it.
 func validate(s jobs.Schedule, module string) error {
 	switch {
 	case s.Key == "":
@@ -309,10 +215,6 @@ func validate(s jobs.Schedule, module string) error {
 	return nil
 }
 
-// checkHandlers reports the first enabled declaration whose Type has no
-// registered handler. The handler set is fixed before the queue starts, and a
-// declaration whose type nobody runs would go by silently every window, so the
-// startup fails with the declaration named.
 func (s *scheduler) checkHandlers() error {
 	registered := make(map[string]struct{})
 	for _, t := range s.handlers.Registered() {
@@ -327,12 +229,9 @@ func (s *scheduler) checkHandlers() error {
 	return nil
 }
 
-// start begins the ticker, unless the configured tick is at or below zero.
-//
-// The ticker carries the values of this stage's context but not its
-// cancellation: it runs until this module's own stop. A tick at or below zero
-// turns the ticker off — no window is ever enqueued, and the process does not
-// report the periodic declarations as failing, it simply does not drive them.
+// start begins the ticker, unless the configured tick is at or below zero. The
+// ticker carries this stage's context values but not its cancellation, so it
+// runs until this module's own stop.
 func (s *scheduler) start(ctx context.Context) {
 	if s.tick <= 0 {
 		return
@@ -342,11 +241,9 @@ func (s *scheduler) start(ctx context.Context) {
 	s.cancel, s.done = cancel, done
 	go func() {
 		defer close(done)
-		// The first tick runs at once rather than after one interval, and it
-		// covers the window the process started in as well. That window's start
-		// can lie up to one interval before now, further back than the backscan
-		// reaches, so a later tick could only pick it up once the next window
-		// begins.
+		// The first tick covers the window the process started in as well: that
+		// window's start can lie up to one interval before now, beyond the
+		// backscan a later tick reaches.
 		s.tickOnce(ctx, true)
 		ticker := time.NewTicker(s.tick)
 		defer ticker.Stop()
@@ -361,13 +258,8 @@ func (s *scheduler) start(ctx context.Context) {
 	}()
 }
 
-// stop cancels the ticker and waits for its goroutine to return.
-//
-// The wait is what keeps the trigger from outliving Stop: the queue this module
-// enqueues through stops after it does, so a tick left running would enqueue
-// after this module had stopped, into a queue that is about to go down.
-// Waiting keeps no enqueue in flight once Stop has returned, and no window past
-// it. The wait is as long as that tick takes to finish.
+// stop cancels the ticker and waits for its goroutine, so no enqueue is in
+// flight once Stop returns.
 func (s *scheduler) stop() {
 	if !s.running() {
 		return
@@ -377,20 +269,8 @@ func (s *scheduler) stop() {
 	s.cancel, s.done = nil, nil
 }
 
-// running reports whether the ticker is up. It is false before Start, after
-// Stop, and whenever the configured tick is at or below zero.
 func (s *scheduler) running() bool { return s.cancel != nil }
 
-// tickOnce runs one tick: for every frozen declaration, enqueue one job for
-// every window whose start has fallen since the previous tick, for every tenant
-// in the roster.
-//
-// startup marks the tick Start runs, which covers the window now falls in on
-// top of that backscan. Every later tick reaches back one tick alone.
-//
-// It reads the roster once. A roster read that fails leaves this round
-// unexpanded and is retried on the next tick; the failure is one replica's to
-// retry, not a condition to record against any declaration.
 func (s *scheduler) tickOnce(ctx context.Context, startup bool) {
 	if len(s.schedules) == 0 {
 		return
@@ -407,29 +287,14 @@ func (s *scheduler) tickOnce(ctx context.Context, startup bool) {
 	}
 }
 
-// enqueueSchedule enqueues one job per (window, tenant) pair for one
-// declaration.
-//
-// The windows are those whose start falls in (now - tick, now]: the backscan
-// reaches back exactly one tick, so the set is derived from the current instant,
-// the tick and the interval alone, and every replica derives the same set
-// without reading any record of what was already scheduled. A tick denser than
-// the interval re-derives the same window start and the same key, which the
-// queue converges to one job; a tick sparser than the interval crosses several
-// windows and enqueues each of them.
-//
-// The tick Start runs covers the window now falls in as well, whatever the
-// interval: that window's start can lie up to one interval before now, and an
-// interval longer than the tick would otherwise leave it out until the next
-// window began. The window key makes the extra coverage idempotent, so a window
-// another replica has already enqueued is not run twice. It reaches back no
-// further than that one window — a window a process crossed while stopped is
-// not enqueued.
+// enqueueSchedule enqueues one job per (window, tenant) pair for the windows
+// whose start falls in (now - tick, now]; the first tick also covers the window
+// now falls in. Every replica derives the same windows and keys from the instant,
+// the tick and the interval alone, so the queue's key uniqueness converges their
+// enqueues to one job.
 func (s *scheduler) enqueueSchedule(ctx context.Context, now time.Time, tenants []tenant.Tenant, sched jobs.Schedule, startup bool) {
 	start := windowStart(now, sched.Interval)
 	lower := now.Add(-s.tick)
-	// The lower bound is exclusive, so admitting a window whose start sits at
-	// or before it takes a bound just ahead of that start.
 	if startup && !start.After(lower) {
 		lower = start.Add(-time.Nanosecond)
 	}
@@ -441,17 +306,9 @@ func (s *scheduler) enqueueSchedule(ctx context.Context, now time.Time, tenants 
 	}
 }
 
-// enqueueOne enters one tenant and enqueues one job for one window.
-//
-// Each enqueue is independent: a tenant that cannot be entered, or an enqueue
-// the queue refuses, is logged and skipped, and the round carries on with the
-// next pair. The next tick derives the same window start and the same key, so a
-// window whose enqueue failed is retried for as long as the ticker runs.
 func (s *scheduler) enqueueOne(ctx context.Context, t tenant.Tenant, sched jobs.Schedule, window time.Time, key string) {
 	tctx, err := s.catalog.Enter(ctx, t.ID)
 	if err != nil {
-		// A disabled tenant is skipped for this window; the error is that
-		// tenant's own answer, not a failure of the round.
 		s.logger.Warn("jobs.scheduler: entering a tenant failed; that tenant's window is skipped",
 			"tenant", string(t.ID), "schedule", sched.Key, "window", window, "error", err)
 		return
@@ -466,11 +323,9 @@ func (s *scheduler) enqueueOne(ctx context.Context, t tenant.Tenant, sched jobs.
 	}
 }
 
-// windowStart is the start of the window now falls in, for a declaration of the
-// given interval: the largest multiple of the interval, measured from the Unix
-// epoch, that is not after now. Windows are aligned to absolute multiples so
-// that every replica derives the same window start from the same instant, which
-// is what makes their idempotency keys agree.
+// windowStart is the start of the window now falls in: the largest multiple of
+// the interval from the Unix epoch that is not after now, so every replica
+// derives the same start from the same instant.
 func windowStart(now time.Time, interval time.Duration) time.Time {
 	unit := interval.Nanoseconds()
 	aligned := now.UnixNano() - floorMod(now.UnixNano(), unit)
@@ -478,17 +333,16 @@ func windowStart(now time.Time, interval time.Duration) time.Time {
 }
 
 // windowKey is the idempotency key of one declaration's window: the SHA-256 of
-// the declaration key and the window start, hex-encoded. It does not carry the
-// tenant, so every tenant's job in one window shares one key while each becomes
-// its own row under the queue's (tenant_id, idempotency_key) uniqueness.
+// the declaration key and the window start. It carries no tenant, so each
+// tenant's job in one window becomes its own row under the queue's
+// (tenant_id, idempotency_key) uniqueness.
 func windowKey(scheduleKey string, window time.Time) string {
 	sum := sha256.Sum256([]byte(scheduleKey + strconv.FormatInt(window.UnixNano(), 10)))
 	return hex.EncodeToString(sum[:])
 }
 
-// floorMod returns n modulo unit in [0, unit), which is the remainder a floor
-// division leaves. Go's % truncates toward zero, so a negative n would give a
-// non-positive remainder and the alignment would round the wrong way.
+// floorMod returns n modulo unit in [0, unit); Go's % truncates toward zero, so a
+// negative n would otherwise round the alignment the wrong way.
 func floorMod(n, unit int64) int64 {
 	if unit == 0 {
 		return 0
