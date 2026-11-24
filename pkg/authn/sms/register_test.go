@@ -7,12 +7,7 @@ import (
 	"time"
 )
 
-// TestConsumePassesOnceAndRefusesTheSecondSubmit pins the one-winner gate at the
-// layer that decides it: the conditional consume of a live row succeeds once and
-// returns false the second time, which is what makes two correct submits of one
-// challenge have exactly one winner. The concurrent-submit case does not pin
-// this: with the increment gate ahead of it, its submits are serialized so the
-// consume gate never gets to decide there.
+// TestConsumePassesOnceAndRefusesTheSecondSubmit checks that Consume passes once and refuses the second submit.
 func TestConsumePassesOnceAndRefusesTheSecondSubmit(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -35,9 +30,7 @@ func TestConsumePassesOnceAndRefusesTheSecondSubmit(t *testing.T) {
 	}
 }
 
-// TestAResendLeavesASpentRowsConsumedAtUnchanged holds the void's column guard:
-// the void matches only rows whose consumed_at is still empty, so a resend does
-// not overwrite the consumed_at of a row already consumed or voided.
+// TestAResendLeavesASpentRowsConsumedAtUnchanged checks that a resend leaves a spent row's consumed-at unchanged.
 func TestAResendLeavesASpentRowsConsumedAtUnchanged(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -67,9 +60,7 @@ func TestAResendLeavesASpentRowsConsumedAtUnchanged(t *testing.T) {
 	}
 }
 
-// TestIncrementLeavesASpentRowAlone holds the increment's column guard: a row
-// whose consumed_at is set is not counted, so a submit against a spent row does
-// not advance its attempts.
+// TestIncrementLeavesASpentRowAlone checks that Increment leaves a spent row alone.
 func TestIncrementLeavesASpentRowAlone(t *testing.T) {
 	r := newRigSQLite(t)
 	at := base.Add(-time.Minute)

@@ -10,11 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// The setting keys the new budget dimensions are read under. They are written as
-// paths here rather than through the package constants so that the behaviour
-// cases can be compiled against the module before the settings are declared;
-// after the declaration the two spellings must agree, which
-// TestTheNewBudgetKeysMatchTheReaderPaths holds.
 const (
 	perSourceAttemptHourlyPathLiteral  = "authn.sms.per-source-attempt-hourly"
 	perSourceDistinctHourlyPathLiteral = "authn.sms.per-source-distinct-hourly"
@@ -24,9 +19,7 @@ const (
 	globalAttemptResetPathLiteral      = "authn.sms.global-attempt-hourly-reset"
 )
 
-// TestTheRetunedSMSBudgetDefaultsAreWhatSettingsReport holds the values the
-// redesign moves the existing budgets to. Every one is read through the reader,
-// so a default that a settings store cannot serve fails the case.
+// TestTheRetunedSMSBudgetDefaultsAreWhatSettingsReport checks that the retuned budget defaults are what the settings report.
 func TestTheRetunedSMSBudgetDefaultsAreWhatSettingsReport(t *testing.T) {
 	r := newReader(nil, (&logBuffer{}).logger())
 	if got := r.resendInterval(); got != 30*time.Second {
@@ -62,12 +55,7 @@ func TestTheRetunedSMSBudgetDefaultsAreWhatSettingsReport(t *testing.T) {
 	}
 }
 
-// TestTheAttemptBudgetRefusesAfterFailedRefundedSends holds the attempt
-// dimension: every send that reaches the carrier and is definitively refused
-// refunds its send budget, so the send budgets never fill; the attempt budget
-// counts the failed refunded rows and refuses the next attempt. The source's raw
-// send budget and its distinct-destination budget are lifted, so the attempt
-// dimension is the only one that can refuse.
+// TestTheAttemptBudgetRefusesAfterFailedRefundedSends checks that the attempt budget refuses after failed refunded sends.
 func TestTheAttemptBudgetRefusesAfterFailedRefundedSends(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -80,8 +68,6 @@ func TestTheAttemptBudgetRefusesAfterFailedRefundedSends(t *testing.T) {
 		if _, err := r.sendFrom(source, fmt.Sprintf("+86138006%05d", i)); err != nil {
 			t.Fatalf("send %d: %v", i, err)
 		}
-		// The carrier definitively refuses the send, so the send budgets are
-		// given back and only the attempt stays counted.
 		r.deliverQueued(t, sms.ErrRejected)
 		r.clock.advance(31 * time.Second)
 	}
@@ -89,17 +75,12 @@ func TestTheAttemptBudgetRefusesAfterFailedRefundedSends(t *testing.T) {
 	if !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("the send after the attempt budget returned %v, want ErrThrottled", err)
 	}
-	// The sends really were refunded: a source that has spent no attempt budget
-	// still sends.
 	if _, err := r.sendFrom("203.0.113.31", "+8613800699998"); err != nil {
 		t.Fatalf("a send from another source was refused: %v", err)
 	}
 }
 
-// TestASuccessfulSendDoesNotSpendTheAttemptBudget holds the other side of the
-// attempt dimension: it counts the sends a failure refunded, not every send. A
-// source whose sends go out stays below its attempt limit however many it makes,
-// while a send the carrier refuses and refunds spends it.
+// TestASuccessfulSendDoesNotSpendTheAttemptBudget checks that a successful send does not spend the attempt budget.
 func TestASuccessfulSendDoesNotSpendTheAttemptBudget(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -115,8 +96,6 @@ func TestASuccessfulSendDoesNotSpendTheAttemptBudget(t *testing.T) {
 		r.deliverQueued(t, nil)
 		r.clock.advance(31 * time.Second)
 	}
-	// A send the carrier refuses is admitted, then refunded, and it is the one
-	// that spends the attempt budget.
 	if _, err := r.sendFrom(source, "+8613800999990"); err != nil {
 		t.Fatalf("the failing send was refused before it spent the attempt budget: %v", err)
 	}
@@ -127,10 +106,7 @@ func TestASuccessfulSendDoesNotSpendTheAttemptBudget(t *testing.T) {
 	}
 }
 
-// TestTheGlobalAttemptBudgetCountsOnlyFailedSends holds the same rule on the
-// deployment-wide attempt dimension: a purpose's successful sends do not spend
-// its attempt budget, a failed refunded send does, and another purpose keeps its
-// own budget.
+// TestTheGlobalAttemptBudgetCountsOnlyFailedSends checks that the global attempt budget counts only failed sends.
 func TestTheGlobalAttemptBudgetCountsOnlyFailedSends(t *testing.T) {
 	r := newResetRig(t)
 	r.allow()
@@ -145,7 +121,6 @@ func TestTheGlobalAttemptBudgetCountsOnlyFailedSends(t *testing.T) {
 		r.deliverQueued(t, nil)
 		r.clock.advance(31 * time.Second)
 	}
-	// The failing login send is admitted and refunded; it fills the budget.
 	if _, err := r.loginTo("+8613801099990"); err != nil {
 		t.Fatalf("the failing login send was refused before it spent the attempt budget: %v", err)
 	}
@@ -154,16 +129,12 @@ func TestTheGlobalAttemptBudgetCountsOnlyFailedSends(t *testing.T) {
 	if _, err := r.loginTo("+8613801099991"); !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("the login send after a failed and refunded one returned %v, want ErrThrottled", err)
 	}
-	// The reset purpose's attempt budget is its own.
 	if _, err := r.resetTo("+8613801088888"); err != nil {
 		t.Fatalf("a reset send was refused by the login attempt budget: %v", err)
 	}
 }
 
-// TestTheDistinctDestinationBudgetRefusesAChangingSource holds the
-// distinct-destination dimension: a source that keeps sending to a new number
-// reaches the distinct limit long before its raw send budget, and the next new
-// number is refused. Another source has its own distinct window.
+// TestTheDistinctDestinationBudgetRefusesAChangingSource checks that the distinct destination budget refuses a source cycling numbers.
 func TestTheDistinctDestinationBudgetRefusesAChangingSource(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -178,8 +149,6 @@ func TestTheDistinctDestinationBudgetRefusesAChangingSource(t *testing.T) {
 		}
 		r.clock.advance(31 * time.Second)
 	}
-	// The source's raw hourly budget is far from its limit, so the distinct
-	// dimension is what refuses the third number.
 	if _, err := r.sendFrom(source, "+8613800799999"); !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("a third number from one source returned %v, want ErrThrottled (the distinct budget)", err)
 	}
@@ -188,9 +157,7 @@ func TestTheDistinctDestinationBudgetRefusesAChangingSource(t *testing.T) {
 	}
 }
 
-// TestTheGlobalAttemptBudgetIsPerPurpose holds the deployment-wide attempt
-// dimension: a purpose's attempts that all failed and were refunded still fill
-// its attempt budget, while another purpose keeps its own.
+// TestTheGlobalAttemptBudgetIsPerPurpose checks that the global attempt budget is per purpose.
 func TestTheGlobalAttemptBudgetIsPerPurpose(t *testing.T) {
 	r := newResetRig(t)
 	r.allow()
@@ -208,7 +175,6 @@ func TestTheGlobalAttemptBudgetIsPerPurpose(t *testing.T) {
 	if _, err := r.loginTo("+8613800899999"); !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("the login send after the attempt budget returned %v, want ErrThrottled", err)
 	}
-	// The reset purpose's attempt budget is its own.
 	if _, err := r.resetTo("+8613800888888"); err != nil {
 		t.Fatalf("a reset send was refused by the login attempt budget: %v", err)
 	}

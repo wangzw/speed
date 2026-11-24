@@ -14,9 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestTheWorkerRecordsEachCarrierOutcome holds the carrier classification: the
-// four sentinels a carrier returns map to their outcome, and a success maps to
-// sent.
+// TestTheWorkerRecordsEachCarrierOutcome checks that the worker records each carrier outcome.
 func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -41,11 +39,7 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 	}
 }
 
-// TestEachCarrierCallWritesOneLineWithoutSecrets holds the external-send log
-// rule on the carrier path: an accepted send writes one Info line carrying the
-// outcome, the duration and the carrier's identifier, a refused send writes one
-// Warn line carrying the outcome, the cause, the duration and the identifier,
-// and neither line carries the number or the code.
+// TestEachCarrierCallWritesOneLineWithoutSecrets checks that each carrier call writes one line without secrets.
 func TestEachCarrierCallWritesOneLineWithoutSecrets(t *testing.T) {
 	const code = "654321"
 	cases := []struct {
@@ -84,9 +78,7 @@ func TestEachCarrierCallWritesOneLineWithoutSecrets(t *testing.T) {
 	}
 }
 
-// TestACarrierErrorOutsideTheClosedSetIsUncertain holds the defect direction: an
-// error that is none of the four sentinels is read as uncertain, never as a
-// delivery and never as a retry.
+// TestACarrierErrorOutsideTheClosedSetIsUncertain checks that a carrier error outside the closed set is uncertain.
 func TestACarrierErrorOutsideTheClosedSetIsUncertain(t *testing.T) {
 	r := newRigSQLite(t)
 	r.sender.setResult(errors.New("a carrier defect"))
@@ -99,24 +91,20 @@ func TestACarrierErrorOutsideTheClosedSetIsUncertain(t *testing.T) {
 	}
 }
 
-// TestEveryOutcomeIsRecorded holds the closed set of the outcome attribute: each
-// value is reachable from a real path, so a dashboard's set is the whole set.
+// TestEveryOutcomeIsRecorded checks that every outcome is recorded.
 func TestEveryOutcomeIsRecorded(t *testing.T) {
 	r := newRigSQLite(t)
 	ctx := context.Background()
 
-	// unsupported-region: the allowed table is empty.
 	if _, err := r.sendLogin(); !errors.Is(err, authn.ErrUnsupportedRegion) {
 		t.Fatalf("the empty-table send returned %v", err)
 	}
 	r.allow()
 
-	// suppressed: Deliver false.
 	if _, err := r.p.Send(ctx, authn.SendCode{Purpose: authn.SMSPurposeLogin, Phone: phone, Deliver: false}); err != nil {
 		t.Fatalf("the suppressed send returned %v", err)
 	}
 
-	// dropped: the queue is full.
 	for range cap(r.p.pool.queue) {
 		r.p.pool.queue <- sms.Resolved{To: phone}
 	}
@@ -126,22 +114,15 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 	for len(r.p.pool.queue) > 0 {
 		<-r.p.pool.queue
 	}
-	// Move on so the rows written above are past every counting window.
 	r.clock.advance(2 * time.Hour)
 
-	// not-sendable: the registry holds a template it will not send a message
-	// under, so the request path resolves a message and the registry refuses it.
 	r.registry.setResolveErr(sms.ErrNotSendable)
 	if _, err := r.loginTo("+8613800138012"); err != nil {
 		t.Fatalf("a not-sendable send returned %v", err)
 	}
 	r.registry.setResolveErr(nil)
-	// That send wrote a login row; move past the window so it is not what the
-	// budget block below counts.
 	r.clock.advance(2 * time.Hour)
 
-	// budget-exhausted: the global login budget is spent. A second number is used
-	// so the per-number budgets are not what refuses.
 	r.store.set(globalLoginPath, 1)
 	if _, err := r.loginTo("+8613800138009"); err != nil {
 		t.Fatalf("the first budgeted send returned %v", err)
@@ -150,7 +131,6 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 		t.Fatalf("the budget-exhausted send returned %v", err)
 	}
 
-	// The five carrier outcomes, driven directly.
 	for _, res := range []error{nil, sms.ErrUncertain, sms.ErrThrottled, sms.ErrRejected, sms.ErrUnroutable} {
 		r.sender.setResult(res)
 		r.p.deliverOne(ctx, sms.Resolved{To: phone})
@@ -167,8 +147,7 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 	}
 }
 
-// TestTheWorkersDrainQueuedMessagesOffTheRequestPath holds the pool: a started
-// pool sends what Send queued, without the request waiting for the carrier.
+// TestTheWorkersDrainQueuedMessagesOffTheRequestPath checks that workers drain queued messages off the request path.
 func TestTheWorkersDrainQueuedMessagesOffTheRequestPath(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -196,9 +175,7 @@ func TestTheWorkersDrainQueuedMessagesOffTheRequestPath(t *testing.T) {
 	}
 }
 
-// TestStoppingAnUnstartedPoolReturnsAtOnce holds the guard: a product whose pool
-// was never started stops cleanly and promptly, so a module whose Start failed
-// (a missing table or root key) still stops without a stall or a spurious error.
+// TestStoppingAnUnstartedPoolReturnsAtOnce checks that stopping an unstarted pool returns at once.
 func TestStoppingAnUnstartedPoolReturnsAtOnce(t *testing.T) {
 	r := newRigSQLite(t)
 	start := time.Now()
@@ -210,13 +187,10 @@ func TestStoppingAnUnstartedPoolReturnsAtOnce(t *testing.T) {
 	}
 }
 
-// TestStopDrainsTheQueueWithinItsBound holds the shutdown: a message queued when
-// Stop is called is sent while the bound lasts.
+// TestStopDrainsTheQueueWithinItsBound checks that Stop drains the queue within its bound.
 func TestStopDrainsTheQueueWithinItsBound(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
-	// A pool of one worker that is slow enough that the queue holds the next
-	// message when Stop is called.
 	block := make(chan struct{})
 	first := make(chan struct{}, 1)
 	r.sender.onSend = func(sms.Resolved) {
@@ -232,8 +206,6 @@ func TestStopDrainsTheQueueWithinItsBound(t *testing.T) {
 		t.Fatalf("the first Send: %v", err)
 	}
 	<-first
-	// Move past the resend interval, then queue a second message that waits while
-	// the worker is blocked.
 	r.clock.advance(2 * time.Minute)
 	if _, err := r.sendLogin(); err != nil {
 		t.Fatalf("the second Send: %v", err)

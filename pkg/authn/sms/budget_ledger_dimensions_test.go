@@ -11,14 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// otherPhone is a number distinct from the one a case sends to, so a ledger row
-// written under it exercises a dimension without meeting the send's resend
-// interval or its number budget.
 const otherPhone = "+8613800199999"
 
-// recordLedger writes one attempt directly to the shared ledger, the way another
-// replica or the notification channel would. Defaults are filled in so a case
-// names only the dimension it is about.
 func (r *rig) recordLedger(a budget.Attempt) budget.ID {
 	r.t.Helper()
 	if a.Channel == "" {
@@ -40,8 +34,6 @@ func (r *rig) recordLedger(a budget.Attempt) budget.ID {
 	return id
 }
 
-// recordRefundedLedger writes an attempt a certain failure refunded after the
-// fact, the shape an attempt budget counts.
 func (r *rig) recordRefundedLedger(a budget.Attempt) budget.ID {
 	r.t.Helper()
 	if a.AttemptedAt.IsZero() {
@@ -53,8 +45,6 @@ func (r *rig) recordRefundedLedger(a budget.Attempt) budget.ID {
 	return r.recordLedger(a)
 }
 
-// recordSuppressedLedger writes an attempt the caller deliberately did not send:
-// marked suppressed and refunded at write time.
 func (r *rig) recordSuppressedLedger(a budget.Attempt) budget.ID {
 	r.t.Helper()
 	if a.AttemptedAt.IsZero() {
@@ -67,10 +57,7 @@ func (r *rig) recordSuppressedLedger(a budget.Attempt) budget.ID {
 	return r.recordLedger(a)
 }
 
-// TestEveryAuthnBudgetReadsTheSharedLedger writes one row directly to the ledger,
-// never to the challenge table, and shows each dimension refusing over it. A
-// dimension that still counted authn_challenges would see nothing and admit the
-// send, so a case that is refused proves that dimension reads the ledger.
+// TestEveryAuthnBudgetReadsTheSharedLedger checks that every authentication budget reads the shared ledger.
 func TestEveryAuthnBudgetReadsTheSharedLedger(t *testing.T) {
 	const source = "203.0.113.90"
 	earlier := func(r *rig) time.Time { return r.clock.read().Add(-31 * time.Second) }
@@ -249,11 +236,7 @@ func TestEveryAuthnBudgetReadsTheSharedLedger(t *testing.T) {
 	}
 }
 
-// TestASuppressedLedgerRowSpendsOnlyTheAntiEnumerationDimensions holds where a
-// suppressed attempt is counted: the number, source and account dimensions count
-// it, so refusal cannot tell a registered number from an unregistered one, while
-// the global send budget, the cross-channel ceiling and every attempt budget
-// leave it out because no message left the process.
+// TestASuppressedLedgerRowSpendsOnlyTheAntiEnumerationDimensions checks that a suppressed ledger row spends only the anti-enumeration dimensions.
 func TestASuppressedLedgerRowSpendsOnlyTheAntiEnumerationDimensions(t *testing.T) {
 	const source = "203.0.113.91"
 	sourceMAC := func(r *rig) *string {
@@ -338,9 +321,7 @@ func TestASuppressedLedgerRowSpendsOnlyTheAntiEnumerationDimensions(t *testing.T
 	})
 }
 
-// TestTheAttemptBudgetCountsOnlyRefundedRows holds the OnlyRefunded predicate on
-// both attempt dimensions: a successful attempt does not spend the budget, and a
-// refunded one does.
+// TestTheAttemptBudgetCountsOnlyRefundedRows checks that the attempt budget counts only refunded rows.
 func TestTheAttemptBudgetCountsOnlyRefundedRows(t *testing.T) {
 	const source = "203.0.113.92"
 	sourceMAC := func(r *rig) *string {
@@ -417,9 +398,7 @@ func TestTheAttemptBudgetCountsOnlyRefundedRows(t *testing.T) {
 	})
 }
 
-// TestTheResendIntervalReadsTheNewestLedgerAttempt holds the retry the interval
-// carries: a ledger attempt one second old refuses the send with the remainder of
-// the interval, proving Latest reads the ledger rather than the challenge table.
+// TestTheResendIntervalReadsTheNewestLedgerAttempt checks that the resend interval reads the newest ledger attempt.
 func TestTheResendIntervalReadsTheNewestLedgerAttempt(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -442,10 +421,7 @@ func TestTheResendIntervalReadsTheNewestLedgerAttempt(t *testing.T) {
 	}
 }
 
-// TestTheResendIntervalCountsRefundedAndSuppressedAttempts holds that the
-// interval is measured from every attempt, whatever its refund state: a code was
-// asked for, so asking again inside the interval is refused even when the first
-// attempt certainly did not go out or was deliberately suppressed.
+// TestTheResendIntervalCountsRefundedAndSuppressedAttempts checks that the resend interval counts refunded and suppressed attempts.
 func TestTheResendIntervalCountsRefundedAndSuppressedAttempts(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -484,10 +460,7 @@ func TestTheResendIntervalCountsRefundedAndSuppressedAttempts(t *testing.T) {
 	}
 }
 
-// TestThePhoneDailyWindowReadsTheLedgerSeparately guards the daily window from
-// being satisfied by the hourly one: a ledger attempt 90 minutes old is outside
-// the hour and inside the day, so the hourly budget admits it and the daily
-// budget refuses.
+// TestThePhoneDailyWindowReadsTheLedgerSeparately checks that the phone daily window reads the ledger separately.
 func TestThePhoneDailyWindowReadsTheLedgerSeparately(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -506,15 +479,12 @@ func TestThePhoneDailyWindowReadsTheLedgerSeparately(t *testing.T) {
 	if !errors.As(err, &throttled) {
 		t.Fatalf("the refusal is %T, want *ThrottledError", err)
 	}
-	// The oldest counted row still has 22h30m in the day window.
 	if want := 22*time.Hour + 30*time.Minute; throttled.RetryAfter != want {
 		t.Errorf("RetryAfter = %v, want %v", throttled.RetryAfter, want)
 	}
 }
 
-// TestTheSourceDistinctBudgetCountsLedgerDestinations is the diversity dimension
-// over the ledger: two different destinations from one source fill a limit of
-// two, and a third is refused even though the source's raw send budget is lifted.
+// TestTheSourceDistinctBudgetCountsLedgerDestinations checks that the source distinct budget counts ledger destinations.
 func TestTheSourceDistinctBudgetCountsLedgerDestinations(t *testing.T) {
 	const source = "203.0.113.93"
 	r := newRigSQLite(t)

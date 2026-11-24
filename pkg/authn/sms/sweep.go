@@ -8,30 +8,17 @@ import (
 	"time"
 )
 
-// sweepInterval is how often the sweep runs. Every replica runs it, and the
-// deletes are conditional, so two replicas sweeping at once remove no row twice.
 const sweepInterval = 10 * time.Minute
 
-// sweepAfter is how long after a challenge's expiry the sweep may remove it. It
-// is the longest counting window — one day — plus an hour of margin, so a row
-// inside a window is never removed early and no budget is under-counted. Because
-// a row's expiry is at most code-ttl past its creation and that is far under the
-// margin, the expiry-based cutoff keeps every row a creation-based one would.
 const sweepAfter = 25 * time.Hour
 
-// errSweepWait is what Stop returns when the sweep did not end within stopWait.
 var errSweepWait = errors.New("the sweep did not end in time")
 
-// sweeper is the bounded goroutine that removes the challenges past the counting
-// windows.
 type sweeper struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
-// startSweep starts the goroutine. It sweeps once as it starts, so a process
-// that restarts more often than the interval still sweeps, and then every
-// sweepInterval until stopped.
 func (p *product) startSweep(ctx context.Context) {
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	sw := &sweeper{cancel: cancel, done: make(chan struct{})}
@@ -54,7 +41,6 @@ func (p *product) startSweep(ctx context.Context) {
 	}()
 }
 
-// stopSweep ends the goroutine and waits for it, at most stopBound.
 func (p *product) stopSweep() error {
 	sw := p.sweeper
 	if sw == nil {
@@ -71,9 +57,7 @@ func (p *product) stopSweep() error {
 	}
 }
 
-// Sweep removes the challenges past the counting window, in batches, and returns
-// how many it removed. The cutoff is the given margin before now; a row inside a
-// window is never removed, so no budget is under-counted.
+// Sweep removes the challenges past the counting window in batches and returns how many it removed.
 func (p *product) Sweep(ctx context.Context) (int64, error) {
 	cutoff := p.clock.Now().Add(-sweepAfter)
 	var total int64

@@ -15,10 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// TestAnAllowedSendWritesARowAndQueuesAMessage holds the happy path: the allowed
-// table admits the number, a challenge row is written with a keyed digest of the
-// code, and the message is queued for the carrier with the code the row was
-// written for.
+// TestAnAllowedSendWritesARowAndQueuesAMessage checks that an allowed send writes a row and queues a message.
 func TestAnAllowedSendWritesARowAndQueuesAMessage(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -54,10 +51,7 @@ func TestAnAllowedSendWritesARowAndQueuesAMessage(t *testing.T) {
 	}
 }
 
-// TestASuppressedSendTakesTheSamePathAndQueuesNothing holds the suppression:
-// Deliver false writes a row marked suppressed, spends the budget like a real
-// one, and enqueues nothing — the only difference between the two, and one the
-// caller cannot see in the answer.
+// TestASuppressedSendTakesTheSamePathAndQueuesNothing checks that a suppressed send takes the same path and queues nothing.
 func TestASuppressedSendTakesTheSamePathAndQueuesNothing(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -87,9 +81,7 @@ func TestASuppressedSendTakesTheSamePathAndQueuesNothing(t *testing.T) {
 	}
 }
 
-// TestTheEmptyAllowedTableRefusesEveryNumber holds the closed default: an empty
-// allowed table admits no number, and the refusal is ErrUnsupportedRegion with
-// no row written.
+// TestTheEmptyAllowedTableRefusesEveryNumber checks that an empty allowed table refuses every number.
 func TestTheEmptyAllowedTableRefusesEveryNumber(t *testing.T) {
 	r := newRigSQLite(t)
 	_, err := r.sendLogin()
@@ -104,8 +96,7 @@ func TestTheEmptyAllowedTableRefusesEveryNumber(t *testing.T) {
 	}
 }
 
-// TestANumberOutsideTheAllowedTableIsRefused holds the prefix test: a number
-// whose prefix is not in the table is refused, whatever its registration.
+// TestANumberOutsideTheAllowedTableIsRefused checks that a number outside the allowed table is refused.
 func TestANumberOutsideTheAllowedTableIsRefused(t *testing.T) {
 	r := newRigSQLite(t)
 	r.store.set(allowedPrefixesPath, `["+1"]`)
@@ -119,11 +110,7 @@ func TestANumberOutsideTheAllowedTableIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheCallerContractIsEnforced holds the input checks: a purpose outside the
-// set, an empty number and a missing account for mfa are defects of the caller
-// and are ordinary errors, not sentinels. The locale is deliberately not one of
-// them: a language the carrier does not declare is a preference that resolves to
-// the default, not a defect to refuse.
+// TestTheCallerContractIsEnforced checks that the caller contract is enforced.
 func TestTheCallerContractIsEnforced(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -132,9 +119,6 @@ func TestTheCallerContractIsEnforced(t *testing.T) {
 		in   authn.SendCode
 	}{
 		{"purpose", authn.SendCode{Purpose: "signup", Phone: phone, Deliver: true}},
-		// A purpose outside the set with an account set: the account check that
-		// follows does not catch this one, so the closed-purpose check is what
-		// has to refuse it.
 		{"purpose-with-account", authn.SendCode{Purpose: "signup", Phone: phone, Account: acct, Deliver: true}},
 		{"phone", authn.SendCode{Purpose: authn.SMSPurposeLogin, Phone: "", Deliver: true}},
 		{"account", authn.SendCode{Purpose: authn.SMSPurposeMFA, Phone: phone, Deliver: true}},
@@ -156,9 +140,7 @@ func TestTheCallerContractIsEnforced(t *testing.T) {
 	}
 }
 
-// TestAResendVoidsThePreviousChallengeOfTheNumber holds the void: a second send
-// to the same number and purpose marks the earlier live row consumed, so two
-// codes are never valid at once. A row of another purpose is left alone.
+// TestAResendVoidsThePreviousChallengeOfTheNumber checks that a resend voids the number's previous challenge.
 func TestAResendVoidsThePreviousChallengeOfTheNumber(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -167,13 +149,11 @@ func TestAResendVoidsThePreviousChallengeOfTheNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the first Send: %v", err)
 	}
-	// Move past the resend interval so the second send is not throttled.
 	r.clock.advance(2 * time.Minute)
 	second, err := r.sendLogin()
 	if err != nil {
 		t.Fatalf("the second Send: %v", err)
 	}
-	// A row of another purpose for the same number is not voided.
 	r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeMFA, Phone: phone, Account: acct, Deliver: true,
 	})
@@ -188,8 +168,7 @@ func TestAResendVoidsThePreviousChallengeOfTheNumber(t *testing.T) {
 	}
 }
 
-// TestNoPlaintextCodeReachesTheTable holds the digest: the row carries the code
-// only as a keyed digest, and the code text appears in no column of any row.
+// TestNoPlaintextCodeReachesTheTable checks that no plaintext code reaches the table.
 func TestNoPlaintextCodeReachesTheTable(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -206,10 +185,7 @@ func TestNoPlaintextCodeReachesTheTable(t *testing.T) {
 	}
 }
 
-// TestARegisteredAndASuppressedNumberTakeTheSameCountingPath holds the
-// enumeration defense: the two requests differ only in whether a message is
-// queued, and by every other observable — the answer's shape, the row written,
-// the budget spent — they are the same.
+// TestARegisteredAndASuppressedNumberTakeTheSameCountingPath checks that a registered and a suppressed number take the same counting path.
 func TestARegisteredAndASuppressedNumberTakeTheSameCountingPath(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -244,21 +220,15 @@ func TestARegisteredAndASuppressedNumberTakeTheSameCountingPath(t *testing.T) {
 	}); n != 2 {
 		t.Errorf("the phone budget counts %d sends, want 2: the two paths must agree", n)
 	}
-	// The one difference the caller may observe is off the answer: the registered
-	// send queued a message and the suppressed one did not.
 	if got := len(r.p.pool.queue); got != 1 {
 		t.Errorf("the queue holds %d messages, want 1 (the registered send only)", got)
 	}
 }
 
-// TestAQueuedMessageIsDroppedWhenTheQueueIsFull holds the drop: a full queue
-// refuses the send before anything is written, with ErrUnavailable and the
-// dropped outcome. The same check runs for a suppressed send, so the full queue
-// is not an observation that tells the two apart.
+// TestAQuedMessageIsDroppedWhenTheQueueIsFull checks that a queued message is dropped when the queue is full.
 func TestAQuedMessageIsDroppedWhenTheQueueIsFull(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
-	// Fill the queue without starting the pool, so nothing drains it.
 	for range cap(r.p.pool.queue) {
 		r.p.pool.queue <- sms.Resolved{To: phone}
 	}
@@ -274,10 +244,7 @@ func TestAQuedMessageIsDroppedWhenTheQueueIsFull(t *testing.T) {
 	}
 }
 
-// TestTheAllowedPrefixIsAnchoredAndNeverBlank holds the prefix test's edges: a
-// blank entry admits nothing rather than everything, a prefix that appears
-// mid-number does not admit the number, and a number equal to the prefix is
-// admitted.
+// TestTheAllowedPrefixIsAnchoredAndNeverBlank checks that the allowed prefix is anchored and never blank.
 func TestTheAllowedPrefixIsAnchoredAndNeverBlank(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -304,9 +271,7 @@ func TestTheAllowedPrefixIsAnchoredAndNeverBlank(t *testing.T) {
 	}
 }
 
-// TestAnEnrollSendAndAnEnglishSendGoThrough holds two values that no other case
-// drives positively: the enroll purpose and the en-US language are both declared
-// by the carrier, so a send carrying either is legal.
+// TestAnEnrollSendAndAnEnglishSendGoThrough checks that an enroll send and an English send go through.
 func TestAnEnrollSendAndAnEnglishSendGoThrough(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -332,9 +297,7 @@ func TestAnEnrollSendAndAnEnglishSendGoThrough(t *testing.T) {
 	}
 }
 
-// TestTheQueuedMessageCarriesTheLanguageTheCallerNamed holds that the message
-// locale is not lost: an empty input reads as the configured default and a
-// language the carrier declares is carried as it is.
+// TestTheQueuedMessageCarriesTheLanguageTheCallerNamed checks that the queued message carries the language the caller named.
 func TestTheQueuedMessageCarriesTheLanguageTheCallerNamed(t *testing.T) {
 	cases := []struct {
 		locale string
@@ -361,13 +324,7 @@ func TestTheQueuedMessageCarriesTheLanguageTheCallerNamed(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredRequestedLocaleResolvesToTheDefault holds that a language the
-// carrier does not declare is a preference and not a caller defect: the send goes
-// through, in the configured default, rather than being refused.
-//
-// On the pre-change code a "fr-FR" send is refused as a caller defect — the
-// locale is held to the hardcoded pair — so this send returns an error instead of
-// reaching the carrier.
+// TestAnUndeclaredRequestedLocaleResolvesToTheDefault checks that an undeclared requested locale resolves to the default.
 func TestAnUndeclaredRequestedLocaleResolvesToTheDefault(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -382,19 +339,7 @@ func TestAnUndeclaredRequestedLocaleResolvesToTheDefault(t *testing.T) {
 	}
 }
 
-// TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet holds that the
-// languages a message may go out in are those of the template its purpose maps
-// to, not the union of every template the registry declares. A registry whose
-// login template declares en-US and ja-JP and whose mfa template declares en-US
-// and fr-FR starts up — every template covers the configured default — a login
-// request in ja-JP goes out in ja-JP, and an mfa request in ja-JP resolves to
-// the configured default, because the mfa template does not carry ja-JP.
-//
-// On the union code this case fails: ja-JP is in the union, taken from the login
-// template, so the mfa message would go out in ja-JP — a language its own
-// template does not hold. The registry accepts the startup and then refuses
-// every mfa message at send time, which is the shape the startup check exists to
-// prevent.
+// TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet checks that the message language comes from its template, not the whole set.
 func TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet(t *testing.T) {
 	registry := newRegistry()
 	registry.setDeclared([]sms.Template{
@@ -408,7 +353,6 @@ func TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet(t *testing.T) {
 	r := newRigOver(t, openSQLite(t), registry, newSender(), testDefaultLocale)
 	r.allow()
 
-	// A login send requested in ja-JP goes out in ja-JP: its template declares it.
 	if _, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeLogin, Phone: phone, Locale: "ja-JP", Deliver: true,
 	}); err != nil {
@@ -419,9 +363,6 @@ func TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet(t *testing.T) {
 		t.Errorf("the login message locale = %q, want ja-JP", loginMsg.Locale)
 	}
 
-	// An mfa send requested in ja-JP goes out in the configured default: the mfa
-	// template declares en-US and fr-FR and carries no ja-JP. A distinct number
-	// keeps this send off the login send's resend-interval and phone budgets.
 	if _, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeMFA, Phone: "+8613800138001", Account: acct, Locale: "ja-JP", Deliver: true,
 	}); err != nil {
@@ -433,9 +374,7 @@ func TestTheMessageLanguageIsTheTemplatesOwnNotTheWholeSet(t *testing.T) {
 	}
 }
 
-// TestANormalEnqueueIsNotRecordedAsADrop holds the enqueue discrimination: a
-// send whose message reaches the queue records no dropped outcome, so inverting
-// the enqueue result is not silently mislabeled.
+// TestANormalEnqueueIsNotRecordedAsADrop checks that a normal enqueue is not recorded as a drop.
 func TestANormalEnqueueIsNotRecordedAsADrop(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -450,12 +389,7 @@ func TestANormalEnqueueIsNotRecordedAsADrop(t *testing.T) {
 	}
 }
 
-// TestATemplateTheRegistryWontSendUnderIsNotSendable holds the registry-refusal
-// path: the request path resolves the message and the registry refuses it
-// because the template is disabled or its vendor review is not back, so the send
-// records the refusal under its own outcome — not sent, not rejected — queues
-// nothing, and returns the challenge identifier like a send a carrier would
-// later refuse, because the row is already written.
+// TestATemplateTheRegistryWontSendUnderIsNotSendable checks that a template the registry will not send under is not sendable.
 func TestATemplateTheRegistryWontSendUnderIsNotSendable(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -485,10 +419,7 @@ func TestATemplateTheRegistryWontSendUnderIsNotSendable(t *testing.T) {
 	}
 }
 
-// TestADatabaseThatCannotBeReadIsNotRecordedAsABudgetRefusal holds the outcome
-// split: a budget check that cannot read its rows answers unavailable and is
-// recorded under no outcome, so a dashboard does not read a database outage as a
-// policy refusal.
+// TestADatabaseThatCannotBeReadIsNotRecordedAsABudgetRefusal checks that an unreadable database is not recorded as a budget refusal.
 func TestADatabaseThatCannotBeReadIsNotRecordedAsABudgetRefusal(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
@@ -504,23 +435,15 @@ func TestADatabaseThatCannotBeReadIsNotRecordedAsABudgetRefusal(t *testing.T) {
 	}
 }
 
-// TestTheSuppressedAndDeliveredPathsTakeComparableTime holds the weak half of the
-// timing claim: an implementation that made the suppressed path a fast exit — a
-// sleep, a skipped write — would show here. It proves nothing on its own; the
-// structural sameness above is what does.
+// TestTheSuppressedAndDeliveredPathsTakeComparableTime checks that the suppressed and delivered paths take comparable time.
 func TestTheSuppressedAndDeliveredPathsTakeComparableTime(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
-	// The two runs together send more than the declared hourly login budget; lift
-	// it so the timing is not measuring a refusal.
 	r.store.set(globalLoginPath, 1000000)
 
 	measure := func(tag int, deliver bool) time.Duration {
 		start := time.Now()
 		for i := range 200 {
-			// A distinct number each iteration keeps the per-number budgets from
-			// accumulating, and the tag keeps the two runs off each other's numbers;
-			// the global login budget is well above 200.
 			number := fmt.Sprintf("+861380%02d%05d", tag, i)
 			if _, err := r.p.Send(context.Background(), authn.SendCode{
 				Purpose: authn.SMSPurposeLogin, Phone: number, Deliver: deliver,
@@ -539,8 +462,6 @@ func TestTheSuppressedAndDeliveredPathsTakeComparableTime(t *testing.T) {
 	if delivered == 0 || suppressed == 0 {
 		t.Fatal("a measurement was zero")
 	}
-	// A generous bound: it catches a path that is an order of magnitude slower or
-	// faster, not a small difference, which is all a timing check can do.
 	ratio := float64(delivered) / float64(suppressed)
 	if ratio > 20 || ratio < 1.0/20 {
 		t.Errorf("the delivered path took %v and the suppressed path %v, a ratio of %.1f; "+

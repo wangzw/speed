@@ -13,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// The setting keys this module declares, relative to its namespace, and the
-// full paths a read goes by.
 const (
 	allowedPrefixesKey = "allowed-prefixes"
 	codeLengthKey      = "code-length"
@@ -43,13 +41,8 @@ const (
 	perAccountHourlyKey = "per-account-hourly"
 )
 
-// ceilingHourlyPath is the cross-channel emergency ceiling's full key. The
-// setting is declared by the shared SMS ledger module under the shared sms
-// namespace, because both sending channels spend it; this module reads it by the
-// full key instead of declaring it a second time.
 const ceilingHourlyPath = "sms.ceiling-hourly"
 
-// The full paths the reads and the relaxation watch go by.
 var (
 	allowedPrefixesPath = ModuleName + "." + allowedPrefixesKey
 	codeLengthPath      = ModuleName + "." + codeLengthKey
@@ -78,7 +71,6 @@ var (
 	perAccountHourlyPath = ModuleName + "." + perAccountHourlyKey
 )
 
-// The bounds of the setting domains.
 const (
 	minCodeLength = 6
 	maxCodeLength = 8
@@ -123,10 +115,6 @@ const (
 	maxPerAccountHourly = 60
 )
 
-// options carries the settings this module declares and their defaults, which
-// the settings module reads off it and which it never receives a value for.
-// AllowedPrefixes is a string item holding JSON, because a setting item is a
-// scalar.
 type options struct {
 	AllowedPrefixes string        `config:"allowed-prefixes"`
 	CodeLength      int           `config:"code-length"`
@@ -155,9 +143,6 @@ type options struct {
 	PerAccountHourly int `config:"per-account-hourly"`
 }
 
-// defaults is the declared default of each setting. The default of
-// AllowedPrefixes is the empty table, which admits no number: a deployment that
-// does not name a region sends nothing.
 var defaults = options{
 	AllowedPrefixes: "[]",
 	CodeLength:      6,
@@ -186,7 +171,6 @@ var defaults = options{
 	PerAccountHourly: 20,
 }
 
-// The domains of the settings. Each is the one statement of its range.
 func codeLengthInDomain(n int) bool { return n >= minCodeLength && n <= maxCodeLength }
 
 func codeTTLInDomain(d time.Duration) bool {
@@ -224,22 +208,15 @@ func perAccountHourlyInDomain(n int) bool {
 	return n >= minPerAccountHourly && n <= maxPerAccountHourly
 }
 
-// ceilingHourlyInDomain holds the cross-channel ceiling to the domain the ledger
-// module declares for it: a count of sends in an hour.
 func ceilingHourlyInDomain(n int) bool {
 	return n >= budget.MinCeilingHourly && n <= budget.MaxCeilingHourly
 }
 
-// allowedPrefixesTextInDomain reports whether a JSON array of strings is a legal
-// value of the allowed-prefixes setting: the text parses as an array of strings.
 func allowedPrefixesTextInDomain(text string) bool {
 	_, err := parsePrefixes(text)
 	return err == nil
 }
 
-// parsePrefixes reads a JSON array of strings from the text of the
-// allowed-prefixes setting. The empty string reads as the empty list, which
-// admits no number.
 func parsePrefixes(text string) ([]string, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, nil
@@ -252,8 +229,6 @@ func parsePrefixes(text string) ([]string, error) {
 	return out, nil
 }
 
-// settingsSchema declares this module's runtime parameters, each with the domain
-// the code acts on.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ModuleName,
@@ -366,15 +341,10 @@ func settingsSchema() settings.Schema {
 	}
 }
 
-// reader reads the settings with the failure direction each has. The store is
-// nil when the assembly has none, and every setting then reads as its declared
-// default, which is a legal assembly.
 type reader struct {
 	store  settings.Store
 	logger *slog.Logger
 
-	// mu guards reported, which holds for each setting the fault last written, so
-	// that a setting read on every request is reported once and not on each.
 	mu       sync.Mutex
 	reported map[string]string
 }
@@ -383,9 +353,6 @@ func newReader(store settings.Store, logger *slog.Logger) *reader {
 	return &reader{store: store, logger: logger, reported: make(map[string]string)}
 }
 
-// allowedPrefixes reads the allowed table. A read that fails, and a value that
-// is not a JSON array, read as the empty table, which admits no number: the
-// default is the strict direction, so a failed read refuses every send.
 func (r *reader) allowedPrefixes() []string {
 	if r.store == nil {
 		prefixes, _ := parsePrefixes(defaults.AllowedPrefixes)
@@ -453,16 +420,10 @@ func (r *reader) perAccountHourly() int {
 	return readTuned(r, perAccountHourlyPath, defaults.PerAccountHourly, perAccountHourlyInDomain)
 }
 
-// ceilingHourly reads the deployment's cross-channel emergency ceiling by its
-// full key. The ledger module declares the setting; this module only reads it.
-// It is read before every send, so a value outside its domain falls back to the
-// declared default rather than to no ceiling.
 func (r *reader) ceilingHourly() int {
 	return readTuned(r, ceilingHourlyPath, budget.DefaultCeilingHourly, ceilingHourlyInDomain)
 }
 
-// globalHourly reads the global hourly budget of one purpose. The purpose is one
-// of the closed set, which the caller has already held the input to.
 func (r *reader) globalHourly(purpose string) int {
 	switch purpose {
 	case authn.SMSPurposeLogin:
@@ -477,10 +438,6 @@ func (r *reader) globalHourly(purpose string) int {
 	return defaults.GlobalLogin
 }
 
-// globalAttemptHourly reads the global attempt budget of one purpose: the most
-// failed sends the purpose may make in an hour, where a failed send is one a
-// definitive failure refunded. The purpose is one of the closed set, which the
-// caller has already held the input to.
 func (r *reader) globalAttemptHourly(purpose string) int {
 	switch purpose {
 	case authn.SMSPurposeLogin:
@@ -495,9 +452,6 @@ func (r *reader) globalAttemptHourly(purpose string) int {
 	return defaults.GlobalAttemptLogin
 }
 
-// readTuned reads a tuning setting: one that fails to read, and one outside its
-// domain, read as the declared default, and the fault is reported at Error once
-// per distinct fault.
 func readTuned[T any](r *reader, path string, fallback T, inDomain func(T) bool) T {
 	if r.store == nil {
 		return fallback
@@ -515,10 +469,6 @@ func readTuned[T any](r *reader, path string, fallback T, inDomain func(T) bool)
 	return v
 }
 
-// report writes the Error line of a setting that is read in a way other than as
-// it says. A setting is read on requests, so the same fault is written once and
-// again only when it changes or has been cleared in between; an empty problem
-// clears it.
 func (r *reader) report(path, problem, detail string) {
 	r.mu.Lock()
 	last, reported := r.reported[path]

@@ -9,14 +9,11 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// deliverChange hands a settings.changed event to the module's subscription.
 func (r *rig) deliverChange(change settings.Change) {
 	_ = r.bus.deliver(context.Background(), event.Event{Type: settings.ChangedEventType, Payload: change})
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: a setting
-// moved in its relaxing direction writes a Warn naming the key and the direction
-// and a best-effort audit row, and nothing else.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow checks that a relaxing change writes one Warn and one audit row.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: codeTTLPath, Old: "5m0s", New: "8m0s", Actor: "op"})
@@ -36,8 +33,7 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningChangeWritesNothing holds the other direction: a move that
-// checks more is not a relaxation and is not reported.
+// TestATighteningChangeWritesNothing checks that a tightening change writes nothing.
 func TestATighteningChangeWritesNothing(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: codeTTLPath, Old: "8m0s", New: "5m0s"})
@@ -47,8 +43,7 @@ func TestATighteningChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestADecreaseThatLoosensIsReported holds the direction that is not "up":
-// shortening the code and the resend interval relax a check.
+// TestADecreaseThatLoosensIsReported checks that a decrease that loosens is reported.
 func TestADecreaseThatLoosensIsReported(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: codeLengthPath, Old: "8", New: "6"})
@@ -58,8 +53,7 @@ func TestADecreaseThatLoosensIsReported(t *testing.T) {
 	}
 }
 
-// TestAWidenedAllowedTableIsReported holds the list direction: adding a prefix
-// relaxes and removing one does not.
+// TestAWidenedAllowedTableIsReported checks that a widened allowed table is reported.
 func TestAWidenedAllowedTableIsReported(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: allowedPrefixesPath, Old: `["+86"]`, New: `["+86","+1"]`})
@@ -72,9 +66,7 @@ func TestAWidenedAllowedTableIsReported(t *testing.T) {
 	}
 }
 
-// TestAWidenedSourceBudgetIsReported holds the source budgets among the watched
-// settings: raising one is a relaxation, and a first write is compared against
-// the declared default rather than read as no change.
+// TestAWidenedSourceBudgetIsReported checks that a widened source budget is reported.
 func TestAWidenedSourceBudgetIsReported(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: perSourceHourlyPath, Old: "30", New: "60"})
@@ -82,17 +74,13 @@ func TestAWidenedSourceBudgetIsReported(t *testing.T) {
 	if got := len(r.audit.entries()); got != 2 {
 		t.Fatalf("the audit holds %d rows, want 2: raising either source budget is a relaxation", got)
 	}
-	// Lowering one is not.
 	r.deliverChange(settings.Change{Key: perSourceHourlyPath, Old: "60", New: "30"})
 	if got := len(r.audit.entries()); got != 2 {
 		t.Errorf("lowering a source budget wrote an audit row")
 	}
 }
 
-// TestARelaxedCeilingIsReported holds the shared ceiling among the watched
-// settings now that its declaration lives in the ledger module: the reader keeps
-// the declared default, so a first write above it is audited and one below it is
-// not.
+// TestARelaxedCeilingIsReported checks that a relaxed ceiling is reported.
 func TestARelaxedCeilingIsReported(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: ceilingHourlyPath, Old: "", New: "10000"})
@@ -105,8 +93,7 @@ func TestARelaxedCeilingIsReported(t *testing.T) {
 	}
 }
 
-// TestAnUnwatchedOrSensitiveChangeIsIgnored holds the filter: a key this module
-// does not watch and a change whose value was withheld are both dropped.
+// TestAnUnwatchedOrSensitiveChangeIsIgnored checks that an unwatched or withheld change is ignored.
 func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: "authn.mfa.max-per-kind", Old: "1", New: "20"})
@@ -116,10 +103,7 @@ func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	}
 }
 
-// TestASensitiveChangeThatWouldRelaxIsStillIgnored holds the Sensitive filter
-// against a change whose values would relax: a withheld change that loosens a
-// check is dropped before the relaxation test, so it writes no Warn and no audit
-// row.
+// TestASensitiveChangeThatWouldRelaxIsStillIgnored checks that a withheld change that would relax is still ignored.
 func TestASensitiveChangeThatWouldRelaxIsStillIgnored(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: codeTTLPath, Old: "5m0s", New: "8m0s", Sensitive: true})
@@ -131,9 +115,7 @@ func TestASensitiveChangeThatWouldRelaxIsStillIgnored(t *testing.T) {
 	}
 }
 
-// TestAnEqualValuedChangeIsNotARelaxation holds the strictness of the
-// comparison: a change that keeps a value the same relaxes nothing and is not
-// reported, so an equality cannot pass for an increase or a decrease.
+// TestAnEqualValuedChangeIsNotARelaxation checks that an equal-valued change is not a relaxation.
 func TestAnEqualValuedChangeIsNotARelaxation(t *testing.T) {
 	r := newRigSQLite(t)
 	r.deliverChange(settings.Change{Key: codeTTLPath, Old: "5m0s", New: "5m0s"})
@@ -143,8 +125,7 @@ func TestAnEqualValuedChangeIsNotARelaxation(t *testing.T) {
 	}
 }
 
-// TestAnAuditWriteFailureIsCounted holds the best-effort direction: the change is
-// still reported and the module carries on, and a failed audit write is counted.
+// TestAnAuditWriteFailureIsCounted checks that an audit write failure is counted.
 func TestAnAuditWriteFailureIsCounted(t *testing.T) {
 	r := newRigSQLite(t)
 	r.audit.err = errors.New("the audit is down")

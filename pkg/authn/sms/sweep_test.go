@@ -6,9 +6,7 @@ import (
 	"time"
 )
 
-// TestTheSweepRemovesOnlyRowsPastTheWindow holds the sweep: a row past the margin
-// before now is removed and one inside it stays, so no budget inside a window is
-// under-counted.
+// TestTheSweepRemovesOnlyRowsPastTheWindow checks that the sweep removes only rows past the window.
 func TestTheSweepRemovesOnlyRowsPastTheWindow(t *testing.T) {
 	r := newRigSQLite(t)
 	old := r.clock.read().Add(-sweepAfter - time.Hour)
@@ -31,10 +29,7 @@ func TestTheSweepRemovesOnlyRowsPastTheWindow(t *testing.T) {
 	}
 }
 
-// TestTheSweepKeepsARowInsideTheDailyWindow holds the margin: the sweep must not
-// remove a row still inside the longest counting window, one day, or the daily
-// budget is under-counted and more sends go out than configured. A row whose
-// expiry is inside the day stays; one past the margin goes.
+// TestTheSweepKeepsARowInsideTheDailyWindow checks that the sweep keeps a row inside the daily window.
 func TestTheSweepKeepsARowInsideTheDailyWindow(t *testing.T) {
 	r := newRigSQLite(t)
 	now := r.clock.read()
@@ -60,8 +55,7 @@ func TestTheSweepKeepsARowInsideTheDailyWindow(t *testing.T) {
 	}
 }
 
-// TestTheSweepLeavesASpentRowUntilItsWindowCloses holds that a consumed row still
-// counts: the sweep keys on the window, not on the challenge's own state.
+// TestTheSweepLeavesASpentRowUntilItsWindowCloses checks that the sweep leaves a spent row until its window closes.
 func TestTheSweepLeavesASpentRowUntilItsWindowCloses(t *testing.T) {
 	r := newRigSQLite(t)
 	at := r.clock.read().Add(-time.Minute)

@@ -7,14 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// TestTheTemplatesWorkOnABodyOnlyCarrier holds the template contract across
-// carrier shapes: the three templates this module sends under are satisfied by a
-// declaration that carries a body per language and no vendor code, the startup
-// check accepts it, and a send resolves the body the declaration rendered with
-// the module's parameters filled in.
-//
-// The text is the configuration's, not this module's: the case builds the bodies
-// it declares, so nothing in the package carries a carrier-specific copy.
+// TestTheTemplatesWorkOnABodyOnlyCarrier checks that the templates work on a body-only carrier.
 func TestTheTemplatesWorkOnABodyOnlyCarrier(t *testing.T) {
 	specs := make(map[string]sms.TemplateSpec, len(requiredTemplates))
 	for _, name := range requiredTemplates {

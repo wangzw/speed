@@ -14,9 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// TestStartRefusesWithoutARootKey holds the self-check: with the table there but
-// no root key, the startup ends with ErrNoEncryptionKey and never falls back to
-// an unkeyed digest.
+// TestStartRefusesWithoutARootKey checks that Start refuses without a root key.
 func TestStartRefusesWithoutARootKey(t *testing.T) {
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms.db"), nil)
 	handle := database.DB().Session(&gorm.Session{Logger: logger.Discard})
@@ -30,8 +28,7 @@ func TestStartRefusesWithoutARootKey(t *testing.T) {
 	}
 }
 
-// TestStartRefusesWhenTheTableIsMissing holds the probe: a table that is not
-// there ends the startup with ErrNotMigrated before the key is even checked.
+// TestStartRefusesWhenTheTableIsMissing checks that Start refuses when the table is missing.
 func TestStartRefusesWhenTheTableIsMissing(t *testing.T) {
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "sms.db"), nil)
 	p := build(database, newRegistry(), newSender(), budget.New(database.DB()), resolved{Workers: 1, QueueSize: 4}, testDefaultLocale,

@@ -15,23 +15,10 @@ import (
 )
 
 const (
-	// lockWaitBudget bounds the wait for the second insert to be seen waiting on
-	// the lock. The insert reaches the lock in the microseconds of one statement;
-	// the budget only stops the case hanging if it never does, and a case that
-	// saw neither completion nor the wait fails rather than passes.
 	lockWaitBudget = 10 * time.Second
-	// lockWaitPoll is how often the case looks while the second insert runs.
-	lockWaitPoll = 2 * time.Millisecond
+	lockWaitPoll   = 2 * time.Millisecond
 )
 
-// aResendIsWaitingForTheLock reports whether a session on this database is
-// blocked on the advisory lock the send's ordered lock set takes. The wait event is named rather
-// than leaving it at any lock wait: a server process of its own — autovacuum,
-// say — can briefly wait on a lock of another kind, and counting that as the
-// resend would let the case pass with the insert never having reached the
-// lock. This database is not otherwise shared, and the first transaction is the
-// one holding the key, so the only session that can wait on it is the second
-// insert.
 func aResendIsWaitingForTheLock(t *testing.T, h *gorm.DB) bool {
 	t.Helper()
 	var waiting int64
@@ -45,13 +32,6 @@ func aResendIsWaitingForTheLock(t *testing.T, h *gorm.DB) bool {
 	return waiting > 0
 }
 
-// theResendReachedTheLock drives the second insert to the one of two states that
-// decides the case. It reports held=true once the insert is seen waiting on the
-// key the first transaction holds, and held=false with the insert's error once
-// the insert completes first (its lock set was not taken). It fails if neither
-// is reached within the budget, so an insert neither done nor seen waiting
-// cannot pass as serialized: a slow machine that has not run the insert yet is
-// not mistaken for the insert being blocked.
 func theResendReachedTheLock(t *testing.T, h *gorm.DB, done <-chan error) (bool, error) {
 	t.Helper()
 	deadline := time.Now().Add(lockWaitBudget)
@@ -71,9 +51,6 @@ func theResendReachedTheLock(t *testing.T, h *gorm.DB, done <-chan error) (bool,
 	}
 }
 
-// The module runs on PostgreSQL as well in an integration run, over a database
-// of the case's own on the server the compose stack brings up: Acquire fails the
-// case when that server does not answer rather than skipping it.
 func init() {
 	dialects = append(dialects, dialect{
 		name: "postgres",
@@ -83,12 +60,7 @@ func init() {
 	})
 }
 
-// TestOverlappingResendsOfOneNumberSerialize holds the resend rule under
-// overlap: two Send transactions for the same (number, purpose) cannot each read
-// no live row and write their own, leaving two codes valid at once. The case
-// forces the overlap by holding one transaction's lock open while the other
-// runs, so it does not depend on a timing race. The lock is PostgreSQL-only
-// (SQLite serializes writers itself), so this runs on that engine alone.
+// TestOverlappingResendsOfOneNumberSerialize checks that overlapping resends of one number serialize.
 func TestOverlappingResendsOfOneNumberSerialize(t *testing.T) {
 	database := openDialect(t, "postgres")
 	r := newRig(t, database, newSender())
@@ -121,17 +93,11 @@ func TestOverlappingResendsOfOneNumberSerialize(t *testing.T) {
 		done <- err
 	}()
 
-	// B must wait for A's transaction: while A holds the lock, B's backend is
-	// seen waiting on it, which is the state observed here rather than elapsed
-	// time. Without the lock, B would run to completion and the case would see
-	// that instead.
 	waiting, early := theResendReachedTheLock(t, r.h, done)
 	if !waiting {
 		t.Fatalf("the second insert did not wait for the first: %v", early)
 	}
 
-	// The insert is blocked while its backend waits on the lock, so it cannot
-	// have completed here.
 	select {
 	case err := <-done:
 		t.Fatalf("the second insert completed while its backend was waiting on the lock: %v", err)
@@ -143,7 +109,6 @@ func TestOverlappingResendsOfOneNumberSerialize(t *testing.T) {
 	}
 	committed = true
 
-	// With the first transaction committed, the second proceeds.
 	select {
 	case err := <-done:
 		if err != nil {
