@@ -10,7 +10,7 @@
 
 ### 不在范围内
 
-- 无障碍的机械审查门禁指标（对比度阈值、焦点顺序与可聚焦性的机械检查、语义结构检查）。写入前后键盘焦点停留在何处是使用者可感知的行为，不属于此类，由 REQ-presentation-040 与 REQ-presentation-042 规定。
+- 无障碍的机械审查门禁指标（对比度阈值、焦点顺序与可聚焦性的机械检查、语义结构检查）。写入前后键盘焦点停留在何处是使用者可感知的行为，不属于此类，由 REQ-presentation-040、REQ-presentation-042 与 REQ-presentation-043 规定。
 - 每个写入动作本身的业务语义与授权条件，归登录、账户安全、租户、平台运营等能力。
 - 服务端生成的用户可见文案的内容与语言归属，归后端国际化能力；本能力只规定前端界面自身的语言与时区呈现。
 - 主题预设的具体设计取值与组件样式映射，属设计取值，不是使用者可见的需求。
@@ -319,6 +319,14 @@
 - **验收**：经导航链接或账户菜单进入另一页、登录或注册成功、社交登录回调完成、退出、接受邀请后，焦点在新页面的一级标题上，读屏读出该标题，再按 Tab 到达标题之后的第一个控件；浏览器后退与前进同样；新页面自己把焦点交给某个控件时（例如注册后的验证码输入框），焦点在该控件上；首次打开或刷新页面时焦点不被移动。
 - **状态**：已实现
 - **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
+
+### REQ-presentation-043
+
+翻页控件在页读进行中、写入进行中或已到列表边界时，仍可经 Tab 到达并保持焦点，读屏读出其不可用；激活不可用的翻页控件不发起读取。
+
+- **验收**：以键盘激活“下一页”或“上一页”后，该页读取进行中焦点停在被激活的控件上，读屏读出它正忙且不可用，另一方向读出不可用；读取落定后焦点仍在该控件上，到达首页或末页时它读出不可用，再按 Tab 到达的是它之后的下一个控件；列表的写入进行中，两个方向都可经 Tab 到达并读出不可用；激活任一不可用的方向，界面不发起读取、所在页不变、焦点不移动。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: the pager directions stay reachable at the list boundary and start no read`
 
 ### REQ-presentation-029
 
