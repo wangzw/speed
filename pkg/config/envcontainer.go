@@ -11,28 +11,11 @@ import (
 )
 
 // envContainer writes the JSON text an environment variable gave into a
-// container leaf's field.
+// container leaf's field, replacing the whole value.
 //
-// The value is replaced as a whole: the variable is the container, not a patch
-// on one, so neither the prototype's value nor the primary source's survives.
-// That is the same rule the primary source and the host defaults document
-// follow, and it is why a container's keys can stay out of the manifest.
-//
-// The decoding is strict. A member name no field answers for is an error rather
-// than a value dropped, and a name is matched exactly: no case folding and no
-// separator rewriting. A container written by hand in a variable has no
-// unknown-key pass behind it, so a misspelling has to be visible at startup
-// instead of leaving a field at its zero value. The names themselves are the
-// ones the container's own decoder uses -- the config tag, the json tag, or the
-// lower-case kebab form of the field name.
-//
-// A map's keys are its data and are taken as written; only the target's key
-// type can make the shape impossible, and a key type other than string is
-// refused because a JSON object names its members with strings.
-//
-// A failure names the variable and the item. A sensitive item's failure does
-// not repeat the value: the text is a credential like any other, and the
-// diagnostic goes to standard error.
+// The decoding is strict: a member name no field answers for is an error, and a
+// name is matched exactly. A failure names the variable and the item and, for a
+// sensitive item, does not repeat the value.
 func envContainer(item *manifestItem, text string, fv reflect.Value) error {
 	if t := nonStringMapKey(fv.Type(), make(map[reflect.Type]bool)); t != nil {
 		return envContainerFailure(item, fv,
@@ -55,15 +38,8 @@ func envContainer(item *manifestItem, text string, fv reflect.Value) error {
 }
 
 // nonStringMapKey returns the first map type reached from t whose keys are not
-// strings, or nil when every map in the value is string-keyed. A JSON object
-// names its members with strings, so a map with any other key type would have
-// the decoder turn those names into keys the source never wrote.
-//
-// The walk follows the shapes a container can hold -- list elements, map
-// values, struct fields -- and stops at a type that reads itself from text,
-// which is a leaf rather than a section. seen keeps a cyclic element type from
-// being walked without end, the same reason the decoder's key rewrite keeps a
-// chain.
+// strings, or nil when every map is string-keyed. seen keeps a cyclic element
+// type from being walked without end.
 func nonStringMapKey(t reflect.Type, seen map[reflect.Type]bool) reflect.Type {
 	if seen[t] {
 		return nil
@@ -97,10 +73,8 @@ func nonStringMapKey(t reflect.Type, seen map[reflect.Type]bool) reflect.Type {
 	return nil
 }
 
-// emptyEnvContainer gives the value an empty variable means for a container.
-// A list or a map has one: the container with no entries, which is what the
-// same text means for a string list. A struct has none -- there is no empty
-// form to read out of nothing -- so it is refused rather than silently zeroed.
+// emptyEnvContainer gives the value an empty variable means for a container. A
+// list or a map has one; a struct has none and is refused.
 func emptyEnvContainer(item *manifestItem, fv reflect.Value) error {
 	switch fv.Kind() {
 	case reflect.Map:
@@ -110,8 +84,6 @@ func emptyEnvContainer(item *manifestItem, fv reflect.Value) error {
 		fv.Set(reflect.MakeSlice(fv.Type(), 0, 0))
 		return nil
 	case reflect.Array:
-		// A fixed-size array has no length to empty; every element takes its
-		// zero value, which is what decoding an empty JSON array into it does.
 		fv.Set(reflect.Zero(fv.Type()))
 		return nil
 	}
@@ -121,8 +93,7 @@ func emptyEnvContainer(item *manifestItem, fv reflect.Value) error {
 }
 
 // envContainerFailure wraps a failed decode, naming the variable and the item.
-// A sensitive item's failure states the type alone: the parser and the decoder
-// both quote what they were given, and that text must not reach the diagnostic.
+// A sensitive item's failure states the type alone.
 func envContainerFailure(item *manifestItem, fv reflect.Value, err error) error {
 	if item.item.Sensitive {
 		return fmt.Errorf("%w: environment variable %s gives the value of %q, and it does not "+
@@ -133,19 +104,9 @@ func envContainerFailure(item *manifestItem, fv reflect.Value, err error) error 
 		item.envName, item.path, err)
 }
 
-// parseEnvJSON reads a container variable's value. The text is read token by
-// token rather than decoded in one call: the standard library keeps the last of
-// two equal keys in an object and drops the first without a word, and an
-// environment variable is written by hand, where a repeated key means the
-// writer lost track rather than that the second is meant.
-//
-// Numbers keep the width they were written with, the way the JSON config format
-// delivers them: decoding every one as a float64 would round an integer above
-// 2^53 before any field saw it. A null is refused wherever it stands, because an
-// environment variable that means nothing is better left unset than written as
-// a value no container type has. Text that holds no value at all is refused: an
-// empty variable already means the empty container, so whitespace alone is a
-// mistake rather than a second spelling of it.
+// parseEnvJSON reads a container variable's value token by token. A repeated
+// key is refused, numbers keep their width, and a null or whitespace-only value
+// is refused.
 func parseEnvJSON(text string) (any, error) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.UseNumber()
@@ -187,7 +148,7 @@ func parseJSONValue(dec *json.Decoder) (any, error) {
 }
 
 // parseJSONObject reads the members of an object whose opening brace has been
-// read, refusing a key given twice.
+// read.
 func parseJSONObject(dec *json.Decoder) (any, error) {
 	object := make(map[string]any)
 	for dec.More() {
@@ -245,10 +206,7 @@ func onlyWhitespace(dec *json.Decoder) error {
 }
 
 // jsonNumber gives a JSON number the Go value that holds what it was written
-// with: an int when the literal fits one, the 64-bit type holding it otherwise,
-// and a float64 only when the literal has a fraction or an exponent or no
-// 64-bit integer holds it. The config format's JSON parser follows the same
-// rule, so one value reads the same from either source.
+// with: an int when the literal fits one, otherwise a wider or floating type.
 func jsonNumber(n json.Number) (any, error) {
 	text := n.String()
 	if !strings.ContainsAny(text, ".eE") {

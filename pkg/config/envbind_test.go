@@ -53,6 +53,8 @@ func decodeServer(t *testing.T, l *loader) envOptions {
 	return opts
 }
 
+// TestEnvOverridesPrimary checks that an environment variable overrides the
+// primary source.
 func TestEnvOverridesPrimary(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__ADDR", ":9090")
 	l := envLoader(t, "MYAPP")
@@ -64,6 +66,8 @@ func TestEnvOverridesPrimary(t *testing.T) {
 	}
 }
 
+// TestEnvLayerRecordsProvenance checks that EffectiveLayer reports the
+// environment as the source.
 func TestEnvLayerRecordsProvenance(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__ADDR", ":9090")
 	l := envLoader(t, "MYAPP")
@@ -78,8 +82,7 @@ func TestEnvLayerRecordsProvenance(t *testing.T) {
 
 // TestEmptyEnvVariableCountsAsGiven pins the reading an empty variable gets:
 // somebody who set it did give a value, and a string list set to it is the
-// empty list rather than a list of one empty element. The layering tool's own
-// default is the opposite, so this is a setting rather than a given.
+// empty list rather than a list of one empty element.
 func TestEmptyEnvVariableCountsAsGiven(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__HOSTS", "")
 	l := envLoader(t, "MYAPP")
@@ -92,11 +95,8 @@ func TestEmptyEnvVariableCountsAsGiven(t *testing.T) {
 	}
 }
 
-// TestUnknownPrefixedEnvPassesAndIsCollected pins the one origin that does not
-// fail on a key it does not know. The process environment is not the host's
-// alone: an orchestrator injects <PREFIX>_SERVICE_HOST by service name, and
-// treating that as a startup failure would let a deployment action unrelated
-// to configuration kill the process.
+// TestUnknownPrefixedEnvPassesAndIsCollected pins the one origin that does
+// not fail on a key it does not know.
 func TestUnknownPrefixedEnvPassesAndIsCollected(t *testing.T) {
 	m := envLoader(t, "MYAPP").m
 	unclaimed := unclaimedEnvNames(m, map[string]string{
@@ -113,11 +113,9 @@ func TestUnknownPrefixedEnvPassesAndIsCollected(t *testing.T) {
 	}
 }
 
-// TestItemWithoutEnvOriginIsNotOverridden pins that an item not declaring the
-// environment derives no name, so a variable that looks like its name takes
-// the pass-and-report path rather than overriding it. It is the executable
-// form of the rule that the layering tool is never let loose on the whole
-// environment: every name it reads is one this module bound by hand.
+// TestItemWithoutEnvOriginIsNotOverridden pins that an item not declaring
+// the environment derives no name, so a variable that looks like its name
+// takes the pass-and-report path rather than overriding it.
 func TestItemWithoutEnvOriginIsNotOverridden(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__FLAGS_ON", "given")
 	l := envLoader(t, "MYAPP")
@@ -166,9 +164,9 @@ func diagnosticLoader(t *testing.T, prefix string) (*loader, *strings.Builder) {
 }
 
 // TestEnvVariableNamingAPrimaryOnlyItemIsReportedByName pins that a variable
-// whose name spells a declared item the environment cannot give is reported as
-// such: the line names the item and the sources it accepts, rather than
-// reading as if no declaration existed. The variable still reaches no value.
+// whose name spells a declared item the environment cannot give is reported
+// as such: the line names the item and the sources it accepts, rather than
+// reading as if no declaration existed.
 func TestEnvVariableNamingAPrimaryOnlyItemIsReportedByName(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__ADDR", ":9090")
 	l, diag := diagnosticLoader(t, "MYAPP")
@@ -194,9 +192,7 @@ func TestEnvVariableNamingAPrimaryOnlyItemIsReportedByName(t *testing.T) {
 }
 
 // TestEnvVariableWithNoDeclaredPathStaysGeneric pins the other half of the
-// split: a variable whose path no module declares keeps the generic line. Both
-// variables are set together, so the case shows the report telling them apart
-// in one pass.
+// split: a variable whose path no module declares keeps the generic line.
 func TestEnvVariableWithNoDeclaredPathStaysGeneric(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__ADDR", ":9090")
 	t.Setenv("MYAPP_SERVICE_HOST", "10.0.0.1")
@@ -237,6 +233,8 @@ func TestPinnedEnvNameWorksWithoutPrefix(t *testing.T) {
 	}
 }
 
+// TestStringListFromEnvReplaces checks that an environment list replaces the
+// whole list.
 func TestStringListFromEnvReplaces(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__HOSTS", "x,y,z")
 	l := envLoader(t, "MYAPP")
@@ -246,6 +244,8 @@ func TestStringListFromEnvReplaces(t *testing.T) {
 	}
 }
 
+// TestEnvTypeMismatch checks that a value that does not convert is
+// ErrTypeMismatch.
 func TestEnvTypeMismatch(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__RETRIES", "many")
 	l := envLoader(t, "MYAPP")
@@ -283,11 +283,7 @@ func TestUndeclaredContainerIgnoresTheEnvironment(t *testing.T) {
 }
 
 // TestTheEnvironmentIsReadOnceWhenLoadingBegins pins the snapshot the
-// configuration of a run is. A variable changed in the process after loading
-// began -- set, changed or removed -- reaches no value a module decodes, and
-// no answer to whether a required item was given: a module that decodes again
-// at run time would otherwise see a configuration nobody started the process
-// with.
+// configuration of a run is.
 func TestTheEnvironmentIsReadOnceWhenLoadingBegins(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__ADDR", ":1")
 	t.Setenv("MYAPP_SERVER__RETRIES", "5")

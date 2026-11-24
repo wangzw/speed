@@ -5,63 +5,40 @@ import (
 	"net/url"
 )
 
-// Source is the transport extension point: one implementation per URI scheme.
-// An implementation is delivered as a resource, so config finds it by walking
-// the registry and never imports it.
+// Source is the transport extension point: one implementation per URI scheme,
+// delivered as a resource.
 type Source interface {
 	// Scheme is the URI scheme this transport answers for, without the
-	// separator, for example "file". It is registered in lower case, so
-	// "FILE" and "file" are one scheme rather than two, and two transports
-	// declaring them conflict.
+	// separator, for example "file". It is registered in lower case.
 	Scheme() string
-	// Fetch reads the primary config source the locator points at and
-	// reports the format name of the data it returns. The name is matched
-	// exactly against the registered formats; config never sniffs content,
-	// because valid JSON is also valid YAML and a wrong guess parses the
-	// same bytes under the other grammar. Exactly is about that and about
-	// priorities, not about case: the name is folded to lower case before
-	// it is matched, so "YAML" reaches the parser registered as yaml.
-	//
-	// A locator this transport cannot serve, such as a remote host handed to
-	// a file source, is an error here rather than a silent fallback.
+	// Fetch reads the primary config source the locator points at and reports
+	// the format name of the data it returns. The name is matched against the
+	// registered formats, folded to lower case; config never sniffs content. A
+	// locator this transport cannot serve is an error rather than a silent
+	// fallback.
 	Fetch(ctx context.Context, locator *url.URL) (data []byte, format string, err error)
 }
 
-// Format is the format extension point: one implementation per format name.
-// Like a transport, it is delivered as a resource.
+// Format is the format extension point: one implementation per format name,
+// delivered as a resource.
 type Format interface {
-	// Name is the format name, for example "json". It is registered in
-	// lower case, so "JSON" and "json" are one name rather than two, and
-	// two parsers declaring them conflict.
+	// Name is the format name, for example "json". It is registered in lower
+	// case.
 	Name() string
-	// Unmarshal decodes the data into a tree of string-keyed maps. A
-	// non-string key anywhere in the tree, which YAML permits, is an error:
-	// silently stringifying it would make 1 and "1" indistinguishable, and a
-	// numeric key is not a legal config key in the first place. So is a key
-	// given twice in one mapping: a map holds one of the two values, and the
-	// other would be a setting written and never read.
+	// Unmarshal decodes the data into a tree of string-keyed maps. A non-string
+	// key anywhere in the tree, and a key given twice in one mapping, are errors.
 	Unmarshal(data []byte) (map[string]any, error)
 }
 
-// Reader is how a module reads its own values back. Modules take it up as a
-// capability, in Prepare to report what they cannot start without and in New to
-// build their product.
-//
-// The interface carries reads only: configuration is a snapshot taken at
-// startup and does not change afterwards.
+// Reader is how a module reads its own values back. It carries reads only:
+// configuration is a snapshot taken at startup.
 type Reader interface {
 	// Decode writes the values under a path into target. The path is the
-	// complete one in the config data, namespace plus mount path, which the
-	// module assembles itself from what it declared.
+	// complete one in the config data, namespace plus mount path. Defaults arrive
+	// through the base layer, and a path never declared leaves target as it is.
 	//
-	// Defaults arrive through the config data's base layer, so a caller
-	// passing a zero struct still gets them. A path that was never declared
-	// is not an error: target keeps what the caller put in it.
-	//
-	// A required item no source gave is ErrMissingRequired when its module
-	// is one this run takes in at run level. The required items of any other
-	// module are not judged, whoever decodes its path: a command that reports
-	// the configuration reads modules it only collects from, and their
-	// required items are the business of the commands that run them.
+	// A required item no source gave is ErrMissingRequired when its module is one
+	// this run takes in at run level; the required items of other modules are not
+	// judged.
 	Decode(path string, target any) error
 }

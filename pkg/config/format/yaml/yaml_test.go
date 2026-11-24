@@ -24,6 +24,7 @@ func parser(t *testing.T) config.Format {
 	return found[0].Value
 }
 
+// TestName checks the format name the parser reports.
 func TestName(t *testing.T) {
 	if got := parser(t).Name(); got != "yaml" {
 		t.Errorf("Name() = %q, want %q", got, "yaml")
@@ -135,9 +136,7 @@ func TestUndefinedAliasRejected(t *testing.T) {
 }
 
 // TestSelfReferentialAliasRejected covers an anchor holding an alias to
-// itself. The library parses it and leaves a cycle in the tree, so a walk
-// without memory of its path never returns; the failure has to be reported
-// rather than waited out.
+// itself.
 func TestSelfReferentialAliasRejected(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
@@ -163,8 +162,7 @@ func TestMergeKeyRejected(t *testing.T) {
 }
 
 // TestMultipleDocumentsRejected covers a stream carrying more than one
-// document. Reading the first and dropping the rest would leave settings
-// somebody wrote with no effect and nothing said about it.
+// document.
 func TestMultipleDocumentsRejected(t *testing.T) {
 	_, err := parser(t).Unmarshal([]byte("a: 1\n---\nb: 2\n"))
 	if err == nil {
@@ -175,11 +173,7 @@ func TestMultipleDocumentsRejected(t *testing.T) {
 	}
 }
 
-// TestDuplicateKeyRejected covers a mapping that gives one key twice. Keeping
-// either value drops the other, and a second section under one key drops every
-// setting of the first that the second does not repeat, which then falls back
-// to its default with nothing said about it. The same key written once plainly
-// and once quoted, or once through an alias, is still the same key.
+// TestDuplicateKeyRejected covers a mapping that gives one key twice.
 func TestDuplicateKeyRejected(t *testing.T) {
 	for name, data := range map[string]string{
 		"section":   "app:\n  level: info\n  port: 1\napp:\n  level: debug\n",
@@ -240,6 +234,7 @@ func TestNonMappingTopLevelRejected(t *testing.T) {
 	}
 }
 
+// TestMalformedDocumentRejected checks that a malformed document is refused.
 func TestMalformedDocumentRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte("a: [1, 2\n")); err == nil {
 		t.Fatal("Unmarshal() succeeded on malformed YAML, want an error")

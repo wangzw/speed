@@ -35,6 +35,8 @@ func decodeRejects[T any](t *testing.T, raw any) error {
 	return err
 }
 
+// TestDurationFromString checks that a duration is read from its string
+// form.
 func TestDurationFromString(t *testing.T) {
 	if got := decodeTo[time.Duration](t, "5m"); got != 5*time.Minute {
 		t.Fatalf("\"5m\" converted to %v, want 5m0s", got)
@@ -46,17 +48,15 @@ func TestDurationFromString(t *testing.T) {
 
 // TestDurationPassesThroughFromTheDefaultLayer pins the one numeric source a
 // duration does take: the carrier struct's own field, which already is one.
-// Refusing it would make every declared default unreadable.
 func TestDurationPassesThroughFromTheDefaultLayer(t *testing.T) {
 	if got := decodeTo[time.Duration](t, 5*time.Minute); got != 5*time.Minute {
 		t.Fatalf("a declared duration converted to %v, want 5m0s", got)
 	}
 }
 
-// TestBareNumberDurationRejected pins the one rule this mechanism has to give
-// itself: a Duration is an int64 count of nanoseconds, so a bare 300 would
-// read as five minutes and mean three hundred nanoseconds. The library's own
-// duration hook covers the string leg alone and would take the number.
+// TestBareNumberDurationRejected pins the one rule this mechanism has to
+// give itself: a Duration is an int64 count of nanoseconds, so a bare 300
+// would read as five minutes and mean three hundred nanoseconds.
 func TestBareNumberDurationRejected(t *testing.T) {
 	for name, raw := range map[string]any{
 		"a JSON number the primary source gives": float64(300),
@@ -69,6 +69,7 @@ func TestBareNumberDurationRejected(t *testing.T) {
 	}
 }
 
+// TestIntFromJSONNumber checks that a JSON integer lands in an int field.
 func TestIntFromJSONNumber(t *testing.T) {
 	if got := decodeTo[int](t, float64(10)); got != 10 {
 		t.Fatalf("the JSON number 10 converted to %d, want 10", got)
@@ -86,6 +87,8 @@ func TestFractionalNumberIntoAnIntegerFieldRejected(t *testing.T) {
 	}
 }
 
+// TestTextUnmarshalerSupported checks that a type implementing
+// TextUnmarshaler reads itself from text.
 func TestTextUnmarshalerSupported(t *testing.T) {
 	want := time.Date(2026, 9, 13, 10, 30, 0, 0, time.UTC)
 	if got := decodeTo[time.Time](t, "2026-09-13T10:30:00Z"); !got.Equal(want) {
@@ -103,6 +106,7 @@ func TestTextUnmarshalerSupported(t *testing.T) {
 	}
 }
 
+// TestScalarConversions checks the scalar conversions a text layer gives.
 func TestScalarConversions(t *testing.T) {
 	if got := decodeTo[bool](t, "true"); !got {
 		t.Fatal("the string \"true\" converted to false")
@@ -133,6 +137,8 @@ func TestScalarConversions(t *testing.T) {
 	decodeRejects[uint8](t, -1)
 }
 
+// TestIntegerOverflowRejected checks that a number too wide for its field is
+// refused.
 func TestIntegerOverflowRejected(t *testing.T) {
 	err := decodeRejects[int8](t, float64(300))
 	if !strings.Contains(err.Error(), "int8") {
@@ -142,6 +148,8 @@ func TestIntegerOverflowRejected(t *testing.T) {
 	decodeRejects[uint32](t, float64(1e20))
 }
 
+// TestStringListCommaSeparatedReplaces checks that comma-separated text
+// becomes a list.
 func TestStringListCommaSeparatedReplaces(t *testing.T) {
 	want := []string{"a", "b", "c"}
 	if got := decodeTo[[]string](t, "a,b,c"); !reflect.DeepEqual(got, want) {
@@ -158,9 +166,8 @@ func TestStringListCommaSeparatedReplaces(t *testing.T) {
 }
 
 // TestCommaInsideElementIsNotEscapable pins the accepted cost of the flat
-// form: the separator carries no escape, so an element holding a comma has to
-// come from the primary config source. A quoting rule of this project's own is
-// exactly what the flat form is meant to avoid.
+// form: the separator carries no escape, so an element holding a comma has
+// to come from the primary config source.
 func TestCommaInsideElementIsNotEscapable(t *testing.T) {
 	for _, written := range []string{`a\,b`, `"a,b"`} {
 		got := decodeTo[[]string](t, written)
@@ -173,8 +180,7 @@ func TestCommaInsideElementIsNotEscapable(t *testing.T) {
 
 // TestEmbeddedFieldInsideContainerElement pins that the keys of a container
 // element address an embedded field directly, the way the manifest expansion
-// and Decode address it. A config file would otherwise read differently inside
-// a container than outside one.
+// and Decode address it.
 func TestEmbeddedFieldInsideContainerElement(t *testing.T) {
 	type element struct {
 		EmbeddedOptions
@@ -211,10 +217,7 @@ func TestContainersFromPrimaryConverted(t *testing.T) {
 }
 
 // TestContainerKeyFromAJSONTag pins the leg of the field-name rule the
-// decoding library has no setting for. Left to the library the json tag is
-// invisible, and the key would fall through to the field's own name without a
-// word - the same key reading one way outside a container and another inside
-// one.
+// decoding library has no setting for.
 func TestContainerKeyFromAJSONTag(t *testing.T) {
 	type endpoint struct {
 		PoolSize int `json:"pool_size"`
@@ -237,6 +240,8 @@ func TestConvertedContainersDoNotAliasTheSource(t *testing.T) {
 	}
 }
 
+// TestTypeMismatchNamesPathAndType checks that a type mismatch names the
+// path and the target type.
 func TestTypeMismatchNamesPathAndType(t *testing.T) {
 	out := reflect.New(reflect.TypeFor[time.Duration]()).Elem()
 	err := decodeInto("cache.ttl", "abc", out)
@@ -263,10 +268,7 @@ func TestPointerFieldsAreAllocated(t *testing.T) {
 	}
 }
 
-// TestFloatOverflowRejected pins the numeric leg of the range check. The
-// library writes a float64 into a float32 field by conversion, so a value
-// wider than the field arrives as an infinity and reads as a value rather
-// than as a failure.
+// TestFloatOverflowRejected pins the numeric leg of the range check.
 func TestFloatOverflowRejected(t *testing.T) {
 	err := decodeRejects[float32](t, 1e300)
 	if !strings.Contains(err.Error(), "float32") {
@@ -281,18 +283,8 @@ func TestFloatOverflowRejected(t *testing.T) {
 	}
 }
 
-// TestTheLargestFloat32GoesInAsItIsWritten pins where a float32 field's range
-// ends.
-//
-// float32's shortest text for math.MaxFloat32 is 3.4028235e+38, and that text
-// names a number a little above the value itself. It is still a number the
-// field holds by the round-trip rule: its nearest float32 is math.MaxFloat32,
-// which float32 writes as the same text. So a config file, a variable or a
-// flag giving that text sets the field to its largest value. A number whose
-// nearest float32 is an infinity, and one the field would hold as its largest
-// value while writing it as a different number, are refused as every other
-// neighbour is; the infinities themselves pass, as every float type holds
-// them.
+// TestTheLargestFloat32GoesInAsItIsWritten checks that the shortest float32
+// text for math.MaxFloat32 still lands in a float32 field.
 func TestTheLargestFloat32GoesInAsItIsWritten(t *testing.T) {
 	for _, c := range []struct {
 		raw  any
@@ -323,10 +315,7 @@ func TestTheLargestFloat32GoesInAsItIsWritten(t *testing.T) {
 }
 
 // TestAFloat32DefaultAtItsLargestTypesBack pins the same line where the help
-// output meets it. The default column writes a float32 field at its own width,
-// so a field declared at math.MaxFloat32 shows 3.4028235e+38, and a reader who
-// copies that onto the command line gets the declared default back rather
-// than a refusal.
+// output meets it.
 func TestAFloat32DefaultAtItsLargestTypesBack(t *testing.T) {
 	defaults := struct {
 		Ceiling float32
@@ -361,16 +350,8 @@ func TestAFloat32DefaultAtItsLargestTypesBack(t *testing.T) {
 	}
 }
 
-// TestANumberIntoAFloatFieldIsNeverRounded pins that a float field takes only
-// a number it reads back as the one the source gave.
-//
-// An integer has to be one the field's type holds exactly: 16777217 is not a
-// float32, and 2^53+1 is not a float64, so either would be stored as its
-// neighbour. A float going into a float32 has to come back as the same number
-// when the float32 is written in its own shortest form: 0.1 does, while
-// 16777217.0 comes back as 16777216 and 1e-50 as zero. The text form is held
-// to the same rule as the typed one, so the command line and a config file do
-// not differ on what a field takes.
+// TestANumberIntoAFloatFieldIsNeverRounded pins that a float field takes
+// only a number it reads back as the one the source gave.
 func TestANumberIntoAFloatFieldIsNeverRounded(t *testing.T) {
 	for _, raw := range []any{int64(16_777_217), float64(16_777_217), "16777217", 1e-50, "1e-50"} {
 		decodeRejects[float32](t, raw)
@@ -402,14 +383,6 @@ func TestANumberIntoAFloatFieldIsNeverRounded(t *testing.T) {
 // TestAWholeFloatIsHeldToTheIntegerRangeExactly pins the edges of the 64-bit
 // range for a whole number that arrives as a float, which is how a source
 // writing one with an exponent delivers it.
-//
-// The range is the target's own on every platform. Converting a float an
-// integer type cannot hold is implementation-defined in Go, and where it
-// saturates to the bound, 2^63 would become the largest int64 and pass a
-// check that converts first and compares after -- a value one past the range
-// accepted as a different value. For an unsigned field the same conversion
-// through int64 turns 2^63 into 2^63-1, and a value above it into a refusal
-// of a number the field holds.
 func TestAWholeFloatIsHeldToTheIntegerRangeExactly(t *testing.T) {
 	decodeRejects[int64](t, float64(1<<63))
 	decodeRejects[int64](t, math.Inf(1))
@@ -428,8 +401,7 @@ func TestAWholeFloatIsHeldToTheIntegerRangeExactly(t *testing.T) {
 }
 
 // TestUnsignedAboveTheSignedRangeAccepted pins the upper end of an unsigned
-// field. A source can reach it -- YAML reads 18446744073709551615 as a uint64
-// -- and a field wide enough to hold it has to take it.
+// field.
 func TestUnsignedAboveTheSignedRangeAccepted(t *testing.T) {
 	if got := decodeTo[uint64](t, uint64(math.MaxUint64)); got != math.MaxUint64 {
 		t.Fatalf("the largest uint64 converted to %d, want %d", got, uint64(math.MaxUint64))
@@ -444,10 +416,9 @@ func TestUnsignedAboveTheSignedRangeAccepted(t *testing.T) {
 	decodeRejects[int64](t, uint64(math.MaxUint64))
 }
 
-// TestTwoKeysForOneContainerFieldRejected pins that renaming a key to the one
-// the decoder looks the field up by does not overwrite a value already there.
-// The keys inside a container take no part in the unknown-key check, so a
-// dropped value would go unreported everywhere.
+// TestTwoKeysForOneContainerFieldRejected pins that renaming a key to the
+// one the decoder looks the field up by does not overwrite a value already
+// there.
 func TestTwoKeysForOneContainerFieldRejected(t *testing.T) {
 	type element struct {
 		MaxConns int `json:"maxConns"`

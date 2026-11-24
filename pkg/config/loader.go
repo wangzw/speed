@@ -16,58 +16,28 @@ import (
 const diagnosticPrefix = "config: "
 
 // loader carries one run's load from the first declaration to the reader.
-//
-// It is staged rather than done in one call because the command tree descends
-// one level at a time: which arguments exist on a level depends on which
-// modules that level takes in, and which level comes next is the answer the
-// previous one parsed. Collection is not staged: it happens once, over every
-// registered module, before any level is looked at.
 type loader struct {
 	reg *core.Registry
 	m   *manifest
 	t   *transports
-	// v is the layering tool holding the defaults, the primary source and
-	// the command line.
+	// v is the layering tool holding the defaults, the primary source and the
+	// command line.
 	v *viper.Viper
-	// env is the process environment as it stood when loading began. Every
-	// reading of the environment in a run is a reading of this one -- the
-	// values, whether a required item was given, the config locator and the
-	// unclaimed-variable report -- so they cannot disagree, and a variable
-	// changed later reaches nothing: configuration is a snapshot taken at
-	// startup.
+	// env is the process environment as it stood when loading began.
 	env map[string]string
-	// bound is the argument each item was registered as, by path. It is the
-	// command-line leg of the question which layer gave a value, and it
-	// fills up as the command tree descends.
+	// bound is the argument each item was registered as, by path.
 	bound map[string]*pflag.Flag
-	// readPrimary records that the primary source has been read, so that a
-	// second read is caught rather than merged on top of the first.
+	// readPrimary records that the primary source has been read.
 	readPrimary bool
-	// primary is what the primary config source wrote, before the layering
-	// tool folded its keys. A container leaf is read back from here: its
-	// inner keys are the user's own data and are not in the manifest, so
-	// folding them changes the configuration rather than normalising a name.
-	primary map[string]any
-	// defaults is the host defaults document, before the layering tool folded
-	// its keys. It is the primary source's counterpart one layer down: a
-	// container leaf whose prototype value the document replaces is read back
-	// from here for the same reason, and the scalars reach the default layer
-	// through the manifest instead (see applyDefaults).
+	// primary and defaults are the two documents before the layering tool
+	// folded their keys; a container leaf is read back from here.
+	primary  map[string]any
 	defaults map[string]any
 	stderr   io.Writer
 }
 
 // newLoader collects the declarations of a registry and lays the base layer.
-//
-// Collection comes before everything and covers every registered module,
-// whichever command this run selects: without the whole manifest there is no
-// way to tell an unknown key from a misspelled one, and no way to know which
-// environment variable names are claimed.
-//
-// It is not exported. The stages have an order the reader depends on -- a
-// Reader taken before the command line is bound reports every required item
-// given there as missing -- and App and Load are the two places that keep it,
-// so they are the two ways in.
+// Collection covers every registered module, whichever command this run selects.
 func newLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 	m, err := newManifest(reg)
 	if err != nil {
@@ -90,10 +60,6 @@ func newLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 		bound:  make(map[string]*pflag.Flag),
 		stderr: stderr,
 	}
-	// The document is folded into the manifest before the base layer is laid:
-	// replacing the item's default makes Decode, the rendered default of the
-	// help output, meansUnset and container decoding agree on one value, with
-	// no second place that resolves a default.
 	if hasDefaults {
 		if err := l.applyDefaults(d, dModule); err != nil {
 			return nil, err
@@ -103,10 +69,8 @@ func newLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 	return l, nil
 }
 
-// seedDefaults lays the base layer: every declared leaf takes the current
-// value of its field in the carrier struct. Decode reads from the layering
-// tool alone and never goes back to the prototype, which is how a caller
-// passing a zero struct still gets the declared defaults.
+// seedDefaults lays the base layer: every declared leaf takes the current value
+// of its field in the carrier struct.
 func (l *loader) seedDefaults() {
 	for _, item := range l.m.items {
 		l.v.SetDefault(item.path, item.def)
@@ -120,15 +84,7 @@ func (l *loader) Manifest() *manifest { return l.m }
 // Host is the declared host identity, zero when no module declared one.
 func (l *loader) Host() HostIdentity { return l.m.host }
 
-// Reader hands out the values of a run every registered module takes part in,
-// which is the run Load assembles: the required items of every module are
-// judged.
-//
-// The command line leg of the question which layer gave a value rests on
-// BindLayer having been called for every level of the selected command path.
-// Handing out a reader before that would make the leg answer no for every
-// item, and a required item given on the command line would be reported as
-// missing.
+// Reader hands out the values of a run every registered module takes part in.
 func (l *loader) Reader() Reader {
 	modules := l.reg.Modules()
 	running := make([]string, len(modules))
@@ -138,11 +94,8 @@ func (l *loader) Reader() Reader {
 	return l.ReaderFor(running)
 }
 
-// ReaderFor hands out the values of a run that takes the named modules in at
-// run level. Their required items are judged and no other module's are: a
-// module the run only collects from is never constructed, so nothing of the
-// run is short of its values, and a command reading them in its own action is
-// reporting on them rather than depending on them.
+// ReaderFor hands out the values of a run that takes the named modules in at run
+// level. Their required items are judged and no other module's are.
 func (l *loader) ReaderFor(running []string) Reader {
 	judged := make(map[string]bool, len(running))
 	for _, name := range running {

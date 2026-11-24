@@ -11,17 +11,7 @@ import (
 
 // TestConfigRootCarriesOnlyTheParsingTools is the executable form of the
 // boundary in this module's AGENTS.md: the root package carries the parsing
-// tools and nothing else third-party. Every module that declares
-// configuration imports this package, so that budget is spent for all of them
-// at once, and spending it again needs the same kind of decision that spent it
-// the first time.
-//
-// The observation is the root package's own non-test import face: what a host
-// compiles by importing this package, and no more. It is read out of the
-// package rather than out of go.mod because one go.mod now covers the whole of
-// pkg/: its requirements are the union of every capability's, and judging that
-// list would fail on dependencies this package never asked for. The cost of
-// having no compiler support here is recorded in ADR-module-layout.
+// tools and nothing else third-party.
 func TestConfigRootCarriesOnlyTheParsingTools(t *testing.T) {
 	allowed := []string{
 		"github.com/go-viper/mapstructure/v2",

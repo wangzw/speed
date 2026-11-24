@@ -46,14 +46,7 @@ func secretLoader(t *testing.T) *loader {
 }
 
 // TestASensitiveValueStaysOutOfItsFailure pins that a value an item marks
-// sensitive is not written into the error its conversion fails with. That
-// error travels up through the stage that decoded it and is printed to
-// standard error by the command-line library, which makes it one of the
-// diagnostics a sensitive item is kept out of: a mistyped credential would
-// otherwise land in the startup log of every failed deploy.
-//
-// The failure still names the item and says it did not convert, since that is
-// what the operator has to fix.
+// sensitive is not written into the error its conversion fails with.
 func TestASensitiveValueStaysOutOfItsFailure(t *testing.T) {
 	check := func(t *testing.T, err error, class error) {
 		t.Helper()
@@ -133,10 +126,9 @@ func TestASensitiveContainerFromTheEnvironmentIsDecoded(t *testing.T) {
 	}
 }
 
-// TestSensitiveItemsReportTheirSourceAndNotTheirValue pins the startup report:
-// every sensitive item names the source its value came from, and no line
-// carries the value. An operator needs to know which secret the run took and
-// where from; the diagnostic stream is not a place to repeat it.
+// TestSensitiveItemsReportTheirSourceAndNotTheirValue pins the startup
+// report: every sensitive item names the source its value came from, and no
+// line carries the value.
 func TestSensitiveItemsReportTheirSourceAndNotTheirValue(t *testing.T) {
 	t.Setenv("MYAPP_VAULT__PIN", "424242")
 	t.Setenv("MYAPP_VAULT__TOKENS", `{"api":7}`)
@@ -159,9 +151,8 @@ func TestSensitiveItemsReportTheirSourceAndNotTheirValue(t *testing.T) {
 	}
 }
 
-// TestSensitiveItemReportNamesThePrimarySource pins the other source a sensitive
-// value comes from: the primary config source. The line says so, and the value
-// the source wrote stays out of it.
+// TestSensitiveItemReportNamesThePrimarySource pins the other source a
+// sensitive value comes from: the primary config source.
 func TestSensitiveItemReportNamesThePrimarySource(t *testing.T) {
 	l, stderr := sensitiveReporter(t)
 	givePrimaryWhole(t, l, map[string]any{
@@ -177,10 +168,9 @@ func TestSensitiveItemReportNamesThePrimarySource(t *testing.T) {
 	}
 }
 
-// TestLoadReportsSensitiveSources pins that the report is part of the startup
-// hosts already run, rather than a helper each caller has to remember. The
-// loading pass writes it to the diagnostics stream like the unclaimed-variable
-// report, and the value stays out of the line.
+// TestLoadReportsSensitiveSources pins that the report is part of the
+// startup hosts already run, rather than a helper each caller has to
+// remember.
 func TestLoadReportsSensitiveSources(t *testing.T) {
 	t.Setenv("MYAPP_VAULT__TOKENS", `{"api":7}`)
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, nil,

@@ -11,23 +11,11 @@ import (
 )
 
 // Load reads the configuration of a registry without a command tree: every
-// registered module takes part, and the arguments are one flat set.
+// registered module takes part, and the arguments are one flat set. It returns
+// the reader; a caller that drives the registry supplies it itself.
 //
-// It is the loading step on its own. A host writes a command tree instead, and
-// Execute runs this same step across its levels; Load is for a caller that
-// wants the values and has no lifecycle to drive, a test of a module outside
-// its own package among them.
-//
-// The reader is returned and not supplied. A caller that drives the registry
-// supplies it itself, as the instance of the config module: a registry made with
-// core.New registers Module first, and naming the module with ModuleName leaves
-// no doubt which one the reader belongs to, whatever else the registry holds.
-//
-// The environment is the process's own, read once when the call begins: the
-// <PREFIX>_CONFIG that selects the primary source is read from that snapshot,
-// and so are the values. A caller that steers a variable writes it into the
-// process environment before calling, which in a test is t.Setenv; a variable
-// changed afterwards reaches nothing the returned Reader decodes.
+// The environment is read once when the call begins: a caller that steers a
+// variable writes it into the process environment first.
 func Load(ctx context.Context, reg *core.Registry, args []string) (Reader, error) {
 	l, err := newLoader(reg, os.Stderr)
 	if err != nil {

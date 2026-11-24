@@ -1,10 +1,5 @@
-// Package json parses the JSON configuration format. It is written on the
-// standard library alone, which is the whole point of keeping it apart from
-// the YAML parser: a host that configures itself in JSON carries no parsing
-// dependency at all.
-//
-// Importing the package is all a host does with it, because the parser travels
-// as a resource of a module registered in init:
+// Package json parses the JSON configuration format, on the standard library
+// alone. Importing the package is all a host does with it:
 //
 //	import _ "github.com/vislake/speed/pkg/config/format/json"
 package json
@@ -22,58 +17,28 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// ModuleName is the name this parser registers under. Transports and formats
-// are named after where they live, so a registry listing says what a module is
-// without anybody opening it. It is exported for the host's command tree, which
-// takes modules in by name: a constant a rename carries along rather than a
-// literal it leaves behind.
+// ModuleName is the name this parser registers under.
 const ModuleName = "config.format.json"
 
-// init registers the module with the process registry, which is what makes a
-// blank import of this package enough to have JSON config sources parsed.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is this module's descriptor, exported for registries that do not
-// inherit the process-level registrations, such as the ones tests build with
-// core.New.
-//
-// It holds a resource and nothing else: a parser is stateless, has no
-// lifecycle and delivers no capability. The configuration module collects it
-// with core.Resources and never imports this package.
+// Module is this module's descriptor, for registries that do not inherit the
+// process-level registrations. It holds a resource and nothing else.
 func Module() core.Module {
 	return core.Module{Name: ModuleName, Resources: []any{format{}}}
 }
 
-// Compile-time proof that this parser satisfies the extension point it is
-// collected by: the resource is stored as any, so nothing else would catch a
-// signature that drifted from the interface.
 var _ config.Format = format{}
 
-// format is the parser itself. It holds no state: every call is answered out
-// of the data it is given.
 type format struct{}
 
-// Name reports the format name this parser is selected by. The name is matched
-// exactly, so it is the same string a file source derives from the .json
-// extension.
+// Name reports the format name this parser is selected by.
 func (format) Name() string { return "json" }
 
-// Unmarshal decodes a JSON document into a tree of string-keyed maps. JSON has
-// string keys by construction, so the rule against non-string keys costs this
-// parser nothing. A number written as an integer arrives as one, with every
-// digit it was written with; any other number arrives as a float64, which the
-// conversion layer writes into an integer field when it is whole.
-//
-// An object that gives one key twice is refused. The standard library keeps
-// the last of them, so a second section under one key would drop every setting
-// of the first that it does not repeat, and nothing would say so. Data after
-// the document is refused for the same reason. The document is therefore read
-// token by token rather than decoded in one call, which is the one way the
-// standard library leaves the keys of an object in view.
-//
-// A document holding null is an empty configuration rather than a failure: a
-// source that carries no settings is a legal way to run, and the layers below
-// it decide the values.
+// Unmarshal decodes a JSON document into a tree of string-keyed maps. An integer
+// literal arrives as an integer; any other number as a float64. A repeated key,
+// data after the document, and a non-mapping top level are refused. A document
+// holding null is an empty configuration.
 func (format) Unmarshal(data []byte) (map[string]any, error) {
 	w := &walker{data: data, dec: stdjson.NewDecoder(bytes.NewReader(data))}
 	w.dec.UseNumber()
@@ -103,8 +68,7 @@ func (format) Unmarshal(data []byte) (map[string]any, error) {
 	}
 }
 
-// walker reads one document off the decoder's token stream. The decoder holds
-// the syntax to the standard; the walker builds the tree and judges the keys.
+// walker reads one document off the decoder's token stream.
 type walker struct {
 	data []byte
 	dec  *stdjson.Decoder
@@ -125,19 +89,11 @@ func (w *walker) value() (any, error) {
 	if n, isNumber := tok.(stdjson.Number); isNumber {
 		return number(n)
 	}
-	// A closing delimiter where a value belongs is a syntax error the
-	// decoder reports itself, so what arrives here is a scalar.
 	return tok, nil
 }
 
-// number gives a number the Go value that holds what the document wrote.
-//
-// An integer literal, one written with neither a fraction nor an exponent, is
-// held as an integer: an int when it fits one, which is how YAML resolves it
-// too, and otherwise the 64-bit type that holds it. Held as a float64 it would
-// be rounded to 53 bits before any field saw it, and a config file writing
-// 9007199254740993 would run with 9007199254740992. Any other number, and an
-// integer literal no 64-bit type holds, is a float64, which is all it can be.
+// number gives a number the Go value that holds what the document wrote: an int
+// when the integer literal fits one, otherwise a wider or floating type.
 func number(n stdjson.Number) (any, error) {
 	text := n.String()
 	if !strings.ContainsAny(text, ".eE") {
@@ -164,7 +120,6 @@ func (w *walker) object() (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		// Inside an object the decoder yields a key as a string or fails.
 		key, _ := tok.(string)
 		if first, repeated := lines[key]; repeated {
 			return nil, fmt.Errorf("line %d: the key %q is given twice in one object, first at "+
@@ -200,14 +155,11 @@ func (w *walker) array() ([]any, error) {
 	return out, nil
 }
 
-// line is the line the decoder has read up to, counted from one, which is the
-// line of the token it returned last.
+// line is the line the decoder has read up to, counted from one.
 func (w *walker) line() int {
 	return 1 + bytes.Count(w.data[:w.dec.InputOffset()], []byte("\n"))
 }
 
-// describe names what a value is in the words of the format, so the error says
-// what was found rather than what Go called it.
 func describe(value any) string {
 	switch value.(type) {
 	case []any:

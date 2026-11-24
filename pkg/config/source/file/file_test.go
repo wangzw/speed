@@ -50,6 +50,7 @@ func write(t *testing.T, name, content string) string {
 	return "file://" + path
 }
 
+// TestScheme checks the scheme the transport answers for.
 func TestScheme(t *testing.T) {
 	if got := transport(t).Scheme(); got != "file" {
 		t.Errorf("Scheme() = %q, want %q", got, "file")
@@ -83,9 +84,7 @@ func TestFormatByExtension(t *testing.T) {
 }
 
 // TestUnknownExtension covers the two shapes that leave the format
-// undetermined. The file is absent in both, which pins the order as well: the
-// extension decides before anything is read, so an unreadable name fails on
-// the format rather than on the missing file.
+// undetermined.
 func TestUnknownExtension(t *testing.T) {
 	for _, name := range []string{"app.conf", "app"} {
 		t.Run(name, func(t *testing.T) {
@@ -100,9 +99,7 @@ func TestUnknownExtension(t *testing.T) {
 	}
 }
 
-// TestRemoteHostRejected covers a shape this transport does not serve. It is
-// a malformed locator rather than an unavailable source: retrying never helps
-// and the host has to fix what it wrote.
+// TestRemoteHostRejected covers a shape this transport does not serve.
 func TestRemoteHostRejected(t *testing.T) {
 	// file://./app.yaml is the shape that would slip through if accepting
 	// localhost were read as accepting a host at all: "." is a host here, and
@@ -181,11 +178,7 @@ func TestOpaqueLocatorKeepsExtensionRules(t *testing.T) {
 	}
 }
 
-// TestMissingFile also pins that the read error stays on the chain. A host
-// telling "the file is not there" apart from "the file would not open" is the
-// difference between writing one and fixing permissions, and the only thing
-// that carries it is the wrapped fs.ErrNotExist -- which a %v in the wrapping
-// verb would have flattened into text nobody can match on.
+// TestMissingFile also pins that the read error stays on the chain.
 func TestMissingFile(t *testing.T) {
 	_, _, err := fetch(t, "file://"+filepath.Join(t.TempDir(), "absent.yaml"))
 	if !errors.Is(err, config.ErrSourceUnavailable) {
@@ -196,6 +189,7 @@ func TestMissingFile(t *testing.T) {
 	}
 }
 
+// TestUnreadableFile checks that an unreadable file is ErrSourceUnavailable.
 func TestUnreadableFile(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root, which reads a file whatever its mode says")

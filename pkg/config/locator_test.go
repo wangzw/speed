@@ -137,6 +137,7 @@ func readLocator(t *testing.T, tr *transports, locator string) error {
 	return err
 }
 
+// TestMalformedLocator checks that a malformed locator is refused.
 func TestMalformedLocator(t *testing.T) {
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), defaultFormat())
 	if err := readLocator(t, tr, "://nope"); !errors.Is(err, ErrMalformedLocator) {
@@ -166,6 +167,8 @@ func TestSourceRejectedShapeMapsToMalformedLocator(t *testing.T) {
 	}
 }
 
+// TestUnknownSchemeNamesMissingImport checks that an unknown scheme names
+// the transport to import.
 func TestUnknownSchemeNamesMissingImport(t *testing.T) {
 	_, tr := locatorSetup(t, HostIdentity{}, defaultSource(), defaultFormat())
 	err := readLocator(t, tr, "etcd://10.0.0.1:2379/app/config")
@@ -210,6 +213,8 @@ func TestUnknownSchemeDerivesPathFromRequestedScheme(t *testing.T) {
 	}
 }
 
+// TestUndeterminedFormat checks that a file with an unrecognised extension
+// leaves the format undetermined.
 func TestUndeterminedFormat(t *testing.T) {
 	source := defaultSource()
 	source.format = ""
@@ -219,6 +224,8 @@ func TestUndeterminedFormat(t *testing.T) {
 	}
 }
 
+// TestUnknownFormatNamesMissingImport checks that an unknown format names
+// the parser to import.
 func TestUnknownFormatNamesMissingImport(t *testing.T) {
 	source := defaultSource()
 	source.format = "toml"
@@ -299,6 +306,8 @@ func missingTransportHints(t *testing.T) []error {
 	return []error{schemeErr, readLocator(t, tr, "file:///app.toml")}
 }
 
+// TestFetchFailureMapsToSourceUnavailable checks that a transport failure
+// becomes ErrSourceUnavailable.
 func TestFetchFailureMapsToSourceUnavailable(t *testing.T) {
 	source := defaultSource()
 	source.err = errors.New("no such file or directory")
@@ -312,6 +321,8 @@ func TestFetchFailureMapsToSourceUnavailable(t *testing.T) {
 	}
 }
 
+// TestUnmarshalFailureMapsToMalformedConfig checks that a parse failure
+// becomes ErrMalformedConfig.
 func TestUnmarshalFailureMapsToMalformedConfig(t *testing.T) {
 	format := defaultFormat()
 	format.err = errors.New("line 3: mapping values are not allowed here")
@@ -325,6 +336,8 @@ func TestUnmarshalFailureMapsToMalformedConfig(t *testing.T) {
 	}
 }
 
+// TestFetchAndUnmarshalProduceTheContent checks that a successful read
+// produces the parsed content.
 func TestFetchAndUnmarshalProduceTheContent(t *testing.T) {
 	format := defaultFormat()
 	format.content = map[string]any{"cache": map[string]any{"addr": "redis:6379"}}
@@ -358,6 +371,8 @@ func TestDuplicateSchemeRejected(t *testing.T) {
 	}
 }
 
+// TestDuplicateFormatNameRejected checks that two formats declaring one name
+// are refused.
 func TestDuplicateFormatNameRejected(t *testing.T) {
 	reg := core.New()
 	reg.Register(providing("format.yaml", fakeFormat{name: "yaml"}))
@@ -464,6 +479,8 @@ func TestFormatMatchIgnoresReportedNameCase(t *testing.T) {
 	}
 }
 
+// TestDuplicateFormatNameIgnoringCaseRejected checks that format names
+// differing only in case conflict.
 func TestDuplicateFormatNameIgnoringCaseRejected(t *testing.T) {
 	reg := core.New()
 	reg.Register(providing("format.upper", fakeFormat{name: "YAML"}))

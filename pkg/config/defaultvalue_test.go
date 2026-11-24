@@ -183,8 +183,7 @@ func sameDefault(got, want any) bool {
 }
 
 // TestHelpPointerDefaultShowsThePointee pins that a scalar pointer renders
-// what it points at. An address is a number that changes every run and names
-// no value the reader could give.
+// what it points at.
 func TestHelpPointerDefaultShowsThePointee(t *testing.T) {
 	if got := corpusDefault(t, "held"); got != "7" {
 		t.Fatalf("the pointer default renders as %q, and its value is 7", got)
@@ -192,9 +191,7 @@ func TestHelpPointerDefaultShowsThePointee(t *testing.T) {
 }
 
 // TestHelpTextDefaultUsesTheTypesOwnTextForm pins that a leaf which reads
-// itself from a string renders in that same string form. Both of these carry
-// their text methods on the pointer receiver, which is the shape a value held
-// in an interface hides.
+// itself from a string renders in that same string form.
 func TestHelpTextDefaultUsesTheTypesOwnTextForm(t *testing.T) {
 	if got := corpusDefault(t, "moment"); got != "2026-09-13T10:00:00Z" {
 		t.Fatalf("the time default renders as %q, and its own text form is RFC 3339", got)
@@ -205,8 +202,7 @@ func TestHelpTextDefaultUsesTheTypesOwnTextForm(t *testing.T) {
 }
 
 // TestHelpNumericDefaultIgnoresAStringerForm pins that a number renders as a
-// number. A type printing a word for its value says what the value means, not
-// what a source would have to give to produce it.
+// number.
 func TestHelpNumericDefaultIgnoresAStringerForm(t *testing.T) {
 	if got := corpusDefault(t, "level"); got != "3" {
 		t.Fatalf("the named integer renders as %q, and its value is 3", got)
@@ -214,8 +210,7 @@ func TestHelpNumericDefaultIgnoresAStringerForm(t *testing.T) {
 }
 
 // TestHelpFloatDefaultKeepsItsPrecision pins that a 32-bit float renders at
-// its own width. Widened to 64 bits it grows a tail of digits that is not what
-// the module declared.
+// its own width.
 func TestHelpFloatDefaultKeepsItsPrecision(t *testing.T) {
 	if got := corpusDefault(t, "ratio"); got != "0.1" {
 		t.Fatalf("the float default renders as %q, and its value is 0.1", got)
@@ -232,9 +227,7 @@ func TestHelpDurationDefaultIsWrittenAsDuration(t *testing.T) {
 }
 
 // TestHelpStringListDefaultIsCommaSeparated pins the flat form of a list,
-// which is the one the command line and the environment give. It is pinned on
-// what the command-line library is handed, not on the rendering alone: a
-// second renderer for lists is how the form and the quoting rule come apart.
+// which is the one the command line and the environment give.
 func TestHelpStringListDefaultIsCommaSeparated(t *testing.T) {
 	l := defaultsCorpusLoader(t)
 	if got := flagDefaultString(corpusItem(t, l, "hosts")); got != "a,b" {
@@ -242,10 +235,8 @@ func TestHelpStringListDefaultIsCommaSeparated(t *testing.T) {
 	}
 }
 
-// TestHelpPrintsNoDefaultForAListNobodyGaveAValue pins what a list whose field
-// was left alone hands over. An empty list is the zero of its type, and the
-// rule that omits every other zero omits this one too: a rendered stand-in
-// reads as a value somebody chose.
+// TestHelpPrintsNoDefaultForAListNobodyGaveAValue pins what a list whose
+// field was left alone hands over.
 func TestHelpPrintsNoDefaultForAListNobodyGaveAValue(t *testing.T) {
 	var defaults struct{ Hosts []string }
 	l := loadOver(t, declaring("greeter", Schema{
@@ -262,10 +253,8 @@ func TestHelpPrintsNoDefaultForAListNobodyGaveAValue(t *testing.T) {
 	}
 }
 
-// TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt pins that a string is not
-// quoted for being a string. The quotes follow the text: a word a command line
-// takes as it stands is rendered as it stands, and one the shell would split
-// or rewrite is wrapped so the reader copies the whole of it.
+// TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt pins that a string is
+// not quoted for being a string.
 func TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt(t *testing.T) {
 	for name, want := range map[string]string{
 		"text":   "Hello",
@@ -278,22 +267,17 @@ func TestHelpQuotesAStringDefaultOnlyWhenItsTextNeedsIt(t *testing.T) {
 	}
 }
 
-// TestHelpKeepsTheResidualFormForATextTypeWithoutAnOutputForm pins what a leaf
-// gets when it reads itself from text but writes none: Go's own printed form.
-// That form is not one the parser is known to take back, which is why this
-// argument stays out of the round trip; the alternatives - the number it
-// stores, or a spelling made up here - would both be untrue.
+// TestHelpKeepsTheResidualFormForATextTypeWithoutAnOutputForm pins what a
+// leaf gets when it reads itself from text but writes none: Go's own printed
+// form.
 func TestHelpKeepsTheResidualFormForATextTypeWithoutAnOutputForm(t *testing.T) {
 	if got := corpusDefault(t, "share"); got != "50%" {
 		t.Fatalf("the text-reading type renders as %q, and its printed form is 50%%", got)
 	}
 }
 
-// TestHelpPrintsNoDefaultForAnUnsetLeaf pins what the command-line library is
-// handed for a leaf whose value stands for being unset. A nil scalar pointer
-// is how a module tells "nobody gave it" from "it was given the zero value",
-// so neither the zero nor Go's <nil> is the truth about it, and a rendered
-// stand-in would become the value every silent layer falls back on.
+// TestHelpPrintsNoDefaultForAnUnsetLeaf pins what the command-line library
+// is handed for a leaf whose value stands for being unset.
 func TestHelpPrintsNoDefaultForAnUnsetLeaf(t *testing.T) {
 	l := defaultsCorpusLoader(t)
 	if got := flagDefaultString(corpusItem(t, l, "missing")); got != "" {
@@ -336,8 +320,7 @@ func TestHelpOmitsSensitiveDefault(t *testing.T) {
 }
 
 // TestHelpGivesEitherBooleanNoPlaceholder pins that the placeholder looks
-// through the pointer exactly as the argument form does. Offering a value for
-// --trace would advertise a spelling written without one.
+// through the pointer exactly as the argument form does.
 func TestHelpGivesEitherBooleanNoPlaceholder(t *testing.T) {
 	var defaults struct {
 		Verbose bool
@@ -359,10 +342,8 @@ func TestHelpGivesEitherBooleanNoPlaceholder(t *testing.T) {
 	}
 }
 
-// TestPlaceholderCollidingWithAValueTypeNameRejected pins the one placeholder
-// a declaration may not choose. The placeholder is what the layering tool
-// reads a changed argument by, and one of its own type names would have it
-// convert the text itself and swallow whatever failed.
+// TestPlaceholderCollidingWithAValueTypeNameRejected pins the one
+// placeholder a declaration may not choose.
 func TestPlaceholderCollidingWithAValueTypeNameRejected(t *testing.T) {
 	defaults := struct{ Count string }{}
 	reg := core.New()
@@ -384,10 +365,7 @@ func TestPlaceholderCollidingWithAValueTypeNameRejected(t *testing.T) {
 }
 
 // TestHelpOmitsTheDefaultOfARequiredItem pins that an item nobody may omit
-// hands over no default. The zero of a string rendered in the form it would be
-// typed back is ”, and the library prints that as a default the item does not
-// have: the reader takes "leave it out and you get the empty string" from a
-// line that means the opposite.
+// hands over no default.
 func TestHelpOmitsTheDefaultOfARequiredItem(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -411,11 +389,7 @@ func TestHelpOmitsTheDefaultOfARequiredItem(t *testing.T) {
 }
 
 // TestHelpRendersTheDocumentDefaultOfARequiredItem pins that the help output
-// tells the two kinds of required item apart. A required item the host
-// defaults document supplies does not have to be given on the command line,
-// so the document's value is the default the reader is shown and the mark is
-// gone: saying a run cannot start without it would be false on the one page a
-// reader uses to decide that.
+// tells the two kinds of required item apart.
 func TestHelpRendersTheDocumentDefaultOfARequiredItem(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t,
@@ -447,11 +421,7 @@ func TestHelpRendersTheDocumentDefaultOfARequiredItem(t *testing.T) {
 }
 
 // TestHelpMarksARequiredItem pins that the help output tells an argument
-// nobody may omit from an optional one. The default column is what separates
-// them everywhere else, and a required item no document supplies leaves that
-// column empty, so the mark rides in the usage text the command-line library
-// prints as it stands. Without it the reader is left to guess which arguments
-// the run needs.
+// nobody may omit from an optional one.
 func TestHelpMarksARequiredItem(t *testing.T) {
 	defaults := struct {
 		Addr string
@@ -487,11 +457,6 @@ func TestHelpMarksARequiredItem(t *testing.T) {
 // TestHelpDoesNotMarkACollectedModulesArgumentAsRequired pins that the mark
 // follows the module a run asks for its configuration rather than the item
 // that declares itself required.
-//
-// A module taken in for its declarations alone is never constructed, so it
-// never decodes its configuration and no run comes up short of the value. The
-// marker says a run will not start without it, and it is printed on the one
-// page a reader uses to decide exactly that.
 func TestHelpDoesNotMarkACollectedModulesArgumentAsRequired(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -522,8 +487,7 @@ func TestHelpDoesNotMarkACollectedModulesArgumentAsRequired(t *testing.T) {
 }
 
 // TestHelpMarksARequiredItemWithoutADescription pins that the mark stands on
-// its own when the item declares no description. It is the whole of what the
-// line says about the argument, so dropping it would leave the line blank.
+// its own when the item declares no description.
 func TestHelpMarksARequiredItemWithoutADescription(t *testing.T) {
 	defaults := struct{ Addr string }{}
 	l := loadOver(t, declaring("greeter", Schema{
@@ -539,8 +503,7 @@ func TestHelpMarksARequiredItemWithoutADescription(t *testing.T) {
 }
 
 // TestHelpOmitsADefaultThatIsTheZeroValue pins that a zero default is left
-// out, which is the test the library applies to its own types. A rendered zero
-// reads as a value somebody chose.
+// out, which is the test the library applies to its own types.
 func TestHelpOmitsADefaultThatIsTheZeroValue(t *testing.T) {
 	defaults := struct {
 		Addr    string

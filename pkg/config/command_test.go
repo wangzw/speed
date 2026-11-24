@@ -36,6 +36,8 @@ func panicsWith(t *testing.T, what string, fn func()) string {
 // command paths a diagnostic renders do not carry the test binary's name.
 func declaredTree() *Command { return &Command{use: "app"} }
 
+// TestSubBuildsThePathTheCommandLineReads checks that Sub builds the command
+// path the command line selects.
 func TestSubBuildsThePathTheCommandLineReads(t *testing.T) {
 	root := declaredTree()
 	deep := root.Sub("cluster").Sub("member").Sub("add")
@@ -100,6 +102,8 @@ func TestIncludeTakesAModuleInOnce(t *testing.T) {
 	}
 }
 
+// TestIncludeRejectsAnEmptyName checks that Include rejects an empty module
+// name.
 func TestIncludeRejectsAnEmptyName(t *testing.T) {
 	root := declaredTree()
 	message := panicsWith(t, `Include("")`, func() { root.Include("") })
@@ -109,8 +113,7 @@ func TestIncludeRejectsAnEmptyName(t *testing.T) {
 }
 
 // TestDoTwiceIsAProgrammingError pins the one depth and one action a command
-// has. A second call would leave two answers to how far the run drives, and
-// only the writer of the tree can say which was meant.
+// has.
 func TestDoTwiceIsAProgrammingError(t *testing.T) {
 	serve := declaredTree().Sub("serve")
 	serve.Do(core.StageServe, nil)
@@ -134,9 +137,8 @@ func TestDoRejectsADepthThatIsNotAStage(t *testing.T) {
 	}
 }
 
-// TestDoAtTheZeroDepthIsADeclaration pins that the shallowest stage is a legal
-// answer rather than a missing one. A command that only asks the modules for a
-// stance drives to it, and nothing about the value says whether Do was called.
+// TestDoAtTheZeroDepthIsADeclaration pins that the shallowest stage is a
+// legal answer rather than a missing one.
 func TestDoAtTheZeroDepthIsADeclaration(t *testing.T) {
 	serve := declaredTree().Sub("serve")
 	if serve.hasDo {

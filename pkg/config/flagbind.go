@@ -8,25 +8,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// BindLayer registers the arguments of one command on its flag set: the items
-// of the modules named here that declared the command line as an origin. The
-// command tree calls it once per command, naming the modules whose arguments
-// that command shows in a way no command above it already does, so an empty
-// list registers nothing.
+// BindLayer registers the arguments of one command on its flag set: the items of
+// the modules named here that declared the command line as an origin. running
+// names the ones among them this command actually runs; an item of a
+// declaration-only module is not marked required.
 //
-// running names the ones among them this command actually runs. An argument of
-// a module the command only collects from is not marked required, because this
-// command never decodes the module and so never comes up short of the value.
-//
-// An item holds one value for the whole tree, and each command that carries it
-// shows it with a face of its own. The value is defined the first time any
-// command takes the module in and is bound to the layering tool once, so a run
-// reads it from there whichever command it selected and wherever on the path
-// the argument was written. The face is per command because what the help
-// output says about the argument is: the same required item is one a run of
-// the command that runs its module cannot start without unless the host
-// defaults document supplies it, and one a run of a command that only collects
-// its declarations can leave out.
+// An item holds one value for the whole tree, bound to the layering tool once,
+// and each command that carries it shows a face of its own so the help output
+// can differ.
 func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 	takes := make(map[string]bool, len(taking))
 	for _, name := range taking {
@@ -50,13 +39,8 @@ func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 	return nil
 }
 
-// argumentOf gives the one argument an item is across the tree, defining it
-// and binding it to the layering tool the first time it is asked for.
-//
-// The argument is registered on no command itself. Every command registers a
-// face of it instead, and a face forwards what it is given here: two
-// definitions would hold two values, and only the one the layering tool is
-// bound to is ever read.
+// argumentOf gives the one argument an item is across the tree, defining it and
+// binding it to the layering tool the first time it is asked for.
 func (l *loader) argumentOf(item *manifestItem) (*pflag.Flag, error) {
 	if arg, defined := l.bound[item.path]; defined {
 		return arg, nil
@@ -92,9 +76,7 @@ func faceOf(arg *pflag.Flag, usage string) *pflag.Flag {
 	}
 }
 
-// sharedValue is the value of a face: it is the argument's own. Setting it
-// marks the argument given as well as the face, since the argument is what the
-// layering tool and the required rule read.
+// sharedValue is the value of a face: it is the argument's own.
 type sharedValue struct {
 	arg *pflag.Flag
 }
@@ -113,19 +95,9 @@ func (v sharedValue) Set(s string) error {
 }
 
 // ClassifyParseError puts what the command-line library reported under this
-// module's sentinels. The library's error types are what the classification
-// reads, not the text they render: the text is the library's to change.
-//
-// collected names the modules the command the library was parsing reached for
-// their declarations alone. It is that command's and no other's: which fix an
-// unknown argument calls for depends on what the command being run took in,
-// and a sibling that collects the module says nothing about a command that
-// does not take it in at all.
-//
-// Anything it does not recognise is returned as it stands. An unknown
-// subcommand is one of those: the library reports it, and inventing a
-// sentinel of this module's own for it would claim a failure that is not
-// about configuration.
+// module's sentinels, reading the library's error types rather than their text.
+// collected names the modules the parsed command reached for their declarations
+// alone. Anything it does not recognise is returned as it stands.
 func (l *loader) ClassifyParseError(err error, collected []string) error {
 	var unknown *pflag.NotExistError
 	if errors.As(err, &unknown) {
@@ -141,9 +113,6 @@ func (l *loader) ClassifyParseError(err error, collected []string) error {
 	}
 	var badValue *pflag.InvalidValueError
 	if errors.As(err, &badValue) {
-		// The library's text quotes the value it refused, which a sensitive
-		// item keeps out of every diagnostic: this one is printed to
-		// standard error.
 		if item := l.m.byFlag[badValue.GetFlag().Name]; item != nil && item.item.Sensitive {
 			return fmt.Errorf("%w: the command line gives --%s a value it does not take, for %q. "+
 				"The value is not repeated here, since the item is sensitive",
@@ -155,10 +124,7 @@ func (l *loader) ClassifyParseError(err error, collected []string) error {
 }
 
 // unknownFlagError tells the three ways an argument the command line gives can
-// fail to reach an item apart. The library knows only that nothing by that
-// name is registered on this command; which of the three it is can only be
-// answered by looking the name up in the manifest, and the answers lead to
-// three different fixes.
+// fail to reach an item apart, each with its own fix.
 func (l *loader) unknownFlagError(unknown *pflag.NotExistError, collected []string) error {
 	written, item := l.writtenAs(unknown)
 	if item == nil {

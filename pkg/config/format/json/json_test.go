@@ -30,6 +30,7 @@ func parser(t *testing.T) config.Format {
 	return found[0].Value
 }
 
+// TestName checks the format name the parser reports.
 func TestName(t *testing.T) {
 	if got := parser(t).Name(); got != "json" {
 		t.Errorf("Name() = %q, want %q", got, "json")
@@ -93,11 +94,7 @@ func TestNullDocumentIsEmpty(t *testing.T) {
 	}
 }
 
-// TestDuplicateKeyRejected covers an object that gives one key twice. The
-// standard library keeps the last one, so a second section under one key
-// drops every setting of the first that the second does not repeat, and those
-// fall back to their defaults with nothing said about it. A key written with
-// an escape is the same key as the one written plainly.
+// TestDuplicateKeyRejected covers an object that gives one key twice.
 func TestDuplicateKeyRejected(t *testing.T) {
 	for name, data := range map[string]string{
 		"section":   `{"app": {"level": "info", "port": 1}, "app": {"level": "debug"}}`,
@@ -117,8 +114,7 @@ func TestDuplicateKeyRejected(t *testing.T) {
 	}
 }
 
-// TestTrailingDataRejected covers bytes after the document. A second value
-// after the first is one more place a setting can be written and never read.
+// TestTrailingDataRejected covers bytes after the document.
 func TestTrailingDataRejected(t *testing.T) {
 	for _, data := range []string{`{"a": 1} {"a": 2}`, `{"a": 1} x`, `{"a": 1}]`} {
 		if got, err := parser(t).Unmarshal([]byte(data)); err == nil {
@@ -157,12 +153,8 @@ func (s memorySource) Fetch(context.Context, *url.URL) ([]byte, string, error) {
 	return []byte(s.data), "json", nil
 }
 
-// TestIntegersKeepEveryDigit pins that an integer a JSON document writes is the
-// integer a module decodes. Held as a float64 on the way through, anything
-// above 2^53 would be rounded before any field saw it, and a config file
-// writing 9007199254740993 would run with 9007199254740992; a value one past
-// the int64 range would reach the field as a float the range check can no
-// longer tell from the bound.
+// TestIntegersKeepEveryDigit pins that an integer a JSON document writes is
+// the integer a module decodes.
 func TestIntegersKeepEveryDigit(t *testing.T) {
 	type counters struct{ N int64 }
 	load := func(document string) (int64, error) {
@@ -205,6 +197,7 @@ func TestIntegersKeepEveryDigit(t *testing.T) {
 	}
 }
 
+// TestMalformedDocumentRejected checks that a malformed document is refused.
 func TestMalformedDocumentRejected(t *testing.T) {
 	if _, err := parser(t).Unmarshal([]byte(`{"a": }`)); err == nil {
 		t.Fatal("Unmarshal() succeeded on malformed JSON, want an error")
@@ -242,20 +235,10 @@ func TestRegistersAsFormatResource(t *testing.T) {
 	}
 }
 
-// TestJSONFormatAddsNoParsingLibrary is the executable form of what splitting
-// the two parsers buys: a host that configures itself in JSON does not carry
-// the YAML parser, which shares a go.mod with this package and is one import
-// away from arriving unnoticed.
-//
-// The budget is the standard library, this repository's modules, and the
-// closure of the root package. This package delivers its parser as a resource
-// of that package and is reached from it, so whatever reading a configuration
-// costs is already spent by the time anybody gets here; that cost is recorded
-// in ADR-config-parsing. What is checked is the increment: parsing
-// JSON adds nothing on top of it.
-//
-// The budget is computed rather than written out, so that the root package
-// exchanging one of its own dependencies does not turn into an edit here.
+// TestJSONFormatAddsNoParsingLibrary is the executable form of what
+// splitting the two parsers buys: a host that configures itself in JSON does
+// not carry the YAML parser, which shares a go.mod with this package and is
+// one import away from arriving unnoticed.
 func TestJSONFormatAddsNoParsingLibrary(t *testing.T) {
 	reached := dependenciesOf(t, ".")
 	// The positive control. This package is in its own dependency listing,

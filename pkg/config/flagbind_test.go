@@ -66,6 +66,8 @@ func parseRejects(t *testing.T, l *loader, args ...string) error {
 	return err
 }
 
+// TestLongFlagBothForms checks that a long flag is read in both the separate
+// and equals forms.
 func TestLongFlagBothForms(t *testing.T) {
 	for _, args := range [][]string{{"--addr=:9090"}, {"--addr", ":9090"}} {
 		if got := parse(t, flagLoader(t), args...).Addr; got != ":9090" {
@@ -74,6 +76,8 @@ func TestLongFlagBothForms(t *testing.T) {
 	}
 }
 
+// TestShortFlagBothForms checks that a short flag is read in both the
+// separate and equals forms.
 func TestShortFlagBothForms(t *testing.T) {
 	for _, args := range [][]string{{"-a=:9090"}, {"-a", ":9090"}} {
 		if got := parse(t, flagLoader(t), args...).Addr; got != ":9090" {
@@ -140,9 +144,7 @@ func TestPointerBoolOmitsItsValue(t *testing.T) {
 }
 
 // TestNilScalarPointerKeepsItsUnsetDefault pins that a leaf whose declared
-// value stands for being unset stays unset when nobody gives it one. Its
-// default is not in any layer, so the argument's own rendered default must not
-// stand in for it.
+// value stands for being unset stays unset when nobody gives it one.
 func TestNilScalarPointerKeepsItsUnsetDefault(t *testing.T) {
 	type pointerCarrier struct {
 		Colour *bool
@@ -175,9 +177,7 @@ func TestRepeatedFlagKeepsTheLast(t *testing.T) {
 }
 
 // TestRepeatedListFlagAccumulates pins the other reading a repeated argument
-// has: a list written twice within one layer gives two elements. Replacement
-// is what happens between layers; accumulation is how one layer writes several
-// values.
+// has: a list written twice within one layer gives two elements.
 func TestRepeatedListFlagAccumulates(t *testing.T) {
 	want := []string{"x", "y"}
 	if got := parse(t, flagLoader(t), "--hosts=x", "--hosts=y").Hosts; !reflect.DeepEqual(got, want) {
@@ -185,6 +185,8 @@ func TestRepeatedListFlagAccumulates(t *testing.T) {
 	}
 }
 
+// TestStringListFromFlagReplaces checks that a command-line list replaces
+// the whole list.
 func TestStringListFromFlagReplaces(t *testing.T) {
 	want := []string{"x", "y", "z"}
 	if got := parse(t, flagLoader(t), "--hosts=x,y,z").Hosts; !reflect.DeepEqual(got, want) {
@@ -203,8 +205,7 @@ func TestFlagOverridesEnv(t *testing.T) {
 }
 
 // TestFlagLayerRecordsProvenance pins the command-line leg of the question a
-// required item asks. It only answers once the level carrying the argument has
-// been bound: an item nobody registered has no argument to have changed.
+// required item asks.
 func TestFlagLayerRecordsProvenance(t *testing.T) {
 	l := flagLoader(t)
 	if err := giveFlags(t, l, []string{"server"}, "--addr=:9090"); err != nil {
@@ -218,6 +219,8 @@ func TestFlagLayerRecordsProvenance(t *testing.T) {
 	}
 }
 
+// TestFlagTypeMismatch checks that a flag value that does not convert is
+// ErrTypeMismatch.
 func TestFlagTypeMismatch(t *testing.T) {
 	err := parseRejects(t, flagLoader(t), "--retries=many")
 	if !errors.Is(err, ErrTypeMismatch) {
@@ -229,8 +232,7 @@ func TestFlagTypeMismatch(t *testing.T) {
 }
 
 // TestBooleanFlagChecksItsOwnValue pins that a boolean argument refuses text
-// that is not one. The layering tool would otherwise read --verbose=maybe as
-// false and say nothing.
+// that is not one.
 func TestBooleanFlagChecksItsOwnValue(t *testing.T) {
 	err := parseRejects(t, flagLoader(t), "--verbose=maybe")
 	if !errors.Is(err, ErrTypeMismatch) {
@@ -251,6 +253,8 @@ func TestArgumentEndsWithoutItsValue(t *testing.T) {
 	}
 }
 
+// TestUnknownFlagRejected checks that a flag no item declares is
+// ErrUnknownKey.
 func TestUnknownFlagRejected(t *testing.T) {
 	err := parseRejects(t, flagLoader(t), "--nope=1")
 	if !errors.Is(err, ErrUnknownKey) {
@@ -308,10 +312,9 @@ func TestFlagNameWithoutFlagOriginRejected(t *testing.T) {
 	}
 }
 
-// TestArgumentOfAModuleOutsideTheCommandRejected pins the third reading of an
-// unknown argument: the item declares the command line, and this command does
-// not take its module in. The fix is a different command, which neither of the
-// other two texts would lead the reader to.
+// TestArgumentOfAModuleOutsideTheCommandRejected pins the third reading of
+// an unknown argument: the item declares the command line, and this command
+// does not take its module in.
 func TestArgumentOfAModuleOutsideTheCommandRejected(t *testing.T) {
 	l := flagLoader(t)
 	err := giveFlags(t, l, nil, "--addr=:9090")
@@ -325,11 +328,7 @@ func TestArgumentOfAModuleOutsideTheCommandRejected(t *testing.T) {
 }
 
 // TestOneItemIsOneArgumentOnEveryCommandThatTakesItIn pins what a second
-// command taking the same module in gets. It carries the argument, since the
-// module is in its participating set and a run selects it as readily as any
-// other command; and what it carries holds the value the first command's does,
-// since a second value would be one the layering tool is not bound to and
-// never reads.
+// command taking the same module in gets.
 func TestOneItemIsOneArgumentOnEveryCommandThatTakesItIn(t *testing.T) {
 	l := flagLoader(t)
 	first := pflag.NewFlagSet("first", pflag.ContinueOnError)
@@ -386,9 +385,7 @@ func TestReservedConfigFlagAcceptedAndNotInData(t *testing.T) {
 }
 
 // TestHelpGivesAListItsDeclaredPlaceholder pins that a list of strings shows
-// the placeholder its declaration chose. Taking the library's own list
-// argument names the argument after that type instead, so the one word the
-// reader is shown would be the library's rather than the declaration's.
+// the placeholder its declaration chose.
 func TestHelpGivesAListItsDeclaredPlaceholder(t *testing.T) {
 	defaults := struct{ Hosts []string }{Hosts: []string{"a", "b"}}
 	l := loadOver(t, declaring("server", Schema{
@@ -413,10 +410,8 @@ func TestHelpGivesAListItsDeclaredPlaceholder(t *testing.T) {
 	}
 }
 
-// TestListArgumentAccumulatesWithinOneLayer pins that a repeated argument adds
-// to what came before it. Giving several elements in one layer is written
-// either way, and the separated form and the repeated form reach the same
-// list.
+// TestListArgumentAccumulatesWithinOneLayer pins that a repeated argument
+// adds to what came before it.
 func TestListArgumentAccumulatesWithinOneLayer(t *testing.T) {
 	for _, c := range []struct {
 		name string
