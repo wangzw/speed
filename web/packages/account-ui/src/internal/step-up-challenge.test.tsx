@@ -29,6 +29,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthSession, AuthSnapshot, AuthnFlowState } from '@speed/auth-core'
@@ -1173,7 +1174,7 @@ describe('StepUpChallenge', () => {
         zhCN.errors.ratelimit.throttled,
       )
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 

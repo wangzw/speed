@@ -34,6 +34,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
@@ -1077,7 +1078,7 @@ describe('PhoneSection', () => {
       expect(visible?.textContent).toBe(zhCN.errors.authn.throttled)
       expect(screen.getByRole('alert')).toBeTruthy()
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
