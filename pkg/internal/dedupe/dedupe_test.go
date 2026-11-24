@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// The first Begin for an identifier owns it, and a later Begin reads the
-// outcome the owner settled rather than taking it again.
+// The first Begin for an identifier owns it, and a later Begin reads the outcome the owner settled
+// rather than taking it again.
 func TestALaterBeginReadsTheOwnersOutcome(t *testing.T) {
 	tab := New[string](8)
 	owner, first := tab.Begin("id")
@@ -45,8 +45,8 @@ func TestWaitCarriesTheOwnersError(t *testing.T) {
 	}
 }
 
-// Settled identifiers beyond the cap are forgotten, so the table does not grow
-// without bound; an identifier forgotten this way can be taken again.
+// Settled identifiers beyond the cap are forgotten, so the table does not grow without bound; an
+// identifier forgotten this way can be taken again.
 func TestSettledEntriesBeyondTheCapAreForgotten(t *testing.T) {
 	tab := New[int](2)
 	for i, id := range []string{"a", "b", "c"} {
@@ -56,22 +56,18 @@ func TestSettledEntriesBeyondTheCapAreForgotten(t *testing.T) {
 		}
 		tab.Finish(owner, i, nil)
 	}
-	// With a cap of two, "a" is the oldest settled and was evicted.
 	if _, first := tab.Begin("a"); !first {
 		t.Error("the oldest settled identifier was not forgotten at the cap")
 	}
 }
 
-// An identifier still in flight is never evicted: forgetting it would let a
-// later call for the same identifier run again while the first was going, which
-// is the one thing this table exists to prevent.
+// TestAnInFlightEntryIsNotEvicted checks that an in-flight identifier is not evicted at the cap and
+// still reads as taken.
 func TestAnInFlightEntryIsNotEvicted(t *testing.T) {
 	tab := New[int](1)
 	if _, first := tab.Begin("a"); !first {
 		t.Fatal("Begin(a) did not take the identifier")
 	}
-	// "b" takes the table past its cap, but the entry at the front of the order,
-	// "a", is in flight, so nothing is forgotten.
 	if _, first := tab.Begin("b"); !first {
 		t.Fatal("Begin(b) did not take the identifier")
 	}
@@ -80,8 +76,8 @@ func TestAnInFlightEntryIsNotEvicted(t *testing.T) {
 	}
 }
 
-// Calls for one identifier that arrive together elect exactly one owner; every
-// other caller waits and reads that owner's outcome.
+// Calls for one identifier that arrive together elect exactly one owner; every other caller waits
+// and reads that owner's outcome.
 func TestConcurrentBeginsTakeOneOwner(t *testing.T) {
 	tab := New[int](0)
 	const callers = 64
@@ -108,7 +104,6 @@ func TestConcurrentBeginsTakeOneOwner(t *testing.T) {
 	}
 }
 
-// errTest is a settled error the Wait cases read back.
 var errTest = &testError{}
 
 type testError struct{}
