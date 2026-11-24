@@ -18,7 +18,7 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json",
+    "typecheck": "node ../../scripts/typecheck-each.mjs tsconfig.json tsconfig.browser.json",
     "test": "vitest run",
     "build": "pnpm --filter @speed/product-shell... --fail-if-no-match --workspace-concurrency=1 run build:self",
     "build:self": "tsc -p tsconfig.build.json"
