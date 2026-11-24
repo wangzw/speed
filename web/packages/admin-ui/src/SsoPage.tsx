@@ -1,65 +1,7 @@
 /**
- * SsoPage: the SSO-provider administration page of the console.
- *
- * SSO providers belong to a tenant (/api/v1/tenants/:tenant/sso/
- * providers), so the page opens with a tenant selector and keeps its
- * reads disabled until a tenant is chosen. It lists a tenant's providers
- * (name, protocol, enabled state, version), creates and edits one
- * (SsoProviderWriteForm, choosing create or an existing provider),
- * deletes one, refreshes a provider's metadata, re-verifies every claimed
- * domain, and -- for a named provider -- claims a domain and verifies or
- * removes its declared domains.
- *
- * The provider read carries the provider's declared email domains and
- * their verification state, so the domain section lists them under the
- * selected provider: one row per declared domain with its state, a
- * verification control on an unverified row and a removal control on
- * every row. The text field claims a domain the provider does not declare
- * yet. A claim, a verify and a removal each re-read the provider list, so
- * the row appears, turns verified or leaves in place.
- *
- * The page's three titled control groups are its three feedback scopes:
- * the provider list (delete, refresh metadata, re-verify domains) reports
- * under its table; the provider write form reports under itself; the domain
- * section (claim, verify, remove) reports under its controls. A refusal
- * marks the affected provider row inline with the same resolved text the
- * region shows and brings that region into view; a success names the
- * provider or provider-and-domain it changed. A write the tenant admission
- * layer refuses because the tenant requires enterprise single sign-on
- * renders its resolved sentence with a re-login exit under the region: the
- * exit ends the session so the host's session gate returns to its sign-in
- * surface, where the operator signs in through the tenant's provider. No
- * local factor can clear that refusal, so the page opens no step-up dialog
- * and lists no factor. The tenant seeds every
- * write, so changing it resets all three scopes and disables the tenant
- * selector while any of them is in flight; the provider selectors follow
- * the scope they drive and are natively disabled only while that one is
- * pending.
- *
- * A claimed domain's verification token is handed out once, together with
- * the DNS record name and value to publish. Its display panel is the
- * page's own state, rendered beside the domain section's region and
- * outside that scope's slot, so a reset, a later failure or a context
- * change never drops the only copy; it stays until the operator closes it.
- *
- * The page's refresh action re-reads the provider list, so its accessible
- * name says so ("Refresh the provider list"); the row's metadata refresh
- * is a write to that provider and carries its own visible text ("Refresh
- * metadata") and name, keeping the two controls distinguishable even
- * though they sit in one view.
- *
- * Every read and write is an operation on the console operations bundle,
- * so the page builds no client and writes no query key. The page opens
- * with ui-kit's PageHeader.
- *
- * The tenant scope is optionally controlled: `tenant` locks the page to the
- * given value and hides the selector, `defaultTenant` seeds the page's own
- * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
- * reports each re-selection. Given none of them the page opens on the URL's
- * parameter and the selector changes it, as before.
- *
- * The row's metadata-refresh control renders only where
- * `authn.admin.sso.metadata` is present.
+ * SsoPage administers one tenant's SSO providers and their domains: create,
+ * edit, delete, refresh metadata, re-verify, claim, verify and remove. Reads
+ * stay disabled until a tenant is chosen.
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -104,30 +46,17 @@ import type { AdminSsoProvider } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
 import { RowActionMenu } from './internal/row-action-menu.js'
 
-/**
- * The id of the page's own "choose a tenant first" text. The disabled
- * refresh is described by it, so the explanation has one copy on the page.
- */
+// One copy of the "choose a tenant first" explanation, shared with the disabled refresh.
 const TENANT_HINT_ID = 'sso-tenant-hint'
 
-/**
- * The provider form's configuration field and its hint. The submit control
- * describes itself by that hint while the typed configuration does not parse
- * as a JSON object, so the explanation has one copy on the page.
- */
+// One copy of the config parse hint, shared with the submit control.
 const CONFIG_FIELD_ID = 'sso-provider-config'
 const CONFIG_HINT_ID = `${CONFIG_FIELD_ID}-helper-text`
 
-/** The provider-row action a row's inline failure marker belongs to. */
 type ProviderAction = 'refresh' | 'reverify' | 'delete'
 
-/**
- * A domain action in flight: claim runs from the shared button row, while
- * verify and remove run from each declared domain's own row controls.
- */
 type DomainAction = 'claim' | 'verify' | 'remove'
 
-/** The one-time verification token a claim hands out, with its owner. */
 interface ClaimToken {
   readonly token: string
   readonly tenant: string
@@ -135,6 +64,7 @@ interface ClaimToken {
   readonly domain: string
 }
 
+/** Props of SsoPage: the tenant scope, optionally controlled by the host. */
 export interface SsoPageProps {
   /**
    * A controlled tenant scope: when given, the page's reads and writes name
@@ -151,6 +81,10 @@ export interface SsoPageProps {
   readonly onTenantChange?: (tenant: string) => void
 }
 
+/**
+ * SsoPage administers one tenant's SSO providers, their metadata and their
+ * declared domains.
+ */
 export function SsoPage({
   tenant: controlledTenant,
   defaultTenant,
@@ -160,8 +94,7 @@ export function SsoPage({
   const operations = useAdminOperations()
   const session = useAdminSession()
   const hasFeature = useAdminHasFeature()
-  // A provider's metadata refresh is a separate capability of the SSO
-  // surface; without it the row keeps its other actions.
+  // Without this capability the row keeps its other actions.
   const metadataRefresh = hasFeature('authn.admin.sso.metadata')
 
   const [innerTenant, setInnerTenant] = useState(
@@ -183,8 +116,6 @@ export function SsoPage({
   const removeDomain = operations.useRemoveSsoDomain()
   const claimDomain = operations.useClaimSsoDomain()
 
-  // One scope per control group: the provider list and its row actions, the
-  // provider write form, and the domain bar.
   const listFeedback = useWriteFeedback()
   const formFeedback = useWriteFeedback()
   const domainsFeedback = useWriteFeedback()
@@ -192,8 +123,6 @@ export function SsoPage({
   const formRegionRef = useFailureScroll(formFeedback.outcome)
   const domainsRegionRef = useFailureScroll(domainsFeedback.outcome)
 
-  // The row each list-scope failure names, and the row control currently
-  // running, cleared when the next attempt starts.
   const [failedProvider, setFailedProvider] = useState<{
     readonly id: string
     readonly action: ProviderAction
@@ -203,27 +132,21 @@ export function SsoPage({
     readonly domain?: string
   } | null>(null)
 
-  // The one resolver every region binds: a row's inline marker resolves the
-  // same failure code through it, so the two can never carry different copy.
+  // The row's inline marker resolves through the same resolver as the region.
   const resolveErrorText = useAdminUiErrorText()
   const listFailureText = failureTextOf(listFeedback.outcome, resolveErrorText)
 
   const anyPending =
     listFeedback.pending || formFeedback.pending || domainsFeedback.pending
 
-  // Clears the three scopes and the row marker; the refresh action and a
-  // tenant change both start from this.
   const resetPageFeedback = useCallback(() => {
     listFeedback.reset()
     formFeedback.reset()
     domainsFeedback.reset()
     setFailedProvider(null)
   }, [listFeedback.reset, formFeedback.reset, domainsFeedback.reset])
-  // The tenant is an argument of every write here: a change clears all
-  // three slots and every row marker, and drops the provider selections
-  // whose ids no longer name this tenant's providers. The one-time token
-  // panel is page state, not a slot result, and stays: it names the tenant
-  // it was claimed under.
+  // The one-time token panel is page state, not a scope result, and survives a
+  // tenant change: it names the tenant it was claimed under.
   useEffect(() => {
     resetPageFeedback()
     setBusyDomainAction(null)
@@ -236,22 +159,17 @@ export function SsoPage({
     onTenantChange?.(next)
   }
 
-  // The tenant admission layer's SSO refusal cannot be cleared by any local
-  // factor: the exit ends the session so the host's session gate returns to
-  // its sign-in surface, where the operator signs in through the tenant's
-  // provider. Without a session there is no exit to offer.
+  // The SSO refusal cannot be cleared locally: ending the session returns the
+  // host's session gate to its sign-in surface, where the tenant's provider signs in.
   const relogin = useCallback(() => {
     void session?.logout().catch(() => undefined)
   }, [session])
 
-  // The provider form scope follows the provider it edits: another target's
-  // result would read as this one's.
   const selectEditProvider = (next: string) => {
     setEditProvider(next)
     formFeedback.reset()
   }
 
-  // The domain scope follows the provider the bar names.
   const selectDomainProvider = (next: string) => {
     setDomainProvider(next)
     domainsFeedback.reset()
@@ -323,9 +241,7 @@ export function SsoPage({
 
   const requestClaimDomain = () => {
     const name = providerName(domainProvider)
-    // The module trims the domain before it stores it. Trimming the claim
-    // here keeps the hand-off's record name free of surrounding whitespace
-    // and equal to the domain that was stored.
+    // Trim to match the module's stored value, so the record name is clean.
     const claimed = domain.trim()
     runDomainAction('claim', undefined, async () => {
       const answer = await claimDomain.mutateAsync({
@@ -380,10 +296,7 @@ export function SsoPage({
       header: t('sso.column.name'),
       cellWrap: 'nowrap',
       cellFullValue: (provider) => provider.name,
-      // The provider's primary identity: never hidden, and the shared
-      // whole-cell cap -- which counts the copy control -- keeps it from
-      // widening the table past its container. The complete name stays on
-      // the cell title and copy control.
+      // The cap counts the copy control beside the name.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (provider) => (
         <Typography variant="body2" noWrap>
@@ -470,8 +383,6 @@ export function SsoPage({
   const rows = providers.data
   const pending = providers.isPending && rows === undefined
   const domainReady = domainProvider !== '' && domain.trim() !== ''
-  // The declared domains of the provider the domain section names. Absent
-  // while no provider is chosen or until the read settles.
   const declaredDomains =
     (rows ?? []).find((provider) => provider.id === domainProvider)?.domains ??
     []
@@ -560,12 +471,8 @@ export function SsoPage({
             icon={<SsoIcon size={24} />}
             sx={{ mb: 3 }}
           >
-            {/* A selection-shaped context control: switching it resets the
-                form scope's result, so the coding standard keeps it natively
-                disabled while that scope writes. The write starts from a
-                control in the form, so focus is not on the selector. The
-                button-shaped-control lint rule does not judge a TextField
-                select. */}
+            {/* A selection control is natively disabled while its scope writes;
+                the button-shaped-control lint rule does not judge a TextField select. */}
             <TextField
               select
               size="small"
@@ -605,8 +512,6 @@ export function SsoPage({
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {t('sso.domains.note')}
             </Typography>
-            {/* Selection-shaped context control, natively disabled while the
-                domain scope writes (see the edit selector above). */}
             <TextField
               select
               size="small"
@@ -664,9 +569,6 @@ export function SsoPage({
                         '&:last-of-type': { borderBottom: 0 },
                       }}
                     >
-                      {/* The text block takes the free width, so the
-                          row's control cluster sits at the end without an
-                          automatic margin. */}
                       <Box
                         sx={{
                           display: 'flex',
@@ -779,18 +681,8 @@ export function SsoPage({
   )
 }
 
-/**
- * ClaimTokenNotice: the display of a domain's verification token and the
- * DNS TXT record that hands it over -- values handed out once.
- *
- * Its state is the page's (`SsoPage` holds it), so a scope reset, a later
- * failure or a context change cannot drop the only copy. The panel is one
- * polite live region with an explicit close control whose accessible name
- * names the tenant, the provider and the domain it belongs to. Beside the
- * token it carries the record name (`_speed-authn.<domain>`) and the full
- * record value (`speed-authn=<token>`), each with its own copy control, so
- * the operator can publish the record from the panel alone.
- */
+// The one-time verification token and the DNS TXT record that hands it over.
+// The page holds its state, so no scope reset can drop the only copy.
 function ClaimTokenNotice({
   notice,
   onClose,
@@ -799,9 +691,6 @@ function ClaimTokenNotice({
   readonly onClose: () => void
 }) {
   const { t, i18n } = useAdminUiTranslation()
-  // The panel requires a copy label; a dedicated claim-token label takes
-  // over once the namespace carries it, and the namespace's generic copy
-  // label stands in until then.
   const copyKey = 'sso.domains.claimTokenCopy'
   const copyLabel = i18n.exists(copyKey, { ns: ADMIN_UI_NAMESPACE })
     ? t(copyKey)
@@ -838,11 +727,7 @@ function ClaimTokenNotice({
   )
 }
 
-/**
- * Parses an optional provider configuration the operator typed as a JSON
- * object. Returns null when the text is not one, so the form can mark the
- * field and keep the submit disabled. An empty text means "no config".
- */
+// Returns the typed JSON object, or null when the text is not one. Empty means no config.
 function parseConfig(text: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(text)
@@ -855,13 +740,8 @@ function parseConfig(text: string): Record<string, unknown> | null {
   }
 }
 
-/**
- * Renders a stored provider configuration as the JSON text the form edits.
- * The provider read carries the configuration back, so an update starts from
- * it rather than an empty field: the server refuses an empty config, and the
- * operator should not have to retype what the provider already holds. A
- * provider with no configuration starts empty.
- */
+// An update starts from the stored configuration because the server refuses an
+// empty config; a provider with no configuration starts empty.
 function configTextOf(config: unknown): string {
   if (config === undefined || config === null) {
     return ''
@@ -873,16 +753,11 @@ function configTextOf(config: unknown): string {
   }
 }
 
-/** A three-state boolean field: left as it is, or set true or false. */
 export type TriState = 'unchanged' | 'true' | 'false'
 
-/**
- * The username claims the contract accepts. The set is closed: the module
- * refuses any other value, so the form offers these and nothing else.
- */
+// The module refuses any other username claim.
 const USERNAME_CLAIMS = ['preferred_username', 'email'] as const
 
-/** Reports whether a value names one of the accepted username claims. */
 function isUsernameClaim(value: string): boolean {
   return (USERNAME_CLAIMS as readonly string[]).includes(value)
 }
@@ -904,13 +779,9 @@ export interface SsoProviderWriteDraft {
 }
 
 /**
- * Builds the body of a provider write.
- *
- * A create names the username fields only under the combination that uses
- * them. An update names both explicitly: the module keeps a field a body
- * leaves out, so a provider that stops being jit, or a claim strategy that
- * becomes user-confirm, would otherwise keep a stored value the new
- * combination refuses. An empty string clears the field.
+ * Builds the body of a provider write. An update names both username fields
+ * explicitly because the module keeps a field a body omits; an empty string
+ * clears it.
  */
 export function ssoProviderWriteBody(
   draft: SsoProviderWriteDraft,
@@ -957,21 +828,9 @@ export function ssoProviderWriteBody(
   }
 }
 
-/**
- * SsoProviderWriteForm: the provider create and update control. The same
- * fields render for both; on a create they start empty (an unset boolean
- * takes the module's false default) and the path tenant is the form's, and
- * on an update they start from the provider and an unset boolean leaves the
- * stored flag. The configuration is JSON and the client secret is write-only.
- * The configuration field starts from the provider's stored configuration on
- * an update -- the read carries it back and the server refuses an empty one --
- * so saving an unchanged provider needs no retype.
- *
- * The write reports through the page's provider-form scope (`feedback`), so
- * its result lands in the region the page renders directly under this form;
- * a landed create names the provider and returns the form to its initial
- * state.
- */
+// The provider create and update control: on a create the fields start empty and
+// an unset boolean takes the module's false default; on an update they start from
+// the provider and an unset boolean leaves the stored flag.
 function SsoProviderWriteForm({
   tenant,
   provider,
@@ -989,9 +848,7 @@ function SsoProviderWriteForm({
   const [protocol, setProtocol] = useState(provider?.protocol ?? '')
   const [name, setName] = useState(provider?.name ?? '')
   const [provisioning, setProvisioning] = useState(provider?.provisioning ?? '')
-  // A jit provider must name how it picks the username; user-confirm is the
-  // default so the existing confirmation flow keeps working, and a stored
-  // strategy wins on an update.
+  // User-confirm is the default; a stored strategy wins on an update.
   const [usernameStrategy, setUsernameStrategy] = useState(
     provider?.username_strategy !== undefined && provider.username_strategy !== ''
       ? provider.username_strategy
@@ -1007,8 +864,7 @@ function SsoProviderWriteForm({
   const [clientSecret, setClientSecret] = useState('')
 
   const configInvalid = config.trim() !== '' && parseConfig(config) === null
-  // The username fields belong to jit only: a preprovisioned provider carries
-  // neither, and a claim strategy needs the claim it reads.
+  // The username fields belong to jit only, and a claim strategy needs its claim.
   const provisioningJit = provisioning.trim() === 'jit'
   const claimStrategy = provisioningJit && usernameStrategy === 'claim'
   const usernameMissing =
@@ -1043,10 +899,7 @@ function SsoProviderWriteForm({
       const created = name
       void feedback.run(async () => {
         await createProvider.mutateAsync({ tenant, ...body })
-        // A landed create returns the form to its initial state, the
-        // write-only client secret included: the provider now exists,
-        // and none of what was typed belongs to the next one. A
-        // refusal keeps every value for correction.
+        // A landed create resets the form; a refusal keeps every value.
         setProtocol('')
         setName('')
         setProvisioning('')
@@ -1070,9 +923,6 @@ function SsoProviderWriteForm({
     }
   }
 
-  // The form submit follows the same busy/unavailable state the submit
-  // control carries, so Enter from a field and a click on the control are
-  // refused identically.
   const submitWrite = useActivationGuard(submitProviderWrite, {
     busy: feedback.pending,
     unavailable: configInvalid || requiredMissing,

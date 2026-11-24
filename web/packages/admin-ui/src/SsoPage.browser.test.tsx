@@ -1,9 +1,3 @@
-/**
- * SsoPage in a real browser: the SSO provider table at the sm/md/lg
- * floor widths with fixed data, and the declared-domain list with the
- * one-time DNS record panel at the same floors. The tenant is seeded
- * through the query parameter the page opens on.
- */
 import { afterEach, describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -28,10 +22,7 @@ const PROVIDERS = [
   providerFixture({ name: 'Acme Corporate Identity Provider' }),
 ]
 
-/**
- * A provider with both a long declared domain and a verified one, so the
- * row's state text and its two actions are measured at every floor.
- */
+// A long declared domain and a verified one, so both row states are measured.
 const DOMAIN_PROVIDER = providerFixture({
   name: 'Acme Corporate Identity Provider',
   domains: [
@@ -40,10 +31,8 @@ const DOMAIN_PROVIDER = providerFixture({
   ],
 })
 
-/** A 64-character verification token, the module's own token shape. */
 const TOKEN = 'a'.repeat(64)
 
-/** The rendered width and horizontal bounds of a control. */
 function horizontalBounds(element: HTMLElement): {
   width: number
   left: number
@@ -53,8 +42,6 @@ function horizontalBounds(element: HTMLElement): {
   return { width: rect.width, left: rect.left, right: rect.right }
 }
 
-/** A promise the case settles by hand, so one request can be held in
- * flight across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -66,16 +53,12 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** One animation frame: the component's updated state has reached the DOM
- * and the browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message: tag, role and the
- * label or text a reader can map back to a control. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -119,13 +102,7 @@ describe('SsoPage horizontal overflow in Chromium', () => {
   }
 })
 
-/**
- * The domain list and the DNS record panel carry the widest strings on
- * the page -- a long declared domain, a 64-character token, and the
- * record's full name and value. At each floor every row action and copy
- * control must stay inside the viewport's horizontal bounds, and the page
- * must not overflow.
- */
+// The domain list and DNS panel carry the page's widest strings.
 describe('SsoPage domain list and DNS record panel in Chromium', () => {
   for (const width of FLOOR_WIDTHS) {
     it(`keeps the domain rows and DNS record inside a ${width}px viewport`, async () => {
@@ -164,8 +141,6 @@ describe('SsoPage domain list and DNS record panel in Chromium', () => {
         expect(bounds.right).toBeLessThanOrEqual(viewportWidth + 1)
       }
 
-      // Claiming hands out the DNS record: its complete name and value,
-      // with their copy controls, must also stay inside the floor.
       await user.type(
         screen.getByRole('textbox', { name: enUS.sso.domains.domainLabel }),
         'beta.example',
@@ -194,13 +169,8 @@ describe('SsoPage domain list and DNS record panel in Chromium', () => {
   }
 })
 
-/**
- * jsdom does not honour focusability: a natively disabled button still takes
- * and keeps focus there, so the defect this page fixes -- a focused trigger
- * losing focus the moment its write starts or its precondition fails -- is
- * only observable in a real browser. These cases hold focus across a write
- * and a failed precondition, and assert it comes back through the settle.
- */
+// jsdom does not honour focusability, so a focused trigger losing focus on its
+// write or failed precondition is observable only in a real browser.
 describe('SsoPage focus retention in Chromium', () => {
   it('keeps focus on the claim control while its precondition is unmet and through its write', async () => {
     await page.viewport(900, 900)
@@ -217,8 +187,6 @@ describe('SsoPage focus retention in Chromium', () => {
     await screen.findByText('Acme Corporate Identity Provider')
     const user = userEvent.setup()
 
-    // No provider and no domain: the claim is unavailable but still holds
-    // focus, so a keyboard user never loses their place.
     const claim = screen.getByRole('button', { name: enUS.sso.domains.claim })
     claim.focus()
     await waitFor(() => {
@@ -279,7 +247,6 @@ describe('SsoPage focus retention in Chromium', () => {
     const submit = screen.getByRole('button', {
       name: enUS.sso.provider.createSubmit,
     })
-    // Required fields are empty: unavailable, but it still holds focus.
     submit.focus()
     await waitFor(() => {
       expect(

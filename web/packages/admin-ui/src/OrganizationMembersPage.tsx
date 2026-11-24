@@ -1,30 +1,7 @@
 /**
- * OrganizationMembersPage: the organization administrator's members and
- * invitations page.
- *
- * One route, two sections in the order the operator works in: members first
- * (the main task), invitations second. The page is not a tabbed surface.
- *
- * Members: a server-side search over `query` (debounced), a table of display
- * name, username, roles, status, source and joined-at, cursor pagination, and
- * a management panel opened from each row. The panel owns bind/unbind,
- * suspend/resume and remove; its permission degradation and the role
- * escalation check live in `internal/member-panel.tsx`.
- *
- * Invitations: an issue form with a one-day / seven-day / thirty-day expiry
- * choice and, for a caller who may manage roles, a role choice whose grants
- * are checked against the caller's own permission set before the write. The
- * list opens on pending invitations, filters by the server's four-value
- * status, and renders the server-judged `state` rather than deriving expiry
- * from the local clock (`internal/invitation-status.ts`). Terminal rows say
- * when they reached that state; only pending rows offer resend and revoke.
- * The one-time panel is page state, so a scope reset or a later failure
- * cannot drop the only copy; its close control asks for confirmation only
- * when it actually holds a link, and only the invitation that was just
- * issued or resent offers a row copy-link action.
- *
- * Every read and write runs through the organization operations bundle,
- * so the page builds no client and writes no query key.
+ * OrganizationMembersPage renders an organization's members and invitations:
+ * a searchable, cursor-paged member table with a per-row management panel,
+ * and an invitation issue form plus a status-filtered list.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -92,74 +69,43 @@ import type {
   AdminMember,
 } from './operations.js'
 
-/** The member table's page size; the server answers the next page's cursor. */
 const MEMBER_PAGE_SIZE = 100
 
-/** The invitation table's page size. */
 const INVITATION_PAGE_SIZE = 50
 
-/** The issue form's default expiry, in days (the module's configured default). */
 const DEFAULT_EXPIRY_DAYS = 7
 
-/** The expiry choices the issue form offers, in days. */
 const EXPIRY_CHOICES = [1, 7, 30] as const
 
-/**
- * The texts that explain why the issue control cannot run: each is the
- * paragraph the role's grant check already renders for that state, so the
- * control points at it rather than repeating it.
- */
+// Ids of the role-check paragraphs the issue control points at.
 const ISSUE_ROLE_CHECKING_ID = 'invitation-issue-role-checking'
 const ISSUE_ROLE_FAILED_ID = 'invitation-issue-role-failed'
 const ISSUE_ROLE_UNCONFIRMED_ID = 'invitation-issue-role-unconfirmed'
 const ISSUE_ROLE_BLOCKED_ID = 'invitation-issue-role-blocked'
 
-/**
- * The two tables carry five high-priority columns from the `sm` container
- * floor (600px). Their horizontal cell padding is tightened from the
- * ui-kit default so those columns fit that floor instead of falling back
- * to the scroll container; the vertical padding is unchanged.
- */
+// Tightened padding lets the five high-priority columns fit the 600px sm floor.
 const COMPACT_TABLE_SX = {
   '& .MuiTableCell-root': { px: 1 },
 } as const
 
-/**
- * The content cap the member table's two nowrap identity columns take
- * below `md`. The shared primary cap (`PRIMARY_COLUMN_MAX_WIDTH`) is sized
- * for a primary column whose wrapping text can shrink to its longest word;
- * the display name and the account stay on one line, so each contributes
- * its whole cap to the row's unbreakable width. At the 600px `sm` floor
- * those two caps together with the roles, status, joined and action columns
- * exceed the floor. The status column has no cap of its own and its chip
- * grows with the label -- "Suspended" is the widest state -- so the pair has
- * to fit with that worst-case column as well, not only with "Active". 96px
- * makes the suspended row require 576.8px in the browser tier's pinned font,
- * 23.2px inside the floor; the complete values remain reachable through the
- * title and the copy control.
- * From `md` up the shared 200px cap applies unchanged.
- */
+// Below md the two nowrap identity columns cap at 96px: at the 600px sm floor,
+// 96px each plus the worst-case "Suspended" status fits; the complete values stay
+// in the title and copy control.
 const MEMBER_IDENTITY_MAX_WIDTH = {
   belowMd: 96,
   fromMd: PRIMARY_COLUMN_MAX_WIDTH.fromMd,
 } as const
 
-/** The sources the surface names itself; a `jit:<id>` value names a provider. */
 const MEMBER_SOURCES = new Set<string>(['admin', 'initial', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
 
-/** The invitation just issued or resent, held with the tenant it belongs to. */
 interface IssuedNotice {
   readonly answer: AdminIssuedInvitation
   readonly tenant: string
 }
 
-/**
- * One list's cursor stack tagged with the tenant it was collected for. A
- * frame for another tenant derives as the first page synchronously, so the
- * first read after a switch carries no cursor from the tenant left behind
- * even before the post-commit reset lands.
- */
+// A cursor stack tagged with its tenant; a frame for another tenant derives as
+// the first page, so a switch carries no cursor from the tenant left behind.
 interface CursorFrame {
   readonly tenant: string
   readonly cursors: readonly string[]
@@ -170,29 +116,20 @@ function firstCursorPage(tenant: string): CursorFrame {
   return { tenant, cursors: [''], page: 0 }
 }
 
-/** The query parameter the members section's role filter reads and writes. */
 const ROLE_QUERY_PARAM = 'role'
 
-/** The role name a query string carries, or '' when the parameter is absent. */
 function roleFromSearch(search: string): string {
   return new URLSearchParams(search).get(ROLE_QUERY_PARAM)?.trim() ?? ''
 }
 
-/** The role filter the page opens on from the current URL; '' outside a
- * browser. The parameter is read once, when the page's state is created. */
 function roleFromLocation(): string {
   return typeof window === 'undefined'
     ? ''
     : roleFromSearch(window.location.search)
 }
 
-/**
- * Writes the role filter into the current URL so the filtered view is
- * addressable and survives a reload. The role is percent-encoded in place
- * (not form-encoded), so a name carrying a space or an ampersand round-trips
- * as the role itself. Every other query parameter is preserved, and an empty
- * role removes the parameter rather than writing an empty one.
- */
+// Writes the role into the URL, percent-encoded in place (not form-encoded) so
+// names with spaces or ampersands round-trip; an empty role removes the parameter.
 function rememberRoleInLocation(role: string): void {
   if (typeof window === 'undefined') {
     return
@@ -216,16 +153,12 @@ export interface OrganizationMembersPageProps {
   readonly tenant: string
 }
 
-/** The absolute RFC 3339 instant `days` from now, the issue form's expiry. */
 function expiryInstant(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
 }
 
-/**
- * The absolute acceptance URL for a host-built link; a host-relative path is
- * resolved against the current origin, and a value that will not resolve is
- * shown as it came.
- */
+// Resolves a host-relative link against the current origin; an unresolvable value
+// is shown as it came.
 function acceptanceUrl(link: string): string {
   try {
     return new URL(link, window.location.origin).toString()
@@ -239,27 +172,18 @@ export function OrganizationMembersPage({
 }: OrganizationMembersPageProps) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useOrganizationAdminOperations()
-  // Every invitation instant renders through the one entry, in the viewer's
-  // display zone; the pure helpers below take it as an argument.
   const formatTime = useFormatInstant()
   const invitationLink = useAdminInvitationLink()
   const resolveErrorText = useAdminUiErrorText()
   const session = useAdminSession()
-  // The tenant admission layer's multi-factor refusal cannot be cleared by
-  // any retry: the organization requires a fresh sign-in. The exit ends the
-  // session so the host's session gate returns to its sign-in surface.
-  // Without a session there is no exit to offer.
+  // The MFA refusal cannot be cleared locally: ending the session returns the
+  // host's session gate to its sign-in surface.
   const relogin = useCallback(() => {
     void session?.logout().catch(() => undefined)
   }, [session])
 
-  // --- Members ----------------------------------------------------------
-
   const [memberSearch, setMemberSearch] = useState('')
   const debouncedMemberSearch = useDebouncedValue(memberSearch)
-  // The role filter is named by the URL (`?role=...`) and applied on entry:
-  // the state's initial value is the parameter, so the first member read
-  // already carries it. An empty value is no filter.
   const [roleFilter, setRoleFilter] = useState<string>(roleFromLocation)
   const tenantRoles = operations.useTenantRoles(tenant)
   const roleOptions = tenantRoles.data ?? []
@@ -279,8 +203,7 @@ export function OrganizationMembersPage({
       ...(debouncedMemberSearch === ''
         ? {}
         : { query: debouncedMemberSearch }),
-      // The server filters the page by role; the page never narrows the rows
-      // it received, so a filtered page is still a full page of matches.
+      // The server filters; the page never narrows the rows it received.
       ...(roleFilter === '' ? {} : { role: roleFilter }),
       ...(memberCursor === '' ? {} : { after: memberCursor }),
     }),
@@ -290,63 +213,40 @@ export function OrganizationMembersPage({
   const memberRows = members.data?.members
   const memberNextCursor = members.data?.next_cursor ?? ''
 
-  // The tenant is the list's context: a switch already derives the first
-  // page, and the post-commit reset drops the previous tenant's stack so a
-  // later switch back does not resume a page left long ago. The search
-  // resets the stack in the input handler itself, so the debounced value's
-  // first read never carries a cursor read under the old search.
   useEffect(() => {
     setMemberCursorState(firstCursorPage(tenant))
   }, [tenant])
 
   const [panelMember, setPanelMember] = useState<AdminMember | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
-  // The member list's container: the focus target when a removal leaves no
-  // adjacent row to take the place of the one that left.
   const memberListRef = useRef<HTMLDivElement | null>(null)
-  // The member a removal took away, as the panel saw it. The account finds
-  // the row while it is still on screen; the index names the row that moved
-  // up once the re-read has dropped it.
   const removalFocus = useRef<{
     readonly account: string
     readonly index: number
   } | null>(null)
-  // The panel belongs to the tenant it was opened under. A tenant switch
-  // closes it and drops the snapshot; the derivation below also refuses a
-  // snapshot from another tenant, so even the render before this effect
-  // commits cannot offer a control whose write would name the new tenant's
-  // path and the old tenant's member.
+  // The panel belongs to its tenant; the derivation below refuses another
+  // tenant's snapshot even before this effect commits.
   useEffect(() => {
     setPanelOpen(false)
     setPanelMember(null)
   }, [tenant])
-  // The panel acts on the member as the list read now carries it, not on the
-  // snapshot taken when the row was clicked: a suspend or resume writes the
-  // membership and invalidates the list, and the open panel then follows
-  // that read instead of showing the state it opened with. A member no
-  // current row carries (a search narrowed the list away) keeps the
-  // snapshot, which is the last state read for it.
+  // The panel follows the list's current row, so a suspend or resume shows the
+  // new state; a row no longer listed keeps the snapshot.
   const livePanelMember =
     panelMember === null || panelMember.tenant !== tenant
       ? null
       : (memberRows?.find((row) => row.account === panelMember.account) ??
         panelMember)
-  // A removal's message is written into the list's scope only after the
-  // panel has exited: while the modal is open the page behind it is
-  // aria-hidden, so a notice written then would never be announced.
+  // The notice is written after the panel exits: while the modal is open the
+  // page behind it is aria-hidden.
   const removalSuccess = useRef<string | null>(null)
 
-  // The member list's feedback scope holds the panel's removal success; the
-  // panel's own writes report in its own scope.
   const membersFeedback = useWriteFeedback()
   const membersRegionRef = useFailureScroll(membersFeedback.outcome)
 
   const roleFilterActive = roleFilter !== ''
   const roleListed = roleOptions.some((role) => role.role === roleFilter)
 
-  // A filter change is a new first page and a new scope: the cursor stack
-  // belonged to the previous filter, and a result written under it would read
-  // as describing the filter just left behind.
   const changeRoleFilter = (next: string) => {
     setRoleFilter(next)
     setMemberCursorState(firstCursorPage(tenant))
@@ -361,15 +261,8 @@ export function OrganizationMembersPage({
   const requestPanelClose = () => {
     setPanelOpen(false)
   }
-  /**
-   * Places focus after a removal closed the panel that its opener's row
-   * opened. The same control on the next row takes it, else the previous
-   * row's, else the list container: the opener itself is gone, and a
-   * focused control that leaves the document must not drop focus to the
-   * body. A row still on screen names its own position, so the adjacent
-   * control is the one beside it; once the re-read has dropped the row, the
-   * position recorded when the removal started names the row that moved up.
-   */
+  // Places focus after a removal closed the panel: the same control on the next
+  // row, else the previous, else the list container, so focus never drops to the body.
   const placeFocusAfterRemoval = (
     removed: { readonly account: string; readonly index: number } | null,
   ) => {
@@ -380,10 +273,8 @@ export function OrganizationMembersPage({
     if (list === null) {
       return
     }
-    // Only recover focus the removal left behind: the body (the opener was
-    // removed while focused), anything inside the closing panel (its content
-    // unmounts right after this callback), or the removed row's own opener.
-    // A reader who moved focus elsewhere has chosen a new resting place.
+    // Recover focus only when the removal left it on the body, the closing
+    // panel, or the removed row's own opener.
     const active = document.activeElement
     const focusWasLost =
       active === null ||
@@ -438,10 +329,8 @@ export function OrganizationMembersPage({
   }
 
   const nextMemberPage = () => {
-    // `keepPreviousData` leaves the previous page's envelope on screen while
-    // the next one loads, so its `next_cursor` still names that same page.
-    // Reading it again would push the same cursor twice and show one page
-    // twice; the control waits for the read to settle.
+    // keepPreviousData leaves the previous envelope on screen, whose next_cursor
+    // names the same page; the control waits for the read to settle.
     if (memberNextCursor === '' || membersFeedback.pending || members.isFetching) {
       return
     }
@@ -467,24 +356,16 @@ export function OrganizationMembersPage({
     })
   }
 
-  // --- Invitations ------------------------------------------------------
-
   const [email, setEmail] = useState('')
   const [expiryDays, setExpiryDays] = useState<number>(DEFAULT_EXPIRY_DAYS)
-  // The role an invitation grants, if any. The choice is tagged with the
-  // tenant whose catalog offered it: a switch derives an empty choice in the
-  // same render, so no role name reaches a tenant whose roles read has not
-  // answered yet. The control renders only for a caller holding the tenant
-  // role-management permission.
+  // The choice is tagged with its tenant, so no role name reaches a tenant whose
+  // roles read has not answered.
   const [issueRoleState, setIssueRoleState] = useState({
     tenant,
     role: '',
   })
   const issueRole = issueRoleState.tenant === tenant ? issueRoleState.role : ''
   const setIssueRole = (role: string) => setIssueRoleState({ tenant, role })
-  // The issue form's escalation pre-check reads the selected role's grants
-  // and compares each with the caller's own set, through the same shared
-  // check the member panel's bind control uses.
   const {
     canManageRoles,
     roleSelected: issueRoleSelected,
@@ -494,10 +375,8 @@ export function OrganizationMembersPage({
     grantPermissionUnconfirmed: issueGrantUnconfirmed,
     escalationBlocked: issueEscalationBlocked,
   } = useRoleEscalationCheck(tenant, issueRole)
-  // The role choice belongs to the control that offered it. Without the
-  // tenant role-management permission the control is absent, so a value
-  // chosen earlier must not survive to be sent behind the operator's back
-  // when the permission returns.
+  // Without the role-management permission the control is absent, so a previously
+  // chosen role must not be sent when the permission returns.
   useEffect(() => {
     if (!canManageRoles) {
       setIssueRoleState((previous) =>
@@ -505,15 +384,10 @@ export function OrganizationMembersPage({
       )
     }
   }, [canManageRoles])
-  // The list opens on the state an operator came to act on; history is one
-  // filter choice away.
   const [statusFilter, setStatusFilter] =
     useState<InvitationStatusFilter>('pending')
-  // A revoke moves focus to the invitation section's heading: the row may
-  // leave the filtered list, taking the menu that started the write with
-  // it, while the heading stays put and names the section the result
-  // belongs to. A terminal refusal (409) also re-reads the list; when that
-  // leaves the row out of the current filter, focus follows the same path.
+  // A revoke moves focus to the invitations heading, which stays while the row
+  // may leave the filtered list.
   const {
     sectionRef: invitationSectionRef,
     focusHeading: focusInvitationHeading,
@@ -540,17 +414,11 @@ export function OrganizationMembersPage({
   const invitationRows = invitations.data?.invitations
   const invitationNextCursor = invitations.data?.next_cursor ?? ''
 
-  // The filter resets the cursor in its own change handler for the same
-  // reason as the member search; the tenant switch derives the first page
-  // synchronously and resets the previous stack after the commit.
   useEffect(() => {
     setInvitationCursorState(firstCursorPage(tenant))
   }, [tenant])
 
   const [issued, setIssued] = useState<IssuedNotice | null>(null)
-  // The invitation-scope control the in-flight write belongs to, so only the
-  // activated control reports busy and the issue form is unavailable while a
-  // row's resend or revoke runs.
   const [pendingInvitationWrite, setPendingInvitationWrite] = useState<
     | { readonly kind: 'issue' }
     | { readonly kind: 'resend'; readonly id: string }
@@ -570,11 +438,8 @@ export function OrganizationMembersPage({
     invitationFeedback.outcome,
     resolveErrorText,
   )
-  // The issue control's unmet preconditions, in the order an operator meets
-  // them. The address is what the form is for; the role's grant check is a
-  // precondition of the optional choice beside it. Every role state already
-  // renders its own explanation, which the control points at; an empty
-  // address has no standing text, so the control carries the reason.
+  // Each role state has its own paragraph the control points at; an empty
+  // address has none, so the control carries that reason.
   const issueExplanation: ActionButtonUnavailableExplanation | undefined =
     email.trim() === ''
       ? { unavailableReason: t('invitations.issue.emailRequired') }
@@ -599,11 +464,7 @@ export function OrganizationMembersPage({
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
 
-  // A notice whose delivery succeeded carries no token: the recipient holds
-  // the link already, so the panel only says the invitation was emailed.
   const issuedToken = issued?.answer.token
-  // Only a panel that holds a link loses something when it closes; a notice
-  // the carrier accepted carries no token, so its panel closes directly.
   const issuedHasValue = issuedToken !== undefined
   const issuedValue =
     issuedToken === undefined
@@ -618,9 +479,6 @@ export function OrganizationMembersPage({
     if (address === '') {
       return
     }
-    // A new attempt owns the scope: the row marked by an earlier failed
-    // resend or revoke must not keep a dangling `aria-describedby` once this
-    // attempt replaces that failure's text.
     setFailedInvitation(null)
     setPendingInvitationWrite({ kind: 'issue' })
     void invitationFeedback
@@ -655,8 +513,8 @@ export function OrganizationMembersPage({
         void invitationFeedback
           .run(async () => {
             try {
-              // Resend replaces the token on this invitation; it neither
-              // extends the deadline nor creates another row.
+              // Resend replaces the token; it neither extends the deadline nor
+              // creates another row.
               const answer = await resendInvitation.mutateAsync({
                 tenant,
                 id: invitation.id,
@@ -690,17 +548,12 @@ export function OrganizationMembersPage({
                 tenant,
                 id: invitation.id,
               })
-              // The row leaves the filtered list; keep focus on the section's
-              // heading, which stays visible and names the section the result
-              // belongs to.
               focusInvitationHeading()
               return t('invitations.revoked', { email: invitation.email })
             } catch (error) {
               setFailedInvitation(invitation.id)
-              // A terminal refusal leaves the row out of the current filter
-              // too, so focus does not fall back to the body when the re-read
-              // drops it. An "all" filter keeps the row, so its menu keeps
-              // focus there.
+              // A terminal refusal also drops the row from a filtered list, so
+              // focus follows the heading; an "all" filter keeps the row.
               if (
                 statusFilter !== 'all' &&
                 errorCodeOf(error) === INVITATION_TERMINAL_CODE
@@ -741,10 +594,6 @@ export function OrganizationMembersPage({
     })
   }
 
-  // A filter change is a new first page and a new scope, exactly as the
-  // member filter is: the cursor stack belonged to the previous filter, and
-  // a result or row marker written under it would read as describing the
-  // filter just left behind.
   const changeInvitationStatusFilter = (next: InvitationStatusFilter) => {
     setStatusFilter(next)
     setInvitationCursorState(firstCursorPage(tenant))
@@ -752,9 +601,7 @@ export function OrganizationMembersPage({
     setFailedInvitation(null)
   }
 
-  // A source the surface names renders its own label; a `jit:<id>` value
-  // names the provider that provisioned the membership; anything else is
-  // shown as the record carries it.
+  // A `jit:<id>` source names its provider; anything else is shown as it came.
   const memberSourceLabel = (source: string): string => {
     let key: string | null = null
     let options: Record<string, string> | undefined
@@ -775,14 +622,10 @@ export function OrganizationMembersPage({
     {
       id: 'displayName',
       header: t('members.column.displayName'),
-      // The display name is the row's identity: a short one must never be
-      // split mid-token by a squeezed column. It stays on one line and
-      // truncates inside the cap. Only the username and email columns carry
-      // a copy control; the display name is read, not copied.
+      // Stays on one line and truncates inside the cap; the display name is read,
+      // not copied.
       cellWrap: 'nowrap',
       contentMaxWidth: MEMBER_IDENTITY_MAX_WIDTH,
-      // A truncated name stays reachable by hover; the copy control belongs
-      // to the username and email columns only.
       cell: (member) => (
         <Typography
           variant="body2"
@@ -797,12 +640,8 @@ export function OrganizationMembersPage({
       id: 'username',
       header: t('members.column.username'),
       priority: 'high',
-      // The column shows the member record's login username as it is: the
-      // display name is the identity column beside it, and the account's
-      // internal identifier is never shown. The copy control hands over the
-      // username -- the unique value an operator can act on. A member the
-      // record carries no username for gets the neutral copy rather than a
-      // repeat of the display name.
+      // The account's internal identifier is never shown; a member with no
+      // username gets the neutral copy.
       cellWrap: 'nowrap',
       cellFullValue: (member) =>
         member.username === '' ? undefined : member.username,
@@ -815,13 +654,8 @@ export function OrganizationMembersPage({
     {
       id: 'roles',
       header: t('members.column.roles'),
-      // The role list is a primary fact about a member, not a fine-print
-      // detail: it stays from the high floor up, so the 1024px desktop
-      // viewport (280px sidebar, ~640px of content) still shows it.
       priority: 'high',
       cellWrap: 'wrap',
-      // The role names are read, not copied; the copy control stays on the
-      // username and email columns.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (member) =>
         member.roles.length === 0 ? (
@@ -867,10 +701,6 @@ export function OrganizationMembersPage({
     {
       id: 'joinedAt',
       header: t('members.column.joinedAt'),
-      // Joined-at is ordinary row information beside roles and status, so
-      // it stays from the high floor up rather than disappearing on the
-      // common laptop width the way a medium or low column would. The
-      // timestamp wraps at that floor instead of forcing the table wider.
       priority: 'high',
       cellWrap: 'wrap',
       cell: (member) => formatTime(member.joined_at),
@@ -890,8 +720,7 @@ export function OrganizationMembersPage({
               identityLabel(member.display_name, member.username) ??
               t('common.accountUnavailable'),
           })}
-          // Names the row's own control so a removal can hand focus to the
-          // neighbouring row's.
+          // Names the row's own control so a removal can hand focus to its neighbour.
           data-member-manage={member.account}
           onClick={() => openPanel(member)}
         >
@@ -918,9 +747,6 @@ export function OrganizationMembersPage({
       id: 'status',
       header: t('invitations.column.status'),
       priority: 'high',
-      // The tag is one short word and stays whole; the caption under a
-      // terminal tag names the instant it settled and wraps inside the
-      // column instead of forcing the row wider than the sm floor.
       cellWrap: 'wrap',
       cell: (invitation) => {
         const state = invitation.state
@@ -936,8 +762,6 @@ export function OrganizationMembersPage({
     {
       id: 'role',
       header: t('invitations.column.role'),
-      // A role is secondary to the address and its state: the column yields
-      // at the narrow floor and returns from the md container tier.
       priority: 'medium',
       cellWrap: 'nowrap',
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
@@ -950,10 +774,8 @@ export function OrganizationMembersPage({
       id: 'invitedBy',
       header: t('invitations.column.invitedBy'),
       priority: 'high',
-      // The invitation carries the inviter's display name; the username is
-      // only the hover title behind a truncated name, never a second visible
-      // value. An invitation a host command issued, or whose inviter is gone,
-      // carries neither key and leaves the cell empty.
+      // Only the display name shows; the username is the truncated name's hover
+      // title. Missing inviter keys leave the cell empty.
       cellWrap: 'nowrap',
       contentMaxWidth: INVITATION_IDENTITY_MAX_WIDTH.invitedBy,
       cell: (invitation) => {
@@ -976,9 +798,6 @@ export function OrganizationMembersPage({
     {
       id: 'expires',
       header: t('invitations.column.expires'),
-      // Only a pending invitation has a deadline the operator can still act
-      // on; terminal rows leave the cell empty. A deadline within a day says
-      // how long is left.
       priority: 'high',
       cellWrap: 'wrap',
       cell: (invitation) => {
@@ -1001,8 +820,7 @@ export function OrganizationMembersPage({
     {
       id: 'created',
       header: t('invitations.column.created'),
-      // The issued time is the row's `created_at` and does not move on a
-      // resend; a resent row adds the count and the latest send beneath it.
+      // `created_at` does not move on a resend; the count and latest send sit beneath.
       priority: 'high',
       cellWrap: 'wrap',
       cell: (invitation) => (
@@ -1033,8 +851,8 @@ export function OrganizationMembersPage({
       header: t('invitations.column.actions'),
       cellWrap: 'nowrap',
       cell: (invitation) => {
-        // A terminal invitation has nothing left to act on: its link no
-        // longer works, and the server refuses both writes with 409.
+        // A terminal invitation's link no longer works, and the server refuses
+        // both writes with 409.
         if (invitation.state !== 'pending') {
           return null
         }
@@ -1075,8 +893,6 @@ export function OrganizationMembersPage({
                   },
                 ]}
               />
-              {/* The acceptance token is handed out once: only the item just
-                  issued or resent has a value to copy. */}
               {current && (
                 <CopyButton
                   value={issuedValue}
@@ -1124,8 +940,8 @@ export function OrganizationMembersPage({
         contentAligned={false}
         sx={{ mb: 3 }}
       >
-        {/* The toolbar stays outside the async section: a loading, empty or
-            failed list must not swallow the controls that change it. */}
+        {/* The toolbar stays outside the async section, so a loading, empty or
+            failed list cannot swallow its controls. */}
         <Box
           sx={{
             display: 'flex',
@@ -1160,9 +976,7 @@ export function OrganizationMembersPage({
               {t('members.search.clear')}
             </Button>
           )}
-          {/* The role options come from the tenant's role read. A failed read
-              keeps the current selection addressable and offers a retry
-              rather than presenting an empty role list as the truth. */}
+          {/* A failed role read keeps the selection addressable and offers a retry. */}
           <TextField
             select
             size="small"
@@ -1207,9 +1021,8 @@ export function OrganizationMembersPage({
             </Button>
           )}
         </Box>
-        {/* The list group is the fallback focus target after a removal
-            leaves no adjacent row; it stays mounted through the empty and
-            failed branches, so the container is always there to take it. */}
+        {/* The fallback focus target after a removal; it stays mounted through
+            the empty and failed branches. */}
         <Box
           ref={memberListRef}
           role="group"
@@ -1324,8 +1137,7 @@ export function OrganizationMembersPage({
               </MenuItem>
             ))}
           </TextField>
-          {/* A caller without the tenant role-management permission cannot
-              grant a role, so the choice is absent rather than refused. */}
+          {/* Without the role-management permission the choice is absent. */}
           {canManageRoles && (
             <TextField
               select
@@ -1414,8 +1226,6 @@ export function OrganizationMembersPage({
           <OneTimeValuePanel
             message={
               issued.answer.token === undefined ? (
-                // The notice reached the address, so there is no link to pass
-                // on and no expiry or risk to describe.
                 t('invitations.issued.emailed', {
                   email: issued.answer.invitation.email,
                 })
@@ -1593,9 +1403,8 @@ export function OrganizationMembersPage({
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
 
-      {/* A panel that holds a link is cleared only after the operator
-          confirms: closing it is the only moment the sole copy is dropped.
-          A panel for a delivered notice holds no link and closes directly. */}
+      {/* Closing a panel that holds a link is the only moment the sole copy is
+          dropped, so it confirms; a delivered notice closes directly. */}
       <ConfirmDialog
         open={closeIssuedOpen}
         title={t('invitations.issued.closeTitle')}

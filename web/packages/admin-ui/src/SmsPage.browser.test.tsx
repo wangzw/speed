@@ -1,7 +1,3 @@
-/**
- * SmsPage in a real browser: the SMS template table at the sm/md/lg
- * floor widths with fixed data.
- */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -38,15 +34,10 @@ function smsTemplate(name: string): AdminSmsTemplate {
 
 const TEMPLATES: readonly AdminSmsTemplate[] = [smsTemplate('authn-login-code')]
 
-/** The accessible name of a row's remove control in the active language. */
 function removeName(name: string): string {
   return enUS.sms.removeAria.replace('{{name}}', name)
 }
 
-/**
- * Renders a table of the named templates over a backend that drops the
- * removed row from its list, then removes `target` through the dialog.
- */
 async function removeRow(
   names: readonly string[],
   target: string,

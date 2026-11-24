@@ -1,15 +1,3 @@
-/**
- * TenantRosterPage: the roster-administration page.
- *
- * Its read renders the settled list as a table keyed by name (with the
- * roster's own status spelling, a value outside the closed set falling to
- * the generic label), and its writes drive the operations bundle -- a
- * successful status write names the row's name, and a refused write
- * renders the answer's code text (a roster collision reading the conflict
- * text), never a raw key. The roster carries no text input at all: it is a
- * table and a link to the standalone registration page.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -28,7 +16,6 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(
   template: string,
   values: Record<string, string>,
@@ -38,7 +25,6 @@ function text(
   )
 }
 
-/** jsdom implements no layout; a scroll observer installs this stub. */
 function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   const spy = vi.fn()
   Object.defineProperty(Element.prototype, 'scrollIntoView', {
@@ -49,7 +35,6 @@ function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   return spy
 }
 
-/** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => {
@@ -93,7 +78,6 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     expect(await screen.findByText('Gone Co')).toBeInTheDocument()
     expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
-    // A tombstone is terminal: the row carries no enable/disable toggle.
     expect(
       screen.queryByRole('switch', {
         name: text(zhCN.tenants.enableAria, { name: 'gone' }),
@@ -119,8 +103,6 @@ describe('TenantRosterPage', () => {
     await screen.findByText('Operator Off')
     expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
     expect(screen.getByText(zhCN.tenants.disabledBy.account)).toBeInTheDocument()
-    // Only the disabled operator row carries the operator source; the
-    // active row carries none.
     expect(screen.getAllByText(zhCN.tenants.disabledBy.operator)).toHaveLength(1)
   })
 
@@ -140,8 +122,6 @@ describe('TenantRosterPage', () => {
     const oldToggle = screen.getByRole('switch', {
       name: text(zhCN.tenants.enableAria, { name: 'old' }),
     })
-    // The coarse floor is the theme's rule on the switch root, not the
-    // visually hidden input the role sits on.
     const acmeRoot = acmeToggle.closest('.MuiSwitch-root')
     const oldRoot = oldToggle.closest('.MuiSwitch-root')
     expect(acmeRoot).not.toBeNull()
@@ -168,8 +148,6 @@ describe('TenantRosterPage', () => {
     expect(
       screen.getByRole('link', { name: zhCN.tenants.register }),
     ).toHaveAttribute('href', '/admin/tenants/new')
-    // The registration form is its own page now: the roster carries no
-    // text input at all (no inline name or display-name field).
     expect(screen.queryAllByRole('textbox')).toHaveLength(0)
   })
 
@@ -199,8 +177,6 @@ describe('TenantRosterPage', () => {
     )
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
-    // The row's enable/disable control names its own tenant, so it is not
-    // confusable with another row's toggle.
     await user.click(
       screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { name: 'acme' }) }),
     )
@@ -232,16 +208,11 @@ describe('TenantRosterPage', () => {
     await user.click(toggle)
 
     expect(writes).toEqual(['acme:disabled'])
-    // The switch keeps the focus that activated it: the write in flight never
-    // makes it natively disabled.
     expect(document.activeElement).toBe(toggle)
     expect(toggle).toHaveAttribute('aria-busy', 'true')
     expect(toggle).toHaveAttribute('aria-disabled', 'true')
-    // The controlled value does not move until the write's refetch settles.
     expect(toggle).toBeChecked()
 
-    // Click, Enter and Space are all swallowed while the write runs: none of
-    // them writes a second time, and the value and focus stay where they were.
     await user.click(toggle)
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -267,9 +238,6 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    // The two rows carry the same control distinguished only by the name
-    // baked into each accessible name -- never two identical "Disable"
-    // switches.
     expect(
       screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { name: 'acme' }) }),
     ).toBeInTheDocument()
@@ -292,8 +260,6 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    // The success notice is a standing status region: mounted clipped until a
-    // write lands, then filled with the confirmation.
     await user.click(screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { name: 'acme' }) }))
     expect(
       await screen.findByText(text(zhCN.tenants.disabledToast, { name: 'acme' })),
@@ -309,15 +275,11 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    // The page title is the level-one heading.
     expect(
       screen.getByRole('heading', { level: 1, name: zhCN.tenants.title }),
     ).toBeInTheDocument()
-    // The breadcrumb trail is its own navigation landmark, running from
-    // the admin to this page.
     const breadcrumbs = screen.getByRole('navigation')
     expect(within(breadcrumbs).getByText(zhCN.shell.title)).toBeInTheDocument()
-    // The refresh action re-reads the roster.
     const user = userEvent.setup()
     const before = listTenants.mock.calls.length
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
@@ -347,16 +309,11 @@ describe('TenantRosterPage', () => {
 
     await user.click(screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { name: 'acme' }) }))
 
-    // The row's scope is in flight, so the page-level refresh is
-    // unavailable. The scope is chosen, so the unavailable control
-    // carries no "choose a scope first" description.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     await waitForCondition(() => {
       expect(refresh).toHaveAttribute('aria-disabled', 'true')
     })
     expect(refresh).not.toHaveAttribute('aria-describedby')
-    // A forced activation issues no read while the write it would race
-    // is in flight.
     fireEvent.click(refresh)
     await act(async () => {
       await Promise.resolve()
@@ -457,8 +414,6 @@ describe('TenantRosterPage', () => {
     )
     await screen.findByText('Acme')
 
-    // The roster's own fields keep their order, the host column follows
-    // them, and the row's write controls stay the last cell.
     expect(
       screen.getAllByRole('columnheader').map((cell) => cell.textContent),
     ).toEqual([
@@ -484,11 +439,6 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText(displayName)
 
-    // The display name is the page's primary label and the row's link: the
-    // shared cap (160px below `md`, 200px from `md` up) keeps a long value
-    // from pushing the row's controls out of the table's container. The
-    // cap counts the copy control beside it, so the whole cell stays inside
-    // the same budget while the title and the control keep the full value.
     const nameCell = screen.getByText(displayName).closest('td')
     expect(nameCell).not.toBeNull()
     expect(nameCell).toHaveAttribute('title', displayName)
@@ -499,8 +449,6 @@ describe('TenantRosterPage', () => {
       ]),
     )
 
-    // The name never hides either, and the same shared cap keeps a long
-    // value contained; the complete value rides the cell's title.
     const nameText = screen.getByText(name)
     expect(nameText).toHaveAttribute('title', name)
     expect(containerMaxWidthOf(nameText)).toEqual(
@@ -536,7 +484,6 @@ describe('TenantRosterPage', () => {
     expect(
       screen.queryByRole('button', { name: zhCN.tenants.retry }),
     ).toBeNull()
-    // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -551,7 +498,6 @@ describe('TenantRosterPage', () => {
       operations,
     })
     await screen.findByText('Acme')
-    // The display name is the link text; the name is the path segment.
     expect(screen.getByRole('link', { name: 'Acme' })).toHaveAttribute(
       'href',
       '/admin/tenants/acme',
@@ -580,7 +526,6 @@ describe('TenantRosterPage', () => {
       name: text(zhCN.tenants.disableAria, { name: 'acme' }),
     })
     await user.click(acmeToggle)
-    // The same resolved text stands in the row marker and in the region.
     await waitFor(() =>
       expect(screen.getAllByText(zhCN.errors.tenant.conflict)).toHaveLength(2),
     )
@@ -595,10 +540,8 @@ describe('TenantRosterPage', () => {
       ),
     )
 
-    // Each row marks its own failure; the other row is untouched.
     expect(acmeToggle).toHaveAttribute('aria-invalid', 'true')
     expect(globexToggle).toHaveAttribute('aria-invalid', 'true')
-    // Two results, one per row scope: no page-level aggregate.
     expect(
       screen.getAllByRole('alert').map((alert) => alert.textContent),
     ).toEqual([
@@ -651,7 +594,6 @@ describe('TenantRosterPage', () => {
     renderWithProviders(<TenantRosterPage />, { operations })
     await screen.findByText('Acme')
 
-    // The row's status change names its tenant and the new state.
     await user.click(screen.getByRole('switch', { name: text(zhCN.tenants.disableAria, { name: 'acme' }) }))
     expect(
       await screen.findByText(text(zhCN.tenants.disabledToast, { name: 'acme' })),
@@ -675,12 +617,9 @@ describe('TenantRosterPage', () => {
     })
     await user.click(toggle)
 
-    // The refusal marks the row's own control and region.
     await waitFor(() => expect(toggle).toHaveAttribute('aria-invalid', 'true'))
     expect(screen.getByRole('alert')).toBeInTheDocument()
 
-    // The refresh bumps the generation every row watches: the row resets
-    // its own scope and marker without being remounted.
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )

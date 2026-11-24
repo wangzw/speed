@@ -1,21 +1,5 @@
-/**
- * OrganizationSecurityPage in a real browser.
- *
- * The page is a flexible row per policy: the identity block on the left and
- * the switch and its feedback on the right, stacked below the sm breakpoint.
- * A browser is the only tier that resolves the actual text metrics and the
- * layout, so this suite holds the page inside the sm/md/lg floor widths, proves
- * the theme's coarse-pointer touch floor reaches the switch, and renders the
- * whole page in the dark theme. The read-only state drops the switch entirely
- * and renders the standing notice; that shape is measured at the narrowest
- * floor too.
- *
- * The touch floor is a `@media (pointer: coarse)` rule, which a headless
- * browser's fine pointer never activates; `hasCoarsePointerTouchTarget` reads
- * the rule emotion emitted for the rendered element, the same proof the
- * theme's own suite uses. The rendered box is then asserted to have area, so a
- * rule that matched an element the page no longer paints cannot pass.
- */
+// The touch floor is a @media (pointer: coarse) rule a headless fine pointer never
+// activates; hasCoarsePointerTouchTarget reads the emitted rule instead.
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -107,10 +91,6 @@ function renderPage({
   )
 }
 
-/**
- * The theme's own mode and body surface, so the dark case compares the page
- * against the theme it was given rather than against a color written here.
- */
 function ModeProbe() {
   const theme = useTheme()
   return (
@@ -122,7 +102,6 @@ function ModeProbe() {
   )
 }
 
-/** Wait for the page's read to settle into its two policy rows. */
 async function ready(): Promise<HTMLElement> {
   await screen.findByRole('heading', {
     level: 2,
@@ -134,7 +113,6 @@ async function ready(): Promise<HTMLElement> {
   })
 }
 
-/** Assert the document and one block keep their content inside their box. */
 function expectInsideBox(block: HTMLElement): void {
   expect(
     document.documentElement.scrollWidth,
@@ -203,9 +181,6 @@ describe('OrganizationSecurityPage focus in Chromium', () => {
     let writes = 0
     const operations = createAdminOperations(
       makeAdminBackend({
-        // The policy declares no danger, so a second activation the guard
-        // failed to swallow would save immediately rather than pausing on a
-        // confirmation the case could mistake for a refusal.
         listTenantSettings: () =>
           Promise.resolve(envelope([{ ...MFA, danger: '' }])),
         writeTenantSetting: () => {
@@ -236,14 +211,10 @@ describe('OrganizationSecurityPage focus in Chromium', () => {
     const user = userEvent.setup()
     await user.click(mfaSwitch)
 
-    // A real browser moves the focus of a control that turns natively
-    // disabled; the switch must stay focusable while its write runs.
     expect(mfaSwitch).toHaveAttribute('aria-busy', 'true')
     expect(mfaSwitch).toHaveAttribute('aria-disabled', 'true')
     expect(document.activeElement).toBe(mfaSwitch)
 
-    // A second activation while the write runs is swallowed: no second
-    // write, no confirmation, and the controlled value stays put.
     await user.click(mfaSwitch)
     expect(writes).toBe(1)
     expect(mfaSwitch).toBeChecked()

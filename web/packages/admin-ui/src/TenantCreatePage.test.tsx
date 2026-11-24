@@ -1,9 +1,3 @@
-/**
- * TenantCreatePage: the shared form in platform mode, the profile fields
- * it sends, the display-name requirement, the name rules, a refused
- * registration's error text, and the host hand-off on success.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -226,8 +220,6 @@ describe('TenantCreatePage', () => {
       }
       await waitFor(() => expect(createTenant).toHaveBeenCalledTimes(1))
 
-      // In flight: the write marks the submit busy and the fields read-only;
-      // neither drops the control that started it to the document body.
       await waitFor(() =>
         expect(submit).toHaveAttribute('aria-busy', 'true'),
       )
@@ -240,7 +232,6 @@ describe('TenantCreatePage', () => {
       expect(
         await screen.findByText(zhCN.errors.tenant.conflict),
       ).toBeInTheDocument()
-      // The refusal keeps the draft and the focus on the same control.
       expect(submit).not.toHaveAttribute('aria-busy')
       expect(name).not.toHaveAttribute('readonly')
       expect(initiating).toHaveFocus()

@@ -1,45 +1,7 @@
 /**
- * SmsPage: the SMS-template administration page of the console.
- *
- * It renders the runtime SMS template set over /api/v1/system/sms: it lists the
- * templates (name, source, enabled state, languages, per-language
- * approval state), takes up a template whose vendor code the operator
- * already holds, hands a template to the vendor for review, turns a
- * template's sending on or off, and drops a runtime template.
- *
- * The SMS administration surface is mounted only where the deployment
- * configures an SMS carrier: the surface has no meaning without one. A
- * process without it has no route to answer at all, so the read is
- * answered 404 -- or, on a deployment that serves this console from the
- * same endpoint as the API, with the front-end entry document, which the
- * transport refuses as `client.html`. Both are one more failed read: the
- * page renders its generic failure surface, the retryable placeholder that
- * keeps the retry, and keeps both write forms in place, because a write may
- * still land there. The page says so in its own words, so an operator who
- * reaches it on a carrier-less process knows why it is empty.
- *
- * Every read and write is an operation on the console operations bundle,
- * so the page builds no client and writes no query key.
- *
- * Each titled section is its own feedback scope: registering reports under
- * the register form, offering for review under the offer form, and the
- * template table's enable/remove actions under the table. A refused row
- * action marks that row inline with the same resolved text the region
- * shows and brings the region into view; a success names the template it
- * changed. The header's refresh re-reads the template list and drops the
- * three scopes and the table's row marker first, because a refresh changes
- * the context those results were written under. The page opens with
- * ui-kit's PageHeader.
- *
- * The template switch saves on change. While a table write is in flight the
- * switch and the row's remove action stay focusable, report the unavailable
- * state, and ignore activation. The row whose own removal is in flight is
- * the one remove action that reports the busy state; every other control in
- * the scope, and every remove action while a toggle runs, reports the
- * unavailable state alone. A landed removal takes its row out of the
- * document on the re-read that follows; focus moves to the same remove
- * action in the next row, else the previous row, else the table's own
- * container.
+ * SmsPage is the console's SMS-template administration page: it lists the
+ * runtime templates, registers one, offers one for vendor review, enables or
+ * disables sending, and removes a runtime template.
  */
 
 import { useLayoutEffect, useRef, useState } from 'react'
@@ -75,10 +37,8 @@ import { useAdminOperations } from './operations.js'
 import type { AdminSmsTemplate, AdminSmsTemplatePage } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
 
-/** The template sources the registry names. */
 const SMS_SOURCES = new Set<string>(['config', 'runtime'])
 
-/** The vendor review states a template can carry. */
 const APPROVAL_STATES = new Set<string>([
   'pending',
   'approved',
@@ -86,7 +46,6 @@ const APPROVAL_STATES = new Set<string>([
   'withdrawn',
 ])
 
-/** Splits a comma- or whitespace-separated list into its non-empty parts. */
 function parseList(text: string): string[] {
   return text
     .split(/[\s,]+/)
@@ -94,10 +53,7 @@ function parseList(text: string): string[] {
     .filter((part) => part !== '')
 }
 
-/**
- * Parses the codes draft into a language-to-code map: entries separated by
- * commas or whitespace, each a `locale:code` (or `locale=code`) pair.
- */
+// Parses `locale:code` (or `locale=code`) entries separated by commas or whitespace.
 function parseCodes(text: string): Record<string, string> {
   const codes: Record<string, string> = {}
   for (const entry of parseList(text)) {
@@ -109,17 +65,13 @@ function parseCodes(text: string): Record<string, string> {
   return codes
 }
 
-/** Which of a row's two writes the table scope's failure names. */
 type SmsRowFailedAction = 'enabled' | 'remove'
 
 type SmsRowActionsProps = {
   readonly template: AdminSmsTemplate
-  /** The write the table scope's failure names, or null for another row. */
   readonly failedAction: SmsRowFailedAction | null
   readonly failureText: string | null
-  /** This row's own removal is in flight. */
   readonly removalBusy: boolean
-  /** A write in the table scope is in flight (this row's or another's). */
   readonly writePending: boolean
   readonly onToggle: (template: AdminSmsTemplate) => void
   readonly onRemove: (template: AdminSmsTemplate) => void
@@ -129,11 +81,8 @@ type SmsRowActionsProps = {
   ) => void
 }
 
-/**
- * One row's save-on-change switch and remove action. It is a component of
- * its own because the switch's change handler goes through a hook, which
- * cannot be called from the column's cell callback.
- */
+// A separate component because the switch's change handler uses a hook, which
+// cannot be called from a column's cell callback.
 function SmsRowActions({
   template,
   failedAction,
@@ -148,9 +97,7 @@ function SmsRowActions({
   const errorId = `sms-error-${encodeURIComponent(template.name)}`
   const toggleFailed = failedAction === 'enabled'
   const removeFailed = failedAction === 'remove'
-  // Saving on change: while the scope's write is in flight the switch stays
-  // focusable and reports the unavailable state on its input, and the
-  // change is swallowed instead of reaching the handler.
+  // Saving on change: the switch stays focusable while busy and swallows the change.
   const guardedToggle = useActivationGuard(() => onToggle(template), {
     busy: writePending,
   })
@@ -201,6 +148,10 @@ function SmsRowActions({
   )
 }
 
+/**
+ * SmsPage administers the runtime SMS templates: register, offer for review,
+ * enable or disable sending, and remove a template.
+ */
 export function SmsPage() {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
@@ -212,7 +163,6 @@ export function SmsPage() {
   const setEnabled = operations.useSetSmsTemplateEnabled()
   const removeTemplate = operations.useRemoveSmsTemplate()
 
-  // One scope per titled section: register, offer, and the template table.
   const registerFeedback = useWriteFeedback()
   const offerFeedback = useWriteFeedback()
   const tableFeedback = useWriteFeedback()
@@ -220,23 +170,16 @@ export function SmsPage() {
   const offerRegionRef = useFailureScroll(offerFeedback.outcome)
   const tableRegionRef = useFailureScroll(tableFeedback.outcome)
 
-  // The table row the scope's failure names, and which of its two writes
-  // was refused, so the inline marker sits on that control.
   const [failedTemplate, setFailedTemplate] = useState<{
     readonly name: string
     readonly action: 'enabled' | 'remove'
   } | null>(null)
-  // Which row owns the table scope's in-flight write, and which of its two
-  // writes it is. The scope's `pending` says a write runs; this says whose,
-  // so only that row's remove action reports the busy state and every other
-  // control reports the shared scope as unavailable.
+  // The scope's `pending` says a write runs; this says whose, so only its row's
+  // remove action reports busy while the rest report unavailable.
   const [pendingRow, setPendingRow] = useState<{
     readonly name: string
     readonly action: SmsRowFailedAction
   } | null>(null)
-  // Where a landed removal sends focus. The row leaves the document on the
-  // re-read the write invalidates, so the target is recorded against the
-  // list the write ran over and resolved once that list is replaced.
   const landingAfterRemoval = useRef<{
     readonly name: string
     readonly data: AdminSmsTemplatePage | undefined
@@ -255,9 +198,6 @@ export function SmsPage() {
     }
   }
 
-  // The refresh action re-reads the page's one body read. A refresh changes
-  // the context every result on the page was written under, so it drops the
-  // three section scopes and the table's row marker before re-reading.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('sms-templates', templates)],
     () => {
@@ -355,12 +295,10 @@ export function SmsPage() {
     })
   }
 
-  // Register draft.
   const [name, setName] = useState('')
   const [params, setParams] = useState('')
   const [codes, setCodes] = useState('')
 
-  // Offer draft.
   const [offerName, setOfferName] = useState('')
   const [offerContent, setOfferContent] = useState('')
   const [offerKind, setOfferKind] = useState('')
@@ -368,11 +306,8 @@ export function SmsPage() {
   const [offerParams, setOfferParams] = useState('')
   const [offerRemark, setOfferRemark] = useState('')
 
-  // A create submit stays unavailable until every required field carries
-  // text, judged after trimming: a registration needs its template name,
-  // and a submission needs the template name, the content, the kind and the
-  // language. The parameters and the reviewer's note may be empty. Each
-  // missing field is checked on its own so the reason can name it.
+  // Each submit stays unavailable until every required field carries text after
+  // trimming; the parameters and the reviewer's note may be empty.
   const missingFieldsReason = (labels: readonly string[]): string | undefined =>
     labels.length === 0
       ? undefined
@@ -389,8 +324,6 @@ export function SmsPage() {
   ]
   const offerReady = offerMissing.length === 0
 
-  // A closed-set source or review state renders its own label; a value the
-  // set does not name is shown as the record carries it.
   const closedSetLabel = (key: string, value: string): string =>
     i18n.exists(key, { ns: ADMIN_UI_NAMESPACE }) ? t(key) : value
   const sourceLabel = (source: string): string =>
@@ -472,12 +405,8 @@ export function SmsPage() {
 
   const rows = templates.data?.templates
 
-  // A landed removal moves focus off the row it takes away: the same
-  // control in the next row, else the previous row, else the table's own
-  // container. The list is compared by identity, so the landing waits for
-  // the re-read that actually drops the row. Focus is only placed when the
-  // removal left it on the document body; a reader who has chosen another
-  // resting place keeps it.
+  // A landed removal moves focus to the next row's remove action, else the
+  // previous row's, else the table container, unless the reader moved it.
   useLayoutEffect(() => {
     const names = rows?.map((template) => template.name) ?? []
     const landing = landingAfterRemoval.current
@@ -514,10 +443,6 @@ export function SmsPage() {
         actions={
           <RefreshButton
             label={t('common.refresh')}
-            // A refresh changes the context the page's writes settle
-            // against, so the control stays inert while any of the page's
-            // scopes has a write in flight; the mechanism marks it busy
-            // while the re-read is in flight.
             busy={pageRefresh.busy}
             writePending={
               registerFeedback.pending ||

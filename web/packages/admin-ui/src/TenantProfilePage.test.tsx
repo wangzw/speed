@@ -1,14 +1,3 @@
-/**
- * TenantProfilePage: the organization's own profile page.
- *
- * It reads one tenant's organization profile, renders the identity card
- * read-only (the name is never an input), edits the four descriptive
- * fields, and reports a landed save through its feedback scope while
- * calling the host's `onTenantUpdated`. The read's 403, 404 and loading
- * branches are the shared async section's; a refused save keeps the draft
- * exactly as the operator typed it.
- */
-
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -42,17 +31,15 @@ const OWNER = 'acc-1'
 const OTHER_ACCOUNT = 'acc-2'
 const OWNER_DISPLAY_NAME = 'Ada Lovelace'
 const OWNER_USERNAME = 'ada'
-/** An owner account identifier the page must never render. */
+// An owner account identifier the page must never render.
 const UNSHOWN_OWNER = '8f14e45f-ceea-467a-9d3d-0c1b7e2f4a51'
 
-/** The ui-kit label the confirm button shows once the two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['zh-CN'] as unknown as {
     readonly confirmDialog: { readonly confirmAgainLabel: string }
   }
 ).confirmDialog.confirmAgainLabel
 
-/** A promise the case settles by hand, so one write can be held in flight. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -99,7 +86,6 @@ const SUSPENDED: AdminMember = {
   active: false,
 }
 
-/** Attach the session the page reads the acting account from. */
 function attachAccount(accountId: string): void {
   attachSession(
     createStepUpSession({
@@ -161,7 +147,6 @@ function renderPage({
   )
 }
 
-/** The page's heading, once its read settled. */
 async function ready(): Promise<void> {
   await screen.findByRole('heading', {
     level: 1,
@@ -183,10 +168,6 @@ describe('TenantProfilePage', () => {
 
     expect(screen.getByText('acme-inc')).toBeInTheDocument()
     expect(screen.getByText(zhCN.tenants.status.active)).toBeInTheDocument()
-    // The status names the field it states, so a screen reader hears which
-    // fact "Active" belongs to rather than a bare value. The field name is a
-    // visually hidden prefix beside the chip; the chip itself is a generic
-    // element and takes no aria-label.
     expect(
       screen.getByText(
         zhCN.tenantProfile.field.statusAria
@@ -195,16 +176,12 @@ describe('TenantProfilePage', () => {
           .trimEnd(),
       ),
     ).toBeInTheDocument()
-    // The name is stated, never editable: there is no control named after
-    // it, and the read-only explanation sits beside the identity card.
     expect(
       screen.queryByLabelText(zhCN.tenantProfile.field.name),
     ).toBeNull()
     expect(
       screen.getByText(zhCN.tenantProfile.identity.nameHint),
     ).toBeInTheDocument()
-    // The display name is the profile card's editable value, not a second
-    // read-only statement on the identity card.
     expect(
       screen.getByLabelText(zhCN.tenantProfile.field.displayName),
     ).toHaveValue('Acme Incorporated')
@@ -215,9 +192,6 @@ describe('TenantProfilePage', () => {
       profile: profileFixture({ name: 'acme-inc', display_name: '' }),
     })
     await ready()
-    // The identity card's name is the only place it is stated on the
-    // page; the form's display-name field is empty and offers the name as
-    // its placeholder.
     const displayName = screen.getByLabelText(
       zhCN.tenantProfile.field.displayName,
     )
@@ -294,7 +268,6 @@ describe('TenantProfilePage', () => {
     await waitFor(() => expect(updates).toHaveLength(1))
     expect((updates[0] as { fields: { displayName: string } }).fields)
       .toMatchObject({ displayName: '' })
-    // The confirmation names what every surface will show: the name.
     expect(
       await screen.findByText(
         zhCN.tenantProfile.form.savedNamed.replace('{{name}}', 'acme-inc'),
@@ -322,8 +295,6 @@ describe('TenantProfilePage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.tenant.conflict,
     )
-    // The refusal did not withdraw the edit, and the host was not asked to
-    // reload a list that did not change.
     expect(displayName).toHaveValue('Unsaved name')
     expect(onTenantUpdated).not.toHaveBeenCalled()
   })
@@ -346,16 +317,11 @@ describe('TenantProfilePage', () => {
     await user.click(save)
     await waitFor(() => expect(updates).toHaveLength(1))
 
-    // The write is in flight: the control stays focusable and says so,
-    // rather than turning natively disabled and dropping the operator's
-    // focus to the document body.
     expect(save).not.toHaveAttribute('disabled')
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).toHaveAttribute('aria-busy', 'true')
     expect(save).toHaveFocus()
 
-    // Click, Enter and Space are all swallowed while the write runs: none
-    // of them writes a second time, and focus stays where it was.
     await user.click(save)
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -460,7 +426,6 @@ function ownerProfile(
   })
 }
 
-/** The owner row's whole definition row: the label cell and its value. */
 function ownerRow(container: HTMLElement): HTMLElement {
   const label = within(container).getByText(zhCN.tenantProfile.field.owner)
   const row = label.closest('div')
@@ -470,8 +435,6 @@ function ownerRow(container: HTMLElement): HTMLElement {
   return row
 }
 
-/** The identifier must be absent from the rendered page, attributes
- * included: it is the internal key, never a fallback for the label. */
 function expectNoOwnerAccount(container: HTMLElement, account: string): void {
   expect(container.innerHTML).not.toContain(account)
   expect(container.textContent).not.toContain(account)
@@ -485,7 +448,6 @@ function deleteTitle(): string {
   return zhCN.tenantProfile.ownership.delete.title.replace('{{name}}', ORG_NAME)
 }
 
-/** Arm the dialog's two-step guard and fire it. */
 async function armAndConfirm(
   user: ReturnType<typeof userEvent.setup>,
   dialog: HTMLElement,
@@ -519,8 +481,6 @@ describe('TenantProfilePage owner row', () => {
   })
 
   it('tells two owners sharing one display name apart by their usernames', async () => {
-    // The username is shown because a display name alone does not identify
-    // the owner: two members may carry the same one.
     const first = renderPage({
       profile: profileFixture({
         owner_account: UNSHOWN_OWNER,
@@ -580,8 +540,6 @@ describe('TenantProfilePage owner row', () => {
   })
 
   it('shows the neutral label when the owner cannot be resolved, never the identifier', async () => {
-    // A static credential-table subject has no account row, so both name
-    // fields are empty; the page still must not fall back to the identifier.
     const { container } = renderPage({
       profile: profileFixture({
         owner_account: UNSHOWN_OWNER,
@@ -599,7 +557,6 @@ describe('TenantProfilePage owner row', () => {
 })
 
 describe('TenantProfilePage ownership', () => {
-  /** The pending request the ownership card renders. */
   const PENDING = {
     id: 'transfer-1',
     target_display_name: 'Bob Stone',
@@ -620,9 +577,6 @@ describe('TenantProfilePage ownership', () => {
     })
     await ready()
 
-    // The pending read can land while the control holds focus: a native
-    // disable moves that focus to the document body, so the control stays
-    // focusable and points at the request that holds it.
     const transfer = await screen.findByRole('button', {
       name: zhCN.tenantProfile.ownership.transfer.button,
     })
@@ -635,7 +589,6 @@ describe('TenantProfilePage ownership', () => {
     transfer.focus()
     expect(transfer).toHaveFocus()
     await user.click(transfer)
-    // The activation was swallowed: no dialog opened and focus stayed put.
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(transfer).toHaveFocus()
   })
@@ -668,8 +621,6 @@ describe('TenantProfilePage ownership', () => {
       zhCN.tenantProfile.ownership.delete.confirmLabel,
     )
 
-    // The confirmation closed and the write runs; the control that started
-    // it keeps its focus instead of handing it to the document body.
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: deleteTitle() })).toBeNull(),
     )
@@ -691,8 +642,6 @@ describe('TenantProfilePage ownership', () => {
     attachAccount(OWNER)
     const requests: unknown[] = []
     const onOrganizationLeft = vi.fn()
-    // The old ownership flow removed the previous owner's membership and
-    // bindings. A request changes neither; it only records the request.
     const removeMember = vi.fn(() => Promise.resolve())
     const unbindTenantRole = vi.fn(() => Promise.resolve())
     let pending: typeof PENDING | null = null
@@ -734,7 +683,6 @@ describe('TenantProfilePage ownership', () => {
         name: zhCN.tenantProfile.ownership.transfer.targetLabel,
       }),
     )
-    // Only active members other than the owner are offered.
     expect(
       screen.queryByRole('option', {
         name: 'Carol Suspended (carol)',
@@ -758,9 +706,6 @@ describe('TenantProfilePage ownership', () => {
     await waitFor(() =>
       expect(requests).toEqual([{ tenant: TENANT, account: OTHER_ACCOUNT }]),
     )
-    // While the transfer dialog is on screen the page behind it is
-    // aria-hidden, so its buttons are readable only after the dialog has
-    // left.
     await waitFor(() =>
       expect(
         screen.queryByRole('dialog', { name: transferTitle() }),
@@ -774,16 +719,12 @@ describe('TenantProfilePage ownership', () => {
         ),
       ),
     ).toBeInTheDocument()
-    // Ownership has not changed: the caller is still the owner and stays on
-    // the page, with no membership or binding removal.
     expect(onOrganizationLeft).not.toHaveBeenCalled()
     expect(removeMember).not.toHaveBeenCalled()
     expect(unbindTenantRole).not.toHaveBeenCalled()
     expect(
       screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
     ).toBeInTheDocument()
-    // The pending panel names the target and the deadline, and holds the
-    // transfer control while the request waits.
     expect(
       screen.getByText(zhCN.tenantProfile.ownership.pending.title),
     ).toBeInTheDocument()
@@ -808,7 +749,6 @@ describe('TenantProfilePage ownership', () => {
         name: zhCN.tenantProfile.ownership.transfer.button,
       }),
     ).toHaveAttribute('aria-disabled', 'true')
-    // Deletion stays available: the delete transaction settles the request.
     expect(
       screen.getByRole('button', {
         name: zhCN.tenantProfile.ownership.delete.button,
@@ -850,9 +790,6 @@ describe('TenantProfilePage ownership', () => {
         name: zhCN.tenantProfile.ownership.pending.cancelConfirm,
       }),
     )
-    // While the confirmation is on screen the ownership card behind it is
-    // aria-hidden, so the controls are readable only after the dialog has
-    // left.
     await waitFor(() =>
       expect(
         screen.queryByRole('dialog', {
@@ -867,7 +804,6 @@ describe('TenantProfilePage ownership', () => {
     expect(
       await screen.findByText(zhCN.tenantProfile.ownership.pending.cancelled),
     ).toBeInTheDocument()
-    // The request is gone from the card, and the caller is still the owner.
     await waitFor(() =>
       expect(
         screen.queryByText(zhCN.tenantProfile.ownership.pending.title),
@@ -881,8 +817,6 @@ describe('TenantProfilePage ownership', () => {
     expect(
       screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
     ).toBeInTheDocument()
-    // The pending panel took the cancel control out of the document; focus
-    // rests on the ownership card's own heading, which stays on screen.
     expect(
       screen.getByRole('heading', {
         name: zhCN.tenantProfile.ownership.title,
@@ -927,8 +861,6 @@ describe('TenantProfilePage ownership', () => {
         }),
       ).toBeNull(),
     )
-    // The operator moves to the transfer control before the request settles;
-    // the landing must not pull focus back to the card heading.
     const transfer = screen.getByRole('button', {
       name: zhCN.tenantProfile.ownership.transfer.button,
     })
@@ -949,8 +881,6 @@ describe('TenantProfilePage ownership', () => {
     renderPage({ profile: ownerProfile() })
     await ready()
 
-    // The administrator still sees who the owner is, but no ownership
-    // control: the controls branch on ownerAccount, not on the row's label.
     expect(screen.getByText(zhCN.tenantProfile.field.owner)).toBeInTheDocument()
     expect(
       screen.getByText(`${OWNER_DISPLAY_NAME} (${OWNER_USERNAME})`),
@@ -1017,8 +947,6 @@ describe('TenantProfilePage ownership', () => {
       zhCN.tenantProfile.ownership.transfer.targetRequired,
     )
 
-    // Activation is swallowed for click, Enter and Space: with no target
-    // chosen the confirmation never opens and nothing is written.
     await user.click(submit)
     submit.focus()
     await user.keyboard('{Enter}')
@@ -1209,7 +1137,6 @@ describe('TenantProfilePage ownership', () => {
       name: zhCN.tenantProfile.ownership.delete.confirmLabel,
     })
     expect(confirm).toHaveAttribute('aria-disabled', 'true')
-    // The typed-name guard states the mismatch on the confirming button.
     expect(confirm).toHaveAccessibleDescription(
       zhCN.tenantProfile.ownership.delete.nameMismatch,
     )
@@ -1233,7 +1160,6 @@ describe('TenantProfilePage ownership', () => {
     )
     await waitFor(() => expect(onOrganizationLeft).toHaveBeenCalledWith(message))
     expect(screen.queryByText(message)).toBeNull()
-    // The terminal state is reflected locally and the controls are gone.
     expect(await screen.findByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
     expect(
       screen.queryByRole('button', {
@@ -1279,8 +1205,6 @@ describe('TenantProfilePage ownership', () => {
         name: zhCN.tenantProfile.ownership.delete.button,
       }),
     ).toBeNull()
-    // The withdrawn controls left nothing to hold the focus the delete
-    // started with; the card's heading is the stable landmark that takes it.
     expect(
       screen.getByRole('heading', {
         name: zhCN.tenantProfile.ownership.title,
@@ -1347,7 +1271,6 @@ describe('TenantProfilePage ownership', () => {
       }),
     )
     const dialog = await screen.findByRole('dialog', { name: transferTitle() })
-    // The dialog reads the first page before any search is typed.
     await waitFor(() => expect(queried).toEqual([undefined]))
 
     await user.type(
@@ -1356,8 +1279,6 @@ describe('TenantProfilePage ownership', () => {
       ),
       'Bob',
     )
-    // The search is a server-side prefix read, so it reaches members beyond
-    // the dialog's first page instead of paging the whole roster.
     await waitFor(() => expect(queried.at(-1)).toBe('Bob'))
     expect(
       screen.queryByRole('option', { name: 'Carol Suspended (carol)' }),

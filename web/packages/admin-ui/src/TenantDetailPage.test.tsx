@@ -1,12 +1,3 @@
-/**
- * TenantDetailPage: one tenant's administration detail.
- *
- * It reads the tenant by id and renders its fields, drives the
- * enable/disable (status) write, links back to the roster
- * when given the roster's path, splits a refused read into the permission
- * placeholder (403, no retry) or the retryable error placeholder.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import type { ReactElement } from 'react'
@@ -31,10 +22,6 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/**
- * The sibling declarations a host publishes, as its narrowed table carries
- * them: the admin mount prefix is already in each path.
- */
 const RELATED_ROUTES: readonly AdminRoute[] = [
   {
     id: 'permissions',
@@ -62,11 +49,6 @@ const RELATED_ROUTES: readonly AdminRoute[] = [
   },
 ]
 
-/**
- * Renders the page under the shell's two seams: the published (already
- * narrowed) route table and the feature answer. Passing `routes: null`
- * mounts no table at all, as a page rendered outside a shell has none.
- */
 function renderDetail(
   ui: ReactElement,
   options: RenderWithProvidersOptions,
@@ -103,9 +85,6 @@ describe('TenantDetailPage', () => {
     )
     await screen.findAllByText('Acme')
 
-    // Every link lands on the path its sibling declaration publishes, with
-    // the tenant in the query parameter those pages read their selection
-    // from.
     const expected = [
       [zhCN.tenantDetail.related.permissions, '/admin/permissions?tenant=acme'],
       [zhCN.tenantDetail.related.invitations, '/admin/invitations?tenant=acme'],
@@ -138,9 +117,6 @@ describe('TenantDetailPage', () => {
 
   it('hides a sibling link when no root is given to resolve a admin-relative path', async () => {
     const operations = createAdminOperations(makeAdminBackend())
-    // The declarations the package publishes are admin-relative
-    // ('/permissions'), which is indistinguishable from an origin path
-    // without the root they hang under.
     const relativeRoutes: readonly AdminRoute[] = [
       { id: 'permissions', path: '/permissions', view: () => null },
     ]
@@ -216,8 +192,6 @@ describe('TenantDetailPage', () => {
     )
     await screen.findAllByText('Acme')
 
-    // The override's own query survives and the tenant is still a key, so
-    // the target page seeds its selection from it.
     expect(
       screen.getByRole('link', { name: zhCN.tenantDetail.related.permissions }),
     ).toHaveAttribute('href', '/bespoke/permissions?scope=all&tenant=acme')
@@ -237,8 +211,6 @@ describe('TenantDetailPage', () => {
     )
     await screen.findAllByText('Acme')
 
-    // Both slots receive the loaded tenant, and the host section follows
-    // the page's own sections in the main column.
     const section = screen.getByText('Section acme')
     expect(section).toBeInTheDocument()
     expect(screen.getByText('Aside acme')).toBeInTheDocument()
@@ -250,7 +222,6 @@ describe('TenantDetailPage', () => {
       related.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
 
-    // The aside sits above the back link in the side column.
     const aside = screen.getByText('Aside acme')
     const back = screen.getByRole('link', { name: zhCN.tenantDetail.back })
     expect(
@@ -321,8 +292,6 @@ describe('TenantDetailPage', () => {
     await user.click(
       screen.getByRole('switch', { name: zhCN.tenantDetail.actions.disable }),
     )
-    // The write invalidates the detail read, so it refetches and the
-    // control relabels from the settled status (disable -> enable).
     expect(
       await screen.findByRole('switch', {
         name: zhCN.tenantDetail.actions.enable,
@@ -356,8 +325,6 @@ describe('TenantDetailPage', () => {
       'acme',
     )
     expect(await screen.findByText(confirmation)).toBeInTheDocument()
-    // The write invalidates the detail read and it re-settles with the new
-    // status; the confirmation stays until the refresh.
     expect(
       await screen.findByRole('switch', {
         name: zhCN.tenantDetail.actions.enable,
@@ -390,8 +357,6 @@ describe('TenantDetailPage', () => {
       }),
     )
 
-    // The refusal resolves through the admin whitelist into the scope's
-    // failure alert.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.tenant.conflict,
     )
@@ -424,7 +389,6 @@ describe('TenantDetailPage', () => {
 
     await user.click(screen.getByRole('switch', { name: zhCN.tenantDetail.actions.disable }))
     expect(refresh()).toHaveAttribute('aria-disabled', 'true')
-    // A write-pending disable carries no "choose a scope first" description.
     expect(refresh()).not.toHaveAttribute('aria-describedby')
 
     await act(async () => {
@@ -460,16 +424,11 @@ describe('TenantDetailPage', () => {
     await user.click(toggle)
 
     expect(writes).toEqual(['acme:disabled'])
-    // The switch keeps the focus that activated it: the write in flight never
-    // makes it natively disabled.
     expect(document.activeElement).toBe(toggle)
     expect(toggle).toHaveAttribute('aria-busy', 'true')
     expect(toggle).toHaveAttribute('aria-disabled', 'true')
-    // The controlled value does not move until the write's refetch settles.
     expect(toggle).toBeChecked()
 
-    // Click, Enter and Space are all swallowed while the write runs: none of
-    // them writes a second time, and the value and focus stay where they were.
     await user.click(toggle)
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -524,8 +483,6 @@ describe('TenantDetailPage', () => {
     const operations = createAdminOperations(makeAdminBackend({ getTenant }))
     renderWithProviders(<TenantDetailPage name="acme" />, { operations })
 
-    // A bare 404 keeps the wording undecided about deletion ("not found or
-    // unavailable") and still offers the retry that checks again.
     expect(
       await screen.findByText(zhCN.detail.notFound.title),
     ).toBeInTheDocument()
@@ -550,8 +507,6 @@ describe('TenantDetailPage', () => {
     await screen.findAllByText('Acme')
 
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
-    // The 404 makes the older content meaningless: it is replaced, not
-    // marked stale.
     expect(
       await screen.findByText(zhCN.detail.notFound.title),
     ).toBeInTheDocument()
@@ -613,8 +568,6 @@ describe('TenantDetailPage', () => {
   })
 
   it('reads a disabled row that carries no source as the operator\'s', async () => {
-    // The view attaches the source to every disabled row, so a missing one is
-    // the operator's closed-set default rather than a reason to show nothing.
     const operations = createAdminOperations(
       makeAdminBackend({
         getTenant: () =>
@@ -659,9 +612,6 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage name="acme-inc" />, { operations })
     await screen.findByText('Acme Incorporated')
 
-    // The summary states each profile fact once per field; the editable
-    // values also sit in the form, so the assertion is scoped to the summary
-    // card rather than the whole page.
     const summary = screen.getByRole('region', {
       name: zhCN.tenantDetail.summary,
     })
@@ -753,8 +703,6 @@ describe('TenantDetailPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.tenant.conflict,
     )
-    // The refused save leaves the draft as typed: the profile scope's
-    // failure does not reset the form.
     expect(displayName).toHaveValue('Unsaved')
   })
 
@@ -785,16 +733,11 @@ describe('TenantDetailPage', () => {
     await user.click(save)
     await waitForCondition(() => expect(updates).toHaveLength(1))
 
-    // The write is in flight: the control stays focusable and says so,
-    // rather than turning natively disabled and dropping the operator's
-    // focus to the document body.
     expect(save).not.toHaveAttribute('disabled')
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).toHaveAttribute('aria-busy', 'true')
     expect(save).toHaveFocus()
 
-    // Click, Enter and Space are all swallowed while the write runs: none
-    // of them writes a second time, and focus stays where it was.
     await user.click(save)
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -818,12 +761,9 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage name="gone" />, { operations })
     await screen.findAllByText('Gone Co')
     expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
-    // A source describes a disabled tenant, and a tombstone is not one.
     expect(screen.queryByText(zhCN.tenantDetail.field.disabledBy)).toBeNull()
     expect(screen.queryByText(zhCN.tenants.disabledBy.operator)).toBeNull()
     expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
-    // Deletion is terminal: the page renders the tenant and no write
-    // control at all -- neither the status control nor the profile form.
     expect(screen.queryByText(zhCN.tenantDetail.actions.title)).toBeNull()
     expect(screen.queryByText(zhCN.tenantProfile.form.title)).toBeNull()
     expect(

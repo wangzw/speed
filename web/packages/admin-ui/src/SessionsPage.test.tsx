@@ -1,12 +1,3 @@
-/**
- * SessionsPage: the account-session administration page.
- *
- * Its read lists one account's sessions (assurance rendered as a label),
- * the page prompts for an account until one is chosen through the account
- * picker, a session revokes through the bundle, and a failed read settles
- * into the retryable error placeholder.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, within } from '@testing-library/react'
@@ -33,7 +24,6 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** The zh-CN template the table's copy control names itself with. */
 const COPY_VALUE = (
   uiKitResources['zh-CN'] as unknown as {
     readonly dataTable: { readonly copyValue: string }
@@ -55,14 +45,12 @@ function session(overrides: Partial<AdminAccountSession> = {}): AdminAccountSess
   }
 }
 
-/** A row an older server answered with: the current flag is absent. */
 function sessionWithoutCurrent(): AdminAccountSession {
   const legacy: Partial<AdminAccountSession> = session()
   delete legacy.current
   return legacy as AdminAccountSession
 }
 
-/** The account the picker finds: named "Ada", identified by an opaque id. */
 function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
   return {
     id: 'acc-9',
@@ -80,7 +68,6 @@ function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
   }
 }
 
-/** The scripted bundle with the account search answer the picker needs. */
 function withSessions(
   overrides: Partial<AdminBackend> = {},
 ): ReturnType<typeof createAdminOperations> {
@@ -99,7 +86,6 @@ async function loadAccount(
   await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (ada)')
 }
 
-/** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => {
@@ -108,12 +94,10 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-/** The accessible name of the revoke control in the given session's row. */
 function revokeName(id: string): string {
   return zhCN.sessions.revokeAriaWithId.replace('{{id}}', id)
 }
 
-/** Opens the confirmation for one session and confirms it. */
 async function confirmRevoke(
   user: ReturnType<typeof userEvent.setup>,
   id: string,
@@ -123,8 +107,6 @@ async function confirmRevoke(
   await user.click(
     within(dialog).getByRole('button', { name: zhCN.common.confirm }),
   )
-  // Wait out the dialog's exit transition: while it runs the page behind
-  // it is hidden from the accessibility tree.
   await waitForCondition(() => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
@@ -145,7 +127,6 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
 
-    // The titled section is an h2; its placeholder sits one level below it.
     expect(
       screen.getByRole('heading', { name: zhCN.sessions.section.title }),
     ).toBeInTheDocument()
@@ -167,22 +148,16 @@ describe('SessionsPage', () => {
     })
     renderWithProviders(<SessionsPage />, { operations })
 
-    // The read is disabled while no account is chosen; the refresh control
-    // follows it instead of issuing the read with an empty id.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).toHaveAttribute('aria-disabled', 'true')
-    // The disabled control is described by the page's own "choose an
-    // account first" text, not by a second copy of it.
+    // The disabled control points at the page's own text, not a second copy.
     const describedBy = refresh.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
       zhCN.sessions.needAccount.description,
     )
-    // The control is never natively disabled, so the tooltip attaches to the
-    // button itself and no pointer-blocking wrapper is needed.
+    // Never natively disabled, so the tooltip attaches to the button itself.
     expect(refresh.parentElement?.tagName).not.toBe('SPAN')
-    // A programmatic click exercises the guard directly: the control must
-    // stay inert even when reached from a script.
     fireEvent.click(refresh)
     expect(queried).toEqual([])
   })
@@ -196,7 +171,6 @@ describe('SessionsPage', () => {
     const disabled = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(disabled).toHaveAttribute('aria-disabled', 'true')
 
-    // The tooltip names the same text the page already renders.
     await user.hover(disabled)
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
       zhCN.sessions.needAccount.description,
@@ -237,12 +211,8 @@ describe('SessionsPage', () => {
     await waitForCondition(() => {
       expect(refresh).toHaveAttribute('aria-busy', 'true')
     })
-    // A busy read keeps the control enabled and focused: the read itself
-    // must not take the operator's place away.
     expect(refresh).not.toBeDisabled()
     expect(refresh).toBe(document.activeElement)
-    // A forced activation while the read is in flight issues no second
-    // request and queues none.
     fireEvent.click(refresh)
     expect(reads).toBe(2)
 
@@ -281,8 +251,6 @@ describe('SessionsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
-    // While the dialog's exit transition runs the page behind it is
-    // hidden from the accessibility tree; the revoke is already in flight.
     await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
@@ -291,8 +259,6 @@ describe('SessionsPage', () => {
     await waitForCondition(() => {
       expect(refresh).toHaveAttribute('aria-disabled', 'true')
     })
-    // The scope is chosen, so the disabled control does not claim it is
-    // empty; it is disabled because the revoke it would race is in flight.
     expect(refresh).not.toHaveAttribute('aria-describedby')
     fireEvent.click(refresh)
     await act(async () => {
@@ -342,15 +308,12 @@ describe('SessionsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
-    // Wait out the dialog's exit transition: while it runs the page behind
-    // it is hidden from the accessibility tree.
     await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
-    // The revoke names the account it was issued for. A change while it
-    // settles would reset the scope and let the late result land under the
-    // other account's list, so the picker is held for the whole attempt.
+    // A change while the revoke settles would land its result under another
+    // account's list, so the picker is held for the whole attempt.
     const picker = screen.getByRole('combobox', {
       name: zhCN.sessions.accountLabel,
     })
@@ -364,8 +327,6 @@ describe('SessionsPage', () => {
     await waitForCondition(() => {
       expect(picker).not.toBeDisabled()
     })
-    // The result belongs to the account it was issued for, which is still
-    // the chosen one.
     expect(
       await screen.findByText(zhCN.sessions.revokedNotice),
     ).toBeInTheDocument()
@@ -381,8 +342,6 @@ describe('SessionsPage', () => {
       },
     })
     renderWithProviders(<SessionsPage />, { operations })
-    // Choosing the account is the whole gesture: no further control stands
-    // between the picker and the read.
     await chooseAccount(user, zhCN.sessions.accountLabel, 'Ada', 'Ada (ada)')
     await waitForCondition(() => {
       expect(queried).toEqual(['acc-9'])
@@ -402,12 +361,9 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
     await screen.findByText('sess-cur')
-    // The marker sits on the current row only. The cell shows the id
-    // prefix; the complete id stays on the title and copy control.
     const marker = screen.getByText(zhCN.sessions.current)
     expect(marker.closest('tr')).toHaveTextContent('sess-cur')
     expect(marker.closest('tr')).not.toHaveTextContent('sess-oth')
-    // The current row's revocation says the caller is signed out too.
     await user.click(
       screen.getByRole('button', {
         name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-current'),
@@ -422,7 +378,6 @@ describe('SessionsPage', () => {
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.cancel }),
     )
-    // A row the server does not mark keeps the plain confirmation.
     await user.click(
       await screen.findByRole('button', {
         name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-other'),
@@ -517,8 +472,6 @@ describe('SessionsPage', () => {
     renderWithProviders(<SessionsPage />, { operations })
     await loadAccount(user)
     await screen.findByText('sess-1')
-    // The revoke control names its own session id, so two rows' buttons are
-    // distinguishable.
     await user.click(
       screen.getByRole('button', {
         name: zhCN.sessions.revokeAriaWithId.replace('{{id}}', 'sess-1'),
@@ -531,7 +484,6 @@ describe('SessionsPage', () => {
     await waitForCondition(() => {
       expect(revoked).toEqual(['sess-1'])
     })
-    // The landed revoke fills the page's standing status region.
     expect(
       await screen.findByText(zhCN.sessions.revokedNotice),
     ).toBeInTheDocument()
@@ -554,8 +506,6 @@ describe('SessionsPage', () => {
 
     await confirmRevoke(user, 'sess-a')
 
-    // The revoke keeps its control: it stays focused and reports both the
-    // busy write and the unavailable state without a native disable.
     const revoke = screen.getByRole('button', { name: revokeName('sess-a') })
     expect(revoke).toBe(document.activeElement)
     expect(revoke).toHaveAttribute('aria-disabled', 'true')
@@ -589,8 +539,6 @@ describe('SessionsPage', () => {
     await confirmRevoke(user, 'sess-b')
     expect(revokeSession).toHaveBeenCalledTimes(1)
 
-    // A row that shares the scope is unavailable without a reason: the
-    // reason belongs to the row whose write is running.
     const sibling = screen.getByRole('button', { name: revokeName('sess-a') })
     expect(sibling).toHaveAttribute('aria-disabled', 'true')
     expect(sibling).not.toHaveAttribute('aria-busy', 'true')
@@ -627,14 +575,9 @@ describe('SessionsPage', () => {
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
 
-    // The landed revoke fills the list's scope, which sits under the table
-    // as one polite live region.
     expect(
       await screen.findByText(zhCN.sessions.revokedNotice),
     ).toBeInTheDocument()
-    // While the dialog's exit transition runs the page behind it is hidden
-    // from the accessibility tree; wait for the dialog to leave before
-    // reaching for the page's controls.
     await waitForCondition(() => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
@@ -642,8 +585,6 @@ describe('SessionsPage', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
-    // The refresh resets the scope before re-reading: the confirmation
-    // described the list as it stood before the re-read.
     await waitForCondition(() => {
       expect(screen.queryByText(zhCN.sessions.revokedNotice)).toBeNull()
     })
@@ -669,8 +610,6 @@ describe('SessionsPage', () => {
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
 
-    // The refusal resolves through the console whitelist into the region's
-    // failure alert.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.conflict)
     await waitForCondition(() => {
@@ -725,9 +664,6 @@ describe('SessionsPage', () => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
-    // The account is an argument of the revoke, so choosing another one is
-    // a context change: the previous account's confirmation must not stand
-    // beside the new list the picker is about to read.
     await chooseAccount(user, zhCN.sessions.accountLabel, 'Bob', 'Bob (bob)')
     await waitForCondition(() => {
       expect(screen.queryByText(zhCN.sessions.revokedNotice)).toBeNull()
@@ -774,9 +710,6 @@ describe('SessionsPage', () => {
 
     const header = (label: string): Element =>
       screen.getByRole('columnheader', { name: label })
-    // The created time is the primary identity: no priority, shared cap.
-    // The identifier and the descriptive columns shed first; state stays
-    // to `sm`; the row actions never hide.
     expect(columnVisibility(header(zhCN.sessions.column.id))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
@@ -804,8 +737,6 @@ describe('SessionsPage', () => {
     })
     expect(columnVisibility(header(zhCN.sessions.column.actions))).toBeNull()
 
-    // The identifier cell shows the 8-character prefix; the complete id
-    // rides the cell title and the copy control.
     const prefix = screen.getByText(id.slice(0, 8))
     const idCell = prefix.closest('td')
     expect(idCell).not.toBeNull()
@@ -829,10 +760,6 @@ describe('SessionsPage', () => {
     ]
     expect(createdCell).toBeDefined()
 
-    // The current-session mark rides the primary identity (created time),
-    // which declares no priority and therefore stays visible at every
-    // tier; the id column it left hides below `lg`. The mark is therefore
-    // reachable at all three tiers even where the id cell is not.
     expect(
       within(createdCell as HTMLElement).getByText(zhCN.sessions.current),
     ).toBeInTheDocument()
@@ -840,8 +767,6 @@ describe('SessionsPage', () => {
       within(idCell as HTMLElement).queryByText(zhCN.sessions.current),
     ).toBeNull()
 
-    // The shared cap on the created-time text: 160px below `md`, 200px
-    // from `md` up. The mark sits beside it, outside that text cap.
     const createdText = createdCell?.querySelector('p')
     expect(createdText).not.toBeNull()
     expect(containerMaxWidthOf(createdText as Element)).toEqual(

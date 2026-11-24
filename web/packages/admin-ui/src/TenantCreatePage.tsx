@@ -1,23 +1,7 @@
 /**
- * TenantCreatePage: the platform console's standalone organization
- * registration.
- *
- * The roster used to carry an inline registration form; this page lets the
- * form hold the organization profile beside the name without crowding the
- * roster table. It renders the shared creation form from
- * @speed/org-create-ui in platform mode, so the name rules, the built-in
- * reserved names and the profile bounds are the same ones the self-service
- * page uses. The server mints the internal identifier; the page asks for no
- * identifier and never sees one.
- *
- * Registration writes through the console operations bundle. The form
- * requires a display name, which is narrower than the endpoint: the API
- * accepts a registration without a profile. A landed registration hands
- * the new tenant to `onCreated` when the host supplies one, and otherwise
- * routes to the tenant detail -- addressed by the name the answer returned
- * -- through the shell's in-place navigation seam. A refused registration
- * keeps every draft and reports the answer's code through the console's
- * error-text resolver.
+ * TenantCreatePage renders the platform console's standalone organization
+ * registration form from the shared @speed/org-create-ui form in platform mode.
+ * A landed registration is handed to `onCreated`, or navigates to its detail.
  */
 
 import { useState } from 'react'
@@ -45,6 +29,7 @@ import {
 import { useAdminOperations } from './operations.js'
 import type { AdminTenant } from './operations.js'
 
+/** Props of TenantCreatePage: the roster path and the host's created-tenant hook. */
 export interface TenantCreatePageProps {
   /**
    * The roster's matched path; the breadcrumb and the post-registration
@@ -59,8 +44,6 @@ export interface TenantCreatePageProps {
   readonly onCreated?: (tenant: AdminTenant) => void
 }
 
-/** The violations to show before the first submit: the name alone, once
- * the operator has typed something. */
 function visibleViolations(
   values: OrganizationCreateValues,
   submitted: boolean,
@@ -76,6 +59,10 @@ function visibleViolations(
   return name === undefined ? {} : { name }
 }
 
+/**
+ * TenantCreatePage registers an organization from the platform console and
+ * hands the result to `onCreated` or navigates to its detail page.
+ */
 export function TenantCreatePage({
   basePath,
   onCreated,

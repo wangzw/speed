@@ -1,54 +1,7 @@
 /**
- * TenantDetailPage: one tenant's administration detail.
- *
- * The roster's row-level enable/disable control lives on the roster page; this
- * page is the tenant in full -- its display name, its name, its organization
- * profile and status read from GET /api/v1/system/tenants/{tenant}, addressed
- * by the name, with the same enable/disable write gathered into the main
- * column. It is a detail page: a main column carrying the subject and its
- * controls, beside a fixed-width side column carrying the tenant's metadata
- * and a way back to the roster. The name is immutable after creation, so it
- * is read-only and there is no rename control. The page title and breadcrumb
- * name the tenant by its display name (falling back to the name); the
- * summary shows the profile's four descriptive fields
- * and the creation time; a profile card below the status control writes
- * those four fields through the same shared form the organization surface
- * uses. The status and profile are two control groups with two feedback
- * scopes, each region directly under its own control. The lifecycle group
- * below them renders only when it has a control to show -- the caller holds
- * tenant.manage and the subject is a live business organization -- so it
- * never leaves an empty card behind; its landed-write confirmation is a
- * page-level region, because a deletion turns the read into a tombstone and
- * withdraws the group the confirmation would otherwise sit in.
- *
- * The read is an operation on the console operations bundle, so the page
- * builds no client and writes no query key. The status renders from the
- * roster's own closed spelling (active / disabled / deleted); a value
- * outside it renders the generic label, never a raw value. A disabled
- * tenant also shows who disabled it (an operator or the account's own
- * state). A deleted tenant is a tombstone: its state is terminal, so the
- * page renders no write control at all. A refused read settles
- * into a permission placeholder (403) or the retryable error placeholder
- * (any other failure). The enable/disable reports through a feedback scope
- * whose region sits directly under its control: each landed write confirms
- * and names this tenant, and a refusal resolves the answer's code through
- * the admin-ui whitelist.
- * The page also links to the tenant-addressed administration pages
- * (permissions, invitations and members, SSO providers, impersonation
- * records), carrying this tenant in the `tenant` query parameter those
- * pages seed their tenant selection from -- so the detail page is not a
- * dead end and the link does not drop the tenant context. Those links are
- * resolved through the route table the shell publishes: each sibling is
- * looked up by its stable declaration id, because the console may be
- * mounted under any prefix and the declaration is the authority on where
- * the page lives. A sibling whose declaration is absent, or whose
- * declaration needs a feature this process does not serve, renders no
- * link; `relatedHref` overrides a resolved target. The page opens with
- * ui-kit's PageHeader, so the heading order never skips; its refresh action
- * resets the actions scope and re-reads the tenant, and is unavailable
- * (focusable, `aria-disabled`) while the status write is in flight. A
- * host may append its own sections to the main column and its own content to
- * the side column, both of which receive the loaded tenant.
+ * TenantDetailPage shows one tenant in full: its profile and status in a main
+ * column with the status and profile writes, and its metadata and a back link
+ * in a side column. A deleted tenant is a tombstone with no write control.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -99,7 +52,6 @@ import {
 } from './TenantProfileFields.js'
 import type { TenantProfileFields } from './TenantProfileFields.js'
 
-/** The roster's closed status set; a value outside it renders the generic label. */
 const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 
 function statusLabel(status: string, t: (key: string) => string): string {
@@ -108,8 +60,6 @@ function statusLabel(status: string, t: (key: string) => string): string {
     : t('tenants.status.other')
 }
 
-/** Who disabled the tenant, from the roster's closed source set. Only called
- * for a disabled tenant: the source is absent on every other state. */
 function disabledByLabel(
   source: string | undefined,
   t: (key: string) => string,
@@ -126,7 +76,6 @@ export type AdminTenantRelatedPage =
   | 'sso'
   | 'impersonations'
 
-/** The sibling links in the order the related-page section lists them. */
 const RELATED_PAGES: readonly {
   readonly id: AdminTenantRelatedPage
   readonly labelKey: string
@@ -137,16 +86,8 @@ const RELATED_PAGES: readonly {
   { id: 'impersonations', labelKey: 'tenantDetail.related.impersonations' },
 ]
 
-/**
- * One sibling declaration's published path as a link target. A path that
- * already lies under the console root -- the host mounted the declaration
- * onto its prefixed URL -- is used as published; any other path is a
- * console-relative declaration pattern and is resolved against the root.
- * Without a root nothing resolves: this package's own declarations are
- * console-relative ('/permissions'), so a leading slash alone does not say
- * the path is already at the origin. A path that still has to be joined
- * gives no target, which leaves the link out.
- */
+// A path already under the root is used as published; otherwise it is joined to
+// the root. Without a root nothing resolves.
 function siblingHref(
   path: string,
   rootHref: string | undefined,
@@ -161,24 +102,22 @@ function siblingHref(
   return `${root}/${path.replace(/^\/+/, '')}`
 }
 
+/** Props of TenantDetailPage: the tenant to read and the host's slots around it. */
 export interface TenantDetailPageProps {
-  /** The tenant's name -- what the request surface addresses it by. */
+  /** The tenant's name: what the request surface addresses it by. */
   readonly name: string
   /** The roster's path, for the breadcrumb and the back link; absent hides them. */
   readonly parentHref?: string
   /**
-   * The console's root path, used to resolve a sibling declaration whose
-   * published path is console-relative. A path the host already mounted
-   * under the root is used as published, so a host that prefixes its
-   * declarations costs nothing here. Absent, no sibling link resolves: a
-   * console-relative path cannot be told apart from an origin path.
+   * The console's root path, used to resolve a console-relative sibling path.
+   * A path already under the root is used as published; absent, no sibling
+   * link resolves.
    */
   readonly rootHref?: string
   /**
-   * Overrides the href a sibling link points at, keyed by the target's
-   * declaration id. The target declaration must still be published with its
-   * features present, so an override changes where a link goes, never
-   * whether it exists.
+   * Overrides the href a sibling link points at, keyed by declaration id. The
+   * target must still be published with its features present, so an override
+   * changes where a link goes, never whether it exists.
    */
   readonly relatedHref?: Partial<Record<AdminTenantRelatedPage, string>>
   /**
@@ -193,6 +132,10 @@ export interface TenantDetailPageProps {
   readonly aside?: (tenant: AdminTenant) => ReactNode
 }
 
+/**
+ * TenantDetailPage reads the tenant by name and renders its summary, status
+ * control, profile form, lifecycle controls and sibling links.
+ */
 export function TenantDetailPage({
   name,
   parentHref,
@@ -206,15 +149,10 @@ export function TenantDetailPage({
   const formatTime = useFormatInstant()
   const tenant = operations.useTenant({ name })
   const setStatus = operations.useSetTenantStatus()
-  // The status control reports through its own scope and region. The profile
-  // card is a second control group with its own scope, held inside
-  // TenantProfileCard so the two regions never sit in one component.
   const statusFeedback = useWriteFeedback()
   const statusRegionRef = useFailureScroll(statusFeedback.outcome)
-  // The status switch saves on its own, so it stays focusable while its write
-  // is in flight: a natively disabled control would drop the focus the
-  // activation gave it. The guard swallows further activation, and the
-  // controlled value does not move until the write's refetch settles.
+  // The switch stays focusable while its write is in flight: a natively disabled
+  // control would drop the focus the activation gave it.
   const onChangeStatus = useActivationGuard(
     () => {
       const settled = tenant.data
@@ -237,20 +175,14 @@ export function TenantDetailPage({
     },
     { busy: statusFeedback.pending },
   )
-  // The lifecycle group reports its landed writes to a page-level scope:
-  // a deletion turns this page into a tombstone and withdraws the control
-  // group, so its confirmation cannot live inside the group.
+  // A deletion withdraws the lifecycle group, so its confirmation lives at page level.
   const lifecycleFeedback = useWriteFeedback()
-  // The lifecycle group renders no control without tenant.manage, and never
-  // on a personal organization or a tombstone. The page decides with the
-  // same rule, so a group with nothing to show leaves no empty card behind.
+  // The card exists only when the group will render inside it: tenant.manage on
+  // a live business organization.
   const canManageTenant = usePermission('system', 'tenant.manage')
-  // A refresh remounts the profile card through this key: its draft and its
-  // own feedback are withdrawn together with the re-read.
+  // A refresh remounts the profile card, withdrawing its draft and result.
   const [profileEpoch, setProfileEpoch] = useState(0)
-  // A landed deletion withdraws the whole lifecycle card, taking the delete
-  // control that started the write with it. The summary heading is the
-  // stable landmark the focus hands off to instead.
+  // A landed deletion withdraws the lifecycle card; the summary heading takes focus.
   const summaryFocus = useSectionHeadingFocus()
   const deletionLanded = useRef(false)
   const tenantStatus = tenant.data?.status
@@ -267,9 +199,6 @@ export function TenantDetailPage({
     }
   }, [tenantStatus, summaryFocus.focusHeading])
 
-  // The refresh action re-reads the tenant -- the page's one body read --
-  // and resets the status and lifecycle scopes first: a result written
-  // before the re-read would describe the page as it stood then.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('tenant-detail', tenant)],
     () => {
@@ -279,15 +208,10 @@ export function TenantDetailPage({
     },
   )
 
-  // The tenant-addressed pages all read the tenant from the same query
-  // parameter (tenantFromLocation seeds their selector), so a link carries
-  // this tenant into them instead of landing on an empty selection.
+  // The tenant-addressed pages read the same tenant query parameter.
   const tenantParam = `${TENANT_QUERY_PARAM}=${encodeURIComponent(name)}`
-  // Each sibling is found by its stable declaration id in the table the
-  // shell published: the declaration, not a guessed segment, says where the
-  // page lives. A sibling the host narrowed away -- its declaration absent,
-  // or one of its features absent -- has no link; an override only replaces
-  // the resolved target.
+  // Each sibling is found by its stable declaration id; a declaration the host
+  // narrowed away has no link, and an override only replaces the target.
   const routes = useAdminRouteTable()
   const hasFeature = useAdminHasFeature()
   const related = RELATED_PAGES.flatMap((page) => {
@@ -304,17 +228,13 @@ export function TenantDetailPage({
     }
     return [
       {
-        // An override is an arbitrary href and may already carry a query, so
-        // the tenant joins with '&' instead of starting a second '?'.
+        // An override may already carry a query, so join with '&' in that case.
         href: `${href}${href.includes('?') ? '&' : '?'}${tenantParam}`,
         label: t(page.labelKey),
       },
     ]
   })
 
-  // The header and breadcrumb name the tenant the way its profile does: the
-  // display name, or the name when the profile names none. Before the read
-  // settles only the name is known, so the route's own name stands in.
   const tenantLabel = displayNameOf(tenant.data?.display_name ?? '', name)
 
   const crumbs = [
@@ -327,13 +247,8 @@ export function TenantDetailPage({
 
   const main = (settled: AdminTenant) => {
     const disabled = settled.status === 'disabled'
-    // A tombstone is read-only: deletion is terminal, so the page renders
-    // the tenant and no write control at all.
+    // A tombstone is terminal: no write control at all.
     const deleted = settled.status === 'deleted'
-    // The lifecycle group renders its entries only for a caller holding
-    // tenant.manage on a live business organization. The page asks the same
-    // question the group does, so the card and its region exist only when
-    // the group will render inside them.
     const lifecycle = canManageTenant && !isPersonalTenant(settled.kind)
     return (
       <>
@@ -402,8 +317,6 @@ export function TenantDetailPage({
               onChange={onChangeStatus}
             />
           </Box>
-          {/* The actions section's one region, directly under the control
-              whose write reports through it. */}
           <Box ref={statusRegionRef}>
             <WriteFeedbackRegion outcome={statusFeedback.outcome} />
           </Box>
@@ -449,7 +362,6 @@ export function TenantDetailPage({
           </SectionCard>
         )}
 
-        {/* Host sections follow the page's own, with the loaded tenant. */}
         {sections?.(settled)}
       </>
     )
@@ -474,10 +386,7 @@ export function TenantDetailPage({
         sx={{ mb: 2 }}
       />
 
-      {/* The lifecycle group's landed-write confirmation lives at page
-          level: a deletion withdraws the group with the write's own effect,
-          so a result rendered inside it would flash and vanish. Its refusals
-          stay beside the controls, inside the group. */}
+      {/* A deletion withdraws the group, so its confirmation lives at page level. */}
       <WriteFeedbackRegion outcome={lifecycleFeedback.outcome} />
 
       <DetailLayout
@@ -520,8 +429,6 @@ export function TenantDetailPage({
             <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
               {name}
             </Typography>
-            {/* Host side content sits above the back link, once the tenant
-                has loaded so it can render the subject it was given. */}
             {rows !== undefined && aside?.(rows)}
             {parentHref !== undefined && (
               <Box sx={{ mt: 2 }}>
@@ -535,16 +442,8 @@ export function TenantDetailPage({
   )
 }
 
-/**
- * The platform detail's lifecycle card: the transfer and delete control
- * group in its own section. It is a component of its own so this control
- * group's result never shares a region with the status control above it.
- *
- * The page renders the card only when the group has entries to show, and it
- * owns the success region (pushed up through onSuccess) because a deletion
- * withdraws this card; a refusal stays inside the group, beside the controls
- * that were refused.
- */
+// Its own section, so the lifecycle result never shares a region with the status
+// control; a refusal stays inside the group.
 function TenantLifecycleCard({
   tenant,
   onSuccess,
@@ -570,18 +469,9 @@ function TenantLifecycleCard({
   )
 }
 
-/**
- * The platform detail's profile card: the four descriptive fields, with its
- * own write scope and its region directly under the form. The card is a
- * component of its own so this control group's result never shares a region
- * with the status control above it.
- *
- * The draft starts from the settled tenant. A save invalidation re-reads the
- * tenant; when the answer's values changed the draft adopts them, while a
- * background refetch carrying the same values leaves an edit in progress
- * alone. The host remounts the card on a page refresh, so a refresh withdraws
- * both the draft and its result.
- */
+// Its own write scope, so its result never shares a region with the status control.
+// A settled value that changed replaces the draft; a same-value refetch leaves an
+// edit alone.
 function TenantProfileCard({ tenant }: { readonly tenant: AdminTenant }) {
   const { t } = useAdminUiTranslation()
   const operations = useAdminOperations()

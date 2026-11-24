@@ -1,14 +1,3 @@
-/**
- * SmsPage: the SMS-template administration page.
- *
- * Its read lists the runtime templates (with their approval states), the
- * register and offer forms drive the bundle, and the row's enable/disable
- * toggle and remove drive it too. Every read failure settles into the
- * page's generic failure surface -- the retryable placeholder, or the
- * permission placeholder for a 403 -- and the write forms stay in place,
- * because a write may still land once the read recovers.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -35,7 +24,6 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** Fills a locale template's `{{name}}` placeholders. */
 function text(
   template: string,
   values: Record<string, string>,
@@ -45,7 +33,6 @@ function text(
   )
 }
 
-/** The source and approval labels a test injects into the namespace. */
 const SOURCE_LABEL = 'sms-source-runtime'
 const APPROVAL_LABEL = 'sms-approval-approved'
 
@@ -83,7 +70,6 @@ function withTemplates(
   )
 }
 
-/** The titled section a heading opens, which holds its group's region. */
 function section(name: string): HTMLElement {
   const element = screen.getByRole('heading', { name }).closest('section')
   if (element === null) {
@@ -92,7 +78,6 @@ function section(name: string): HTMLElement {
   return element as HTMLElement
 }
 
-/** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
@@ -103,7 +88,6 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-/** jsdom implements no layout; a scroll observer installs this stub. */
 function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   const spy = vi.fn()
   Object.defineProperty(Element.prototype, 'scrollIntoView', {
@@ -141,8 +125,6 @@ describe('SmsPage', () => {
     const cell = (await screen.findByText('login-code')).closest(
       'td',
     ) as HTMLElement
-    // The cap counts the copy control beside the name: 160px below the
-    // table container's md, 200px from it up.
     expect(containerMaxWidthOf(cell.firstElementChild as Element)).toEqual(
       new Map([
         [0, 160],
@@ -234,8 +216,6 @@ describe('SmsPage', () => {
     const toggle = await screen.findByRole('switch', {
       name: text(zhCN.sms.disableAria, { name: 'login-code' }),
     })
-    // The coarse floor is the theme's rule on the switch root, not the
-    // visually hidden input the role sits on.
     const toggleRoot = toggle.closest('.MuiSwitch-root')
     expect(toggleRoot).not.toBeNull()
     const remove = screen.getByRole('button', {
@@ -264,7 +244,6 @@ describe('SmsPage', () => {
     expect(registerSubmit).toHaveAttribute('aria-disabled', 'true')
     expect(offerSubmit).toHaveAttribute('aria-disabled', 'true')
 
-    // Whitespace alone is not a name.
     await user.type(
       within(register).getByLabelText(zhCN.sms.register.nameLabel),
       '   ',
@@ -276,7 +255,6 @@ describe('SmsPage', () => {
     )
     expect(registerSubmit).not.toHaveAttribute('aria-disabled', 'true')
 
-    // An offer names a template, its content, its kind and its language.
     await user.type(within(offer).getByLabelText(zhCN.sms.offer.nameLabel), 'welcome')
     expect(offerSubmit).toHaveAttribute('aria-disabled', 'true')
     await user.type(within(offer).getByLabelText(zhCN.sms.offer.contentLabel), '   ')
@@ -315,14 +293,10 @@ describe('SmsPage', () => {
 
     await user.click(toggle)
 
-    // The save-on-change switch stays focused while its write is in
-    // flight, carries the unavailable state on its input, and keeps the
-    // controlled value until the write settles.
     expect(toggle).toHaveFocus()
     expect(toggle).toHaveAttribute('aria-disabled', 'true')
     expect(toggle).toBeChecked()
 
-    // A second activation from the keyboard is swallowed: no second write.
     await user.keyboard(' ')
     expect(writes).toEqual([false])
 
@@ -365,9 +339,6 @@ describe('SmsPage', () => {
     )
     await waitForCondition(() => expect(removed).toEqual(['bravo']))
 
-    // Only the activated row's remove action reports the write; its siblings
-    // report the shared scope without borrowing that row's progress or a
-    // reason of their own.
     const active = screen.getByRole('button', {
       name: text(zhCN.sms.removeAria, { name: 'bravo' }),
     })
@@ -412,8 +383,6 @@ describe('SmsPage', () => {
     await user.click(toggle)
     await waitForCondition(() => expect(writes).toEqual([false]))
 
-    // The toggle owns the attempt; every remove action in the table reports
-    // the shared scope without claiming progress.
     for (const name of ['alpha', 'bravo']) {
       const remove = screen.getByRole('button', {
         name: text(zhCN.sms.removeAria, { name }),
@@ -460,7 +429,6 @@ describe('SmsPage', () => {
       name: zhCN.sms.offer.submit,
     })
 
-    // The missing field is named in the accessible description.
     expect(registerSubmit).toHaveAttribute('aria-disabled', 'true')
     expect(registerSubmit).toHaveAccessibleDescription(
       text(zhCN.sms.missingFields, { fields: zhCN.sms.register.nameLabel }),
@@ -472,7 +440,6 @@ describe('SmsPage', () => {
     expect(registerSubmit).toHaveFocus()
     expect(registered).toEqual([])
 
-    // Each required offer field is checked, not just the form as a whole.
     expect(offerSubmit).toHaveAccessibleDescription(
       text(zhCN.sms.missingFields, {
         fields: [
@@ -610,7 +577,6 @@ describe('SmsPage', () => {
       }),
     )
     renderWithProviders(<SmsPage />, { operations })
-    // Two name fields exist (register + offer); the register one is first.
     await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
     await user.type(screen.getAllByLabelText(zhCN.sms.register.paramsLabel)[0]!, 'code, name')
     await user.type(screen.getByLabelText(zhCN.sms.register.codesLabel), 'zh-CN:1001')
@@ -633,7 +599,6 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
     await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
-    // Two name fields exist (register + offer); the offer one is second.
     await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
     await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
     await user.type(screen.getByLabelText(zhCN.sms.offer.localeLabel), 'zh-CN')
@@ -678,9 +643,6 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
 
-    // A 404 is one more failed read: the page falls back to its generic
-    // retryable placeholder, and both forms stay in place because a write
-    // may still land once the read recovers.
     expect(await screen.findByText(zhCN.sms.error.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.sms.retry })).toBeInTheDocument()
@@ -691,11 +653,8 @@ describe('SmsPage', () => {
   })
 
   it('renders the generic failure placeholder and keeps both write forms when the entry document answers the read', async () => {
-    // A deployment that serves this console from the API's own endpoint
-    // answers a path no API route claims with the front-end entry document:
-    // HTTP 200 and text/html, not the 404 an API-only deployment gives.
-    // The read travels through the real transport, so the refusal under
-    // test is the one the deployment produces, not a hand-shaped error.
+    // A deployment serving the console from the API's own endpoint answers an
+    // unclaimed path with the entry document: HTTP 200 and text/html.
     const api = createClient({
       baseUrl: 'https://console.example.test',
       fetch: async () =>
@@ -712,8 +671,6 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
 
-    // The entry document is one more failed read: the same generic
-    // retryable placeholder, and both forms stay in place.
     expect(await screen.findByText(zhCN.sms.error.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.sms.retry })).toBeInTheDocument()
@@ -730,14 +687,10 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
 
-    // A 503 is the mounted surface failing, not its absence: the forms stay
-    // available because a write may still land once the read recovers.
     expect(await screen.findByText(zhCN.sms.error.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.register.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.offer.title)).toBeInTheDocument()
-    // Both forms are still there; their submits start disabled because
-    // neither has a required field filled yet.
     expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toHaveAttribute('aria-disabled', 'true')
   })
@@ -763,7 +716,6 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: zhCN.sms.retry })).toBeNull()
-    // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -776,20 +728,15 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
 
-    // The register form's scope carries its own failure.
     await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
     await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
     expect(
       await within(section(zhCN.sms.register.title)).findByRole('alert'),
     ).toHaveTextContent(zhCN.errors.sms.bad_request)
 
-    // The table's row action lands in the table's scope, not the form's
-    // and not the offer form's.
     await user.click(
       screen.getByRole('switch', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
     )
-    // The table's own region carries the refusal, and its row marker
-    // repeats the one message.
     await waitFor(() =>
       expect(
         screen.getAllByRole('alert').map((alert) => alert.textContent),
@@ -804,7 +751,6 @@ describe('SmsPage', () => {
   })
 
   it('marks the refused template row inline and brings the table region into view', async () => {
-    // Reduced motion: the region jumps instead of animating.
     mockMatchMedia(true)
     const scrollIntoView = stubScrollIntoView()
     const user = userEvent.setup()
@@ -841,14 +787,12 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
 
-    // Register names the template.
     await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
     await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
     expect(
       await screen.findByText(text(zhCN.sms.registered, { name: 'welcome' })),
     ).toBeInTheDocument()
 
-    // Offer names the template it hands to the vendor.
     await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
     await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
     await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
@@ -858,7 +802,6 @@ describe('SmsPage', () => {
       await screen.findByText(text(zhCN.sms.offered, { name: 'welcome' })),
     ).toBeInTheDocument()
 
-    // The toggle names the template and the state it now has.
     await user.click(
       screen.getByRole('switch', { name: text(zhCN.sms.disableAria, { name: 'login-code' }) }),
     )
@@ -866,7 +809,6 @@ describe('SmsPage', () => {
       await screen.findByText(text(zhCN.sms.disabledToast, { name: 'login-code' })),
     ).toBeInTheDocument()
 
-    // The removal names the template it dropped.
     await user.click(screen.getByRole('button', { name: text(zhCN.sms.removeAria, { name: 'login-code' }) }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
@@ -883,8 +825,6 @@ describe('SmsPage', () => {
     renderWithProviders(<SmsPage />, { operations })
     await screen.findByText('login-code')
 
-    // One result in each of the three scopes: a register success, an offer
-    // success and a refused row action with its inline marker.
     await user.type(screen.getAllByLabelText(zhCN.sms.register.nameLabel)[0]!, 'welcome')
     await user.click(screen.getAllByRole('button', { name: zhCN.sms.register.submit })[0]!)
     const registered = text(zhCN.sms.registered, { name: 'welcome' })
@@ -912,8 +852,6 @@ describe('SmsPage', () => {
       'true',
     )
 
-    // A refresh changes the context those results describe; all of them go
-    // before the page re-reads.
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
     await waitFor(() => expect(screen.queryByText(registered)).toBeNull())
     expect(screen.queryByText(offered)).toBeNull()
@@ -960,7 +898,6 @@ describe('SmsPage', () => {
     expect(
       screen.getByText(`zh-CN: ${APPROVAL_LABEL}`),
     ).toBeInTheDocument()
-    // Values outside the closed sets keep the recorded text.
     expect(screen.getByText('other')).toBeInTheDocument()
     expect(screen.getByText('zh-CN: other')).toBeInTheDocument()
   })

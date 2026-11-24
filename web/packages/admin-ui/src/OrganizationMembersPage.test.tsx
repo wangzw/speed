@@ -1,19 +1,3 @@
-/**
- * The organization administrator's members and invitations page.
- *
- * The cases pin the page's product shape: members first, invitations
- * second; a server-side member search behind a 300 ms debounce; cursor
- * paging on both lists; the member panel and its four write groups; the
- * three role-permission tiers and the escalation check before a bind; the
- * invitation status derivation, filter, resend/revoke/copy-link actions;
- * the one-time panel's close confirmation and three delivery outcomes; and
- * both color modes.
- *
- * The operations bundle is the scripted admin-ui backend, so the tests
- * observe the parameters the reads actually carry (`query`, `after`,
- * `status`) and the exact write inputs rather than stubbing the page's
- * hooks.
- */
 
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -58,7 +42,6 @@ import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { cellOf } from '../test-utils/table.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-/** Fills a locale template's placeholders with the values under test. */
 function fill(
   template: string,
   values: Readonly<Record<string, string>>,
@@ -96,7 +79,6 @@ const BOB: AdminMember = {
   joined_at: '2026-10-20T08:30:00Z',
 }
 
-/** A third member, so a removal case can see the row after the one removed. */
 const CAROL: AdminMember = {
   account: 'acc-3',
   tenant: TENANT,
@@ -154,8 +136,6 @@ const OPERATOR_BINDING: AdminTenantBinding = {
   granted_at: '2026-10-15T12:00:00Z',
 }
 
-/** A different role the member already holds, so the dropdown still offers
- * the role a bind case chooses. */
 const SUPER_BINDING: AdminTenantBinding = {
   tenant: TENANT,
   account: ADA.account,
@@ -163,7 +143,6 @@ const SUPER_BINDING: AdminTenantBinding = {
   granted_at: '2026-10-15T12:00:00Z',
 }
 
-/** The host's protected role name, as the demo hands it to the provider. */
 const TENANT_ADMIN_ROLE = 'tenant-admin'
 
 const SUPER_GRANT: AdminTenantGrant = {
@@ -175,12 +154,6 @@ const SUPER_GRANT: AdminTenantGrant = {
   created_at: '2026-01-01T00:00:00Z',
 }
 
-/**
- * The six permissions pkg/authz/policy marks TenantGoverned, each one
- * translated to the (resource, action) pair the engine matches on. These are
- * the codes a tenant administrator holds and the pairs a role's grants carry,
- * so the panel's escalation check has to map one back to the other.
- */
 const GOVERNED_PERMISSIONS: readonly AdminTenantPermission[] = [
   tenantPermission('authz.tenant.role.read'),
   tenantPermission('authz.tenant.role.manage'),
@@ -299,7 +272,6 @@ function attachTenantPermissions(
   )
 }
 
-/** A promise the case settles by hand, so one write can be held in flight. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -338,7 +310,6 @@ interface Scripted {
   readonly recorder: Recorder
 }
 
-/** The scripted backend: successful scripted reads, recorded writes. */
 function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
   const recorder: Recorder = {
     memberParams: [],
@@ -418,9 +389,6 @@ function scripted(overrides: Partial<AdminBackend> = {}): Scripted {
   return { backend, recorder }
 }
 
-/** The issue answer for `email`, carrying a fresh pending invitation. The
- * default delivery is `not_configured`, the outcome that hands the token
- * over; a `sent` answer carries none. */
 function issuedFixture(
   email: string,
   delivery: AdminIssuedInvitation['email_delivery'] = 'not_configured',
@@ -484,8 +452,6 @@ function rowOf(target: string | HTMLElement): HTMLElement {
   return row
 }
 
-/** The invitation table's body rows, top to bottom, as the page rendered
- * them -- the order the server returned, which the client never re-sorts. */
 function invitationRowsInOrder(): HTMLElement[] {
   const table = screen.getAllByRole('table').find((candidate) =>
     within(candidate).queryByRole('columnheader', {
@@ -498,12 +464,6 @@ function invitationRowsInOrder(): HTMLElement[] {
   return Array.from(table.querySelectorAll<HTMLElement>('tbody tr'))
 }
 
-/**
- * The shared status tag of one row: the chip plus any caption the note
- * renders under it, as the single unit the row's status cell holds. Found
- * through the status label so the assertion does not depend on the note's
- * wording.
- */
 function statusTagOf(row: HTMLElement, label: string): HTMLElement {
   const chip = within(row).getByText(label).closest('.MuiChip-root')
   const tag = chip?.parentElement
@@ -513,7 +473,6 @@ function statusTagOf(row: HTMLElement, label: string): HTMLElement {
   return tag
 }
 
-/** The chip a row's status tag renders, found through its label. */
 function statusChipOf(row: HTMLElement, label: string): HTMLElement {
   const chip = within(row).getByText(label).closest('.MuiChip-root')
   if (!(chip instanceof HTMLElement)) {
@@ -522,7 +481,6 @@ function statusChipOf(row: HTMLElement, label: string): HTMLElement {
   return chip
 }
 
-/** The member's composed identity, as the row's Manage control names it. */
 function composedName(member: AdminMember): string {
   return member.username === ''
     ? member.display_name
@@ -537,7 +495,6 @@ function manageButton(member: AdminMember): HTMLElement {
   return screen.getByRole('button', { name: manageAria(member) })
 }
 
-/** Opens one invitation row's action menu and picks one item. */
 async function chooseInvitationAction(
   user: ReturnType<typeof userEvent.setup>,
   email: string,
@@ -552,10 +509,6 @@ async function chooseInvitationAction(
   await user.click(await screen.findByRole('menuitem', { name: label }))
 }
 
-/**
- * The failure caption rendered in one invitation row, or null when the row
- * carries no marker.
- */
 function invitationErrorOf(email: string): HTMLElement | null {
   return rowOf(email).querySelector<HTMLElement>('[id^="invitation-error-"]')
 }
@@ -564,15 +517,11 @@ async function openPanel(
   user: ReturnType<typeof userEvent.setup>,
   member: AdminMember,
 ): Promise<HTMLElement> {
-  // The display name can appear twice once the inviter identity resolves
-  // against the member read; the row's Manage control is the unique handle.
   await screen.findAllByText(member.display_name)
   await user.click(manageButton(member))
   return screen.getByRole('dialog', { name: zhCN.members.panel.title })
 }
 
-/** Removes one member through the panel's double confirmation and returns
- * once the write has been sent. */
 async function removeThroughPanel(
   user: ReturnType<typeof userEvent.setup>,
   member: AdminMember,
@@ -584,8 +533,6 @@ async function removeThroughPanel(
   await user.click(
     await screen.findByRole('button', { name: zhCN.common.confirm }),
   )
-  // The first click only arms the guard; the second confirmation is the one
-  // that sends the write.
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 700))
   })
@@ -597,8 +544,6 @@ async function removeThroughPanel(
 }
 
 beforeEach(() => {
-  // Not one of the fixture members: the self-only cases attach their own
-  // session with the member's account id.
   attachTenantPermissions(FULL_TENANT_PERMISSIONS, 'acc-admin')
 })
 
@@ -612,8 +557,6 @@ describe('the page structure', () => {
     renderPage(backend)
 
     expect((await screen.findAllByText(ADA.display_name)).length).toBeGreaterThan(0)
-    // The page opens with the members-and-invitations title, and the two
-    // sections follow it as h2s.
     expect(
       screen.getByRole('heading', {
         level: 1,
@@ -642,7 +585,6 @@ describe('the page structure', () => {
         formatInstant(ADA.joined_at, 'zh-CN', { timeZone: TEST_TIME_ZONE }),
       ),
     ).toBeInTheDocument()
-    // The two columns are ordinary row information, not fine-print detail.
     expect(
       screen.getAllByRole('columnheader', { name: zhCN.members.column.roles })
         .length,
@@ -650,8 +592,6 @@ describe('the page structure', () => {
     expect(
       screen.getByRole('columnheader', { name: zhCN.members.column.joinedAt }),
     ).toBeInTheDocument()
-    // The copy control belongs to the username and email identity columns
-    // only; the display name and the role list are read, not copied.
     const displayCell = within(row).getByText(ADA.display_name).closest('td')
     const roleCell = within(row).getByText('tenant-operator').closest('td')
     expect(displayCell?.querySelector('button')).toBeNull()
@@ -736,7 +676,6 @@ describe('the member search and paging', () => {
 
     const input = screen.getByLabelText(zhCN.members.search.label)
     await user.type(input, 'ada')
-    // The debounce has not settled: no read carries the query yet.
     expect(
       recorder.memberParams.filter((params) => params?.query !== undefined),
     ).toHaveLength(0)
@@ -800,10 +739,6 @@ describe('the member search and paging', () => {
 
     const next = screen.getByRole('button', { name: zhCN.common.pager.next })
     await user.click(next)
-    // While the second page loads, the kept first page's envelope still
-    // names `acc-1`. A second click would push that same cursor onto the
-    // stack and show one page twice, so the direction is busy for the read
-    // until it settles and refuses a second activation.
     await waitFor(() => {
       expect(next).toHaveAttribute('aria-busy', 'true')
       expect(next).toHaveAttribute('aria-disabled', 'true')
@@ -815,7 +750,6 @@ describe('the member search and paging', () => {
       resolveNext({ members: [BOB], next_cursor: '' })
     })
     expect(await screen.findByText(BOB.display_name)).toBeInTheDocument()
-    // Exactly one page advanced: the second click made no change.
     expect(
       screen.getByText(zhCN.common.pager.page.replace('{{page}}', '2')),
     ).toBeInTheDocument()
@@ -867,8 +801,6 @@ describe('the member search and paging', () => {
     await waitFor(() =>
       expect(calls.some((call) => call.tenant === 'globex')).toBe(true),
     )
-    // The first read the new tenant issues carries no cursor from the page
-    // the operator was on under the tenant they left.
     expect(
       calls
         .filter((call) => call.tenant === 'globex')
@@ -880,9 +812,6 @@ describe('the member search and paging', () => {
     const user = userEvent.setup()
     const { backend } = scripted()
     const operations = createAdminOperations(backend)
-    // The host owns the current tenant. Its state change is programmatic here
-    // because the open modal makes the rest of the page inert, exactly as it
-    // would in the running app.
     let switchTenant: () => void = () => undefined
     function SwitchTenant() {
       const [tenant, setTenant] = useState(TENANT)
@@ -903,13 +832,10 @@ describe('the member search and paging', () => {
     const panel = await openPanel(user, ADA)
     expect(panel).toBeInTheDocument()
 
-    // The host mounts the organization surface for another tenant in place.
     await act(async () => {
       switchTenant()
     })
 
-    // The panel was opened under the tenant the host left; it must not stay
-    // mounted with the new tenant's path beside the old member's account.
     await waitFor(() =>
       expect(
         screen.queryByRole('dialog', { name: zhCN.members.panel.title }),
@@ -946,8 +872,6 @@ describe('the role filter', () => {
         role: ROLE_OPERATOR.role,
       }),
     )
-    // The server filters the page: both rows the scripted backend answered
-    // with stay on screen because the page never narrows a page itself.
     expect(screen.getAllByText(ADA.display_name).length).toBeGreaterThan(0)
     expect(screen.getAllByText(BOB.display_name).length).toBeGreaterThan(0)
   })
@@ -963,8 +887,6 @@ describe('the role filter', () => {
     const { backend, recorder } = scripted()
     renderPage(backend)
 
-    // The page opens with the URL's role already applied: the first member
-    // read carries it.
     await waitFor(() =>
       expect(recorder.memberParams).toContainEqual({ limit: 100, role }),
     )
@@ -976,8 +898,6 @@ describe('the role filter', () => {
     await user.click(
       screen.getByRole('option', { name: ROLE_SUPER.role }),
     )
-    // The new role is percent-encoded in place, and the page's path is
-    // untouched.
     await waitFor(() =>
       expect(window.location.search).toBe(
         `?role=${encodeURIComponent(ROLE_SUPER.role)}`,
@@ -1021,8 +941,6 @@ describe('the role filter', () => {
     })
     renderPage(backend)
 
-    // The server answers 200 with no match; the page says no member holds
-    // the role rather than reporting the filter as a failed read.
     expect(
       await screen.findByText(zhCN.members.empty.roleTitle),
     ).toBeInTheDocument()
@@ -1066,8 +984,6 @@ describe('the role filter', () => {
     expect(
       await screen.findByText(zhCN.members.filter.rolesError),
     ).toBeInTheDocument()
-    // The URL's role still filters the server read; its options are unknown,
-    // so the select offers no role it did not read.
     expect(recorder.memberParams).toContainEqual({
       limit: 100,
       role: ROLE_OPERATOR.role,
@@ -1078,8 +994,6 @@ describe('the role filter', () => {
     expect(
       screen.getByRole('option', { name: zhCN.members.filter.anyRole }),
     ).toBeInTheDocument()
-    // The only role shown is the URL's own current value, not a role the
-    // failed read invented; an unread role is absent.
     expect(
       screen.queryByRole('option', { name: ROLE_SUPER.role }),
     ).toBeNull()
@@ -1151,8 +1065,6 @@ describe('the role filter', () => {
       (await screen.findAllByText(BOB.display_name)).length,
     ).toBeGreaterThan(0)
 
-    // A removal's success is written into the member list's scope; the
-    // filter change is what then clears that scope.
     const panel = await openPanel(user, BOB)
     await user.click(
       within(panel).getByRole('button', { name: zhCN.members.remove }),
@@ -1184,8 +1096,6 @@ describe('the role filter', () => {
       screen.getByRole('option', { name: ROLE_OPERATOR.role }),
     )
 
-    // The read starts from the first page under the new filter (no cursor
-    // from the page the operator left), and the old result is gone.
     await waitFor(() =>
       expect(recorder.memberParams).toContainEqual({
         limit: 100,
@@ -1202,8 +1112,6 @@ describe('the role filter', () => {
 describe('the member management panel', () => {
   it('binds a role and unbinds one only after confirmation', async () => {
     const user = userEvent.setup()
-    // The member already holds tenant-super, so the dropdown omits it and
-    // still offers tenant-operator for the bind.
     const { backend, recorder } = scripted({
       listTenantAccountBindings: () => Promise.resolve([SUPER_BINDING]),
     })
@@ -1248,7 +1156,6 @@ describe('the member management panel', () => {
       ),
     ).toBeInTheDocument()
 
-    // Unbinding asks first: the click opens the dialog and sends nothing.
     const unbind = within(panel).getByRole('button', {
       name: zhCN.members.panel.unbind,
     })
@@ -1265,7 +1172,6 @@ describe('the member management panel', () => {
       ),
     ).toBeInTheDocument()
     expect(recorder.unbinds).toEqual([])
-    // Cancelling sends nothing either.
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.cancel }),
     )
@@ -1278,7 +1184,6 @@ describe('the member management panel', () => {
     )
     expect(recorder.unbinds).toEqual([])
 
-    // Only the confirmation sends the unbind.
     await user.click(unbind)
     const again = await screen.findByRole('dialog', {
       name: zhCN.members.panel.unbindTitle,
@@ -1305,7 +1210,6 @@ describe('the member management panel', () => {
     renderPage(backend)
     const panel = await openPanel(user, ADA)
 
-    // The only role the tenant has is the one the member already holds.
     expect(
       await within(panel).findByText(zhCN.members.panel.allRolesBound),
     ).toBeInTheDocument()
@@ -1317,7 +1221,6 @@ describe('the member management panel', () => {
   })
 
   it('disables unbinding its own protected binding and says why', async () => {
-    // The signed-in account is the member whose binding is a protected role.
     attachTenantPermissions(FULL_TENANT_PERMISSIONS, SELF)
     const ownBinding: AdminTenantBinding = {
       tenant: TENANT,
@@ -1370,12 +1273,6 @@ describe('the member management panel', () => {
         active: false,
       }),
     )
-    // While the confirmation is on screen the member panel behind it is
-    // aria-hidden, so the panel's own controls are readable only after that
-    // dialog has left. The panel is a dialog too, so this names the
-    // confirmation instead of taking any dialog. Confirming clears the
-    // pending action at once, so the exiting dialog carries ui-kit's default
-    // heading rather than the action's title.
     await waitFor(() =>
       expect(
         screen.queryByRole('dialog', { name: uiKitZh.confirmDialog.title }),
@@ -1449,9 +1346,6 @@ describe('the member management panel', () => {
       }),
     )
 
-    // The panel stays open, and the list read it derives from now carries
-    // the suspended state: the same panel offers resume, shows the
-    // suspended chip and refuses binding without a reopen.
     expect(
       await within(panel).findByRole('button', {
         name: zhCN.members.panel.resume,
@@ -1502,7 +1396,6 @@ describe('the member management panel', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    // The first click only arms the guard.
     expect(recorder.removes).toHaveLength(0)
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 700))
@@ -1517,7 +1410,6 @@ describe('the member management panel', () => {
         { tenant: TENANT, account: BOB.account },
       ]),
     )
-    // The success is written into the list's scope after the panel exits.
     expect(
       await screen.findByText(
         zhCN.members.removed.replace('{{account}}', composedName(BOB)),
@@ -1618,8 +1510,6 @@ describe('the member management panel', () => {
     await waitFor(() =>
       expect(recorder.binds).toHaveLength(1),
     )
-    // The write in flight locks the choice without natively disabling it:
-    // a disabled control drops a focused control's focus.
     expect(select).toHaveAttribute('aria-readonly', 'true')
     expect(select).not.toHaveAttribute('aria-disabled', 'true')
     await user.click(select)
@@ -1706,8 +1596,6 @@ describe('the member management panel', () => {
     const writeMember = vi.fn(() => Promise.resolve())
     const { backend } = scripted({
       listMembers: () => Promise.resolve({ members: [CAROL], next_cursor: '' }),
-      // The tenant-super role has no grants, so the escalation check passes
-      // and the bind control can start.
       listTenantGrants: () => Promise.resolve([]),
       bindTenantRole: () => pending.promise,
       unbindTenantRole: unbindRole,
@@ -1748,7 +1636,6 @@ describe('the member management panel', () => {
       expect(control).not.toHaveAttribute('aria-describedby')
     }
 
-    // A forced activation on each sibling starts nothing.
     fireEvent.click(unbind)
     fireEvent.click(suspend)
     fireEvent.click(remove)
@@ -1800,8 +1687,6 @@ describe('the member management panel', () => {
       name: zhCN.members.remove,
     })
     expect(unbind).toHaveAttribute('aria-busy', 'true')
-    // The bind control's own unmet role choice keeps its reason; the
-    // sibling write only makes it unavailable.
     expect(bind).toHaveAttribute('aria-disabled', 'true')
     expect(bind).not.toHaveAttribute('aria-busy')
     for (const control of [suspend, remove]) {
@@ -1863,8 +1748,6 @@ describe('the member management panel', () => {
       name: zhCN.members.panel.suspend,
     })
     expect(remove).toHaveAttribute('aria-busy', 'true')
-    // The bind control's own unmet role choice keeps its reason; the
-    // sibling write only makes it unavailable.
     expect(bind).toHaveAttribute('aria-disabled', 'true')
     expect(bind).not.toHaveAttribute('aria-busy')
     for (const control of [unbind, suspend]) {
@@ -1907,8 +1790,6 @@ describe('the role permission tiers', () => {
       }),
     ).toBeNull()
     expect(recorder.accountBindingReads).toEqual([])
-    // The toolbar's role filter reads the tenant's roles for every caller;
-    // the panel's own gated reads stay absent.
     expect(recorder.roleReads).toEqual([TENANT])
   })
 
@@ -1941,8 +1822,6 @@ describe('the role permission tiers', () => {
       }),
     ).toBeNull()
     expect(recorder.accountBindingReads).toEqual([ADA.account])
-    // No panel role read without manage; the one recorded read is the
-    // toolbar's filter options.
     expect(recorder.roleReads).toEqual([TENANT])
   })
 
@@ -2018,9 +1897,6 @@ describe('the bind escalation check', () => {
       ).toBeNull(),
     )
 
-    // Every grant maps back to a governed code the caller holds, so the
-    // server's own tenant-admin path -- allowed, subject to the subset --
-    // stays reachable instead of being refused by the client.
     expect(
       within(panel).queryByText(zhCN.members.panel.escalationBlocked),
     ).toBeNull()
@@ -2034,11 +1910,6 @@ describe('the bind escalation check', () => {
       GOVERNED_PERMISSIONS.map((entry) => entry.permission),
     )
     const user = userEvent.setup()
-    // The grant rows still name every governed permission, but their stored
-    // (resource, action) pairs are spellings this client's vocabulary cannot
-    // reconstruct (a grant written by another translation). The server's
-    // permission field is the authority; a client-side inference from the
-    // pair would resolve every one of these to null and refuse the bind.
     const grants = GOVERNED_GRANTS.map((grant) => ({
       ...grant,
       resource: 'retired_object',
@@ -2108,8 +1979,6 @@ describe('the bind escalation check', () => {
     )
     expect(recorder.binds).toEqual([])
 
-    // The escalation check never gates unbinding: a role the caller can see
-    // bound can always be taken away.
     const unbind = within(panel).getByRole('button', {
       name: zhCN.members.panel.unbind,
     })
@@ -2199,8 +2068,6 @@ describe('the invitation section', () => {
     const { backend, recorder } = scripted()
     renderPage(backend)
 
-    // The page opens on the state an operator acts on; history is a filter
-    // away. The first read already names that state.
     const pendingRow = rowOf(await screen.findByText(PENDING_INVITATION.email))
     expect(
       within(pendingRow).getByText(zhCN.invitations.status.pending),
@@ -2213,8 +2080,6 @@ describe('the invitation section', () => {
       status: 'pending',
     })
 
-    // "All" lists every state in the order the server groups them, and each
-    // terminal row says when it reached that state.
     await user.click(
       screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
     )
@@ -2222,9 +2087,6 @@ describe('the invitation section', () => {
     expect(
       await screen.findByText(EXPIRED_INVITATION.email),
     ).toBeInTheDocument()
-    // The list renders the rows in the order the server sent them. The
-    // grouping is the server's; a client-side re-sort would silently break
-    // the cursor contract the filter pages under.
     expect(
       invitationRowsInOrder().map(
         (row) =>
@@ -2269,9 +2131,6 @@ describe('the invitation section', () => {
       ),
     ).toBeInTheDocument()
 
-    // Each state's chip carries the tone the shared mapping gives it: the
-    // waiting state is informational, the accepted end is success, and both
-    // terminal states stay neutral rather than reading as faults.
     expect(
       statusChipOf(rowOf(PENDING_INVITATION.email), zhCN.invitations.status.pending),
     ).toHaveClass('MuiChip-colorInfo')
@@ -2285,8 +2144,6 @@ describe('the invitation section', () => {
       statusChipOf(rowOf(REVOKED_INVITATION.email), zhCN.invitations.status.revoked),
     ).toHaveClass('MuiChip-colorDefault')
 
-    // Only a pending row has a deadline to act on; every terminal row leaves
-    // the deadline cell empty instead of rendering the one it carries.
     expect(
       cellOf(
         rowOf(PENDING_INVITATION.email),
@@ -2333,14 +2190,11 @@ describe('the invitation section', () => {
     await user.click(screen.getByRole('option', { name: zhCN.invitations.filter.all }))
 
     const pendingRow = rowOf(await screen.findByText(PENDING_INVITATION.email))
-    // The inviter renders the display name; the username rides on hover.
     const inviter = within(pendingRow).getByText(ADA.display_name)
     expect(inviter).toHaveAttribute(
       'title',
       `${ADA.display_name} (${ADA.username})`,
     )
-    // The role the invitation grants is its own column, and the pending row
-    // shows its deadline.
     expect(
       within(pendingRow).getByText(ROLE_OPERATOR.role),
     ).toBeInTheDocument()
@@ -2353,8 +2207,6 @@ describe('the invitation section', () => {
       }),
     ).toBeInTheDocument()
 
-    // Accepted and revoked rows have nothing left to act on; expired rows
-    // show the deadline they passed, not a remaining time.
     for (const invitation of [EXPIRED_INVITATION, ACCEPTED_INVITATION, REVOKED_INVITATION]) {
       const row = rowOf(invitation.email)
       expect(
@@ -2400,8 +2252,6 @@ describe('the invitation section', () => {
     )
     view.unmount()
 
-    // Without the tenant role-management permission the form offers no role
-    // at all: the caller cannot hand out what it cannot manage.
     attachTenantPermissions(['authn.membership.manage'])
     renderPage(backend)
     await screen.findAllByText(ADA.display_name)
@@ -2429,8 +2279,6 @@ describe('the invitation section', () => {
       ).toBeNull(),
     )
 
-    // The permission leaves while the page is mounted: the control goes with
-    // it, and the value chosen while it was visible must not survive.
     attachTenantPermissions(['authn.membership.manage'])
     await waitFor(() =>
       expect(
@@ -2440,8 +2288,6 @@ describe('the invitation section', () => {
       ).toBeNull(),
     )
 
-    // The control returns from a clean choice rather than from the value the
-    // operator picked under an earlier permission set.
     attachTenantPermissions(FULL_TENANT_PERMISSIONS, 'acc-admin')
     const restored = await screen.findByRole('combobox', {
       name: zhCN.invitations.issue.roleLabel,
@@ -2498,9 +2344,6 @@ describe('the invitation section', () => {
     await act(async () => {
       resolveIssue()
     })
-    // The address clears on success, so the precondition is unmet the
-    // moment the write settles: the control stays focusable and says what
-    // is missing rather than dropping focus to the document.
     await waitFor(() =>
       expect(submit).toHaveAttribute('aria-disabled', 'true'),
     )
@@ -2563,8 +2406,6 @@ describe('the invitation section', () => {
     )
     await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
 
-    // A read that has not settled is neither a pass nor a failure: the form
-    // says it is checking and refuses the write until the answer arrives.
     expect(
       screen.getByText(zhCN.invitations.issue.roleChecking),
     ).toBeInTheDocument()
@@ -2604,8 +2445,6 @@ describe('the invitation section', () => {
     )
     await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
 
-    // A failed read is not an empty grant list: the form cannot prove the
-    // role is safe, so it blocks the write and offers the retry.
     expect(
       await screen.findByText(zhCN.invitations.issue.roleFailed),
     ).toBeInTheDocument()
@@ -2650,8 +2489,6 @@ describe('the invitation section', () => {
     )
     await user.click(screen.getByRole('option', { name: ROLE_OPERATOR.role }))
 
-    // There is no code to compare with the caller's set, so the form cannot
-    // vouch for the grant and refuses rather than assuming it is safe.
     expect(
       await screen.findByText(zhCN.invitations.issue.roleUnconfirmed),
     ).toBeInTheDocument()
@@ -2700,10 +2537,6 @@ describe('the invitation section', () => {
     ).toHaveTextContent(ROLE_OPERATOR.role)
 
     await user.click(screen.getByRole('button', { name: 'switch' }))
-    // The role belonged to the roles the previous tenant listed; carrying
-    // the name into another tenant would attach a role that tenant may not
-    // have. The select reads back an empty value in the same render the new
-    // tenant arrives, before its roles read answers.
     await waitFor(() =>
       expect(
         screen
@@ -2735,9 +2568,6 @@ describe('the invitation section', () => {
       screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
     )
 
-    // The tenant admission layer's refusal cannot be retried away: the
-    // region names the enterprise sign-in and offers the session exit, as
-    // the platform page's invitation writes do.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
     await user.click(
@@ -2780,8 +2610,6 @@ describe('the invitation section', () => {
     })
     renderPage(backend)
     const row = rowOf(await screen.findByText(resent.email))
-    // The issued time stays the row's own; the resend count and the latest
-    // send sit beneath it rather than replacing it.
     expect(
       within(row).getByText(
         formatInstant(resent.created_at, 'zh-CN', {
@@ -2827,11 +2655,6 @@ describe('the invitation section', () => {
     expect(
       within(row).getByText(zhCN.invitations.status.accepted),
     ).toBeInTheDocument()
-    // A null instant produces no note: the status tag is its chip alone, so
-    // the whole tag reads as the status label. Comparing the unit's text
-    // rather than a fragment of the note's copy keeps the assertion
-    // discriminating when that wording changes. A missing inviter name
-    // leaves the cell empty rather than showing a placeholder or throwing.
     expect(statusTagOf(row, zhCN.invitations.status.accepted).textContent).toBe(
       zhCN.invitations.status.accepted,
     )
@@ -2862,20 +2685,13 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    // While the confirmation is on screen the rest of the page is
-    // aria-hidden, so the row's copy action is readable only after the
-    // dialog has left. Wait for that rather than for the write alone.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() =>
       expect(recorder.resends).toEqual([
         { tenant: TENANT, id: PENDING_INVITATION.id },
       ]),
     )
-    // Resend names the invitation, not a new address; the issue route is
-    // never used for it.
     expect(recorder.issues).toEqual([])
-    // The new token is shown once, and the row it belongs to now offers
-    // the copy action.
     expect(
       await screen.findByText(
         `${window.location.origin}/invitations/spd_inv_new_token`,
@@ -2931,9 +2747,6 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    // While the confirmation is on screen the rest of the page is
-    // aria-hidden, so the submit button is readable only after the dialog
-    // has left.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const failedMarker = await waitFor(() => {
       const marker = invitationErrorOf(PENDING_INVITATION.email)
@@ -2942,8 +2755,6 @@ describe('the invitation section', () => {
     })
     expect(failedMarker.textContent ?? '').not.toBe('')
 
-    // A later issue replaces the failure in the scope. The old row must stop
-    // showing the error text that is no longer rendered.
     await user.type(
       screen.getByLabelText(zhCN.invitations.issue.emailLabel),
       'fresh@example.com',
@@ -2973,9 +2784,6 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    // While the confirmation is on screen the rest of the page is
-    // aria-hidden, so the status filter is readable only after the dialog
-    // has left.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const failedMarker = await waitFor(() => {
       const marker = invitationErrorOf(PENDING_INVITATION.email)
@@ -2985,9 +2793,6 @@ describe('the invitation section', () => {
     const failureText = failedMarker.textContent ?? ''
     expect(failureText).not.toBe('')
 
-    // The filter change is a new scope, like the member filter: the failure
-    // above the table and the row marker must both go. "All" still lists the
-    // pending row, so a marker that survived would.
     await user.click(
       screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
     )
@@ -3017,13 +2822,7 @@ describe('the invitation section', () => {
         { tenant: TENANT, id: PENDING_INVITATION.id },
       ]),
     )
-    // While the confirmation is on screen the rest of the page is
-    // aria-hidden, so the heading is readable only after the dialog has
-    // left. Wait for that rather than querying the closing state.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // The pending-only list drops the row, so its action menu leaves the
-    // document. Focus moves to the invitation section's heading, which stays,
-    // and the success text is announced through the section's live region.
     const heading = screen.getByRole('heading', {
       name: zhCN.invitations.section.title,
     })
@@ -3048,8 +2847,6 @@ describe('the invitation section', () => {
       state: 'expired',
       expires_at: '2026-02-01T00:00:00Z',
     }
-    // The shipped bundle drives the generated surface, so the refusal and
-    // the re-read are the ones the package ships, not a scripted stand-in.
     bindAdminRequest((call) => {
       if (
         call.method === 'GET' &&
@@ -3077,8 +2874,6 @@ describe('the invitation section', () => {
         call.path ===
           `/api/v1/tenants/${TENANT}/invitations/${PENDING_INVITATION.id}`
       ) {
-        // The row moved between this list's read and the click, so the
-        // server refuses the write without changing anything.
         terminal = true
         throw { status: 409, code: 'authn.invitation_terminal' }
       }
@@ -3096,8 +2891,6 @@ describe('the invitation section', () => {
       </OrganizationAdminProvider>,
     )
     await screen.findByText(PENDING_INVITATION.email)
-    // The "all" filter keeps the moved row on screen, so its new label is
-    // observable rather than the row dropping out of the pending list.
     await user.click(
       screen.getByRole('combobox', { name: zhCN.invitations.filter.label }),
     )
@@ -3112,8 +2905,6 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    // No further operator action: the refused write re-reads the list, and
-    // the server's judgement replaces the stale pending label.
     await waitFor(() =>
       expect(
         within(rowOf(PENDING_INVITATION.email)).getByText(
@@ -3131,8 +2922,6 @@ describe('the invitation section', () => {
       state: 'expired',
       expires_at: '2026-02-01T00:00:00Z',
     }
-    // The shipped bundle drives the generated surface, so the refusal and
-    // the re-read are the ones the package ships, not a scripted stand-in.
     bindAdminRequest((call) => {
       if (
         call.method === 'GET' &&
@@ -3150,8 +2939,6 @@ describe('the invitation section', () => {
         call.method === 'GET' &&
         call.path === `/api/v1/tenants/${TENANT}/invitations`
       ) {
-        // The server filters by status: the terminal row drops out of the
-        // default pending read, so the re-read removes it from the table.
         if (terminal && call.query?.status === 'pending') {
           return { invitations: [], next_cursor: '' }
         }
@@ -3165,8 +2952,6 @@ describe('the invitation section', () => {
         call.path ===
           `/api/v1/tenants/${TENANT}/invitations/${PENDING_INVITATION.id}`
       ) {
-        // The row moved between this list's read and the click, so the
-        // server refuses the write without changing anything.
         terminal = true
         throw { status: 409, code: 'authn.invitation_terminal' }
       }
@@ -3184,8 +2969,6 @@ describe('the invitation section', () => {
       </OrganizationAdminProvider>,
     )
     await screen.findByText(PENDING_INVITATION.email)
-    // The default filter is pending: the re-read drops the now-terminal row,
-    // taking the menu that started the write with it.
     await chooseInvitationAction(
       user,
       PENDING_INVITATION.email,
@@ -3194,9 +2977,6 @@ describe('the invitation section', () => {
     await user.click(
       await screen.findByRole('button', { name: zhCN.common.confirm }),
     )
-    // While the confirmation is on screen the rest of the page is
-    // aria-hidden, so the heading is readable only after the dialog has
-    // left. Wait for that rather than querying the closing state.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const heading = screen.getByRole('heading', {
       name: zhCN.invitations.section.title,
@@ -3238,11 +3018,7 @@ describe('the invitation section', () => {
         name: zhCN.invitations.issued.keepOpen,
       }),
     )
-    // While the confirmation is on screen the rest of the page is
-    // aria-hidden, so the panel's close button is readable only after the
-    // dialog has left.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    // Cancelling keeps the only copy.
     expect(
       screen.getByText(`${window.location.origin}/invitations/spd_inv_new_token`),
     ).toBeInTheDocument()
@@ -3293,8 +3069,6 @@ describe('the invitation section', () => {
           .replace('{{email}}', 'delivery@example.com'),
       }),
     )
-    // There is no link in this panel, so closing drops nothing: no
-    // confirmation stands between the operator and the close.
     expect(
       screen.queryByRole('dialog', {
         name: zhCN.invitations.issued.closeTitle,

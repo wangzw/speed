@@ -1,9 +1,3 @@
-/**
- * PermissionsPage in a real browser: the tenant-scoped authorization
- * tables at the sm/md/lg floor widths with fixed data. The tenant is
- * seeded through the query parameter the page opens on, so the case
- * exercises the settled tables rather than the selector prompt.
- */
 import { afterEach, describe, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -102,14 +96,8 @@ describe('PermissionsPage horizontal overflow in Chromium', () => {
   }
 })
 
-/**
- * A role name and a permission code are identifiers with no length bound in
- * the console's contract: a tenant names its own roles, and the catalog
- * spells each permission as `namespace.resource.action`. At the sm floor
- * the roles table shows its identity, the actions, and nothing else, so an
- * unbounded identifier is what would push the row actions off the table
- * before the scroll fallback appears.
- */
+// Identifiers have no length bound in the console's contract, so an unbounded one
+// is what would push the row actions off the table.
 const LONG_ROLE = 'tenant-operations-reviewer-with-a-long-unbroken-name-0001'
 const LONG_DESCRIPTION =
   'A long free-text description that does not fit in the column on one line'
@@ -171,12 +159,8 @@ describe('PermissionsPage unbounded identifiers in Chromium', () => {
         ),
       }),
     )
-    // The code appears in the catalog and in the selected role's grant
-    // row; both tables must be settled before the widths are measured.
     await screen.findAllByText(LONG_PERMISSION)
 
-    // The helper pins each table's own containment box to the sm, md and
-    // lg floors and requires the columns visible in that tier to fit.
     await expectNoHorizontalOverflow()
   })
 })

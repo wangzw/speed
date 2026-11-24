@@ -1,14 +1,5 @@
-/**
- * TenantProfilePage in a real browser.
- *
- * The page stacks the identity card and the four-field form; the form is one
- * column below `sm` and pairs the short fields above it. A browser is the
- * only tier that resolves the actual layout, so this suite holds the page
- * inside the floor widths, proves the theme's coarse-pointer touch floor
- * reaches the save and ownership controls, and renders the page in both the
- * light and the dark theme.
- */
-
+// A browser is the only tier that resolves the actual layout, the coarse-pointer
+// touch floor and both theme surfaces.
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -38,7 +29,6 @@ const FLOOR_WIDTHS = [600, 900, 1200] as const
 const VIEWPORT_HEIGHT = 900
 const TENANT = 'acme'
 
-/** The ui-kit label the confirm button shows once its two-step guard arms. */
 const CONFIRM_AGAIN_LABEL = (
   uiKitResources['en-US'] as unknown as {
     readonly confirmDialog: { readonly confirmAgainLabel: string }
@@ -51,9 +41,7 @@ function renderPage({
   backend = {},
 }: {
   readonly defaultMode?: 'light' | 'dark' | 'system'
-  /** Attach the session whose account is the fixture's owner. */
   readonly owner?: boolean
-  /** Backend answers the case replaces. */
   readonly backend?: Partial<AdminBackend>
 } = {}): void {
   attachSession(
@@ -95,8 +83,6 @@ function renderPage({
   )
 }
 
-/** The theme's own mode and body surface, so each case compares the page
- * against the theme it was given. */
 function ModeProbe() {
   const theme = useTheme()
   return (
@@ -108,7 +94,6 @@ function ModeProbe() {
   )
 }
 
-/** Wait for the page's read to settle into its two cards. */
 async function ready(): Promise<HTMLElement> {
   await screen.findByRole('heading', {
     level: 1,
@@ -124,7 +109,6 @@ async function ready(): Promise<HTMLElement> {
   })
 }
 
-/** Assert the document and one block keep their content inside their box. */
 function expectInsideBox(block: HTMLElement): void {
   expect(
     document.documentElement.scrollWidth,
@@ -284,8 +268,6 @@ describe('TenantProfilePage ownership focus in Chromium', () => {
         screen.queryByText(enUS.tenantProfile.ownership.pending.title),
       ).toBeNull(),
     )
-    // The confirmation is still exiting while the page behind it stays
-    // aria-hidden; wait for it to leave before reading the card.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     const heading = await screen.findByRole('heading', {
       name: enUS.tenantProfile.ownership.title,
