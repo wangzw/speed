@@ -77,8 +77,14 @@ this file adds what is specific to the npm side.
   typechecks the browser cases. They are a program of their own because one
   program holding the unit and the browser cases sees two conflicting
   declarations of the jest-dom matcher types. A new browser case needs no
-  registration, and a package gaining its first one adds the
-  `tsconfig.browser.json` and the second `tsc` call. The demo host
+  registration; a package gaining its first one replaces its single
+  `tsc -p tsconfig.json` typecheck with a call to
+  `web/scripts/typecheck-each.mjs` that lists both configs. The two programs
+  cannot be chained as `tsc -p … && tsc -p …`: pnpm forwards appended flags
+  only to the last command, so a local `--incremental` would skip the first
+  program, and the workspace rule in
+  `web/scripts/typecheck-each.test.mjs` rejects any member `typecheck` that
+  contains a shell separator. The demo host
   (`starters/demo/web`) needs neither: the base exclude is relative to
   `web/` and does not reach it, so its one program already covers its
   browser cases. Install Chromium once with
