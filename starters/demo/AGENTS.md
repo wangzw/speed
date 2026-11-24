@@ -460,6 +460,8 @@ value they were written with:
 | `server/listener_address.go` | The loopback classification the seed guard uses |
 | `server/signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
 | `server/modules/` | The slot for this product's business modules |
+| `server/treecheck/` | The checks that read files outside the module root: the committed contract artifacts, the frontend's prefix manifest, the deployment template and the entrypoint. The root Makefile's unit test legs always run this package; `make -C starters/demo test` caches it; the main package stays cacheable |
+| `server/internal/demotest/` | What the main package's cases and `treecheck` share: the child-process environment, the prefix ownership table, and building the demo program |
 | `server/testdata/` | One override document per deployment stack: the deltas from `server/defaults.go` |
 | `server/dist/` | The frontend build output, embedded by the Go program |
 | `server/dist-e2e/` | The end-to-end tier's own bundle, produced by `web/e2e/global-setup.ts` and embedded only by an e2e-tagged build |
@@ -933,13 +935,15 @@ frontend page path must stay outside every non-root claim, or a page navigation
 would receive that endpoint's answer instead of the entry document.
 
 Two tests hold the table. `server/claims_test.go` holds every operation of the
-served `/openapi.json` and of the committed `contracts/api.json` to it, so an
-operation whose namespace lost its claim is reported; it reads the table through
-the same loader the binary uses, so it checks the effective configuration —
-defaults document and file together — rather than a file's own copy.
-`server/differential_test.go` removes routing modules from `baselineServe` one
-group at a time and compares every anonymous answer of the variant with the
-baseline's — byte for byte apart from `Date` — on both deployment topologies.
+served `/openapi.json` and of the merged document `gen` writes to it, so an
+operation whose namespace lost its claim is reported; `server/treecheck` holds
+the committed `contracts/api.json` to that same document, and runs on every
+invocation. The claims case reads the table through the same loader the binary
+uses, so it checks the effective configuration — defaults document and file
+together — rather than a file's own copy. `server/differential_test.go` removes
+routing modules from `baselineServe` one group at a time and compares every
+anonymous answer of the variant with the baseline's — byte for byte apart from
+`Date` — on both deployment topologies.
 
 ### The defaults document and the override documents
 
@@ -1064,8 +1068,8 @@ names the fixed part of that wiring, and no configuration file repeats it:
   `authn.Decider`, so `server/management.go` (`management.access`) registers it
   open on the authorization guard's declaration surface: `api` carries the
   guard, whose closed default would otherwise refuse every one of those routes
-  403 before a handler ran. `claims_test.go` holds the list to the committed
-  contract in both directions.
+  403 before a handler ran. `claims_test.go` holds the list to the merged
+  document `gen` writes in both directions.
 - The caller's own permission read (`authz.self`) mounts on `api`: every
   authenticated caller may read the permissions it holds in the platform domain
   and in the request's tenant, and the frontend attaches both sets to the
@@ -1492,3 +1496,13 @@ read two of the identity system's own routes to hold that the baseline is
 assembled and not only the infrastructure it began with. The `sqlite-memory`
 stack needs nothing installed; the other four need the backends `compose.yaml`
 brings up and are not exercised by the suite.
+
+The checks that read files outside the module root live in `server/treecheck`:
+the committed contract artifacts, the frontend's prefix manifest, the deployment
+template and the entrypoint. The root Makefile's unit test legs always run that
+package, while the main package stays cacheable; the `TestTheDeployTemplate`
+cases the main package keeps, because they decode the rendered template in
+process, are run from `treecheck` through the main package's own test binary.
+In a tree copied out of this repository `server/treecheck` cannot reach
+`contracts/`: a copy carries no such directory, so the committed-artifact cases
+report the missing artifact there.

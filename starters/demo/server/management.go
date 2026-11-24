@@ -29,7 +29,7 @@ const managementModuleName = "management.access"
 //
 // The set is written out because the declaration surface matches a route by its
 // exact (method, path) pair and has no prefix form. claims_test.go holds it to
-// the committed contract's tenant-management operations, so an operation the
+// the merged document's tenant-management operations, so an operation the
 // capability adds and this list omits fails the case instead of reaching the
 // guard's closed default.
 var tenantManagementRoutes = []struct {

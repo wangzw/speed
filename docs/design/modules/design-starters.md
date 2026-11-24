@@ -143,7 +143,7 @@ starters/demo/
 
 `gen` 把二进制里各模块声明的 OpenAPI（[REF-openapi](../../references.md)）片段合并成一份文档并写出。它调 [ops](design-ops.md) 的导出包 `pkg/ops/openapi` 里的 `Merge`，即**一个纯函数**，模块在 `Init` 里合并、`/openapi.json` 交出的是它的结果，`gen` 写出制品时用的也是它。**不驱动生命周期、不绑端口、不构造任何模块**：合并读的是各模块的静态声明，不需要把任何模块跑起来，也不需要入口模块的登记接口。这与 `ops` 模块在 `Init` 里合并、在运行期经 `/openapi.json` 交出是同一份合并逻辑的两种用法：运行期服务于一个活着的进程，`gen` 服务于构建与发布，把这份文档写进制品，供前端据它生成自己的 API 接口。
 
-**`gen` 同时写出特性声明的清单。** 输入项 `--features` 点名一个路径，`gen` 把可用集里的全部 `feature.Spec` 声明写到那里，每项带名字、声明模块、所有者与是否条件特性，按名字排序。所有者按声明所在的包判定：取描述符第一个非空生命周期回调所在的包，在平台的模块路径之下为平台所有，其余为应用所有，经平台导出的工厂构造的宿主模块（端到端装配里的短信载体）因此按平台所有；没有生命周期回调的模块使 `gen` 报错而不是猜测。合并文档里应用所有的操作**只带**标签 `speed.application`：`gen` 把合并器写下的模块标签换成所有者标签，并把该模块名从顶层 `tags` 里摘掉，再添上所有者标签。一条 operation 因此只属于一个分组：带两个标签的操作会在按标签分组的文档里出现两次。`gen` 写出的文档因此与运行期的 `/openapi.json` 在这个标签以及 `gen` 缺省填写的 `info.description` 与 `servers` 上不同（运行期这两个成员来自 `ops.description` 与 `ops.servers`，且没有所有者标签的替换）。它与合并文档同源：两者读的都是同一个二进制里已登记模块的静态声明，同样不构造模块、不推进生命周期。示范把它写成 `contracts/features.json`，与 `contracts/api.json` 并列，示范前端的 `api:gen` 写出 `contracts/api.json` 时一并写出它。`@speed/api-sdk/features` 的特性名类型由平台级再生成命令（`web/package.json` 的 `api:gen`）从它生成；应用所有的名字由示范 `api:gen` 运行的骨架副本 `starters/demo/web/scripts/feature-names.mjs` 写到应用自己的 `src/app-api/features.ts`（[api-sdk](web/design-web-api-sdk.md)）。`starters/demo/server` 的 `TestCommittedFeatureVocabulary` 比对已提交的 `contracts/features.json` 与本二进制的声明，两者不一致即失败（[ADR-feature-vocabulary](../../adr/adr-feature-vocabulary.md)）。`contracts/api.json` 同样受一条测试约束：测试比对已提交的 `contracts/api.json` 与本二进制 `gen` 当前写出的合并文档，不一致即失败，使 Go 侧新增或改动一个平台路由而没有重新生成时，门禁变红，而不依赖前端生成流程的某条测试恰好读到被改动的一端。
+**`gen` 同时写出特性声明的清单。** 输入项 `--features` 点名一个路径，`gen` 把可用集里的全部 `feature.Spec` 声明写到那里，每项带名字、声明模块、所有者与是否条件特性，按名字排序。所有者按声明所在的包判定：取描述符第一个非空生命周期回调所在的包，在平台的模块路径之下为平台所有，其余为应用所有，经平台导出的工厂构造的宿主模块（端到端装配里的短信载体）因此按平台所有；没有生命周期回调的模块使 `gen` 报错而不是猜测。合并文档里应用所有的操作**只带**标签 `speed.application`：`gen` 把合并器写下的模块标签换成所有者标签，并把该模块名从顶层 `tags` 里摘掉，再添上所有者标签。一条 operation 因此只属于一个分组：带两个标签的操作会在按标签分组的文档里出现两次。`gen` 写出的文档因此与运行期的 `/openapi.json` 在这个标签以及 `gen` 缺省填写的 `info.description` 与 `servers` 上不同（运行期这两个成员来自 `ops.description` 与 `ops.servers`，且没有所有者标签的替换）。它与合并文档同源：两者读的都是同一个二进制里已登记模块的静态声明，同样不构造模块、不推进生命周期。示范把它写成 `contracts/features.json`，与 `contracts/api.json` 并列，示范前端的 `api:gen` 写出 `contracts/api.json` 时一并写出它。`@speed/api-sdk/features` 的特性名类型由平台级再生成命令（`web/package.json` 的 `api:gen`）从它生成；应用所有的名字由示范 `api:gen` 运行的骨架副本 `starters/demo/web/scripts/feature-names.mjs` 写到应用自己的 `src/app-api/features.ts`（[api-sdk](web/design-web-api-sdk.md)）。`starters/demo/server/treecheck` 的 `TestCommittedFeatureVocabulary` 比对已提交的 `contracts/features.json` 与本二进制 `gen --features` 写出的文件，两者不一致即失败（[ADR-feature-vocabulary](../../adr/adr-feature-vocabulary.md)）。`contracts/api.json` 的比对也在这个包里：`TestCommittedMergedDocument` 比对已提交的 `contracts/api.json` 与本二进制 `gen` 当前写出的合并文档，不一致即失败，使 Go 侧新增或改动一个平台路由而没有重新生成时，门禁变红，而不依赖前端生成流程的某条测试恰好读到被改动的一端。
 
 ### 端点集合
 
@@ -179,8 +179,8 @@ starters/demo/
 
 **认领由测试守住。**
 
-- **认领覆盖平台命名空间。** 示范测试读在服的 `/openapi.json` 与已提交的 `contracts/api.json`，对其中每个 operation 取 `x-endpoint`，在该端所在的监听上按请求期的选端规则核对：配置的认领选中的正是这个端。`testdata/` 的每份配置都过同一判定。
-- **清单与配置一致。** `backend-prefixes.json`、差分测试里写定的前缀归属，以及每份配置在 `backend` 监听上的非 `/` 认领，彼此相等。
+- **认领覆盖平台命名空间。** 示范测试读在服的 `/openapi.json` 与本程序 `gen` 写出的合并文档，对其中每个 operation 取 `x-endpoint`，在该端所在的监听上按请求期的选端规则核对：配置的认领选中的正是这个端；已提交的 `contracts/api.json` 与这份合并文档一致，由 `treecheck` 的 `TestCommittedMergedDocument` 保证。`testdata/` 的每份配置都过同一判定。
+- **清单与配置一致。** `backend-prefixes.json` 这份手写清单、差分测试里写定的前缀归属表，以及每份配置在 `backend` 监听上的非 `/` 认领，彼此相等：`treecheck` 包把清单与归属表双向比对，主包把每份配置与归属表双向比对，两份比对合起来保证清单、归属表与配置认领彼此相等。
 - **页面路径不相交。** 前端测试断言页面表里的每个页面路径与页面前缀，按段边界都不落在清单的任何前缀之下；每个代理键匹配前缀之下的路径，不匹配任何页面路径。
 - **去掉路由模块前后的未认证应答逐字节比较。** 差分测试在合一与分离两种拓扑下，以去掉若干路由模块的变体进程与基线进程比较未认证请求的应答，要求除 `Date` 外逐字节相同。凭据后端这类对端上每个请求都起作用的模块不在去掉之列；至少在一次运行中命中[匿名路由](../../glossary.md)的请求不发送、不比较。同一端上匿名路由与其余路由的匹配域不相交，由同一测试从网关冻结的登记表与在服的 `/openapi.json` 静态核对（[authn-gate](authn/design-authn-gate.md) 的对宿主的要求）；这一核对通过时，不发送的请求正是 [http](http/design-http.md) 术语表所界定的豁免请求。
 
@@ -494,8 +494,8 @@ flowchart TD
 | 通知接口的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
 | `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`（`Init` 建立 system 租户）、`seedSchema`、`seedDatabase`、`seedTenant`、`seedMembers`、`seedAdministration`、`seedAdminMembership`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
 | `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument`、`featureVocabulary` |
-| 已提交的 `contracts/api.json` 与本二进制合并文档的一致性测试 | 已实现 | `starters/demo/server/demo_test.go` `TestCommittedMergedDocument` |
-| 已提交的 `contracts/features.json` 的新鲜度测试 | 已实现 | `starters/demo/server/feature_test.go` `TestCommittedFeatureVocabulary` |
+| 已提交的 `contracts/api.json` 与本二进制合并文档的一致性测试 | 已实现 | `starters/demo/server/treecheck` `TestCommittedMergedDocument` |
+| 已提交的 `contracts/features.json` 的新鲜度测试 | 已实现 | `starters/demo/server/treecheck` `TestCommittedFeatureVocabulary` |
 | 基线 `serve` 的特性文档端到端（逐项等于基线集合、匿名 401） | 已实现 | `starters/demo/server/feature_test.go` `TestServePublishesTheFeatureDocument` |
 | 前端产物的内嵌与托管（合一拓扑的 Go 侧） | 已实现 | `starters/demo/server/main.go` `webBundle`（`//go:embed dist`）、`webuiModuleName` |
 | 前端应用本身（`web/` 的源码与构建） | 已实现 | `starters/demo/web/src/main.tsx` `bootstrapDemoApp`、`starters/demo/web/src/app.tsx` `DemoApp`、`starters/demo/web/src/routes.tsx` `routes`、`starters/demo/web/src/runtime-config.ts` `loadRuntimeConfig`；构建见 `starters/demo/web/vite.config.ts` |
@@ -543,7 +543,7 @@ flowchart TD
 | 后端前缀清单 `backend-prefixes.json` 与由它生成的开发代理 | 已实现 | `starters/demo/web/backend-prefixes.json`；`starters/demo/web/src/backend-prefixes.ts` `backendProxyRules`；`starters/demo/web/vite.config.ts` |
 | 回调页的路径 `/sign-in/callback` | 已实现 | `starters/demo/web/src/paths.ts` `AUTH_CALLBACK_PATH` |
 | 认领覆盖平台命名空间的测试 | 已实现 | `starters/demo/server/claims_test.go` `checkPlatformClaims`、`checkClaimsCover`、`selectClaimedEndpoint` |
-| 前缀清单、差分测试的前缀归属与配置认领的一致性测试 | 已实现 | `starters/demo/server/claims_test.go` `TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims`、`readPrefixManifest`、`checkManifestAgainstOwnership`、`checkManifestAgainstClaims`；`starters/demo/web/backend-prefixes.json`；`starters/demo/server/differential_test.go` `expectedOwners` |
+| 前缀清单、差分测试的前缀归属与配置认领的一致性测试 | 已实现 | `starters/demo/server/treecheck` `TestThePrefixManifestMatchesTheOwnershipTable`、`readPrefixManifest`（清单与归属表双向比对）；`starters/demo/server/claims_test.go` `TestTheConfigurationsClaimExactlyTheOwnershipTable`（每份配置与归属表双向比对）；`starters/demo/web/backend-prefixes.json`；归属表 `demotest.ExpectedOwners`（`starters/demo/server/internal/demotest`） |
 | 页面路径不落在认领之下、代理键按段边界匹配的前端测试 | 已实现 | `starters/demo/web/src/routes.test.ts` |
 | 去掉路由模块前后未认证应答的差分测试 | 已实现 | `starters/demo/server/differential_test.go` `TestAnonymousAnswersDoNotDependOnTheAssembly`、`runDifferential`、`serveWithout` |
 | 租户区对准入层裸 404 的呈现（通知页） | 已实现 | `web/packages/notification-ui/src/internal/tenant-section.tsx` `TenantAsyncSection` |
