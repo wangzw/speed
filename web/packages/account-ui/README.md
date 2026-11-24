@@ -169,10 +169,15 @@ Edits the account's display name through the profile write
 `PATCH /api/v1/auth/me` (the same route the preferences section writes its
 language and time zone through). It reads `GET /api/v1/auth/me` for the stored
 name, lets the field track that value until the user edits it, and
-PATCHes a one-field body from the save button, which is disabled while
-the field still holds the account's own name (a save with nothing changed
-would be a no-op PATCH). A successful save fills a `role="status"` notice
-and refetches the profile. The save button closes the form's action row on
+PATCHes a one-field body from the save button. The button is unavailable --
+focusable, `aria-disabled`, and stating that the display name has not
+changed -- while the field still holds the account's own name (a save with
+nothing changed would be a no-op PATCH), and reports itself busy, focusable
+with a progress indicator, while the save it started is in flight. The name
+field stays focusable and read-only for that attempt, so a save that lands
+leaves the focus on the save button, which now says why it cannot run
+again. A successful save fills a `role="status"` notice and refetches the
+profile. The save button closes the form's action row on
 the right, on a line beneath the field. The write needs no fresh
 authentication, so a refusal renders its code text in that notice's region
 and no step-up dialog opens.
@@ -349,11 +354,13 @@ its own sentence only on the verify step, after a code proved control of the
 address, and points at the change action. The wrong-code answer renders the
 unified invalid-or-expired sentence. A resend action addresses the same
 target the section displays (the address this mount sent to, else the
-profile's pending contact), is disabled for the server's `resend_after` (or a
-429's `Retry-After`) and states the remaining seconds, and its countdown timer
-stops at expiry. The sent notice is announced once through a `role="status"`
-region mounted empty and filled on landing, and focus moves to the code
-field. These writes drive no step-up dialog: a refusal renders as the step's own
+profile's pending contact), and its countdown timer stops at expiry. While
+the server's `resend_after` (or a 429's `Retry-After`) holds it, the action
+is unavailable -- focusable, `aria-disabled`, and carrying the remaining
+seconds in its accessible description -- and a resend it started that is
+still in flight reports itself busy. The sent notice is announced once
+through a `role="status"` region mounted empty and filled on landing, and
+focus moves to the code field. These writes drive no step-up dialog: a refusal renders as the step's own
 failure text -- the automatic send with the `verification.autoStepUp`
 explanation -- rather than opening a dialog. A verify that would change what
 recovers or proves the account -- an email that becomes the default contact or
@@ -491,8 +498,10 @@ header slot of its own. The slot is called only while the action would
 render at all (a settled list holding another live session); without it
 the action keeps the section's own placement above the list, so the
 default behaviour is unchanged. Handing the control over does not change
-when it is busy: the host renders the very control the section would have
-rendered, disabled while a revoke is in flight.
+what it reports: the host renders the very control the section would have
+rendered, busy -- focusable, `aria-busy`, progress shown -- while its own
+bulk revoke is in flight, and unavailable (focusable, `aria-disabled`, no
+reason) while a row's revoke holds the section's write scope.
 
 ```tsx
 interface SessionsSectionProps {
@@ -538,8 +547,12 @@ the top-level `return_to`. The flow's first `redirect` step carries the
 provider's authorization URL, which is reported upward through
 `onAuthorizeUrl` -- the section never navigates. The backend lands the
 browser on `returnTo` once the provider answers; the host completes the
-flow there with `BindingCallbackHandler`. One bind flow at a time: while
-a channel's flow is being started every button is disabled.
+flow there with `BindingCallbackHandler`. One write at a time in the
+section: the button whose channel flow is being started reports itself
+busy -- focusable, `aria-busy`, progress shown -- and every other
+initiating control, the other channel buttons and the rows' unlink
+actions alike, is unavailable, focusable with `aria-disabled` and no
+reason, until it answers.
 
 ```tsx
 interface SocialBindingsSectionProps {
