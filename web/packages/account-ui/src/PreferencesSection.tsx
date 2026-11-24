@@ -36,8 +36,9 @@
  * transport codes when the request never landed). Each select is one
  * control group with its own feedback scope and region beneath it, so
  * the language outcome and the timezone outcome never share a slot and
- * neither clears the other. Both selects are disabled while a write is in
- * flight, so a change can never race its own predecessor.
+ * neither clears the other. Both selects turn read-only while a write is in
+ * flight, so a change can never race its own predecessor and a select that
+ * holds focus keeps it.
  *
  * The write does not ask for a fresh authentication: the route admits the
  * account's own display name, language and time zone directly
@@ -112,10 +113,11 @@ export function PreferencesSection() {
   const timeZoneOptions = useMemo(() => supportedTimeZones(), [])
 
   const pending = isPending && data === undefined
-  // A control stays disabled while any preference write is in flight --
+  // A control stays read-only while any preference write is in flight --
   // including the steps that follow the mutation (the language switch and
   // the invalidation) -- so no control can change context under a pending
-  // scope.
+  // scope. Read-only rather than disabled: the select keeps focus and stays
+  // in the Tab sequence while the write runs.
   const saving =
     patchProfile.isPending || languageFeedback.pending || timezoneFeedback.pending
 
@@ -237,6 +239,10 @@ export function PreferencesSection() {
                 // fills less than the row on a wide viewport.
                 sx={{ mt: 0.5, maxWidth: '24rem' }}
                 slotProps={{
+                  // A write in flight locks the choice without taking the
+                  // select out of the Tab sequence: it stays focusable and
+                  // its value cannot change.
+                  input: { readOnly: saving },
                   // displayEmpty rides the Select slot (MUI 9's slotProps
                   // architecture): the "not chosen" choice carries the empty
                   // string, and without this the control renders blank instead
@@ -251,7 +257,6 @@ export function PreferencesSection() {
                   },
                 }}
                 value={storedLocale}
-                disabled={saving}
                 onChange={(event) => {
                   void saveLocale(event.target.value)
                 }}
@@ -284,9 +289,11 @@ export function PreferencesSection() {
                 // Capped like the language select above: a zone name is short
                 // and the control need not span the content width.
                 sx={{ mt: 0.5, maxWidth: '24rem' }}
-                // Same slot as the language select above: displayEmpty for
-                // the "not chosen" placeholder.
+                // Same slots as the language select above: read-only while a
+                // preference write is in flight, and displayEmpty for the
+                // "not chosen" placeholder.
                 slotProps={{
+                  input: { readOnly: saving },
                   select: {
                     displayEmpty: true,
                     slotProps: {
@@ -297,7 +304,6 @@ export function PreferencesSection() {
                   },
                 }}
                 value={storedTimezone}
-                disabled={saving}
                 onChange={(event) => {
                   void saveTimezone(event.target.value)
                 }}
