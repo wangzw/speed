@@ -172,6 +172,39 @@ export function useActivationGuard<A extends readonly unknown[]>(
 
 `useActivationGuard` 包一层激活处理：`busy` 或 `unavailable` 为真时调用被吞掉，`handler` 不被调用；被吞掉的调用若首个实参是 `submit` 事件，还调用它的 `preventDefault`，浏览器因此不提交表单。两者都为假时以原实参调用 `handler`。返回的函数在组件存续期内引用稳定，调用时按最近一次渲染的状态判定。它不持有写入状态、不读作用域：`busy` 由调用方从作用域的 `pending` 或自己的逐项在途状态传入。用法见“写入的反馈”。
 
+### 弹层背景
+
+模态弹层打开期间，背景要同时对辅助技术隐藏且不可聚焦。MUI 的模态管理器只给背景设 `aria-hidden`，背景仍留在 Tab 顺序里；本包以两个 hook 补上 `inert`（[REF-whatwg-html](../../../references.md)），在打开提交的 layout 阶段施加、在关闭或卸载提交的 layout 清理里撤除，撤除早于 MUI 的焦点归还。决策见 [ADR-web-modal-background-inert](../../../adr/adr-web-modal-background-inert.md)。
+
+```ts
+export function useInertBackground(
+  open: boolean,
+  overlayRef: RefObject<HTMLElement | null>,
+): void
+
+export interface InertSelectMenuProps {
+  readonly open: boolean
+  readonly onOpen: (event: SyntheticEvent) => void
+  readonly onClose: (event: SyntheticEvent) => void
+  readonly MenuProps: { readonly ref: Ref<HTMLDivElement> }
+}
+export function useInertSelectMenu(): InertSelectMenuProps
+```
+
+`overlayRef` 指向弹层的 Modal 根节点：`Dialog`、`Drawer`、`Menu` 的 `ref` 都转发到它，组件已有转发 ref 时用 MUI 的 `useForkRef` 合并。施加范围与 `test-utils` 的背景断言一致：从 `document.body` 起，沿 `overlayRef` 已挂载节点的祖先链下钻，祖先链上的节点本身不加、链外的兄弟都加；`script`、`style`、`template` 等不渲染的标签跳过。门户比打开晚一次提交（非 keepMounted 弹层）。同一提交里没有别的弹层在退场时，hook 当场决定背景（根节点尚未挂上，`body` 的全部子元素都算背景）；有弹层仍在退场时，hook 以有限次定时重试等本次的门户挂上，再把背景限制到该根，使退场的弹层仍能把焦点归还到页面里。不等待会把整页（含退场弹层仍要归还焦点的元素）一并设为 `inert`。
+
+**焦点归还也是 hook 的契约。** 打开提交里记录当时持焦点的元素为归还目标；该元素若位于同一提交里正在关闭的弹层内（即将离开文档），或已经在本弹层内，都不记为归还目标。关闭时若记录仍在文档中，hook 把焦点交还它；没有记录、或记录已离开文档时 hook 不动焦点，交给 MUI 焦点陷阱的归还或宿主的安排。StrictMode 模拟卸载会丢弃 MUI 自己的记录，这份记录因此在严格模式下仍能归还。
+
+**按元素计数持有。** 模块级 `WeakMap<Element, number>` 记每个元素被几层弹层持有：本层对每个背景元素加一并记入自己的集合，计数从零变一时设 `inert`；打开时已带 `inert` 而计数为零的是宿主自己设的，本层不记也不动。关闭或卸载时对集合里的元素逐个减一，计数归零时移除 `inert`，再清空集合。层叠时，面板上再开对话框会把面板的门户节点算作背景，关闭对话框只撤面板门户，应用根仍由面板持有；乱序关闭（外层先关）时应用根计数不归零，内层仍被保护。
+
+**施加与撤除落在哪一阶段是契约的一部分。** 施加在打开提交的 layout 阶段，撤除在同一次提交的 `useLayoutEffect` 清理里，因此早于 MUI 焦点陷阱在被动效果阶段把焦点还给发起控件；改用 `useEffect`、`MutationObserver` 或跟随 `aria-hidden` 的时序都会把撤除推到归还之后，归还目标带 `inert` 时 `focus()` 静默失败。hook 从不读写 `aria-hidden`：打开时 MUI 设 `aria-hidden`、hook 设 `inert`，关闭时 hook 先撤 `inert`、MUI 在退出过渡后再撤 `aria-hidden`。StrictMode 的模拟卸载把施加与撤除各重跑一遍，按元素计数因此回到同一状态；归还记录在被动清理里清空，随后在重跑的 layout 阶段重新记下，所以组件以 `open` 为真首次挂载时，关闭后焦点仍回到挂载时持焦点的元素。
+
+**打开期间新插入 `body` 的节点不追加 `inert`**，与 MUI 的 `aria-hidden` 一致，测试的背景断言会把这样的节点报为违规。
+
+**`useInertSelectMenu` 让选择框受控打开。** 它自持 `open` 状态，把 `open`、`onOpen`、`onClose` 与带回调 Ref 的 `MenuProps` 一并交给 `Select` 或 TextField 的 `select` 槽。回调 Ref 把菜单的 Modal 根节点存进 hook 持有的 `RefObject`，hook 再以 `useInertBackground(open, menuRef)` 接线；回调 Ref 收到 `null` 时不当即认为菜单消失（门户在根节点挂载前的一次提交里会报 `null`），同一次提交之后的微任务里仍未重新挂上，才判定选择框在菜单打开时卸载，并清除 `open` 以释放背景。调用点已有 `MenuProps` 时由调用方合并，合并要保留这个回调 Ref，例如把两个回调组合成一个。这两个 hook 不能在 `.map` 里调用，循环内渲染的选择框抽成小组件。
+
+`ConfirmDialog` 与 `SidePanel` 在组件内部接好这条线，props 不变。
+
 ### 表单校验桥
 
 ```ts
@@ -198,7 +231,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 
 `parseEmailAddress` 把 authn 账户模块的邮箱规范化规则（`NormalizeIdentifier` 的 email 分支）表述在客户端：去空白、可打印 ASCII（0x21 到 0x7e）、恰好一个 `@` 且两侧非空、不超过 254 字节；返回去空白后的地址，不合格返回 `null`。它不改大小写，因为服务端折叠大小写，而折叠用户正在编辑的值会改掉他们的输入。
 
-`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`focusPageLanding`（`(scope: ParentNode) => HTMLElement | null`）、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口。基线导出之外的接口：`AnnouncementRegion` 及其 `AnnouncementRegionProps`、`WriteFeedbackPageProvider`、`useWriteFeedbackPageCoordination` 及其类型 `WriteFeedbackPageCoordination`、`ActionRow`／`ActionButton` 及其 `ActionRowSize`、`ActionEmphasis`、`ActionTone`、`ActionButton.busy`／`unavailable`／`unavailableReason`／`unavailableDescribedBy`、`useActivationGuard` 及其 `ActivationGuardState`、`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`useFormatInstant`／`useResolvedTimeZone` 及其 `UseFormatInstantOptions`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`TablePager` 及其 `TablePagerProps`、`DataTablePagination.unavailable`／`reading`、`ConfirmDialog.children`／`confirmDisabled`／`confirmDisabledReason`、`PhoneNumberField.readOnly`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有那些在要求 `T` 的地方用到它的使用方无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的使用方仍编译，故可能破坏使用方、是不兼容变更。公开接口的一次改动要与代码、测试、README 以及 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有使用方逐字节不受影响。
+`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`focusPageLanding`（`(scope: ParentNode) => HTMLElement | null`）、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口。基线导出之外的接口：`AnnouncementRegion` 及其 `AnnouncementRegionProps`、`WriteFeedbackPageProvider`、`useWriteFeedbackPageCoordination` 及其类型 `WriteFeedbackPageCoordination`、`ActionRow`／`ActionButton` 及其 `ActionRowSize`、`ActionEmphasis`、`ActionTone`、`ActionButton.busy`／`unavailable`／`unavailableReason`／`unavailableDescribedBy`、`useActivationGuard` 及其 `ActivationGuardState`、`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`TotpQrCode`、`TotpEnrollmentPanel`、`TotpEnrollmentParameter`、`TotpEnrollmentSecret`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`useFormatInstant`／`useResolvedTimeZone` 及其 `UseFormatInstantOptions`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`TablePager` 及其 `TablePagerProps`、`DataTablePagination.unavailable`／`reading`、`ConfirmDialog.children`／`confirmDisabled`／`confirmDisabledReason`、`PhoneNumberField.readOnly`、`PhoneNumberField.preferredCountries`、`useInertBackground`／`useInertSelectMenu` 及其 `InertSelectMenuProps`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反：放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有那些在要求 `T` 的地方用到它的使用方无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的使用方仍编译，故可能破坏使用方、是不兼容变更。公开接口的一次改动要与代码、测试、README 以及 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有使用方逐字节不受影响。
 
 ## 依赖
 
@@ -403,11 +436,15 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 **内容的存续。** 面板关闭后内容卸载；退出过渡期间渲染宿主此刻传入的子节点，宿主在发出关闭的同一次状态批里清掉内容，面板就带着空白滑出，因此需要内容保留到退出结束的宿主在 `onExited` 里清理。面板内的局部状态随卸载丢失，需要跨关闭保留的状态（表单的字段值）由宿主持有。
 
-**焦点。** 打开后焦点落入面板：MUI 的焦点陷阱把焦点放在纸张上，纸张是带可及名的 `dialog`，读屏读出面板名；Tab 在面板内循环；关闭后焦点回到打开面板的元素。面板打开期间再打开对话框时，焦点陷阱归属最上层的模态，对话框关闭后焦点回到面板内触发它的控件。面板内的写入不移动焦点：发起控件在写入进行中与落定后都保持可聚焦（见“写入的反馈”），焦点不离开它，面板的焦点陷阱因此不会把焦点收回到纸张上；确认对话框与加强认证对话框关闭时归还的目标就是这个控件。
+**焦点。** 打开后焦点落入面板：MUI 的焦点陷阱把焦点放在纸张上，纸张是带可及名的 `dialog`，读屏读出面板名；Tab 在面板内循环；关闭后焦点回到打开面板的元素。面板打开期间再打开对话框时，焦点陷阱归属最上层的模态，对话框关闭后焦点回到面板内触发它的控件。面板内的写入不移动焦点：发起控件在写入进行中与落定后都保持可聚焦（见“写入的反馈”），焦点不离开它，面板的焦点陷阱因此不会把焦点收回到纸张上；确认对话框与加强认证对话框关闭时归还的目标就是这个控件。面板打开期间背景带 `inert`，关闭时在焦点归还之前撤除，归还目标因此可聚焦。
 
-### 非模态浮层的焦点空档
+### 模态弹层的背景
 
-**非模态浮层的焦点只留一次按键的空档。** `Select`、`Menu`、`Autocomplete` 打开时是 MUI 的非模态浮层：背景被设为对辅助技术隐藏，而浮层管理器不设 `inert`。第一次按 Tab，焦点落到背景里打开这个浮层的控件上，那一步没有可见焦点，读屏通常也不播报；从第二次按键起，浮层的焦点陷阱接管，焦点回到浮层内并保持。本库接受这一行为，不改 MUI 的浮层管理器。测试里 axe 的 `aria-hidden-focus` 对这些浮层只报告、不判定失败，条目留在门禁日志里。
+**模态弹层打开期间背景不可达。** `Dialog`、`Drawer`、`Menu` 与 `Select` 展开的菜单都经 MUI 的 Modal 渲染，打开时背景对辅助技术隐藏，界面再经 `useInertBackground`（`Select` 经 `useInertSelectMenu`）把背景设为 `inert`。背景因此不在 Tab 顺序里：焦点陷阱之外按 Tab 不会落到背景。菜单按 Tab 关闭并把焦点交还触发控件（MUI 9.5 的实际行为），对话框、面板与层叠弹层按 Escape、关闭按钮或取消关闭时，焦点回到发起控件；这些关闭都在同一次提交撤 `inert`，撤除早于焦点归还，归还目标因此可聚焦。施加与撤除的时机、范围、层叠计数与焦点归还契约见“外部接口契约”的“弹层背景”。
+
+**测试里按违规判定。** 弹层打开时背景必须同时带 `aria-hidden` 与 `inert`，`aria-hidden-focus` 在 jsdom 与 Chromium 两档都按违规失败。
+
+**`Autocomplete` 的弹出层不是模态。** 它渲染 Popper，不隐藏背景，也不设 `inert`，焦点留在输入框，因而不属于这一节的范围；`Select` 与 `Menu` 是模态，与它不同类。
 
 ### 上传队列的 settle 播报
 
@@ -573,3 +610,4 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | `DataTable` 的可及名覆盖与过滤器标签 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`、`DataTableFilter` |
 | `ConfirmDialog` 的宿主内容与确认禁用 | 已实现 | `web/packages/ui-kit/src/components/ConfirmDialog.tsx` `ConfirmDialog` |
 | 主题的等宽字体槽 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `typography.fontFamilyMono` 模块扩充 |
+| 模态弹层背景 inert（`useInertBackground`、`useInertSelectMenu`） | 已实现 | `web/packages/ui-kit/src/inert-background.ts` `useInertBackground`、`useInertSelectMenu`、`InertSelectMenuProps`；`web/packages/ui-kit/src/components/ConfirmDialog.tsx` `ConfirmDialog`；`web/packages/ui-kit/src/components/SidePanel.tsx` `SidePanel` |

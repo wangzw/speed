@@ -120,6 +120,7 @@
 | [route-kit 按宿主给出的特性在场判定收窄注册接口，特性缺席的页面与未登记路径同走 `fallback`](adr-web-route-kit.md) |
 | [应用内导航与认证翻转后焦点交给新页面的一级标题，首屏不移](adr-web-navigation-focus.md) |
 | [管理后台列表页的行详情与创建改由侧边面板承载，面板是页内状态而非路由](adr-web-side-panel.md) |
+| [模态弹层打开期间背景设为 inert，由 ui-kit 的共用 hook 在 layout 阶段施加与撤除](adr-web-modal-background-inert.md) |
 | [写入的结果由每个反馈作用域的一个槽承载、同页至多一条结果，成功确认为默认；不可用的按钮形控件保持可聚焦并以 `aria-disabled` 表示](adr-web-write-feedback.md) |
 | [冒充期间由应用壳在应用栏之下显示可隐藏的横幅、外壳常驻 chrome 区里的身份指示并提供结束入口，身份变更按会话边界处理依赖身份的状态](adr-web-impersonation-shell.md) |
 | [宿主可为平台命名空间补整套语言，注册期全覆盖规则不变](adr-web-host-language-sets.md) |
