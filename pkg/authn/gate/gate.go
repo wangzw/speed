@@ -65,7 +65,6 @@ const ConfigNamespace = ModuleName
 // authentication did, and the gateway is the only part of it that writes here.
 const diagnosticPrefix = "authn: "
 
-// gateway is this module's product. It implements authn.Gate.
 type gateway struct {
 	settings settings
 	// csrf is the cross-origin check a request whose credential the browser
@@ -302,8 +301,6 @@ func prepare(reader config.Reader) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// newGateway builds the product. It takes up no module's product: everything
-// this gateway reaches is taken up in Init, where every instance exists.
 func newGateway(set settings) (*gateway, error) {
 	csrf, err := mount.CrossOrigin(set.mount.PublicURL, set.trustedOrigins)
 	if err != nil {
@@ -319,7 +316,6 @@ func newGateway(set settings) (*gateway, error) {
 	}, nil
 }
 
-// guards reports whether the endpoint is one this gateway guards.
 func (g *gateway) guards(endpoint string) bool {
 	_, found := slices.BinarySearch(g.guarded, endpoint)
 	return found
@@ -464,8 +460,6 @@ func (g *gateway) diagnose() {
 	g.warnUnprefixedCookies()
 }
 
-// hostCookiePrefix is the prefix a browser holds a cookie to being host-only,
-// Secure and unsettable by a sibling subdomain.
 const hostCookiePrefix = cookiename.HostPrefix
 
 // warnUnprefixedCookies writes one Warn line for each cookie name a backend takes
@@ -502,9 +496,6 @@ func (g *gateway) warnUnprefixedCookies() {
 	}
 }
 
-// reachable lists the guarded endpoints the scope guard covers, which are the
-// endpoints an impersonating identity is admitted to on any route. Without a
-// guard there are none.
 func (g *gateway) reachable() []string {
 	var out []string
 	if g.scope == nil {
@@ -518,8 +509,6 @@ func (g *gateway) reachable() []string {
 	return out
 }
 
-// describeReach renders the endpoints of reachable the way a diagnostic names
-// them.
 func describeReach(endpoints []string) string {
 	if len(endpoints) == 0 {
 		return "none: an impersonating identity is admitted to routes registered " +
@@ -528,7 +517,6 @@ func describeReach(endpoints []string) string {
 	return strings.Join(endpoints, ", ")
 }
 
-// describeAccounts renders an account prefix the way a diagnostic names it.
 func describeAccounts(prefix string) string {
 	if prefix == "" {
 		return "the library namespace"
@@ -567,9 +555,6 @@ func (g *gateway) takeLogger(reg *core.Registry) error {
 	return nil
 }
 
-// freeze runs in Start: it shuts the registration window, validates what was
-// registered and freezes the tables, checks where the capability's own routes
-// are mounted, then writes the tables out.
 func (g *gateway) freeze(reg *core.Registry) error {
 	if err := g.seal(g.router); err != nil {
 		return err
@@ -818,7 +803,6 @@ func (g *gateway) resolutionEndpoints(reg *core.Registry) ([]string, bool) {
 	return shape.Endpoints, true
 }
 
-// stop runs in Stop: no further backend call may join.
 func (g *gateway) stop() {
 	g.callsMu.Lock()
 	g.stopped = true
@@ -854,9 +838,6 @@ func (g *gateway) drain(ctx context.Context) error {
 	}
 }
 
-// tally reports the counters by bucket name, for the tests. Outside the process
-// they are read through the metric capability (takeMeter). The bucket names are
-// fixed by bucketName.
 func (g *gateway) tally() map[string]int64 {
 	out := make(map[string]int64, len(g.counts))
 	for i := range g.counts {

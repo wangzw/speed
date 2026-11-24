@@ -11,7 +11,6 @@ import (
 
 var defaultParams = ThrottleParams{FreeAttempts: 5, Window: 15 * time.Minute, MaxBackoff: 15 * time.Minute}
 
-// reserved takes one attempt of the key and fails the case when it is held back.
 func reserved(t *testing.T, th *Throttle, key string) *Attempt {
 	t.Helper()
 	w, a := th.Reserve(authn.ScopeIdentifier, key)
@@ -63,7 +62,6 @@ func TestAnAttemptSettledAsAPassGivesBackItsOwnReservationAndNothingElse(t *test
 	failN(t, th, "k", 5)
 
 	a := reserved(t, th, "k")
-	// The attempt in flight is the sixth failure for whoever arrives meanwhile.
 	if w, other := th.Reserve(authn.ScopeIdentifier, "k"); other != nil || w != 2*time.Second {
 		t.Fatalf("an attempt that arrives while the sixth is in flight gets %s and %v, want 2s and no attempt", w, other)
 	}
@@ -72,7 +70,6 @@ func TestAnAttemptSettledAsAPassGivesBackItsOwnReservationAndNothingElse(t *test
 	if d := wait(t, th, "k"); d != 0 {
 		t.Fatalf("the key waits %s after its attempt was given back, want none", d)
 	}
-	// The five failures stand: one more is the sixth and engages the back-off.
 	b := reserved(t, th, "k")
 	if !b.Fail() {
 		t.Error("the failure after a pass did not engage the back-off: the pass took more than its own attempt")

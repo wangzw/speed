@@ -12,7 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 )
 
-// tableName is the one table this module owns.
 const tableName = "authn_sessions"
 
 // rowColumns is the column list every read of a row selects, in the order of
@@ -20,7 +19,6 @@ const tableName = "authn_sessions"
 const rowColumns = "id, token_hash, account_id, kind, credential_id, impersonation_id, data, client_ip, " +
 	"user_agent, created_at, last_seen_at, idle_expires_at, expires_at, revoked_at, revoke_reason"
 
-// sessionRow is one row of the table. Every time in it is UTC.
 type sessionRow struct {
 	ID              string         `gorm:"column:id"`
 	TokenHash       sql.NullString `gorm:"column:token_hash"`
@@ -39,9 +37,6 @@ type sessionRow struct {
 	RevokeReason    sql.NullString `gorm:"column:revoke_reason"`
 }
 
-// live reports whether the row's own conditions hold at now: it is not revoked
-// and the period of its kind has not run out. The account's state is judged
-// separately.
 func (r sessionRow) live(now time.Time) bool {
 	if r.RevokedAt.Valid {
 		return false
@@ -58,8 +53,6 @@ func (r sessionRow) live(now time.Time) bool {
 	return false
 }
 
-// optionalTime is a time as a statement binds it: UTC, or NULL for the zero
-// time.
 func optionalTime(t time.Time) any {
 	if t.IsZero() {
 		return nil
@@ -67,7 +60,6 @@ func optionalTime(t time.Time) any {
 	return clock.UTC(t)
 }
 
-// optionalText is a string as a statement binds it: NULL for the empty one.
 func optionalText(s string) any {
 	if s == "" {
 		return nil
@@ -82,10 +74,8 @@ func unavailable(op string, err error) error {
 	return fmt.Errorf("%w: %s: %w", authn.ErrUnavailable, op, err)
 }
 
-// errNoRow is what a lookup that found no row reports.
 var errNoRow = errors.New("session: no such row")
 
-// exec runs one statement and returns the rows it changed.
 func (p *product) exec(ctx context.Context, op, statement string, args ...any) (int64, error) {
 	res := p.handle.WithContext(ctx).Exec(statement, args...)
 	if res.Error != nil {
@@ -94,8 +84,6 @@ func (p *product) exec(ctx context.Context, op, statement string, args ...any) (
 	return res.RowsAffected, nil
 }
 
-// returnedIDs runs one statement that returns the identifiers it selected or
-// changed, in a RETURNING clause — syntax SQLite and PostgreSQL share.
 func (p *product) returnedIDs(ctx context.Context, op, statement string, args ...any) ([]authn.SessionID, error) {
 	var rows []struct{ ID string }
 	if err := p.handle.WithContext(ctx).Raw(statement, args...).Scan(&rows).Error; err != nil {
@@ -108,7 +96,6 @@ func (p *product) returnedIDs(ctx context.Context, op, statement string, args ..
 	return out, nil
 }
 
-// rows runs one query and returns the rows it selected.
 func (p *product) rows(ctx context.Context, op, statement string, args ...any) ([]sessionRow, error) {
 	var out []sessionRow
 	if err := p.handle.WithContext(ctx).Raw(statement, args...).Scan(&out).Error; err != nil {
@@ -120,8 +107,6 @@ func (p *product) rows(ctx context.Context, op, statement string, args ...any) (
 	return out, nil
 }
 
-// normalize puts every time the row carries in UTC, whichever zone the driver
-// read it in.
 func (r *sessionRow) normalize() {
 	r.CreatedAt = clock.UTC(r.CreatedAt)
 	r.LastSeenAt = clock.UTC(r.LastSeenAt)
@@ -130,7 +115,6 @@ func (r *sessionRow) normalize() {
 	r.RevokedAt.Time = clock.UTC(r.RevokedAt.Time)
 }
 
-// one runs a query that selects at most one row.
 func (p *product) one(ctx context.Context, op, statement string, args ...any) (sessionRow, error) {
 	got, err := p.rows(ctx, op, statement, args...)
 	if err != nil {
@@ -142,12 +126,10 @@ func (p *product) one(ctx context.Context, op, statement string, args ...any) (s
 	return got[0], nil
 }
 
-// byID reads the row with the public identifier id.
 func (p *product) byID(ctx context.Context, id authn.SessionID) (sessionRow, error) {
 	return p.one(ctx, "reading a session", "SELECT "+rowColumns+" FROM "+tableName+" WHERE id = ?", string(id))
 }
 
-// byCredential reads the service row of a secret.
 func (p *product) byCredential(ctx context.Context, credentialID string) (sessionRow, error) {
 	return p.one(ctx, "reading a service session",
 		"SELECT "+rowColumns+" FROM "+tableName+" WHERE credential_id = ?", credentialID)
@@ -163,7 +145,6 @@ func (p *product) byStoreKey(ctx context.Context, key string, now time.Time) (se
 		key, clock.UTC(now), clock.UTC(now))
 }
 
-// insertParams are the values of a row that is inserted.
 func (r sessionRow) insertParams() []any {
 	return []any{
 		r.ID, nullable(r.TokenHash), r.AccountID, r.Kind, nullable(r.CredentialID), nullable(r.ImpersonationID),
@@ -189,7 +170,6 @@ func nullableTime(t sql.NullTime) any {
 const insertColumns = "(id, token_hash, account_id, kind, credential_id, impersonation_id, data, client_ip, " +
 	"user_agent, created_at, last_seen_at, idle_expires_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
-// insert writes a new row.
 func (p *product) insert(ctx context.Context, r sessionRow) error {
 	_, err := p.exec(ctx, "writing a session", "INSERT INTO "+tableName+" "+insertColumns, r.insertParams()...)
 	return err
@@ -221,8 +201,6 @@ func (p *product) revokeRow(ctx context.Context, id authn.SessionID, reason stri
 		clock.UTC(at), reason, string(id))
 }
 
-// liveCondition is the part of a statement that selects the browser and token
-// rows of an account that can still authenticate. now binds twice.
 const liveCondition = "account_id = ? AND kind IN ('browser', 'token') AND revoked_at IS NULL " +
 	"AND expires_at > ? AND (kind = 'token' OR idle_expires_at > ?)"
 
@@ -232,17 +210,12 @@ const liveCondition = "account_id = ? AND kind IN ('browser', 'token') AND revok
 // writing one audit row per revocation has to name it.
 const revocableCondition = "account_id = ? AND kind IN ('browser', 'token') AND revoked_at IS NULL"
 
-// liveRows lists the account's live browser and token rows, the least recently
-// used first.
 func (p *product) liveRows(ctx context.Context, account authn.AccountID, now time.Time, order string) ([]sessionRow, error) {
 	return p.rows(ctx, "listing sessions",
 		"SELECT "+rowColumns+" FROM "+tableName+" WHERE "+liveCondition+" ORDER BY "+order,
 		string(account), clock.UTC(now), clock.UTC(now))
 }
 
-// isMissingTable reports whether a failure is the database saying the table
-// does not exist. SQLite says "no such table: authn_sessions"; PostgreSQL says
-// `relation "authn_sessions" does not exist`.
 func isMissingTable(err error) bool {
 	if err == nil {
 		return false

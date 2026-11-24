@@ -7,7 +7,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// standing reads how long the failures that stand make the key wait.
 func standing(th *Throttle, key string) time.Duration {
 	return th.Standing(authn.ScopeIdentifier, key)
 }
@@ -81,8 +80,6 @@ func TestStandingReservesNothingAndRemembersNothing(t *testing.T) {
 	for range 100 {
 		standing(th, "k")
 	}
-	// Four stand and no reading admitted anything: the fifth is still free and
-	// the sixth is the one that engages.
 	if reserved(t, th, "k").Fail() {
 		t.Error("the fifth failure engaged the back-off: readings were counted as attempts")
 	}

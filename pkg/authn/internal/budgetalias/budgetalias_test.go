@@ -3,9 +3,8 @@ package budgetalias
 import "testing"
 
 // TestCanonical folds the writings of one mailbox into one budget form: the
-// "+suffix" of every domain is dropped, and the two Gmail domains additionally
-// fold their dots and become one domain. Everything else is left as it is, so an
-// address at another provider keeps its dots and its domain.
+// "+suffix" of every domain is dropped, and the two Gmail domains
+// additionally fold their dots and become one domain.
 func TestCanonical(t *testing.T) {
 	for _, c := range []struct {
 		name string

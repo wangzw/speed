@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// accessFor issues an access token bound to session with the given client
-// identifier, for the revocation cases.
 func (r *rig) accessFor(session authn.SessionID, clientID string) string {
 	r.t.Helper()
 	in := normalIssue(session)
@@ -22,8 +20,6 @@ func (r *rig) accessFor(session authn.SessionID, clientID string) string {
 	return access.Value
 }
 
-// closeStore closes the underlying database so the next query fails, which is
-// how a case reaches the refresh table being unreachable.
 func (r *rig) closeStore() {
 	r.t.Helper()
 	sqlDB, err := r.p.handle.DB()
@@ -35,6 +31,8 @@ func (r *rig) closeStore() {
 	}
 }
 
+// TestRevokeOfARefreshTokenRevokesItsSession checks that revoke of a refresh
+// token revokes its session.
 func TestRevokeOfARefreshTokenRevokesItsSession(t *testing.T) {
 	r := newRig(t)
 	id, refresh := r.issueRefresh()
@@ -46,6 +44,8 @@ func TestRevokeOfARefreshTokenRevokesItsSession(t *testing.T) {
 	}
 }
 
+// TestRevokeOfAnOrdinaryAccessTokenRevokesItsSession checks that revoke of an
+// ordinary access token revokes its session.
 func TestRevokeOfAnOrdinaryAccessTokenRevokesItsSession(t *testing.T) {
 	r := newRig(t)
 	id, _ := r.issueRefresh()
@@ -58,6 +58,8 @@ func TestRevokeOfAnOrdinaryAccessTokenRevokesItsSession(t *testing.T) {
 	}
 }
 
+// TestRevokeOfAServiceTokenIsANoOp checks that revoke of a service token is a
+// no op.
 func TestRevokeOfAServiceTokenIsANoOp(t *testing.T) {
 	r := newRig(t)
 	service := authn.SessionID("sess-service-1")
@@ -71,6 +73,8 @@ func TestRevokeOfAServiceTokenIsANoOp(t *testing.T) {
 	}
 }
 
+// TestRevokeOfAnImpersonationTokenEndsTheRecordOnly checks that revoke of an
+// impersonation token ends the record only.
 func TestRevokeOfAnImpersonationTokenEndsTheRecordOnly(t *testing.T) {
 	r := newRig(t)
 	admin := authn.SessionID("sess-admin-1")
@@ -94,6 +98,8 @@ func TestRevokeOfAnImpersonationTokenEndsTheRecordOnly(t *testing.T) {
 	}
 }
 
+// TestRevokeOfAnUnrecognisableTokenIsANoOpAndAlwaysSucceeds checks that
+// revoke of an unrecognisable token is a no op and always succeeds.
 func TestRevokeOfAnUnrecognisableTokenIsANoOpAndAlwaysSucceeds(t *testing.T) {
 	r := newRig(t)
 	for _, presented := range []string{
@@ -120,7 +126,6 @@ func TestRevokeDoesNotRevokeForATokenOfAnotherKey(t *testing.T) {
 	r := newRig(t)
 	id, _ := r.issueRefresh()
 	other := loadedSet(t, algES256)
-	// Sign a token bound to the same session with a different key.
 	payload, err := tokenClaims{
 		Issuer: issuer, Subject: string(account), Audience: []string{issuer},
 		Expiry: epoch.Add(600).Unix(), IssuedAt: epoch.Unix(), NotBefore: epoch.Unix(),

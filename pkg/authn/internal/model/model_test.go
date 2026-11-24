@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+// checks that ParseAccountID accepts a well-formed identifier and refuses the
+// rest.
 func TestParseAccountID(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -68,6 +70,8 @@ func TestAnInvalidAccountIDFailureSaysWhatItIs(t *testing.T) {
 	}
 }
 
+// checks that IsStatic reports whether an identifier belongs to the static
+// table.
 func TestAccountIDIsStatic(t *testing.T) {
 	for _, c := range []struct {
 		id   AccountID
@@ -89,12 +93,15 @@ func TestAccountIDIsStatic(t *testing.T) {
 	}
 }
 
+// checks that String returns the identifier's text.
 func TestAccountIDString(t *testing.T) {
 	if got := AccountID("static.bob").String(); got != "static.bob" {
 		t.Fatalf("String() = %q", got)
 	}
 }
 
+// checks that Valid accepts a method in the closed set and refuses one
+// outside it.
 func TestMethodValid(t *testing.T) {
 	for _, m := range []Method{
 		MethodPassword, MethodSMS, MethodTOTP, MethodWebAuthn, MethodOAuth,
@@ -125,6 +132,8 @@ func TestMethodTexts(t *testing.T) {
 	}
 }
 
+// TestZeroValuesReadAsTheLeastPermissive checks that zero values read as the
+// least permissive.
 func TestZeroValuesReadAsTheLeastPermissive(t *testing.T) {
 	var a Assurance
 	if a != AssuranceNone {
@@ -153,6 +162,7 @@ func TestZeroValuesReadAsTheLeastPermissive(t *testing.T) {
 	}
 }
 
+// TestPrincipalCloneSharesNothing checks that principal clone shares nothing.
 func TestPrincipalCloneSharesNothing(t *testing.T) {
 	orig := Principal{
 		Account:    "a",
@@ -182,12 +192,14 @@ func TestPrincipalCloneSharesNothing(t *testing.T) {
 	}
 }
 
+// TestCloneKeepsNilNil checks that clone keeps nil nil.
 func TestCloneKeepsNilNil(t *testing.T) {
 	if c := (Principal{}).Clone(); c.Methods != nil || c.Attributes != nil {
 		t.Error("a nil slice or map became non-nil in the clone")
 	}
 }
 
+// TestProofCloneSharesNothing checks that proof clone shares nothing.
 func TestProofCloneSharesNothing(t *testing.T) {
 	orig := Proof{
 		Identifier: &Identifier{ID: "i1", Value: "+8613800000000"},
@@ -221,6 +233,7 @@ func TestProofCloneSharesNothing(t *testing.T) {
 	}
 }
 
+// TestPassCloneSharesNothing checks that pass clone shares nothing.
 func TestPassCloneSharesNothing(t *testing.T) {
 	orig := Pass{Methods: []Method{MethodTOTP}, UserVerified: true}
 	c := orig.Clone()

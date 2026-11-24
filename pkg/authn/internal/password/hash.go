@@ -89,8 +89,6 @@ func (p Params) Hash(password string) (string, error) {
 	}
 }
 
-// encodePBKDF2 derives and renders a PBKDF2 entry over a given salt. Hash goes
-// through it, and so do the cases that need the salt fixed.
 func encodePBKDF2(iterations int, salt []byte, password string) (string, error) {
 	key, err := pbkdf2.Key(sha256.New, password, salt, iterations, pbkdf2KeyLen)
 	if err != nil {

@@ -76,9 +76,13 @@ const formMediaType = "application/x-www-form-urlencoded"
 type AuthnTokenResponse struct {
 	_ struct{} "description:\"The success body of `POST /auth/token`, per RFC 6749 §5.1. A `client_credentials` response carries no `refresh_token`.\""
 
-	AccessToken  string "json:\"access_token\" required:\"true\" description:\"The signed access token: a compact JWT, presented as a `Bearer` credential.\""
-	TokenType    string `json:"token_type" required:"true" description:"Always Bearer"`
-	ExpiresIn    int    `json:"expires_in" required:"true" description:"The access token's remaining lifetime in whole seconds"`
+	// AccessToken is the issued access token.
+	AccessToken string "json:\"access_token\" required:\"true\" description:\"The signed access token: a compact JWT, presented as a `Bearer` credential.\""
+	// TokenType is Bearer.
+	TokenType string `json:"token_type" required:"true" description:"Always Bearer"`
+	// ExpiresIn is the access token lifetime in seconds.
+	ExpiresIn int `json:"expires_in" required:"true" description:"The access token's remaining lifetime in whole seconds"`
+	// RefreshToken is the issued refresh token, when one is issued.
 	RefreshToken string `json:"refresh_token,omitempty" description:"Present only for the refresh_token grant"`
 }
 
@@ -88,6 +92,7 @@ type AuthnTokenResponse struct {
 type AuthnTokenJWKS struct {
 	_ struct{} "description:\"The public key set published on `GET /auth/jwks.json`, served as `application/jwk-set+json`. It holds the public half of every key loaded at startup and no private field.\""
 
+	// Keys are the published public keys.
 	Keys []AuthnTokenJWK `json:"keys" required:"true" description:"Every configured key's public JWK; the set is never empty."`
 }
 
@@ -97,15 +102,24 @@ type AuthnTokenJWKS struct {
 type AuthnTokenJWK struct {
 	_ struct{} "additionalProperties:\"true\" description:\"One public JSON Web Key. The published keys carry `kty`, `kid`, `alg` and `use`; the remaining members depend on the key type: an EC key carries `crv`, `x` and `y`, an RSA key carries `n` and `e`.\""
 
+	// Kty is the key type.
 	Kty string `json:"kty" required:"true" description:"The key type, for example EC or RSA"`
+	// Use is the key use, sig.
 	Use string `json:"use" description:"The key use, signature"`
+	// Kid is the key identifier, the RFC 7638 thumbprint.
 	Kid string `json:"kid" required:"true" description:"The RFC 7638 thumbprint of the public key"`
+	// Alg is the key algorithm.
 	Alg string `json:"alg" description:"The signature algorithm the key signs and verifies with"`
+	// Crv is the elliptic curve, for an EC key.
 	Crv string "json:\"crv\" description:\"The curve of an EC key; only P-256 is supported, so this is `P-256`.\""
-	X   string `json:"x" description:"The x coordinate of an EC public key, base64url-encoded without padding."`
-	Y   string `json:"y" description:"The y coordinate of an EC public key, base64url-encoded without padding."`
-	N   string `json:"n" description:"The modulus of an RSA public key, at least 2048 bits, base64url-encoded without padding."`
-	E   string `json:"e" description:"The public exponent of an RSA public key, base64url-encoded without padding."`
+	// X is the EC x coordinate.
+	X string `json:"x" description:"The x coordinate of an EC public key, base64url-encoded without padding."`
+	// Y is the EC y coordinate.
+	Y string `json:"y" description:"The y coordinate of an EC public key, base64url-encoded without padding."`
+	// N is the RSA modulus.
+	N string `json:"n" description:"The modulus of an RSA public key, at least 2048 bits, base64url-encoded without padding."`
+	// E is the RSA public exponent.
+	E string `json:"e" description:"The public exponent of an RSA public key, base64url-encoded without padding."`
 }
 
 // AuthnTokenOAuthError is the failure body of RFC 6749 §5.2, which the token
@@ -114,6 +128,7 @@ type AuthnTokenJWK struct {
 type AuthnTokenOAuthError struct {
 	_ struct{} "description:\"The failure body of RFC 6749 §5.2, which the token and revocation endpoints answer in place of the entry point's problem+json. Its only member is `error`; no `error_description` accompanies it.\""
 
+	// Error is the RFC 6749 error code.
 	Error string "json:\"error\" required:\"true\" enum:\"invalid_request,invalid_client,invalid_grant,unsupported_grant_type,temporarily_unavailable\" description:\"The machine-readable failure code, one of `invalid_request`, `invalid_client`, `invalid_grant`, `unsupported_grant_type` and `temporarily_unavailable`.\""
 }
 
@@ -154,8 +169,6 @@ var (
 	}
 )
 
-// challengeHeader declares the header every 401 of the token endpoint carries:
-// the Basic challenge of the client-authentication failure.
 var challengeHeader = speedhttp.Header{
 	Name:        "WWW-Authenticate",
 	Description: "The Basic challenge of the client-authentication failure.",
@@ -286,8 +299,6 @@ var revokeOperation = speedhttp.NewReplyOperation[revokeInput](
 	speedhttp.Public(),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	jwksOperation,
 	tokenOperation,

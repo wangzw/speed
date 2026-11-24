@@ -13,7 +13,6 @@ var ErrInvalidAccountID = errors.New("authn: account identifier is not well form
 // table. It is what AccountID.IsStatic tests for.
 const StaticPrefix = "static."
 
-// maxAccountIDLen is the longest an account identifier may be, in bytes.
 const maxAccountIDLen = 64
 
 // AccountID names one account. It is opaque, immutable and never reused, 1 to

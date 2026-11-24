@@ -18,9 +18,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// S1: the library's manager is built to the adaptation rules. The values are
-// written as literals: a test that compared them with the constants the code
-// reads would pass for whatever the code said.
+// S1: the library's manager is built to the adaptation rules.
 func TestTheManagerIsBuiltToTheAdaptationRules(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	sm := f.p.sm
@@ -45,7 +43,6 @@ func TestTheManagerIsBuiltToTheAdaptationRules(t *testing.T) {
 	if !sm.Cookie.HttpOnly || sm.Cookie.Path != "/" || !sm.Cookie.Secure || sm.Cookie.Domain != "" {
 		t.Errorf("cookie attributes are %+v", sm.Cookie)
 	}
-	// The lifetime is the upper bound of every domain, whatever the settings say.
 	for name, d := range map[string]time.Duration{
 		"absolute-timeout": absoluteTimeoutMax, "token-absolute-timeout": tokenAbsoluteMax, "sso-absolute-timeout": ssoAbsoluteMax,
 	} {
@@ -147,7 +144,7 @@ func TestTheIdlePeriodIsExtendedOncePerTouchInterval(t *testing.T) {
 			advance time.Duration
 			writes  int
 		}{
-			{5 * time.Second, 0}, // inside the interval of the creation
+			{5 * time.Second, 0},
 			{6 * time.Second, 1}, // 11s: the interval has run out
 			{1 * time.Second, 1}, // 12s
 			{3 * time.Second, 1}, // 15s
@@ -175,9 +172,8 @@ func TestTheIdlePeriodIsExtendedOncePerTouchInterval(t *testing.T) {
 }
 
 // S3: the absolute period written to the row is the one computed from the
-// setting and not the library's lifetime, which is the upper bound of the domain.
-// With the library's expiry the session would run for 8760 hours and Status,
-// which reads only the row, would not notice.
+// setting and not the library's lifetime, which is the upper bound of the
+// domain.
 func TestTheAbsolutePeriodIsTheSettingsAndNotTheLibrarys(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -296,8 +292,6 @@ func TestTheStoreFindsOnlyLiveBrowserRows(t *testing.T) {
 			}
 		}
 
-		// A token row and a service row do not answer to a token, even one that
-		// was written into their token_hash.
 		tokenRow := f.create(newToken1(alice))
 		sid, err := f.p.ForCredential(ctx, alice, "cred-1", nil)
 		noErr(t, err)
@@ -308,7 +302,6 @@ func TestTheStoreFindsOnlyLiveBrowserRows(t *testing.T) {
 			}
 		}
 
-		// Unlinking the token leaves the row, and its revocation state, alone.
 		noErr(t, store.DeleteCtx(ctx, storeKey(live.Token)))
 		row := f.row(live.ID)
 		if row.TokenHash.Valid || row.RevokedAt.Valid {
@@ -321,7 +314,6 @@ func TestTheStoreFindsOnlyLiveBrowserRows(t *testing.T) {
 	})
 }
 
-// recordingStore is a library store that remembers the keys it was given.
 type recordingStore struct {
 	mu   sync.Mutex
 	keys []string
@@ -342,9 +334,8 @@ func (s *recordingStore) Commit(key string, _ []byte, _ time.Time) error {
 	return nil
 }
 
-// S5 and the first external assumption: the store key this module computes is the
-// one the library computes for the same token. A library upgrade that changes the
-// hash fails here first.
+// S5 and the first external assumption: the store key this module computes is
+// the one the library computes for the same token.
 func TestTheStoreKeyIsTheOneTheLibraryComputes(t *testing.T) {
 	store := &recordingStore{}
 	sm := scs.New()
@@ -468,7 +459,6 @@ func TestARotationThatLosesTheRaceLeavesTheRowAlone(t *testing.T) {
 	})
 }
 
-// countingStore counts the reads the library makes of the store.
 type countingStore struct {
 	inner storeAdapter
 	finds atomic.Int64
@@ -519,14 +509,12 @@ func TestACacheHitReadsNothingAndAMissReadsOnce(t *testing.T) {
 			t.Errorf("%d reads of the table for three requests, want 1", got)
 		}
 
-		// Past check-ttl the entry has run out and the next request reads again.
 		f.clock.Advance(defaults.CheckTTL + time.Second)
 		f.verify(issued.Token)
 		if got := spy.finds.Load(); got != 2 {
 			t.Errorf("the library read the store %d times after the entry ran out, want 2", got)
 		}
 
-		// The adapter itself keeps nothing: two reads in a row are two statements.
 		f.sql.reset()
 		for range 2 {
 			_, ok, err := storeAdapter{p: f.p}.FindCtx(context.Background(), storeKey(issued.Token))

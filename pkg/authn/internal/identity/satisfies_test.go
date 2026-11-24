@@ -8,8 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/model"
 )
 
-// A freshness requirement is measured against an instant. A zero instant is a
-// clock that was never set, and it reads as no answer, not as a pass.
+// A freshness requirement is measured against an instant.
 func TestAFreshnessRequirementIsNotMetAtTheZeroInstant(t *testing.T) {
 	fresh := func(authTime time.Time) identity.Identity {
 		p := principal()
@@ -26,7 +25,6 @@ func TestAFreshnessRequirementIsNotMetAtTheZeroInstant(t *testing.T) {
 			t.Errorf("%s satisfies a MaxAge requirement at the zero instant", name)
 		}
 	}
-	// The same requirement with a real instant still tells fresh from stale.
 	if !fresh(t0).Satisfies(r, t0) {
 		t.Error("a current authentication does not satisfy a MaxAge requirement")
 	}

@@ -41,8 +41,6 @@ var reservedClaims = map[string]struct{}{
 	"typ":        {},
 }
 
-// actorClaim is the "act" claim of an impersonation token: the account that
-// acted, as RFC 8693 §4.1 writes it.
 type actorClaim struct {
 	Subject string `json:"sub"`
 }

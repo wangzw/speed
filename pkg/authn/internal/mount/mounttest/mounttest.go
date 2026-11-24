@@ -51,6 +51,7 @@ const (
 
 // Registration is one route a test's code mounted.
 type Registration struct {
+	// Kind is what the registration was made as.
 	Kind         Kind
 	Methods      []string // one method, or the methods of a Callback
 	Path         string   // Base() joined to the rel the caller passed
@@ -64,7 +65,6 @@ const (
 	DefaultEndpoint  = "main"
 )
 
-// defaultBases is the base path of each scope the mounter stands in for.
 func defaultBases() map[speedhttp.Scope]string {
 	return map[speedhttp.Scope]string{
 		"":                     mount.DefaultBasePath,
@@ -255,8 +255,6 @@ func (m *Mounter) register(kind Kind, methods []string, rel string, h gin.Handle
 	m.mu.Unlock()
 }
 
-// gateway is the stand-in for the gateway's part: the access level and the
-// identity a handler reads out of its context.
 func (m *Mounter) gateway(kind Kind, impersonable bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()

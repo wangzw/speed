@@ -41,16 +41,6 @@ func countsIn(rm metricdata.ResourceMetrics) (map[string]int64, string, bool) {
 
 // TestTheConclusionCountsReachTheMetricCapability holds the one surface the
 // buckets are read from.
-//
-// The buckets are fixed so that a dashboard and an alert can be written against
-// them, and a count held in the process with no reader outside it is one no
-// dashboard ever sees: the outage bucket an operator is told to alert on would
-// be a number nobody can alert on. Where the assembly carries the metric
-// capability, each bucket is reported through it under the outcome it names,
-// the empty ones included, so a series exists before its first conclusion. The
-// anonymous bucket is the fifth: a request with no credential that passed on an
-// optional route is a conclusion of its own, and counted nowhere else it would
-// vanish from the set that is meant to be exhaustive.
 func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 	collected := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(collected))
@@ -98,7 +88,6 @@ func TestTheConclusionCountsReachTheMetricCapability(t *testing.T) {
 		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/orders"))
 		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/catalog"))
 		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/catalog"))
-		// An exempt route is no conclusion and is counted nowhere.
 		engine.ServeHTTP(httptest.NewRecorder(), request("GET", "/status"))
 
 		var rm metricdata.ResourceMetrics

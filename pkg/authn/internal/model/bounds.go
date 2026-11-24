@@ -134,8 +134,6 @@ func CheckIDPAttributes(m map[string]string) error {
 	return nil
 }
 
-// plainText reports whether v is valid UTF-8 without a control character and at
-// most limit bytes long.
 func plainText(v string, limit int) bool {
 	return len(v) <= limit && utf8.ValidString(v) && strings.IndexFunc(v, unicode.IsControl) < 0
 }

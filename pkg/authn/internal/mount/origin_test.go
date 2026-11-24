@@ -150,8 +150,6 @@ func TestTrustedOriginsRefusesAPublicURLThatHasNoOrigin(t *testing.T) {
 	}
 }
 
-// crossSite is a state-changing request a browser sent from another site, with
-// the headers it would have put on it.
 func crossSite(origin string) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, "https://app.example.com/api/v1/auth/x", nil)
 	r.Header.Set("Sec-Fetch-Site", "cross-site")
@@ -159,9 +157,8 @@ func crossSite(origin string) *http.Request {
 	return r
 }
 
-// TestCrossOriginTrustsThePublicOriginAndTheListedOnesAndNoOther holds the check
-// that is built: each origin of the set passes, any other does not. The refusals
-// are what keep an implementation that trusted everything from passing.
+// TestCrossOriginTrustsThePublicOriginAndTheListedOnesAndNoOther holds the
+// check that is built: each origin of the set passes, any other does not.
 func TestCrossOriginTrustsThePublicOriginAndTheListedOnesAndNoOther(t *testing.T) {
 	check, err := CrossOrigin("https://app.example.com", []string{"https://sibling.example.com"})
 	if err != nil {

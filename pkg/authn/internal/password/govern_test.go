@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// parsed writes an entry with p and reads it back.
 func parsed(t *testing.T, p Params, plaintext string) Entry {
 	t.Helper()
 	encoded, err := p.Hash(plaintext)
@@ -186,8 +185,6 @@ func TestACallersOwnContextIsNotTheWidthBeingFull(t *testing.T) {
 		t.Errorf("a cancelled context was reported as busy (%v) or as a match (%v)", err, ok)
 	}
 
-	// While waiting for a slot that is held, the caller's cancellation is also
-	// reported as the caller's.
 	release, err := g.acquire(context.Background(), 0, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -204,9 +201,9 @@ func TestACallersOwnContextIsNotTheWidthBeingFull(t *testing.T) {
 	}
 }
 
-// TestNoMoreThanTheWidthRunsAtOnce holds the bound under load: with a width of
-// two and many callers, the derivations inside the Governor never exceed two.
-// The count is taken from inside the section the Governor protects.
+// TestNoMoreThanTheWidthRunsAtOnce holds the bound under load: with a width
+// of two and many callers, the derivations inside the Governor never exceed
+// two.
 func TestNoMoreThanTheWidthRunsAtOnce(t *testing.T) {
 	const width, callers = 2, 24
 	g := NewGovernor(width, 1<<20)
@@ -317,9 +314,6 @@ func TestAMemoryShareThatIsNotFreedWithinTheWaitIsBusyAndGivesTheSlotBack(t *tes
 	if !errors.Is(err, authn.ErrBusy) || errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("a derivation that found the memory taken gave %v, want one wrapping %v alone", err, authn.ErrBusy)
 	}
-	// Of the two slots one is held by the share taken above and the other is the
-	// one the refused derivation passed through: a derivation that needs no
-	// memory finds it free.
 	if ok, err := g.Verify(context.Background(), parsed(t, cheapPBKDF2, "secret"), "secret", 0); err != nil || !ok {
 		t.Errorf("after a refused wait for memory the slot is still held: %v, %v", ok, err)
 	}
@@ -351,7 +345,6 @@ func TestAShareIsGivenBackWhenTheCallerLeavesWhileWaitingForIt(t *testing.T) {
 		t.Fatalf("a caller that left gave %v, want one wrapping %v", got, context.Canceled)
 	}
 	release()
-	// Everything is free: the whole budget and both slots can be taken at once.
 	first, err := g.acquire(context.Background(), 0, 0)
 	if err != nil {
 		t.Errorf("a slot is still held after the caller left: %v", err)

@@ -35,7 +35,6 @@ func serve(h gin.HandlerFunc, method string, hdr map[string]string, body io.Read
 	return w
 }
 
-// problemBodyOf decodes a problem details object into its members.
 func problemBodyOf(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	m := problemBodyOfRaw(w.Body.Bytes())
@@ -54,9 +53,6 @@ func problemBodyOfRaw(raw []byte) map[string]any {
 	return m
 }
 
-// codeTable is the design's table of problem codes with the status each belongs
-// to, written out so that the table in the code is compared with it and not with
-// itself.
 var codeTable = []struct {
 	code   string
 	status int
@@ -131,7 +127,6 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 			t.Errorf("Status(%q) = %d, %v, want 0, false", code, s, ok)
 		}
 	}
-	// The constants are the texts.
 	consts := []string{
 		CodeBadRequest, CodeUsernameReserved, CodeUsernameInvalid, CodeUnsupportedRegion,
 		CodeInvitationTargetInvalid, CodeInvitationExpiryTooLong, CodeInvitationRoleUnknown, CodeLoginFailed,
@@ -359,8 +354,6 @@ func TestUnavailableNeverSaysWhichDependencyFailed(t *testing.T) {
 	}
 }
 
-// identityOf builds the identity a gateway would stamp, with the challenge a
-// carrier gives it.
 func identityOf(t *testing.T, opts ...authntest.Option) authn.Identity {
 	t.Helper()
 	id, ok := authn.FromContext(authntest.Context(t, context.Background(), opts...))
@@ -444,6 +437,7 @@ func TestStepUpRequiredMarksItsAnswer(t *testing.T) {
 	}
 }
 
+// checks that Unauthorized does not mark its answer as a step-up.
 func TestUnauthorizedDoesNotMarkItsAnswer(t *testing.T) {
 	for _, code := range []string{"", CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired} {
 		var marked bool
@@ -476,9 +470,8 @@ func TestStepUpRequiredDoesNotTrustTheSchemeToBeAHeaderValue(t *testing.T) {
 // TestContactRequiredCodeMatchesTheRootConstant holds the two writers of the
 // contact-required type to one value: this capability's handlers build it as
 // typePrefix + CodeContactRequired, and the managing faces of the other
-// capabilities and a host's own surfaces write authn.ContactRequiredProblemType.
-// A change to either side that the other does not follow fails here rather than
-// splitting the type across surfaces.
+// capabilities and a host's own surfaces write
+// authn.ContactRequiredProblemType.
 func TestContactRequiredCodeMatchesTheRootConstant(t *testing.T) {
 	if got := typePrefix + CodeContactRequired; got != authn.ContactRequiredProblemType {
 		t.Errorf("typePrefix+CodeContactRequired = %q, but authn.ContactRequiredProblemType = %q",

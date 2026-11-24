@@ -41,14 +41,10 @@ const (
 	// listening is the record the entry point writes once a listener's address
 	// is bound, the only place outside the process that says which port the
 	// operating system picked for a listener configured on port 0.
-	listening = "an HTTP listener is listening"
-	// requestBound bounds each request a case sends, so one that would hang
-	// fails the case.
+	listening    = "an HTTP listener is listening"
 	requestBound = 5 * time.Second
 )
 
-// memory is a log handler that keeps what it is handed, so that a case can read
-// back where the entry point bound itself.
 type memory struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -64,7 +60,6 @@ func (m *memory) Handle(_ context.Context, r slog.Record) error {
 func (m *memory) WithAttrs([]slog.Attr) slog.Handler { return m }
 func (m *memory) WithGroup(string) slog.Handler      { return m }
 
-// addressOf reads the address an endpoint was bound to out of the records.
 func (m *memory) addressOf(endpoint string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -89,27 +84,22 @@ func (m *memory) addressOf(endpoint string) string {
 	return ""
 }
 
-// logging delivers the logging capability over the memory handler.
 type logging struct{ logger *slog.Logger }
 
 func (l logging) Named(string) *slog.Logger { return l.logger }
 func (logging) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes the registrations of redaction rules and keeps none: what these
-// cases read is the responses, not the log output.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// host is what a case holds while the assembly serves.
 type host struct {
 	t         *testing.T
 	ctx       context.Context
@@ -117,7 +107,6 @@ type host struct {
 	client    *nethttp.Client
 }
 
-// send issues one request to a bound endpoint.
 func (h *host) send(endpoint, method, path string, edits ...func(*nethttp.Request)) reply {
 	h.t.Helper()
 	req, err := nethttp.NewRequestWithContext(h.ctx, method, "http://"+h.addresses[endpoint]+path, nil)
@@ -141,7 +130,6 @@ func (h *host) send(endpoint, method, path string, edits ...func(*nethttp.Reques
 	return reply{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// as returns an edit that puts a Basic credential on a request.
 func as(user, password string) func(*nethttp.Request) {
 	return func(r *nethttp.Request) { r.SetBasicAuth(user, password) }
 }
@@ -321,10 +309,9 @@ func TestAPassIsStampedWithTheStaticAccountAndTheBackendThatVerifiedIt(t *testin
 	})
 }
 
-// TestAWrongPasswordIsRefusedWithTheBasicChallenge holds the refusals a client
-// can cause with a credential: a wrong password, a name that is not in the table
-// and a credential that is not a Basic pair at all. Each is a 401 that says what to
-// send, and none says which of the three it was.
+// TestAWrongPasswordIsRefusedWithTheBasicChallenge holds the refusals a
+// client can cause with a credential: a wrong password, a name that is not in
+// the table and a credential that is not a Basic pair at all.
 func TestAWrongPasswordIsRefusedWithTheBasicChallenge(t *testing.T) {
 	serve(t, ``, func(h *host) {
 		wrong := h.send("public", "GET", "/orders", as("bob", "not-bob-password"))
@@ -364,15 +351,8 @@ func TestEntriesInEveryFormTheTableAcceptsAuthenticate(t *testing.T) {
 	})
 }
 
-// TestFailuresPastTheFreeAttemptsLockTheNameEvenAgainstItsRightPassword holds the
-// back-off from the outside. A name that has used up its free attempts is refused
-// with its right password, which is how a caller can tell the lock from a wrong
-// password only by the fact that it does not lift; and the lock is the name's own,
-// so another name is not held back with it.
-//
-// The free attempts are five, so five failures leave the name open, and the sixth
-// starts the back-off. Both sides of that edge are held: an implementation that
-// locked a failure early or late would pass one of them and fail the other.
+// TestFailuresPastTheFreeAttemptsLockTheNameEvenAgainstItsRightPassword holds
+// the back-off from the outside.
 func TestFailuresPastTheFreeAttemptsLockTheNameEvenAgainstItsRightPassword(t *testing.T) {
 	serve(t, ``, func(h *host) {
 		// The control: the right password admits the name before anything has
@@ -402,12 +382,11 @@ func TestFailuresPastTheFreeAttemptsLockTheNameEvenAgainstItsRightPassword(t *te
 	})
 }
 
-// TestParallelRequestsWithTheRightPasswordAreNeverRefusedByTheirOwnTraffic holds
-// the property a browser or a script that opens many connections depends on:
-// once a password has been checked, any number of requests that present it at
-// once, on keep-alive connections of their own, are all admitted. No failure was
-// ever recorded for the name, so a refusal here could only come from the
-// requests holding something against one another.
+// TestParallelRequestsWithTheRightPasswordAreNeverRefusedByTheirOwnTraffic
+// holds the property a browser or a script that opens many connections
+// depends on: once a password has been checked, any number of requests that
+// present it at once, on keep-alive connections of their own, are all
+// admitted.
 func TestParallelRequestsWithTheRightPasswordAreNeverRefusedByTheirOwnTraffic(t *testing.T) {
 	const workers, requests = 24, 150
 	serve(t, ``, func(h *host) {

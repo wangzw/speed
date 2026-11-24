@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// serviceSession puts a live service session in the store and points the
-// password checker at it, so a case reaches the issuing half of the grant.
 func (r *rig) serviceSession() authn.SessionID {
 	id := authn.SessionID("sess-service-1")
 	r.sessions.put(id, authn.SessionStatus{Active: true, Account: account, Kind: authn.SessionService})
@@ -18,6 +16,8 @@ func (r *rig) serviceSession() authn.SessionID {
 	return id
 }
 
+// TestClientCredentialsThrottleKeyIsThePresentedClientID checks that client
+// credentials throttle key is the presented client id.
 func TestClientCredentialsThrottleKeyIsThePresentedClientID(t *testing.T) {
 	r := newRig(t)
 	r.throttle.retry = 30 * time.Second
@@ -39,6 +39,8 @@ func TestClientCredentialsThrottleKeyIsThePresentedClientID(t *testing.T) {
 	}
 }
 
+// TestAnUnknownClientAndAWrongSecretAnswerAlike checks that an unknown client
+// and a wrong secret answer alike.
 func TestAnUnknownClientAndAWrongSecretAnswerAlike(t *testing.T) {
 	r := newRig(t)
 	r.passwords.verify = func(string, string) (authn.AccountID, string, time.Time, error) {
@@ -64,6 +66,8 @@ func TestAnUnknownClientAndAWrongSecretAnswerAlike(t *testing.T) {
 	}
 }
 
+// TestClientCredentialsIssuesOnlyAnAccessToken checks that client credentials
+// issues only an access token.
 func TestClientCredentialsIssuesOnlyAnAccessToken(t *testing.T) {
 	r := newRig(t)
 	session := r.serviceSession()

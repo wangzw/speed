@@ -46,7 +46,6 @@ var configDefaults = moduleConfig{
 	}},
 }
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// Endpoints names the listening endpoints this gateway guards, by the
 	// entry point's own names. The reserved name "*" stands for every declared
@@ -81,7 +80,6 @@ type moduleConfig struct {
 	TrustedOrigins []string `config:"trusted-origins"`
 }
 
-// mountConfig is the mount.* section of the configuration.
 type mountConfig struct {
 	// Endpoints is the endpoint each scope's routes are mounted on. The
 	// capability's routes span policy domains, and the endpoint decides which
@@ -98,9 +96,6 @@ type mountConfig struct {
 	PublicURL string `config:"public-url"`
 }
 
-// endpoints is the endpoint of each scope the capability's routes are published
-// under. The default scope is the ordinary surface; the two management scopes
-// are published beside it.
 type endpoints struct {
 	// Default is the endpoint the ordinary routes are mounted on. Empty means
 	// the one endpoint the entry point declares.
@@ -117,15 +112,12 @@ type endpoints struct {
 	System string `config:"system"`
 }
 
-// bases is the base path of the ordinary surface and of each management scope
-// the capability's routes are published under, written as bare literal paths.
 type bases struct {
 	Default string `config:"default"`
 	Tenants string `config:"tenants"`
 	System  string `config:"system"`
 }
 
-// settings is the configuration this module actually runs on.
 type settings struct {
 	// endpoints is the list as written, which may be the single reserved name.
 	endpoints      []string
@@ -135,13 +127,10 @@ type settings struct {
 	trustedOrigins []string
 }
 
-// allGuarded reports whether the list is the reserved name alone.
 func (s settings) allGuarded() bool {
 	return len(s.endpoints) == 1 && s.endpoints[0] == allEndpoints
 }
 
-// resolve turns decoded configuration into what the module runs on, refusing
-// what cannot be run on.
 func (c moduleConfig) resolve() (settings, error) {
 	s := settings{
 		endpoints:      c.Endpoints,
@@ -190,8 +179,6 @@ func (c moduleConfig) resolve() (settings, error) {
 	return s, nil
 }
 
-// checkEndpoints holds the endpoint list to its rules: it names something, the
-// reserved name stands alone, and no name is empty or written twice.
 func checkEndpoints(names []string) error {
 	if len(names) == 0 {
 		return fmt.Errorf("%w: %s.%s is an empty list, which guards no endpoint and would serve "+
@@ -225,9 +212,6 @@ func checkEndpoints(names []string) error {
 	return nil
 }
 
-// checkBasePath holds a mount path to the form gin keeps a path in: it begins
-// with a slash, does not end with one, carries no wildcard or parameter and is
-// already what path.Clean would make of it.
 func checkBasePath(item, p string) error {
 	switch {
 	case !strings.HasPrefix(p, "/"):
@@ -286,8 +270,6 @@ func checkPublicURL(raw string) error {
 	return nil
 }
 
-// withoutUser renders a parsed URL with its user information, query and fragment
-// removed. Those are the parts of a URL a secret rides in.
 func withoutUser(u *url.URL) string {
 	bare := *u
 	bare.User = nil
@@ -298,7 +280,6 @@ func withoutUser(u *url.URL) string {
 	return bare.String()
 }
 
-// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -353,8 +334,6 @@ func schema() config.Schema {
 	}
 }
 
-// readSettings decodes this module's section and validates it. Prepare and New
-// both go through it, so the two see one configuration.
 func readSettings(reader config.Reader) (settings, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

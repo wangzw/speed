@@ -31,6 +31,7 @@ func impersonation() model.Principal {
 	return p
 }
 
+// TestKeyIsTheActor checks that key is the actor.
 func TestKeyIsTheActor(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -65,12 +66,15 @@ func TestKeyIsTheActor(t *testing.T) {
 	}
 }
 
+// checks that the zero identity's key is empty rather than a slash.
 func TestTheZeroIdentityKeyIsEmptyNotASlash(t *testing.T) {
 	if got := (identity.Identity{}).Key(); got != "" {
 		t.Fatalf("zero identity Key() = %q, want the empty string", got)
 	}
 }
 
+// checks that the impersonation scope is reported, and empty when there is
+// none.
 func TestScope(t *testing.T) {
 	if s, ok := identity.New(principal(), "b", "c").Scope(); ok || s != "" {
 		t.Errorf("Scope() = %q, %v on an identity that is not impersonating; want empty, false", s, ok)
@@ -83,6 +87,7 @@ func TestScope(t *testing.T) {
 	}
 }
 
+// TestFieldsAreTheOnesStamped checks that fields are the ones stamped.
 func TestFieldsAreTheOnesStamped(t *testing.T) {
 	p := principal()
 	p.IDPAssured = true
@@ -106,10 +111,7 @@ func TestFieldsAreTheOnesStamped(t *testing.T) {
 	}
 }
 
-// Backend and challenge are the gateway's stamps. A principal has no field
-// for either, so nothing a backend hands over can reach them; this holds the
-// other direction, that the identity reads the arguments and not something
-// else.
+// Backend and challenge are the gateway's stamps.
 func TestBackendAndChallengeComeFromTheArguments(t *testing.T) {
 	a := identity.New(principal(), "one", "Bearer")
 	b := identity.New(principal(), "two", "Basic")
@@ -118,6 +120,8 @@ func TestBackendAndChallengeComeFromTheArguments(t *testing.T) {
 	}
 }
 
+// TestIdentityIsACopyOfThePrincipal checks that identity is a copy of the
+// principal.
 func TestIdentityIsACopyOfThePrincipal(t *testing.T) {
 	p := principal()
 	id := identity.New(p, "b", "c")
@@ -141,6 +145,7 @@ func TestIdentityIsACopyOfThePrincipal(t *testing.T) {
 	}
 }
 
+// TestReadersReturnCopies checks that readers return copies.
 func TestReadersReturnCopies(t *testing.T) {
 	id := identity.New(principal(), "b", "c")
 
@@ -161,6 +166,7 @@ func TestReadersReturnCopies(t *testing.T) {
 	}
 }
 
+// TestEmptyReadersAreSafeToWrite checks that empty readers are safe to write.
 func TestEmptyReadersAreSafeToWrite(t *testing.T) {
 	// A caller may write into what Attributes returns even when there are
 	// none: a nil map would panic there.
@@ -174,10 +180,7 @@ func TestEmptyReadersAreSafeToWrite(t *testing.T) {
 	}
 }
 
-// TestCopiesHoldUnderConcurrentUse runs under -race. Readers take copies and
-// scribble on them while other goroutines read the identity, and the backend
-// keeps changing the principal it handed over; none of it may reach a shared
-// location.
+// TestCopiesHoldUnderConcurrentUse runs under -race.
 func TestCopiesHoldUnderConcurrentUse(t *testing.T) {
 	p := principal()
 	id := identity.New(p, "b", "c")
@@ -214,6 +217,7 @@ func TestCopiesHoldUnderConcurrentUse(t *testing.T) {
 	wg.Wait()
 }
 
+// checks that Identity.Satisfies reads the requirement it is given.
 func TestSatisfies(t *testing.T) {
 	const hour = time.Hour
 	at := func(a model.Assurance, auth time.Time, fromIDP bool) identity.Identity {
@@ -265,6 +269,7 @@ func TestSatisfies(t *testing.T) {
 	}
 }
 
+// checks that With and FromContext round-trip an identity.
 func TestWithAndFrom(t *testing.T) {
 	id := identity.New(principal(), "b", "c")
 	ctx := identity.With(context.Background(), id)
@@ -274,8 +279,6 @@ func TestWithAndFrom(t *testing.T) {
 		t.Fatalf("From(With(id)) = %+v, %v", got, ok)
 	}
 
-	// An identity put into a child context is read there, and the parent is
-	// unchanged.
 	other := identity.New(impersonation(), "b2", "c")
 	child := identity.With(ctx, other)
 	if got, _ := identity.From(child); got.Actor() != "admin-9" {
@@ -286,9 +289,9 @@ func TestWithAndFrom(t *testing.T) {
 	}
 }
 
-// otherKey is a context key of this test's own.
 type otherKey struct{}
 
+// TestFromHasNoFallback checks that from has no fallback.
 func TestFromHasNoFallback(t *testing.T) {
 	for name, ctx := range map[string]context.Context{
 		"background":       context.Background(),
@@ -301,11 +304,11 @@ func TestFromHasNoFallback(t *testing.T) {
 	}
 }
 
+// checks that WithAccess and AccessFromContext round-trip the access level.
 func TestWithAccessAndAccessFrom(t *testing.T) {
 	if got := identity.AccessFrom(context.Background()); got != model.AccessUnknown {
 		t.Errorf("an untouched context reads %v, want AccessUnknown", got)
 	}
-	// An identity in the context does not imply an access level.
 	withID := identity.With(context.Background(), identity.New(principal(), "b", "c"))
 	if got := identity.AccessFrom(withID); got != model.AccessUnknown {
 		t.Errorf("a context with only an identity reads %v, want AccessUnknown", got)

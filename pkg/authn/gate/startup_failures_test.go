@@ -22,6 +22,8 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
+// TestConfiguredEndpointsAreGuardedWhateverOrderTheyAreWritten checks that
+// configured endpoints are guarded whatever order they are written.
 func TestConfiguredEndpointsAreGuardedWhateverOrderTheyAreWritten(t *testing.T) {
 	g, err := newGateway(settings{endpoints: []string{"web", "api", "ops"}, budget: time.Second, inFlight: 1})
 	if err != nil {
@@ -87,6 +89,8 @@ func (r descendingRouter) Endpoints() []string {
 	return out
 }
 
+// checks that an admission conflict does not depend on the order the backends
+// were listed.
 func TestAdmissionConflictDoesNotDependOnTheOrderBackendsWereListed(t *testing.T) {
 	alpha, beta := schemeBackend("alpha", "x"), schemeBackend("beta", "x")
 	gamma, delta := cookieBackend("gamma", "c"), cookieBackend("delta", "c")
@@ -106,6 +110,8 @@ func TestAdmissionConflictDoesNotDependOnTheOrderBackendsWereListed(t *testing.T
 	}
 }
 
+// checks that every configuration bound accepts its edge and refuses just
+// past it.
 func TestConfigurationBoundaries(t *testing.T) {
 	base := func() moduleConfig {
 		c := configDefaults
@@ -161,6 +167,8 @@ func TestConfigBoundaries(t *testing.T) {
 	}
 }
 
+// TestAmbiguousNeighboursStopTheStartup checks that ambiguous neighbours stop
+// the startup.
 func TestAmbiguousNeighboursStopTheStartup(t *testing.T) {
 	providerA, providerB := sdkmetric.NewMeterProvider(), sdkmetric.NewMeterProvider()
 	for name, pair := range map[string][2]supply{
@@ -196,6 +204,8 @@ type failingLookupRouter struct{ err error }
 func (r failingLookupRouter) Endpoint(string) (speedhttp.Endpoint, error) { return nil, r.err }
 func (r failingLookupRouter) Endpoints() []string                         { return []string{"public"} }
 
+// TestALookupFailureIsNotReadAsAnUnknownEndpoint checks that a lookup failure
+// is not read as an unknown endpoint.
 func TestALookupFailureIsNotReadAsAnUnknownEndpoint(t *testing.T) {
 	boom := errors.New("router exploded")
 
@@ -215,6 +225,8 @@ func TestALookupFailureIsNotReadAsAnUnknownEndpoint(t *testing.T) {
 	}
 }
 
+// TestPrepareAndNewReportAMissingConfigurationReader checks that prepare and
+// new report a missing configuration reader.
 func TestPrepareAndNewReportAMissingConfigurationReader(t *testing.T) {
 	m := Module()
 	_, err := m.Prepare(t.Context(), core.New())
@@ -227,6 +239,8 @@ func TestPrepareAndNewReportAMissingConfigurationReader(t *testing.T) {
 	}
 }
 
+// TestAConfigurationThatDoesNotDecodeStopsTheStartup checks that a
+// configuration that does not decode stops the startup.
 func TestAConfigurationThatDoesNotDecodeStopsTheStartup(t *testing.T) {
 	for key, body := range map[string]string{
 		"authn.gate.call-budget": `{"authn":{"gate":{"call-budget":"soon"}}}`,
@@ -247,6 +261,7 @@ func TestAConfigurationThatDoesNotDecodeStopsTheStartup(t *testing.T) {
 	}
 }
 
+// checks that New reports a configuration it cannot run on.
 func TestNewReportsAConfigurationItCannotRunOn(t *testing.T) {
 	m := Module()
 	reader := authntest.ConfigReaderAll(t, `{"authn":{"gate":{"call-budget":"0s"}}}`, m)
@@ -319,6 +334,8 @@ type refusingProvider struct {
 
 func (p refusingProvider) Meter(string, ...metric.MeterOption) metric.Meter { return p.meter }
 
+// TestAMeterThatRefusesTheCounterStopsTheStartup checks that a meter that
+// refuses the counter stops the startup.
 func TestAMeterThatRefusesTheCounterStopsTheStartup(t *testing.T) {
 	for name, meter := range map[string]refusingMeter{
 		"the counter":  {counter: true},

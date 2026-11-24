@@ -62,10 +62,7 @@ const (
 
 	// legacyKeyLen is the length of the key a legacy entry holds. The legacy
 	// form never wrote another.
-	legacyKeyLen = 32
-	// legacyMinSalt is the shortest salt a legacy entry may carry. The legacy
-	// reader took any non-empty one, and an entry already written is read as it
-	// was written.
+	legacyKeyLen  = 32
 	legacyMinSalt = 1
 
 	pbkdf2SaltLen = 16
@@ -96,10 +93,13 @@ var b64 = base64.RawStdEncoding.Strict()
 // Params are the cost parameters an entry was written with, or one would be
 // written with.
 type Params struct {
+	// Algorithm is the derivation algorithm.
 	Algorithm Algorithm
 	// MemoryKiB, Iterations and Parallelism are the Argon2id parameters.
-	MemoryKiB   uint32
-	Iterations  uint32
+	MemoryKiB uint32
+	// Iterations is the Argon2id iteration count.
+	Iterations uint32
+	// Parallelism is the Argon2id lane count.
 	Parallelism uint8
 	// PBKDF2Iterations is the iteration count of PBKDF2-SHA256.
 	PBKDF2Iterations int

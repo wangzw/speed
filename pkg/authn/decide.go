@@ -45,12 +45,18 @@ const (
 // account it is on where there is one, and Params carries a few more parameters
 // such as reason or ttl, never a credential.
 type Decision struct {
-	Action        Action
-	Actor         Identity
-	Tenant        string
-	Target        string
+	// Action is the action being asked about.
+	Action Action
+	// Actor is the account whose hands are on the action.
+	Actor Identity
+	// Tenant is the tenant the action is about; empty means platform scope.
+	Tenant string
+	// Target names the object the action is on.
+	Target string
+	// TargetAccount is the account the action is on, where it is one.
 	TargetAccount string
-	Params        map[string]string
+	// Params carries the action's extra parameters such as reason or ttl; never a credential.
+	Params map[string]string
 }
 
 // Decider answers whether an actor may do one thing within this capability. The

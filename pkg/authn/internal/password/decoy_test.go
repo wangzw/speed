@@ -68,9 +68,8 @@ func TestADecoyIsRefusedForParametersNoReaderAccepts(t *testing.T) {
 }
 
 // TestTheDecoyIsMadeFromAFreshDrawEachTime holds where the decoy's password
-// comes from: one draw for each decoy that is made, none for one that is served
-// again, and never the same text twice. A decoy made from a fixed text would be
-// an entry some password does match.
+// comes from: one draw for each decoy that is made, none for one that is
+// served again, and never the same text twice.
 func TestTheDecoyIsMadeFromAFreshDrawEachTime(t *testing.T) {
 	var drawn []string
 	d := Decoy{text: func() string {
@@ -82,8 +81,6 @@ func TestTheDecoyIsMadeFromAFreshDrawEachTime(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Three makes: the first ask, the change to PBKDF2 and the change back; the
-	// repeated ask in between is served from what was made.
 	if len(drawn) != 3 {
 		t.Fatalf("the decoy drew %d times, want 3", len(drawn))
 	}

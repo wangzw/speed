@@ -48,8 +48,6 @@ type rowSink struct {
 	row *sessionRow
 }
 
-// client is the client information a Commit writes into the row's columns, put
-// in the context of that one call.
 type client struct {
 	ip, userAgent string
 }

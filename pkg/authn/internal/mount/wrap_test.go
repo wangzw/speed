@@ -42,7 +42,6 @@ func newWrapped(t *testing.T, trusted ...string) *wrapped {
 	return w
 }
 
-// add registers a handler that counts its calls and answers 200.
 func (w *wrapped) add(method, path string) {
 	w.engine.Handle(method, path, Wrap(w.csrf, "main", func(c *gin.Context) {
 		w.calls[method+" "+path]++
@@ -60,10 +59,9 @@ func (w *wrapped) do(method, path string, hdr map[string]string) *httptest.Respo
 	return rec
 }
 
-// TestEveryResponseCarriesNoStore holds the header on each kind of response the
-// wrapper produces or lets through: a success, a problem the handler wrote, a
-// 204, and the 401 of a refused cross-origin check. A header set at the end of
-// the handler would miss the refused one.
+// TestEveryResponseCarriesNoStore holds the header on each kind of response
+// the wrapper produces or lets through: a success, a problem the handler
+// wrote, a 204, and the 401 of a refused cross-origin check.
 func TestEveryResponseCarriesNoStore(t *testing.T) {
 	w := newWrapped(t)
 	w.engine.GET("/ok", Wrap(w.csrf, "main", func(c *gin.Context) { c.String(http.StatusOK, "x") }))
@@ -83,13 +81,10 @@ func TestEveryResponseCarriesNoStore(t *testing.T) {
 	}
 }
 
-// TestAHandlerThatPanickedRanWithTheHeaderOn holds the wrapper's part of a panic:
-// it puts the header on before the handler, so the header is on the response while
-// the handler runs and a panic leaves it there, which the recovery reads as the
-// handler unwinds. A header set at the end of the handler would be missing here.
-// The panic's own response is the entry point's fallback's to write, and the
-// fallback's default shape drops the representation headers, so this does not hold
-// what a client of the assembled entry point receives.
+// TestAHandlerThatPanickedRanWithTheHeaderOn holds the wrapper's part of a
+// panic: it puts the header on before the handler, so the header is on the
+// response while the handler runs and a panic leaves it there, which the
+// recovery reads as the handler unwinds.
 func TestAHandlerThatPanickedRanWithTheHeaderOn(t *testing.T) {
 	w := newWrapped(t)
 	w.engine.GET("/panic", Wrap(w.csrf, "main", func(*gin.Context) { panic("boom") }))
@@ -237,8 +232,6 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAlone(t *testing.T) {
 		}
 	}
 
-	// The bypass lives on one instance: another check, such as the gateway's, is
-	// built from the same origins and has no bypass, and refuses the same request.
 	other := newWrapped(t)
 	other.add(http.MethodPost, "/api/v1/auth/callback/:provider")
 	if rec := other.do(http.MethodPost, "/api/v1/auth/callback/google", cross); rec.Code != http.StatusUnauthorized {

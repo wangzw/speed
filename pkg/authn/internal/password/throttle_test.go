@@ -16,8 +16,6 @@ func throttleAt(clock *clockAt, p ThrottleParams) *Throttle {
 
 var bg = context.Background()
 
-// failN records n failures of the key and reports whether any of them engaged
-// the back-off.
 func failN(t *testing.T, th *Throttle, key string, n int) (engaged int) {
 	t.Helper()
 	for range n {
@@ -113,10 +111,9 @@ func TestTheDelayDoesNotOverflow(t *testing.T) {
 	}
 }
 
-// TestTheCountReturnsToZeroAfterTheWindow holds the decay at its edge: a key left
-// alone for the window starts again from nothing, and the failure that comes
-// after is the first of a new count. The wait is shorter than the window, so
-// the count is told apart from the wait by what the next failure costs.
+// TestTheCountReturnsToZeroAfterTheWindow holds the decay at its edge: a key
+// left alone for the window starts again from nothing, and the failure that
+// comes after is the first of a new count.
 func TestTheCountReturnsToZeroAfterTheWindow(t *testing.T) {
 	params := ThrottleParams{FreeAttempts: 1, Window: time.Minute, MaxBackoff: time.Hour}
 
@@ -142,7 +139,6 @@ func TestTheCountReturnsToZeroAfterTheWindow(t *testing.T) {
 		th := throttleAt(clock, params)
 		failN(t, th, "k", 5)
 		clock.advance(time.Minute)
-		// The new count starts at one: the first failure is free, the second is not.
 		if engaged := failN(t, th, "k", 1); engaged != 0 {
 			t.Error("a failure after the window was counted on top of the old count")
 		}
@@ -183,7 +179,6 @@ func TestAWaitLongerThanTheWindowIsServedInFull(t *testing.T) {
 	if d := wait(t, th, "k"); d != 0 {
 		t.Errorf("the key waits %s at the end of its wait, want none", d)
 	}
-	// The wait is over and the window long past: the count is forgotten now.
 	if engaged := failN(t, th, "k", 1); engaged != 0 {
 		t.Error("a failure after the wait and the window was counted on top of the old count")
 	}
@@ -304,7 +299,6 @@ func TestTheTableDoesNotGrowPastItsBound(t *testing.T) {
 	if d := wait(t, th, "first"); d == 0 {
 		t.Error("the key touched lately was the one forgotten")
 	}
-	// k0 was the quietest.
 	failN(t, th, "k0", 1)
 	if got := th.Len(); got != MaxThrottleKeys {
 		t.Errorf("the table holds %d keys, want the bound", got)
@@ -367,8 +361,6 @@ func TestAFixedKeyIsNotPushedOutBySprayedNames(t *testing.T) {
 	if got := wait(t, th, fixed.Key); got != held {
 		t.Errorf("the fixed key waits %s after the spray, want the %s it waited before: it was forgotten", got, held)
 	}
-	// The same spray does forget an ordinary key, which is the price of the bound
-	// and what tells the fixed key's survival from a table that forgets nothing.
 	failN(t, th, "ordinary", 4)
 	for i := range 10 * th.limit {
 		failN(t, th, "spray-"+strconv.Itoa(i), 1)
@@ -410,7 +402,6 @@ func TestAFixedKeyBehavesLikeAnyOtherKey(t *testing.T) {
 	if got := th.Len(); got != 1 {
 		t.Errorf("the table holds %d keys after the successes, want the one fixed key", got)
 	}
-	// A cleared fixed key starts from zero again.
 	if engaged := failN(t, th, "fixed", 3); engaged != 1 {
 		t.Errorf("three failures of a cleared fixed key engaged the back-off %d times, want once", engaged)
 	}

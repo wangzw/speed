@@ -51,7 +51,6 @@ func (d *Decoy) For(p Params) (Entry, error) {
 	return e, nil
 }
 
-// randomText is text no one chose: 32 bytes from the system's source, as hex.
 func randomText() string {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {

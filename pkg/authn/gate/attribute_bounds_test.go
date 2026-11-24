@@ -16,9 +16,6 @@ import (
 // produce, merged, to the exit check and to authntest, which holds a second copy
 // of the totals.
 
-// worstAccountAttributes is the largest account attribute set the model admits:
-// every entry allowed, the keys and values together exactly at the byte bound,
-// and no value above its own.
 func worstAccountAttributes(t *testing.T) map[string]string {
 	t.Helper()
 	m := make(map[string]string, model.AccountAttributesMax)
@@ -39,8 +36,6 @@ func worstAccountAttributes(t *testing.T) map[string]string {
 	return m
 }
 
-// worstIDPAttributes is the largest idp.* set the model admits: every entry
-// allowed, every key at the key bound and every value at the value bound.
 func worstIDPAttributes(t *testing.T) map[string]string {
 	t.Helper()
 	m := make(map[string]string, model.SessionIDPAttributesMax)
@@ -90,11 +85,10 @@ func TestTheSubBoundsAddUpToLessThanTheStampedTotals(t *testing.T) {
 	}
 }
 
-// TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest merges the worst
-// account set with the worst idp.* set and asks the exit check and authntest
-// whether each admits it, which is the sentence the sub-bounds exist for. The two
-// have to agree with each other and with the arithmetic, and the same set one
-// entry or one byte larger than the totals has to be refused by both.
+// TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest merges the
+// worst account set with the worst idp.* set and asks the exit check and
+// authntest whether each admits it, which is the sentence the sub-bounds
+// exist for.
 func TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest(t *testing.T) {
 	d := exitTable(t)
 	capable := backendNamed(t, d, "capable")
@@ -135,7 +129,6 @@ func TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest(t *testing.T) 
 
 	check("the largest set of both writers", merged, true)
 
-	// One entry more than the totals allow.
 	over := map[string]string{}
 	for k, v := range merged {
 		over[k] = v
@@ -143,9 +136,6 @@ func TestTheLargestSetOfBothWritersPassesTheExitCheckAndAuthntest(t *testing.T) 
 	over["one-more"] = "v"
 	check("one entry past the total", over, false)
 
-	// The byte total is reached with fewer entries and larger values: the largest
-	// set of both writers is 768 bytes under it, and the totals are the model's
-	// IdentityAttributeBytesMax, which has to be where both copies draw the line.
 	check("exactly the byte total", bytesOf(model.IdentityAttributeBytesMax), true)
 	check("one byte past the byte total", bytesOf(model.IdentityAttributeBytesMax+1), false)
 }
@@ -184,9 +174,6 @@ func TestEachWritersLargestKeyAndValueAreKeysAndValuesTheExitCheckKnows(t *testi
 			}
 		})
 	}
-	// What the model admits as an account key or an idp key is a key the exit
-	// check admits: the bound is the exit check's own at the account side, and the
-	// idp side is tighter.
 	for _, k := range []string{strings.Repeat("a", model.AttributeKeyMax), idpKey, "a.b_c-d9"} {
 		if !attributeKey(k) {
 			t.Errorf("the exit check does not take %q as a key, which the model admits", k)

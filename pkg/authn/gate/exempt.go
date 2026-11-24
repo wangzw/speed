@@ -34,9 +34,6 @@ const (
 	phaseSealed
 )
 
-// route is the pair a registrant passes to Endpoint.Route: the method and the
-// path in gin's spelling. A registration names one, and a request is compared
-// with it as it is, character for character.
 type route struct {
 	method string
 	path   string
@@ -45,7 +42,6 @@ type route struct {
 // String renders the pair the way a diagnostic names a route.
 func (r route) String() string { return r.method + " " + r.path }
 
-// kind is which of the three registrations a call made.
 type kind uint8
 
 const (
@@ -77,9 +73,6 @@ type registration struct {
 	route    route
 }
 
-// access is what the frozen table holds for one route: the registrations made
-// on it, which are independent except that an exempt route is neither optional
-// nor impersonable.
 type access struct {
 	exempt       bool
 	optional     bool
@@ -143,7 +136,6 @@ func (g *gateway) register(k kind, endpoint, method, path string) {
 	})
 }
 
-// open lifts the gate. It runs in Migrate.
 func (g *gateway) open() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -229,7 +221,6 @@ func (g *gateway) seal(router speedhttp.Router) error {
 	return nil
 }
 
-// describeGuarded renders the guarded set the way a diagnostic names it.
 func describeGuarded(endpoints []string) string {
 	if len(endpoints) == 0 {
 		return "no endpoint at all"

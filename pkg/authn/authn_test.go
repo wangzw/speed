@@ -16,14 +16,6 @@ import (
 
 // TestAVerdictNobodyAnsweredReadsAsSaidNothing holds the criterion the whole
 // shape of a verdict rests on.
-//
-// A backend that returns before it answers, or that builds a verdict some way
-// its author did not intend, hands back the zero value. Reading that as a pass
-// would authenticate a caller no backend ever vouched for, which is why the
-// fields are unexported and the constructors are the only way in. It is counted
-// apart from a refusal as well: a refusal says the credential does not hold, a
-// verdict nobody spoke says the backend is defective, and an operator needs to
-// tell a wrong password from a broken plugin.
 func TestAVerdictNobodyAnsweredReadsAsSaidNothing(t *testing.T) {
 	var nobodyAnswered Verdict
 
@@ -37,10 +29,7 @@ func TestAVerdictNobodyAnsweredReadsAsSaidNothing(t *testing.T) {
 	}
 }
 
-// TestEachConstructorSaysWhatItWasCalledFor holds the three answers apart. A
-// constructor whose outcome drifted would send refusals into the pass arm or
-// outages into the refusal arm, and the status code the caller sees is decided
-// from nothing else.
+// TestEachConstructorSaysWhatItWasCalledFor holds the three answers apart.
 func TestEachConstructorSaysWhatItWasCalledFor(t *testing.T) {
 	broken := errors.New("the directory is unreachable")
 
@@ -62,9 +51,7 @@ func TestEachConstructorSaysWhatItWasCalledFor(t *testing.T) {
 }
 
 // TestAnAuthenticatedVerdictCarriesItsPrincipal pins the payload that decides
-// who the caller is. A principal lost between the backend and the gateway would
-// leave an identity naming nobody, and one the backend could still change after
-// returning would let it rewrite what the gateway goes on to check.
+// who the caller is.
 func TestAnAuthenticatedVerdictCarriesItsPrincipal(t *testing.T) {
 	authTime := time.Date(2026, time.October, 11, 8, 0, 0, 0, time.UTC)
 	p := Principal{
@@ -97,11 +84,6 @@ func TestAnAuthenticatedVerdictCarriesItsPrincipal(t *testing.T) {
 
 // TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal holds the one thing a
 // backend must not be able to do with the cause it hands over.
-//
-// Were the cause allowed to decide, a backend could return the timeout the
-// gateway uses for its own budget and turn a wrong password into an outage —
-// and an outage is the status code every lockout, rate limiter and alert rule
-// is keyed off not being.
 func TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal(t *testing.T) {
 	for _, cause := range []error{
 		errors.New("wrong password"),
@@ -121,12 +103,6 @@ func TestWhatARefusalCarriesDoesNotChangeThatItIsARefusal(t *testing.T) {
 
 // TestAnIdentityIsAccountedForByItsActor holds the accountability key through
 // the surface a reader of FromContext sees.
-//
-// Rate limiting counts by the key and the audit trail records it as the actor,
-// so an impersonation has to spend the actor's allowance and not the
-// impersonated account's. A key that followed Account would let one actor draw
-// on as many allowances as there are accounts to impersonate, and put the blame
-// on the account impersonated.
 func TestAnIdentityIsAccountedForByItsActor(t *testing.T) {
 	plain := identity.New(Principal{Account: "acct-1", Methods: []Method{MethodPassword}}, "session", "Cookie")
 	impersonating := identity.New(Principal{
@@ -159,8 +135,7 @@ func TestAnIdentityIsAccountedForByItsActor(t *testing.T) {
 }
 
 // TestAContextThatWentThroughNoGatewayCarriesNobody holds the other half: the
-// absence has to read as absence. A fallback here would turn an anonymous
-// request into some account, which is why FromContext has none.
+// absence has to read as absence.
 func TestAContextThatWentThroughNoGatewayCarriesNobody(t *testing.T) {
 	if _, ok := FromContext(context.Background()); ok {
 		t.Fatal("a context that went through no gateway carries an identity, so an anonymous " +
@@ -185,9 +160,7 @@ func TestTheAccessLevelTravelsAlongsideTheIdentity(t *testing.T) {
 }
 
 // TestAnAccountIdentifierIsCheckedAgainstTheFormat holds the wrapper and the
-// sentinel it returns. The sentinel has to be the one the model package
-// returns: a copy declared here would not match errors.Is on a failure that
-// came from the parser, and a caller testing for it would miss every one.
+// sentinel it returns.
 func TestAnAccountIdentifierIsCheckedAgainstTheFormat(t *testing.T) {
 	id, err := ParseAccountID("static.ops")
 	if err != nil {
@@ -211,10 +184,8 @@ func TestAnAccountIdentifierIsCheckedAgainstTheFormat(t *testing.T) {
 	}
 }
 
-// TestEachStepConstructorMakesTheKindItIsNamedFor holds the nine answers apart.
-// A wrapper that called its neighbour would turn a refusal into an outage or a
-// first factor holding into a second one, and the engine decides what to do
-// from the kind alone.
+// TestEachStepConstructorMakesTheKindItIsNamedFor holds the nine answers
+// apart.
 func TestEachStepConstructorMakesTheKindItIsNamedFor(t *testing.T) {
 	cause := errors.New("cause")
 	for _, c := range []struct {
@@ -273,9 +244,7 @@ var (
 )
 
 // TestTheClaimSentinelsDoNotSpeakOfOwnership holds the wording of the two
-// sentinels that concern the carriers a backend takes. There is no ownership
-// table, so a failure text that says a subject or an owner is owned would send
-// an operator looking for one.
+// sentinels that concern the carriers a backend takes.
 func TestTheClaimSentinelsDoNotSpeakOfOwnership(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -321,9 +290,7 @@ func TestEverySentinelIsDistinctAndNamesItsDirectory(t *testing.T) {
 // TestAThrottledErrorReadsAsTheSentinelAndCarriesItsWait holds both halves of
 // the carrying shape: errors.Is finds the sentinel through a wrap, and
 // errors.As finds the wait, which is the only way a handler can write
-// Retry-After. A carrier that did not match the sentinel would be answered as a
-// server error, and one that did not give the wait back would send a client
-// away with no idea when to return.
+// Retry-After.
 func TestAThrottledErrorReadsAsTheSentinelAndCarriesItsWait(t *testing.T) {
 	carried := fmt.Errorf("checking the identifier: %w", &ThrottledError{RetryAfter: 7 * time.Second})
 
@@ -352,8 +319,6 @@ func TestAThrottledErrorReadsAsTheSentinelAndCarriesItsWait(t *testing.T) {
 }
 
 // TestTheThrottleScopesAreTheClosedSetUnderTheseNames pins the six values.
-// They are the first half of the key a back-off is stored under, so renaming
-// one orphans every counter kept under the old name.
 func TestTheThrottleScopesAreTheClosedSetUnderTheseNames(t *testing.T) {
 	want := map[ThrottleScope]string{
 		ScopeIdentifier:     "identifier",

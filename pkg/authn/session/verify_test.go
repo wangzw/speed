@@ -13,6 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
+// TestTheBackendDeclaresWhatItTakes checks that the backend declares what it
+// takes.
 func TestTheBackendDeclaresWhatItTakes(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	var v authn.Verifier = f.p
@@ -29,6 +31,8 @@ func TestTheBackendDeclaresWhatItTakes(t *testing.T) {
 	}
 }
 
+// TestAValueThatCannotBeATokenIsRefusedWithoutARead checks that a value that
+// cannot be a token is refused without a read.
 func TestAValueThatCannotBeATokenIsRefusedWithoutARead(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -42,7 +46,6 @@ func TestAValueThatCannotBeATokenIsRefusedWithoutARead(t *testing.T) {
 	if n := f.sql.count("SELECT"); n != 0 {
 		t.Errorf("a value that cannot be a token cost %d reads", n)
 	}
-	// 256 characters is within the bound: it is looked up, and is no session.
 	if got := outcomeOf(f.verify(strings.Repeat("a", maxTokenLen))); got.String() != "denied" {
 		t.Errorf("a 256-character unknown value is %s, want denied", got)
 	}
@@ -51,6 +54,7 @@ func TestAValueThatCannotBeATokenIsRefusedWithoutARead(t *testing.T) {
 	}
 }
 
+// TestADeniedCookieCanBeCleared checks that a denied cookie can be cleared.
 func TestADeniedCookieCanBeCleared(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -72,6 +76,8 @@ func TestADeniedCookieCanBeCleared(t *testing.T) {
 	}
 }
 
+// TestAnUnreachableDatabaseIsUnavailableAndNeverDenied checks that an
+// unreachable database is unavailable and never denied.
 func TestAnUnreachableDatabaseIsUnavailableAndNeverDenied(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -82,9 +88,8 @@ func TestAnUnreachableDatabaseIsUnavailableAndNeverDenied(t *testing.T) {
 			t.Fatalf("verdict = %s", got)
 		}
 		f.clock.Advance(2 * defaults.TouchInterval)
-		f.settings.set(checkTTLPath, time.Hour/60) // a minute, to keep the entry for the case
+		f.settings.set(checkTTLPath, time.Hour/60)
 
-		// The database goes away.
 		other, err := f.database.Open(context.Background(), f.dsn)
 		noErr(t, err)
 		raw, err := other.DB()
@@ -128,6 +133,8 @@ func TestAnUnreachableDatabaseIsUnavailableAndNeverDenied(t *testing.T) {
 	})
 }
 
+// TestACachedAnswerIsServedWhileTheDatabaseIsGoneUntilItRunsOut checks that a
+// cached answer is served while the database is gone until it runs out.
 func TestACachedAnswerIsServedWhileTheDatabaseIsGoneUntilItRunsOut(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -151,6 +158,8 @@ func TestACachedAnswerIsServedWhileTheDatabaseIsGoneUntilItRunsOut(t *testing.T)
 	}
 }
 
+// TestAnImpersonationRecordWithNoCapabilityIsDenied checks that an
+// impersonation record with no capability is denied.
 func TestAnImpersonationRecordWithNoCapabilityIsDenied(t *testing.T) {
 	f := newFixture(t, dialects[0], withoutImpersonation())
 	f.accounts.add(admin, nil)
@@ -161,8 +170,6 @@ func TestAnImpersonationRecordWithNoCapabilityIsDenied(t *testing.T) {
 	if got := outcomeOf(v); got.String() != "denied" {
 		t.Errorf("a session naming a record with no capability to ask is %s, want denied", got)
 	}
-	// And without a record it is no refusal. Ending keeps the token, so the one
-	// the attach returned is still the one the browser holds.
 	cleared, err := f.p.SetImpersonation(context.Background(), issued.ID, "")
 	noErr(t, err)
 	if cleared.Token != "" {
@@ -173,8 +180,6 @@ func TestAnImpersonationRecordWithNoCapabilityIsDenied(t *testing.T) {
 	}
 }
 
-// impersonate makes an administrator's session that names a record for bob in a
-// tenant.
 func impersonate(t *testing.T, f *fixture) (id authn.SessionID, token string) {
 	t.Helper()
 	f.accounts.add(admin, map[string]string{"dept": "ops"})
@@ -192,13 +197,13 @@ func impersonate(t *testing.T, f *fixture) (id authn.SessionID, token string) {
 	return issued.ID, attached.Token
 }
 
+// TestAnImpersonationIsTheTargetActedForByTheActor checks that an
+// impersonation is the target acted for by the actor.
 func TestAnImpersonationIsTheTargetActedForByTheActor(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
 		sid, token := impersonate(t, f)
 
-		// Before the record is attached the administrator is themselves, and the
-		// level their login reached is theirs.
 		own := principalOf(f.verify(f.create(func() authn.NewSession {
 			in := newBrowser(admin)
 			in.Assurance, in.Methods = authn.AssuranceMulti, []authn.Method{authn.MethodPassword, authn.MethodTOTP}
@@ -229,7 +234,6 @@ func TestAnImpersonationIsTheTargetActedForByTheActor(t *testing.T) {
 			t.Errorf("methods %v and authentication time %s are the session's", p.Methods, p.AuthTime)
 		}
 
-		// The record ends: the administrator is back as themselves, not refused.
 		f.imp.end("grant-1")
 		f.bus.deliver(event.Event{ID: "ended-1", Type: authn.EventImpersonationEnded, Payload: authn.ImpersonationEnded{GrantID: "grant-1", EndedBy: "actor"}})
 		v = f.verify(token)
@@ -246,6 +250,8 @@ func TestAnImpersonationIsTheTargetActedForByTheActor(t *testing.T) {
 	})
 }
 
+// TestTheAnswerForARecordIsCachedAndAFailureIsNot checks that the answer for
+// a record is cached and a failure is not.
 func TestTheAnswerForARecordIsCachedAndAFailureIsNot(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	_, token := impersonate(t, f)
@@ -267,7 +273,6 @@ func TestTheAnswerForARecordIsCachedAndAFailureIsNot(t *testing.T) {
 		t.Errorf("Active was asked %d times: one failure, which is not cached, and one answer that is, want 2", got)
 	}
 
-	// A record that ended is not served as valid past check-ttl.
 	f.imp.end("grant-1")
 	if got := principalOf(f.verify(token)); got.Actor == "" {
 		t.Error("the record was asked again inside check-ttl")
@@ -278,6 +283,8 @@ func TestTheAnswerForARecordIsCachedAndAFailureIsNot(t *testing.T) {
 	}
 }
 
+// TestAnImpersonationOfAnAccountThatIsNotEnabledIsDenied checks that an
+// impersonation of an account that is not enabled is denied.
 func TestAnImpersonationOfAnAccountThatIsNotEnabledIsDenied(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	_, token := impersonate(t, f)
@@ -292,6 +299,7 @@ func TestAnImpersonationOfAnAccountThatIsNotEnabledIsDenied(t *testing.T) {
 	}
 }
 
+// checks that the attributes are the account's and the session's IdP ones.
 func TestTheAttributesAreTheAccountsAndTheSessionsIDPOnes(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, map[string]string{"dept": "eng", "idp.group": "forged", "authn.flag": "forged"})
@@ -312,6 +320,8 @@ func TestTheAttributesAreTheAccountsAndTheSessionsIDPOnes(t *testing.T) {
 	}
 }
 
+// TestTheMergedAttributesStayInsideWhatTheGatewayStamps checks that the
+// merged attributes stay inside what the gateway stamps.
 func TestTheMergedAttributesStayInsideWhatTheGatewayStamps(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	account := map[string]string{}
@@ -341,6 +351,8 @@ func TestTheMergedAttributesStayInsideWhatTheGatewayStamps(t *testing.T) {
 	}
 }
 
+// TestARowWhosePayloadIsNotItsOwnAuthenticatesNobody checks that a row whose
+// payload is not its own authenticates nobody.
 func TestARowWhosePayloadIsNotItsOwnAuthenticatesNobody(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -388,6 +400,8 @@ func mustPayload(t *testing.T, pl payload) string {
 	return string(b)
 }
 
+// TestTheAccountIsCheckedAgainAfterTheSessionCacheAnswered checks that the
+// account is checked again after the session cache answered.
 func TestTheAccountIsCheckedAgainAfterTheSessionCacheAnswered(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -409,7 +423,6 @@ func TestTheAccountIsCheckedAgainAfterTheSessionCacheAnswered(t *testing.T) {
 		t.Errorf("a disabled account's session is %s, want denied", got)
 	}
 
-	// A session older than the account's valid-after instant is refused the same way.
 	f.enable(alice)
 	f.p.caches().accounts.Invalidate(string(alice))
 	if got := outcomeOf(f.verify(issued.Token)); got.String() != "denied" {
@@ -423,6 +436,8 @@ func TestTheAccountIsCheckedAgainAfterTheSessionCacheAnswered(t *testing.T) {
 	}
 }
 
+// checks that a session from SSO carries its provider and the IdP's assurance
+// level.
 func TestASessionFromSSOCarriesItsProviderAndTheIdPsLevel(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -436,6 +451,8 @@ func TestASessionFromSSOCarriesItsProviderAndTheIdPsLevel(t *testing.T) {
 	}
 }
 
+// TestTheTouchIntervalIsNeverLongerThanHalfTheIdleTimeout checks that the
+// touch interval is never longer than half the idle timeout.
 func TestTheTouchIntervalIsNeverLongerThanHalfTheIdleTimeout(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -458,6 +475,8 @@ func TestTheTouchIntervalIsNeverLongerThanHalfTheIdleTimeout(t *testing.T) {
 	}
 }
 
+// TestTheIdlePeriodOfACachedEntryIsJudgedAgain checks that the idle period of
+// a cached entry is judged again.
 func TestTheIdlePeriodOfACachedEntryIsJudgedAgain(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -469,14 +488,14 @@ func TestTheIdlePeriodOfACachedEntryIsJudgedAgain(t *testing.T) {
 	if got := outcomeOf(f.verify(issued.Token)); got.String() != "authenticated" {
 		t.Fatalf("verdict = %s", got)
 	}
-	// The entry is still inside check-ttl, and the idle period it was read with
-	// has ended.
 	f.clock.Advance(55 * time.Second)
 	if got := outcomeOf(f.verify(issued.Token)); got.String() != "denied" {
 		t.Errorf("an entry whose idle period ended is %s, want denied", got)
 	}
 }
 
+// TestAVerdictNamesNoTokenAndNoAccountState checks that a verdict names no
+// token and no account state.
 func TestAVerdictNamesNoTokenAndNoAccountState(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -490,8 +509,7 @@ func TestAVerdictNamesNoTokenAndNoAccountState(t *testing.T) {
 
 // A session whose account row is gone is Denied, not Unavailable: the gateway
 // clears the cookie instead of leaving the browser to send it again, so a
-// session of a deleted account is not retried forever on every request. An
-// account store that cannot be reached is the other outcome.
+// session of a deleted account is not retried forever on every request.
 func TestAVerifyOfASessionWhoseAccountIsGoneIsDenied(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -500,8 +518,6 @@ func TestAVerifyOfASessionWhoseAccountIsGoneIsDenied(t *testing.T) {
 		t.Fatalf("verdict = %s", got)
 	}
 
-	// The account is deleted while the session row stands and its cache entry is
-	// warm.
 	f.accounts.remove(alice)
 	f.p.caches().accounts.Invalidate(string(alice))
 	v := f.verify(issued.Token)
@@ -543,9 +559,7 @@ func TestTheAccountsReservedPrefixAttributeIsDroppedInThePrincipal(t *testing.T)
 	}
 }
 
-// touch extends the idle period of a browser session alone. A token or service
-// session has no idle period and the table refuses one, so the touch of such a
-// session writes nothing at all: it runs no statement.
+// touch extends the idle period of a browser session alone.
 func TestTouchLeavesTheSessionKindsThatHaveNoIdlePeriod(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)

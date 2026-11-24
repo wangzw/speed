@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
-// stampRefusal stands in for the *testing.T handed to authntest.Context so that
-// a refusal can be observed without failing the case that provokes it.
 type stampRefusal struct {
 	testing.TB
 	refused bool
@@ -22,8 +20,6 @@ type stampRefusal struct {
 func (*stampRefusal) Helper()                 {}
 func (s *stampRefusal) Fatalf(string, ...any) { s.refused = true }
 
-// stampedByAuthntest reports whether authntest.Context accepts the options a
-// principal of the given backend name maps to.
 func stampedByAuthntest(p authn.Principal, backendName string) bool {
 	tb := &stampRefusal{}
 	authntest.Context(tb, context.Background(),
@@ -35,7 +31,6 @@ func stampedByAuthntest(p authn.Principal, backendName string) bool {
 	return !tb.refused
 }
 
-// bytesOf returns sixteen attributes whose keys and values come to size bytes.
 func bytesOf(size int) map[string]string {
 	m := make(map[string]string, 16)
 	rest := size - 16*3
@@ -47,12 +42,10 @@ func bytesOf(size int) map[string]string {
 	return m
 }
 
-// TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound holds the two copies of
-// the shape and bound rules to one another: the same principal is put to
+// TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound holds the two copies
+// of the shape and bound rules to one another: the same principal is put to
 // checkPrincipal and to authntest.Context, and they have to accept or refuse
-// together. The conditions only one of them can decide, the authentication-time
-// skew and the namespaces and capabilities of backends other than static, are
-// not in the table.
+// together.
 func TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound(t *testing.T) {
 	d := exitTable(t)
 	capable, static := backendNamed(t, d, "capable"), backendNamed(t, d, "static")

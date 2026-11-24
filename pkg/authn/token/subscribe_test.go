@@ -37,13 +37,11 @@ func TestAnEventIsActedOnOnce(t *testing.T) {
 	}
 }
 
-// TestWireRegistersTheCacheClearingSubscriptions holds the module wiring: Init
-// (wire) subscribes the handlers that drop the verifying backend's caches, so a
-// revocation a replica hears of clears the entry at once instead of at the end of
-// check-ttl, and the handler that makes a relaxing settings change visible. It
-// subscribes the settings watch because the rig carries both a bus and a store.
-// Without the call from wire the bus carries no handler and the caches only ever
-// lapse.
+// TestWireRegistersTheCacheClearingSubscriptions holds the module wiring:
+// Init (wire) subscribes the handlers that drop the verifying backend's
+// caches, so a revocation a replica hears of clears the entry at once instead
+// of at the end of check-ttl, and the handler that makes a relaxing settings
+// change visible.
 func TestWireRegistersTheCacheClearingSubscriptions(t *testing.T) {
 	r := newRig(t)
 	if err := r.p.wire(core.New()); err != nil {

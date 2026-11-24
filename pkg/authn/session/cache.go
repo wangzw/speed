@@ -40,8 +40,6 @@ func (e *sessionEntry) lapsed(now time.Time) bool {
 	return !e.idleExpires.IsZero() && !now.Before(e.idleExpires)
 }
 
-// grantEntry is what the impersonation cache holds: what Impersonation.Active
-// answered for a record.
 type grantEntry struct {
 	grant  authn.ImpersonationGrant
 	active bool
@@ -74,14 +72,10 @@ func newCacheSet(ttl time.Duration, now func() time.Time) *cacheSet {
 	}
 }
 
-// digestKey is the session cache key of a token whose store key is key.
 func digestKey(key string) string { return "t:" + key }
 
-// sessionKey is the session cache key of a session by its public identifier.
 func sessionKey(id authn.SessionID) string { return "s:" + string(id) }
 
-// accountKey is the key an invalidation by account moves the epoch of the
-// session cache under, whether or not an entry is held for the account.
 func accountKey(account authn.AccountID) string { return "a:" + string(account) }
 
 // putSession stores a session entry under its identifier and, for a browser
@@ -98,8 +92,6 @@ func (c *cacheSet) putSession(e *sessionEntry, key string, epoch uint64) {
 	}
 }
 
-// forgetSession drops what is cached for one session, under both keys, and moves
-// the epoch so that a read already in flight is not stored.
 func (c *cacheSet) forgetSession(id authn.SessionID, knownKeys ...string) {
 	key, _ := c.index.remove(id)
 	c.sessions.Invalidate(sessionKey(id))
@@ -113,8 +105,6 @@ func (c *cacheSet) forgetSession(id authn.SessionID, knownKeys ...string) {
 	}
 }
 
-// forgetAccount drops what is cached for an account: its snapshot and the
-// entries of every session of it the index knows, and moves the epochs.
 func (c *cacheSet) forgetAccount(account authn.AccountID) {
 	for _, e := range c.index.takeAccount(account) {
 		c.sessions.Invalidate(sessionKey(e.id))
@@ -126,10 +116,8 @@ func (c *cacheSet) forgetAccount(account authn.AccountID) {
 	c.accounts.Invalidate(string(account))
 }
 
-// forgetGrant drops the cached answer for an impersonation record.
 func (c *cacheSet) forgetGrant(id string) { c.grants.Invalidate(id) }
 
-// purge empties the three caches and the index.
 func (c *cacheSet) purge() {
 	c.sessions.Purge()
 	c.accounts.Purge()
@@ -162,8 +150,6 @@ func newSessionIndex(capacity int) *sessionIndex {
 	return &sessionIndex{capacity: capacity, byID: make(map[authn.SessionID]*list.Element), recency: list.New()}
 }
 
-// add records the session, replacing what was recorded for it, and makes it the
-// most recently used.
 func (x *sessionIndex) add(id authn.SessionID, key string, account authn.AccountID) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -185,7 +171,6 @@ func (x *sessionIndex) add(id authn.SessionID, key string, account authn.Account
 	x.byID[id] = x.recency.PushFront(&indexEntry{id: id, key: key, account: account})
 }
 
-// remove drops the record of a session and returns the digest key it held.
 func (x *sessionIndex) remove(id authn.SessionID) (string, bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -199,7 +184,6 @@ func (x *sessionIndex) remove(id authn.SessionID) (string, bool) {
 	return e.key, true
 }
 
-// takeAccount removes and returns the records of an account's sessions.
 func (x *sessionIndex) takeAccount(account authn.AccountID) []indexEntry {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -223,7 +207,6 @@ func (x *sessionIndex) clear() {
 	x.recency.Init()
 }
 
-// size is the number of sessions recorded.
 func (x *sessionIndex) size() int {
 	x.mu.Lock()
 	defer x.mu.Unlock()

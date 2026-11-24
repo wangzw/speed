@@ -5,10 +5,8 @@ import (
 	"time"
 )
 
-// SQLite keeps a time as text and compares it as a string, so a reading left in
-// the machine's zone would not compare with one written in UTC. The module judges
-// every session in UTC whatever the local zone is, so the periods hold and the
-// token lookup, which compares in SQL, still finds the row.
+// SQLite keeps a time as text and compares it as a string, so a reading left
+// in the machine's zone would not compare with one written in UTC.
 func TestTheSessionPeriodsAreJudgedInUTCUnderANonUTCLocalZone(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -39,8 +37,6 @@ func TestTheSessionPeriodsAreJudgedInUTCUnderANonUTCLocalZone(t *testing.T) {
 		t.Errorf("expires_at = %s, want the absolute period %s from the creation", row.ExpiresAt.Time, want)
 	}
 
-	// The idle period runs from the last use: with no request in between, past it
-	// the session is refused.
 	f.clock.Advance(defaults.IdleTimeout + time.Second)
 	if got := outcomeOf(f.verify(issued.Token)); got.String() != "denied" {
 		t.Errorf("past the idle period the verdict is %s, want denied", got)
@@ -66,7 +62,7 @@ func TestTheValidAfterComparisonHoldsUnderANonUTCLocalZone(t *testing.T) {
 	issued := f.create(newBrowser(alice))
 
 	f.clock.Advance(time.Minute)
-	f.disable(alice) // stamps valid_after from a New York reading
+	f.disable(alice)
 	f.enable(alice)
 	f.p.caches().accounts.Invalidate(string(alice))
 

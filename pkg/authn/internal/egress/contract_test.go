@@ -78,7 +78,6 @@ func TestTheBodyCapIsOneMebibyte(t *testing.T) {
 	}
 }
 
-// errCloser is a body that records its close and answers it with err.
 type errCloser struct {
 	io.Reader
 	err    error
@@ -87,6 +86,8 @@ type errCloser struct {
 
 func (c *errCloser) Close() error { c.closed = true; return c.err }
 
+// TestCappedBodyCloseClosesTheWrappedBody checks that capped body close
+// closes the wrapped body.
 func TestCappedBodyCloseClosesTheWrappedBody(t *testing.T) {
 	sentinel := errors.New("close failed")
 	inner := &errCloser{Reader: strings.NewReader("x"), err: sentinel}
@@ -110,6 +111,8 @@ func TestCappedBodyPassesOnAReadError(t *testing.T) {
 	}
 }
 
+// TestATruncatedBodyIsAnErrorNotAShortBody checks that a truncated body is an
+// error not a short body.
 func TestATruncatedBodyIsAnErrorNotAShortBody(t *testing.T) {
 	srv, pool := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Length", "100")
@@ -303,11 +306,8 @@ func TestTheProtocolVersionFloor(t *testing.T) {
 	})
 }
 
-// TestTheDialEndsWithTheCall holds that the name resolution and the connection
-// attempts started for a call stop when the call does. net/http runs the dial on
-// a context that is detached from the call, so without help a call that gave up
-// leaves the dial running behind it for as long as the operating system lets a
-// connect attempt take.
+// TestTheDialEndsWithTheCall holds that the name resolution and the
+// connection attempts started for a call stop when the call does.
 func TestTheDialEndsWithTheCall(t *testing.T) {
 	for name, end := range map[string]func(context.Context) (context.Context, context.CancelFunc){
 		"the deadline passes": func(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -412,8 +412,6 @@ func TestCloseIdleConnectionsReachesTheTransport(t *testing.T) {
 	awaitState(t, states, time.Second, http.StateClosed, "the idle connection to close after CloseIdleConnections")
 }
 
-// awaitState takes transitions until want arrives, failing when the deadline
-// passes first and when the connection closes while another state is awaited.
 func awaitState(t *testing.T, states <-chan http.ConnState, deadline time.Duration, want http.ConnState, what string) {
 	t.Helper()
 	timeout := time.After(deadline)

@@ -361,14 +361,10 @@ func (p *product) denyUnavailable(ctx context.Context, op string, err error) aut
 	return authn.Unavailable(fmt.Errorf("%w: %s: %w", authn.ErrUnavailable, op, err))
 }
 
-// isAccessTokenType reports whether typ, compared case-insensitively, is one of
-// the two spellings RFC 9068 fixes for an access token.
 func isAccessTokenType(typ string) bool {
 	return strings.EqualFold(typ, accessTokenType) || strings.EqualFold(typ, accessTokenTypeAlt)
 }
 
-// lookup finds the key with the given kid in the local set, which the design
-// keeps small: a linear scan is the whole of it.
 func (ks *keySet) lookup(kid string) (keyEntry, bool) {
 	for i := range ks.entries {
 		if ks.entries[i].kid == kid {
@@ -389,8 +385,6 @@ func methodsOf(raw []string) []authn.Method {
 	return out
 }
 
-// authTimeOf is the authentication time taken from a token's own claims, for the
-// stateless mode: auth_time when it is there, the issue instant otherwise.
 func authTimeOf(vc verifyClaims) time.Time {
 	if vc.AuthTime != nil {
 		return time.Unix(*vc.AuthTime, 0)
@@ -398,9 +392,6 @@ func authTimeOf(vc verifyClaims) time.Time {
 	return time.Unix(*vc.IssuedAt, 0)
 }
 
-// assuranceOf reads the acr claim as an assurance level. The value is the
-// decimal text of Assurance; anything but "2" reads as a single factor, which is
-// the conservative side.
 func assuranceOf(acr string) authn.Assurance {
 	if acr == "2" {
 		return authn.AssuranceMulti

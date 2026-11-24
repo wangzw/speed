@@ -169,5 +169,7 @@ type MembershipGuard interface {
 // is the guard's own. The value must be comparable — guards wired to one object
 // answer the same pointer.
 type SharedMembershipLock interface {
+	// MembershipLock returns the shared lock object, or nil when the lock is the
+	// guard's own.
 	MembershipLock() any
 }

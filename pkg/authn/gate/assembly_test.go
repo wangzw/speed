@@ -63,7 +63,6 @@ type supply struct {
 	instance any
 }
 
-// routerModule is the name of the stand-in the router is supplied to.
 const routerModule = "stand-in.router"
 
 // standIn is a module that declares the capability token names and nothing
@@ -74,8 +73,6 @@ func standIn(name string, token core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: token}}}
 }
 
-// drive advances the assembly to Start, runs action there, and returns what the
-// drive returned once every Stop and Close has run.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 
@@ -115,8 +112,6 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// backendModule registers a backend the way a backend subpackage does: its own
-// module, delivering the verification capability non-exclusively.
 func backendModule(v authn.Verifier) core.Module {
 	return core.Module{
 		Name:     "authn." + v.Name(),
@@ -128,8 +123,6 @@ func backendModule(v authn.Verifier) core.Module {
 	}
 }
 
-// guarding is the configuration body for a gateway guarding the endpoints
-// named, with every other item at its default.
 func guarding(endpoints ...string) string {
 	return `{"authn":{"gate":{"endpoints":["` + strings.Join(endpoints, `","`) + `"]}}}`
 }
@@ -175,9 +168,8 @@ func TestTheDescriptorRegistersTheLayerOnEveryGuardedEndpointAndNowhereElse(t *t
 }
 
 // TestInitRefusesWhatTheCommandIsMissing holds the two sentinels Init reports
-// for a command that left something out, and the one it reports for a name that
-// does not exist. Each points at a different edit, which is why they are told
-// apart at all.
+// for a command that left something out, and the one it reports for a name
+// that does not exist.
 func TestInitRefusesWhatTheCommandIsMissing(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -240,8 +232,6 @@ func TestInitRefusesWhatTheCommandIsMissing(t *testing.T) {
 	}
 }
 
-// brokenRouter reports a failure for one endpoint that is not the unknown-name
-// one, which is the case the router's contract leaves open.
 type brokenRouter struct {
 	*fakeRouter
 	broken string
@@ -255,9 +245,8 @@ func (r brokenRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
 	return r.fakeRouter.Endpoint(name)
 }
 
-// TestARouterFailureOtherThanAnUnknownNameIsCarriedOutAsItStands holds the other
-// branch of the endpoint lookup. Reading every failure as a misspelt name would
-// send the operator to a configuration key that is already right.
+// TestARouterFailureOtherThanAnUnknownNameIsCarriedOutAsItStands holds the
+// other branch of the endpoint lookup.
 func TestARouterFailureOtherThanAnUnknownNameIsCarriedOutAsItStands(t *testing.T) {
 	failure := errors.New("the entry point cannot hand out endpoints right now")
 	err := assembly{
@@ -320,9 +309,6 @@ func (c *countingVerifier) Verify(ctx context.Context, cred authn.Credential) au
 	return c.fakeVerifier.Verify(ctx, cred)
 }
 
-// foreignGate is an instance a host supplies for the gateway module so that
-// something else answers for the authentication layer: it delivers the module's
-// capability and is not a gateway.
 type foreignGate struct{}
 
 func (foreignGate) Exempt(string, string, string)       {}
@@ -330,12 +316,7 @@ func (foreignGate) Optional(string, string, string)     {}
 func (foreignGate) Impersonable(string, string, string) {}
 
 // TestTheCallbacksPassByAnInstanceSuppliedForTheGateway holds what the
-// descriptor does with an instance this module did not build: nothing. The
-// module is in the drive with that instance as its own, so every callback from
-// Migrate to Close is handed it, and each has to pass it by. The configuration
-// guards an endpoint and a backend is present, so a callback that wired anyway
-// would find all it needs and leave a layer on the endpoint, and one that took
-// the instance for a gateway would fail the drive or panic.
+// descriptor does with an instance this module did not build: nothing.
 func TestTheCallbacksPassByAnInstanceSuppliedForTheGateway(t *testing.T) {
 	router := routerWith("public")
 	var delivered authn.Gate
@@ -418,15 +399,9 @@ func TestTheRedactionRulesReachTheLoggingModulesOwnOutput(t *testing.T) {
 }
 
 // TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit holds the effect of
-// registering those rules before Init: a module constructed after the gateway,
-// and before Init, binds attributes carrying a credential under a key name and as
-// a bare JWT, and the destination gets neither.
-//
-// The rules the logging module keeps are process-wide and only ever grow, so a
-// case that ran earlier in the same test binary may already have registered the
-// same names, and this case then passes whichever stage the gateway registers at.
-// The stage itself is held by TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt,
-// which reads what a recording capability has been handed.
+// registering those rules before Init: a module constructed after the
+// gateway, and before Init, binds attributes carrying a credential under a
+// key name and as a bare JWT, and the destination gets neither.
 func TestTheKeyAndShapeRulesGovernAnAttributeBoundBeforeInit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "log.json")
 	body := `{"authn":{"gate":{"endpoints":["public"]}},` +
@@ -525,13 +500,10 @@ func (r rulesRecorder) AddPattern(name string, _ log.Matcher) {
 	*r.events = append(*r.events, "pattern:"+name)
 }
 
-// TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule holds what reaches
-// the logging capability and in which order: the credential key names, then the
-// value shapes, then the rule over the value that follows a scheme, which needs
-// the backends' declarations. The key names have to include every spelling of
-// each name, because key matching is exact. Which stage each is registered in is
-// held by TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt, and this case
-// cannot tell the stages apart.
+// TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule holds what
+// reaches the logging capability and in which order: the credential key
+// names, then the value shapes, then the rule over the value that follows a
+// scheme, which needs the backends' declarations.
 func TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule(t *testing.T) {
 	var mu sync.Mutex
 	var events, keys []string
@@ -572,13 +544,8 @@ func TestTheRulesAreRegisteredAsKeysThenShapesThenTheSchemeRule(t *testing.T) {
 	}
 }
 
-// TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt holds the stage the
-// key names and the value shapes are registered at. A module that requires the
-// gateway and logging is built right after the gateway, and no Init has run
-// by then; what the recording capability has been handed at that moment is the
-// rules registered in New, and the rule over a scheme's value, which waits for the
-// backends' declarations, is not among them. A gateway that registered the key
-// names in Init would hand the recorder nothing yet.
+// TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt holds the stage
+// the key names and the value shapes are registered at.
 func TestTheKeyAndShapeRulesAreInPlaceWhenTheNextModuleIsBuilt(t *testing.T) {
 	var mu sync.Mutex
 	var events, keys, atNextNew []string

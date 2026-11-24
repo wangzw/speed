@@ -61,8 +61,6 @@ func AllowCallback(csrf *http.CrossOriginProtection, methods []string, fullPath 
 	}
 }
 
-// servePattern writes a path the entry point's way in the form of
-// http.ServeMux: ":name" becomes "{name}" and "*name" becomes "{name...}".
 func servePattern(path string) string {
 	segments := strings.Split(path, "/")
 	for i, s := range segments {

@@ -36,6 +36,8 @@ func TestAVerdictNobodyAnsweredReadsAsSaidNothing(t *testing.T) {
 	}
 }
 
+// TestEachConstructorSaysWhatItWasCalledFor checks that each constructor says
+// what it was called for.
 func TestEachConstructorSaysWhatItWasCalledFor(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -57,6 +59,8 @@ func TestEachConstructorSaysWhatItWasCalledFor(t *testing.T) {
 	}
 }
 
+// TestAnAuthenticatedVerdictCarriesItsPrincipal checks that an authenticated
+// verdict carries its principal.
 func TestAnAuthenticatedVerdictCarriesItsPrincipal(t *testing.T) {
 	p := principal()
 	got := verdict.PrincipalOf(verdict.NewAuthenticated(p))
@@ -69,6 +73,8 @@ func TestAnAuthenticatedVerdictCarriesItsPrincipal(t *testing.T) {
 	}
 }
 
+// TestOnlyAnAuthenticatedVerdictCarriesAPrincipal checks that only an
+// authenticated verdict carries a principal.
 func TestOnlyAnAuthenticatedVerdictCarriesAPrincipal(t *testing.T) {
 	for name, v := range map[string]verdict.Verdict{
 		"denied":      verdict.NewDenied(errors.New("x")),
@@ -182,8 +188,7 @@ func TestCopiesHoldUnderConcurrentUse(t *testing.T) {
 	wg.Wait()
 }
 
-// The bucket names are what a dashboard reads. Changing one breaks every
-// panel that names it.
+// The bucket names are what a dashboard reads.
 func TestOutcomeBucketNamesAreFrozen(t *testing.T) {
 	for o, want := range map[verdict.Outcome]string{
 		verdict.Unspoken:      "unspoken",

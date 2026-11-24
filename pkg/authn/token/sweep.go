@@ -39,8 +39,6 @@ const deleteStale = "DELETE FROM " + tableName + " WHERE id IN (" +
 	"OR (s.expires_at IS NOT NULL AND s.expires_at < ?) OR r.idle_expires_at < ? " +
 	"LIMIT ?)"
 
-// sweeper is the bounded goroutine that deletes the stale refresh rows of one
-// product.
 type sweeper struct {
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -72,8 +70,6 @@ func (p *product) startSweep(ctx context.Context) {
 	go p.sweepLoop(runCtx, cancel, s.done)
 }
 
-// stopSweep ends the sweep and waits for it, at most stopWait. A sweep that is
-// in the middle of a statement is cancelled with the statement.
 func (p *product) stopSweep() {
 	sweepMu.Lock()
 	s := sweepRunning[p]

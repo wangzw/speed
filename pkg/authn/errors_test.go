@@ -13,12 +13,11 @@ import (
 	"testing"
 )
 
-// designSentinels is every sentinel of the root package that the design's two
-// failure tables name, the startup table and the runtime table together, written
-// out. ErrMalformedHash, the three egress sentinels and the tenant module's
-// sentinels are not here: the design puts them in packages of their own.
+// designSentinels is every sentinel of the root package that the two failure
+// tables name, the startup table and the runtime table together, written out.
+// ErrMalformedHash, the three egress sentinels and the tenant module's sentinels
+// are not here: they belong to packages of their own.
 var designSentinels = map[string]error{
-	// startup
 	"ErrNoRouter": ErrNoRouter, "ErrNoVerifier": ErrNoVerifier, "ErrClaimConflict": ErrClaimConflict,
 	"ErrInvalidClaim": ErrInvalidClaim, "ErrInvalidConfig": ErrInvalidConfig, "ErrUnknownEndpoint": ErrUnknownEndpoint,
 	"ErrExemptionUnguarded": ErrExemptionUnguarded, "ErrAccessConflict": ErrAccessConflict,
@@ -26,7 +25,6 @@ var designSentinels = map[string]error{
 	"ErrInsecureConfig": ErrInsecureConfig, "ErrNoEncryptionKey": ErrNoEncryptionKey, "ErrInvalidKey": ErrInvalidKey,
 	"ErrNotMigrated": ErrNotMigrated, "ErrMethodConflict": ErrMethodConflict, "ErrFactorConflict": ErrFactorConflict,
 	"ErrNoLoginMethod": ErrNoLoginMethod, "ErrNoFactor": ErrNoFactor, "ErrDrainTimeout": ErrDrainTimeout,
-	// runtime
 	"ErrInvalidAccountID": ErrInvalidAccountID, "ErrAccountNotFound": ErrAccountNotFound, "ErrAccountExists": ErrAccountExists,
 	"ErrContactTaken":       ErrContactTaken,
 	"ErrInvalidCredentials": ErrInvalidCredentials, "ErrPasswordPolicy": ErrPasswordPolicy,
@@ -64,8 +62,6 @@ var designSentinels = map[string]error{
 	"ErrHumanProofTooLong": ErrHumanProofTooLong,
 }
 
-// declaredSentinels reads the Err variables the non-test files of the root
-// package declare.
 func declaredSentinels(t *testing.T) []string {
 	t.Helper()
 	bp, err := build.Default.ImportDir(".", 0)
@@ -97,10 +93,9 @@ func declaredSentinels(t *testing.T) []string {
 	return out
 }
 
-// TestTheSentinelsAreExactlyTheDesignsTables holds the set of sentinels against
-// the tables in both directions: one the design names and the package lacks, and
-// one the package declares that no table names. The set is closed over what this
-// directory judges for itself.
+// TestTheSentinelsAreExactlyTheDesignsTables holds the set of sentinels
+// against the tables in both directions: one a table names and the package
+// lacks, and one the package declares that no table names.
 func TestTheSentinelsAreExactlyTheDesignsTables(t *testing.T) {
 	declared := declaredSentinels(t)
 	for name := range designSentinels {
@@ -115,10 +110,9 @@ func TestTheSentinelsAreExactlyTheDesignsTables(t *testing.T) {
 	}
 }
 
-// TestEveryDesignSentinelIsDistinctAndSafeToLog holds each sentinel apart from
-// the others, under the authn: prefix, with no format verb and no word that says
-// it carries a value. An error text reaches logs and, through wraps, responses'
-// causes, so what it names is a class and never a value.
+// TestEveryDesignSentinelIsDistinctAndSafeToLog holds each sentinel apart
+// from the others, under the authn: prefix, with no format verb and no word
+// that says it carries a value.
 func TestEveryDesignSentinelIsDistinctAndSafeToLog(t *testing.T) {
 	names := make([]string, 0, len(designSentinels))
 	for n := range designSentinels {
@@ -148,8 +142,7 @@ func TestEveryDesignSentinelIsDistinctAndSafeToLog(t *testing.T) {
 }
 
 // TestASentinelSurvivesWrapping holds the one property callers use: errors.Is
-// finds a sentinel through the %w wraps the design requires, and does not find
-// the one next to it.
+// finds a sentinel through the %w wraps, and does not find the one next to it.
 func TestASentinelSurvivesWrapping(t *testing.T) {
 	err := fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", ErrCleanupIncomplete))
 	if !errors.Is(err, ErrCleanupIncomplete) {
@@ -160,9 +153,9 @@ func TestASentinelSurvivesWrapping(t *testing.T) {
 	}
 }
 
-// TestLinkRequiredErrorKeepsTheAddressOutOfItsText holds the split the design
-// states: the value carries the address so a surface can name the collision,
-// while its text stays the sentinel's, so a log line names no address.
+// TestLinkRequiredErrorKeepsTheAddressOutOfItsText holds the split: the value
+// carries the address so a surface can name the collision, while its text stays
+// the sentinel's, so a log line names no address.
 func TestLinkRequiredErrorKeepsTheAddressOutOfItsText(t *testing.T) {
 	err := fmt.Errorf("resolve: %w", &LinkRequiredError{Email: "ann@home.org"})
 	if !errors.Is(err, ErrLinkRequired) {
@@ -177,11 +170,7 @@ func TestLinkRequiredErrorKeepsTheAddressOutOfItsText(t *testing.T) {
 }
 
 // TestContactRequiredProblemTypeIsTheWireValue holds the exported code to its
-// wire value. The three management faces and a host's own surfaces write this
-// constant, so its value is a contract those surfaces share; pinning the literal
-// here is what makes a rename fail rather than drift silently, because the
-// surfaces' own cases assert against the constant and would pass whatever it
-// held.
+// wire value.
 func TestContactRequiredProblemTypeIsTheWireValue(t *testing.T) {
 	if ContactRequiredProblemType != "urn:speed:authn:contact-required" {
 		t.Errorf("ContactRequiredProblemType = %q, want %q",
@@ -190,10 +179,8 @@ func TestContactRequiredProblemTypeIsTheWireValue(t *testing.T) {
 }
 
 // TestErrInsecureConfigStatesAProtectionTheDeploymentNeeds holds the text an
-// operator reads when startup refuses an http public URL or a same-site of none.
-// No setting lets a deployment give either protection up, so the text names a
-// protection the deployment cannot run without, not one it could be told to
-// drop.
+// operator reads when startup refuses an http public URL or a same-site of
+// none.
 func TestErrInsecureConfigStatesAProtectionTheDeploymentNeeds(t *testing.T) {
 	const want = "authn: the configuration weakens a protection the deployment cannot run without"
 	if got := ErrInsecureConfig.Error(); got != want {

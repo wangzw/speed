@@ -45,10 +45,9 @@ func mustMiss(t *testing.T, c *Cache[string], key string) {
 }
 
 // TestAnEntryIsServedUntilItsLifetimeIsFullyElapsed holds the edge on both
-// sides: one tick before the lifetime ends the entry is served, at the instant
-// it ends it is not, and the miss removes the entry rather than leaving it to
-// occupy a slot. A cache that served up to and including the instant, or one
-// that never expired anything, differs at one of these observations.
+// sides: one tick before the lifetime ends the entry is served, at the
+// instant it ends it is not, and the miss removes the entry rather than
+// leaving it to occupy a slot.
 func TestAnEntryIsServedUntilItsLifetimeIsFullyElapsed(t *testing.T) {
 	clk := newStepClock()
 	c := New[string](4, time.Minute, clk.now)
@@ -110,7 +109,7 @@ func TestAReadRefreshesRecency(t *testing.T) {
 	c.Put("a", "1")
 	c.Put("b", "2")
 	c.Put("c", "3")
-	mustHit(t, c, "a", "1") // a is now newer than b
+	mustHit(t, c, "a", "1")
 	c.Put("d", "4")
 
 	mustMiss(t, c, "b")
@@ -134,9 +133,7 @@ func TestAMissDoesNotRefreshAnything(t *testing.T) {
 }
 
 // TestAZeroLifetimeDisablesTheCache holds the strict mode: nothing is stored
-// and nothing hits, however soon after the Put the Get comes. A negative
-// lifetime reads the same way, since there is no lifetime in which an entry
-// could be served.
+// and nothing hits, however soon after the Put the Get comes.
 func TestAZeroLifetimeDisablesTheCache(t *testing.T) {
 	for _, ttl := range []time.Duration{0, -time.Second} {
 		t.Run(ttl.String(), func(t *testing.T) {
@@ -264,8 +261,7 @@ func TestTheZeroClockReadsTheSystemClock(t *testing.T) {
 	mustHit(t, c, "a", "1")
 }
 
-// TestConcurrentUseIsRaceFree drives every operation from many goroutines. The
-// observation is the race detector's, and that the bound holds afterwards.
+// TestConcurrentUseIsRaceFree drives every operation from many goroutines.
 func TestConcurrentUseIsRaceFree(t *testing.T) {
 	clk := newStepClock()
 	c := New[int](16, time.Second, clk.now)

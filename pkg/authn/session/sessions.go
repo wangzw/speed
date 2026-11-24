@@ -37,7 +37,6 @@ const (
 // The longest a client address is kept: an IPv6 address with a zone is shorter.
 const maxClientIP = 64
 
-// maxGrantIDLen is the longest an impersonation record identifier may be.
 const maxGrantIDLen = 128
 
 // retryLimit is how many times a conditional update that lost a race is read
@@ -105,13 +104,8 @@ func (p *product) Create(ctx context.Context, in authn.NewSession) (authn.Issued
 	return issued, nil
 }
 
-// maxUserAgent is the longest a user agent is kept, which the table's check holds
-// to as well.
 const maxUserAgent = 200
 
-// commitBrowser creates a browser session through the library: a new session,
-// the payload put into it and a commit, which calls the store's CommitCtx and
-// returns the token.
 func (p *product) commitBrowser(ctx context.Context, c client, pl payload) (string, error) {
 	sctx, err := p.sm.Load(context.WithValue(ctx, clientKey, c), "")
 	if err != nil {
@@ -163,8 +157,6 @@ func checkNew(in authn.NewSession) error {
 	return model.CheckIDPAttributes(in.Attributes)
 }
 
-// checkAccount refuses an identifier that is not an account's, and a subject of
-// the static table, which has no account and no session.
 func checkAccount(id authn.AccountID) error {
 	if _, err := authn.ParseAccountID(string(id)); err != nil {
 		return fmt.Errorf("%w: the account identifier is not well formed", authn.ErrInvalidArgument)
@@ -237,9 +229,6 @@ func (p *product) Get(ctx context.Context, id authn.SessionID) (authn.SessionInf
 	return p.info(row), nil
 }
 
-// info is the listing form of a row. The level and the authentication time are
-// the payload's; a payload that cannot be read leaves them zero, which a listing
-// shows as nothing and which grants nothing.
 func (p *product) info(r sessionRow) authn.SessionInfo {
 	info := authn.SessionInfo{
 		ID:              authn.SessionID(r.ID),
@@ -465,8 +454,6 @@ func (p *product) change(ctx context.Context, id authn.SessionID, c change) (aut
 	return authn.Issued{}, errChanged
 }
 
-// elevatedData is the data column of the row with the elevation applied to its
-// payload.
 func elevatedData(row sessionRow, e authn.Elevation) (string, error) {
 	pl, ok, err := decodePayload([]byte(row.Data))
 	if err != nil || !ok || pl.SID != row.ID {
@@ -636,9 +623,6 @@ func (p *product) Current(r *http.Request) (authn.SessionID, bool, error) {
 	return authn.SessionID(row.ID), true, nil
 }
 
-// accountError turns what the account store said into what this module reports:
-// an absent account stays ErrAccountNotFound, and anything else is the store
-// being unavailable.
 func accountError(err error) error {
 	if errors.Is(err, authn.ErrAccountNotFound) || errors.Is(err, authn.ErrUnavailable) {
 		return err
@@ -646,9 +630,6 @@ func accountError(err error) error {
 	return fmt.Errorf("%w: reading the account: %w", authn.ErrUnavailable, err)
 }
 
-// textOf is a string as the column of a nullable text value takes it.
 func textOf(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
 
-// nullTime is a time as the column of a nullable time takes it: NULL for the
-// zero time.
 func nullTime(t time.Time) sql.NullTime { return sql.NullTime{Time: clock.UTC(t), Valid: !t.IsZero()} }

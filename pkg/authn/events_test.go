@@ -12,10 +12,10 @@ import (
 	"testing"
 )
 
-// eventTable is the design's event table: for each type, its name, its payload
-// and the top-level fields of the payload, in the JSON names the design writes.
-// The names are the contract with subscribers, so they are written out here and
-// not derived from the code under test.
+// eventTable is the expected event table: for each type, its name, its payload
+// and the top-level fields of the payload, in their JSON names. The names are
+// the contract with subscribers, so they are written out here and not derived
+// from the code under test.
 var eventTable = []struct {
 	name    string
 	typ     reflect.Type
@@ -111,7 +111,6 @@ func TestEveryEventConstantIsInTheTable(t *testing.T) {
 	if got := len(constNames(t, "Event")); got != len(eventTable) {
 		t.Errorf("events.go declares %d Event constants, the table has %d entries", got, len(eventTable))
 	}
-	// Every payload struct of events.go is in the table too.
 	f, err := parser.ParseFile(token.NewFileSet(), "events.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -132,9 +131,7 @@ func TestEveryEventConstantIsInTheTable(t *testing.T) {
 }
 
 var (
-	tagShape = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
-	// secretWords are words a payload field's name may not contain: what they
-	// name is a credential, free text, or a handle a person typed.
+	tagShape    = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 	secretWords = []string{"secret", "password", "token", "code", "otp", "email", "phone", "identifier", "username", "assertion", "state", "key"}
 	// freeTextNames are whole names a field may not have, because what they hold
 	// is free text; reason_class is a class and is allowed.
@@ -218,9 +215,6 @@ func TestAPayloadMarshalsToExactlyItsFields(t *testing.T) {
 			t.Errorf("%s marshals the keys %q, want %q", e.name, got, want)
 		}
 
-		// A field the design leaves out when empty is left out, and every other
-		// one is written even when empty: a subscriber reads a missing key as
-		// "not applicable".
 		raw, err = json.Marshal(reflect.New(e.typ).Elem().Interface())
 		if err != nil {
 			t.Fatal(err)
@@ -252,15 +246,15 @@ func TestAThrottleEventCarriesAnAccountOnlyForTheScopesThatHaveOne(t *testing.T)
 	}
 }
 
-// reasonClasses is the design's closed set, in the table's order.
+// reasonClasses is the closed set, in the table's order.
 var reasonClasses = []string{
 	"admin", "self", "password-change", "factor-reset", "refresh-reuse",
 	"expired", "account-disabled", "account-deleted", "evicted", "throttled",
 	"invitation-membership-inactive", "invitation-tenant-deleted", "invitation-role-withdrawn",
 }
 
-// TestTheReasonClassesAreTheDesignsSet holds the closed set against the design
-// and against the source, and that a value outside it is refused.
+// TestTheReasonClassesAreTheDesignsSet holds the closed set against the source
+// and that a value outside it is refused.
 func TestTheReasonClassesAreTheDesignsSet(t *testing.T) {
 	consts := map[string]string{
 		"ReasonAdmin": ReasonAdmin, "ReasonSelf": ReasonSelf, "ReasonPasswordChange": ReasonPasswordChange,

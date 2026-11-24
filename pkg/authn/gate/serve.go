@@ -19,11 +19,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// authHeader is the request header a credential arrives in.
 const authHeader = "Authorization"
 
-// challengeHeader is the response header a 401 names the acceptable
-// authentication schemes in.
 const challengeHeader = "WWW-Authenticate"
 
 // varyValue is what every response on a guarded route varies by. A cache that
@@ -53,8 +50,6 @@ var (
 	errAbandoned = errors.New("the request's own context ended before the backend answered")
 )
 
-// refusal is a conclusion reached without a backend verdict, or one derived
-// from a backend's failure to produce one.
 type refusal struct {
 	status int
 	// bucket is which of the counters this conclusion lands in.
@@ -85,8 +80,6 @@ type refusal struct {
 	retryAfter string
 }
 
-// gatewayRefusal builds a refusal the gateway produced itself: a 401 charged to
-// nobody but this module.
 func gatewayRefusal(reason string, attrs ...any) *refusal {
 	return &refusal{
 		status: nethttp.StatusUnauthorized,
@@ -305,9 +298,6 @@ func identityAttrs(id identity.Identity) []any {
 	return attrs
 }
 
-// identify asks the backend that took the credential, then holds what it says
-// to the exit checks and the impersonation rule, and produces either the
-// identity to stamp or the refusal to conclude with.
 func (g *gateway) identify(c *gin.Context, endpoint string, reg access, found *claimed) (identity.Identity, *refusal) {
 	b := found.backend
 	r := c.Request
@@ -464,8 +454,6 @@ func (g *gateway) conclude(r *nethttp.Request, endpoint string, deny *refusal) {
 	log.FromContext(r.Context()).Log(r.Context(), deny.level, deny.reason, attrs...)
 }
 
-// anonymous counts a request that carried no credential and passed on an
-// optional route, and writes the line that says so.
 func (g *gateway) anonymous(c *gin.Context, endpoint string) {
 	g.counts[bucketAnonymous].Add(1)
 	r := c.Request
@@ -475,8 +463,6 @@ func (g *gateway) anonymous(c *gin.Context, endpoint string) {
 		slog.String("outcome", bucketName(bucketAnonymous)))
 }
 
-// claimed is a credential taken off a request together with the backend that
-// takes it.
 type claimed struct {
 	cred       authn.Credential
 	backend    *backend
@@ -575,8 +561,6 @@ func (g *gateway) credentialOf(r *nethttp.Request) (*claimed, *refusal) {
 	return found, nil
 }
 
-// verify puts one credential to one backend, under the call budget, the
-// in-flight gate and a recover.
 func (g *gateway) verify(ctx context.Context, b *backend, cred authn.Credential) (
 	answer authn.Verdict, err error,
 ) {

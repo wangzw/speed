@@ -13,12 +13,8 @@ import (
 // after it would be a namespace nobody could be named in.
 const maxPrefixLen = 63
 
-// staticName is the name of the one backend that may declare, and hand back
-// accounts under, authn.StaticPrefix.
 const staticName = "static"
 
-// backend is one admitted credential-verifying backend with what it declared,
-// normalised once at admission so the request path compares without folding.
 type backend struct {
 	// name is what Verifier.Name reported at admission. It is stamped on the
 	// identity as Backend and is the key of every log line about this backend.
@@ -120,7 +116,6 @@ func buildDispatch(verifiers []authn.Verifier) (*dispatch, error) {
 	return d, nil
 }
 
-// admitBackend checks one backend on its own and normalises what it declared.
 func admitBackend(v authn.Verifier) (*backend, error) {
 	if v == nil {
 		return nil, fmt.Errorf("%w: a nil backend was delivered as a credential-verifying backend",
@@ -256,7 +251,6 @@ func (d *dispatch) schemes() []string {
 	return out
 }
 
-// describe renders a backend for a diagnostic: its name and what it takes.
 func describe(b *backend) string {
 	var parts []string
 	if len(b.schemes) > 0 {
@@ -279,7 +273,6 @@ func describe(b *backend) string {
 	return b.name + " (" + strings.Join(parts, "; ") + ")"
 }
 
-// validBackendName reports whether name matches [a-z0-9][a-z0-9.-]*.
 func validBackendName(name string) bool {
 	if name == "" {
 		return false
@@ -296,8 +289,6 @@ func validBackendName(name string) bool {
 	return true
 }
 
-// isToken reports whether s is a non-empty RFC 9110 token, which is also what an
-// RFC 6265 cookie name is.
 func isToken(s string) bool {
 	if s == "" {
 		return false

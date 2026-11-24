@@ -46,29 +46,18 @@ const ConfigNamespace = ModuleName
 // known, so it carries the conventional name.
 const defaultEndpoint = "account"
 
-// tokenFragment is this module's OpenAPI fragment, describing the key set, the
-// token endpoint and the revocation endpoint.
-//
 //go:embed openapi/token.json
 var tokenFragment []byte
 
-// backendName is the name this backend reports. It is a constant of the code and
-// not an input: the gateway stamps it on every identity this backend vouches for.
 const backendName = "token"
 
-// diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
 
-// tableName is the refresh-token table this module owns and everyone else reads
-// through Tokens.
 const tableName = "authn_refresh_tokens"
 
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so that the
-// tree the database module sees has one directory per dialect at its root.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
@@ -79,8 +68,6 @@ var migrationsFS = func() fs.FS {
 	return sub
 }()
 
-// init registers this module with the process registry. Importing the package is
-// what puts the token surface in a binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
@@ -216,8 +203,6 @@ func productOf(instance any) (*product, bool) {
 	return p, ok && p != nil
 }
 
-// readerOf takes up the configuration reader. Its absence is the host's omission
-// and is carried out as it stands, not read as "nothing was configured".
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -239,13 +224,10 @@ func (p *product) start(ctx context.Context) error {
 	return nil
 }
 
-// stop ends the module's background work: the refresh-token sweep.
 func (p *product) stop(_ context.Context) {
 	p.stopSweep()
 }
 
-// probe reads the table once. A missing table is ErrNotMigrated, and any other
-// failure is returned as it is.
 func (p *product) probe(ctx context.Context) error {
 	err := p.handle.WithContext(ctx).Exec("SELECT 1 FROM " + tableName + " WHERE 1 = 0").Error
 	switch {

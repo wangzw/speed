@@ -79,7 +79,6 @@ func TestTheBoundsAreTheDesignsNumbers(t *testing.T) {
 	if worst > IdentityAttributeBytesMax {
 		t.Errorf("the worst case of both writers is %d bytes, over the gateway's %d", worst, IdentityAttributeBytesMax)
 	}
-	// A mapped attribute name is at most 28 bytes: the key counts the prefix.
 	if got := SessionIDPKeyMax - len(ReservedPrefixIDP); got != 28 {
 		t.Errorf("a mapped attribute name may be %d bytes, want 28", got)
 	}
@@ -211,7 +210,6 @@ func TestAWorstCaseSetOfEachWriterTogetherFitsTheTotals(t *testing.T) {
 	size := 0
 	for i := range AccountAttributesMax {
 		k := fmt.Sprintf("k%02d", i)
-		// Spread 2048 bytes over 24 entries, the last taking what is left.
 		v := strings.Repeat("v", (AccountAttributeBytesMax-AccountAttributesMax*len(k))/AccountAttributesMax)
 		account[k] = v
 		size += len(k) + len(v)
@@ -268,7 +266,6 @@ func TestTruncateUTF8CutsOnACharacterBoundary(t *testing.T) {
 		if bound := max(limit, 0); len(got) > bound {
 			t.Errorf("limit %d: the result is %d bytes", limit, len(got))
 		}
-		// Longest: the next character does not fit.
 		if rest := s[len(got):]; rest != "" {
 			_, size := utf8.DecodeRuneInString(rest)
 			if len(got)+size <= max(limit, 0) {

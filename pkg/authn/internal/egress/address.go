@@ -45,18 +45,12 @@ var (
 	// unicast use.
 	globalUnicastV6 = netip.MustParsePrefix("2000::/3")
 
-	// nat64WellKnown carries an IPv4 address in its last four bytes (RFC 6052).
 	nat64WellKnown = netip.MustParsePrefix("64:ff9b::/96")
 
-	// nat64LocalUse is refused outright: the IPv4 address it carries is not
-	// where the packet goes (RFC 8215).
 	nat64LocalUse = netip.MustParsePrefix("64:ff9b:1::/48")
 
-	// teredo is refused outright: the IPv4 address it carries is the
-	// tunnel server's, not the peer's (RFC 4380).
 	teredo = netip.MustParsePrefix("2001::/32")
 
-	// sixToFour carries an IPv4 address in bytes 2 to 5 (RFC 3056).
 	sixToFour = netip.MustParsePrefix("2002::/16")
 )
 

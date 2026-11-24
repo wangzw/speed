@@ -1,14 +1,5 @@
 package authn_test
 
-// The cross-module summary of the failure design: this file assembles the real
-// modules of the capability directory, drives them to Serve, and holds the four
-// properties design-authn-failure.md states over an assembly larger than one
-// module: the sentinel closure of the root capability interfaces, the direction
-// each path takes under a dependency outage, and the shape of a 503 that a
-// dependency fault produces. Each module's own assembly_test and direction test
-// holds its own slice of this; this is the one place many modules stand together
-// and the properties are asserted across all of them.
-
 import (
 	"bytes"
 	"context"
@@ -58,7 +49,6 @@ import (
 // operating system picked for an endpoint configured on port 0.
 const summaryListening = "an HTTP listener is listening"
 
-// summaryRequestBound bounds each request a case sends.
 func summaryRequestBound() time.Duration {
 	return coretest.Scale(5 * time.Second)
 }
@@ -68,8 +58,6 @@ func summaryRequestBound() time.Duration {
 // refusing it without a read, so a request that presents it reaches the store.
 const unknownSessionToken = "summary-unknown-session-token-value"
 
-// summaryCapture is a log handler that keeps what it is handed, so a case can
-// read back the address the entry point bound itself to.
 type summaryCapture struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -109,7 +97,6 @@ func (c *summaryCapture) addressOf(endpoint string) string {
 	return ""
 }
 
-// summaryLogging delivers the logging capability over the capture.
 type summaryLogging struct{ logger *slog.Logger }
 
 func (l summaryLogging) Named(string) *slog.Logger { return l.logger }
@@ -134,7 +121,6 @@ var errKVUnreachable = errors.New("the key-value store is unreachable")
 
 func newFaultKV() *faultKV { return &faultKV{entries: make(map[string][]byte)} }
 
-// breakIt puts the store into its outage.
 func (k *faultKV) breakIt() { k.broken.Store(true) }
 
 func (k *faultKV) down() error {
@@ -266,7 +252,6 @@ type summaryHost struct {
 	pass     authn.Passwords
 }
 
-// summaryReply is what a client got back.
 type summaryReply struct {
 	status int
 	header http.Header
@@ -324,8 +309,6 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 				"issuer":           "https://auth.example.com",
 				"signing-key-file": keyPath,
 			},
-			// The gate is a required dependency of the login engine, and these cases
-			// present no proof: both surfaces run the off mechanism.
 			"humanverify": map[string]any{"mode": "off", "phone-mode": "off"},
 		},
 	}
@@ -409,8 +392,6 @@ func runSummary(t *testing.T, use func(h *summaryHost)) {
 	}
 }
 
-// summaryLoadConfig loads the configuration the way a host does, with every
-// module's declaration in the registry that reads it.
 func summaryLoadConfig(t *testing.T, body string, modules ...core.Module) config.Reader {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -449,9 +430,6 @@ func summarySigningKey(t *testing.T) string {
 	return path
 }
 
-// do issues one request through client, defaulting the origin header a browser
-// would send and, when cookie is not empty, the Cookie header a case hands by
-// hand.
 func (h *summaryHost) do(client *http.Client, method, path string, body []byte, contentType, cookie string) summaryReply {
 	h.t.Helper()
 	var reader io.Reader
@@ -504,9 +482,6 @@ func (h *summaryHost) postForm(path string, values url.Values) summaryReply {
 	return h.do(h.bare, http.MethodPost, path, []byte(values.Encode()), "application/x-www-form-urlencoded", "")
 }
 
-// closeDatabase closes the underlying connection pool of the assembly's
-// database handle, so every later read against it fails the way an unreachable
-// database does.
 func (h *summaryHost) closeDatabase() {
 	h.t.Helper()
 	database, err := core.Resolve[db.Database](h.reg)
@@ -522,7 +497,6 @@ func (h *summaryHost) closeDatabase() {
 	}
 }
 
-// createAccount makes an enabled account with a password.
 func (h *summaryHost) createAccount(username, pw string) authn.AccountID {
 	h.t.Helper()
 	acct, err := h.admin.Create(h.ctx, authn.CreateAccount{
@@ -534,8 +508,6 @@ func (h *summaryHost) createAccount(username, pw string) authn.AccountID {
 	return acct.ID
 }
 
-// loginFlow runs a password login from the first factor to a delivered session
-// over the jar-carrying client and returns the completion's reply.
 func (h *summaryHost) loginFlow(username, pw string) summaryReply {
 	h.t.Helper()
 	start := h.postJSON("/api/v1/auth/flows", map[string]any{
@@ -553,8 +525,6 @@ func (h *summaryHost) loginFlow(username, pw string) summaryReply {
 	return done
 }
 
-// sessionCookieName reads the name of the cookie a completion set, so a case can
-// present a value of its own under the name the session backend accepts.
 func sessionCookieName(t *testing.T, header string) string {
 	t.Helper()
 	if header == "" {
@@ -568,8 +538,6 @@ func sessionCookieName(t *testing.T, header string) string {
 	return strings.TrimSpace(name)
 }
 
-// authenticated reports whether GET /api/v1/auth/session answered that somebody is
-// logged in.
 func (h *summaryHost) authenticated(reply summaryReply) bool {
 	h.t.Helper()
 	if reply.status != http.StatusOK {
@@ -578,9 +546,6 @@ func (h *summaryHost) authenticated(reply summaryReply) bool {
 	return reply.json(h.t)["authenticated"] == true
 }
 
-// assertNoDependencyName holds the design's "the answer does not say which
-// dependency is unavailable": the body of a dependency-fault 503 carries no word
-// that names the kind of store that failed.
 func assertNoDependencyName(t *testing.T, body string) {
 	t.Helper()
 	low := strings.ToLower(body)
@@ -641,11 +606,10 @@ func classified(err error) bool {
 	return errors.Unwrap(err) != nil && !matchesAny(err, startupSentinels)
 }
 
-// TestEveryCapabilityErrorIsARuntimeSentinelOrAWrappedExternal drives the error
-// paths of the root capability interfaces in one assembled host and holds the
-// design's closure: each error can be classified with errors.Is to a runtime
-// sentinel, or is a wrapped external error. It is the assembly test the
-// assumption table of design-authn-failure.md names.
+// TestEveryCapabilityErrorIsARuntimeSentinelOrAWrappedExternal drives the
+// error paths of the root capability interfaces in one assembled host and
+// holds the design's closure: each error can be classified with errors.Is to
+// a runtime sentinel, or is a wrapped external error.
 func TestEveryCapabilityErrorIsARuntimeSentinelOrAWrappedExternal(t *testing.T) {
 	runSummary(t, func(h *summaryHost) {
 		acct := h.createAccount("dave", "dave-password")
@@ -712,10 +676,9 @@ func TestEveryCapabilityErrorIsARuntimeSentinelOrAWrappedExternal(t *testing.T) 
 }
 
 // TestADatabaseFaultAnswers503Never200Or401 holds the shape of a dependency
-// fault's answer over two entry points at once: a protected route and the token
-// endpoint both answer 503, never 200 and never 401, and neither body names the
-// dependency kind. The baseline while the database answers shows the two are
-// otherwise a 401 and a 400, so the 503 is the fault and not the ordinary path.
+// fault's answer over two entry points at once: a protected route and the
+// token endpoint both answer 503, never 200 and never 401, and neither body
+// names the dependency kind.
 func TestADatabaseFaultAnswers503Never200Or401(t *testing.T) {
 	runSummary(t, func(h *summaryHost) {
 		done := h.loginFlowAccount("erin", "erin-password")
@@ -751,38 +714,29 @@ func TestADatabaseFaultAnswers503Never200Or401(t *testing.T) {
 	})
 }
 
-// TestADatabaseFaultRelaxesOnlyTheSessionCheckCacheInBound holds the direction
-// table's one leniency for the database: a session answer already cached is
-// served until check-ttl runs out, and every other path is refused. A cookie
-// whose answer was cached still authenticates, while an uncached cookie and the
-// login path both answer 503 -- so leniency appears on the listed path and
-// nowhere else.
+// TestADatabaseFaultRelaxesOnlyTheSessionCheckCacheInBound holds the
+// direction table's one leniency for the database: a session answer already
+// cached is served until check-ttl runs out, and every other path is refused.
 func TestADatabaseFaultRelaxesOnlyTheSessionCheckCacheInBound(t *testing.T) {
 	runSummary(t, func(h *summaryHost) {
 		done := h.loginFlowAccount("frank", "frank-password")
 		cookieName := sessionCookieName(t, done.header.Get("Set-Cookie"))
 
-		// Warm the check cache for this cookie while the database answers.
 		if !h.authenticated(h.get("/api/v1/auth/session")) {
 			t.Fatal("the freshly delivered session did not authenticate")
 		}
 
 		h.closeDatabase()
 
-		// The cached answer inside check-ttl is the listed leniency: the same
-		// cookie still authenticates though the database is gone.
 		if !h.authenticated(h.get("/api/v1/auth/session")) {
 			t.Errorf("a cached session stopped authenticating on a database fault, so the bounded leniency is not in force")
 		}
 
-		// An uncached cookie has no leniency: it is refused with a 503, not
-		// admitted as anonymous and not denied with a 401.
 		uncached := h.getWithCookie("/api/v1/auth/session", cookieName+"="+unknownSessionToken)
 		if uncached.status != http.StatusServiceUnavailable {
 			t.Errorf("an uncached cookie under a database fault answered %d, want 503: %s", uncached.status, uncached.body)
 		}
 
-		// The login path is not on the leniency list: it is refused.
 		start := h.postJSON("/api/v1/auth/flows", map[string]any{
 			"method": "password",
 			"input":  map[string]string{"identifier": "frank", "password": "frank-password"},
@@ -795,22 +749,18 @@ func TestADatabaseFaultRelaxesOnlyTheSessionCheckCacheInBound(t *testing.T) {
 
 // TestAKeyValueFaultRefusesFlowsButLeavesTheSessionAlone holds the key-value
 // dependency's direction: with the flow store gone, beginning a login flow is
-// refused with a 503, while an already-established session, which lives in the
-// database, still authenticates. The design's "sessions and revocations are in
-// the database, so the key-value store's outage leaves a logged-in user alone"
-// has no other cross-module witness.
+// refused with a 503, while an already-established session, which lives in
+// the database, still authenticates.
 func TestAKeyValueFaultRefusesFlowsButLeavesTheSessionAlone(t *testing.T) {
 	runSummary(t, func(h *summaryHost) {
 		h.loginFlowAccount("grace", "grace-password")
 
 		h.kv.breakIt()
 
-		// The session survives: it is a database row, not a key-value entry.
 		if !h.authenticated(h.get("/api/v1/auth/session")) {
 			t.Error("an established session stopped authenticating on a key-value fault, so the session depends on the flow store")
 		}
 
-		// Beginning a login flow needs the store and is refused.
 		start := h.postJSON("/api/v1/auth/flows", map[string]any{
 			"method": "password",
 			"input":  map[string]string{"identifier": "grace", "password": "grace-password"},
@@ -821,16 +771,12 @@ func TestAKeyValueFaultRefusesFlowsButLeavesTheSessionAlone(t *testing.T) {
 	})
 }
 
-// loginFlowAccount creates an account and logs it in, returning the completion's
-// reply so a case can read the session cookie it set.
 func (h *summaryHost) loginFlowAccount(username, pw string) summaryReply {
 	h.t.Helper()
 	h.createAccount(username, pw)
 	return h.loginFlow(username, pw)
 }
 
-// tokenRefresh posts a refresh_token grant to the token endpoint with the
-// standard client, which reads no cookie.
 func (h *summaryHost) tokenRefresh(refresh string) summaryReply {
 	return h.postForm("/api/v1/auth/token", url.Values{
 		"grant_type":    {"refresh_token"},

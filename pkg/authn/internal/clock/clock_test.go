@@ -7,10 +7,7 @@ import (
 )
 
 // TestNowIsInUTCWhateverTheLocalZoneIs holds the property the package exists
-// for. A reading in the machine's zone would be stored by SQLite as text in that
-// zone and compared as a string, so the zone of the result is the observation:
-// the instant is the same either way, and only the location tells the two
-// implementations apart.
+// for.
 func TestNowIsInUTCWhateverTheLocalZoneIs(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	if err != nil {

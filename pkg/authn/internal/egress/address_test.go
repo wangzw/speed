@@ -15,7 +15,6 @@ type vector struct {
 // ones against a rule that refuses too little. The ones a plain
 // IsGlobalUnicast check gets wrong are listed in naiveWrong.
 var addressVectors = []vector{
-	// IPv4 special-purpose blocks, each refused.
 	{"127.0.0.1", false, "loopback"},
 	{"127.255.255.255", false, "loopback, top of the block"},
 	{"10.0.0.1", false, "private 10/8"},
@@ -44,7 +43,6 @@ var addressVectors = []vector{
 	{"0.255.255.255", false, "this network, top"},
 	{"255.255.255.255", false, "limited broadcast"},
 
-	// IPv4 just outside each block, accepted.
 	{"8.8.8.8", true, "public"},
 	{"1.0.0.1", true, "public"},
 	{"1.0.0.0", true, "first address past this-network"},
@@ -70,7 +68,6 @@ var addressVectors = []vector{
 	{"203.0.114.1", true, "past TEST-NET-3"},
 	{"223.255.255.255", true, "below multicast"},
 
-	// IPv6 special-purpose blocks, each refused.
 	{"::", false, "unspecified"},
 	{"::1", false, "loopback"},
 	{"100::1", false, "discard-only"},
@@ -96,7 +93,6 @@ var addressVectors = []vector{
 	{"2001:1::1", false, "inside 2001::/23, PCP anycast refused with its block"},
 	{"2001:1ff:ffff::1", false, "inside 2001::/23, top"},
 
-	// IPv6 accepted.
 	{"2606:4700:4700::1111", true, "public"},
 	{"2001:4860:4860::8888", true, "public"},
 	{"2000::1", true, "bottom of 2000::/3"},
@@ -108,13 +104,11 @@ var addressVectors = []vector{
 	{"2003::1", true, "past 6to4"},
 	{"2001:ffff::1", true, "far from the IETF block"},
 
-	// IPv4-mapped IPv6 is judged as the IPv4 address.
 	{"::ffff:127.0.0.1", false, "mapped loopback"},
 	{"::ffff:10.1.2.3", false, "mapped private"},
 	{"::ffff:169.254.169.254", false, "mapped metadata address"},
 	{"::ffff:8.8.8.8", true, "mapped public"},
 
-	// NAT64 well-known prefix: the IPv4 address in the last four bytes decides.
 	{"64:ff9b::a9fe:a9fe", false, "embeds 169.254.169.254"},
 	{"64:ff9b::a01:203", false, "embeds 10.1.2.3"},
 	{"64:ff9b::7f00:1", false, "embeds 127.0.0.1"},
@@ -122,7 +116,6 @@ var addressVectors = []vector{
 	{"64:ff9b::1:0:0", false, "outside the /96, no embedded address"},
 	{"64:ff9b::", false, "embeds 0.0.0.0"},
 
-	// NAT64 local-use prefix: refused whatever it embeds.
 	{"64:ff9b:1::", false, "local-use NAT64"},
 	{"64:ff9b:1::808:808", false, "local-use NAT64 embedding a public address"},
 	{"64:ff9b:1:ffff:ffff:ffff:ffff:ffff", false, "local-use NAT64, top"},
@@ -135,7 +128,6 @@ var addressVectors = []vector{
 	{"2002:808:808::1", true, "embeds 8.8.8.8"},
 	{"2002:808:808::a01:203", true, "embeds 8.8.8.8 while the last four bytes are private"},
 
-	// Teredo: refused whatever it embeds.
 	{"2001:0:4136:e378:8000:63bf:3fff:fdd2", false, "Teredo"},
 	{"2001::1", false, "Teredo, bottom"},
 	{"2001:0:ffff:ffff:ffff:ffff:ffff:ffff", false, "Teredo, top"},
@@ -156,6 +148,8 @@ var naiveWrong = []string{
 	"3fff::1",
 }
 
+// TestPermittedAgainstTheAddressTable checks that permitted against the
+// address table.
 func TestPermittedAgainstTheAddressTable(t *testing.T) {
 	for _, v := range addressVectors {
 		t.Run(v.addr, func(t *testing.T) {
@@ -170,6 +164,8 @@ func TestPermittedAgainstTheAddressTable(t *testing.T) {
 	}
 }
 
+// TestAPlainGlobalUnicastCheckAcceptsWhatPermittedRefuses checks that a plain
+// global unicast check accepts what permitted refuses.
 func TestAPlainGlobalUnicastCheckAcceptsWhatPermittedRefuses(t *testing.T) {
 	for _, s := range naiveWrong {
 		addr := netip.MustParseAddr(s)
@@ -182,6 +178,8 @@ func TestAPlainGlobalUnicastCheckAcceptsWhatPermittedRefuses(t *testing.T) {
 	}
 }
 
+// TestTheZeroAddressIsNotPermitted checks that the zero address is not
+// permitted.
 func TestTheZeroAddressIsNotPermitted(t *testing.T) {
 	for _, loop := range []bool{false, true} {
 		if Permitted(netip.Addr{}, loop) {
@@ -190,6 +188,8 @@ func TestTheZeroAddressIsNotPermitted(t *testing.T) {
 	}
 }
 
+// TestTheLoopbackSwitchAdmitsLoopbackAndNothingElse checks that the loopback
+// switch admits loopback and nothing else.
 func TestTheLoopbackSwitchAdmitsLoopbackAndNothingElse(t *testing.T) {
 	cases := []struct {
 		addr string
@@ -199,10 +199,8 @@ func TestTheLoopbackSwitchAdmitsLoopbackAndNothingElse(t *testing.T) {
 		{"127.255.255.254", true},
 		{"::1", true},
 		{"::ffff:127.0.0.1", true},
-		// Loopback wrapped in a translation prefix leaves the machine.
 		{"64:ff9b::7f00:1", false},
 		{"2002:7f00:1::1", false},
-		// Every other refused address stays refused.
 		{"10.0.0.1", false},
 		{"169.254.169.254", false},
 		{"192.168.1.1", false},
@@ -213,7 +211,6 @@ func TestTheLoopbackSwitchAdmitsLoopbackAndNothingElse(t *testing.T) {
 		{"2001:db8::1", false},
 		{"64:ff9b::a9fe:a9fe", false},
 		{"2001:0:4136:e378:8000:63bf:3fff:fdd2", false},
-		// And a public address stays accepted.
 		{"8.8.8.8", true},
 		{"2606:4700:4700::1111", true},
 	}

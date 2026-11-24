@@ -21,8 +21,6 @@ func (r *rig) createSessionTable() {
 	}
 }
 
-// seedSession writes one session row. revokedAt and expiresAt are nullable, so a
-// live session and a dead one are both expressible.
 func (r *rig) seedSession(id string, revokedAt, expiresAt *time.Time) {
 	r.t.Helper()
 	err := r.p.handle.Exec("INSERT INTO "+sessionTable+" (id, revoked_at, expires_at) VALUES (?, ?, ?)",
@@ -32,8 +30,6 @@ func (r *rig) seedSession(id string, revokedAt, expiresAt *time.Time) {
 	}
 }
 
-// seedRefresh writes one refresh row on a session with the given idle expiry,
-// unused so nothing else about it matters to the sweep.
 func (r *rig) seedRefresh(id, session string, idleExpiresAt time.Time) {
 	r.t.Helper()
 	err := r.p.handle.Exec("INSERT INTO "+tableName+
@@ -45,7 +41,6 @@ func (r *rig) seedRefresh(id, session string, idleExpiresAt time.Time) {
 	}
 }
 
-// countRefresh is how many rows the table holds.
 func (r *rig) countRefresh() int {
 	r.t.Helper()
 	var n int
@@ -194,8 +189,6 @@ func TestStartSweepIsBoundedAndStopEndsIt(t *testing.T) {
 	}
 }
 
-// waitUntil polls cond until it holds or a short bound passes, so a case can
-// observe a goroutine's effect without racing it.
 func waitUntil(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -208,11 +201,9 @@ func waitUntil(t *testing.T, cond func() bool) {
 	t.Fatal("the condition was not met within the bound")
 }
 
-// TestTheSweepGoroutineRunsAndASecondStartAddsNone holds the design property the
-// map-entry check cannot observe: one sweep goroutine per product, actually
-// running, and a second start launching none. A startSweep that launched no
-// goroutine leaves the run counter at zero, and one that launched a second
-// raises it to two.
+// TestTheSweepGoroutineRunsAndASecondStartAddsNone holds the design property
+// the map-entry check cannot observe: one sweep goroutine per product,
+// actually running, and a second start launching none.
 func TestTheSweepGoroutineRunsAndASecondStartAddsNone(t *testing.T) {
 	r := newRig(t)
 	r.p.startSweep(context.Background())

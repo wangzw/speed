@@ -188,8 +188,6 @@ func (i Identity) Satisfies(r model.Requirement, now time.Time) bool {
 	return true
 }
 
-// key and accessKey are unexported and empty, so no value from another package
-// can equal either.
 type (
 	key       struct{}
 	accessKey struct{}

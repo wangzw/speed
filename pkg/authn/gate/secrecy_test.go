@@ -20,8 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// recordText is everything a record says: its message and every attribute, groups
-// included, as key=value.
 func recordText(r slog.Record) string {
 	var b strings.Builder
 	b.WriteString(r.Message)
@@ -60,7 +58,6 @@ func sharedWindow(haystack, secret string) (string, bool) {
 	return "", false
 }
 
-// responseText is the whole response: status line, headers and body.
 func responseText(w *httptest.ResponseRecorder) string {
 	res := w.Result()
 	defer func() { _ = res.Body.Close() }()
@@ -73,15 +70,9 @@ func responseText(w *httptest.ResponseRecorder) string {
 	return b.String()
 }
 
-// TestNoCredentialTextReachesARecordOrTheResponse holds the rule that a credential
-// is written nowhere: not in the log line a refusal produces, whatever the
-// refusal is for, and not in the response. Each case sends a secret in the place
-// a client can put one and drives it down one of the paths that end a request.
-//
-// The first group of cases puts the secret where a scheme name belongs. A client
-// that leaves the scheme out writes the credential itself there, and the line
-// that says no backend takes the scheme is the one place the gateway used to
-// copy the word.
+// TestNoCredentialTextReachesARecordOrTheResponse holds the rule that a
+// credential is written nowhere: not in the log line a refusal produces,
+// whatever the refusal is for, and not in the response.
 func TestNoCredentialTextReachesARecordOrTheResponse(t *testing.T) {
 	const (
 		jwt       = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNlY3JldC1ieXRlcw"
@@ -213,10 +204,7 @@ func TestTheLengthOfAnUnclaimedSchemeIsAllTheRecordSays(t *testing.T) {
 }
 
 // TestTheCookieNameIsReadableThroughTheRealRedaction holds that the attribute
-// naming a cookie survives the gateway's own key rules. The key rules mask every
-// record written under a credential key, and the cookie a warning names is a
-// name and not a value; the startup warning about a cookie without the host
-// prefix exists to say which one, and masked it says nothing.
+// naming a cookie survives the gateway's own key rules.
 func TestTheCookieNameIsReadableThroughTheRealRedaction(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "log.json")
 	body := `{"authn":{"gate":{"endpoints":["public"]}},` +
@@ -282,11 +270,8 @@ func TestAConfigurationErrorNeverRepeatsWhatMayHoldASecret(t *testing.T) {
 }
 
 // TestAnAbsentResolutionLayerListIsNotAShapeTheGatewayCouldNotRead holds the
-// difference between a configuration nobody wrote and one the gateway could not
-// decode. The tenant resolution layer declares its endpoint list as required, so
-// a command that includes the layer and leaves the list out decodes to the
-// missing-required error: that resolves a tenant on no endpoint, so nothing
-// conflicts and nothing needs a warning, which is for a shape that cannot be read.
+// difference between a configuration nobody wrote and one the gateway could
+// not decode.
 func TestAnAbsentResolutionLayerListIsNotAShapeTheGatewayCouldNotRead(t *testing.T) {
 	for name, c := range map[string]struct {
 		body     string

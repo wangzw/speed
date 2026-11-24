@@ -32,9 +32,12 @@ type ThrottleParams struct {
 // still read here: the default is the strict side of every one of them, so a
 // value that cannot be acted on falls back to the more cautious reading.
 const (
+	// MinFreeAttempts and MaxFreeAttempts bound the free-attempt setting.
 	MinFreeAttempts, MaxFreeAttempts = 1, 20
-	MinWindow, MaxWindow             = time.Minute, 24 * time.Hour
-	MinBackoff, MaxBackoff           = 10 * time.Second, 24 * time.Hour
+	// MinWindow and MaxWindow bound the failure-window setting.
+	MinWindow, MaxWindow = time.Minute, 24 * time.Hour
+	// MinBackoff and MaxBackoff bound the back-off cap setting.
+	MinBackoff, MaxBackoff = 10 * time.Second, 24 * time.Hour
 )
 
 // DefaultThrottleParams are what the back-off runs on when nothing states other
@@ -102,8 +105,10 @@ func ThrottleKey(subject string) string {
 
 // Key names one counter: the scope it is kept under and the key within it.
 type Key struct {
+	// Scope is the first half of the key.
 	Scope authn.ThrottleScope
-	Key   string
+	// Key is the value the back-off counts under.
+	Key string
 }
 
 // Throttle is the in-process failure back-off. It implements authn.Throttle for
@@ -207,9 +212,6 @@ func (s *throttleState) live(now time.Time, p ThrottleParams) int {
 	return s.failures
 }
 
-// pending is the count an attempt arriving now is set against: the failures that
-// stand and the attempts in flight, each of which is a failure until it is
-// settled as a pass.
 func (s *throttleState) pending(now time.Time, p ThrottleParams) int {
 	return s.live(now, p) + s.inflight
 }

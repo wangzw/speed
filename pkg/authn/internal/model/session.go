@@ -30,14 +30,19 @@ type ClientInfo struct {
 
 // NewSession is what creating a session takes.
 type NewSession struct {
-	Account     AccountID
-	Kind        SessionKind // browser or token; a service session is made only by ForCredential
-	Methods     []Method
-	Assurance   Assurance
-	IDPAssured  bool // the multi-factor level is an enterprise IdP's declaration
-	AuthTime    time.Time
-	Provider    string            // the SSO provider
-	Attributes  map[string]string // the idp.* snapshot the attribute mapping produced
+	// Account is the account the session is for.
+	Account AccountID
+	Kind    SessionKind // browser or token; a service session is made only by ForCredential
+	// Methods are the authentication methods completed.
+	Methods []Method
+	// Assurance is the level the authentication reached.
+	Assurance  Assurance
+	IDPAssured bool // the multi-factor level is an enterprise IdP's declaration
+	// AuthTime is when the last interactive authentication happened.
+	AuthTime   time.Time
+	Provider   string            // the SSO provider
+	Attributes map[string]string // the idp.* snapshot the attribute mapping produced
+	// Client describes where the request came from.
 	Client      ClientInfo
 	AbsoluteTTL time.Duration // zero: the setting for the kind; non-zero may not exceed it
 }
@@ -52,43 +57,68 @@ func (n NewSession) Clone() NewSession {
 // Issued is the result of creating a session or of renewing its token. Token is
 // a secret and is handed over once.
 type Issued struct {
-	ID        SessionID
-	Token     string // the cookie's value for a browser session, empty for the others
+	// ID is the public session identifier.
+	ID    SessionID
+	Token string // the cookie's value for a browser session, empty for the others
+	// ExpiresAt is the absolute expiry.
 	ExpiresAt time.Time
 }
 
 // SessionInfo is one session row as a listing shows it.
 type SessionInfo struct {
-	ID              SessionID
-	Account         AccountID
-	Kind            SessionKind
-	Assurance       Assurance
-	AuthTime        time.Time
+	// ID is the public session identifier.
+	ID SessionID
+	// Account is the session account.
+	Account AccountID
+	// Kind is the session kind.
+	Kind SessionKind
+	// Assurance is the level the session carries.
+	Assurance Assurance
+	// AuthTime is when the last interactive authentication happened.
+	AuthTime time.Time
+	// ImpersonationID is the attached impersonation record, empty when none.
 	ImpersonationID string
 	CredentialID    string // a service session: the secret it stands for
-	CreatedAt       time.Time
-	LastSeenAt      time.Time
-	ExpiresAt       time.Time // a service session may carry the zero time: it follows its secret
-	Revoked         bool
+	// CreatedAt is when the session was created.
+	CreatedAt time.Time
+	// LastSeenAt is the last activity the row was written for.
+	LastSeenAt time.Time
+	// ExpiresAt is the absolute expiry.
+	ExpiresAt time.Time // a service session may carry the zero time: it follows its secret
+	// Revoked says the session has been revoked.
+	Revoked bool
 }
 
 // SessionStatus is what a verifying backend needs to build an identity: whether
 // the session is still valid and the facts the identity is made from. The zero
 // value, with Active false, is invalid and carries nothing a backend could use.
 type SessionStatus struct {
-	Active          bool
-	Account         AccountID
-	Kind            SessionKind
-	Methods         []Method
-	Assurance       Assurance
-	IDPAssured      bool
-	AuthTime        time.Time
-	Provider        string
-	Attributes      map[string]string
+	// Active says the session is still valid.
+	Active bool
+	// Account is the account the session belongs to.
+	Account AccountID
+	// Kind is the session kind.
+	Kind SessionKind
+	// Methods are the authentication methods completed.
+	Methods []Method
+	// Assurance is the level the session carries.
+	Assurance Assurance
+	// IDPAssured says the multi-factor level is an IdP declaration.
+	IDPAssured bool
+	// AuthTime is when the last interactive authentication happened.
+	AuthTime time.Time
+	// Provider is the enterprise SSO provider, empty otherwise.
+	Provider string
+	// Attributes is the idp.* snapshot.
+	Attributes map[string]string
+	// ImpersonationID is the attached impersonation record, empty when none.
 	ImpersonationID string
-	CredentialID    string
-	CreatedAt       time.Time
-	ExpiresAt       time.Time
+	// CredentialID is the service secret the session stands for.
+	CredentialID string
+	// CreatedAt is when the session was created.
+	CreatedAt time.Time
+	// ExpiresAt is the absolute expiry.
+	ExpiresAt time.Time
 }
 
 // Clone returns a copy that shares no slice or map with s.
@@ -100,10 +130,13 @@ func (s SessionStatus) Clone() SessionStatus {
 
 // Elevation is what a completed step-up changes on a session.
 type Elevation struct {
-	Methods    []Method
+	// Methods are the methods the step-up proved.
+	Methods []Method
+	// Assurance is the level after the step-up.
 	Assurance  Assurance
 	IDPAssured bool // false after local factors completed the step-up
-	AuthTime   time.Time
+	// AuthTime is when the step-up happened.
+	AuthTime time.Time
 }
 
 // Clone returns a copy that shares no slice with e.

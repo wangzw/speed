@@ -41,8 +41,6 @@ func (h *recorder) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h *recorder) WithGroup(string) slog.Handler { return h }
 
-// boundRecorder is a recorder with attributes bound: it writes each record to
-// the parent with them added.
 type boundRecorder struct {
 	parent *recorder
 	attrs  []slog.Attr
@@ -62,9 +60,6 @@ func (b boundRecorder) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (b boundRecorder) WithGroup(string) slog.Handler { return b }
 
-// only returns the one record written, failing the case when there is not
-// exactly one: every conclusion writes one line, and a second would be a second
-// conclusion.
 func (h *recorder) only(t *testing.T) slog.Record {
 	t.Helper()
 	h.mu.Lock()
@@ -75,7 +70,6 @@ func (h *recorder) only(t *testing.T) slog.Record {
 	return h.records[0]
 }
 
-// attr returns the value of the attribute key on r, and whether it is there.
 func attr(r slog.Record, key string) (slog.Value, bool) {
 	var found slog.Value
 	var ok bool
@@ -89,7 +83,6 @@ func attr(r slog.Record, key string) (slog.Value, bool) {
 	return found, ok
 }
 
-// recorded builds a request whose logger writes into h.
 func recorded(h *recorder, method, target string) *nethttp.Request {
 	r := httptest.NewRequest(method, target, nil)
 	return r.WithContext(log.WithLogger(r.Context(), slog.New(h)))
@@ -97,15 +90,6 @@ func recorded(h *recorder, method, target string) *nethttp.Request {
 
 // TestEachConclusionIsLoggedAtTheLevelItsCauseDeserves holds the level every
 // refusal and outage is written at.
-//
-// The level is the one filter every log pipeline applies before anything else,
-// so a conclusion written below the level an operator keeps is a conclusion that
-// was never written. A wrong password is ordinary traffic. A backend that cannot
-// answer is something to look at. A backend that returned without answering, or
-// that panicked, is a defect in code somebody has to go and fix, and the zero
-// verdict in particular is counted apart from a refusal precisely so that it can
-// be found — a signal only visible at the level a production deployment
-// discards is not a signal.
 func TestEachConclusionIsLoggedAtTheLevelItsCauseDeserves(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -258,10 +242,7 @@ func TestARequestOnAnExemptRouteWritesNoRecordAndCountsNothing(t *testing.T) {
 }
 
 // TestAPassOutsideTheNamespaceIsLoggedAsTheDefectItIs holds the level of the
-// namespace check. The refusal is charged to the gateway, which judged it, but
-// what it reports is a backend saying something it had no authority to say — a
-// defect in that backend or an overlap in the deployment — and either one is
-// somebody's to fix.
+// namespace check.
 func TestAPassOutsideTheNamespaceIsLoggedAsTheDefectItIs(t *testing.T) {
 	minting := basicBackend("corp", "corp.")
 	minting.verify = func(context.Context, authn.Credential) authn.Verdict {

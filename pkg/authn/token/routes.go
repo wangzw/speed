@@ -59,7 +59,6 @@ var (
 	revokeFormFields = formFieldNames(reflect.TypeOf(revokeInput{}))
 )
 
-// formFieldNames returns the names the declaration's form tags carry.
 func formFieldNames(t reflect.Type) []string {
 	names := make([]string, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
@@ -142,8 +141,6 @@ func declaredForm(c *gin.Context, fields []string) url.Values {
 	return out
 }
 
-// mediaTypeOf lowercases a Content-Type and drops its parameters, the way the
-// entry point compares a declared media type with the header.
 func mediaTypeOf(raw string) string {
 	mediaType, _, err := mime.ParseMediaType(raw)
 	if err != nil {
@@ -184,8 +181,6 @@ func (p *product) grantClientCredentials(ctx context.Context, in tokenIssueInput
 	return tokenSuccess(access, authn.RefreshToken{}, p.clock.Now()), nil
 }
 
-// grantRefreshToken serves the refresh_token grant. A missing refresh_token is
-// invalid_request; a token that does not rotate is invalid_grant.
 func (p *product) grantRefreshToken(ctx context.Context, in tokenIssueInput) (speedhttp.Reply, error) {
 	if in.RefreshToken == "" {
 		return oauthReply(http.StatusBadRequest, errInvalidRequest), nil
@@ -197,8 +192,6 @@ func (p *product) grantRefreshToken(ctx context.Context, in tokenIssueInput) (sp
 	return tokenSuccess(access, refresh, p.clock.Now()), nil
 }
 
-// clientCredential reads the client identifier and secret a request presents.
-// The last result is false when the form names no client and no secret.
 func clientCredential(in tokenIssueInput) (string, string, bool) {
 	if in.ClientID == "" || in.ClientSecret == "" {
 		return "", "", false
@@ -248,8 +241,6 @@ func oauthReply(status int, code string) speedhttp.Reply {
 	return speedhttp.JSONReply(status, AuthnTokenOAuthError{Error: code})
 }
 
-// tokenSuccess builds the success body. expires_in is the access token's
-// remaining lifetime in whole seconds.
 func tokenSuccess(access authn.AccessToken, refresh authn.RefreshToken, now time.Time) speedhttp.Reply {
 	body := AuthnTokenResponse{
 		AccessToken: access.Value,

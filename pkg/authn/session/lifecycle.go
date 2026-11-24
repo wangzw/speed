@@ -16,8 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// recentEventsCapacity is how many event identifiers are remembered to tell a
-// second delivery from a new event.
 const recentEventsCapacity = 4096
 
 // AccountCreated changes nothing: a new account has no session, and a session is
@@ -90,8 +88,6 @@ func (p *product) publishRevoked(ctx context.Context, payload authn.SessionRevok
 	}
 }
 
-// count reports one operation on the operations counter, when the assembly has a
-// meter.
 func (p *product) count(ctx context.Context, operation string) {
 	if p.operations == nil {
 		return

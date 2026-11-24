@@ -33,6 +33,8 @@ func TestAStepNobodyAnsweredReadsAsNoAnswer(t *testing.T) {
 	}
 }
 
+// TestEachConstructorSaysWhatItWasCalledFor checks that each constructor says
+// what it was called for.
 func TestEachConstructorSaysWhatItWasCalledFor(t *testing.T) {
 	boom := errors.New("boom")
 	for _, c := range []struct {
@@ -61,6 +63,7 @@ func TestEachConstructorSaysWhatItWasCalledFor(t *testing.T) {
 	}
 }
 
+// checks that each step kind carries its name.
 func TestKindNames(t *testing.T) {
 	seen := map[string]step.Kind{}
 	for k := step.KindUnanswered; k <= step.KindEnrolled; k++ {
@@ -78,6 +81,8 @@ func TestKindNames(t *testing.T) {
 	}
 }
 
+// TestPromptPayloadIsReadBackAsGiven checks that prompt payload is read back
+// as given.
 func TestPromptPayloadIsReadBackAsGiven(t *testing.T) {
 	fields := []model.Field{
 		{Name: "identifier", Kind: model.FieldText, Required: true},
@@ -98,6 +103,8 @@ func TestPromptPayloadIsReadBackAsGiven(t *testing.T) {
 	}
 }
 
+// TestRedirectPayloadIsReadBackAsGiven checks that redirect payload is read
+// back as given.
 func TestRedirectPayloadIsReadBackAsGiven(t *testing.T) {
 	s := step.Redirect("authorize", []byte{1, 2, 3}, "https://idp.example/authorize?state=x")
 	if got := step.RedirectOf(s); got != "https://idp.example/authorize?state=x" {
@@ -114,6 +121,8 @@ func TestRedirectPayloadIsReadBackAsGiven(t *testing.T) {
 	}
 }
 
+// TestDataPayloadIsReadBackAsGiven checks that data payload is read back as
+// given.
 func TestDataPayloadIsReadBackAsGiven(t *testing.T) {
 	v := map[string]string{"challenge": "abc"}
 	s := step.Data("assert", nil, v)
@@ -126,6 +135,7 @@ func TestDataPayloadIsReadBackAsGiven(t *testing.T) {
 	}
 }
 
+// TestProvenCarriesTheProof checks that proven carries the proof.
 func TestProvenCarriesTheProof(t *testing.T) {
 	proof := model.Proof{
 		Identifier:   &model.Identifier{Kind: model.IdentifierPhone, Value: "+8613800000000", VerifiedVia: "sms-code"},
@@ -139,13 +149,13 @@ func TestProvenCarriesTheProof(t *testing.T) {
 		!slices.Equal(got.Methods, []model.Method{model.MethodSMS}) || got.Account != "" || got.External != nil {
 		t.Errorf("ProofOf = %+v", got)
 	}
-	// A proof read off another kind names nothing, so account resolution
-	// fails on it.
 	if p := step.ProofOf(step.Refused(errors.New("x"))); p.Account != "" || p.Identifier != nil || p.External != nil {
 		t.Errorf("a refusal carries a proof: %+v", p)
 	}
 }
 
+// TestPayloadsAreCopiedOnTheWayInAndOut checks that payloads are copied on
+// the way in and out.
 func TestPayloadsAreCopiedOnTheWayInAndOut(t *testing.T) {
 	private := []byte("abc")
 	fields := []model.Field{{Name: "a"}}
@@ -159,7 +169,6 @@ func TestPayloadsAreCopiedOnTheWayInAndOut(t *testing.T) {
 	proven := step.Proven(proof)
 	passed := step.Passed(pass)
 
-	// The method keeps editing what it handed over.
 	private[0] = 'X'
 	fields[0].Name = "changed"
 	proof.External.Subject = "changed"
@@ -181,7 +190,6 @@ func TestPayloadsAreCopiedOnTheWayInAndOut(t *testing.T) {
 		t.Error("the pass follows the method's slice")
 	}
 
-	// And what a reader got is its own.
 	step.PrivateOf(prompt)[0] = 'Y'
 	step.FieldsOf(prompt)[0].Name = "changed"
 	r := step.ProofOf(proven)
@@ -195,6 +203,8 @@ func TestPayloadsAreCopiedOnTheWayInAndOut(t *testing.T) {
 	}
 }
 
+// TestRefusedAndUnavailableCarryTheirCause checks that refused and
+// unavailable carry their cause.
 func TestRefusedAndUnavailableCarryTheirCause(t *testing.T) {
 	boom := errors.New("boom")
 	if got := step.CauseOf(step.Refused(boom)); !errors.Is(got, boom) {
@@ -203,7 +213,6 @@ func TestRefusedAndUnavailableCarryTheirCause(t *testing.T) {
 	if got := step.CauseOf(step.Unavailable(boom)); !errors.Is(got, boom) {
 		t.Errorf("Unavailable cause = %v", got)
 	}
-	// The cause does not change the kind.
 	if got := step.KindOf(step.Refused(nil)); got != step.KindRefused {
 		t.Errorf("Refused(nil) reads as %v", got)
 	}
@@ -212,6 +221,7 @@ func TestRefusedAndUnavailableCarryTheirCause(t *testing.T) {
 	}
 }
 
+// checks that Throttled carries its Retry-After.
 func TestThrottledCarriesRetryAfter(t *testing.T) {
 	for _, c := range []struct {
 		in, want time.Duration
@@ -231,6 +241,8 @@ func TestThrottledCarriesRetryAfter(t *testing.T) {
 	}
 }
 
+// TestPassedAndEnrolledCarryTheirPayload checks that passed and enrolled
+// carry their payload.
 func TestPassedAndEnrolledCarryTheirPayload(t *testing.T) {
 	p := step.PassOf(step.Passed(model.Pass{Methods: []model.Method{model.MethodWebAuthn}, UserVerified: true}))
 	if !p.UserVerified || !slices.Equal(p.Methods, []model.Method{model.MethodWebAuthn}) {
@@ -245,6 +257,8 @@ func TestPassedAndEnrolledCarryTheirPayload(t *testing.T) {
 	}
 }
 
+// checks that WithSends sets the send count and leaves a zero Step
+// unanswered.
 func TestWithSends(t *testing.T) {
 	base := step.Prompt("code", []byte("st"), model.Field{Name: "code"})
 	for _, c := range []struct {

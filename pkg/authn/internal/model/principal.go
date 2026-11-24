@@ -13,10 +13,12 @@ import (
 // A Principal may be written as a literal; a malformed one compiles and is
 // refused at run time by the gateway's checks.
 type Principal struct {
-	Account   AccountID
-	Actor     AccountID // zero means the same as Account; when set it differs from Account, and Session and Scope are set
-	Session   SessionID // empty for a backend with no login session
-	Methods   []Method  // non-empty, each in the closed set, no repeats, at most 8
+	// Account is the account the credential was verified for.
+	Account AccountID
+	Actor   AccountID // zero means the same as Account; when set it differs from Account, and Session and Scope are set
+	Session SessionID // empty for a backend with no login session
+	Methods []Method  // non-empty, each in the closed set, no repeats, at most 8
+	// Assurance is the level the verification reached.
 	Assurance Assurance
 	// IDPAssured: the multi-factor level is an enterprise IdP's declaration, not
 	// locally verified factors. When true, Assurance is multi-factor and Provider

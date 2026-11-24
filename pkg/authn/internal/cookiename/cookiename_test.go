@@ -39,11 +39,10 @@ func TestNameFollowsThePublicURLsScheme(t *testing.T) {
 	}
 }
 
-// TestSecureFollowsThePublicURLsScheme holds the Secure rule over each kind of
-// public URL: an http public URL writes no Secure whatever its host, https
-// writes it, https on a loopback host included, and so does every value that is
-// not an http URL. The rule turns on the same test as Name, so a cookie is
-// unprefixed exactly where it is not Secure.
+// TestSecureFollowsThePublicURLsScheme holds the Secure rule over each kind
+// of public URL: an http public URL writes no Secure whatever its host, https
+// writes it, https on a loopback host included, and so does every value that
+// is not an http URL.
 func TestSecureFollowsThePublicURLsScheme(t *testing.T) {
 	cases := []struct {
 		name, publicURL string
@@ -113,11 +112,11 @@ func TestEveryStemTakesTheSameRule(t *testing.T) {
 }
 
 // TestCookieBuildsEveryAttributeFromThePublicURLAndTheSpec holds the
-// constructor every authn cookie writer calls: an http public URL gives the bare
-// name and no Secure, https, https on localhost included, gives __Host- and
-// Secure, a Domain on https gives __Secure- and Secure, and every cookie is
-// HttpOnly on Path=/ with the value, Domain, Max-Age and SameSite of the spec.
-// The serialised header is checked as well, since that is what a browser stores.
+// constructor every authn cookie writer calls: an http public URL gives the
+// bare name and no Secure, https, https on localhost included, gives __Host-
+// and Secure, a Domain on https gives __Secure- and Secure, and every cookie
+// is HttpOnly on Path=/ with the value, Domain, Max-Age and SameSite of the
+// spec.
 func TestCookieBuildsEveryAttributeFromThePublicURLAndTheSpec(t *testing.T) {
 	cases := []struct {
 		name, publicURL string

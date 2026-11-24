@@ -63,9 +63,6 @@ func (p *product) Revoke(ctx context.Context, presented string) error {
 	return p.revokeSession(ctx, authn.SessionID(claims.Session))
 }
 
-// revokeSession revokes a session and reports the outcome: a success, or
-// ErrUnavailable when the session store cannot be reached. A session already
-// revoked is idempotent and still a success.
 func (p *product) revokeSession(ctx context.Context, session authn.SessionID) error {
 	if err := p.sessions.Revoke(ctx, session, authn.ReasonSelf); err != nil {
 		return p.revokeUnavailable(ctx, "revoking a session", err)

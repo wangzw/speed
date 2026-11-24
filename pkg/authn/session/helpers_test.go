@@ -51,7 +51,6 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
-// fakeAccounts is an account store a test writes by hand.
 type fakeAccounts struct {
 	mu       sync.Mutex
 	accounts map[authn.AccountID]authn.Account
@@ -66,21 +65,18 @@ func newFakeAccounts() *fakeAccounts {
 	return &fakeAccounts{accounts: make(map[authn.AccountID]authn.Account)}
 }
 
-// put adds or replaces an account.
 func (f *fakeAccounts) put(a authn.Account) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.accounts[a.ID] = a.Clone()
 }
 
-// add makes an enabled user account.
 func (f *fakeAccounts) add(id authn.AccountID, attrs map[string]string) authn.Account {
 	a := authn.Account{ID: id, Kind: authn.KindUser, Status: authn.StatusActive, Attributes: attrs, CreatedAt: epoch.Add(-time.Hour)}
 	f.put(a)
 	return a
 }
 
-// update changes an account in place.
 func (f *fakeAccounts) update(id authn.AccountID, fn func(*authn.Account)) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -160,8 +156,6 @@ func (*fakeAccounts) ListServiceSecrets(context.Context, authn.AccountID) ([]aut
 	return nil, nil
 }
 
-// fakeSettings is a settings store holding the values a test wrote, and the
-// declared default for anything else.
 type fakeSettings struct {
 	mu     sync.Mutex
 	values map[string]any
@@ -227,7 +221,6 @@ func (s *fakeSettings) Read(key string, reads ...settings.LayerRead) ([]settings
 	return results, nil
 }
 
-// declaredDefault is the declared default of a setting path.
 func declaredDefault(path string) any {
 	switch path {
 	case idleTimeoutPath:
@@ -250,7 +243,6 @@ func declaredDefault(path string) any {
 	return nil
 }
 
-// fakeImpersonation answers Active from a table a test writes.
 type fakeImpersonation struct {
 	mu     sync.Mutex
 	grants map[string]authn.ImpersonationGrant
@@ -309,8 +301,6 @@ func (*fakeImpersonation) List(context.Context, authn.GrantQuery) ([]authn.Imper
 	return nil, "", nil
 }
 
-// recordingBus is an in-process bus that delivers on the publisher's goroutine
-// and keeps what was published.
 type recordingBus struct {
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -347,8 +337,6 @@ func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
 	return nil
 }
 
-// deliver hands an event to the subscribers without recording it, as a replica
-// that did not publish it would receive it.
 func (b *recordingBus) deliver(evt event.Event) {
 	b.mu.Lock()
 	hs := append([]event.Handler(nil), b.handlers[evt.Type]...)
@@ -376,7 +364,6 @@ func (b *recordingBus) failWith(err error) {
 	b.err = err
 }
 
-// sqlRecorder is a gorm logger that records the statements run through it.
 type sqlRecorder struct {
 	mu   sync.Mutex
 	sqls []string
@@ -394,7 +381,6 @@ func (r *sqlRecorder) Trace(_ context.Context, _ time.Time, fc func() (string, i
 	r.sqls = append(r.sqls, sql)
 }
 
-// count is how many recorded statements start with the prefix.
 func (r *sqlRecorder) count(prefix string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -413,7 +399,6 @@ func (r *sqlRecorder) reset() {
 	r.sqls = nil
 }
 
-// logCapture is a log handler's output.
 type logCapture struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -435,7 +420,6 @@ func (l *logCapture) logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(l, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// dialectCase is one database dialect a case runs over.
 type dialectCase struct {
 	name    string
 	dialect db.Dialect
@@ -460,7 +444,6 @@ var dialects = []dialectCase{
 	},
 }
 
-// forEachDialect runs a case over every dialect.
 func forEachDialect(t *testing.T, run func(t *testing.T, d dialectCase)) {
 	t.Helper()
 	for _, d := range dialects {
@@ -468,8 +451,6 @@ func forEachDialect(t *testing.T, run func(t *testing.T, d dialectCase)) {
 	}
 }
 
-// fixture is a product over a real database with every collaborator a test
-// moves by hand.
 type fixture struct {
 	t        *testing.T
 	d        dialectCase
@@ -505,13 +486,10 @@ func withoutImpersonation() option   { return func(s *fixtureSpec) { s.noImp = t
 func withoutSettings() option        { return func(s *fixtureSpec) { s.noStore = true } }
 func withoutMigration() option       { return func(s *fixtureSpec) { s.noMigration = true } }
 
-// sharingDatabaseWith makes the fixture another replica over the same database
-// as other, with its own caches and its own bus.
 func sharingDatabaseWith(other *fixture) option {
 	return func(s *fixtureSpec) { s.shareWith = other }
 }
 
-// defaultCookie is the cookie a deployment on an https address gets.
 func defaultCookie() cookieSpec {
 	return cookieSpec{publicURL: "https://app.example.com", sameSite: http.SameSiteLaxMode}
 }
@@ -570,7 +548,6 @@ func newFixture(t *testing.T, d dialectCase, opts ...option) *fixture {
 	return f
 }
 
-// applyMigration creates the table from the dialect's migration.
 func applyMigration(t *testing.T, handle *gorm.DB, d dialectCase) {
 	t.Helper()
 	body, err := fs.ReadFile(migrationsFS, string(d.dialect)+"/0001_authn_sessions.sql")
@@ -594,10 +571,8 @@ const (
 	admin authn.AccountID = "acct-admin"
 )
 
-// provider is an SSO provider identifier in the form the gateway admits.
 const provider = "0198a3b4-7c5d-7e6f-8a9b-0c1d2e3f4a5b"
 
-// newBrowser is a browser session request that passes the checks.
 func newBrowser(account authn.AccountID) authn.NewSession {
 	return authn.NewSession{
 		Account:   account,
@@ -615,7 +590,6 @@ func newToken1(account authn.AccountID) authn.NewSession {
 	return in
 }
 
-// create makes a session and fails the test when it cannot.
 func (f *fixture) create(in authn.NewSession) authn.Issued {
 	f.t.Helper()
 	issued, err := f.p.Create(context.Background(), in)
@@ -637,12 +611,10 @@ func (f *fixture) cookieOf(token string) authn.Credential {
 	return authn.Credential{Cookie: f.p.cookie.name(), Value: token, Peer: "192.0.2.7:1234"}
 }
 
-// verify runs the verifying backend on a token.
 func (f *fixture) verify(token string) authn.Verdict {
 	return f.p.Verify(context.Background(), f.cookieOf(token))
 }
 
-// row reads a row straight from the table.
 func (f *fixture) row(id authn.SessionID) sessionRow {
 	f.t.Helper()
 	r, err := f.p.byID(context.Background(), id)
@@ -652,7 +624,6 @@ func (f *fixture) row(id authn.SessionID) sessionRow {
 	return r
 }
 
-// count is how many rows the table holds for an account.
 func (f *fixture) count(account authn.AccountID) int64 {
 	f.t.Helper()
 	var n int64
@@ -662,18 +633,14 @@ func (f *fixture) count(account authn.AccountID) int64 {
 	return n
 }
 
-// replica is another product over the same database, as a second process would be.
 func (f *fixture) replica(opts ...option) *fixture {
 	return newFixture(f.t, f.d, append(opts, sharingDatabaseWith(f))...)
 }
 
-// outcomeOf, principalOf and causeOf read a verdict, which the root package
-// leaves unreadable to a backend and open to this capability's own code.
 func outcomeOf(v authn.Verdict) verdict.Outcome   { return verdict.OutcomeOf(v) }
 func principalOf(v authn.Verdict) authn.Principal { return verdict.PrincipalOf(v) }
 func causeOf(v authn.Verdict) error               { return verdict.CauseOf(v) }
 
-// exec runs a statement straight against the table.
 func (f *fixture) exec(statement string, args ...any) {
 	f.t.Helper()
 	if err := f.p.handle.Exec(statement, args...).Error; err != nil {
@@ -706,11 +673,8 @@ func (f *fixture) enable(id authn.AccountID) {
 	f.accounts.update(id, func(a *authn.Account) { a.Status = authn.StatusActive })
 }
 
-// testRequest is a request a case sends, with the session cookie it carries.
 type testRequest struct{ r *http.Request }
 
-// newRequest is a request carrying a cookie of the given name; an empty name
-// carries none.
 func newRequest(name, value string) *testRequest {
 	r, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://app.example.com/", nil)
 	if name != "" {

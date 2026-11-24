@@ -18,8 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// tokenMeter registers the operations counter on a manual reader and hands it to
-// the product, so a case reads back what recordOperation reported.
 func (r *rig) tokenMeter() *sdkmetric.ManualReader {
 	r.t.Helper()
 	collected := sdkmetric.NewManualReader()
@@ -41,8 +39,6 @@ func (r *rig) tokenMeter() *sdkmetric.ManualReader {
 	return collected
 }
 
-// operationPoints reads the operations counter back as the counts keyed by the
-// operation and outcome attributes, with the instrument's name and unit.
 func operationPoints(t *testing.T, rm metricdata.ResourceMetrics) (map[[2]string]int64, string, string, string) {
 	t.Helper()
 	for _, scope := range rm.ScopeMetrics {
@@ -194,7 +190,6 @@ func TestNoTokenReachesTheLogsMetricsOrErrors(t *testing.T) {
 	})
 	access := decodeToken(t, rec).AccessToken
 
-	// A rotation and a revocation each write a line.
 	form(m, m.BaseIn("")+tokenPath, url.Values{"grant_type": {grantRefreshToken}, "refresh_token": {refresh.Value}})
 	form(m, m.BaseIn("")+revokePath, url.Values{"token": {refresh.Value}})
 
@@ -245,8 +240,6 @@ func TestNoTokenReachesTheLogsMetricsOrErrors(t *testing.T) {
 	}
 }
 
-// collectedPoints reads the operations counter back as the (operation, outcome)
-// counts.
 func collectedPoints(t *testing.T, collected *sdkmetric.ManualReader) map[[2]string]int64 {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -357,8 +350,6 @@ func TestTheOperationsCounterRecordsEachRealPath(t *testing.T) {
 	}
 }
 
-// auditFailurePoints reads the audit-write-failures counter back as the counts
-// keyed by the mandatory attribute.
 func auditFailurePoints(t *testing.T, rm metricdata.ResourceMetrics) map[bool]int64 {
 	t.Helper()
 	for _, scope := range rm.ScopeMetrics {

@@ -20,12 +20,11 @@ import (
 // values.
 const envPrefix = "SPEEDTOKENTEST"
 
-// baseConfig is a configuration that resolves, so that a case can change one
-// item and still reach the check it means to exercise.
 func baseConfig() moduleConfig {
 	return moduleConfig{ClientID: clientIDDefault, Algorithm: algES256}
 }
 
+// TestAnEmptyAudienceIsRefused checks that an empty audience is refused.
 func TestAnEmptyAudienceIsRefused(t *testing.T) {
 	_, err := baseConfig().resolve(gateMount{})
 	if !errors.Is(err, authn.ErrInvalidConfig) {
@@ -36,6 +35,8 @@ func TestAnEmptyAudienceIsRefused(t *testing.T) {
 	}
 }
 
+// TestTheIssuerAndAudienceDefaultToThePublicAddress checks that the issuer
+// and audience default to the public address.
 func TestTheIssuerAndAudienceDefaultToThePublicAddress(t *testing.T) {
 	const public = "https://auth.example.com"
 	cfg, err := baseConfig().resolve(gateMount{PublicURL: public})
@@ -50,6 +51,8 @@ func TestTheIssuerAndAudienceDefaultToThePublicAddress(t *testing.T) {
 	}
 }
 
+// TestAConfiguredAudienceAndIssuerWin checks that a configured audience and
+// issuer win.
 func TestAConfiguredAudienceAndIssuerWin(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Issuer = "https://issuer.example.com"
@@ -66,6 +69,8 @@ func TestAConfiguredAudienceAndIssuerWin(t *testing.T) {
 	}
 }
 
+// TestAnUnsupportedAlgorithmIsRefused checks that an unsupported algorithm is
+// refused.
 func TestAnUnsupportedAlgorithmIsRefused(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Algorithm = "HS256"
@@ -93,6 +98,8 @@ func TestTheRelaxationSwitchIsASettingAndNotAConfigurationItem(t *testing.T) {
 	}
 }
 
+// checks that the signing key file is Sensitive and takes no command-line
+// flag.
 func TestTheSigningKeyFileIsSensitiveAndTakesNoCommandLine(t *testing.T) {
 	item, ok := schema().Items[signingKeyFileItem]
 	if !ok {
@@ -136,10 +143,8 @@ func loadConfig(t *testing.T, body string, args ...string) (resolved, error) {
 	return readConfig(reader)
 }
 
-// TestAnEnvironmentVariableCannotTurnTheSessionCheckOff holds that the session
-// check takes no value from the environment. A variable on an item that does
-// read the environment is the control: without it a variable name that was
-// never going to be read would pass the case.
+// TestAnEnvironmentVariableCannotTurnTheSessionCheckOff holds that the
+// session check takes no value from the environment.
 func TestAnEnvironmentVariableCannotTurnTheSessionCheckOff(t *testing.T) {
 	const issuerBody = `{"authn":{"token":{"issuer":"https://auth.example.com"}}}`
 
@@ -167,8 +172,7 @@ func TestAnEnvironmentVariableCannotTurnTheSessionCheckOff(t *testing.T) {
 }
 
 // TestACommandLineArgumentCannotTurnTheSessionCheckOff holds the same setting
-// against the command line. It is not a configuration item, so the loader
-// refuses the argument as a key no module declares.
+// against the command line.
 func TestACommandLineArgumentCannotTurnTheSessionCheckOff(t *testing.T) {
 	_, err := loadConfig(t, `{"authn":{"token":{"issuer":"https://auth.example.com"}}}`,
 		"--authn.token.check-session=false")

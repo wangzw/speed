@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// loadedSet builds a set with one signing key and one verification key, both of
-// alg, and returns it.
 func loadedSet(t *testing.T, alg string) *keySet {
 	t.Helper()
 	signing := generatedKey(t, alg)
@@ -24,11 +22,12 @@ func loadedSet(t *testing.T, alg string) *keySet {
 	return set
 }
 
-// jwksBody is the key set decoded for inspection.
 type jwksBody struct {
 	Keys []map[string]any `json:"keys"`
 }
 
+// TestJWKSPublishesEveryPublicHalfAndNoPrivateField checks that jwks
+// publishes every public half and no private field.
 func TestJWKSPublishesEveryPublicHalfAndNoPrivateField(t *testing.T) {
 	set := loadedSet(t, algES256)
 	p := &product{keys: set}
@@ -63,6 +62,8 @@ func TestJWKSPublishesEveryPublicHalfAndNoPrivateField(t *testing.T) {
 	}
 }
 
+// TestTheJWKSRouteCarriesItsOwnHeadersAndContentType checks that the JWKS
+// route carries its own headers and content type.
 func TestTheJWKSRouteCarriesItsOwnHeadersAndContentType(t *testing.T) {
 	set := loadedSet(t, algES256)
 	m := mounttest.New(t)

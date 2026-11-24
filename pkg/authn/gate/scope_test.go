@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// impersonatingBackend is a backend that declared the impersonation capability
-// and hands back an impersonating identity for every credential.
 func impersonatingBackend() *fakeVerifier {
 	b := &fakeVerifier{name: "imp", accepts: authn.Accepts{Schemes: []string{"bearer"}, Impersonation: true}}
 	b.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -28,9 +26,8 @@ func impersonatingBackend() *fakeVerifier {
 
 // TestAnImpersonatingIdentityIsAdmittedOnlyWhereTheRuleSaysSo holds the
 // impersonation scope rule from every side it has: the route is registered
-// Impersonable, or the endpoint is one the scope guard covers, and nothing else
-// admits it. Anywhere else the request is refused with a 401 charged to the
-// backend, and with no scope guard in the assembly only the first can hold.
+// Impersonable, or the endpoint is one the scope guard covers, and nothing
+// else admits it.
 func TestAnImpersonatingIdentityIsAdmittedOnlyWhereTheRuleSaysSo(t *testing.T) {
 	for _, c := range []struct {
 		name         string
@@ -102,10 +99,9 @@ func TestAnIdentityThatIsNotImpersonatingIsNotHeldToTheScopeRule(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationOutOfScopeIsRefusedAfterTheBackendAnswered holds the order
-// of the conclusion: the backend is asked, its pass is read, and only then is the
-// scope rule applied. The refusal is a 401 and not a 403, since the gateway
-// writes no 403, and it is charged to the backend whose pass it declines.
+// TestAnImpersonationOutOfScopeIsRefusedAfterTheBackendAnswered holds the
+// order of the conclusion: the backend is asked, its pass is read, and only
+// then is the scope rule applied.
 func TestAnImpersonationOutOfScopeIsRefusedAfterTheBackendAnswered(t *testing.T) {
 	imp := impersonatingBackend()
 	g := testGateway(t, []string{"public"}, imp)
@@ -169,15 +165,12 @@ func TestAnExemptRouteDoesNotApplyTheScopeRuleBecauseItReadsNoCredential(t *test
 	}
 }
 
-// TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer holds the
-// checks Start makes of the endpoint the capability's own routes are mounted on,
-// each with its own sentinel: it has to be an endpoint the entry point has, one
-// this gateway guards, and not one the admission layer guards, since that layer
-// answers an impersonating request with no tenant context with 404 and an
-// impersonating caller could not even end the impersonation. An endpoint the
-// configuration names is held to them whether or not a module mounts routes; an
-// empty key is held to them only when one does, and then it is the only endpoint
-// the entry point declares.
+// TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer holds
+// the checks Start makes of the endpoint the capability's own routes are
+// mounted on, each with its own sentinel: it has to be an endpoint the entry
+// point has, one this gateway guards, and not one the admission layer guards,
+// since that layer answers an impersonating request with no tenant context
+// with 404 and an impersonating caller could not even end the impersonation.
 func TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer(t *testing.T) {
 	for _, c := range []struct {
 		name      string
@@ -196,15 +189,10 @@ func TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer(t *test
 		{"a guarded endpoint with no admission layer", []string{"admin", "public"}, []string{"admin", "public"}, "admin", false, nil, nil, ""},
 		{"an endpoint the admission layer guards, with a module that mounts routes", []string{"admin", "public"}, []string{"admin", "public"}, "admin", true, fakeScope{"admin": true}, authn.ErrInvalidConfig, "admin"},
 
-		// With the key empty and no module that mounts routes there is no endpoint
-		// of theirs to judge, and the only endpoint a command has is not refused
-		// for what covers it.
 		{"no endpoint configured with several declared", []string{"admin", "public"}, []string{"admin", "public"}, "", false, fakeScope{"admin": true, "public": true}, nil, ""},
 		{"no endpoint configured, no module mounts routes, the only endpoint covered", []string{"public"}, []string{"public"}, "", false, fakeScope{"public": true}, nil, ""},
 		{"no endpoint configured, no module mounts routes, the only endpoint left unguarded", nil, []string{"public"}, "", false, nil, nil, ""},
 
-		// With a module that mounts routes the empty key is the only endpoint, held
-		// to every check a written one is.
 		{"no endpoint configured, routes mounted, the only endpoint covered", []string{"public"}, []string{"public"}, "", true, fakeScope{"public": true}, authn.ErrInvalidConfig, "public"},
 		{"no endpoint configured, routes mounted, the only endpoint not covered", []string{"public"}, []string{"public"}, "", true, fakeScope{}, nil, ""},
 		{"no endpoint configured, routes mounted, no admission layer", []string{"public"}, []string{"public"}, "", true, nil, nil, ""},
@@ -258,8 +246,7 @@ func resolutionLayer(endpoints string) core.Module {
 // TestTheMountEndpointIsNotOneTheResolutionLayerResolvesATenantOn holds the
 // last check of Start, through the descriptor: a global account's request
 // carries no tenant name, and the resolution layer answers it 404, so the
-// authentication routes cannot be on an endpoint that layer resolves. The list is
-// another module's, read when its shape can be read.
+// authentication routes cannot be on an endpoint that layer resolves.
 func TestTheMountEndpointIsNotOneTheResolutionLayerResolvesATenantOn(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -322,8 +309,6 @@ func TestAnImpersonatingRequestThroughTheRealEntryPoint(t *testing.T) {
 	requireStatus(t, "an impersonation on a route that is not, on an endpoint the guard does not cover", publicOrders, nethttp.StatusUnauthorized)
 	requireStatus(t, "an impersonation on another endpoint the guard does not cover", adminOrders, nethttp.StatusUnauthorized)
 	requireStatus(t, "an impersonation on an endpoint the guard covers", orders, nethttp.StatusOK)
-	// The Key of an impersonation is the actor's, which is what rate limiting
-	// and the audit trail count under.
 	if want := "reached as admin-9 [required]"; orders.body != want {
 		t.Errorf("the handler on the covered endpoint saw %q, want %q", orders.body, want)
 	}

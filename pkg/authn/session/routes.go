@@ -25,8 +25,6 @@ const (
 	outcomeSuccess      = "success"
 )
 
-// typePrefix starts the Problem.Type of every failure this capability's
-// handlers write, the code following it being one of mount's closed table.
 const typePrefix = "urn:speed:authn:"
 
 // cacheControlSetCookie is the directive a response that clears the session
@@ -35,8 +33,6 @@ const typePrefix = "urn:speed:authn:"
 // cache from holding a response whose Set-Cookie it may ignore.
 const cacheControlSetCookie = `no-cache="Set-Cookie"`
 
-// authnFailure is a refusal of one of the capability's problem codes: the entry
-// point writes it as a problem document of the code's status and type.
 func authnFailure(status int, code string) error {
 	return speedhttp.Fault{Status: status, Type: typePrefix + code}
 }
@@ -98,9 +94,6 @@ func mountRel(declared string) string {
 	return rel
 }
 
-// handleSession answers who is logged in on this session. With no credential the
-// answer is {"authenticated": false}, so a front end can ask on startup without
-// a 401 in its console.
 func (p *product) handleSession(ctx context.Context, _ struct{}) (AuthnSessionView, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -125,8 +118,6 @@ func (p *product) handleSession(ctx context.Context, _ struct{}) (AuthnSessionVi
 	return view, nil
 }
 
-// assuranceName is the level's name, which is what the wire carries and not its
-// number.
 func assuranceName(a authn.Assurance) string {
 	switch a {
 	case authn.AssuranceSingle:

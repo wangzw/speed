@@ -15,6 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// TestRefusedCookieIsClearedInTheCommittedResponse checks that refused cookie
+// is cleared in the committed response.
 func TestRefusedCookieIsClearedInTheCommittedResponse(t *testing.T) {
 	b := newCarrierBackends()
 	g := b.gateway(t, settings{})
@@ -30,6 +32,8 @@ func TestRefusedCookieIsClearedInTheCommittedResponse(t *testing.T) {
 	}
 }
 
+// TestCrossOriginCheckHoldsOnOptionalAndImpersonableRoutes checks that cross
+// origin check holds on optional and impersonable routes.
 func TestCrossOriginCheckHoldsOnOptionalAndImpersonableRoutes(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -63,13 +67,13 @@ func TestCrossOriginCheckHoldsOnOptionalAndImpersonableRoutes(t *testing.T) {
 	}
 }
 
-// TestExitAndScopeRefusalsAreChallengedAsARejectedCredential holds that a refusal
-// the gateway judged itself, a pass that fails the exit check and an impersonating
-// pass on a route that does not admit one, is challenged the way a refusal of a
-// credential the backend took is: the request carries a credential that backend
-// claimed, and it is refused, so the 401 carries the backend's rejected
-// challenge, which for a token backend is the one with error="invalid_token". The
-// plain challenge would tell the caller to send a credential it already sent.
+// TestExitAndScopeRefusalsAreChallengedAsARejectedCredential holds that a
+// refusal the gateway judged itself, a pass that fails the exit check and an
+// impersonating pass on a route that does not admit one, is challenged the
+// way a refusal of a credential the backend took is: the request carries a
+// credential that backend claimed, and it is refused, so the 401 carries the
+// backend's rejected challenge, which for a token backend is the one with
+// error="invalid_token".
 func TestExitAndScopeRefusalsAreChallengedAsARejectedCredential(t *testing.T) {
 	for name, principal := range map[string]func(*fakeVerifier) authn.Principal{
 		"the principal fails the exit check": func(f *fakeVerifier) authn.Principal {
@@ -108,6 +112,8 @@ func TestExitAndScopeRefusalsAreChallengedAsARejectedCredential(t *testing.T) {
 	}
 }
 
+// TestHeaderRefusalClearsNoCookieOfABackendThatTakesBothCarriers checks that
+// header refusal clears no cookie of a backend that takes both carriers.
 func TestHeaderRefusalClearsNoCookieOfABackendThatTakesBothCarriers(t *testing.T) {
 	var cleared atomic.Int64
 	hybrid := clearingVerifier{
@@ -131,6 +137,8 @@ func TestHeaderRefusalClearsNoCookieOfABackendThatTakesBothCarriers(t *testing.T
 	}
 }
 
+// TestRegistrationsAreComparedCaseSensitively checks that registrations are
+// compared case sensitively.
 func TestRegistrationsAreComparedCaseSensitively(t *testing.T) {
 	for _, exempt := range []string{"/health", "/Health"} {
 		t.Run(exempt, func(t *testing.T) {
@@ -157,6 +165,8 @@ func TestRegistrationsAreComparedCaseSensitively(t *testing.T) {
 	}
 }
 
+// TestAnExemptRouteReadsNoCookieEither checks that an exempt route reads no
+// cookie either.
 func TestAnExemptRouteReadsNoCookieEither(t *testing.T) {
 	b := newCarrierBackends()
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: time.Second, inFlight: 8}, b.verifiers()...)
@@ -176,6 +186,8 @@ func TestAnExemptRouteReadsNoCookieEither(t *testing.T) {
 	}
 }
 
+// TestTheCallContextEndsOnceTheCallReturns checks that the call context ends
+// once the call returns.
 func TestTheCallContextEndsOnceTheCallReturns(t *testing.T) {
 	var handed context.Context
 	basic := basicBackend("static", "static.")
@@ -183,7 +195,7 @@ func TestTheCallContextEndsOnceTheCallReturns(t *testing.T) {
 		handed = ctx
 		return held(basic, "alice")
 	}
-	g := testGateway(t, []string{"public"}, basic) // a budget of a second
+	g := testGateway(t, []string{"public"}, basic)
 	sealed(t, g, routerWith("public"))
 
 	w, _ := run(g, "public", withBasic(request("GET", "/x"), "alice", "secret"))
@@ -196,6 +208,9 @@ func TestTheCallContextEndsOnceTheCallReturns(t *testing.T) {
 	}
 }
 
+// TestRejectedChallengeKeepsTheChallengesOfBackendsThatSortAfterIt checks
+// that rejected challenge keeps the challenges of backends that sort after
+// it.
 func TestRejectedChallengeKeepsTheChallengesOfBackendsThatSortAfterIt(t *testing.T) {
 	first := challengingVerifier{
 		fakeVerifier: schemeBackend("aaa", "bearer"),
@@ -214,6 +229,8 @@ func TestRejectedChallengeKeepsTheChallengesOfBackendsThatSortAfterIt(t *testing
 	}
 }
 
+// checks that backend challenge lines are trimmed, deduplicated and free of
+// line endings.
 func TestBackendChallengeLinesAreTrimmedDeduplicatedAndFreeOfLineEndings(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -390,6 +407,8 @@ func TestCrossOriginRefusalRecordNamesCookieAndCause(t *testing.T) {
 	}
 }
 
+// TestOutageLogsWhyTheBackendCouldNotAnswer checks that outage logs why the
+// backend could not answer.
 func TestOutageLogsWhyTheBackendCouldNotAnswer(t *testing.T) {
 	basic := basicBackend("static", "static.")
 	basic.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -403,6 +422,8 @@ func TestOutageLogsWhyTheBackendCouldNotAnswer(t *testing.T) {
 	}
 }
 
+// TestAFullGateAndAStoppedGatewayAreToldApartInTheLog checks that a full gate
+// and a stopped gateway are told apart in the log.
 func TestAFullGateAndAStoppedGatewayAreToldApartInTheLog(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -429,6 +450,8 @@ func TestAFullGateAndAStoppedGatewayAreToldApartInTheLog(t *testing.T) {
 	}
 }
 
+// TestAnEmptyAuthorizationHeaderIsRefusedAsHavingNoScheme checks that an
+// empty authorization header is refused as having no scheme.
 func TestAnEmptyAuthorizationHeaderIsRefusedAsHavingNoScheme(t *testing.T) {
 	g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
 	sealed(t, g, routerWith("public"))
@@ -466,12 +489,11 @@ func bareEngine(g *gateway, endpoint string) *gin.Engine {
 	return engine
 }
 
-// TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks holds that a route
-// which accepts a request with no credential does not accept a cookie credential
-// on easier terms: the cross-origin check applies to an unsafe request, and a
-// cookie that cannot be told from another is a refusal, not an anonymous caller.
-// Reading either as "no credential" would let a forged or planted cookie through
-// as a visitor, on the routes that are public to begin with.
+// TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks holds that a
+// route which accepts a request with no credential does not accept a cookie
+// credential on easier terms: the cross-origin check applies to an unsafe
+// request, and a cookie that cannot be told from another is a refusal, not an
+// anonymous caller.
 func TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -524,15 +546,10 @@ func TestACookieCredentialOnAnOptionalRouteIsHeldToTheSameChecks(t *testing.T) {
 	}
 }
 
-// TestAtMostOneClaimedCookieMayComeInARequest holds the reading of two claimed
-// cookies of different names: which was meant cannot be told, so the request is
-// refused as a whole, whether the two names belong to one backend or to two, the
-// same as for one name twice. The refusal clears neither cookie, so a browser that
-// holds both stays refused until one of them expires: a gateway that picked one,
-// or cleared one, would let a cookie planted for this site decide which credential
-// is judged. A name is therefore never claimed beside the one it replaces: the old
-// cookie is let expire before the new name is enabled. Each cookie alone is a
-// credential, so the refusal is the pair and not either.
+// TestAtMostOneClaimedCookieMayComeInARequest holds the reading of two
+// claimed cookies of different names: which was meant cannot be told, so the
+// request is refused as a whole, whether the two names belong to one backend
+// or to two, the same as for one name twice.
 func TestAtMostOneClaimedCookieMayComeInARequest(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -575,7 +592,6 @@ func TestAtMostOneClaimedCookieMayComeInARequest(t *testing.T) {
 				t.Errorf("counted %v, want one denied", got)
 			}
 
-			// Once one of the two is gone, the other is a credential again.
 			for _, name := range []string{"sid", "sid-next"} {
 				if w, _ := run(g, "public", withCookie(request("GET", "/x"), name, "v")); w.Code != nethttp.StatusOK {
 					t.Errorf("the cookie %s alone answered %d, want %d", name, w.Code, nethttp.StatusOK)

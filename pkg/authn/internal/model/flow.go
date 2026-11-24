@@ -48,10 +48,12 @@ func (s Start) Clone() Start {
 // FlowState is the view the engine hands a method of a flow, which the method
 // may not change, with the method's own bytes.
 type FlowState struct {
-	ID        string // the flow's public identifier, for log correlation only; no secret
-	Purpose   string
-	Step      string // the method's own name for the current step
-	Provider  string // the provider the callback path must name: a social method's own name, an enterprise provider's identifier, or empty
+	ID string // the flow's public identifier, for log correlation only; no secret
+	// Purpose is the flow purpose.
+	Purpose  string
+	Step     string // the method's own name for the current step
+	Provider string // the provider the callback path must name: a social method's own name, an enterprise provider's identifier, or empty
+	// Account is the account the flow belongs to, known for link and step-up.
 	Account   AccountID
 	Session   SessionID // an authenticated flow: the login session that started it
 	Private   []byte    // the method's own, opaque, at most 8 KiB, kept by the engine as it stands
@@ -82,6 +84,7 @@ type StepInput struct {
 	Fields map[string]string // the submitted fields
 	Query  url.Values        // an external redirect back only
 	Form   url.Values        // an external redirect back only: SAML's POST binding
+	// Client describes where the answer came from, for logs and audit.
 	Client ClientInfo
 }
 

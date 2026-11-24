@@ -55,10 +55,7 @@ func TestAnAnonymousSessionReadSaysNobodyIsLoggedIn(t *testing.T) {
 	}
 }
 
-// An identity that is impersonating reaches every session route. The listing
-// and both revocations act on the impersonated account's sessions: the
-// operator's own session is outside that set, so it is listed nowhere, kept by
-// the "revoke the others" call and refused by the one-session call.
+// An identity that is impersonating reaches every session route.
 func TestAnImpersonatingIdentityManagesTheTargetsSessions(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -85,8 +82,6 @@ func TestAnImpersonatingIdentityManagesTheTargetsSessions(t *testing.T) {
 		t.Errorf("the listing names the operator's own session:\n%s", body)
 	}
 
-	// One of the target's sessions is revoked; the operator's own is not the
-	// caller's to touch and answers as not found.
 	if rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions/"+string(victimOther.ID)); rec.Code != http.StatusNoContent {
 		t.Fatalf("revoking the target's session answered %d, want 204", rec.Code)
 	}
@@ -100,7 +95,6 @@ func TestAnImpersonatingIdentityManagesTheTargetsSessions(t *testing.T) {
 		t.Error("the operator's own session was revoked")
 	}
 
-	// Revoking the others ends the target's sessions and leaves the operator's.
 	if rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions"); rec.Code != http.StatusOK {
 		t.Fatalf("revoking the others answered %d, want 200", rec.Code)
 	}
@@ -160,10 +154,7 @@ func TestLogoutRevokesTheCallersSession(t *testing.T) {
 }
 
 // Every self-service revocation route writes the seam-level audit row of the
-// action it performed. The capability's action table puts logout and session
-// revocation in the best-effort tier, and the object of a row is the session it
-// is about: a route that revokes several sessions writes one row per session,
-// which is what the management surface does for the same action.
+// action it performed.
 func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -181,9 +172,6 @@ func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 			objects: func(current, _, _ authn.SessionID) []string { return []string{string(current)} },
 		},
 		{
-			// The row names the session it revoked, so revoking the others writes
-			// one row per session revoked — and none for the current one, which
-			// the route keeps.
 			name:   "revoking the other sessions",
 			method: http.MethodDelete,
 			path:   func(authn.SessionID, authn.SessionID, authn.SessionID) string { return "/api/v1/auth/sessions" },
@@ -235,10 +223,7 @@ func TestTheSelfServiceRevocationRoutesWriteTheirAuditRows(t *testing.T) {
 	}
 }
 
-// A bulk revocation with nothing to name revokes nothing and writes no row. The
-// audit row names the session it revoked, so a revocation carried out with no
-// row to account for it is what the tier exists to prevent — and the session the
-// route keeps is not among the sessions to end.
+// A bulk revocation with nothing to name revokes nothing and writes no row.
 func TestRevokingTheOtherSessionsWithNoneToNameRevokesNothing(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -275,8 +260,7 @@ func send(t *testing.T, f *fixture, method, path string) *httptest.ResponseRecor
 }
 
 // The handlers of the session-management routes act for the effective account
-// themselves, so the behaviour does not rest on the gateway's guard alone. Here
-// each is called without the gateway in front, with the identity on the request.
+// themselves, so the behaviour does not rest on the gateway's guard alone.
 func TestAnImpersonatingIdentityHandlersActOnTheTarget(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -321,11 +305,9 @@ func TestAnImpersonatingIdentityHandlersActOnTheTarget(t *testing.T) {
 }
 
 // A request that reaches one of the session-management handlers without the
-// gateway — the path the handler's own refusal exists for — is answered 401 with
-// the capability's challenge, not a bare problem document: RFC 9110 requires a
-// 401 to carry one. The chain is the mounter's own wrapper with no gateway in
-// front of it; the handler writes the header while the entry point has not sent
-// the response yet.
+// gateway — the path the handler's own refusal exists for — is answered
+// 401 with the capability's challenge, not a bare problem document: RFC 9110
+// requires a 401 to carry one.
 func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	cases := []struct {
@@ -354,8 +336,6 @@ func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			c.Request = httptest.NewRequest(tc.method, tc.path, nil)
-			// The cross-origin check the mounter applies to an unsafe method is
-			// not what this case is about; a same-origin request passes it.
 			c.Request.Header.Set("Sec-Fetch-Site", "same-origin")
 			c.Params = tc.params
 			mount.Wrap(f.mounter.CSRF(), f.mounter.Endpoint(), tc.handler)(c)

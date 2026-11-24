@@ -95,21 +95,12 @@ func TestTheCredentialIsMaskedWhereverTheSchemeAppears(t *testing.T) {
 	}
 }
 
-// TestProseAboutASchemeKeepsItsWords holds the other side of a rule that runs on
-// every string of every record in the process.
-//
-// A scheme name is also an English word, and the text written about a credential
-// uses it as one: a backend's refusal cause, the gateway's own sentences, any
-// other module's. Taking the word after it for a credential masks ordinary prose
-// — "the bearer [REDACTED] names no live session" — and a refusal cause masked
-// that way does not say what was wrong. Every value here is text a real
-// component writes or would write, and none of it carries a credential, so each
-// has to reach the destination exactly as it was written.
+// TestProseAboutASchemeKeepsItsWords holds the other side of a rule that runs
+// on every string of every record in the process.
 func TestProseAboutASchemeKeepsItsWords(t *testing.T) {
 	matcher := credentialMatcher([]string{"basic", "bearer"})
 
 	for _, value := range []string{
-		// pkg/authn/static's refusal of a malformed Basic credential.
 		"authn.static: the Basic credential is not base64 of user:password, or it is " +
 			"qualified with a backend that is not this one",
 		"the bearer token names no live session",
@@ -128,27 +119,18 @@ func TestProseAboutASchemeKeepsItsWords(t *testing.T) {
 	}
 }
 
-// TestACaseChangingRuneDoesNotShiftTheMask holds the one thing that makes this
-// matcher hard to write.
-//
-// Searching a lower-cased copy and applying the offsets to the original is the
-// obvious implementation and it is wrong: lower-casing is not length-preserving
-// in Unicode. 'İ' is two bytes and folds to three, so every offset past it is
-// short by one, and the mask lands one byte early — covering the last byte of
-// the scheme name and leaving the first byte of the credential in the clear.
-//
-// A record that reaches a destination with a credential in it cannot be taken
-// back, and nothing downstream would report that it happened.
+// TestACaseChangingRuneDoesNotShiftTheMask holds the one thing that makes
+// this matcher hard to write.
 func TestACaseChangingRuneDoesNotShiftTheMask(t *testing.T) {
 	matcher := credentialMatcher([]string{"basic"})
 	const secret = "YWxpY2U6czNjcmV0"
 
 	for _, prefix := range []string{
 		"",
-		"İ ",      // two bytes, folds to three
-		"İİİ ",    // three of them, so the shift is past one byte
-		"ΣΣ ",     // Greek capitals, folding to a different byte length
-		"straße ", // already lower case, left alone
+		"İ ",
+		"İİİ ",
+		"ΣΣ ",
+		"straße ",
 	} {
 		t.Run("prefixed with "+prefix, func(t *testing.T) {
 			got := mask(matcher, prefix+"Basic "+secret)
@@ -163,14 +145,8 @@ func TestACaseChangingRuneDoesNotShiftTheMask(t *testing.T) {
 	}
 }
 
-// TestEverySpanHandedOverIsUsable holds the shape of what this matcher returns.
-//
-// pkg/log collects the spans of every matcher, drops any that are empty or
-// reach outside the value, then sorts and merges the rest. Dropping is silent,
-// so a span this matcher gets wrong fails nowhere — it just leaves a credential
-// unmasked. Ordering and overlap are the logging layer's to settle and are
-// deliberately not repeated on this side; what has to hold here is that every
-// span covers something and lands inside the string it was found in.
+// TestEverySpanHandedOverIsUsable holds the shape of what this matcher
+// returns.
 func TestEverySpanHandedOverIsUsable(t *testing.T) {
 	matcher := credentialMatcher([]string{"basic", "bearer"})
 
@@ -198,10 +174,9 @@ func TestEverySpanHandedOverIsUsable(t *testing.T) {
 	}
 }
 
-// TestTheSchemesMaskedAreTheOnesInPlay holds that the rule follows the assembly
-// rather than a fixed list: a scheme no backend claims is not searched for, and
-// every scheme one does claim is, Basic included. The gateway interprets no
-// credential, so it has no scheme of its own to add.
+// TestTheSchemesMaskedAreTheOnesInPlay holds that the rule follows the
+// assembly rather than a fixed list: a scheme no backend claims is not
+// searched for, and every scheme one does claim is, Basic included.
 func TestTheSchemesMaskedAreTheOnesInPlay(t *testing.T) {
 	const secret = "ey.Jh.bGci"
 

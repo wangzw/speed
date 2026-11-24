@@ -15,7 +15,10 @@ const (
 
 // Field is one input a login method asks the client for.
 type Field struct {
-	Name, Kind       string // Kind is one of the Field constants
+	// Name is the input's name. Kind is one of the Field constants.
+	Name, Kind string
+	// Required says the client must fill the field. Secret says the client must
+	// not display or echo the value.
 	Required, Secret bool
 }
 
@@ -27,9 +30,10 @@ type Field struct {
 // A method reports facts and never a level: the assurance is composed in one
 // place, by the multi-factor module.
 type Proof struct {
-	Account      AccountID   // the method already determined the account (password, passkey)
-	Identifier   *Identifier // the method proved ownership of an identifier (a phone verified by SMS)
-	External     *External   // an external identity
+	Account    AccountID   // the method already determined the account (password, passkey)
+	Identifier *Identifier // the method proved ownership of an identifier (a phone verified by SMS)
+	External   *External   // an external identity
+	// Methods are the authentication methods the proof established.
 	Methods      []Method
 	UserVerified bool // a passkey assertion carried user verification, which makes the factor count as two
 	// IDPAsserted: an enterprise IdP declared multi-factor and the provider's
@@ -77,7 +81,8 @@ type External struct {
 	Subject       string // the stable identifier inside that namespace
 	Email         string // normalized; may be empty; a hint only
 	EmailVerified bool   // the provider claims it verified the address; whether to believe it depends on the source
-	DisplayName   string
+	// DisplayName is the name the provider gave, for display only.
+	DisplayName string
 	// PreferredUsername is the standard preferred_username claim the provider
 	// asserted, read by a claim-strategy just-in-time login and empty when the
 	// provider did not assert one.
@@ -95,6 +100,10 @@ func (e External) Clone() External {
 // ExternalLink is the key an external identity may have been bound under
 // before, which lets a provider's key be upgraded in place.
 type ExternalLink struct {
+	// Provider is the external namespace. Subject is the stable identifier
+	// inside it. Email is the normalized address, which may be empty and is
+	// only a hint.
 	Provider, Subject, Email string
-	EmailVerified            bool
+	// EmailVerified says the provider claims it verified the address.
+	EmailVerified bool
 }

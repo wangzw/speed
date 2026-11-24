@@ -59,9 +59,6 @@ const ModuleName = "authn.session"
 // known, so it carries the conventional name.
 const defaultEndpoint = "account"
 
-// sessionFragment is this module's OpenAPI fragment, describing the five routes
-// it mounts.
-//
 //go:embed openapi/session.json
 var sessionFragment []byte
 
@@ -79,19 +76,13 @@ var sessionSpec = speedhttp.Spec{
 // ConfigNamespace is where this module's input items and settings are mounted.
 const ConfigNamespace = ModuleName
 
-// backendName is the name this backend reports. It is a constant of the code and
-// not an input: the gateway stamps it on every identity this backend vouches for.
 const backendName = "session"
 
-// diagnosticPrefix starts every line this module writes to the startup
-// diagnostics, which have several writers.
 const diagnosticPrefix = "authn: "
 
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so that the
-// tree the database module sees has one directory per dialect at its root.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
@@ -102,8 +93,6 @@ var migrationsFS = func() fs.FS {
 	return sub
 }()
 
-// product is this module's instance. One value satisfies every interface the
-// module delivers.
 type product struct {
 	cookie   cookieSpec
 	handle   *gorm.DB
@@ -142,9 +131,6 @@ var (
 	_ authn.AccountLifecycle = (*product)(nil)
 )
 
-// init registers this module with the process registry. Importing the package is
-// what puts the session store in a binary's available set, as importing a
-// backend is what gives a gateway something to ask.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
@@ -254,8 +240,6 @@ func productOf(instance any) (*product, bool) {
 	return p, ok && p != nil
 }
 
-// readerOf takes up the configuration reader. Its absence is the host's omission
-// and is carried out as it stands, not read as "nothing was configured".
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -265,9 +249,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// newProduct builds the product over the handle, the account store and the
-// mounter. The library's manager is configured here, once, as the design's
-// adaptation rules S1 to S6 say.
 func newProduct(cookie cookieSpec, handle *gorm.DB, accounts authn.Accounts, mounter mount.Mounter) *product {
 	p := &product{
 		cookie:     cookie,
@@ -293,9 +274,6 @@ func newProduct(cookie cookieSpec, handle *gorm.DB, accounts authn.Accounts, mou
 	return p
 }
 
-// newManager configures the library's session manager. S1: the lifetime is the
-// largest the settings allow, the idle timeout is off, tokens are stored as
-// their digest and the codec is JSON.
 func newManager(p *product, cookie cookieSpec) *scs.SessionManager {
 	sm := scs.New()
 	sm.Lifetime = lifetimeUpperBound
@@ -319,12 +297,8 @@ func newManager(p *product, cookie cookieSpec) *scs.SessionManager {
 	return sm
 }
 
-// now is the instant this module reads the time at, in UTC.
 func (p *product) now() time.Time { return p.clock.Now() }
 
-// wire takes up what is optional, writes the startup diagnostics, subscribes to
-// the events and registers the routes. It runs in Init, where every instance
-// exists.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -361,9 +335,6 @@ func (p *product) wire(reg *core.Registry) error {
 	return nil
 }
 
-// diagnose writes the startup lines: one Warn for each protection the
-// configuration gives up, and one Info for each optional capability that is
-// absent, saying what does not happen without it.
 func (p *product) diagnose() {
 	if p.cookie.domain != "" {
 		p.logger.Warn(diagnosticPrefix+ModuleName+": the session cookie carries a Domain, so it is named "+

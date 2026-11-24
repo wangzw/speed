@@ -75,8 +75,6 @@ type options struct {
 	Retention            time.Duration `config:"retention"`
 }
 
-// defaults is the declared default of every setting, and what each reads as when
-// the assembly carries no settings store.
 var defaults = options{
 	IdleTimeout:          30 * time.Minute,
 	AbsoluteTimeout:      12 * time.Hour,
@@ -106,8 +104,6 @@ func checkTTLInDomain(d time.Duration) bool  { return inRange(d, 0, checkTTLMax)
 func maxPerAccountInDomain(n int) bool       { return n >= maxPerAccountMin && n <= maxPerAccountMax }
 func retentionInDomain(d time.Duration) bool { return inRange(d, retentionMin, retentionMax) }
 
-// settingsSchema declares this module's runtime parameters, each with the domain
-// the code acts on.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ConfigNamespace,
@@ -208,7 +204,6 @@ func (r *settingReader) report(path, problem, detail string) {
 	}
 }
 
-// timing is the settings a session's period is computed from.
 type timing struct {
 	idle, absolute, tokenAbsolute, ssoAbsolute time.Duration
 }

@@ -33,7 +33,7 @@ func TestWithoutASettingsStoreEverySettingReadsAsItsDefault(t *testing.T) {
 // Error, once for as long as the same fault stands.
 func TestASettingOutsideItsDomainIsReadAsItsDefaultAndReportedOnce(t *testing.T) {
 	f := newFixture(t, dialects[0])
-	f.settings.set(idleTimeoutPath, 48*time.Hour) // above the 24h maximum
+	f.settings.set(idleTimeoutPath, 48*time.Hour)
 
 	got := f.p.settings.timing()
 	if got.idle != defaults.IdleTimeout {

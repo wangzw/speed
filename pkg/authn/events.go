@@ -49,6 +49,7 @@ const (
 
 // AccountCreated is the payload of EventAccountCreated.
 type AccountCreated struct {
+	// AccountID is the account that was created.
 	AccountID string `json:"account_id"`
 	Kind      string `json:"kind"` // user or service
 	Via       string `json:"via"`  // admin, jit, signup or import
@@ -56,19 +57,23 @@ type AccountCreated struct {
 
 // AccountStatusChanged is the payload of EventAccountStatusChanged.
 type AccountStatusChanged struct {
-	AccountID   string `json:"account_id"`
-	From        string `json:"from"` // the name of an AccountStatus: disabled, active or deleted
+	// AccountID is the account whose status changed.
+	AccountID string `json:"account_id"`
+	From      string `json:"from"` // the name of an AccountStatus: disabled, active or deleted
+	// To is the status the account was moved to.
 	To          string `json:"to"`
 	ReasonClass string `json:"reason_class"` // one of the ReasonClass constants
 }
 
 // AccountDeleted is the payload of EventAccountDeleted.
 type AccountDeleted struct {
+	// AccountID is the account that was deleted.
 	AccountID string `json:"account_id"`
 }
 
 // IdentifierChanged is the payload of EventIdentifierChanged.
 type IdentifierChanged struct {
+	// AccountID is the account whose identifier changed.
 	AccountID string `json:"account_id"`
 	Kind      string `json:"kind"`   // username, email or phone
 	Change    string `json:"change"` // added or removed
@@ -76,6 +81,7 @@ type IdentifierChanged struct {
 
 // BindingChanged is the payload of EventBindingChanged.
 type BindingChanged struct {
+	// AccountID is the account whose binding changed.
 	AccountID     string `json:"account_id"`
 	ProviderClass string `json:"provider_class"` // google, github, wechat, oidc or saml
 	Change        string `json:"change"`         // linked or unlinked
@@ -84,6 +90,7 @@ type BindingChanged struct {
 
 // MembershipChanged is the payload of EventMembershipChanged.
 type MembershipChanged struct {
+	// AccountID is the account whose membership changed.
 	AccountID string `json:"account_id"`
 	Change    string `json:"change"` // added, suspended, resumed, removed, sso-exempt-set or sso-exempt-cleared
 	Source    string `json:"source"` // as Membership.Source is written; it may carry an IdP identifier
@@ -92,6 +99,7 @@ type MembershipChanged struct {
 // PasswordChanged is the payload of EventPasswordChanged. A rehash is not a
 // change and publishes nothing.
 type PasswordChanged struct {
+	// AccountID is the account whose password changed.
 	AccountID string `json:"account_id"`
 	By        string `json:"by"`      // self, admin, import or reset
 	Channel   string `json:"channel"` // email or sms on a reset; empty otherwise
@@ -99,16 +107,20 @@ type PasswordChanged struct {
 
 // FactorChanged is the payload of EventFactorChanged.
 type FactorChanged struct {
+	// AccountID is the account whose factor changed.
 	AccountID string `json:"account_id"`
-	FactorID  string `json:"factor_id"`
-	Kind      string `json:"kind"`   // totp, sms or webauthn
-	Change    string `json:"change"` // enrolled, removed, reset or flagged
-	By        string `json:"by"`     // the class of whoever acted, as the publishing module's document states it
+	// FactorID is the factor that changed.
+	FactorID string `json:"factor_id"`
+	Kind     string `json:"kind"`   // totp, sms or webauthn
+	Change   string `json:"change"` // enrolled, removed, reset or flagged
+	By       string `json:"by"`     // the class of whoever acted, as the publishing module's document states it
 }
 
 // LoginSucceeded is the payload of EventLoginSucceeded.
 type LoginSucceeded struct {
+	// AccountID is the account that logged in.
 	AccountID string `json:"account_id"`
+	// SessionID is the session the login created.
 	SessionID string `json:"session_id"`
 	Methods   string `json:"methods"`   // the Method values, joined by commas
 	Assurance string `json:"assurance"` // the level's name, never its number
@@ -117,7 +129,8 @@ type LoginSucceeded struct {
 
 // SessionRevoked is the payload of EventSessionRevoked.
 type SessionRevoked struct {
-	SessionID   string `json:"session_id"` // empty when Scope is all
+	SessionID string `json:"session_id"` // empty when Scope is all
+	// AccountID is the account whose session was revoked.
 	AccountID   string `json:"account_id"`
 	Scope       string `json:"scope"`        // one or all
 	ReasonClass string `json:"reason_class"` // one of the ReasonClass constants
@@ -132,16 +145,21 @@ type ThrottleEngaged struct {
 
 // TokenReuseDetected is the payload of EventTokenReuseDetected.
 type TokenReuseDetected struct {
+	// SessionID is the session whose token family was revoked.
 	SessionID string `json:"session_id"`
+	// AccountID is the account whose refresh token was reused.
 	AccountID string `json:"account_id"`
 }
 
 // ImpersonationStarted is the payload of EventImpersonationStarted. The reason
 // of an impersonation is in the audit row and the record only, never here.
 type ImpersonationStarted struct {
-	GrantID   string `json:"grant_id"`
+	// GrantID is the record that started.
+	GrantID string `json:"grant_id"`
+	// ActorID is the impersonating account.
 	ActorID   string `json:"actor_id"`
 	AccountID string `json:"account_id"` // the impersonated account
+	// SessionID is the session the impersonation is attached to.
 	SessionID string `json:"session_id"`
 	ExpiresAt string `json:"expires_at"` // RFC 3339
 }
@@ -150,12 +168,14 @@ type ImpersonationStarted struct {
 // merely ran past its end publishes nothing, and whoever needs that signal
 // computes it from ImpersonationStarted.ExpiresAt.
 type ImpersonationEnded struct {
+	// GrantID is the record that ended.
 	GrantID string `json:"grant_id"`
 	EndedBy string `json:"ended_by"` // actor, session-ended, disabled, membership-removed or revoked
 }
 
 // IDPChanged is the payload of EventIDPChanged.
 type IDPChanged struct {
+	// IDPID is the provider whose configuration changed.
 	IDPID  string `json:"idp_id"`
 	Change string `json:"change"` // created, updated, enabled, disabled, deleted, domain-verified, domain-unverified or domain-removed
 }

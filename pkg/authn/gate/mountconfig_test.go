@@ -49,14 +49,9 @@ func loadSettings(t *testing.T, body string, args ...string) (settings, error) {
 	return readSettings(reader)
 }
 
-// TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates holds the item that
-// widens what the gateway accepts: the list of origins trusted beyond the public
-// one. It cannot be moved by a variable of the process's environment, which a
-// deployment's orchestrator and every process of the same user can write.
-//
-// A variable on an item that does read the environment, written the same way, is
-// the control: without it a variable name that was never going to be read would
-// pass these cases.
+// TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates holds the item
+// that widens what the gateway accepts: the list of origins trusted beyond
+// the public one.
 func TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	const gate = "SPEEDGATETEST_AUTHN__GATE__"
 
@@ -84,10 +79,9 @@ func TestAnEnvironmentVariableCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	})
 }
 
-// TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates holds the same item
-// against the command line, which a process listing shows and a wrapper script
-// can add to. The item takes no flag, so the loader refuses the argument or
-// ignores it; either way what the file states is what the gateway runs on.
+// TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates holds the same
+// item against the command line, which a process listing shows and a wrapper
+// script can add to.
 func TestACommandLineArgumentCannotRelaxWhatTheMainSourceStates(t *testing.T) {
 	set, err := loadSettings(t, `{}`, "--authn.gate.trusted-origins=https://evil.example")
 	if err == nil && len(set.trustedOrigins) != 0 {
@@ -112,11 +106,9 @@ func TestTheMainSourceCanRelaxWhatItAloneMay(t *testing.T) {
 	}
 }
 
-// TestAnHTTPPublicURLStartsOnlyOnALoopbackHost holds the one form an http public
-// URL may take: a loopback host, whose traffic never leaves the machine.
-// Any other http address is refused through the real loader, and the
-// configuration has no item that admits one: a key written beside the address to
-// relax the check is refused as a key no module declares.
+// TestAnHTTPPublicURLStartsOnlyOnALoopbackHost holds the one form an http
+// public URL may take: a loopback host, whose traffic never leaves the
+// machine.
 func TestAnHTTPPublicURLStartsOnlyOnALoopbackHost(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -162,8 +154,6 @@ func TestAnHTTPPublicURLStartsOnlyOnALoopbackHost(t *testing.T) {
 	}
 }
 
-// warnings lists the records of this assembly's startup that were written at Warn
-// or above.
 func warnings(logs *recorder) []slog.Record {
 	var out []slog.Record
 	for _, r := range logs.recordsOf() {
@@ -174,7 +164,6 @@ func warnings(logs *recorder) []slog.Record {
 	return out
 }
 
-// messages lists the messages of records, for a failure to print.
 func messages(records []slog.Record) []string {
 	out := make([]string, len(records))
 	for i, r := range records {
@@ -207,12 +196,8 @@ func TestACookieWithoutTheHostPrefixIsWarnedAboutOnceEach(t *testing.T) {
 	}
 }
 
-// TestTheCookiePrefixDiagnosticFollowsThePublicURL holds the diagnostic on each
-// kind of public URL. On https, https on localhost included, each cookie name
-// without the __Host- prefix gets its Warn line. On an http address, which
-// starts only on a loopback host, the cookies carry no prefix by design, so no
-// Warn is written about a name and one Info line names the setting that makes it
-// so.
+// TestTheCookiePrefixDiagnosticFollowsThePublicURL holds the diagnostic on
+// each kind of public URL.
 func TestTheCookiePrefixDiagnosticFollowsThePublicURL(t *testing.T) {
 	for _, c := range []struct {
 		publicURL string
@@ -259,12 +244,10 @@ func TestTheCookiePrefixDiagnosticFollowsThePublicURL(t *testing.T) {
 }
 
 // TestAMountEndpointTheResolutionListCannotBeReadForIsOnlyAWarning holds the
-// failure direction of the one check that reads another module's configuration:
-// when the list has a shape this module cannot decode, the startup goes on and
-// says on a Warn line that the endpoint was not checked against it. A list that
-// is not written at all is not this case: it reads as empty, and nothing is
-// resolved on the endpoint. Refusing would make this module's startup depend on another's
-// declaration; not saying anything would make the missing check invisible.
+// failure direction of the one check that reads another module's
+// configuration: when the list has a shape this module cannot decode, the
+// startup goes on and says on a Warn line that the endpoint was not checked
+// against it.
 func TestAMountEndpointTheResolutionListCannotBeReadForIsOnlyAWarning(t *testing.T) {
 	type stand struct {
 		name string
@@ -328,19 +311,15 @@ func (fakeMounter) Endpoint() string                                          { 
 func (fakeMounter) PublicURL() string                                         { return "" }
 func (fakeMounter) CSRF() *nethttp.CrossOriginProtection                      { return nil }
 
-// mounting is a stand-in for the module that mounts routes, to hand to an
-// assembly.
 func mounting() supply {
 	return supply{module: "stand-in.mount", token: (*mount.Mounter)(nil), instance: fakeMounter{}}
 }
 
-// TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes holds that the
-// gateway picks no endpoint of its own accord: with the key empty and no module
-// that mounts routes in the assembly nothing is checked, whatever the entry point
-// declares and whatever the admission layer or the resolution layer covers, and no
-// sentinel about the routes is produced. Judging the only endpoint of a command
-// that mounts nothing would refuse a command whose only endpoint is, quite
-// properly, one a tenant is resolved on.
+// TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes holds that
+// the gateway picks no endpoint of its own accord: with the key empty and no
+// module that mounts routes in the assembly nothing is checked, whatever the
+// entry point declares and whatever the admission layer or the resolution
+// layer covers, and no sentinel about the routes is produced.
 func TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes(t *testing.T) {
 	err := assembly{
 		body:     `{"authn":{"gate":{"endpoints":["public"]}},"tenant":{"resolve":{"endpoints":["public"]}}}`,
@@ -357,8 +336,7 @@ func TestAMountEndpointLeftEmptyIsNotJudgedWhenNoModuleMountsRoutes(t *testing.T
 // TestAMountEndpointLeftEmptyIsJudgedWhenAModuleMountsRoutes holds the same
 // assembly with a module that mounts routes added: the empty key is then the
 // only endpoint, and the gateway refuses it for what covers it, from the real
-// descriptor and its stages. Each refusal has a control that differs in the one
-// thing the case is about.
+// descriptor and its stages.
 func TestAMountEndpointLeftEmptyIsJudgedWhenAModuleMountsRoutes(t *testing.T) {
 	admission := func(covered bool) supply {
 		return supply{module: "stand-in.admission", token: (*authn.ScopeGuard)(nil), instance: fakeScope{"public": covered}}
@@ -443,10 +421,8 @@ func TestAModuleThatMountsRoutesWithNoEndpointToPickIsRefusedAtStartToo(t *testi
 
 // TestTheTenantScopesMountEndpointMustBeCoveredByBothTenantLayers is the
 // opposite rule for the tenant-administration scope: its routes decide in the
-// tenant's own policy domain, so the endpoint they are mounted on has to be one
-// both tenant layers guard. The ordinary and platform-management scopes keep the
-// other direction, which the cases above hold. Each refusal names the key and
-// the layer the endpoint is missing from, so a host knows which line to change.
+// tenant's own policy domain, so the endpoint they are mounted on has to be
+// one both tenant layers guard.
 func TestTheTenantScopesMountEndpointMustBeCoveredByBothTenantLayers(t *testing.T) {
 	resolved := `"tenant":{"resolve":{"endpoints":["api"]}}`
 	for _, c := range []struct {

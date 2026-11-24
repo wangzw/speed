@@ -28,16 +28,10 @@ func keyID(pub crypto.PublicKey) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(sum), nil
 }
 
-// jwkOf is a key's public JWK: its public half with the kid, the algorithm and
-// the signature use. It carries no private field even when the entry holds a
-// signer.
 func jwkOf(k keyEntry) jose.JSONWebKey {
 	return jose.JSONWebKey{Key: k.pub, KeyID: k.kid, Algorithm: k.alg, Use: useSig}
 }
 
-// marshalJWKS writes the public JWK set of every key as JSON, the body of
-// GET B/jwks.json. The set holds the public half of each key and no private
-// field.
 func marshalJWKS(keys []keyEntry) ([]byte, error) {
 	set := jose.JSONWebKeySet{Keys: make([]jose.JSONWebKey, 0, len(keys))}
 	for _, k := range keys {
@@ -98,15 +92,10 @@ func parseSigned(raw string, algorithms []string) (*signedToken, error) {
 
 func (t *signedToken) header() jose.Header { return t.token.Headers[0] }
 
-// headerKID is the kid of the token's header, empty when there is none.
 func (t *signedToken) headerKID() string { return t.header().KeyID }
 
-// headerAlgorithm is the alg of the token's header.
 func (t *signedToken) headerAlgorithm() string { return t.header().Algorithm }
 
-// headerType is the typ of the token's header and whether it was present. A
-// token without a typ is refused by the verifying sequence, which is why the
-// presence is reported apart from the value.
 func (t *signedToken) headerType() (string, bool) {
 	v, ok := t.header().ExtraHeaders[jose.HeaderType]
 	if !ok {
@@ -116,8 +105,6 @@ func (t *signedToken) headerType() (string, bool) {
 	return s, true
 }
 
-// criticalHeader reports whether the token names any critical header extension,
-// which the backend refuses: it understands none of them.
 func (t *signedToken) criticalHeader() bool {
 	_, ok := t.header().ExtraHeaders[jose.HeaderKey("crit")]
 	return ok

@@ -20,8 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// fakeVerifier stands in for a credential-verifying backend. Every field the
-// tests vary is a field here, so that a case reads as the backend it describes.
 type fakeVerifier struct {
 	name    string
 	accepts authn.Accepts
@@ -61,7 +59,6 @@ func (f *fakeVerifier) credentials() []authn.Credential {
 	return slices.Clone(f.handed)
 }
 
-// challengingVerifier is a backend that writes its own part of the challenge.
 type challengingVerifier struct {
 	*fakeVerifier
 	challenge func(realm string, rejected bool) []string
@@ -71,7 +68,6 @@ func (c challengingVerifier) Challenge(realm string, rejected bool) []string {
 	return c.challenge(realm, rejected)
 }
 
-// clearingVerifier is a backend whose credential is a cookie it can clear.
 type clearingVerifier struct {
 	*fakeVerifier
 	cleared *atomic.Int64
@@ -82,20 +78,14 @@ func (c clearingVerifier) ClearCookie(w nethttp.ResponseWriter) {
 	nethttp.SetCookie(w, &nethttp.Cookie{Name: c.accepts.Cookies[0], Value: "", MaxAge: -1, Path: "/"})
 }
 
-// basicBackend builds a backend that takes the Basic scheme and hands back
-// accounts under the prefix.
 func basicBackend(name, prefix string) *fakeVerifier {
 	return &fakeVerifier{name: name, accepts: authn.Accepts{Schemes: []string{"basic"}, Accounts: prefix}}
 }
 
-// schemeBackend builds a backend that takes whole authentication schemes and
-// hands back accounts in the library namespace.
 func schemeBackend(name string, schemes ...string) *fakeVerifier {
 	return &fakeVerifier{name: name, accepts: authn.Accepts{Schemes: schemes}}
 }
 
-// cookieBackend builds a backend that takes cookies and hands back accounts in
-// the library namespace.
 func cookieBackend(name string, cookies ...string) *fakeVerifier {
 	return &fakeVerifier{name: name, accepts: authn.Accepts{Cookies: cookies}}
 }
@@ -113,13 +103,10 @@ func principalOf(f *fakeVerifier, local string) authn.Principal {
 	}
 }
 
-// held is the verdict that a credential holds for the account local, from the
-// backend.
 func held(f *fakeVerifier, local string) authn.Verdict {
 	return authn.Authenticated(principalOf(f, local))
 }
 
-// passes makes a backend answer that every credential holds, for alice.
 func passes(f *fakeVerifier) *fakeVerifier {
 	f.verify = func(context.Context, authn.Credential) authn.Verdict { return held(f, "alice") }
 	return f
@@ -137,8 +124,6 @@ func (e *fakeEndpoint) Route(string, string, ...gin.HandlerFunc) {}
 func (e *fakeEndpoint) Use(mw speedhttp.Middleware)              { e.middleware = append(e.middleware, mw) }
 func (e *fakeEndpoint) Accepting() bool                          { return true }
 
-// fakeRouter hands out the endpoints it was built with and reports every other
-// name the way the entry point does.
 type fakeRouter struct {
 	endpoints map[string]*fakeEndpoint
 }
@@ -161,27 +146,19 @@ func (r *fakeRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
 
 func (r *fakeRouter) Endpoints() []string { return slices.Sorted(maps.Keys(r.endpoints)) }
 
-// fakeScope is the admission layer's statement of which endpoints it guards.
 type fakeScope map[string]bool
 
 func (s fakeScope) Covers(endpoint string) bool { return s[endpoint] }
 
-// quiet is a logger that writes nowhere, so that a test asserting on a
-// conclusion does not also print it.
 func quiet() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// testGateway builds a gateway with its dispatch table already in place, the
-// endpoints named guarded and its registration window open, which is the state
-// the Init stage leaves it in.
 func testGateway(t *testing.T, guarded []string, verifiers ...authn.Verifier) *gateway {
 	t.Helper()
 	return gatewayWith(t, settings{endpoints: guarded, budget: time.Second, inFlight: 8}, verifiers...)
 }
 
-// gatewayWith is testGateway with the settings spelled out, for the cases that
-// are about the call budget or the in-flight gate rather than about a verdict.
 func gatewayWith(t *testing.T, set settings, verifiers ...authn.Verifier) *gateway {
 	t.Helper()
 
@@ -200,8 +177,6 @@ func gatewayWith(t *testing.T, set settings, verifiers ...authn.Verifier) *gatew
 	return g
 }
 
-// sealed advances the gateway through Start against a router carrying the
-// endpoints named.
 func sealed(t *testing.T, g *gateway, router speedhttp.Router) {
 	t.Helper()
 	g.router = router
@@ -210,27 +185,21 @@ func sealed(t *testing.T, g *gateway, router speedhttp.Router) {
 	}
 }
 
-// request builds a server-side request carrying a logger that writes nowhere,
-// so a refusal is counted and judged without its log line reaching the test
-// output.
 func request(method, target string) *nethttp.Request {
 	r := httptest.NewRequest(method, target, nil)
 	return r.WithContext(log.WithLogger(r.Context(), quiet()))
 }
 
-// withBasic puts a Basic credential on a request.
 func withBasic(r *nethttp.Request, user, password string) *nethttp.Request {
 	r.SetBasicAuth(user, password)
 	return r
 }
 
-// withBearer puts a Bearer credential on a request.
 func withBearer(r *nethttp.Request, token string) *nethttp.Request {
 	r.Header.Set(authHeader, "Bearer "+token)
 	return r
 }
 
-// withCookie puts a cookie on a request.
 func withCookie(r *nethttp.Request, name, value string) *nethttp.Request {
 	r.AddCookie(&nethttp.Cookie{Name: name, Value: value})
 	return r

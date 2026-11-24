@@ -43,9 +43,8 @@ func TestEndpointIsTheConfiguredOneOrTheOnlyOneDeclared(t *testing.T) {
 
 // TestEndpointLeftEmptyWithNoOneToPickIsRefused holds the failure: nothing
 // written and an entry point that declares none or several endpoints is a
-// startup error that names the key to write and, for several, the endpoints to
-// choose among. A first-listed default would be a guess about which traffic the
-// authentication routes share a listener with.
+// startup error that names the key to write and, for several, the endpoints
+// to choose among.
 func TestEndpointLeftEmptyWithNoOneToPickIsRefused(t *testing.T) {
 	for _, c := range []struct {
 		name     string

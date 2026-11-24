@@ -28,7 +28,6 @@ const (
 	publishTimeout     = 5 * time.Second
 )
 
-// refreshRow is one row of authn_refresh_tokens. Every time in it is UTC.
 type refreshRow struct {
 	ID            string         `gorm:"column:id"`
 	SessionID     string         `gorm:"column:session_id"`
@@ -45,8 +44,6 @@ type refreshRow struct {
 // answers invalid_grant and triggers no revocation.
 var errNoRefreshRow = errors.New("token: no such refresh row")
 
-// normalize puts every time the row carries in UTC, whichever zone the driver
-// read it in.
 func (r *refreshRow) normalize() {
 	r.IssuedAt = clock.UTC(r.IssuedAt)
 	r.IdleExpiresAt = clock.UTC(r.IdleExpiresAt)
@@ -60,7 +57,6 @@ func refreshUnavailable(op string, err error) error {
 	return fmt.Errorf("%w: %s: %w", authn.ErrUnavailable, op, err)
 }
 
-// one runs a query that selects at most one row by the given condition.
 func (s *refreshStore) one(ctx context.Context, op, where string, args ...any) (refreshRow, error) {
 	var out []refreshRow
 	if err := s.handle.WithContext(ctx).Raw("SELECT "+refreshColumns+" FROM "+tableName+" WHERE "+where,
@@ -74,7 +70,6 @@ func (s *refreshStore) one(ctx context.Context, op, where string, args ...any) (
 	return out[0], nil
 }
 
-// byHash reads the row a presented token belongs to, by the digest of the token.
 func (s *refreshStore) byHash(ctx context.Context, digest string) (refreshRow, error) {
 	return s.one(ctx, "reading a refresh token", "token_hash = ?", digest)
 }
@@ -85,13 +80,10 @@ func (s *refreshStore) byID(ctx context.Context, id string) (refreshRow, error) 
 	return s.one(ctx, "reading a refresh token", "id = ?", id)
 }
 
-// insert writes a fresh row on the store's own handle.
 func (s *refreshStore) insert(ctx context.Context, r refreshRow) error {
 	return insertRefreshRow(ctx, s.handle, r)
 }
 
-// insertRefreshRow writes one row on the given handle, which is the store's or a
-// transaction's.
 func insertRefreshRow(ctx context.Context, db *gorm.DB, r refreshRow) error {
 	res := db.WithContext(ctx).Exec("INSERT INTO "+tableName+
 		" (id, session_id, token_hash, parent_id, issued_at, idle_expires_at, used_at, replaced_by) "+
@@ -104,8 +96,6 @@ func insertRefreshRow(ctx context.Context, db *gorm.DB, r refreshRow) error {
 	return nil
 }
 
-// nullText is a nullable string as a statement binds it: NULL for the absent
-// one.
 func nullText(s sql.NullString) any {
 	if !s.Valid {
 		return nil
@@ -113,8 +103,6 @@ func nullText(s sql.NullString) any {
 	return s.String
 }
 
-// nullTime is a nullable time as a statement binds it: UTC, or NULL for the
-// absent one.
 func nullTime(t sql.NullTime) any {
 	if !t.Valid {
 		return nil
@@ -299,8 +287,6 @@ func (p *product) Refresh(ctx context.Context, presented string) (authn.AccessTo
 	return authn.AccessToken{}, authn.RefreshToken{}, authn.ErrRefreshReuse
 }
 
-// refreshDenied records the outcome and returns the grant failure, so the
-// several invalid_grant exits read alike.
 func (p *product) refreshDenied(ctx context.Context, outcome string, err error) (authn.AccessToken, authn.RefreshToken, error) {
 	p.recordOperation(ctx, operationRefreshed, outcome)
 	return authn.AccessToken{}, authn.RefreshToken{}, err
@@ -319,7 +305,6 @@ func issuedFromStatus(status authn.SessionStatus, session authn.SessionID) authn
 	}
 }
 
-// renewal is the pair a grace-window retry hands back.
 type renewal struct {
 	access  authn.AccessToken
 	refresh authn.RefreshToken
