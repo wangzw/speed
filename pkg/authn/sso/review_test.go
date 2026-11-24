@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// fakeConfigReader answers the SAML key configuration with a case's value, so a
-// Put can be driven with the service provider's key reported as present.
 type fakeConfigReader struct{ keyFile string }
 
 func (f fakeConfigReader) Decode(path string, target any) error {
@@ -39,8 +37,7 @@ func samlProviderOf(cfg string) authn.SSOProvider {
 	}
 }
 
-// TestTheConfigRulesHoldAtTheirEdges drives each config rule at the boundary a
-// value is accepted or refused, both the refusing and the succeeding half.
+// TestTheConfigRulesHoldAtTheirEdges checks that the configuration rules hold at their edges.
 func TestTheConfigRulesHoldAtTheirEdges(t *testing.T) {
 	r := newRigSQLite(t)
 	base := `"idp_entity_id":"e","idp_sso_url":"https://idp.example.com/sso","idp_certs":["x"]`
@@ -92,8 +89,7 @@ func TestTheConfigRulesHoldAtTheirEdges(t *testing.T) {
 	}
 }
 
-// TestIsConcreteIssuerRefusesEveryAggregatorPlaceholder holds that all three
-// multi-tenant placeholders are refused, whatever their case.
+// TestIsConcreteIssuerRefusesEveryAggregatorPlaceholder checks that IsConcreteIssuer refuses every aggregator placeholder.
 func TestIsConcreteIssuerRefusesEveryAggregatorPlaceholder(t *testing.T) {
 	r := newRigSQLite(t)
 	for _, segment := range []string{"common", "organizations", "consumers", "COMMON", "Organizations"} {
@@ -104,8 +100,7 @@ func TestIsConcreteIssuerRefusesEveryAggregatorPlaceholder(t *testing.T) {
 	}
 }
 
-// TestTheNameBoundIsLiteral pins the name-length bound to literal lengths, so a
-// changed constant moves the bound and not the test.
+// TestTheNameBoundIsLiteral checks that the provider name bound is the literal value.
 func TestTheNameBoundIsLiteral(t *testing.T) {
 	r := newRigSQLite(t)
 	at := oidcProviderOf(`{"issuer":"https://idp.example.com","client_id":"c"}`)
@@ -120,9 +115,7 @@ func TestTheNameBoundIsLiteral(t *testing.T) {
 	}
 }
 
-// TestNormalizeDomainHoldsItsLengthAndLabelBounds holds the domain rule at the
-// total-length and label-length boundaries and against a character outside the
-// set.
+// TestNormalizeDomainHoldsItsLengthAndLabelBounds checks that NormalizeDomain holds its length and label bounds.
 func TestNormalizeDomainHoldsItsLengthAndLabelBounds(t *testing.T) {
 	at253 := strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61)
 	if len(at253) != 253 {
@@ -145,8 +138,7 @@ func TestNormalizeDomainHoldsItsLengthAndLabelBounds(t *testing.T) {
 	}
 }
 
-// TestTheVerifyTokenIsFullLength pins the domain-ownership token to its declared
-// entropy, so a reduction is caught.
+// TestTheVerifyTokenIsFullLength checks that the verification token is full length.
 func TestTheVerifyTokenIsFullLength(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.putOIDC("tenant-a", "idp")
@@ -159,8 +151,7 @@ func TestTheVerifyTokenIsFullLength(t *testing.T) {
 	}
 }
 
-// TestHoldsTokenToleratesWhitespace holds that a TXT record with surrounding
-// whitespace still verifies the domain.
+// TestHoldsTokenToleratesWhitespace checks that the token check tolerates surrounding whitespace.
 func TestHoldsTokenToleratesWhitespace(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.putOIDC("tenant-a", "idp")
@@ -177,8 +168,7 @@ func TestHoldsTokenToleratesWhitespace(t *testing.T) {
 	}
 }
 
-// TestTheNotFoundSentinelsHold holds the ErrProviderNotFound answers a read of a
-// provider that is not there.
+// TestTheNotFoundSentinelsHold checks that the not-found sentinels hold.
 func TestTheNotFoundSentinelsHold(t *testing.T) {
 	r := newRigSQLite(t)
 	ctx := context.Background()
@@ -191,8 +181,7 @@ func TestTheNotFoundSentinelsHold(t *testing.T) {
 	}
 }
 
-// TestVerifyDomainWithoutAClaimIsRefused holds the guard that a verification
-// asked for with no claim returns the claim sentinel and looks up nothing.
+// TestVerifyDomainWithoutAClaimIsRefused checks that verifying a domain without a claim is refused.
 func TestVerifyDomainWithoutAClaimIsRefused(t *testing.T) {
 	r := newRigSQLite(t)
 	r.txt[txtName("example.com")] = []string{"speed-authn=whatever"}
@@ -201,8 +190,7 @@ func TestVerifyDomainWithoutAClaimIsRefused(t *testing.T) {
 	}
 }
 
-// TestMarkVerifiedWithoutAClaimIsRefused holds that a verification write that
-// affects no row reports the claim sentinel.
+// TestMarkVerifiedWithoutAClaimIsRefused checks that marking verified without a claim is refused.
 func TestMarkVerifiedWithoutAClaimIsRefused(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.putOIDC("tenant-a", "idp")
@@ -211,8 +199,7 @@ func TestMarkVerifiedWithoutAClaimIsRefused(t *testing.T) {
 	}
 }
 
-// TestRememberAssertionRefusesAnEmptyArgument holds that an empty provider or an
-// empty identifier is refused.
+// TestRememberAssertionRefusesAnEmptyArgument checks that RememberAssertion refuses an empty argument.
 func TestRememberAssertionRefusesAnEmptyArgument(t *testing.T) {
 	r := newRigSQLite(t)
 	ctx := context.Background()
@@ -225,8 +212,7 @@ func TestRememberAssertionRefusesAnEmptyArgument(t *testing.T) {
 	}
 }
 
-// TestSweepKeepsAClaimInsideTheRetentionWindow holds the retention: a claim two
-// days old is inside the seven-day window and survives the sweep.
+// TestSweepKeepsAClaimInsideTheRetentionWindow checks that the sweep keeps a claim inside the retention window.
 func TestSweepKeepsAClaimInsideTheRetentionWindow(t *testing.T) {
 	r := newRigSQLite(t)
 	r.insertClaim("two-day.example.com", "idp-1", "tenant-a", "t", false, base.Add(-48*time.Hour))
@@ -239,9 +225,7 @@ func TestSweepKeepsAClaimInsideTheRetentionWindow(t *testing.T) {
 	}
 }
 
-// TestASignedRequestWithAConfiguredKeyIsAccepted holds the succeeding half of the
-// sign_requests rule: a deployment that carries the key takes a provider that
-// signs its requests.
+// TestASignedRequestWithAConfiguredKeyIsAccepted checks that a signed request is accepted with a configured key.
 func TestASignedRequestWithAConfiguredKeyIsAccepted(t *testing.T) {
 	r := newRigSQLite(t)
 	r.p.reader = fakeConfigReader{keyFile: "/tmp/sp-key.pem"}
@@ -251,8 +235,7 @@ func TestASignedRequestWithAConfiguredKeyIsAccepted(t *testing.T) {
 	}
 }
 
-// TestTheSettingsDomainsHoldTheirBounds holds each settings domain at the value
-// just inside and just outside each end.
+// TestTheSettingsDomainsHoldTheirBounds checks that the settings domains hold their bounds.
 func TestTheSettingsDomainsHoldTheirBounds(t *testing.T) {
 	domains := []struct {
 		name string
@@ -278,8 +261,7 @@ func TestTheSettingsDomainsHoldTheirBounds(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryTakesTheDomainAfterTheLastAt holds that the domain is
-// everything after the last at sign.
+// TestTheDiscoveryTakesTheDomainAfterTheLastAt checks that discovery takes the domain after the last at sign.
 func TestTheDiscoveryTakesTheDomainAfterTheLastAt(t *testing.T) {
 	r := routed(t)
 	w := r.post(discoverFullPath, `{"email":"a@b@example.com"}`)

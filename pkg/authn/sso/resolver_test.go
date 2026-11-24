@@ -14,9 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// TestAnUnsetResolverUsesTheSystemResolver holds that a deployment which
-// configures no resolver keeps the TXT lookup on net.DefaultResolver: the
-// product's lookup is the system one, not a wrapper around another resolver.
+// TestAnUnsetResolverUsesTheSystemResolver checks that an unset resolver uses the system resolver.
 func TestAnUnsetResolverUsesTheSystemResolver(t *testing.T) {
 	reader := authntest.ConfigReaderAll(t, "{}", Module())
 	cfg, err := readConfig(reader)
@@ -30,10 +28,7 @@ func TestAnUnsetResolverUsesTheSystemResolver(t *testing.T) {
 	}
 }
 
-// TestAConfiguredResolverCarriesTheTXTLookup holds that the configured resolver
-// address is where the TXT lookup of a domain verification goes. The test listens
-// on a loopback UDP socket and asserts the query arrives there; it never answers,
-// so the lookup itself ends when its deadline passes.
+// TestAConfiguredResolverCarriesTheTXTLookup checks that a configured resolver carries the TXT lookup.
 func TestAConfiguredResolverCarriesTheTXTLookup(t *testing.T) {
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
@@ -70,9 +65,7 @@ func TestAConfiguredResolverCarriesTheTXTLookup(t *testing.T) {
 	}
 }
 
-// TestAResolverAddressThatIsNotHostPortIsRefused holds that the address is held
-// to host:port, so a misspelt resolver fails the start rather than silently
-// falling back to the system resolver.
+// TestAResolverAddressThatIsNotHostPortIsRefused checks that a resolver address that is not host:port is refused.
 func TestAResolverAddressThatIsNotHostPortIsRefused(t *testing.T) {
 	reader := authntest.ConfigReaderAll(t,
 		`{"authn":{"sso":{"dns-resolver":"not-an-address"}}}`, Module())

@@ -8,8 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// TestCacheHitsUntilTheVersionChanges holds that a second Begin reuses the
-// discovered provider, and that a raised provider version discovers it again.
+// TestCacheHitsUntilTheVersionChanges checks that the cache hits until the provider version changes.
 func TestCacheHitsUntilTheVersionChanges(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -32,8 +31,7 @@ func TestCacheHitsUntilTheVersionChanges(t *testing.T) {
 	}
 }
 
-// TestIDPChangedDropsTheCachedProvider holds that an authn.idp.changed event for
-// a provider makes the next Begin discover it again.
+// TestIDPChangedDropsTheCachedProvider checks that an authn.idp.changed event drops the cached provider.
 func TestIDPChangedDropsTheCachedProvider(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)
@@ -52,8 +50,7 @@ func TestIDPChangedDropsTheCachedProvider(t *testing.T) {
 	}
 }
 
-// TestCacheExpires holds that an entry past its provider-cache-ttl is discovered
-// again.
+// TestCacheExpires checks that a cached provider expires at the configured instant.
 func TestCacheExpires(t *testing.T) {
 	m := newMockIDP(t)
 	r := newRig(t, m)

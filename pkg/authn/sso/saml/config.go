@@ -16,12 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The configuration items this module declares, relative to its namespace. The
-// enable switch decides whether this run offers the method. The service
-// provider's key and certificates belong to the whole deployment, not to one
-// provider; only the private key is secret. The key file is the one item the
-// register reads across namespaces, to refuse a provider whose requests could
-// not be signed.
 const (
 	enabledItem        = "enabled"
 	spKeyFileItem      = "sp-key-file"
@@ -29,39 +23,21 @@ const (
 	spNextCertFileItem = "sp-next-cert-file"
 )
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// Enabled states whether this run offers the method. The method has nothing
-	// of its own to infer that from: its providers are rows created at run time,
-	// so an empty register is not evidence of a deployment that never intended to
-	// offer enterprise SAML sign-in.
-	Enabled bool `config:"enabled"`
-	// SPKeyFile is the path of the service provider's private key. It is read
-	// only when a provider signs its requests or an IdP encrypts assertions.
-	SPKeyFile string `config:"sp-key-file"`
-	// SPCertFile is the path of the current service provider certificate.
-	SPCertFile string `config:"sp-cert-file"`
-	// SPNextCertFile is the path of the next service provider certificate,
-	// published beside the current one while a rotation is in progress.
+	Enabled        bool   `config:"enabled"`
+	SPKeyFile      string `config:"sp-key-file"`
+	SPCertFile     string `config:"sp-cert-file"`
 	SPNextCertFile string `config:"sp-next-cert-file"`
 }
 
-// resolved is the configuration this module actually runs on: the parsed signer
-// and the DER bytes of the current and next certificates. A nil signer is a
-// deployment that carries no key.
 type resolved struct {
 	signer  crypto.Signer
 	certDER []byte
 	nextDER []byte
 }
 
-// configDefaults is what this module is worth without a configuration file: no
-// key and no certificate, a legal deployment that never signs its requests.
 var configDefaults = moduleConfig{}
 
-// resolve loads the declared key and certificates and holds them to the rules
-// the module can run on: the key and the current certificate are a pair, and a
-// file that is declared is one that parses.
 func (c moduleConfig) resolve() (resolved, error) {
 	keyGiven := c.SPKeyFile != ""
 	certGiven := c.SPCertFile != ""
@@ -96,10 +72,8 @@ func (c moduleConfig) resolve() (resolved, error) {
 	return out, nil
 }
 
-// configured reports whether the deployment carries a service provider key.
 func (r resolved) configured() bool { return r.signer != nil }
 
-// configSchema declares this module's input items under its own namespace.
 func configSchema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -128,7 +102,6 @@ func configSchema() config.Schema {
 	}
 }
 
-// readEnabled decodes this module's enable switch.
 func readEnabled(reader config.Reader) (bool, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
@@ -137,7 +110,6 @@ func readEnabled(reader config.Reader) (bool, error) {
 	return cfg.Enabled, nil
 }
 
-// readConfig decodes this module's section and validates it.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
@@ -147,8 +119,6 @@ func readConfig(reader config.Reader) (resolved, error) {
 	return cfg.resolve()
 }
 
-// readerOf takes up the configuration reader, whose absence is the host's
-// omission and is carried out as it stands.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -158,8 +128,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 	return reader, nil
 }
 
-// loadKey reads and parses a PEM private key. It accepts the PKCS#8, PKCS#1 and
-// SEC 1 encodings, which are what `openssl` and the Go standard library write.
 func loadKey(path string) (crypto.Signer, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
@@ -181,7 +149,6 @@ func loadKey(path string) (crypto.Signer, error) {
 	return nil, fmt.Errorf("%w: %s is not a PKCS#8, PKCS#1 or SEC 1 private key", authn.ErrInvalidConfig, spKeyFileItem)
 }
 
-// signerOf reports an RSA, ECDSA or Ed25519 key as a signer.
 func signerOf(k any) (crypto.Signer, error) {
 	switch key := k.(type) {
 	case *rsa.PrivateKey:
@@ -195,8 +162,6 @@ func signerOf(k any) (crypto.Signer, error) {
 	}
 }
 
-// loadCertificate reads a PEM certificate and returns its DER bytes, which is
-// what the metadata publishes.
 func loadCertificate(path string) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {

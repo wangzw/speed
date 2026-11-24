@@ -7,12 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn/sso/saml"
 )
 
-// TestSPKeyConfiguredReadsTheRealSAMLSection holds the register's cross-namespace
-// read against the actual configuration loader: the key file is decoded out of
-// authn.sso.saml, in a section that also carries the enable switch, by the item
-// name samlKeySettings declares. A copy of the struct decoded in the test would
-// keep agreeing with a misspelt tag; this reader is the one the deployment's
-// Put path reads through.
+// TestSPKeyConfiguredReadsTheRealSAMLSection checks that the SAML key configuration is read from the real settings section.
 func TestSPKeyConfiguredReadsTheRealSAMLSection(t *testing.T) {
 	cases := []struct {
 		name string

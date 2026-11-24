@@ -12,6 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
+// TestOnlyTheKeyFileItemIsSensitive checks that only the key-file item is sensitive.
 func TestOnlyTheKeyFileItemIsSensitive(t *testing.T) {
 	s := configSchema()
 	key, ok := s.Items[spKeyFileItem]
@@ -32,8 +33,7 @@ func TestOnlyTheKeyFileItemIsSensitive(t *testing.T) {
 	}
 }
 
-// TestTheSchemaDeclaresTheEnableSwitch holds the switch in the schema and off by
-// default, which is what makes a deployment that never names it serve nothing.
+// TestTheSchemaDeclaresTheEnableSwitch checks that the schema declares the enable switch.
 func TestTheSchemaDeclaresTheEnableSwitch(t *testing.T) {
 	if _, ok := configSchema().Items[enabledItem]; !ok {
 		t.Fatalf("the schema does not declare %s", enabledItem)
@@ -43,12 +43,7 @@ func TestTheSchemaDeclaresTheEnableSwitch(t *testing.T) {
 	}
 }
 
-// TestTheKeyFileIsReadBesideTheEnableSwitch holds the cross-namespace read the
-// enterprise provider register makes. It decodes sp-key-file out of
-// authn.sso.saml with the real configuration machinery while the same section
-// also carries the enable switch: an unknown key that broke the decode would be
-// read by the register as "no service provider key" and silently swallow the
-// deployment's signing setup.
+// TestTheKeyFileIsReadBesideTheEnableSwitch checks that the key file is read beside the enable switch.
 func TestTheKeyFileIsReadBesideTheEnableSwitch(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -67,8 +62,6 @@ func TestTheKeyFileIsReadBesideTheEnableSwitch(t *testing.T) {
 		t.Fatalf("loading the configuration: %v", err)
 	}
 
-	// The register's own view of the section: the key file alone, decoded from a
-	// section that also declares enabled.
 	var key struct {
 		SPKeyFile string `config:"sp-key-file"`
 	}

@@ -12,28 +12,19 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// stepAssertion is this method's name for its one step: the flow is at the
-// redirect to the identity provider, waiting for the assertion's POST back. The
-// engine keeps the name and hands it back in FlowState.Step, so a callback that
-// arrives at a step this method did not name is refused.
 const stepAssertion = "assertion"
 
-// relayStateBytes is the length of the random RelayState the method draws.
 const relayStateBytes = 16
 
-// The causes the method puts on an answer. None carries a value the client sent.
 var (
 	errNotCallback    = errors.New("authn.sso.saml: the answer is not a redirect back")
 	errNoProvider     = errors.New("authn.sso.saml: the start names no provider")
 	errProviderUsable = errors.New("authn.sso.saml: the provider does not answer this method")
 )
 
-// Name is the method's stable name.
 func (p *product) Name() string { return methodName }
 
-// Describe reports the enterprise SAML method: an enterprise entry that
-// discovers the provider and leaves for it. It opens no account of its own; a
-// provider's trust settings and the account resolution decide that.
+// Describe reports the enterprise SAML method as an entry that discovers the provider and leaves for it, opening no account of its own.
 func (p *product) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
 		Name:             methodName,
@@ -43,11 +34,7 @@ func (p *product) Describe() authn.MethodDescriptor {
 	}
 }
 
-// Begin starts a flow: it reads the provider row the start names, builds an
-// AuthnRequest for it, keeps the request's identifier, the RelayState and the
-// provider's identifier in the flow's private state, and answers the redirect
-// the user agent leaves for. A provider that does not exist, is disabled or is
-// not a SAML provider is refused, before anything is drawn.
+// Begin reads the named provider, keeps the AuthnRequest identifier, RelayState and provider identifier in the flow's private state, and answers the redirect. A missing, disabled or non-SAML provider is refused.
 func (p *product) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if !servesPurpose(s.Purpose) {
 		return refusePurpose(s.Purpose), nil
@@ -90,10 +77,7 @@ func (p *product) Begin(ctx context.Context, s authn.Start) (authn.Step, error) 
 	return authn.StepRedirect(stepAssertion, writeState(requestID, relay, row.ID), url), nil
 }
 
-// Answer handles the assertion's POST back. The engine has already checked the
-// flow's binding, the method's name and the path, and moved the record to
-// processing, so the assertion is consumed at most once by the engine's own
-// compare-and-swap; the checks here are the design's ordered set on top of that.
+// Answer handles the assertion's POST back and runs the ordered checks on top of the engine's one-time consumption of the flow.
 func (p *product) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputCallback {
 		return authn.StepRefused(errNotCallback), nil
@@ -103,11 +87,7 @@ func (p *product) Answer(ctx context.Context, f authn.FlowState, in authn.StepIn
 	}
 	st, ok := readState(f.Private)
 	if !ok {
-		// An identity-provider-initiated sign-in: the engine created the flow on
-		// the spot and names the provider to the method in the flow state, with no
-		// drawn request or RelayState to check. A flow that names no provider at
-		// all is refused rather than validated without a provider to check it
-		// against.
+		// An IdP-initiated flow names its provider in the flow state and has no drawn request or RelayState to check; a flow naming none is refused.
 		if f.Provider == "" {
 			return p.reject(ctx, "", outcomeOther, "the flow names no provider"), nil
 		}
@@ -135,11 +115,6 @@ func (p *product) Answer(ctx context.Context, f authn.FlowState, in authn.StepIn
 	return p.consume(ctx, row, b, st, encoded, in.Form.Get("RelayState")), nil
 }
 
-// servePurpose reports whether the method answers a flow of this purpose. A
-// SAML identity proves which external identity a caller holds: a login uses it
-// to resolve an account, a link binds it to the flow's account, and a step-up
-// re-proves an account whose first factor is this one. An enrollment registers
-// a factor, which an external identity does not prove.
 func servesPurpose(purpose string) bool {
 	switch purpose {
 	case authn.PurposeLogin, authn.PurposeLink, authn.PurposeStepUp:
@@ -149,13 +124,10 @@ func servesPurpose(purpose string) bool {
 	}
 }
 
-// refusePurpose refuses a flow of a purpose the method does not serve, before it
-// reads or draws anything.
 func refusePurpose(purpose string) authn.Step {
 	return authn.StepRefused(fmt.Errorf("%s: purpose %q is not served", ModuleName, purpose))
 }
 
-// randomRelay draws the RelayState: 16 random bytes, in hexadecimal.
 func randomRelay() (string, error) {
 	var raw [relayStateBytes]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -164,8 +136,6 @@ func randomRelay() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
-// serviceProvider returns the built service provider for a row, from the cache
-// or freshly built.
 func (p *product) serviceProvider(ctx context.Context, row authn.SSOProvider) (built, error) {
 	ttl := p.settings.providerCacheTTL()
 	now := p.clock.Now()

@@ -9,9 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestRememberAssertionRecordsOnceAndRefusesAReplay holds the replay line: the
-// first write of an identifier is taken, a second is ErrAssertionReplay, and a
-// different identifier of the same provider is taken on its own.
+// TestRememberAssertionRecordsOnceAndRefusesAReplay checks that an assertion identifier is recorded once and a repeat is ErrAssertionReplay.
 func TestRememberAssertionRecordsOnceAndRefusesAReplay(t *testing.T) {
 	r := newRigSQLite(t)
 	ctx := context.Background()
@@ -32,12 +30,7 @@ func TestRememberAssertionRecordsOnceAndRefusesAReplay(t *testing.T) {
 	}
 }
 
-// TestRememberAssertionStoresTheConditionInUTC holds that the replay line's
-// not_on_or_after is written UTC whatever zone the clock reads in, so the sweep's
-// text comparison is between two UTC values on SQLite. The write happens under an
-// America/New_York clock, and the sweep runs at an instant that falls between the
-// value a local-zone write would leave and the UTC one, so only the UTC write
-// survives.
+// TestRememberAssertionStoresTheConditionInUTC checks that RememberAssertion stores the condition in UTC.
 func TestRememberAssertionStoresTheConditionInUTC(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	if err != nil {
@@ -49,21 +42,15 @@ func TestRememberAssertionStoresTheConditionInUTC(t *testing.T) {
 
 	r := newRigSQLite(t)
 	ctx := context.Background()
-	// The clock reads in New York, which is not UTC.
 	r.clock = newClock(base.In(newYork))
 	r.p.clock = r.clock.read
 
 	idp := r.putOIDC("tenant-a", "idp")
-	// base is 12:00 UTC and 08:00 in New York; ten minutes earlier is 11:50 UTC
-	// and 07:50 local. The condition is taken in the New York zone, so a write
-	// that did not convert to UTC would leave the local value behind.
 	cond := base.In(newYork).Add(-10 * time.Minute)
 	if err := r.p.RememberAssertion(ctx, idp.ID, "a1", cond); err != nil {
 		t.Fatalf("RememberAssertion: %v", err)
 	}
 
-	// Sweep at 09:50 UTC, which is after the value a local-zone write would have
-	// left (07:50) and before the UTC one (11:50).
 	r.clock = newClock(time.Date(2026, time.March, 14, 9, 50, 0, 0, time.UTC))
 	r.p.clock = r.clock.read
 	if err := r.p.Sweep(ctx); err != nil {

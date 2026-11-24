@@ -19,9 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// configReader builds the real configuration loader over the gateway's mount
-// items and the SSO namespace, which this method reads. The SSO module is
-// registered for its declaration alone; the loader never drives it.
 func configReader(t *testing.T, caFile string) config.Reader {
 	t.Helper()
 	extra := ""
@@ -34,8 +31,6 @@ func configReader(t *testing.T, caFile string) config.Reader {
 	return authntest.ConfigReaderAll(t, body, gate.Module(), sso.Module(), Module())
 }
 
-// driveRegistered drives this module through a real registry to Init and hands
-// the delivered product to action.
 func driveRegistered(t *testing.T, reader config.Reader, providers *fakeProviders, action func(*product)) error {
 	t.Helper()
 	reg := core.New()
@@ -64,7 +59,6 @@ func driveRegistered(t *testing.T, reader config.Reader, providers *fakeProvider
 	})
 }
 
-// writeCert writes one certificate as a PEM file and returns its path.
 func writeCert(t *testing.T, cert *x509.Certificate) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "roots.pem")
@@ -75,7 +69,6 @@ func writeCert(t *testing.T, cert *x509.Certificate) string {
 	return path
 }
 
-// beginProvider starts a login on the named provider against m.
 func beginProvider(t *testing.T, p *product, id string) authn.Step {
 	t.Helper()
 	got, err := p.Begin(context.Background(), authn.Start{
@@ -88,9 +81,7 @@ func beginProvider(t *testing.T, p *product, id string) authn.Step {
 	return got
 }
 
-// TestAnUnsetCAFileLeavesTheSystemRoots holds that a deployment which configures
-// no CA file trusts the system roots alone: a provider serving a certificate no
-// system root signs is an outage, not a discovery that succeeds.
+// TestAnUnsetCAFileLeavesTheSystemRoots checks that an unset CA file leaves the system roots.
 func TestAnUnsetCAFileLeavesTheSystemRoots(t *testing.T) {
 	m := newMockIDP(t)
 	providers := newFakeProviders()
@@ -110,9 +101,7 @@ func TestAnUnsetCAFileLeavesTheSystemRoots(t *testing.T) {
 	}
 }
 
-// TestAConfiguredCAFileIsTrustedForTheOIDCCall holds that the configured file's
-// certificate is trusted by the egress client: a provider serving a certificate
-// from that file is discovered and the whole login completes.
+// TestAConfiguredCAFileIsTrustedForTheOIDCCall checks that a configured CA file is trusted for the OIDC call.
 func TestAConfiguredCAFileIsTrustedForTheOIDCCall(t *testing.T) {
 	m := newMockIDP(t)
 	providers := newFakeProviders()
@@ -132,9 +121,7 @@ func TestAConfiguredCAFileIsTrustedForTheOIDCCall(t *testing.T) {
 	}
 }
 
-// TestACAFileWithNoCertificateIsRefused holds that a file the deployment named
-// but that holds no certificate fails the start rather than quietly leaving the
-// system roots in place.
+// TestACAFileWithNoCertificateIsRefused checks that a CA file with no certificate is refused.
 func TestACAFileWithNoCertificateIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "roots.pem")
 	if err := os.WriteFile(path, []byte("not a certificate"), 0o600); err != nil {

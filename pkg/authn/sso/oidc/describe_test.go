@@ -7,10 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestDescribeReportsTheEnterpriseEntry holds the descriptor the discovery
-// endpoint publishes for the enterprise OIDC method: an enterprise entry that
-// speaks OIDC, with no label and no fields, opens no account of its own, and
-// whose bindings land under the "oidc:" namespace prefix.
+// TestDescribeReportsTheEnterpriseEntry checks that Describe reports the enterprise entry.
 func TestDescribeReportsTheEnterpriseEntry(t *testing.T) {
 	got := (&product{}).Describe()
 	if got.Name != "oidc" || got.Kind != authn.MethodKindEnterprise ||

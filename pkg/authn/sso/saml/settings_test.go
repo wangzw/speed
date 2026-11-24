@@ -11,9 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// fakeStore is a settings store whose values a case chooses, keyed by the full
-// path; a key it does not hold reads as undeclared. It embeds the interface so
-// that only Get, which is all the reader uses, has to be written.
 type fakeStore struct {
 	settings.Store
 	values map[string]string
@@ -47,6 +44,7 @@ func quietReader(store settings.Store) *reader {
 	return newReader(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
+// TestTheSettingsReaderFallsBackToTheDeclaredDefault checks that the settings reader falls back to the declared default.
 func TestTheSettingsReaderFallsBackToTheDeclaredDefault(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -67,6 +65,7 @@ func TestTheSettingsReaderFallsBackToTheDeclaredDefault(t *testing.T) {
 	}
 }
 
+// TestTheOtherSettingsReadTheirDeclaredDefaults checks that the other settings read their declared defaults.
 func TestTheOtherSettingsReadTheirDeclaredDefaults(t *testing.T) {
 	r := quietReader(nil)
 	if got := r.providerCacheTTL(); got != defaultProviderCache {

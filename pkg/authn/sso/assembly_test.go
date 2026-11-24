@@ -23,17 +23,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The stand-in modules an assembly drives: the capabilities another module
-// delivers exclusively in a real command, each supplied to a module of its own
-// here because the modules that deliver them are not ones these cases bring in.
 const (
 	dbModule      = "stand-in.db"
 	mounterModule = "stand-in.mounter"
 	admission     = "tenant.admission"
 )
 
-// standIn is a module that declares the tokens names, exclusively when told to,
-// and delivers instance from its New.
 func standIn(name string, instance any, exclusive bool, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -46,44 +41,23 @@ func standIn(name string, instance any, exclusive bool, tokens ...core.Token) co
 	}
 }
 
-// standInLogger is a logging capability that writes every record to a buffer a
-// case reads.
 type standInLogger struct{ logs *logBuffer }
 
 func (l standInLogger) Named(string) *slog.Logger { return l.logs.logger() }
 func (l standInLogger) Redaction() log.Redaction  { return nil }
 
-// nothing is a drive action that asserts nothing and succeeds.
 func nothing(context.Context, *core.Registry) error { return nil }
 
-// assembly is one drive of a real registry through this module's descriptor. The
-// database and the mounter are supplied as stand-in modules of their own; what a
-// case varies is whether the tables and the root key are there, whether the
-// admission layer takes part, and whether a logging capability is present.
 type assembly struct {
-	// keyless builds the database without a root key.
-	keyless bool
-	// migrate builds the module's tables before the drive.
-	migrate bool
-	// noDatabase registers no database stand-in, so the required dependency is
-	// missing.
-	noDatabase bool
-	// withAdmission registers a module named tenant.admission, so the startup
-	// diagnostic about its absence is not written.
+	keyless       bool
+	migrate       bool
+	noDatabase    bool
 	withAdmission bool
-	// logging, when non-nil, is supplied to a stand-in for the logging module.
-	logging log.Logger
-	// methods are login methods the drive delivers from stand-in modules of
-	// their own, so that the module's Init sees exactly these protocols.
-	methods []authn.LoginMethod
-	// loginSwitch, when non-nil, is the run-time switch the drive delivers from
-	// a stand-in module of its own, so that the module's Init takes it up. It is
-	// nil for a run that delivers none.
-	loginSwitch authn.LoginMethodSwitch
+	logging       log.Logger
+	methods       []authn.LoginMethod
+	loginSwitch   authn.LoginMethodSwitch
 }
 
-// drive advances the assembly to Start, runs action there, and returns what the
-// drive returned once every Stop and Close has run.
 func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 
@@ -139,9 +113,7 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	})
 }
 
-// TestTheDescriptorNamesWhatItDeliversAndRequires holds the descriptor's shape:
-// the SSO provider register is claimed exclusively, and the database and the
-// mounter are required.
+// TestTheDescriptorNamesWhatItDeliversAndRequires checks that the descriptor claims SSOProviders exclusively, requires the database and mounter, and keeps optional capabilities unclaimed.
 func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authn.sso" {
@@ -241,9 +213,7 @@ func TestStartRefusesWithoutARootKey(t *testing.T) {
 	}
 }
 
-// TestStartWarnsWhenTheAdmissionLayerTakesNoPart holds the startup diagnostic: a
-// deployment with no tenant admission layer has nobody enforcing a tenant's
-// requirement of SSO, and the module says so with a Warn naming that module.
+// TestStartWarnsWhenTheAdmissionLayerTakesNoPart checks that Start warns when the tenant admission layer takes no part.
 func TestStartWarnsWhenTheAdmissionLayerTakesNoPart(t *testing.T) {
 	logs := &logBuffer{}
 	err := assembly{migrate: true, logging: standInLogger{logs: logs}}.drive(t, nothing)
@@ -255,9 +225,6 @@ func TestStartWarnsWhenTheAdmissionLayerTakesNoPart(t *testing.T) {
 	}
 }
 
-// standInMethod is a login method of a name a case chooses. It delivers
-// authn.LoginMethod so that the module's Init sees its protocol as delivered;
-// its steps are never driven.
 type standInMethod struct{ name string }
 
 func (m standInMethod) Name() string { return m.name }
@@ -274,16 +241,11 @@ func (m standInMethod) Answer(context.Context, authn.FlowState, authn.StepInput)
 	return authn.Step{}, errors.New("the stand-in method is never driven")
 }
 
-// discoveryUnder drives an assembly whose run delivers methods, verifies one
-// OIDC provider and one SAML provider on a domain of their own, and returns the
-// providers the discovery names for each domain.
 func discoveryUnder(t *testing.T, methods []authn.LoginMethod) map[string][]AuthnSsoProvider {
 	t.Helper()
 	return discoveryUnderSwitch(t, methods, nil)
 }
 
-// discoveryUnderSwitch is discoveryUnder for a run that also delivers a
-// run-time switch, nil for a run that delivers none.
 func discoveryUnderSwitch(t *testing.T, methods []authn.LoginMethod, loginSwitch authn.LoginMethodSwitch) map[string][]AuthnSsoProvider {
 	t.Helper()
 	answers := map[string][]AuthnSsoProvider{}
@@ -299,10 +261,6 @@ func discoveryUnderSwitch(t *testing.T, methods []authn.LoginMethod, loginSwitch
 	return answers
 }
 
-// discoveryDriving drives an assembly whose run delivers methods and loginSwitch
-// (nil for none), verifies one OIDC provider and one SAML provider on a domain
-// of their own, and hands the case the product together with a discover that
-// reads one domain's answer.
 func discoveryDriving(t *testing.T, methods []authn.LoginMethod, loginSwitch authn.LoginMethodSwitch,
 	run func(ctx context.Context, p *product, discover func(domain string) (discoverResponse, error)),
 ) {
@@ -316,8 +274,6 @@ func discoveryDriving(t *testing.T, methods []authn.LoginMethod, loginSwitch aut
 		if !ok {
 			return fmt.Errorf("the registry delivered %T, want the module's own product", delivered)
 		}
-		// The product built by New has no clock or resolver of a case's own; a
-		// writing case supplies them, as the rig does.
 		p.clock = func() time.Time { return base }
 		tokens := map[string]string{}
 		p.lookup = func(_ context.Context, name string) ([]string, error) {
@@ -361,10 +317,7 @@ func discoveryDriving(t *testing.T, methods []authn.LoginMethod, loginSwitch aut
 	}
 }
 
-// TestTheDiscoveryNamesOnlyTheProtocolTheAssemblyDelivers holds the wiring: in
-// Init the module takes up from the registry which enterprise protocols this run
-// delivers, and the answer names a provider only when its protocol is among
-// them. The provider whose protocol is not delivered is left out.
+// TestTheDiscoveryNamesOnlyTheProtocolTheAssemblyDelivers checks that discovery lists only providers of protocols this run delivers.
 func TestTheDiscoveryNamesOnlyTheProtocolTheAssemblyDelivers(t *testing.T) {
 	for _, protocol := range []string{authn.SSOProtocolOIDC, authn.SSOProtocolSAML} {
 		t.Run(protocol, func(t *testing.T) {
@@ -390,10 +343,7 @@ func TestTheDiscoveryNamesOnlyTheProtocolTheAssemblyDelivers(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryListsEveryDeliveredProtocol holds an assembly that delivers
-// more than one login method side by side: both enterprise protocols are in the
-// delivered set, so each verified domain names its own provider, and the
-// password method beside them neither hides a protocol nor adds one.
+// TestTheDiscoveryListsEveryDeliveredProtocol checks that discovery lists providers of every delivered protocol.
 func TestTheDiscoveryListsEveryDeliveredProtocol(t *testing.T) {
 	answers := discoveryUnder(t, []authn.LoginMethod{
 		standInMethod{name: authn.SSOProtocolOIDC},
@@ -412,9 +362,7 @@ func TestTheDiscoveryListsEveryDeliveredProtocol(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryListsNothingWhenNoMethodIsDelivered holds the other end: a run
-// that delivers no login method lists no provider, though both providers and
-// their verified domains are in the table.
+// TestTheDiscoveryListsNothingWhenNoMethodIsDelivered checks that discovery lists nothing when no enterprise method is delivered.
 func TestTheDiscoveryListsNothingWhenNoMethodIsDelivered(t *testing.T) {
 	answers := discoveryUnder(t, nil)
 	for _, domain := range []string{"oidc.example.com", "saml.example.com"} {
@@ -424,9 +372,7 @@ func TestTheDiscoveryListsNothingWhenNoMethodIsDelivered(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryLeavesOutAMethodTheRunTimeSwitchDisabled holds the run-time
-// filter: a method the switch reports off has its providers left out of the
-// answer, while a method it does not report stays.
+// TestTheDiscoveryLeavesOutAMethodTheRunTimeSwitchDisabled checks that discovery leaves out a method the run-time switch disabled.
 func TestTheDiscoveryLeavesOutAMethodTheRunTimeSwitchDisabled(t *testing.T) {
 	answers := discoveryUnderSwitch(t, []authn.LoginMethod{
 		standInMethod{name: authn.SSOProtocolOIDC},
@@ -441,9 +387,7 @@ func TestTheDiscoveryLeavesOutAMethodTheRunTimeSwitchDisabled(t *testing.T) {
 	}
 }
 
-// TestTheDiscoveryFollowsTheRunTimeSwitchAsItChanges holds that the switch is
-// read on every request: a method turned off disappears from the answer and a
-// method turned back on reappears, with no restart and no cached set.
+// TestTheDiscoveryFollowsTheRunTimeSwitchAsItChanges checks that discovery follows the run-time switch as it changes.
 func TestTheDiscoveryFollowsTheRunTimeSwitchAsItChanges(t *testing.T) {
 	sw := &standInSwitch{disabled: []string{authn.SSOProtocolOIDC}}
 	discoveryDriving(t, []authn.LoginMethod{
@@ -472,9 +416,7 @@ func TestTheDiscoveryFollowsTheRunTimeSwitchAsItChanges(t *testing.T) {
 	})
 }
 
-// TestTheDiscoveryListsEveryDeliveredMethodWithoutARunTimeSwitch holds the
-// absent switch: a run with no login engine delivers no switch, so nothing is
-// filtered by it and every delivered method's provider is named.
+// TestTheDiscoveryListsEveryDeliveredMethodWithoutARunTimeSwitch checks that discovery lists every delivered method when there is no run-time switch.
 func TestTheDiscoveryListsEveryDeliveredMethodWithoutARunTimeSwitch(t *testing.T) {
 	answers := discoveryUnder(t, []authn.LoginMethod{
 		standInMethod{name: authn.SSOProtocolOIDC},

@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The causes a metadata refresh can fail with. None carries a value the
-// administrator wrote beyond the reason class.
 var (
 	errNoIDPDescriptor = errors.New("authn.sso.saml: the metadata holds no identity provider descriptor")
 	errNoEntityID      = errors.New("authn.sso.saml: the metadata holds no entity identifier")
@@ -23,16 +21,9 @@ var (
 	errNotSAMLProvider = errors.New("authn.sso.saml: the provider is not a SAML provider")
 )
 
-// Protocol names the provider protocol this refresher refreshes.
 func (p *product) Protocol() string { return providerProtocol }
 
-// Refresh fetches one provider's metadata through the restricted egress client,
-// parses the identity provider's entity identifier, single sign-on URL and
-// signing certificates out of it, and writes them back through the register's
-// Put, raising the provider's version. A parse or validation failure leaves the
-// stored configuration as it was, logs a warning and returns the error, so that
-// a certificate an IdP has withdrawn stays accepted only until an administrator
-// triggers a successful refresh.
+// Refresh fetches a provider's metadata through the restricted egress client, writes the entity identifier, single sign-on URL and signing certificates back through Put, and leaves the stored configuration unchanged when parsing or validation fails.
 func (p *product) Refresh(ctx context.Context, idpID string) (authn.SSOProvider, error) {
 	saved, err := p.refresh(ctx, idpID)
 	if err != nil {
@@ -42,8 +33,6 @@ func (p *product) Refresh(ctx context.Context, idpID string) (authn.SSOProvider,
 	return saved, err
 }
 
-// refresh is Refresh without the warning, so that the one place a failure is
-// reported is the exported method.
 func (p *product) refresh(ctx context.Context, idpID string) (authn.SSOProvider, error) {
 	row, err := p.providers.Get(ctx, idpID)
 	if err != nil {
@@ -77,9 +66,6 @@ func (p *product) refresh(ctx context.Context, idpID string) (authn.SSOProvider,
 	return saved, nil
 }
 
-// fetchMetadata fetches a metadata document through the restricted egress
-// client, bounded by the configured timeout and the client's own body cap. A
-// response that is not a 200, or one that cannot be read, is an outage.
 func (p *product) fetchMetadata(ctx context.Context, metadataURL string) (metadataRefresh, error) {
 	callCtx, cancel := context.WithTimeout(ctx, p.settings.egressTimeout())
 	defer cancel()
@@ -106,8 +92,6 @@ func (p *product) fetchMetadata(ctx context.Context, metadataURL string) (metada
 	return meta, nil
 }
 
-// mergeMetadata writes the parsed entity identifier, single sign-on URL and
-// certificates into a provider's config, leaving every other key as it was.
 func mergeMetadata(raw json.RawMessage, meta metadataRefresh) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -138,9 +122,6 @@ func mergeMetadata(raw json.RawMessage, meta metadataRefresh) (json.RawMessage, 
 	return out, nil
 }
 
-// unavailable wraps a dependency failure so that the register and an
-// administrator see an outage, and the cause names the step and nothing the
-// administrator wrote.
 func unavailable(doing string, err error) error {
 	return fmt.Errorf("%w: %s: %w", authn.ErrUnavailable, ModuleName+" "+doing, err)
 }

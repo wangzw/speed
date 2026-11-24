@@ -8,7 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 )
 
-// insertClaim writes a domain claim row directly, the way another replica would.
 func (r *rig) insertClaim(domain, idpID, tenant, token string, verified bool, createdAt time.Time) {
 	r.t.Helper()
 	var verifiedAt any
@@ -23,7 +22,6 @@ func (r *rig) insertClaim(domain, idpID, tenant, token string, verified bool, cr
 	}
 }
 
-// insertAssertion writes an assertion identifier row directly.
 func (r *rig) insertAssertion(idpID, assertionID string, notOnOrAfter, seenAt time.Time) {
 	r.t.Helper()
 	err := r.h.Exec("INSERT INTO "+assertionTable+
@@ -34,8 +32,7 @@ func (r *rig) insertAssertion(idpID, assertionID string, notOnOrAfter, seenAt ti
 	}
 }
 
-// TestSweepRemovesStaleUnverifiedClaims holds the claim cutoff: only an
-// unverified claim past the retention window goes.
+// TestSweepRemovesStaleUnverifiedClaims checks that the sweep removes unverified claims past retention.
 func TestSweepRemovesStaleUnverifiedClaims(t *testing.T) {
 	r := newRigSQLite(t)
 
@@ -57,8 +54,7 @@ func TestSweepRemovesStaleUnverifiedClaims(t *testing.T) {
 	}
 }
 
-// TestSweepRemovesExpiredAssertions holds the assertion cutoff: a row past its
-// condition goes, one before it stays.
+// TestSweepRemovesExpiredAssertions checks that the sweep removes expired assertion identifiers.
 func TestSweepRemovesExpiredAssertions(t *testing.T) {
 	r := newRigSQLite(t)
 
@@ -80,9 +76,7 @@ func TestSweepRemovesExpiredAssertions(t *testing.T) {
 	}
 }
 
-// TestStopSweepEndsTheGoroutineWithinItsBound holds the lifecycle: the sweep
-// goroutine starts, Stop ends it within the bound, and a Stop with no goroutine
-// is a no-op.
+// TestStopSweepEndsTheGoroutineWithinItsBound checks that Stop ends the sweep goroutine within its bound.
 func TestStopSweepEndsTheGoroutineWithinItsBound(t *testing.T) {
 	r := newRigSQLite(t)
 	if err := r.p.stopSweep(); err != nil {

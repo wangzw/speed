@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// relaxBus is a bus that keeps its subscriptions and delivers an event to the
-// handlers of its type, which is what a process-local bus does.
 type relaxBus struct {
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -39,7 +37,6 @@ func (b *relaxBus) deliver(ctx context.Context, evt event.Event) error {
 	return errors.Join(errs...)
 }
 
-// relaxAudit keeps the rows it was asked to write.
 type relaxAudit struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -59,13 +56,10 @@ func (a *relaxAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), a.rows...)
 }
 
-// relaxStore is the settings store, present only so that the module subscribes:
-// the relax handler reads the change off the event and never the store.
 type relaxStore struct {
 	settings.Store
 }
 
-// relaxRig is the module's product with the seams a relax case drives.
 type relaxRig struct {
 	p     *product
 	bus   *relaxBus
@@ -74,8 +68,6 @@ type relaxRig struct {
 	logs  *logBuffer
 }
 
-// newRelaxRig builds a product with the event bus, the audit and the settings
-// store present and the subscription wired, as Init would.
 func newRelaxRig(t *testing.T) *relaxRig {
 	t.Helper()
 	logs := &logBuffer{}
@@ -88,14 +80,11 @@ func newRelaxRig(t *testing.T) *relaxRig {
 	return r
 }
 
-// deliverChange hands a settings.changed event to the module's subscription.
 func (r *relaxRig) deliverChange(change settings.Change) {
 	_ = r.bus.deliver(context.Background(), event.Event{Type: settings.ChangedEventType, Payload: change})
 }
 
-// TestARelaxingChangeWritesAWarnAndAnAuditRow holds the visibility: a setting
-// moved in its relaxing direction writes exactly one Warn naming the key and the
-// direction and one best-effort audit row, and nothing else.
+// TestARelaxingChangeWritesAWarnAndAnAuditRow checks that a relaxing change writes one Warn and one audit row.
 func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	r := newRelaxRig(t)
 	r.deliverChange(settings.Change{Key: assertionMaxAgePath, Old: "5m0s", New: "8m0s", Actor: "op"})
@@ -117,9 +106,7 @@ func TestARelaxingChangeWritesAWarnAndAnAuditRow(t *testing.T) {
 	}
 }
 
-// TestATighteningChangeWritesNothing holds the other direction: a move that
-// checks more is not a relaxation and is not reported, and a move that keeps the
-// value the same is not one either.
+// TestATighteningChangeWritesNothing checks that a tightening change writes nothing.
 func TestATighteningChangeWritesNothing(t *testing.T) {
 	r := newRelaxRig(t)
 	r.deliverChange(settings.Change{Key: assertionMaxAgePath, Old: "8m0s", New: "5m0s"})
@@ -132,8 +119,7 @@ func TestATighteningChangeWritesNothing(t *testing.T) {
 	}
 }
 
-// TestAnUnwatchedOrSensitiveChangeIsIgnored holds the filter: a key this module
-// does not watch and a change whose value was withheld are both dropped.
+// TestAnUnwatchedOrSensitiveChangeIsIgnored checks that an unwatched or withheld change is ignored.
 func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	r := newRelaxRig(t)
 	r.deliverChange(settings.Change{Key: "authn.sso.provider-cache-ttl", Old: "1m0s", New: "1h0m0s"})
@@ -146,26 +132,20 @@ func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {
 	}
 }
 
-// TestADeletedLayerReadsAsTheDeclaredDefault holds the comparison against the
-// declared default: raising the window above it relaxes, and dropping the row
-// back to it does not.
+// TestADeletedLayerReadsAsTheDeclaredDefault checks that a deleted layer reads as the declared default.
 func TestADeletedLayerReadsAsTheDeclaredDefault(t *testing.T) {
 	r := newRelaxRig(t)
-	// The row was removed, so the layer reads as the declared 5m: from 8m that
-	// tightens.
 	r.deliverChange(settings.Change{Key: assertionMaxAgePath, Old: "8m0s", Deleted: true})
 	if rows := r.audit.entries(); len(rows) != 0 {
 		t.Errorf("a delete that tightens to the default wrote audit rows: %+v", rows)
 	}
-	// A first write above the default relaxes against the absent layer.
 	r.deliverChange(settings.Change{Key: assertionMaxAgePath, Old: "", New: "8m0s"})
 	if rows := r.audit.entries(); len(rows) != 1 {
 		t.Errorf("a write above the declared default wrote %d audit rows, want 1", len(rows))
 	}
 }
 
-// TestAnAuditWriteFailureStillWarns holds the best-effort direction: a failed
-// audit write leaves the Warn written and the handler carrying on.
+// TestAnAuditWriteFailureStillWarns checks that an audit write failure still warns.
 func TestAnAuditWriteFailureStillWarns(t *testing.T) {
 	r := newRelaxRig(t)
 	r.audit.err = errors.New("the audit is down")
@@ -175,16 +155,13 @@ func TestAnAuditWriteFailureStillWarns(t *testing.T) {
 	}
 }
 
-// TestWithNoBusOrStoreTheSubscriptionIsInert holds the gating: with either the
-// event bus or the settings store absent the module registers no subscription,
-// so a relaxing change is neither reported nor a cause to panic.
+// TestWithNoBusOrStoreTheSubscriptionIsInert checks that without a bus or store the subscription is inert.
 func TestWithNoBusOrStoreTheSubscriptionIsInert(t *testing.T) {
 	t.Run("no settings store", func(t *testing.T) {
 		logs := &logBuffer{}
 		bus := newRelaxBus()
 		sink := &relaxAudit{}
 		p := &product{logger: logs.logger(), bus: bus, audit: sink}
-		// store is absent.
 		p.subscribe()
 		if err := bus.deliver(context.Background(), event.Event{
 			Type:    settings.ChangedEventType,
@@ -201,7 +178,7 @@ func TestWithNoBusOrStoreTheSubscriptionIsInert(t *testing.T) {
 	})
 	t.Run("no event bus", func(t *testing.T) {
 		p := &product{logger: (&logBuffer{}).logger(), store: &relaxStore{}}
-		p.subscribe() // must not panic with no bus
+		p.subscribe()
 	})
 	t.Run("the handler alone never panics", func(t *testing.T) {
 		p := &product{logger: (&logBuffer{}).logger()}

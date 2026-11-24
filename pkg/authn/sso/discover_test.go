@@ -8,7 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// verified registers a provider and verifies a domain for it.
 func (r *rig) verified(tenant, name, domain string) authn.SSOProvider {
 	r.t.Helper()
 	idp := r.putOIDC(tenant, name)
@@ -23,7 +22,6 @@ func (r *rig) verified(tenant, name, domain string) authn.SSOProvider {
 	return idp
 }
 
-// verifiedSAML registers a SAML provider and verifies a domain for it.
 func (r *rig) verifiedSAML(tenant, name, domain string) authn.SSOProvider {
 	r.t.Helper()
 	idp := r.putSAML(tenant, name)
@@ -38,10 +36,7 @@ func (r *rig) verifiedSAML(tenant, name, domain string) authn.SSOProvider {
 	return idp
 }
 
-// TestDiscoverIgnoresTheDeliveredProtocols holds that Discover itself does not
-// filter by what the run delivers: the same call decides which provider owns a
-// domain, so a provider whose protocol is not delivered still answers for the
-// domain it holds, and the answer layer alone leaves it out of the discovery.
+// TestDiscoverIgnoresTheDeliveredProtocols checks that Discover does not filter by the delivered protocols.
 func TestDiscoverIgnoresTheDeliveredProtocols(t *testing.T) {
 	r := newRigSQLite(t)
 	idp := r.verified("tenant-a", "live", "example.com")
@@ -56,14 +51,12 @@ func TestDiscoverIgnoresTheDeliveredProtocols(t *testing.T) {
 	}
 }
 
-// TestDiscoverReturnsOnlyVerifiedAndEnabledRows holds the discovery's filter: a
-// verified domain of an enabled provider, and nothing else.
+// TestDiscoverReturnsOnlyVerifiedAndEnabledRows checks that Discover returns only verified domains of enabled providers.
 func TestDiscoverReturnsOnlyVerifiedAndEnabledRows(t *testing.T) {
 	r := newRigSQLite(t)
 
 	live := r.verified("tenant-a", "live", "example.com")
 
-	// A verified domain, but the provider is disabled.
 	off := r.verified("tenant-b", "off", "disabled.example.com")
 	if _, err := r.p.Put(context.Background(), authn.SSOProvider{
 		ID: off.ID, Tenant: "tenant-b", Protocol: "oidc", Name: "off", Enabled: false,
@@ -72,7 +65,6 @@ func TestDiscoverReturnsOnlyVerifiedAndEnabledRows(t *testing.T) {
 		t.Fatalf("disabling a provider: %v", err)
 	}
 
-	// An enabled provider with a claim that is not verified.
 	unverified := r.putOIDC("tenant-c", "unverified")
 	if _, err := r.p.ClaimDomain(context.Background(), unverified.ID, "pending.example.com"); err != nil {
 		t.Fatalf("ClaimDomain: %v", err)
@@ -93,8 +85,7 @@ func TestDiscoverReturnsOnlyVerifiedAndEnabledRows(t *testing.T) {
 	}
 }
 
-// TestDiscoverOfAnUnknownDomainIsEmptyAndShaped holds that a domain nobody holds
-// answers the same empty list, with no error.
+// TestDiscoverOfAnUnknownDomainIsEmptyAndShaped checks that an unknown domain answers an empty answer of the declared shape.
 func TestDiscoverOfAnUnknownDomainIsEmptyAndShaped(t *testing.T) {
 	r := newRigSQLite(t)
 	r.verified("tenant-a", "live", "example.com")
@@ -111,8 +102,7 @@ func TestDiscoverOfAnUnknownDomainIsEmptyAndShaped(t *testing.T) {
 	}
 }
 
-// TestDiscoverRefusesADomainThatIsNotOne holds the failure a request with a
-// domain that cannot be reduced carries.
+// TestDiscoverRefusesADomainThatIsNotOne checks that a domain that cannot be normalized is refused.
 func TestDiscoverRefusesADomainThatIsNotOne(t *testing.T) {
 	r := newRigSQLite(t)
 	if _, err := r.p.Discover(context.Background(), "例子.测试"); !errors.Is(err, errInvalidDomain) {

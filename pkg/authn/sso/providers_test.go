@@ -10,9 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestPutRefusesAConfigItCannotRunOn drives the config rules through Put: each
-// row varies one thing and expects ErrInvalidConfig (or the not-found sentinel
-// for the update of a row that is not there).
+// TestPutRefusesAConfigItCannotRunOn checks that Put refuses a configuration it cannot run on.
 func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 	r := newRigSQLite(t)
 	existing := r.putOIDC("tenant-a", "kept")
@@ -228,9 +226,7 @@ func TestPutRefusesAConfigItCannotRunOn(t *testing.T) {
 	}
 }
 
-// TestPutCreateAndUpdateVersionAndKeepTheSecret holds the write rules that are
-// not refusals: the version rises by one per write, and a nil secret keeps the
-// stored one while a non-nil one replaces it.
+// TestPutCreateAndUpdateVersionAndKeepTheSecret checks that Put raises the version on create and update and keeps a nil secret.
 func TestPutCreateAndUpdateVersionAndKeepTheSecret(t *testing.T) {
 	r := newRigSQLite(t)
 	created := r.putOIDC("tenant-a", "idp")
@@ -249,7 +245,6 @@ func TestPutCreateAndUpdateVersionAndKeepTheSecret(t *testing.T) {
 		t.Errorf("Secret = %q, want the value written", got)
 	}
 
-	// An update with a nil secret keeps the stored one.
 	updated, err := r.p.Put(context.Background(), authn.SSOProvider{
 		ID: created.ID, Tenant: "tenant-a", Protocol: "oidc", Name: "renamed", Enabled: true,
 		Provisioning: "jit", UsernameStrategy: "user-confirm", Config: oidcConfig(),
@@ -264,7 +259,6 @@ func TestPutCreateAndUpdateVersionAndKeepTheSecret(t *testing.T) {
 		t.Errorf("the secret did not survive an update with a nil secret: %q", s)
 	}
 
-	// A non-nil secret replaces it.
 	replacement := "new-secret"
 	if _, err := r.p.Put(context.Background(), authn.SSOProvider{
 		ID: created.ID, Tenant: "tenant-a", Protocol: "oidc", Name: "renamed", Enabled: true,
@@ -277,8 +271,7 @@ func TestPutCreateAndUpdateVersionAndKeepTheSecret(t *testing.T) {
 	}
 }
 
-// TestTheReadsNeverHoldTheSecret holds that no read handed out carries the
-// client secret: not Get, not List, not Discover.
+// TestTheReadsNeverHoldTheSecret checks that no read returns the provider secret.
 func TestTheReadsNeverHoldTheSecret(t *testing.T) {
 	r := newRigSQLite(t)
 	created := r.putOIDC("tenant-a", "idp")
@@ -301,8 +294,7 @@ func TestTheReadsNeverHoldTheSecret(t *testing.T) {
 	}
 }
 
-// TestTenantAnswersTheOwningTenant holds Tenant, which the admission layer uses
-// to check a session's provider.
+// TestTenantAnswersTheOwningTenant checks that Tenant answers the owning tenant.
 func TestTenantAnswersTheOwningTenant(t *testing.T) {
 	r := newRigSQLite(t)
 	created := r.putOIDC("tenant-a", "idp")
@@ -319,8 +311,7 @@ func TestTenantAnswersTheOwningTenant(t *testing.T) {
 	}
 }
 
-// TestPutAndDeletePublishTheChange holds the authn.idp.changed hint and its
-// change values.
+// TestPutAndDeletePublishTheChange checks that Put and Delete publish authn.idp.changed.
 func TestPutAndDeletePublishTheChange(t *testing.T) {
 	r := newRigSQLite(t)
 	created := r.putOIDC("tenant-a", "idp")
@@ -394,11 +385,7 @@ func TestListTakesTheDisabledOnesToo(t *testing.T) {
 	}
 }
 
-// TestPutHoldsTheUsernameStrategyToItsCombinations drives the two username
-// fields through Put: a just-in-time provider has to state a strategy, a claim
-// strategy has to name a claim, no other strategy carries one, and a
-// preprovisioned provider needs none. The accepted combinations are read back,
-// so the fields survive the round trip.
+// TestPutHoldsTheUsernameStrategyToItsCombinations checks that Put holds the username strategy to its valid combinations.
 func TestPutHoldsTheUsernameStrategyToItsCombinations(t *testing.T) {
 	r := newRigSQLite(t)
 	cases := []struct {
@@ -534,5 +521,4 @@ func TestPutHoldsTheUsernameStrategyToItsCombinations(t *testing.T) {
 	}
 }
 
-// bytesContain reports whether a byte slice holds a substring.
 func bytesContain(b []byte, sub string) bool { return strings.Contains(string(b), sub) }

@@ -7,10 +7,7 @@ import (
 	"time"
 )
 
-// TestBuildProfileMapsClaims holds the attribute mapping: subject, address and
-// display name from the claims a mapping names, the subject falling back to the
-// token's own subject only when no mapping names one, and every attr.<name>
-// target becoming a read-only idp.* attribute.
+// TestBuildProfileMapsClaims checks that BuildProfile maps the configured claims.
 func TestBuildProfileMapsClaims(t *testing.T) {
 	cfg := providerConfig{Claims: map[string]string{
 		"preferred_username": "subject",
@@ -29,9 +26,6 @@ func TestBuildProfileMapsClaims(t *testing.T) {
 	if got.subject != "alice" || got.email != "alice@example.com" || got.displayName != "Alice" {
 		t.Errorf("profile = %+v, want the mapped values", got)
 	}
-	// preferred_username is read as the standard claim itself, not through the
-	// mapping: a claim-strategy just-in-time login names it as the source of the
-	// username it creates the account with.
 	if got.preferredUsername != "alice" {
 		t.Errorf("preferredUsername = %q, want the standard claim's value", got.preferredUsername)
 	}
@@ -43,8 +37,7 @@ func TestBuildProfileMapsClaims(t *testing.T) {
 	}
 }
 
-// TestBuildProfileDefaultsSubjectToSub holds that the subject is the token's own
-// subject when no mapping names one.
+// TestBuildProfileDefaultsSubjectToSub checks that BuildProfile defaults the subject to sub.
 func TestBuildProfileDefaultsSubjectToSub(t *testing.T) {
 	got := buildProfile(providerConfig{}, "the-sub", map[string]any{"email": "x@y.z"})
 	if got.subject != "the-sub" {
@@ -55,9 +48,7 @@ func TestBuildProfileDefaultsSubjectToSub(t *testing.T) {
 	}
 }
 
-// TestBuildProfileEmptyWhenMappedClaimIsAbsent holds that a mapping naming a
-// claim the token does not carry leaves the target empty rather than filling it
-// from elsewhere.
+// TestBuildProfileEmptyWhenMappedClaimIsAbsent checks that BuildProfile is empty when a mapped claim is absent.
 func TestBuildProfileEmptyWhenMappedClaimIsAbsent(t *testing.T) {
 	cfg := providerConfig{Claims: map[string]string{"sub_alt": "subject"}}
 	got := buildProfile(cfg, "the-sub", map[string]any{"email": "x@y.z"})
@@ -66,9 +57,7 @@ func TestBuildProfileEmptyWhenMappedClaimIsAbsent(t *testing.T) {
 	}
 }
 
-// TestClassifyVerify holds the metric label of a token the verifier refused: the
-// token's own unverified claims tell an expiry, an audience and an issuer apart,
-// and everything else reads as a signature failure.
+// TestClassifyVerify checks that ClassifyVerify reads the verified-email flag and the string audience.
 func TestClassifyVerify(t *testing.T) {
 	cfg := providerConfig{Issuer: "https://idp.example", ClientID: "client-1"}
 	now := time.Date(2026, time.October, 12, 12, 0, 0, 0, time.UTC)
@@ -98,9 +87,6 @@ func TestClassifyVerify(t *testing.T) {
 	}
 }
 
-// rawWithClaims builds a compact JWT string carrying the claims, with a header
-// and signature segment that are never read: the classifier reads the payload
-// alone.
 func rawWithClaims(t *testing.T, claims map[string]any) string {
 	t.Helper()
 	payload, err := json.Marshal(claims)

@@ -24,15 +24,10 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// base is the instant the cases that need a fixed time start from.
 var base = time.Date(2026, time.March, 14, 12, 0, 0, 0, time.UTC)
 
-// rootKey is the database root key a rig configures, so the encrypted column has
-// a key. It is long enough for the database module's floor.
 const rootKey = "sso-tests-root-key-0123456789abcdef"
 
-// fakeClock is a clock a case moves. It reads in the zone it was built with, so a
-// case can hand the module a time that is not UTC.
 type fakeClock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -52,7 +47,6 @@ func (c *fakeClock) advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// logBuffer collects what the module logs, as text lines.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -74,7 +68,6 @@ func (b *logBuffer) logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(b, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// lines returns the lines that carry every one of the substrings.
 func (b *logBuffer) lines(substrings ...string) []string {
 	var out []string
 	for _, line := range strings.Split(b.String(), "\n") {
@@ -89,7 +82,6 @@ func (b *logBuffer) lines(substrings ...string) []string {
 	return out
 }
 
-// recordingBus is a bus that keeps what was published, for a case to read.
 type recordingBus struct {
 	mu       sync.Mutex
 	events   []event.Event
@@ -119,7 +111,6 @@ func (b *recordingBus) published() []event.Event {
 	return append([]event.Event(nil), b.events...)
 }
 
-// changes returns the change values published for one provider.
 func (b *recordingBus) changes(idpID string) []string {
 	var out []string
 	for _, evt := range b.published() {
@@ -137,7 +128,6 @@ func (b *recordingBus) changes(idpID string) []string {
 	return out
 }
 
-// rig is the module over a real database with every dependency a case drives.
 type rig struct {
 	t        *testing.T
 	p        *product
@@ -149,21 +139,15 @@ type rig struct {
 	mounter  *mounttest.Mounter
 	reader   config.Reader
 
-	// txt is the TXT record set the fake resolver answers with, and txtErr the
-	// names whose lookup fails.
 	txt    map[string][]string
 	txtErr map[string]error
 }
 
-// newRig builds the module over the handle with a root key configured.
 func newRig(t *testing.T, database db.Database) *rig {
 	t.Helper()
 	return newRigAtBase(t, database, mounttest.DefaultBase)
 }
 
-// newRigAtBase builds the module over the handle with the mounter configured
-// with base, so a case can hold behaviour under a base the host chose rather
-// than the default.
 func newRigAtBase(t *testing.T, database db.Database, basePath string) *rig {
 	t.Helper()
 	reader := authntest.ConfigReaderAll(t, "{}", Module())
@@ -179,16 +163,10 @@ func newRigAtBase(t *testing.T, database db.Database, basePath string) *rig {
 	p.bus = r.bus
 	p.clock = r.clock.read
 	p.lookup = r.lookup
-	// The rig starts as a deployment that takes both enterprise methods in, so
-	// an existing case keeps the answer it had before the delivered set existed;
-	// a case that holds the filter sets it through deliverProtocols.
 	p.delivered = map[string]bool{authn.SSOProtocolOIDC: true, authn.SSOProtocolSAML: true}
 	return r
 }
 
-// deliverProtocols sets the enterprise protocols the product treats as
-// delivered, as Init takes them up from the registry. With no names, nothing is
-// delivered.
 func (r *rig) deliverProtocols(names ...string) {
 	r.p.delivered = make(map[string]bool, len(names))
 	for _, name := range names {
@@ -196,8 +174,6 @@ func (r *rig) deliverProtocols(names ...string) {
 	}
 }
 
-// lookup is the resolver a case scripts. It answers the named set, or the error
-// the case put on the name.
 func (r *rig) lookup(_ context.Context, name string) ([]string, error) {
 	if err := r.txtErr[name]; err != nil {
 		return nil, err
@@ -205,14 +181,10 @@ func (r *rig) lookup(_ context.Context, name string) ([]string, error) {
 	return r.txt[name], nil
 }
 
-// publishTXT makes a name answer the given records.
 func (r *rig) publishTXT(domain, token string) {
 	r.txt[txtName(domain)] = []string{"speed-authn=" + token}
 }
 
-// standInSwitch is the run-time switch a case scripts. It reports the methods a
-// case turned off now, or the error it set, under a lock so that a case can
-// change the answer between requests.
 type standInSwitch struct {
 	mu       sync.Mutex
 	disabled []string
@@ -228,14 +200,12 @@ func (s *standInSwitch) DisabledMethods() ([]string, error) {
 	return append([]string(nil), s.disabled...), s.err
 }
 
-// calls reports how many times the switch has been read.
 func (s *standInSwitch) calls() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.reads
 }
 
-// set turns the given methods off, or makes the read fail when err is non-nil.
 func (s *standInSwitch) set(disabled []string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -247,13 +217,11 @@ func (r *rig) failTXT(domain string, err error) {
 	r.txtErr[txtName(domain)] = err
 }
 
-// newRigSQLite is newRig over a fresh SQLite database with the tables built.
 func newRigSQLite(t *testing.T) *rig {
 	t.Helper()
 	return newRig(t, openSQLite(t))
 }
 
-// count counts the rows of one of the module's tables.
 func (r *rig) count(table string) int64 {
 	r.t.Helper()
 	var n int64
@@ -263,22 +231,13 @@ func (r *rig) count(table string) int64 {
 	return n
 }
 
-// sqliteDialect is the dialect every run exercises; the integration build adds
-// PostgreSQL beside it.
 const sqliteDialect = "sqlite"
 
-// dialect is one engine a case iterates: its name, and how to reach an empty
-// database of the case's own on it.
 type dialect struct {
 	name string
 	open func(t *testing.T) db.Database
 }
 
-// dialects lists the engines a case iterates, SQLite first.
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name a dialect whose opener would fail for want of one.
 var dialects = []dialect{{
 	name: sqliteDialect,
 	open: func(t *testing.T) db.Database {
@@ -286,7 +245,6 @@ var dialects = []dialect{{
 	},
 }}
 
-// applyMigrations builds the module's tables from the files it ships.
 func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	t.Helper()
 	entries, err := fs.ReadDir(migrationsFS, dialect)
@@ -306,8 +264,6 @@ func applyMigrations(t *testing.T, h *gorm.DB, dialect string) {
 	}
 }
 
-// splitStatements splits a migration on the semicolons that end statements,
-// dropping the comment-only and blank fragments.
 func splitStatements(sql string) []string {
 	var out []string
 	for _, part := range bytes.Split([]byte(sql), []byte(";")) {
@@ -331,8 +287,6 @@ func onlyCommentsOrBlank(text string) bool {
 	return true
 }
 
-// openSQLite delivers the SQLite database with the module's tables built and a
-// root key configured.
 func openSQLite(t *testing.T) db.Database {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "sso.db"), dbtest.Items{"encryption-key": rootKey})
@@ -341,11 +295,6 @@ func openSQLite(t *testing.T) db.Database {
 	return database
 }
 
-// openDialect delivers the database of the dialect with the module's tables
-// built.
-//
-// A dialect no engine of this build answers to is a programming error, since
-// dialects never names one.
 func openDialect(t *testing.T, dialect string) db.Database {
 	t.Helper()
 	for _, d := range dialects {
@@ -360,7 +309,6 @@ func openDialect(t *testing.T, dialect string) db.Database {
 	return nil
 }
 
-// forEachDialect runs a case on every engine this build's cases run on.
 func forEachDialect(t *testing.T, run func(t *testing.T, database db.Database, dialect string)) {
 	t.Helper()
 	for _, d := range dialects {
@@ -370,17 +318,14 @@ func forEachDialect(t *testing.T, run func(t *testing.T, database db.Database, d
 	}
 }
 
-// oidcConfig is a minimal valid OIDC config.
 func oidcConfig() json.RawMessage {
 	return json.RawMessage(`{"issuer":"https://idp.example.com","client_id":"client-1"}`)
 }
 
-// samlConfig is a minimal valid SAML config.
 func samlConfig() json.RawMessage {
 	return json.RawMessage(`{"idp_entity_id":"https://idp.example.com/entity","idp_sso_url":"https://idp.example.com/sso","idp_certs":["-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"]}`)
 }
 
-// putSAML creates an enabled SAML provider and returns it.
 func (r *rig) putSAML(tenant, name string) authn.SSOProvider {
 	r.t.Helper()
 	p, err := r.p.Put(context.Background(), authn.SSOProvider{
@@ -398,7 +343,6 @@ func (r *rig) putSAML(tenant, name string) authn.SSOProvider {
 	return p
 }
 
-// putOIDC creates an enabled OIDC provider and returns it.
 func (r *rig) putOIDC(tenant, name string) authn.SSOProvider {
 	r.t.Helper()
 	secret := "shh-" + name
