@@ -1,47 +1,7 @@
 /**
- * One deterministic rewrite over the orval-generated api-sdk entry
- * file, run after every regeneration:
- *
- * orval emits every configured mutator import without a file extension
- * -- `import { speedRequest } from './runtime';` (and, for each
- * per-operation override, a second line such as `import {
- * speedRequestCredentialless } from './runtime';`) -- a specifier
- * TypeScript accepts under bundler resolution but rejects under
- * nodenext (TS2835), where this package's build (tsconfig.build.json)
- * runs. This script rewrites the specifier of every such import to the
- * explicit './runtime.js' form, keeping the committed generated file
- * identical to what a fresh regeneration produces: run orval and then
- * this script before comparing the working tree, so a
- * future orval version that changes the emission fails loudly instead
- * of shipping an unbuildable package.
- *
- * Run from anywhere in the repo, after every orval run:
- *
- *   node web/scripts/orval-nodenext-fixup.mjs
- *
- * The same one script serves an app-owned generation leg: an app's own
- * SDK runs the identical rewrite over its own generated entry and seam by
- * passing both paths. The demo starter carries a byte-identical copy
- * (starters/demo/web/scripts/orval-nodenext-fixup.mjs) and points it at
- * its own generated surface from the app's `api:gen`;
- * web/scripts/starter-script-consistency.test.mjs pins the two copies
- * byte-identical. Run it from the app's directory:
- *
- *   node scripts/orval-nodenext-fixup.mjs \
- *     src/app-api/index.ts \
- *     src/app-api/runtime.ts
- *
- * The script is idempotent: an already-fixed file (every mutator
- * import already carrying the '.js' extension) exits 0 with the
- * already-carry message, so the post-regeneration step can be re-run
- * freely and CI's reproduce-and-diff steps never blame drift for a
- * file the fixup itself already wrote. Exits non-zero only when the
- * generated file carries NO mutator import in either form -- bare
- * './runtime' or explicit './runtime.js' -- which is orval drift (a
- * future version that changes the emission shape, or a mutator
- * configuration change that leaves the generated file without one),
- * or when the seam file the rewritten specifier points at does not
- * exist.
+ * Rewrites orval's extensionless `./runtime` mutator import in the generated
+ * API entry to `./runtime.js`, which a nodenext build requires (TS2835). A
+ * generated file with neither form is drift: fail loudly.
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

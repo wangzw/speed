@@ -1,88 +1,3 @@
-/**
- * Structural guard: every workspace package that runs tests takes its
- * Vitest options from the shared preset (web/vitest.shared.ts).
- *
- * A package that hand-writes its test block can silently run on Vitest's
- * 5s default, which the gate's single vitest process exceeds under load:
- * it runs every member's suite as a project with GATE_JOBS workers shared
- * between them, and individual cases there take longer than 5s, so the
- * failure lands on the clock, not on an assertion. This suite makes that
- * omission red at the source: each package with a `test` script must
- * import `sharedTestOptions` from the preset, must not pin its own
- * `testTimeout` or `hookTimeout`, and its exported config must carry the
- * preset's budgets and coverage options.
- *
- * The preset also owns the boundary between the unit tier and the
- * browser tier: `*.browser.test.tsx` cases run only through the root
- * `make web-browser` entry, so the preset must keep excluding them from
- * every package's `test` leg. The last case pins that exclusion.
- *
- * The guard holds the budgets themselves too, not just their provenance:
- * a preset that lowers its shared default, a setup that lowers the async
- * budget, or a case that pins its own budget below the shared default is
- * red here. Comparing a package's config with the preset alone would
- * accept a preset lowered along with it. The floors -- the Vitest case
- * budget, the Playwright case budget and the async wait budget -- are read
- * from `web/scripts/test-time-floors.json`, a file that holds only floors,
- * so lowering a default cannot lower its own floor in the same edit. That
- * file is the one entry point for an intentional floor change: a change to
- * it carries its reason in the commit message. The values are compared
- * unscaled, so a caller's GATE_TIME_SCALE cannot change this tree's verdict.
- *
- * Vitest's `vi.waitFor` and `vi.waitUntil` are the waits Testing
- * Library's budget does not reach: neither has a global default, and both
- * use a fixed one second per call. Every `vi.waitFor` must go through
- * `waitForCondition` (@speed/test-utils/wait), which supplies the shared
- * budget, and `vi.waitUntil` is forbidden. A scanned source is red here
- * for any member access to either name -- a call, a bracket-access call,
- * optional chaining, a destructured alias (`const { waitFor } = vi`, a
- * parameter default included), an argument, a property value, an arrow's
- * return, or a reference kept uncalled (`const wait = vi.waitFor`) --
- * because outside `wait.ts` no use of either is permitted. The scan
- * follows the name through the wrappers that do not change its value (a
- * parenthesized expression, a non-null assertion, a type assertion), an
- * aliased `vi` import (`import { vi as x } from 'vitest'`), a local alias
- * (`const v = vi`) and an alias of an alias, and a direct
- * `import { waitFor } from 'vitest'`.
- *
- * `vi.useRealTimers` is the other name the guard owns. jsdom 31 serves
- * requestAnimationFrame and its focus fixups from one lazily created
- * interval; a focus change made while fake timers are installed arms that
- * interval as a fake timer, and restoring the real clock with it still
- * armed strands it, so no frame runs again in that worker. Every test
- * returns to the real clock through `restoreRealTimers`
- * (@speed/test-utils/timers), which drains the fake clock first. The same
- * scan applies -- every member access to the name, through an alias or a
- * direct import, is red -- and only the two `timers.ts` helpers (the
- * workspace's and the demo host's) are exempt, by exact path.
- *
- * The scan covers the test sources and the test-support sources the suites
- * run on: every package's `test-utils/`, `web/test-utils/src/` (the
- * browser-tier setup included), `starters/demo/web/src/test-utils/` and the
- * demo's `src/a11y/` support modules, plus the root leg's tests under
- * `web/eslint-rules/` and `web/scripts/`. `web/test-utils/src/wait.ts` is
- * the only source exempt from the wait rule, by its exact path, because it
- * is the helper that supplies the budget; the two `timers.ts` helpers are
- * the only sources exempt from the real-timer rule.
- *
- * Four shapes are outside what a static read of the syntax tree can
- * follow: a key that is not a literal (`vi[name]`, a concatenation, a
- * template literal with a substitution, or a computed destructuring key
- * such as `const { [name]: w } = vi`), a `vi` reached through a namespace
- * import or a dynamic import (`import * as vitest`), a `vi` passed into a
- * helper that is free to access it, and a shadowed local named `vi` (read
- * as Vitest's, a false positive rather than a bypass).
- * A call in dead code such as `if (false)` counts as a use; the guard does
- * not evaluate conditions. Testing Library's own `waitFor` and `findBy*`
- * queries are outside this guard: they wait under the `asyncUtilTimeout`
- * budget the setup configures.
- *
- * The demo host (starters/demo/web) is a copyable application whose
- * repository-internal test wiring is dropped on copy out, so it is not
- * checked for the preset's provenance. Its test sources are scanned for a
- * narrowed case budget and a bare wait, and its setup for the async
- * budget, because the copy carries the same wiring by hand.
- */
 import {
   existsSync,
   globSync,
@@ -111,15 +26,6 @@ import { ASYNC_UTIL_TIMEOUT_MS as DEMO_ASYNC_UTIL_TIMEOUT_MS } from '../../start
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const demoWebRoot = join(webRoot, '..', 'starters', 'demo', 'web')
 
-/**
- * The floors the shared defaults must clear, validated. They live outside
- * the preset so a lowered default cannot lower its own floor in the same
- * edit; the preset holds only the default, and that file holds only the
- * floors. It is the one entry point for an intentional floor change, so a
- * change to it carries its reason in the commit message. A missing file, a
- * missing key or a non-positive, non-finite value throws here rather than
- * leaving the comparison to read `undefined` and pass.
- */
 function readTimeFloors(path) {
   const floors = JSON.parse(readFileSync(path, 'utf8'))
   for (const key of [
@@ -140,7 +46,6 @@ const TIME_FLOORS = readTimeFloors(
 )
 const SHARED_TIMEOUT_FLOOR_MS = TIME_FLOORS.vitestCaseTimeoutMs
 
-/** Every workspace package directory: packages/* plus test-utils. */
 const packageDirs = [
   ...readdirSync(join(webRoot, 'packages'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -148,7 +53,6 @@ const packageDirs = [
   join(webRoot, 'test-utils'),
 ]
 
-/** A package is in scope when its manifest declares a `test` script. */
 const testPackages = packageDirs
   .map((dir) => {
     const manifest = JSON.parse(
@@ -158,19 +62,8 @@ const testPackages = packageDirs
   })
   .filter((pkg) => typeof pkg.test === 'string')
 
-/** The single config the unit-test leg runs, at the web root. */
 const UNIT_CONFIG_PATH = join(webRoot, 'vitest.unit.config.ts')
 
-/**
- * Every workspace member directory under `root`, with the `packages:`
- * patterns of its pnpm-workspace.yaml expanded. The roster is read from
- * that file rather than derived from `packageDirs`, which holds only
- * `packages/*` and test-utils: the demo host is a member outside web/
- * (`../starters/demo/web`). A pattern that matches nothing throws rather
- * than shrinking the set silently. Only a directory that carries a
- * package.json is a member, as pnpm counts them, so a bare directory left
- * beside a package is not one.
- */
 function workspaceMemberDirs(root = webRoot) {
   const workspaceFile = join(root, 'pnpm-workspace.yaml')
   const lines = readFileSync(workspaceFile, 'utf8').split('\n')
@@ -205,7 +98,6 @@ function workspaceMemberDirs(root = webRoot) {
   return dirs
 }
 
-/** The workspace members whose manifest declares a `test` script. */
 const workspaceTestMembers = workspaceMemberDirs()
   .map((dir) => {
     const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
@@ -213,12 +105,10 @@ const workspaceTestMembers = workspaceMemberDirs()
   })
   .filter((member) => typeof member.test === 'string')
 
-/** A member's vitest config path as web/vitest.unit.config.ts names it. */
 function unitProjectPath(dir) {
   return relative(webRoot, join(dir, 'vitest.config.ts')).split(sep).join('/')
 }
 
-/** The script kind a test source is parsed as, by its extension. */
 const SCRIPT_KINDS = {
   '.ts': ts.ScriptKind.TS,
   '.mts': ts.ScriptKind.TS,
@@ -230,25 +120,10 @@ const SCRIPT_KINDS = {
   '.jsx': ts.ScriptKind.JSX,
 }
 
-/**
- * The parser kind for a path. The constructed sources in this suite's own
- * cases have no file of their own and are parsed as TSX, which accepts both
- * the JSX shapes and the plain code they hold.
- */
 function scriptKindOf(filePath) {
   return SCRIPT_KINDS[extname(filePath)] ?? ts.ScriptKind.TSX
 }
 
-/**
- * The syntax tree of one test source, parsed with the TypeScript compiler.
- * The tree is what tells a use of a name from its spelling in a comment, a
- * string, a template literal, a regular expression or JSX text; no
- * hand-written lexer is involved.
- *
- * A source the parser reports a diagnostic for is an error naming the file,
- * never a skipped file. A guard that passed a source it could not read
- * would leave the blind spot it exists to close.
- */
 function parseTestSource(source, filePath) {
   const sourceFile = ts.createSourceFile(
     filePath,
@@ -274,20 +149,11 @@ function parseTestSource(source, filePath) {
   return sourceFile
 }
 
-/** Every node of a tree, parents before children. */
 function forEachNode(node, visit) {
   visit(node)
   ts.forEachChild(node, (child) => forEachNode(child, visit))
 }
 
-/**
- * The name a property or binding element is written under, or null.
- *
- * A computed key counts when its expression is a literal: `['waitFor']`,
- * `[0]` and `` [`waitFor`] `` name the same property as the uncomputed
- * forms. A computed key built from a variable or a substitution stays
- * null; that shape is a known limitation of the guard.
- */
 function writtenName(name) {
   if (
     ts.isIdentifier(name)
@@ -309,7 +175,6 @@ function writtenName(name) {
   return null
 }
 
-/** The root and the members of a property-access chain, or null. */
 function calleeChain(node) {
   if (ts.isIdentifier(node)) {
     return [node.text]
@@ -321,10 +186,6 @@ function calleeChain(node) {
   return null
 }
 
-/**
- * The expression a node denotes, with the wrappers that do not change its
- * value peeled off: parentheses, non-null assertions and type assertions.
- */
 function unwrapExpression(node) {
   let current = node
   while (
@@ -339,19 +200,10 @@ function unwrapExpression(node) {
   return current
 }
 
-/** The two Vitest waits with a fixed one-second default and no global one. */
 const WAIT_NAMES = new Set(['waitFor', 'waitUntil'])
 
-/** The Vitest name that restores the real clock. Tests reach it only
- * through `restoreRealTimers`, which drains pending jsdom frames first. */
 const REAL_TIMER_NAMES = new Set(['useRealTimers'])
 
-/**
- * Every local name that denotes the Vitest `vi` object: `vi`, an aliased
- * named import (`import { vi as x } from 'vitest'`), a variable holding
- * one of those (`const v = vi`), and an alias of an alias. Read to a fixed
- * point so a chain of aliases resolves however it is ordered.
- */
 function viNames(sourceFile) {
   const names = new Set(['vi'])
   forEachNode(sourceFile, (node) => {
@@ -407,18 +259,11 @@ function viNames(sourceFile) {
   return names
 }
 
-/** Whether a node names one of `names`, through the value wrappers. */
 function isNamedReference(node, names) {
   const value = unwrapExpression(node)
   return ts.isIdentifier(value) && names.has(value.text)
 }
 
-/**
- * `vi.waitFor`, `vi.useRealTimers` and the rest of `forbidden`, through
- * `vi['waitFor']`, `vi?.['useRealTimers']`, and the same accesses on an
- * alias of `vi`, whichever wrappers the base carries (`(vi)`, `vi!`,
- * `vi as typeof vi`).
- */
 function isMemberAccess(node, names, forbidden) {
   if (ts.isPropertyAccessExpression(node)) {
     return isNamedReference(node.expression, names)
@@ -434,7 +279,6 @@ function isMemberAccess(node, names, forbidden) {
   return false
 }
 
-/** Whether an object binding pattern binds one of the forbidden names. */
 function bindsName(pattern, forbidden) {
   return (
     ts.isObjectBindingPattern(pattern)
@@ -448,12 +292,6 @@ function bindsName(pattern, forbidden) {
   )
 }
 
-/**
- * `const { waitFor } = vi`, renamed or not, with a parenthesized,
- * asserted or non-null right-hand side and an alias of `vi` there too.
- * A parameter default (`function f({ waitFor } = vi) {}`) is the same
- * binding and is read through the parameter as well.
- */
 function isDestructuredFromVi(node, names, forbidden) {
   if (
     ts.isVariableDeclaration(node)
@@ -471,7 +309,6 @@ function isDestructuredFromVi(node, names, forbidden) {
   )
 }
 
-/** `({ waitFor } = vi)`, renamed or not, through the same wrappers. */
 function isAssignedFromVi(node, names, forbidden) {
   if (
     !ts.isBinaryExpression(node)
@@ -490,12 +327,6 @@ function isAssignedFromVi(node, names, forbidden) {
     )
 }
 
-/**
- * A direct `import { waitFor } from 'vitest'`: naming the wait at the
- * import reaches the same fixed default as `vi.waitFor` and bypasses every
- * member-access check above. The same read covers a direct
- * `import { useRealTimers } from 'vitest'`.
- */
 function importsNameDirectly(node, forbidden) {
   return (
     ts.isImportDeclaration(node)
@@ -507,7 +338,6 @@ function importsNameDirectly(node, forbidden) {
   )
 }
 
-/** Whether any call in a tree names `name`. */
 function hasCallNamed(sourceFile, name) {
   let found = false
   forEachNode(sourceFile, (node) => {
@@ -522,7 +352,6 @@ function hasCallNamed(sourceFile, name) {
   return found
 }
 
-/** Whether any object property in a tree is written under `name`. */
 function hasPropertyNamed(sourceFile, name) {
   let found = false
   forEachNode(sourceFile, (node) => {
@@ -539,7 +368,6 @@ function hasPropertyNamed(sourceFile, name) {
   return found
 }
 
-/** The initializer of the first object property written under `name`. */
 function propertyInitializer(sourceFile, name) {
   let found = null
   forEachNode(sourceFile, (node) => {
@@ -554,7 +382,6 @@ function propertyInitializer(sourceFile, name) {
   return found
 }
 
-/** Whether a tree imports from a specifier matching `pattern`. */
 function importsFrom(sourceFile, pattern) {
   let found = false
   forEachNode(sourceFile, (node) => {
@@ -569,10 +396,6 @@ function importsFrom(sourceFile, pattern) {
   return found
 }
 
-/**
- * Whether the `reporters` property is the shared helper's result, with the
- * given base reporter when one is named.
- */
 function reportersComeFromShared(sourceFile, base) {
   const initializer = propertyInitializer(sourceFile, 'reporters')
   if (
@@ -592,7 +415,6 @@ function reportersComeFromShared(sourceFile, base) {
     && argument.text === base
 }
 
-/** The calls that declare a case, hook or suite. */
 const CASE_HEADS = new Set([
   'it',
   'test',
@@ -603,11 +425,6 @@ const CASE_HEADS = new Set([
   'describe',
 ])
 
-/**
- * A constant millisecond budget: a numeric literal, or factors joined by `*`
- * (`2 * 60_000`), optionally parenthesized. Anything that names a value is
- * not a constant, so a variable is not read as its first factor.
- */
 function constantMs(node) {
   if (ts.isNumericLiteral(node)) {
     return Number(node.text.replaceAll('_', ''))
@@ -628,7 +445,6 @@ function constantMs(node) {
   return null
 }
 
-/** The `timeout` of an options object, when it is a constant. */
 function timeoutOf(options) {
   for (const property of options.properties) {
     if (
@@ -641,7 +457,6 @@ function timeoutOf(options) {
   return null
 }
 
-/** The budgets below `floor` carried by one case call. */
 function caseCallBudgets(call, floor) {
   const lowered = []
   const options = call.arguments[1]
@@ -651,8 +466,6 @@ function caseCallBudgets(call, floor) {
       lowered.push(ms)
     }
   }
-  // A trailing budget needs at least two arguments: `it(name, 2000)` is one,
-  // while a lone numeric argument (`it.runIf(1)`) is a condition or a table.
   const trailing = call.arguments.at(-1)
   if (
     call.arguments.length >= 2
@@ -667,16 +480,6 @@ function caseCallBudgets(call, floor) {
   return lowered
 }
 
-/**
- * The per-case, per-hook and per-suite budgets in one test source that sit
- * below `floor`. Four forms are read from the syntax tree: a trailing numeric
- * budget (`it(name, fn, 2000)`, `beforeEach(fn, 2000)`), an options object in
- * the second argument (`it(name, { timeout }, fn)`, `describe(name, {
- * timeout }, fn)`), the call an `it.each(table)`/`test.each(table)` returns,
- * and `test.setTimeout(ms)`. A case budget of 0 means no limit in both Vitest
- * and Playwright and passes. Waits such as `waitFor(..., { timeout })` and
- * `findBy*(..., { timeout })` are not case budgets and are left alone.
- */
 function lowCaseTimeouts(source, floor, filePath = 'constructed.tsx') {
   const sourceFile = parseTestSource(source, filePath)
   const lowered = []
@@ -688,13 +491,9 @@ function lowCaseTimeouts(source, floor, filePath = 'constructed.tsx') {
     if (chain === null || !CASE_HEADS.has(chain[0])) {
       return
     }
-    // `test.setTimeout(ms)` is a case budget of its own, read below; it does
-    // not take case arguments that are budgets.
     if (chain.length === 2 && chain[0] === 'test' && chain[1] === 'setTimeout') {
       return
     }
-    // `it.each(table)` returns a function that is then called with the case.
-    // The table is not a budget, so the call it returns is inspected instead.
     if (chain.at(-1) === 'each') {
       if (ts.isCallExpression(node.parent) && node.parent.expression === node) {
         lowered.push(...caseCallBudgets(node.parent, floor))
@@ -725,19 +524,6 @@ function lowCaseTimeouts(source, floor, filePath = 'constructed.tsx') {
   return lowered
 }
 
-/**
- * The uses of one of `forbidden` on `vi` in a scanned source that bypass
- * the shared route. Outside the one helper that owns each name there is no
- * permitted use, so every member access counts, whatever becomes of it: a
- * call, an argument, a property value, an arrow's return or a reference
- * kept for later. Optional chaining and bracket access are the same
- * access, an alias of `vi` names the same object, and a direct import of
- * the name from `vitest` is the same use. A destructuring that binds a
- * forbidden name from `vi` -- as a declaration, an assignment or a
- * parameter default -- is listed too. The syntax tree tells a use from
- * prose: a comment, string, template literal, regular expression or JSX
- * text that spells the name out is not one.
- */
 function bareMemberUses(source, forbidden, filePath = 'constructed.tsx') {
   const sourceFile = parseTestSource(source, filePath)
   const names = viNames(sourceFile)
@@ -755,27 +541,14 @@ function bareMemberUses(source, forbidden, filePath = 'constructed.tsx') {
   return uses
 }
 
-/** The uses of `vi.waitFor` or `vi.waitUntil` in a scanned source that
- * bypass the shared budget. */
 function bareWaitUses(source, filePath = 'constructed.tsx') {
   return bareMemberUses(source, WAIT_NAMES, filePath)
 }
 
-/** The uses of `vi.useRealTimers` in a scanned source that bypass the
- * draining helper. */
 function bareRealTimerUses(source, filePath = 'constructed.tsx') {
   return bareMemberUses(source, REAL_TIMER_NAMES, filePath)
 }
 
-/**
- * The argument a setup hands `asyncBudgetMs` for its async timeout, or null
- * when it names no such budget. The argument must be the caller's scale --
- * `gateTimeScale()`, or the browser tier's injected
- * `__SPEED_GATE_TIME_SCALE__` -- rather than a literal: a literal pins the
- * budget on the setup's own value and drops the callers' scale, and even
- * the literal 1 would leave the floor in place while ignoring a caller who
- * raised it.
- */
 function asyncBudgetScale(source, filePath = 'constructed.ts') {
   const sourceFile = parseTestSource(source, filePath)
   const initializer = propertyInitializer(sourceFile, 'asyncUtilTimeout')
@@ -791,17 +564,12 @@ function asyncBudgetScale(source, filePath = 'constructed.ts') {
   return argument === undefined ? null : argument.getText(sourceFile)
 }
 
-/** The async budget a setup file names, read from `path` so a parse failure
- * names the real file rather than the constructed placeholder. */
 function setupAsyncBudgetScale(path) {
   return asyncBudgetScale(readFileSync(path, 'utf8'), path)
 }
 
-/** The expressions that carry the caller's scale into a setup. */
 const SCALE_SOURCE = /^(?:gateTimeScale\(\)|__SPEED_GATE_TIME_SCALE__)$/
 
-/** The scales a setups list names, in order. A setup that names no budget,
- * pins a literal, or cannot be parsed throws with its own path. */
 function setupScales(setups) {
   return setups.map((path) => {
     const scale = setupAsyncBudgetScale(path)
@@ -817,10 +585,8 @@ function setupScales(setups) {
   })
 }
 
-/** The source extensions a scan reads. */
 const SOURCE_FILE = /\.(?:[cm]?[jt]sx?)$/
 
-/** Every script under `dir`, skipping installed and built output. */
 function scriptSources(dir) {
   const sources = []
   const walk = (current) => {
@@ -840,19 +606,11 @@ function scriptSources(dir) {
   return sources
 }
 
-/** Every test source under `dir`, skipping installed and built output. */
 function testSources(dir) {
   return scriptSources(dir).filter((path) =>
     /\.test\.(?:[cm]?[jt]sx?)$/.test(path))
 }
 
-/**
- * The test-support directories the wait rule scans: each package's
- * `test-utils/`, the shared `web/test-utils/src/` (the browser tier's
- * setup included), the demo host's own copy and its `src/a11y/` support
- * modules. They are derived from the package roster and the fixed roots,
- * so a new helper file is in scope without a second list to maintain.
- */
 function testSupportDirs() {
   const dirs = []
   for (const pkgDir of packageDirs) {
@@ -867,27 +625,13 @@ function testSupportDirs() {
   return dirs
 }
 
-/**
- * The one source allowed to call `vi.waitFor`: the helper that supplies the
- * shared budget. An exact path, so no other file is exempted with it.
- */
 const WAIT_HELPER = join(webRoot, 'test-utils', 'src', 'wait.ts')
 
-/**
- * The two sources allowed to call `vi.useRealTimers`: the helper that
- * drains jsdom's fake-clock frames, and the demo host's copy of it. Exact
- * paths, so no other file is exempted with them.
- */
 const REAL_TIMER_HELPERS = new Set([
   join(webRoot, 'test-utils', 'src', 'timers.ts'),
   join(demoWebRoot, 'src', 'test-utils', 'timers.ts'),
 ])
 
-/**
- * The async defaults that sit below the async floor `floors` names. Both
- * copies (the workspace's and the demo host's) carry the constant by hand,
- * and each is held to the floor unscaled, like the preset's test budget.
- */
 function asyncBudgetsBelowFloor(floors) {
   return [ASYNC_UTIL_TIMEOUT_MS, DEMO_ASYNC_UTIL_TIMEOUT_MS].filter(
     (ms) => ms < floors.asyncUtilTimeoutMs,
@@ -902,16 +646,10 @@ describe('workspace test configuration', () => {
   it('excludes the browser-tier cases from the unit preset', () => {
     const options = sharedTestOptions()
     expect(options.exclude).toContain('**/*.browser.test.tsx')
-    // Naming `exclude` replaces Vitest's defaults, so the preset must
-    // keep them too -- which it derives from configDefaults rather than
-    // restates.
     expect(options.exclude).toContain('**/node_modules/**')
   })
 
   it('gives the root eslint-rules/scripts leg the shared preset', () => {
-    // Those tests live outside every package, so no package config covers
-    // them; without a config at the web root the leg runs on Vitest's
-    // fixed 5s default.
     const configPath = join(webRoot, 'vitest.config.ts')
     const sourceFile = parseTestSource(readFileSync(configPath, 'utf8'), configPath)
     expect(hasCallNamed(sourceFile, 'sharedTestOptions')).toBe(true)
@@ -920,8 +658,6 @@ describe('workspace test configuration', () => {
   })
 
   it('runs every workspace member that has tests in one vitest process', async () => {
-    // The single process covers exactly the workspace members that carry
-    // tests: a member without a project here would stop running in the gate.
     expect(workspaceTestMembers.length).toBeGreaterThan(0)
     const config = (await import(pathToFileURL(UNIT_CONFIG_PATH).href)).default
     const projects = config.test?.projects
@@ -952,8 +688,6 @@ describe('workspace test configuration', () => {
         join(root, 'packages', 'real', 'package.json'),
         JSON.stringify({ name: 'real', scripts: { test: 'vitest run' } }),
       )
-      // A directory with only node_modules inside is a pattern match but
-      // not a member: pnpm counts only directories that carry a manifest.
       mkdirSync(join(root, 'packages', 'stray', 'node_modules'), {
         recursive: true,
       })
@@ -970,10 +704,6 @@ describe('workspace test configuration', () => {
   })
 
   it('gives the single-process unit config the shared preset and reporters', async () => {
-    // Under `projects`, only the root config's reporters are honoured, so
-    // this config has to be the one that pins them; the shared preset is
-    // also where its case and hook budgets come from. The budgets must not
-    // be written here, where the guard reads a package's own values.
     const sourceFile = parseTestSource(
       readFileSync(UNIT_CONFIG_PATH, 'utf8'),
       UNIT_CONFIG_PATH,
@@ -986,21 +716,12 @@ describe('workspace test configuration', () => {
   })
 
   it("runs each workspace member's tests with the package's own script", () => {
-    // The gate runs vitest directly, so a member's own `test` script must
-    // run the same thing: a script that grew flags would no longer match
-    // what the gate runs.
     for (const member of workspaceTestMembers) {
       expect(member.test, member.name).toBe('vitest run')
     }
   })
 
   it('fixes the test reporter so the log does not depend on the runner', () => {
-    // Vitest picks MinimalReporter (silent "passed-only") when std-env
-    // reports an agent environment, which drops the console output of
-    // passing cases. A pinned reporter is what keeps a warning from
-    // appearing only when a person runs the gate. A pinned list also
-    // stops Vitest from appending its own github-actions reporter, so the
-    // shared helper appends it under GitHub Actions instead.
     expect(sharedReporters('default', {})).toBe('default')
     expect(sharedReporters('default', { GITHUB_ACTIONS: 'true' })).toEqual([
       'default',
@@ -1018,9 +739,6 @@ describe('workspace test configuration', () => {
         parseTestSource(readFileSync(configPath, 'utf8'), configPath),
       ),
     ).toBe(true)
-    // The a11y sweep's verbose reporter is the other fixed choice; the
-    // singular CLI spelling is a different key, so the config keeps the
-    // plural one.
     const a11yPath = join(demoWebRoot, 'vitest.a11y.config.ts')
     const a11yFile = parseTestSource(readFileSync(a11yPath, 'utf8'), a11yPath)
     expect(reportersComeFromShared(a11yFile, 'verbose')).toBe(true)
@@ -1028,9 +746,6 @@ describe('workspace test configuration', () => {
   })
 
   it('keeps the shared case budget at or above its floor', () => {
-    // Compared unscaled: SHARED_TIMEOUT_MS is the preset's constant, so a
-    // caller's GATE_TIME_SCALE cannot change this tree's verdict. The
-    // options must then be that constant times the scale.
     expect(SHARED_TIMEOUT_MS).toBeGreaterThanOrEqual(SHARED_TIMEOUT_FLOOR_MS)
     const options = sharedTestOptions()
     expect(options.testTimeout).toBe(SHARED_TIMEOUT_MS * gateTimeScale())
@@ -1052,7 +767,6 @@ describe('workspace test configuration', () => {
         }),
       )
       expect(() => readTimeFloors(path)).toThrow(/vitestCaseTimeoutMs/)
-      // `1e999` parses to Infinity, which `<= 0` alone would let through.
       writeFileSync(
         path,
         '{"vitestCaseTimeoutMs": 60000, "playwrightCaseTimeoutMs": 120000, '
@@ -1065,9 +779,6 @@ describe('workspace test configuration', () => {
   })
 
   it('takes the async floor from the floor file', () => {
-    // The guard's comparison must read the floor the file names. Raising
-    // it above the shared default makes that default an offender; a guard
-    // that compared against a hardcoded floor would still clear it.
     const dir = mkdtempSync(join(tmpdir(), 'test-time-floors-'))
     try {
       const path = join(dir, 'test-time-floors.json')
@@ -1092,9 +803,6 @@ describe('workspace test configuration', () => {
   })
 
   it('keeps the async budget at or above its floor', () => {
-    // Both copies carry the constant by hand; each is held to the floor
-    // unscaled, like the preset's test budget. The floor compared against is
-    // the one the floor file names.
     expect(asyncBudgetsBelowFloor(TIME_FLOORS)).toEqual([])
     expect(
       setupScales([
@@ -1106,11 +814,6 @@ describe('workspace test configuration', () => {
   })
 
   it('names the setup file it cannot parse', () => {
-    // The setups loop reads and parses real files; a setup that stops
-    // parsing must be reported under its own path, not under the
-    // placeholder asyncBudgetScale uses for constructed sources. A call
-    // site that reads the file without handing over the path would leave
-    // the failing setup unidentified.
     const dir = mkdtempSync(join(tmpdir(), 'workspace-test-setup-'))
     try {
       const path = join(dir, 'setup.ts')
@@ -1122,7 +825,6 @@ describe('workspace test configuration', () => {
     }
   })
 
-  /** Every test source the budgets and the wait rule apply to. */
   const scopedTestSources = [
     ...testPackages.flatMap((pkg) => testSources(pkg.dir)),
     ...testSources(demoWebRoot),
@@ -1130,13 +832,6 @@ describe('workspace test configuration', () => {
     ...testSources(join(webRoot, 'scripts')),
   ]
 
-  /**
-   * Every source the two name rules scan: the case files and the
-   * test-support sources the cases run on. The wait rule exempts `wait.ts`
-   * by exact path, because it is where the budget is supplied; the
-   * real-timer rule exempts the two `timers.ts` helpers, which own the
-   * direct call.
-   */
   const scopedSupportSources = [
     ...new Set([
       ...scopedTestSources,
@@ -1153,10 +848,6 @@ describe('workspace test configuration', () => {
   )
 
   it('keeps no case budget below the shared one', () => {
-    // The unscaled constant: a caller's GATE_TIME_SCALE must not change this
-    // tree's verdict. Comparing the scaled options would let a case budget
-    // between the floor and the scaled value pass only when a caller raised
-    // the scale.
     const floor = SHARED_TIMEOUT_MS
     const offenders = []
     for (const source of scopedTestSources) {
@@ -1217,10 +908,6 @@ describe('workspace test configuration', () => {
   })
 
   it('scans the test-support directories and exempts only the two helpers', () => {
-    // The scan list is the guard's own blind spot: a helper source the
-    // suites run on is where a bare wait hides. Every package's test-utils,
-    // the shared tree and the demo host's copy are in scope; the one file
-    // that supplies the budget is out by its exact path, not by a rule.
     const dirs = testSupportDirs()
     expect(dirs).toContain(join(webRoot, 'test-utils', 'src'))
     expect(dirs).toContain(join(demoWebRoot, 'src', 'test-utils'))
@@ -1230,9 +917,6 @@ describe('workspace test configuration', () => {
     expect(scopedWaitSources).toContain(
       join(webRoot, 'packages', 'account-ui', 'test-utils', 'refresh-warning.ts'),
     )
-    // The root leg's own tests and the demo's a11y support modules are in
-    // scope too: they run under the same budgets and may not reach either
-    // wait.
     expect(scopedTestSources).toContain(
       join(webRoot, 'scripts', 'workspace-test-config.test.mjs'),
     )
@@ -1241,8 +925,6 @@ describe('workspace test configuration', () => {
     )
     expect(scopedWaitSources).toContain(join(demoWebRoot, 'src', 'a11y', 'scan.ts'))
     expect(scopedWaitSources).not.toContain(WAIT_HELPER)
-    // The real-timer rule scans the same sources, minus the two helpers
-    // that own the direct call.
     expect(scopedRealTimerSources).toContain(join(demoWebRoot, 'src', 'a11y', 'scan.ts'))
     expect(scopedRealTimerSources).toContain(
       join(webRoot, 'test-utils', 'src', 'timers.test.ts'),
@@ -1284,8 +966,6 @@ describe('workspace test configuration', () => {
     expect(
       lowCaseTimeouts("it('a case', { timeout: 120_000 }, async () => {})", 60_000),
     ).toEqual([])
-    // A case budget of 0 is no limit in both Vitest and Playwright, so it is
-    // a widening and passes in every form the gate reads.
     expect(
       lowCaseTimeouts("it('a case', { timeout: 0 }, async () => {})", 60_000),
     ).toEqual([])
@@ -1293,12 +973,10 @@ describe('workspace test configuration', () => {
     expect(
       lowCaseTimeouts("it('a case', async () => {}, 0)", 60_000),
     ).toEqual([])
-    // The exception is exactly 0: a 1ms budget is still below the floor.
     expect(lowCaseTimeouts('test.setTimeout(1)', 60_000)).toEqual([1])
     expect(
       lowCaseTimeouts("it('a case', { timeout: 1 }, async () => {})", 60_000),
     ).toEqual([1])
-    // An arithmetic base is its product, not its first factor.
     expect(
       lowCaseTimeouts("it('a case', { timeout: 2 * 60_000 }, async () => {})", 60_000),
     ).toEqual([])
@@ -1322,7 +1000,6 @@ describe('workspace test configuration', () => {
     expect(bareWaitUses('const { waitFor: wrapped } = vi')).toHaveLength(1)
     expect(bareWaitUses('let { waitFor, waitUntil } = vi')).toHaveLength(1)
     expect(bareWaitUses('({ waitFor } = vi)')).toHaveLength(1)
-    // A computed key whose expression is a literal names the same property.
     expect(bareWaitUses("const { ['waitFor']: w } = vi")).toHaveLength(1)
     expect(bareWaitUses("const { ['waitUntil']: w } = vi")).toHaveLength(1)
     expect(bareWaitUses('const { [`waitFor`]: w } = vi')).toHaveLength(1)
@@ -1330,36 +1007,24 @@ describe('workspace test configuration', () => {
     expect(
       bareWaitUses("function f({ ['waitUntil']: w } = vi) {}"),
     ).toHaveLength(1)
-    // A computed key built from a variable is outside the static read.
     expect(bareWaitUses('const { [name]: w } = vi')).toHaveLength(0)
     expect(bareWaitUses('const wait = vi.waitFor')).toHaveLength(1)
     expect(bareWaitUses('let wait = vi.waitUntil')).toHaveLength(1)
     expect(bareWaitUses("const wait = vi['waitFor']")).toHaveLength(1)
-    // Every use of either name is a member access, however it is reached:
-    // passed as an argument, kept as a property value, returned from an
-    // arrow, read through optional chaining, or invoked through a method of
-    // its own.
     expect(bareWaitUses('wrap(vi.waitFor)')).toHaveLength(1)
     expect(bareWaitUses('const w = { run: vi.waitFor }')).toHaveLength(1)
     expect(bareWaitUses('const w = () => vi.waitFor')).toHaveLength(1)
     expect(bareWaitUses('await vi?.waitFor(() => {})')).toHaveLength(1)
     expect(bareWaitUses('vi.waitFor.call(null, () => {})')).toHaveLength(1)
     expect(bareWaitUses("await vi?.['waitUntil'](() => true)")).toHaveLength(1)
-    // A string that names the call is prose; the syntax tree holds no node
-    // for it, so no pattern reads it as a use.
     expect(bareWaitUses("it('names vi.waitFor in prose', () => {})")).toHaveLength(0)
-    // A string that spells out an assignment is prose too.
     expect(bareWaitUses("it('x = vi.waitFor', () => {})")).toHaveLength(0)
     expect(bareWaitUses('await waitForCondition(() => {})')).toHaveLength(0)
     expect(bareWaitUses('const { spyOn } = vi')).toHaveLength(0)
     expect(bareWaitUses('// await vi.waitFor(() => {})')).toHaveLength(0)
-    // An array element is prose: a string is a property key only when the
-    // bracket that holds it follows the object it is read from.
     expect(bareWaitUses("const allowed = ['vi.waitFor']")).toHaveLength(0)
     expect(bareWaitUses("check(['vi.waitUntil'])")).toHaveLength(0)
     expect(bareWaitUses("const [first] = ['vi.waitFor']")).toHaveLength(0)
-    // A keyword before the bracket cannot be the object a string is read from,
-    // so the string after it is an array element like any other and prose.
     expect(bareWaitUses("function f() { return ['vi.waitFor'] }")).toHaveLength(0)
     expect(bareWaitUses("for (const n of ['vi.waitFor']) {}")).toHaveLength(0)
     expect(bareWaitUses("function* g() { yield ['vi.waitUntil'] }")).toHaveLength(0)
@@ -1385,10 +1050,6 @@ describe('workspace test configuration', () => {
     expect(
       bareRealTimerUses("const restore = vi['useRealTimers']"),
     ).toHaveLength(1)
-    // Every use of the name is a member access, however it is reached:
-    // passed as an argument, kept as a property value, returned from an
-    // arrow, read through optional chaining, or invoked through a method of
-    // its own.
     expect(bareRealTimerUses('wrap(vi.useRealTimers)')).toHaveLength(1)
     expect(
       bareRealTimerUses('const w = { restore: vi.useRealTimers }'),
@@ -1400,15 +1061,12 @@ describe('workspace test configuration', () => {
     expect(
       bareRealTimerUses('function f({ useRealTimers } = vi) {}'),
     ).toHaveLength(1)
-    // A local alias, an aliased import and a direct import name the same
-    // restore.
     expect(
       bareRealTimerUses('const v = vi\nv.useRealTimers()'),
     ).toHaveLength(1)
     expect(
       bareRealTimerUses("import { vi as x } from 'vitest'\nx.useRealTimers()"),
     ).toHaveLength(1)
-    // A destructuring from the aliased import binds the same name.
     expect(
       bareRealTimerUses(
         "import { vi as x } from 'vitest'\nconst { useRealTimers } = x",
@@ -1419,8 +1077,6 @@ describe('workspace test configuration', () => {
         "import { useRealTimers } from 'vitest'\nuseRealTimers()",
       ),
     ).toHaveLength(1)
-    // Parentheses, non-null assertions and type assertions do not change
-    // the object, so the member access is the same one.
     expect(bareRealTimerUses('(vi).useRealTimers()')).toHaveLength(1)
     expect(bareRealTimerUses('vi!.useRealTimers()')).toHaveLength(1)
     expect(
@@ -1429,41 +1085,30 @@ describe('workspace test configuration', () => {
     expect(
       bareRealTimerUses('(<typeof vi>vi).useRealTimers()', 'constructed.ts'),
     ).toHaveLength(1)
-    // An alias of an alias names the same object.
     expect(
       bareRealTimerUses('const v = vi\nconst w = v\nw.useRealTimers()'),
     ).toHaveLength(1)
-    // A type assertion around the initializer keeps the same object.
     expect(
       bareRealTimerUses('const v = vi as unknown as typeof vi\nv.useRealTimers()'),
     ).toHaveLength(1)
-    // A renamed direct import reaches the same name.
     expect(
       bareRealTimerUses("import { useRealTimers as r } from 'vitest'\nr()"),
     ).toHaveLength(1)
-    // A computed key whose expression is a literal names the same property,
-    // as a binding and as a bracket access.
     expect(
       bareRealTimerUses('const { [`useRealTimers`]: r } = vi'),
     ).toHaveLength(1)
     expect(bareRealTimerUses('vi[`useRealTimers`]()')).toHaveLength(1)
-    // A renamed destructuring assignment binds the same name.
     expect(bareRealTimerUses('({ useRealTimers: r } = vi)')).toHaveLength(1)
-    // The literal computed key holds in an assignment pattern and in a
-    // parameter default too.
     expect(
       bareRealTimerUses("({ ['useRealTimers']: r } = vi)"),
     ).toHaveLength(1)
     expect(
       bareRealTimerUses("function f({ ['useRealTimers']: r } = vi) {}"),
     ).toHaveLength(1)
-    // A computed key that is not a literal names no property, and an alias
-    // of something else is not Vitest's vi.
     expect(bareRealTimerUses('const { [name]: r } = vi')).toHaveLength(0)
     expect(
       bareRealTimerUses('const v = other\nv.useRealTimers()'),
     ).toHaveLength(0)
-    // Prose and the helper are not uses.
     expect(
       bareRealTimerUses("it('calls vi.useRealTimers', () => {})"),
     ).toHaveLength(0)
@@ -1476,8 +1121,6 @@ describe('workspace test configuration', () => {
   it('exempts only the two timers helpers from the real-timer rule', () => {
     for (const helper of REAL_TIMER_HELPERS) {
       expect(scopedRealTimerSources).not.toContain(helper)
-      // The exemption exists for a helper that really does call the name,
-      // so the rule is not passing by an accidental zero.
       expect(
         bareRealTimerUses(readFileSync(helper, 'utf8'), helper).length,
       ).toBeGreaterThan(0)
@@ -1485,10 +1128,7 @@ describe('workspace test configuration', () => {
   })
 
   it('scans the wrappers and aliases a wait can hide behind', () => {
-    // A parameter default destructures the same object a declaration does.
     expect(bareWaitUses('function f({ waitFor } = vi) {}')).toHaveLength(1)
-    // Parentheses, non-null assertions and type assertions do not change
-    // the object, so the member access is the same one.
     expect(bareWaitUses('(vi).waitFor(() => {})')).toHaveLength(1)
     expect(bareWaitUses('vi!.waitFor(() => {})')).toHaveLength(1)
     expect(
@@ -1497,8 +1137,6 @@ describe('workspace test configuration', () => {
     expect(
       bareWaitUses('(<typeof vi>vi).waitFor(() => {})', 'constructed.ts'),
     ).toHaveLength(1)
-    // A local alias, an aliased import, and an alias of an alias all name
-    // the same object.
     expect(bareWaitUses('const v = vi\nv.waitFor(() => {})')).toHaveLength(1)
     expect(
       bareWaitUses("import { vi as x } from 'vitest'\nx.waitFor(() => {})"),
@@ -1512,21 +1150,16 @@ describe('workspace test configuration', () => {
     expect(
       bareWaitUses('const v = vi as unknown as typeof vi\nv.waitFor(() => {})'),
     ).toHaveLength(1)
-    // Naming the wait at the import reaches the same one-second default.
     expect(
       bareWaitUses("import { waitFor } from 'vitest'\nwaitFor(() => {})"),
     ).toHaveLength(1)
     expect(
       bareWaitUses("import { waitFor as w } from 'vitest'\nw(() => {})"),
     ).toHaveLength(1)
-    // An alias of something else is not Vitest's vi.
     expect(bareWaitUses('const v = other\nv.waitFor(() => {})')).toHaveLength(0)
   })
 
   it('scans a wait after a regex literal or JSX text that carries a quote', () => {
-    // A quote inside a regex literal must not open a string: doing so drops
-    // every later line up to the next matching quote, and the wait below it
-    // goes unseen.
     expect(
       bareWaitUses("const single = /'/g\nawait vi.waitFor(() => {})"),
     ).toHaveLength(1)
@@ -1539,9 +1172,6 @@ describe('workspace test configuration', () => {
     expect(
       bareWaitUses("const pattern = /['\"]x/g\nawait vi.waitFor(() => {})"),
     ).toHaveLength(1)
-    // The TypeScript parser reads these as regex literals, not strings, so
-    // the quotes inside them cannot hide the wait below; both shapes occur
-    // in this repository's test sources.
     expect(
       bareWaitUses(
         "const literal = /(['\"`])([^'\"`\\\\]*)\\1/g\nawait vi.waitFor(() => {})",
@@ -1553,30 +1183,21 @@ describe('workspace test configuration', () => {
           + 'await vi.waitFor(() => {})',
       ),
     ).toHaveLength(1)
-    // An apostrophe inside JSX text is prose, not a string opener.
     expect(
       bareWaitUses("<p>it's a member</p>\nawait vi.waitFor(() => {})"),
     ).toHaveLength(1)
-    // A template literal is free to span lines, and the wait spelled out
-    // inside it stays prose; the one below it is a use.
     expect(
       bareWaitUses('const text = `a\nvi.waitFor`\nawait vi.waitFor(() => {})'),
     ).toHaveLength(1)
-    // A division is not a regex, so it masks nothing after it.
     expect(
       bareWaitUses('const half = total / 2\nawait vi.waitFor(() => {})'),
     ).toHaveLength(1)
-    // A string is a value: the division after it is still a division.
     expect(
       bareWaitUses("const half = 'a'.length / 2\nawait vi.waitFor"),
     ).toHaveLength(1)
   })
 
   it('scans a wait below a JSX closing tag that shares its line with a template', () => {
-    // `</Link>` is a closing tag, not a regex: read as one, the scan runs to
-    // the slash inside the template on the same line, swallows the opening
-    // backtick, and the closing one opens a template that runs to the end of
-    // the file, hiding every wait below it.
     expect(
       bareWaitUses(
         'render(<Link>a</Link>); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
@@ -1587,11 +1208,6 @@ describe('workspace test configuration', () => {
         'render(<div>a</div>); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
       ),
     ).toHaveLength(1)
-    // A self-closing tag's slash follows the tag name, or an attribute value.
-    // A lexer that reads the `}` before it as one that can precede a regex
-    // opens one there, runs to the next slash inside the template on the same
-    // line and takes that template's backticks, hiding every wait below. The
-    // parser reads the tag as JSX.
     expect(
       bareWaitUses(
         'render(<Br />); f(`/a/${id}`)\nawait vi.waitFor(() => {})',
@@ -1603,24 +1219,17 @@ describe('workspace test configuration', () => {
           + 'const t = `z`',
       ),
     ).toHaveLength(1)
-    // A `<` operator still opens a regex: the wait name inside the pattern is
-    // prose. Read as a division instead, it would be counted as a use.
     expect(
       bareWaitUses('const match = x < /vi.waitFor/\nawait vi.waitFor(() => {})'),
     ).toHaveLength(1)
   })
 
   it('scans a wait below a regex literal that carries a backtick', () => {
-    // A backtick inside a regex literal used to open a template that ran to
-    // the next backtick, or to the end of the file when there was none. The
-    // parser reads the whole literal as a regular expression.
     expect(
       bareWaitUses(
         'if (x) /`/.test(s)\nawait vi.waitFor(() => {})\nconst t = `z`',
       ),
     ).toHaveLength(1)
-    // The unspaced form is a comparison, not a JSX tag; it is parsed as
-    // TypeScript, where `</` cannot open a JSX closing tag.
     expect(
       bareWaitUses(
         'x</`/.test(s)\nawait vi.waitFor(() => {})\nconst t = `z`',
@@ -1630,8 +1239,6 @@ describe('workspace test configuration', () => {
   })
 
   it('reports a test source it cannot parse instead of skipping it', () => {
-    // A source with no syntax tree is not a source with no offenders: the
-    // guard stops and names the file, so the blind spot cannot pass as clean.
     for (const source of [
       'const text = `unclosed\nawait vi.waitFor(() => {})',
       "const label = 'unfinished\nawait vi.waitFor(() => {})",
@@ -1652,8 +1259,6 @@ describe('workspace test configuration', () => {
         'configure({ asyncUtilTimeout: asyncBudgetMs(__SPEED_GATE_TIME_SCALE__) })',
       ),
     ).toBe('__SPEED_GATE_TIME_SCALE__')
-    // A literal is reported and refused by SCALE_SOURCE even at the floor:
-    // it would ignore a caller who raised the scale.
     expect(
       asyncBudgetScale('configure({ asyncUtilTimeout: asyncBudgetMs(1) })'),
     ).toBe('1')
@@ -1661,9 +1266,6 @@ describe('workspace test configuration', () => {
       asyncBudgetScale('configure({ asyncUtilTimeout: asyncBudgetMs(0.5) })'),
     ).toBe('0.5')
     expect(asyncBudgetScale('configure({ asyncUtilTimeout: 30_000 })')).toBeNull()
-    // A source that cannot be parsed names the file it came from, not the
-    // placeholder: a setup the guard could not read must not report
-    // `constructed.ts` and leave the real file unidentified.
     expect(() =>
       asyncBudgetScale(
         'configure({ asyncUtilTimeout: asyncBudgetMs(',
@@ -1684,11 +1286,6 @@ describe('workspace test configuration', () => {
         configPath,
       )
 
-      // The spread is what makes the preset the source of the options;
-      // a hand-written block (or a locally pinned timeout) is exactly the
-      // omission this guard exists to catch. The import carries the .ts
-      // extension because Vite's native config loader warns on an
-      // extensionless one and plans to reject it.
       expect(
         importsFrom(sourceFile, /^\.\.\/(?:\.\.\/)?vitest\.shared\.ts$/),
       ).toBe(true)
@@ -1698,10 +1295,6 @@ describe('workspace test configuration', () => {
 
       const config = (await import(pathToFileURL(configPath).href)).default
 
-      // Compared against the preset rather than a literal: the shared
-      // budget is multiplied by the caller's GATE_TIME_SCALE, and the
-      // guard is that the package took it, not a particular number. The
-      // floor case above is what stops the preset itself being lowered.
       expect(config.test?.testTimeout).toBe(sharedTestOptions().testTimeout)
       expect(config.test?.hookTimeout).toBe(sharedTestOptions().hookTimeout)
       expect(config.test?.coverage).toMatchObject({
@@ -1709,9 +1302,6 @@ describe('workspace test configuration', () => {
         include: sharedCoverage.include,
         reporter: sharedCoverage.reporter,
       })
-      // test-utils deliberately drops the floor (its src is driven by the
-      // consuming packages' suites); any package that keeps one keeps the
-      // shared one.
       if (config.test?.coverage?.thresholds !== undefined) {
         expect(config.test.coverage.thresholds).toEqual(
           sharedCoverage.thresholds,

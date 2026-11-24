@@ -1,52 +1,5 @@
 #!/usr/bin/env node
-/**
- * Feature-name generator: turns the host's feature vocabulary
- * (contracts/features.json, written by the demo host's `gen --features`)
- * into the generated feature-name surface.
- *
- * Two copies of this script exist. The platform entry
- * (web/scripts/feature-names.mjs) writes the @speed/api-sdk package's
- * src/features.ts from the platform-owned entries, and optionally the
- * application's module augmentation; it runs from web/package.json's
- * `api:gen`. The demo starter's copy
- * (starters/demo/web/scripts/feature-names.mjs) writes only the
- * application's module augmentation into the app's own src/app-api/; it
- * runs from starters/demo/web/package.json's `api:gen`. Everything
- * outside the generation-mode block below is byte-identical between the
- * two copies, and web/scripts/starter-script-consistency.test.mjs pins
- * that.
- *
- * Usage of the platform entry, with paths relative to the working
- * directory:
- *
- *   node web/scripts/feature-names.mjs \
- *       contracts/features.json \
- *       web/packages/api-sdk/src/features.ts \
- *       [src/app-api/features.ts]
- *
- * Every vocabulary entry carries an owner the demo host's `gen` writes
- * mechanically from the declaring module's Go package: `platform` for a
- * module the platform delivers, `application` for the host's own. The
- * first output registers only platform-owned names, so the published
- * package never carries an application's vocabulary; the second output
- * (optional) declares the application-owned names as a module
- * augmentation of the same registry, which is how the application's own
- * code keeps type-checking against the names its own modules declare.
- *
- * The committed outputs are generated artifacts: edit this script or the
- * vocabulary, never the files it writes. On the platform side,
- * `pnpm api:gen` from web/ regenerates src/features.ts (and the platform
- * orval output); on the application side, the demo host's own `api:gen`
- * script runs the demo host's `gen`, which writes the
- * vocabulary beside the merged OpenAPI document, and then runs the
- * starter's copy of this script. A declaration added, removed or renamed
- * on the backend reaches the frontend's types through those commands.
- *
- * The output depends on the vocabulary's contents alone, not on the
- * argument's spelling: the header names the contract by its canonical
- * path, so running the script from any directory with any relative path
- * writes the same bytes.
- */
+/** Feature-name generator; usage: `node web/scripts/feature-names.mjs <features.json> <features.ts> [<app-features.ts>]`. */
 import { readFileSync, writeFileSync } from 'node:fs'
 
 // --- generation mode (the one documented difference between the two copies) ---
