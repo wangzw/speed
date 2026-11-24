@@ -1,37 +1,9 @@
 /**
- * real-client.ts -- the shared real-client network rig for the
- * workspace's journey tests: a real @speed/api-client createClient over
- * a fetch stand-in answering with genuine Response objects, the memory
- * access-token store, and -- unless the caller opts out -- the session's
- * own refreshAccessToken: () => session.refresh() bound into the
- * api-sdk runtime seam (bindRequestFn, the same seam every generated
- * call uses). Because the transport is real api-client machinery, the
- * 401-refresh leg a journey scripts (a refused request answered 401, a
- * silent credential-less refresh, one retry) is exercised by the client
- * itself rather than scripted around. Each call binds anew: the runtime
- * seam is last-bind-wins by contract.
- *
- * What a recorded call carries is per-package policy: the fetcher
- * observes one request (method, path, query string, authorization
- * header, raw body) and hands it to the caller's projection, which
- * returns the call shape that package's type declares and its suites
- * assert on -- the JSON-decoded body one surface pins, the serialized
- * body another records, the plain request leg a third. The observation
- * itself is the single implementation; only the projection differs.
- *
- * A rig whose caller opts out of the refresh seam (the
- * `refresh: false` option) has no session layer at all: the store
- * starts empty and a test plants the bearer token the reads ride
- * (store.set('access-1')), exactly the state a real host's sign-in flow
- * leaves behind, and a 401 answer surfaces directly -- which is what
- * lets a test script a dead-session code and see the surface's own
- * banner for it.
- *
- * The answer helpers (`jsonResponse`, `errorResponse`,
- * `signInWithPassword`) are the scripted-answer vocabulary every
- * journey shares: a genuine Response carrying the API's envelope
- * shape, the 401-style error envelope, and the shared first leg of a
- * signed-in journey (the flow-model sign-in).
+ * The shared real-client network rig for the workspace's journey tests: a real
+ * @speed/api-client client over a fetch stand-in, optionally over the session's
+ * refresh seam (`refresh: false` leaves it out), with each package projecting
+ * the observed request into its own recorded call shape, plus the shared
+ * answer helpers.
  */
 
 import {
@@ -43,57 +15,27 @@ import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createAuthSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 
-/** A request as the fetch stand-in observed it, before the caller's
- * projection narrows it into that package's recorded call shape. */
 export interface ObservedRequest {
   readonly method: string
-  /** The request path without the base URL or query string. */
   readonly path: string
-  /** The raw query string of the request URL, '' when the request sent
-   * none (orval serializes hook params -- a page size, say -- as query
-   * parameters). */
   readonly query: string
-  /** The authorization header value, or null for a credential-less
-   * request (the refresh leg travels credential-less by declaration). */
   readonly authorization: string | null
-  /** The serialized request body when the request carried a string
-   * body (api-client sends JSON strings), else null. */
   readonly rawBody: string | null
 }
 
-/** One scripted endpoint: answer with a genuine Response, immediately
- * or after a deferred promise (journeys hold an exchange open to assert
- * the pending state). */
 export type RealResponder<Call> = (call: Call) => Response | Promise<Response>
 
 export interface RealClientRigOptions {
-  /**
-   * Create an AuthSession over the shared store and bind its
-   * refreshAccessToken into the client (the 401-refresh leg). Pass
-   * false for a package with no session layer of its own (see the
-   * header). Defaults to true.
-   */
   readonly refresh?: boolean
 }
 
-/** The bound rig, generic over the caller's recorded call shape and
- * over the session half (null when the caller opted out of refresh). */
 export interface BoundRealClientRig<Call, Session> {
-  /** The access-token store the client (and the session, when there is
-   * one) reads on every send. */
   readonly store: AccessTokenStore
-  /** The session the journey drives, or null under `refresh: false`. */
   readonly session: Session
-  /** The bound client as the RequestFn a host's own composition slots
-   * into its services layer. */
   readonly api: RequestFn
-  /** Every request observed, in order, in the caller's call shape. */
   readonly calls: Call[]
 }
 
-/** Binds a real client whose fetch stand-in answers from the script,
- * recording each request through `project`, and returns the session
- * over the same store (see the header). */
 export function makeRealClientRig<Call>(
   respond: RealResponder<Call>,
   project: (request: ObservedRequest) => Call,
@@ -112,10 +54,6 @@ export function makeRealClientRig<Call>(
   const store = createMemoryAccessTokenStore()
   const session = refresh ? createAuthSession(store) : null
   const calls: Call[] = []
-  // The fetch stand-in of a real host, narrowed to a script: it records
-  // the request leg and answers from the responder, never touching the
-  // network (nothing here invokes fetch). Response objects are genuine,
-  // so api-client's envelope parsing runs for real.
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input))
     const call = project({
@@ -138,7 +76,6 @@ export function makeRealClientRig<Call>(
   return { store, session, api: client, calls }
 }
 
-/** A JSON answer in the API's envelope shape, like the real server. */
 export function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -146,7 +83,6 @@ export function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-/** A 401-style error envelope answering in the API's error shape. */
 export function errorResponse(
   status: number,
   code: string,
@@ -155,18 +91,6 @@ export function errorResponse(
   return jsonResponse(status, { code, traceId, message: code })
 }
 
-/**
- * The shared first leg of a signed-in journey, in the flow model: the
- * session starts a `purpose: 'login'` flow and answers its first step.
- * The responder must answer POST /api/v1/auth/flows with an open flow whose
- * next step is a first-factor challenge (see
- * @speed/test-utils/session-harness's openFlow), POST /api/v1/auth/flows/answer
- * with a token-issuing completion (authenticatedCompletion), and GET
- * /api/v1/auth/me with the profile the session reads for the principal. The
- * rig's session has no seed path by contract -- a reload starts
- * anonymous -- so a journey signs in through the real session operation,
- * which is also what plants the access token in the shared store.
- */
 export async function signInWithPassword(rig: {
   readonly session: AuthSession
 }): Promise<void> {

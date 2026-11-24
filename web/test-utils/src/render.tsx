@@ -1,35 +1,8 @@
 /**
  * The render-primitive layer shared by the packages' and the app's DOM
- * harnesses. Which provider tree a unit renders under is package policy
- * (a package's own test-utils/render.tsx assembles its tree: the theme
- * provider, a query client where the package reads react-query hooks,
- * the page-heading context a page-shaped surface needs); what every
- * harness builds that tree from is here:
- *
- * - TEST_LANGUAGES: the bilingual pair every suite switches between.
- * - createTestI18n: a fresh instance per call with a deterministic
- *   configuration -- no storage, no URL, no navigator -- that the
- *   caller then registers its namespaces on. A fresh instance per call
- *   keeps registerNamespace's double-registration guard from firing
- *   across tests.
- * - createTestQueryClient: a fresh client that retries nothing, so an
- *   operation a test scripts to fail surfaces its error on the first
- *   attempt, not after react-query default retries, and a mutation
- *   never outlives its test. It also writes the production read defaults
- *   explicitly -- staleTime 0 and every automatic re-read trigger on --
- *   so a suite's re-read timing matches the assembled app's. This
- *   package sits below product-shell and imports none of it, so the
- *   values are stated here rather than shared through that export.
- * - RenderWithProvidersOptions / RenderWithProvidersResult: the option
- *   and result shapes the harnesses extend (the shared options are the
- *   language, a caller-owned instance and the display time zone; the
- *   shared result carries the instance the tree renders with, so
- *   language-switch tests act on it and the provider's 'languageChanged'
- *   subscription re-renders the tree).
- * - TestTimeZoneProvider: the display-time-zone context a harness wraps
- *   its tree in, defaulting to TEST_TIME_ZONE. A suite that says nothing
- *   renders in a fixed zone instead of the machine's own, so a rendered
- *   time does not depend on where the test runs.
+ * harnesses: TEST_LANGUAGES, the deterministic createTestI18n base, the
+ * retries-nothing createTestQueryClient, the RenderWithProviders option and
+ * result shapes, and TestTimeZoneProvider.
  */
 
 import type { ReactNode } from 'react'
@@ -39,37 +12,19 @@ import { createI18n } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
 import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 
-/** The zone a harness renders in unless it passes another one. It is
- * neither the chain's terminal fallback (UTC) nor the browser zone the
- * packages pin (TEST_BROWSER_TIME_ZONE): either value would let an
- * implementation that skipped the provider pass every default
- * expectation unnoticed. */
 export const TEST_TIME_ZONE = 'America/New_York'
 
 export interface RenderWithProvidersOptions {
-  /** Start language of the fresh instance; defaults to zh-CN. */
   readonly language?: string
-  /**
-   * Reuse an existing instance instead of creating one -- the caller
-   * owns its creation AND namespace registration (a second registration
-   * on the same instance throws by design).
-   */
   readonly i18n?: I18nInstance
-  /**
-   * The display time zone the tree renders in; defaults to
-   * TEST_TIME_ZONE when the harness passes it to TestTimeZoneProvider.
-   */
   readonly timeZone?: string
 }
 
 export interface TestTimeZoneProviderProps {
-  /** An IANA zone name; defaults to TEST_TIME_ZONE. */
   readonly timeZone?: string
   readonly children?: ReactNode
 }
 
-/** Wraps a harness's provider tree in the display-time-zone context, with
- * the fixed default a suite gets when it names no zone. */
 export function TestTimeZoneProvider({
   timeZone = TEST_TIME_ZONE,
   children,
@@ -82,14 +37,13 @@ export function TestTimeZoneProvider({
 }
 
 export interface RenderWithProvidersResult extends RenderResult {
-  /** The instance the tree renders with; language-switch tests act on it. */
   readonly i18n: I18nInstance
 }
 
 export const TEST_LANGUAGES = ['zh-CN', 'en-US'] as const
 
-/** Fresh bilingual instance with no namespaces yet: register them on the
- * returned instance (see the header; a fresh instance per call). */
+// Each call must return a fresh instance: a second namespace registration on
+// one instance throws.
 export function createTestI18n(language: string = 'zh-CN'): I18nInstance {
   return createI18n({
     supportedLanguages: TEST_LANGUAGES,
@@ -100,8 +54,6 @@ export function createTestI18n(language: string = 'zh-CN'): I18nInstance {
   })
 }
 
-/** Fresh client that never retries, with the production read defaults
- * written out: see the header. */
 export function createTestQueryClient(): QueryClient {
   return new QueryClient({
     defaultOptions: {

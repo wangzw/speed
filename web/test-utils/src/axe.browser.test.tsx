@@ -1,35 +1,3 @@
-/**
- * axe.browser.test.tsx -- the aria-hidden-focus decision only a browser
- * can make, and the report a browser cannot decide in the same pass.
- *
- * When an aria-modal dialog is open, axe leaves aria-hidden-focus
- * incomplete: its static analysis cannot tell whether the dialog's focus
- * trap keeps the aria-hidden background out of the tab order. The
- * harness answers that question with real key presses (see axe.ts), so
- * this suite pins the outcomes that decision can reach with fixtures
- * built for the purpose:
- *
- * - a dialog whose keyboard focus is trapped is determined, and the scan
- *   prints no aria-hidden-focus report;
- * - a dialog that does not trap focus escapes to the aria-hidden
- *   background on Tab, and the scan fails naming the escape. Without
- *   this case the passing one could be vacuous: a harness that never
- *   exercised the trap would pass both;
- * - a dialog that traps forward Tab only lets Shift+Tab escape, and the
- *   scan fails naming that direction. Without a fixture that escapes
- *   one way only, a harness that pressed just one of the two directions
- *   would still pass the two cases above;
- * - an open dialog whose background is not aria-hidden fails the
- *   page-context exemption rather than having the page rules skipped
- *   silently;
- * - an open Modal-based overlay outside the dialog and drawer families
- *   (a menu, whose paper is not aria-modal) is reported with the reason
- *   its focus trap was not exercised, and does not fail the scan.
- *
- * The fixtures are plain DOM rather than a rendered MUI component so the
- * outcomes differ only in the one property under test. MUI's marker
- * classes on the root are what the harness uses to recognize each family.
- */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { expectNoAxeViolations } from './axe.js'
 
@@ -42,11 +10,6 @@ function tabbables(root: HTMLElement): HTMLElement[] {
     .filter((element) => element.tabIndex >= 0)
 }
 
-/**
- * Which Tab directions the fixture dialog's own trap intercepts. A trap
- * that holds every direction decides the rule; one that misses a
- * direction lets focus escape that way.
- */
 type TrapDirections = 'both' | 'forward' | 'none'
 
 function trapTab(root: HTMLElement, directions: TrapDirections): void {
@@ -77,8 +40,6 @@ function trapTab(root: HTMLElement, directions: TrapDirections): void {
 function buildBackground(): void {
   const background = document.createElement('div')
   background.id = BACKGROUND_ID
-  // MUI hides the page behind an open Modal this way; the harness's
-  // page-context exemption is allowed only after it finds this.
   background.setAttribute('aria-hidden', 'true')
   const backgroundButton = document.createElement('button')
   backgroundButton.type = 'button'
@@ -114,13 +75,6 @@ function buildOpenDialog(directions: TrapDirections): void {
   first.focus()
 }
 
-/**
- * A MUI Menu's shape: a Modal root that is not a dialog or a drawer, a
- * full-viewport backdrop, and a paper with no aria-modal. The backdrop is
- * what a real MUI Modal renders and what makes axe's probe reach the
- * menu as a modal, so the rule is incomplete rather than violated -- the
- * state the harness reports with its reason.
- */
 function buildOpenMenu(): void {
   buildBackground()
 
@@ -175,9 +129,6 @@ describe('aria-hidden-focus under an open aria-modal dialog', () => {
   })
 
   it('fails the scan when only Shift+Tab escapes to the aria-hidden background', async () => {
-    // Forward Tab cycles inside the dialog; Shift+Tab from the first
-    // tabbable walks back out to the background. A harness that pressed
-    // Tab only would pass this fixture, so the case pins that direction.
     buildOpenDialog('forward')
     await expect(expectNoAxeViolations()).rejects.toThrow(
       /Shift\+Tab moved focus to .*outside the overlay/,
