@@ -61,7 +61,10 @@
 // @covers REQ-platform-admin-012, REQ-presentation-027, REQ-security-022, REQ-security-025, REQ-signin-006, REQ-signin-007, REQ-signin-030, REQ-tenancy-022
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
-import { createAccounts } from '../helpers/accounts'
+import {
+  createAccounts,
+  type Accounts,
+} from '../helpers/accounts'
 import {
   adminEntry,
   closeAccountMenu,
@@ -345,6 +348,55 @@ async function proveOperatorEmail(
   ).toBeVisible()
 }
 
+/**
+ * Sign the seeded operator in with its password and the seeded authenticator.
+ *
+ * The operator has a factor, so the password step parks the login at its
+ * second factor. The step belongs to the password channel, which renders in
+ * its own panel; the enterprise entry sits on the same sign-in page and
+ * carries its own "Continue", so every control of the step is addressed
+ * within that panel. A fresh local proof is what lets the privileged writes
+ * land without a step-up dialog.
+ */
+async function signInOperatorWithFactor(
+  page: Page,
+  accounts: Accounts,
+): Promise<void> {
+  await accounts.signIn({
+    identifier: OPERATOR.username,
+    password: OPERATOR.password,
+  })
+  const passwordPanel = page.getByRole('tabpanel', {
+    name: copy('authUi', 'passwordSignIn.title'),
+    exact: true,
+  })
+  await passwordPanel
+    .getByRole('button', {
+      name: copy('authUi', 'signInFlow.factorKind.totp'),
+      exact: true,
+    })
+    .click()
+  const operatorCode = passwordPanel.getByRole('textbox', {
+    name: copy('authUi', 'smsSignIn.codeLabel'),
+    exact: true,
+  })
+  await expect(operatorCode).toBeVisible()
+  await operatorCode.fill(totpCode(TOTP_SEED))
+  await passwordPanel
+    .getByRole('button', {
+      name: copy('authUi', 'signInFlow.submit'),
+      exact: true,
+    })
+    .click()
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: copy('demo', 'home.heading'),
+      exact: true,
+    }),
+  ).toBeVisible()
+}
+
 test('account-offboarding: an operator disables a member and the member returns after the restore', async ({
   demo,
   browser,
@@ -357,45 +409,7 @@ test('account-offboarding: an operator disables a member and the member returns 
 
   try {
     await test.step('precondition: the operator signs in with a factor, and the member holds two sessions', async () => {
-      // The operator has the seeded authenticator factor, so the password
-      // step parks the login at its second factor.
-      await accounts.signIn({
-        identifier: OPERATOR.username,
-        password: OPERATOR.password,
-      })
-      // The step belongs to the password channel, which renders in its own
-      // panel. The enterprise entry sits on the same sign-in page and carries
-      // its own "Continue", so every control of the step is addressed within
-      // that panel.
-      const passwordPanel = page.getByRole('tabpanel', {
-        name: copy('authUi', 'passwordSignIn.title'),
-        exact: true,
-      })
-      await passwordPanel
-        .getByRole('button', {
-          name: copy('authUi', 'signInFlow.factorKind.totp'),
-          exact: true,
-        })
-        .click()
-      const operatorCode = passwordPanel.getByRole('textbox', {
-        name: copy('authUi', 'smsSignIn.codeLabel'),
-        exact: true,
-      })
-      await expect(operatorCode).toBeVisible()
-      await operatorCode.fill(totpCode(TOTP_SEED))
-      await passwordPanel
-        .getByRole('button', {
-          name: copy('authUi', 'signInFlow.submit'),
-          exact: true,
-        })
-        .click()
-      await expect(
-        page.getByRole('heading', {
-          level: 1,
-          name: copy('demo', 'home.heading'),
-          exact: true,
-        }),
-      ).toBeVisible()
+      await signInOperatorWithFactor(page, accounts)
 
       // The privileged status write refuses an unproved address, so the
       // operator proves the account email through the product's own code flow.
@@ -779,4 +793,164 @@ test('account-offboarding: an operator disables a member and the member returns 
     await memberAContext?.close().catch(() => undefined)
     await memberBContext?.close().catch(() => undefined)
   }
+})
+
+/**
+ * Checks that the account detail's save control stays reachable while its
+ * precondition is unmet, sends nothing when activated, and keeps keyboard
+ * focus through a write it starts.
+ */
+test('account-offboarding: the save control keeps keyboard focus through its write and explains an unmet precondition', async ({
+  demo,
+}) => {
+  const { page, server, accounts } = demo
+
+  // The status write the case drives, observed rather than faked: the
+  // unavailable activation must add none, so the landing below is the only
+  // one this case sends.
+  const statusWrites: string[] = []
+  page.on('request', (outgoing) => {
+    if (outgoing.method() !== 'POST') return
+    const path = new URL(outgoing.url()).pathname
+    if (
+      path.startsWith('/api/v1/system/auth/accounts/') &&
+      path.endsWith('/status')
+    ) {
+      statusWrites.push(path)
+    }
+  })
+
+  await test.step('the operator signs in with a factor, proves the address and opens the member detail', async () => {
+    await signInOperatorWithFactor(page, accounts)
+    await proveOperatorEmail(page, server)
+
+    await openConsole(page)
+    await adminNav(page)
+      .getByRole('link', {
+        name: copy('adminUi', 'accounts.title'),
+        exact: true,
+      })
+      .click()
+    await chooseSelectOption(
+      identifierKind(page),
+      page.getByRole('option', {
+        name: copy('adminUi', 'accounts.identifierKind.username'),
+        exact: true,
+      }),
+    )
+    await identifierPrefixField(page).fill(MEMBER.identifier)
+    await chooseSelectOption(
+      statusFilter(page),
+      page.getByRole('option', {
+        name: copy('adminUi', 'accounts.status.active'),
+        exact: true,
+      }),
+    )
+    await searchButton(page).click()
+    const row = memberRow(page)
+    await expect(row).toHaveCount(1)
+    await manageButton(row).click()
+    await expect(
+      page.getByRole('dialog', { name: detailTitle() }),
+    ).toBeVisible()
+  })
+
+  const dialog = page.getByRole('dialog', { name: detailTitle() })
+  const statusSelect = dialog.getByRole('combobox', {
+    name: copy('adminUi', 'accounts.status.label'),
+    exact: true,
+  })
+  const saveStatus = dialog.getByRole('button', {
+    name: copy('adminUi', 'accounts.status.submit'),
+    exact: true,
+  })
+
+  await test.step('an unmet precondition is Tab-reachable, announced once, and its activation sends nothing', async () => {
+    // The draft still matches the saved status, so the control is unavailable
+    // with the UI's own reason.
+    await expect(saveStatus).toHaveAttribute('aria-disabled', 'true')
+    await expect(saveStatus).toHaveAccessibleDescription(
+      copy('adminUi', 'accounts.status.unchanged'),
+    )
+
+    // Reached from the control before it by Tab, not by focusing it directly.
+    await statusSelect.focus()
+    await page.keyboard.press('Tab')
+    await expect(saveStatus).toBeFocused()
+
+    // The activation is swallowed: nothing is written, and the control still
+    // reports its unmet precondition.
+    const writesBeforeActivation = statusWrites.length
+    await page.keyboard.press('Enter')
+    await expect(saveStatus).toHaveAttribute('aria-disabled', 'true')
+    await expect(saveStatus).toHaveAccessibleDescription(
+      copy('adminUi', 'accounts.status.unchanged'),
+    )
+    expect(
+      statusWrites,
+      'the unavailable activation sent no request',
+    ).toHaveLength(writesBeforeActivation)
+  })
+
+  await test.step('a keyboard-started write keeps focus on the control and Tab moves to the next one', async () => {
+    await chooseSelectOption(
+      statusSelect,
+      page.getByRole('option', {
+        name: copy('adminUi', 'accounts.status.disabled'),
+        exact: true,
+      }),
+    )
+    await expect(saveStatus).not.toHaveAttribute('aria-disabled')
+
+    await saveStatus.focus()
+    await expect(saveStatus).toBeFocused()
+    const sent = page.waitForRequest((outgoing) => {
+      if (outgoing.method() !== 'POST') return false
+      const path = new URL(outgoing.url()).pathname
+      return (
+        path.startsWith('/api/v1/system/auth/accounts/') &&
+        path.endsWith('/status')
+      )
+    })
+    const landing = page.waitForResponse((response) => {
+      if (response.request().method() !== 'POST') return false
+      const path = new URL(response.url()).pathname
+      return (
+        path.startsWith('/api/v1/system/auth/accounts/') &&
+        path.endsWith('/status')
+      )
+    })
+
+    // Keyboard activation, not a pointer click.
+    await page.keyboard.press('Enter')
+    // The control that started the write keeps focus from the activation on.
+    await expect(saveStatus).toBeFocused()
+    // The write's request is on the wire, and the control still holds the
+    // focus it started with.
+    await sent
+    await expect(saveStatus).toBeFocused()
+
+    const response = await landing
+    expect(response.ok()).toBe(true)
+    await expect(
+      dialog.getByText(statusSavedNotice(), { exact: true }),
+    ).toBeVisible()
+
+    // The landing makes the draft match the saved status again; the control
+    // turns unavailable without taking the focus it never lost.
+    await expect(saveStatus).toHaveAttribute('aria-disabled', 'true')
+    await expect(saveStatus).toBeFocused()
+
+    // Tab from the control that started the write reaches the next control.
+    await page.keyboard.press('Tab')
+    await expect(
+      dialog.getByRole('combobox', {
+        name: copy('adminUi', 'accounts.mfa.label'),
+        exact: true,
+      }),
+    ).toBeFocused()
+
+    // This write is the only one the case sends.
+    expect(statusWrites).toHaveLength(1)
+  })
 })
