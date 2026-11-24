@@ -27,6 +27,7 @@ import (
 	"github.com/vislake/speed/pkg/core/coretest"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/ops/openapi"
+	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
 // The cases run the program as a real child process and reach it over sockets:
@@ -75,6 +76,27 @@ func TestMain(m *testing.M) {
 		os.Exit(run())
 	}
 
+	// Clear after the re-entry branch, which reads DEMO_SERVE_WITHOUT: no case
+	// may see a host-prefix or OpenTelemetry variable, because the cache key
+	// cannot record what an in-process configuration load reads from them.
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if !strings.HasPrefix(name, envPrefix+"_") && !strings.HasPrefix(name, "OTEL_") {
+			continue
+		}
+		if err := os.Unsetenv(name); err != nil {
+			fmt.Fprintf(os.Stderr, "removing %s from the test process failed: %v\n", name, err)
+			os.Exit(1)
+		}
+	}
+
+	// The re-entry check starts this binary only to see what environment it
+	// inherited. It needs no program, so it runs its single case and exits
+	// before the build below instead of paying for a link it never uses.
+	if _, ok := os.LookupEnv(testProcessProbeEnv); ok {
+		os.Exit(m.Run())
+	}
+
 	dir, err := os.MkdirTemp("", "demo")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "creating the build directory failed:", err)
@@ -96,18 +118,76 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// childEnv is the environment a child starts with: this process's own, less
-// every variable under the host's prefix and every OpenTelemetry one, so that
-// what a case configures is the whole of what the child reads.
 func childEnv() []string {
-	var env []string
-	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, envPrefix+"_") || strings.HasPrefix(kv, "OTEL_") {
-			continue
-		}
-		env = append(env, kv)
+	return demotest.ChildEnv()
+}
+
+// testProcessProbeEnv marks the re-entered run of this test binary. It cannot
+// carry the host's prefix, which TestMain clears before any case runs.
+const testProcessProbeEnv = "TREECHECK_TEST_PROCESS_PROBE"
+
+// TestChildEnvForwardsOnlyTheNamedVariables checks that a child receives a
+// listed variable and not one the host exports outside the list.
+func TestChildEnvForwardsOnlyTheNamedVariables(t *testing.T) {
+	t.Setenv("TREECHECK_ENV_PROBE", "outside")
+	t.Setenv("LANG", "C.UTF-8")
+	env := childEnv()
+	if slices.Contains(env, "TREECHECK_ENV_PROBE=outside") {
+		t.Errorf("childEnv forwarded TREECHECK_ENV_PROBE, which its list does not name")
 	}
-	return env
+	if !slices.Contains(env, "LANG=C.UTF-8") {
+		t.Errorf("childEnv did not forward LANG=C.UTF-8, which its list names")
+	}
+}
+
+// TestTheTestProcessDropsTheHostPrefix checks that a fresh run of this test
+// binary does not inherit a DEMO_* variable from the host.
+func TestTheTestProcessDropsTheHostPrefix(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), commandLimit())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run", "^TestTheHostPrefixIsAbsent$")
+	cmd.Env = append(os.Environ(), "DEMO_PROBE=1", testProcessProbeEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("the re-entered test binary was still running after the limit and was killed: %v", ctx.Err())
+	}
+	if err != nil {
+		t.Fatalf("%s: %v\n%s", reentryFailure(out), err, out)
+	}
+}
+
+// reentryFailure names the cause the re-entered binary reported, so a failure
+// that is not the host prefix surviving is not read as one.
+func reentryFailure(out []byte) string {
+	if strings.Contains(string(out), "inherited DEMO_PROBE") {
+		return "the re-entered test binary inherited DEMO_PROBE from the host"
+	}
+	return "the re-entered test binary failed for a reason other than the host prefix"
+}
+
+// TestReentryFailureNamesTheActualCause checks that a failure unrelated to the
+// host prefix is not reported as the prefix surviving.
+func TestReentryFailureNamesTheActualCause(t *testing.T) {
+	probe := []byte("--- FAIL: TestTheHostPrefixIsAbsent\n" +
+		"    demo_test.go:167: the test process inherited DEMO_PROBE from the host\n")
+	if got := reentryFailure(probe); !strings.Contains(got, "inherited DEMO_PROBE") {
+		t.Errorf("the host-prefix failure is not named: %s", got)
+	}
+	if got := reentryFailure([]byte("building the demo program failed: exit status 1\n")); strings.Contains(got, "DEMO_PROBE") {
+		t.Errorf("a failure that is not the probe is reported as one: %s", got)
+	}
+}
+
+// TestTheHostPrefixIsAbsent is the case the re-entry check runs in a fresh
+// process: it fails when DEMO_PROBE survived into the process. It returns
+// without the probe marker, so an ordinary run of the suite does nothing.
+func TestTheHostPrefixIsAbsent(t *testing.T) {
+	if _, ok := os.LookupEnv(testProcessProbeEnv); !ok {
+		return
+	}
+	if _, ok := os.LookupEnv("DEMO_PROBE"); ok {
+		t.Fatalf("the test process inherited DEMO_PROBE from the host")
+	}
 }
 
 // demoSeedSection is the seed section of the configuration template, kept apart
