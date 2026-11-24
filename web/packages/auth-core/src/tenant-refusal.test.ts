@@ -1,12 +1,3 @@
-/**
- * isTenantAdmissionRefusal: the admission layer's bare-404 tenant refusal.
- *
- * The distinction under test: the refusal carries no module code (the
- * client synthesizes `client.http.404` for it), while a module's own typed
- * 404 keeps its module code at the same status. The predicate reads the
- * code, so status alone never classifies.
- */
-
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '@speed/api-client'
 import { isTenantAdmissionRefusal } from './tenant-refusal.js'

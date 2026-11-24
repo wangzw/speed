@@ -1,44 +1,3 @@
-/**
- * The client half of the human-verification gate: what a surface does when
- * the deployment requires a proof before it sends a verification message.
- *
- * A deployment answers per surface -- the phone surface guards the four
- * SMS sends and the other surface guards every send that does not address
- * a phone number -- and may run a different mechanism on each. Every
- * challenge request names the surface, and the server binds the proof to
- * it, so a proof obtained for one surface is refused on the other. Three
- * mechanisms are possible, and the discovery document names which one a
- * surface runs:
- *
- *  - `pow` -- the self-hosted proof of work. The client asks
- *    `POST /api/v1/auth/human/challenge` for a challenge, solves it off the
- *    main thread (./pow.ts behind ./pow-worker-client.ts) and presents the
- *    `challenge.nonce` proof. A proof is single-use, so the surface
- *    consumes it after every send and the control obtains a fresh one.
- *  - `turnstile` -- a third-party widget. Its token is obtained by the
- *    widget the ui-kit block renders; this module only stores it.
- *  - `captcha` -- the self-hosted captcha. The request carries no form, so
- *    the server chooses between the image and slider forms and the client
- *    renders whichever it answers. The one choice a client may make is
- *    the audio accessibility alternative, requested only through the
- *    block's single accessibility entry (`requestAudio`). The block
- *    obtains the answer from the viewer, and the proof is the challenge
- *    id and that answer joined by a dot. The challenge is single-use and
- *    good for one attempt, so a consumed proof is replaced with a fresh
- *    challenge in the same selection. A refusal of the accessibility
- *    request that states a wait (a 429 whose `Retry-After` parsed) leaves
- *    the challenge on screen and reports the wait, so the viewer keeps a
- *    form they can answer while the entry is held.
- *
- * `useHumanVerification` owns the discovery read, the proof state and the
- * captcha challenge, so every surface obtains its gate the same way. A
- * read that fails is read as the off mechanism: the server still judges
- * the send, and a client that cannot read the document must not block a
- * deployment that may require nothing. The proof itself is never
- * persisted -- it is a short-lived one-shot value held in memory for the
- * send that presents it.
- */
-
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   authnHumanverifyCaptchaChallenge,
@@ -52,62 +11,41 @@ import type {
 } from './session.js'
 import { POW_HASH, solvePowChallenge } from './pow.js'
 
-/** The surface a human-verification check belongs to: `phone` for a send
- * that delivers a message to a phone number, `other` for every send that
- * does not. */
+/** The surface a human-verification check belongs to: `phone` for a send that delivers a message to a phone number, `other` for every send that does not. */
 export type HumanScope = 'phone' | 'other'
 
-/** The proof state a surface renders. `working` covers both the initial
- * solve and a retry; `ready` carries a proof in `useHumanVerification`. */
+/** The proof state a surface renders; `ready` carries a proof in `useHumanVerification`. */
 export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
 
-/** The form a self-hosted captcha challenge takes: a picture of digits, a
- * slider puzzle, or the audio alternative for screen-reader users. */
+/** The form a self-hosted captcha challenge takes: an image, a slider puzzle, or the audio alternative. */
 export type HumanCaptchaForm = 'image' | 'slider' | 'audio'
 
-/** One issued self-hosted captcha challenge, as the challenge route
- * answered it: the id a proof names, the form, the instruction key the
- * block words, and the media paths the form carries. */
+/** One issued self-hosted captcha challenge, as the challenge route answered it. */
 export type HumanCaptchaChallenge = CaptchaChallengeResponse
 
 /** The control `useHumanVerification` hands to a surface. */
 export interface HumanVerification {
-  /** The deployment's gate, or null while the discovery read is in
-   * flight. A failed read settles on the off gate. */
+  /** The deployment's gate, or null while the discovery read is in flight; a failed read settles on the off gate. */
   readonly gate: AuthnHumanGate | null
-  /** The discovery read is in flight. A surface that renders the block
-   * before the gate is known shows nothing until it settles. */
+  /** The discovery read is in flight. */
   readonly pending: boolean
   /** The proof to present on the next send, or null while none is ready. */
   readonly proof: string | null
-  /** The proof-of-work or captcha state; the token mechanism reports
-   * `ready` once the widget yields a token. */
+  /** The proof-of-work or captcha state. */
   readonly status: HumanVerificationStatus
-  /** The issued self-hosted captcha challenge, or null while none is
-   * loaded (or the surface does not run the captcha). */
+  /** The issued self-hosted captcha challenge, or null while none is loaded. */
   readonly captcha: HumanCaptchaChallenge | null
-  /** The wait a refused accessibility request stated, in whole seconds,
-   * counted down while it is in force and undefined once it elapses. A
-   * refusal that states a wait leaves the challenge on screen: the viewer
-   * keeps the form they can answer while the accessibility entry is
-   * held. */
+  /** The wait a refused accessibility request stated, in whole seconds; undefined once it elapses. */
   readonly audioRetryAfterSeconds: number | undefined
-  /** Adopt a token the Turnstile widget or the captcha block yielded
-   * (null when it expired or failed). */
+  /** Adopt a token the Turnstile widget or the captcha block yielded (null when it expired or failed). */
   adoptToken(token: string | null): void
-  /** Ask for another proof after a failure: a fresh solve for `pow`, a
-   * fresh challenge for `captcha`. */
+  /** Ask for another proof after a failure. */
   retry(): void
-  /** Give up the current proof after presenting it, so the control obtains
-   * a fresh one for the next send. */
+  /** Give up the current proof after presenting it, so the control obtains a fresh one for the next send. */
   consume(): void
-  /** Ask for a fresh captcha challenge in the selection in force: the
-   * server's rotation, or the audio accessibility alternative once it was
-   * chosen. */
+  /** Ask for a fresh captcha challenge in the selection in force. */
   refreshCaptcha(): void
-  /** The accessibility entry: ask for the audio alternative explicitly.
-   * A refusal that states a wait leaves the current challenge on screen
-   * and reports the wait in `audioRetryAfterSeconds`. */
+  /** The accessibility entry: ask for the audio alternative explicitly. */
   requestAudio(): void
 }
 
@@ -123,10 +61,7 @@ export function humanSurfaceGate(
   return surface === undefined ? null : surface
 }
 
-/** What a send must do about the gate: a proof is required only for the
- * mechanisms this client can supply one for. An unknown provider is left
- * to the server rather than blocking a surface with no way to satisfy
- * it. */
+/** Whether a send must present a proof for the gate: only the mechanisms this client can satisfy. */
 export function humanGateNeedsProof(
   gate: AuthnHumanGate | null | undefined,
   scope: HumanScope,
@@ -142,12 +77,7 @@ export function humanGateNeedsProof(
   )
 }
 
-/**
- * Turn a challenge answer into a proof, or null when the answer is not a
- * proof-of-work challenge this solver understands. The answer's `provider`
- * and `algorithm` are checked before any work: a deployment that changed
- * mechanisms mid-flight must not be solved as work.
- */
+/** Turns a challenge answer into a proof, or null when it is not a solvable proof-of-work challenge. */
 export function powProofFromChallenge(answer: ChallengeResponse): string | null {
   if (
     answer.provider !== 'pow' ||
@@ -162,14 +92,9 @@ export function powProofFromChallenge(answer: ChallengeResponse): string | null 
 }
 
 /**
- * Ask for one challenge for a surface and solve it into the proof a send
- * presents. The challenge request is the generated operation, so the host's
- * bound transport (base URL, credentials, retry) applies as it does to every
- * other call. The scope is sent with the request and the server binds the
- * proof to it, so a challenge obtained for one surface cannot be spent on
- * the other. The solve runs off the main thread where the platform has a
- * Worker. `requestChallenge` is injectable so a test can drive the answer
- * without a network.
+ * Asks for one challenge for a surface and solves it into the proof a send
+ * presents; the server binds the proof to the scope. `requestChallenge` is
+ * injectable so a test can drive the answer without a network.
  */
 export async function requestPowProof(
   scope: HumanScope,
@@ -195,11 +120,8 @@ export async function requestPowProof(
   return proof
 }
 
-/** The captcha forms the challenge route draws. */
 const CAPTCHA_FORMS = new Set<string>(['image', 'slider', 'audio'])
 
-/** The media paths a form must carry: an image its picture, a slider both
- * the background and the piece that travels over it, audio its recording. */
 const CAPTCHA_MEDIA: Record<
   HumanCaptchaForm,
   readonly (keyof CaptchaChallengeResponse)[]
@@ -209,12 +131,7 @@ const CAPTCHA_MEDIA: Record<
   audio: ['audio_url'],
 }
 
-/**
- * Read a captcha challenge answer, refusing anything the block could not
- * render as a contract violation before the first property access. A form
- * whose media path is missing is refused too: the block would otherwise
- * render a control with nothing in it.
- */
+/** Reads a captcha challenge answer, refusing a body the block could not render. */
 export function parseCaptchaChallenge(
   body: unknown,
 ): HumanCaptchaChallenge {
@@ -250,22 +167,15 @@ export function parseCaptchaChallenge(
 
 /** The options `useHumanVerification` takes. */
 export interface UseHumanVerificationOptions {
-  /** The surface this surface sends on: the phone surface for a message
-   * delivered to a phone number, the other surface for every send that
-   * does not address one. */
+  /** The surface the hook sends on. */
   readonly scope: HumanScope
-  /** A gate the caller already read (the sign-in screen's discovery
-   * document), so the hook does not read it again. */
+  /** A gate the caller already read, so the hook does not read it again. */
   readonly gate?: AuthnHumanGate
-  /** Whether the hook should read the gate and solve. Defaults to true; a
-   * caller that holds an inactive surface (a closed dialog, a challenge
-   * that has not opened) passes false so nothing is read or solved until
-   * it is needed. */
+  /** Whether the hook should read the gate and solve; defaults to true. */
   readonly enabled?: boolean
 }
 
-/** A stable key of a whole gate, so an inline object a caller passes does
- * not restart the read on every render. */
+/** A stable key of a whole gate, so an inline object does not restart the read. */
 function gateKey(gate: AuthnHumanGate | undefined): string | undefined {
   if (gate === undefined) {
     return undefined
@@ -275,9 +185,6 @@ function gateKey(gate: AuthnHumanGate | undefined): string | undefined {
   return `${surface(gate.phone)}|${surface(gate.other)}`
 }
 
-/** The wait a refusal stated, in whole seconds rounded up, or undefined
- * when the failure states none. Only a 429 whose `Retry-After` parsed
- * carries a wait; anything else is an outage, not a refusal to repeat. */
 function statedWaitSeconds(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) {
     return undefined
@@ -288,7 +195,6 @@ function statedWaitSeconds(error: unknown): number | undefined {
     status = (error as { status?: unknown }).status
     wait = (error as { retryAfterMs?: unknown }).retryAfterMs
   } catch {
-    // A throwing getter or a revoked proxy states no wait.
     return undefined
   }
   if (status !== 429 || typeof wait !== 'number' || !Number.isFinite(wait)) {
@@ -297,11 +203,6 @@ function statedWaitSeconds(error: unknown): number | undefined {
   return Math.max(1, Math.ceil(wait / 1000))
 }
 
-/**
- * Solve a challenge off the main thread. The worker module is imported
- * only where the platform has a Worker, so a server render and jsdom never
- * evaluate the worker URL; a platform without one solves here.
- */
 async function solveChallenge(
   challenge: string,
   difficulty: number,
@@ -318,22 +219,9 @@ async function solveChallenge(
 }
 
 /**
- * Read the deployment's human-verification gate and hold the proof a send
- * presents on one surface.
- *
- * A `pow` gate solves one challenge as soon as the gate is known, and
- * again after every consumed proof, so the surface always shows either a
- * ready proof or the work in progress. A `captcha` gate obtains one
- * challenge -- the server's rotation, or the audio accessibility
- * alternative once the entry asked for it -- and replaces it after every
- * consumed proof in the same selection, so the block always has a
- * challenge to render or a reason it could not. A `turnstile` gate waits
- * for the widget to yield a token through `adoptToken`. The off gate does
- * nothing.
- *
- * A change of scope selects the other surface's gate: the proof and any
- * challenge belong to the surface that issued them, so both are dropped
- * and the new surface obtains its own.
+ * Reads the deployment's human-verification gate and holds the proof a send
+ * presents on one surface. A scope change drops the proof and challenge of the
+ * old surface and the new surface obtains its own.
  */
 export function useHumanVerification(
   session: AuthSession,
@@ -348,40 +236,22 @@ export function useHumanVerification(
   const [proof, setProof] = useState<string | null>(null)
   const [status, setStatus] = useState<HumanVerificationStatus>('idle')
   const [captcha, setCaptcha] = useState<HumanCaptchaChallenge | null>(null)
-  // The wait a refused accessibility request stated, in whole seconds, as
-  // the countdown effect below publishes it, or undefined when none is in
-  // force.
   const [audioRetryAfterSeconds, setAudioRetryAfterSeconds] = useState<
     number | undefined
   >(undefined)
-  // The deadline of that wait in epoch milliseconds, or null when no
-  // refusal is in force. The deadline (not a decremented counter) is kept
-  // in a ref, so a timer that fires late still reads the true remaining
-  // time instead of drifting.
+  // The wait's deadline in epoch ms, kept in a ref so a late timer reads the true remainder.
   const audioRetryDeadlineRef = useRef<number | null>(null)
-  // The challenge on screen, read by a request that must keep it when the
-  // accessibility entry is refused.
   const captchaRef = useRef<HumanCaptchaChallenge | null>(null)
   captchaRef.current = captcha
-  // Bumped when a solve is superseded, so the effect below starts a solve
-  // for the gate that replaced it instead of leaving the block waiting.
   const [solveTick, setSolveTick] = useState(0)
-  // The solve in flight and the generation it belongs to: a proof that
-  // settles after the gate changed (or after another solve) is dropped.
+  // The solve in flight and its generation: a proof that settles after the gate changed is dropped.
   const solvingRef = useRef(false)
   const generationRef = useRef(0)
   const injectedRef = useRef(options.gate)
   injectedRef.current = options.gate
   const injectedKey = gateKey(options.gate)
-  // The form the screen asked for, or undefined for the server's choice
-  // between the image and slider forms. Only audio is selectable, and it
-  // is requested through the accessibility entry.
   const lastCaptchaForm = useRef<'audio' | undefined>(undefined)
 
-  // A change of scope selects the other member of the same document. The
-  // proof and the challenge belong to the surface that issued them, so
-  // they are dropped and the new surface obtains its own; the document is
-  // already read and is not read again.
   useEffect(() => {
     generationRef.current += 1
     setProof(null)
@@ -399,8 +269,6 @@ export function useHumanVerification(
     audioRetryDeadlineRef.current = null
     setAudioRetryAfterSeconds(undefined)
     if (!enabled) {
-      // An inactive surface reads nothing and solves nothing; it settles on
-      // the off gate until it opens.
       setGate(null)
       setPending(false)
       return
@@ -421,8 +289,6 @@ export function useHumanVerification(
           setGate(methods.human)
         }
       } catch {
-        // The server still judges the send; a document this client cannot
-        // read must not block one that may require nothing.
         if (active) {
           setGate({
             phone: { required: false, provider: 'off' },
@@ -440,13 +306,7 @@ export function useHumanVerification(
     }
   }, [session, injectedKey, enabled])
 
-  // Count the stated wait down while it is in force: one tick a second
-  // republishes the remaining whole seconds, so every consumer renders the
-  // time left rather than the number the refusal named. At the deadline the
-  // wait clears to undefined, which re-enables the accessibility entry and
-  // removes its message. The deadline lives in a ref, so a tick that fires
-  // late still reports the true remainder; the state write is what makes
-  // consumers re-render.
+  // Counts the stated wait down once a second; the deadline is a ref so a late tick reports the true remainder.
   const audioWaitActive = audioRetryAfterSeconds !== undefined
   useEffect(() => {
     if (!audioWaitActive) {
@@ -497,8 +357,7 @@ export function useHumanVerification(
     } finally {
       solvingRef.current = false
       if (generationRef.current !== generation) {
-        // The gate changed while this solve ran. Ask for one for the gate
-        // that replaced it rather than leaving the block waiting forever.
+        // The gate changed while this solve ran: solve for the gate that replaced it.
         setSolveTick((tick) => tick + 1)
       }
     }
@@ -508,9 +367,7 @@ export function useHumanVerification(
     async (form?: 'audio'): Promise<void> => {
       lastCaptchaForm.current = form
       const generation = generationRef.current
-      // A refusal of the accessibility entry must not spend the challenge
-      // the viewer can already answer, so the challenge on screen is kept
-      // when only the entry is refused.
+      // A refused accessibility entry must not spend the challenge on screen.
       const kept = form === 'audio' ? captchaRef.current : null
       setProof(null)
       setCaptcha(null)
@@ -518,9 +375,6 @@ export function useHumanVerification(
       audioRetryDeadlineRef.current = null
       setAudioRetryAfterSeconds(undefined)
       try {
-        // A request with no form carries none: the server chooses between
-        // the image and slider forms. The scope is always sent: the server
-        // binds the proof to the surface it was issued for.
         const answer = await authnHumanverifyCaptchaChallenge(
           form === undefined ? { scope } : { form, scope },
         )
@@ -537,8 +391,6 @@ export function useHumanVerification(
         if (kept !== null && wait !== undefined) {
           setCaptcha(kept)
           setStatus('ready')
-          // The wait is stored as its deadline, so the countdown effect
-          // expires it instead of leaving the entry disabled forever.
           audioRetryDeadlineRef.current = Date.now() + wait * 1000
           setAudioRetryAfterSeconds(wait)
           return
@@ -593,8 +445,7 @@ export function useHumanVerification(
   const consume = useCallback((): void => {
     setProof(null)
     setStatus('idle')
-    // A captcha challenge is spent with the send that presented it, so the
-    // next send needs a new one; dropping it lets the effect obtain it.
+    // A captcha challenge is spent with the send that presented it.
     setCaptcha(null)
     audioRetryDeadlineRef.current = null
     setAudioRetryAfterSeconds(undefined)

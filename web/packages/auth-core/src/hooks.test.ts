@@ -1,24 +1,4 @@
 // @vitest-environment jsdom
-/**
- * hooks.test.ts -- useAuthState / usePermission / attachSession and the
- * tenant context (TenantProvider + useCurrentTenant): the fail-closed
- * reads before any session is attached, the permission values over a
- * scripted session, the re-renders on set changes, domain separation,
- * the last-bind-wins attach semantics and the tenant read back from the
- * host-supplied provider. Everything flows through the real session
- * driven by the shared @speed/test-utils/session-harness -- no mocks of
- * hooks.ts internals.
- *
- * The hooks' module-level attach state is pristine only until this
- * file's first attachSession call, so the no-session describe runs
- * first (vitest executes tests within a file in declaration order).
- *
- * The @vitest-environment pragma is per-file: the session state machine
- * tests run in the plain node environment, these hooks need a DOM.
- * Rendering leaves components mounted across tests, so cleanup runs
- * explicitly after each (vitest runs without globals, which disables
- * @testing-library/react's auto-cleanup).
- */
 
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { createElement, useState } from 'react'
@@ -69,8 +49,6 @@ describe('before any session is attached', () => {
       permissionSets: { tenant: null, system: null },
       features: { state: 'none' },
     })
-    // The no-session snapshot is referentially stable across renders,
-    // so useSyncExternalStore never re-renders on its own.
     const first = result.current
     rerender()
     expect(result.current).toBe(first)
@@ -94,9 +72,6 @@ describe('before any session is attached', () => {
 })
 
 describe('the tenant context', () => {
-  /** Mounts a TenantProvider whose tenant the test can change, so the
-   * hook is exercised across a tenant change the way a route change
-   * would drive it. */
   let setTenant: (tenantId: string | null) => void
   function TenantRoot({ children }: { children: ReactNode }) {
     const [tenantId, set] = useState<string | null>('tenant-1')
@@ -131,11 +106,8 @@ describe('the tenant context', () => {
     })
     const first = result.current
     expect(first).toEqual({ tenantId: 'tenant-1' })
-    // A re-render with the same tenant does not churn the identity a
-    // host keys its tenant-namespaced cache on.
     rerender()
     expect(result.current).toBe(first)
-    // The identity changes exactly when the tenant does.
     act(() => {
       setTenant('tenant-2')
     })
@@ -170,7 +142,6 @@ describe('attached to a scripted session', () => {
     await act(async () => {
       await signIn(harness)
     })
-    // Authenticated, but no set attached yet: false.
     expect(result.current).toBe(false)
     act(() => {
       harness.session.setPermissionSet('tenant', ['notes:write'])
@@ -198,7 +169,6 @@ describe('attached to a scripted session', () => {
       harness.session.setPermissionSet('tenant', ['notes:read'])
     })
     expect(tenantRead.current).toBe(true)
-    // The system domain has no set: the tenant set is not consulted.
     expect(systemRead.current).toBe(false)
     act(() => {
       harness.session.setPermissionSet('system', ['users:manage'])
@@ -249,20 +219,16 @@ describe('attached to a scripted session', () => {
     const { result } = renderHook(() => useAuthState())
     expect(result.current.state).toBe('authenticated')
 
-    // Rebinding to a fresh, still-anonymous session: last bind wins, and
-    // the swap wakes the subscribers to re-read.
     act(() => {
       attachSession(second.session)
     })
     expect(result.current.state).toBe('anonymous')
 
-    // The first session's later transitions no longer reach the hooks.
     await act(async () => {
       await signIn(first)
     })
     expect(result.current.state).toBe('anonymous')
 
-    // The newly attached session's own transitions do reach the hooks.
     await act(async () => {
       await signIn(second)
     })
@@ -271,8 +237,6 @@ describe('attached to a scripted session', () => {
 })
 
 describe('server rendering', () => {
-  /** The probe renderToString exercises: reads the auth state through
-   * the real hook and renders its state word. */
   function ServerProbe() {
     const snapshot = useAuthState()
     return createElement('div', null, snapshot.state)

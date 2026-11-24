@@ -1,13 +1,4 @@
 // @vitest-environment jsdom
-/**
- * webauthn: the passkey ceremony driver behind the ./webauthn subpath.
- *
- * The suites stub `navigator.credentials` and assert the observable
- * contract only: which ceremony the step options select, the bytes the
- * browser API receives (decoded from the base64url the server sends), the
- * JSON the answer field carries (re-encoded to the shape go-webauthn's
- * decoder reads), and the WebauthnError reason each failure maps to.
- */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebauthnError, runWebauthn, webauthnStepOf } from './webauthn.js'
@@ -79,8 +70,6 @@ describe('runWebauthn', () => {
     expect(parsed.response.attestationObject).toBe('BwgJ')
     expect(parsed.response.transports).toEqual(['internal'])
 
-    // The challenge and user.id reached create() as bytes, not as their
-    // base64url text.
     const call = create.mock.calls[0]?.[0] as {
       publicKey: { challenge: ArrayBuffer; user: { id: ArrayBuffer } }
     }
@@ -189,10 +178,6 @@ describe('runWebauthn', () => {
   })
 
   it('reports a credential the authenticator already holds as already-registered', async () => {
-    // A creation whose excludeCredentials hits an existing credential is
-    // rejected with InvalidStateError. That is not a generic ceremony
-    // failure: the same device cannot register a second passkey, and the
-    // caller has its own remedy to show.
     const create = vi
       .fn()
       .mockRejectedValue(

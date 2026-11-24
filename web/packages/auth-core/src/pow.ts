@@ -1,32 +1,18 @@
 /**
  * The proof-of-work solver behind the human-verification gate's `pow`
- * mechanism.
- *
- * A challenge is a base64url value and a difficulty: the client finds a
- * nonce whose SHA-256 hash, over the decoded challenge followed by the
- * nonce in big-endian, carries at least `difficulty` leading zero bits.
- * The proof is the challenge and the nonce joined by a dot, the form the
- * provider's `Verify` splits and re-hashes.
- *
- * SHA-256 is implemented here in plain JavaScript rather than through
- * `crypto.subtle`: the digest API is asynchronous, and one proof can take
- * hundreds of thousands of attempts, so a per-attempt promise round trip
- * would dominate the work. The solver runs on a single 64-byte block when
- * the challenge is short enough (the provider issues 16 bytes, so it
- * always is), reusing one message block and one schedule across attempts.
- *
- * The browser-facing entry point (`human.ts`) runs this in a Web Worker
- * and falls back to calling it on the main thread where no Worker exists.
+ * mechanism: find a nonce whose SHA-256 over the decoded challenge followed by
+ * the nonce in big-endian carries at least `difficulty` leading zero bits; the
+ * proof is `challenge.nonce`. SHA-256 is implemented here because
+ * `crypto.subtle` is asynchronous and one proof can take hundreds of
+ * thousands of attempts; the solver reuses one 64-byte block when the
+ * challenge fits.
  */
 
-/** The only hash the provider's challenges name. */
 export const POW_HASH = 'sha256'
 
-/** The base64url alphabet, no padding (RFC 4648 §5). */
 const BASE64URL_ALPHABET =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 
-/** The SHA-256 round constants. */
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
   0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -41,19 +27,15 @@ const K = new Uint32Array([
   0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ])
 
-/** The SHA-256 initial hash value. */
 const H0 = new Uint32Array([
   0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c,
   0x1f83d9ab, 0x5be0cd19,
 ])
 
-/** Rotate a 32-bit word right. */
 function rotr(value: number, bits: number): number {
   return ((value >>> bits) | (value << (32 - bits))) >>> 0
 }
 
-/** Compress one 64-byte block from `block` at `offset` into `state`. The
- * `schedule` array is the caller's workspace, reused across attempts. */
 function compress(
   state: Uint32Array,
   block: Uint8Array,
@@ -110,8 +92,6 @@ function compress(
   state[7] = (state[7]! + h) >>> 0
 }
 
-/** The number of zero bits a 256-bit digest (its eight words) begins
- * with. */
 function leadingZeroBits(state: Uint32Array): number {
   let count = 0
   for (let i = 0; i < 8; i += 1) {
@@ -125,9 +105,8 @@ function leadingZeroBits(state: Uint32Array): number {
 }
 
 /**
- * Decode a base64url value without padding into bytes, or null when the
- * text is not base64url. A length of 1 modulo 4 cannot be a whole number
- * of bytes, so it is refused rather than silently truncated.
+ * Decodes a base64url value without padding into bytes, or returns null when
+ * the text is not base64url.
  */
 export function decodeBase64Url(value: string): Uint8Array | null {
   if (value.length === 0 || value.length % 4 === 1) {
@@ -152,10 +131,8 @@ export function decodeBase64Url(value: string): Uint8Array | null {
 }
 
 /**
- * SHA-256 over a byte string, returned as 32 bytes. The solver's hot path
- * does not use this general form; it exists for the message lengths the
- * single-block path cannot take and as the reference the solver's tests
- * check against.
+ * SHA-256 over a byte string, returned as 32 bytes; the reference for message
+ * lengths the single-block path cannot take.
  */
 export function sha256(message: Uint8Array): Uint8Array {
   const bitLength = message.length * 8
@@ -179,7 +156,6 @@ export function sha256(message: Uint8Array): Uint8Array {
   return digest
 }
 
-/** Write an unsigned nonce as eight big-endian bytes. */
 function writeNonce(target: Uint8Array, offset: number, nonce: number): void {
   const high = Math.floor(nonce / 0x100000000)
   const low = nonce >>> 0
@@ -194,8 +170,8 @@ function writeNonce(target: Uint8Array, offset: number, nonce: number): void {
 }
 
 /**
- * Solve one challenge into its proof, or null when the challenge or the
- * difficulty cannot describe work this solver can do. The search starts at
+ * Solves one challenge into its proof, or returns null when the challenge or
+ * the difficulty cannot describe work this solver can do. The search starts at
  * nonce zero and returns the first nonce that reaches the difficulty.
  */
 export function solvePowChallenge(
@@ -249,7 +225,6 @@ export function solvePowChallenge(
   return null
 }
 
-/** The leading zero bits of a 32-byte digest. */
 function leadingZeroBitsBytes(digest: Uint8Array): number {
   let count = 0
   for (const byte of digest) {

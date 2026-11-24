@@ -1,12 +1,3 @@
-/**
- * The proof-of-work solver: the SHA-256 it computes, and the proof it
- * returns.
- *
- * The proof is checked the way the provider checks it -- the hash over the
- * decoded challenge and the nonce in big-endian, against the difficulty --
- * so the shape this client produces is the shape the server accepts.
- */
-
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
@@ -19,7 +10,6 @@ function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** The number of leading zero bits a digest begins with. */
 function leadingZeroBits(digest: Uint8Array): number {
   let count = 0
   for (const byte of digest) {
@@ -31,7 +21,6 @@ function leadingZeroBits(digest: Uint8Array): number {
   return 256
 }
 
-/** Recompute a proof's hash the way the provider does. */
 function hashOfProof(challenge: string, proof: string): Buffer {
   const dot = proof.lastIndexOf('.')
   const nonce = BigInt(proof.slice(dot + 1))
@@ -82,8 +71,6 @@ describe('solvePowChallenge', () => {
     const proof = solvePowChallenge(challenge, difficulty)
     expect(proof).not.toBeNull()
     const dot = proof!.lastIndexOf('.')
-    // The challenge is carried verbatim on the left of the dot and the
-    // nonce is a decimal unsigned integer on the right.
     expect(proof!.slice(0, dot)).toBe(challenge)
     expect(proof!.slice(dot + 1)).toMatch(/^\d+$/)
     expect(leadingZeroBits(hashOfProof(challenge, proof!))).toBeGreaterThanOrEqual(
@@ -92,7 +79,6 @@ describe('solvePowChallenge', () => {
   })
 
   it('reaches the difficulty from any starting challenge, including a multi-block one', () => {
-    // A challenge long enough to push the padded message past one block.
     const challenge = 'A'.repeat(80)
     const proof = solvePowChallenge(challenge, 4)
     expect(proof).not.toBeNull()

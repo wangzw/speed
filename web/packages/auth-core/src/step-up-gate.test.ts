@@ -1,13 +1,4 @@
 // @vitest-environment jsdom
-/**
- * useStepUpGate: the generic step-up gate.
- *
- * The suite drives the exported hook and asserts the observable contract
- * only: what `open` reads, whether the remembered action is replayed
- * (exactly once, with the inputs it was armed with), that a cancel replays
- * nothing, and which failures the default and a caller-supplied shortfall
- * classifier arm on.
- */
 
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +7,6 @@ import { useStepUpGate, stepUpReasonOf } from './step-up-gate.js'
 
 afterEach(cleanup)
 
-/** The platform's step-up refusal as the wire shapes it. */
 function stepUpRefusal(): ApiError {
   return new ApiError({
     status: 401,
@@ -25,7 +15,6 @@ function stepUpRefusal(): ApiError {
   })
 }
 
-/** The tenant admission layer's SSO step-up refusal. */
 function ssoRefusal(): ApiError {
   return new ApiError({
     status: 401,
@@ -63,15 +52,12 @@ describe('useStepUpGate', () => {
   })
 
   it('reads the remembered action without consuming it', () => {
-    // A surface offering the re-login exit describes the operation from the
-    // remembered action before the cancel clears it.
     const onRetry = vi.fn()
     const { result } = renderHook(() => useStepUpGate<string>(onRetry))
 
     expect(result.current.peek()).toBeNull()
     act(() => result.current.arm('row-1'))
     expect(result.current.peek()).toBe('row-1')
-    // Reading does not clear the slot: the challenge can still replay it.
     expect(result.current.open).toBe(true)
     act(() => result.current.cancel())
     expect(result.current.peek()).toBeNull()

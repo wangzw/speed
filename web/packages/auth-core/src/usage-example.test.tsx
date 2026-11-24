@@ -1,24 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The README usage example, compiled and executed by the suite.
- *
- * The README's Quick start wires the session over a host-built
- * @speed/api-client transport (createClient + bindRequestFn). A unit
- * suite cannot run that composition -- no network -- so this file drives
- * the identical session API through the scripted request seam the
- * package's own tests use (@speed/test-utils/session-harness, bound
- * through the same bindRequestFn seam a host's real client binds), and a
- * probe component renders the README's hook reads -- useAuthState,
- * useCurrentTenant (over a host-mounted TenantProvider), usePermission
- * -- with the flow driven from event handlers, exactly as the hooks'
- * rules prescribe. The tenant-scoped query-key flow below executes the
- * README's tenant block. The real-client composition itself (silent-401
- * refresh through createClient) is proven separately in session.test.ts.
- *
- * All strings are English fixtures standing in for a host's own
- * translations: data in a test file (exempt from the no-literal-text
- * rule), never rendered product text.
- */
 
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -56,8 +36,6 @@ afterEach(() => {
   cleanup()
 })
 
-/** The README's sign-in: start a login flow and answer it to completion
- * (a password sign-in is a flow the view drives step by step). */
 async function signInWithPassword(session: AuthSession): Promise<void> {
   await session.startFlow({ method: 'password', purpose: 'login' })
   await session.answerFlow({
@@ -67,11 +45,6 @@ async function signInWithPassword(session: AuthSession): Promise<void> {
   })
 }
 
-/**
- * The README's component: the hooks read the attached session, the
- * sign-in and sign-out buttons drive it from event handlers (a hook
- * never does), and the permission checks read the host-attached sets.
- */
 function SessionPanel({ session }: { readonly session: AuthSession }) {
   const snapshot = useAuthState()
   const tenant = useCurrentTenant()
@@ -93,8 +66,6 @@ function SessionPanel({ session }: { readonly session: AuthSession }) {
   )
 }
 
-/** Mounts the panel under a host-supplied tenant, the way a host's route
- * provides one. */
 function TenantHost({ children }: { children: ReactNode }) {
   const [tenantId] = useState<string | null>('tenant-1')
   return <TenantProvider tenantId={tenantId}>{children}</TenantProvider>
@@ -123,7 +94,6 @@ describe('README usage example', () => {
       usersManage: utils.getByTestId('users-manage').textContent,
     })
 
-    // Anonymous: every hook fails closed; the tenant is the host's.
     expect(reads()).toEqual({
       state: 'anonymous',
       tenant: 'tenant-1',
@@ -131,8 +101,6 @@ describe('README usage example', () => {
       usersManage: 'false',
     })
 
-    // The host's sign-in button drives the flow; the store then holds
-    // the access token the host's client reads on every send.
     await act(async () => {
       fireEvent.click(utils.getByRole('button', { name: 'Sign in' }))
     })
@@ -144,8 +112,6 @@ describe('README usage example', () => {
       usersManage: 'false',
     })
 
-    // Authenticated, but permission-less until the host attaches the
-    // /me-derived lists -- one set per domain, tenant and system.
     act(() => {
       harness.session.setPermissionSet('tenant', ['notes:write'])
     })
@@ -159,8 +125,6 @@ describe('README usage example', () => {
       usersManage: 'true',
     })
 
-    // Sign out: the server call first, then the store empties and every
-    // hook fails closed again.
     await act(async () => {
       fireEvent.click(utils.getByRole('button', { name: 'Sign out' }))
     })
@@ -204,8 +168,6 @@ describe('README usage example', () => {
         <NotesKeyProbe />
       </KeyHost>,
     )
-    // The route has no tenant yet: a key with a null tenant, and the
-    // null operand the read gates `enabled` on.
     expect(utils.getByTestId('key').textContent).toBe(
       JSON.stringify([null, [null, 'notes']]),
     )
@@ -217,8 +179,6 @@ describe('README usage example', () => {
       JSON.stringify(['tenant-1', ['tenant-1', 'notes']]),
     )
 
-    // The README's switch turn: capture the departing id before the
-    // route tenant changes, evict its subtree once the new tenant is in.
     const departingTenantId = 'tenant-1'
     act(() => {
       setTenant('tenant-2')
@@ -239,8 +199,6 @@ describe('README usage example', () => {
     const harness = makeHarness(scripts)
     const transitions = snapshotLog(harness.session)
 
-    // Starting a flow is not a session: the first step comes back and
-    // nothing about the session moved.
     const first = await harness.session.startFlow({
       method: 'password',
       purpose: 'login',
@@ -249,8 +207,6 @@ describe('README usage example', () => {
     expect(harness.store.get()).toBeNull()
     expect(harness.session.getSnapshot().state).toBe('anonymous')
 
-    // Answering it to completion opens the session: store, snapshot and
-    // notify.
     const completion = await harness.session.answerFlow({
       seq: 2,
       step: 'complete',
