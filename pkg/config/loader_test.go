@@ -89,8 +89,7 @@ func decodeCache(t *testing.T, r Reader) loadOptions {
 // TestLoadAppliesEveryLayerInOrder pins the whole stack: the declared
 // defaults, then the primary source, then the environment, then the command
 // line, each overriding the one below it and no layer touching what a higher
-// one already settled. It is the case that says the layering tool's own order
-// and the way this module binds into it agree.
+// one already settled.
 func TestLoadAppliesEveryLayerInOrder(t *testing.T) {
 	t.Setenv("MYAPP_CACHE__SALUTATE", "from-env")
 	t.Setenv("MYAPP_CACHE__ADDR", "from-env:2")
@@ -146,9 +145,8 @@ func TestLocatorFromEnvVar(t *testing.T) {
 	}
 }
 
-// TestLocatorKeysNotInConfigData pins that the two reserved names stay out of
-// the config data. Were they to go in, the unknown-key check would trip over
-// this module's own names first.
+// TestLocatorKeysNotInConfigData pins that the two reserved names stay out
+// of the config data.
 func TestLocatorKeysNotInConfigData(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, map[string]any{})
@@ -222,14 +220,9 @@ func TestPrimarySourceUnknownKeyStopsTheStartup(t *testing.T) {
 	}
 }
 
-// TestLoadWithoutACommandTree pins the exported entry: every registered module
-// takes part, the arguments are one flat set, and what comes back is a reader
-// over the same layers a command tree would have produced.
-//
-// The locator reaches it through the process environment, which is the only
-// environment it reads. The layering tool pulls the values from there, so a
-// second way in for <PREFIX>_CONFIG alone would leave a run taking its primary
-// source from one environment and its values from another.
+// TestLoadWithoutACommandTree pins the exported entry: every registered
+// module takes part, the arguments are one flat set, and what comes back is
+// a reader over the same layers a command tree would have produced.
 func TestLoadWithoutACommandTree(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	s := newLoaderSetup(t,
@@ -252,7 +245,6 @@ func TestLoadWithoutACommandTree(t *testing.T) {
 // TestLoadTakesEveryRegisteredModuleIn pins what makes Load an entry of its
 // own: the question a command answers -- which modules this run assembles --
 // does not arise, so the arguments are one flat set over the whole registry.
-// Two modules a tree would never put on the same command are both reachable.
 func TestLoadTakesEveryRegisteredModuleIn(t *testing.T) {
 	reg := treeRegistry(t, &treeRun{}, nil)
 	r, err := Load(t.Context(), reg, []string{"--cache-addr=given", "--logging-addr=also"})
@@ -267,10 +259,8 @@ func TestLoadTakesEveryRegisteredModuleIn(t *testing.T) {
 	}
 }
 
-// TestLoadReturnsTheReaderWithoutSupplyingIt pins that loading and supplying are
-// two steps. The reader comes back and the registry holds nothing of it: a
-// caller that drives the registry supplies it, and in a registry where the
-// config module is the one module delivering Reader the call needs no name.
+// TestLoadReturnsTheReaderWithoutSupplyingIt pins that loading and supplying
+// are two steps.
 func TestLoadReturnsTheReaderWithoutSupplyingIt(t *testing.T) {
 	reg := treeRegistry(t, &treeRun{}, nil)
 	r, err := Load(t.Context(), reg, nil)
@@ -293,8 +283,7 @@ func TestLoadReturnsTheReaderWithoutSupplyingIt(t *testing.T) {
 }
 
 // TestPrimarySourceReadTwiceIsAProgrammingError pins the guard on the one
-// primary source a run has. The layering tool merges rather than replaces, so
-// a second read would stack on the first instead of being refused.
+// primary source a run has.
 func TestPrimarySourceReadTwiceIsAProgrammingError(t *testing.T) {
 	s := newLoaderSetup(t, HostIdentity{Prefix: "MYAPP"}, map[string]any{})
 	l, err := newLoader(s.reg, s.stderr)

@@ -170,9 +170,7 @@ func TestParticipantsAccumulateDownThePath(t *testing.T) {
 }
 
 // TestParticipantsExpandTheDependencyClosure pins that taking a module in
-// takes in the providers of what it requires. The host names one module and
-// the drive is handed two, so a command never has to list the modules its own
-// dependencies happen to need.
+// takes in the providers of what it requires.
 func TestParticipantsExpandTheDependencyClosure(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	greet := a.Root().Sub("greet")
@@ -185,10 +183,9 @@ func TestParticipantsExpandTheDependencyClosure(t *testing.T) {
 	}
 }
 
-// TestIncludeAllTakesInEveryAvailableModule pins that "every module" means the
-// registry's whole roster, the config module and the modules carrying resources
-// alone among them. They contribute no argument, so nothing the reader has not
-// heard of turns up on the command line.
+// TestIncludeAllTakesInEveryAvailableModule pins that "every module" means
+// the registry's whole roster, the config module and the modules carrying
+// resources alone among them.
 func TestIncludeAllTakesInEveryAvailableModule(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	all := a.Root().Sub("all")
@@ -203,8 +200,7 @@ func TestIncludeAllTakesInEveryAvailableModule(t *testing.T) {
 }
 
 // TestModuleTakenInByTwoLevelsAppearsOnce pins that the drive is handed a
-// deduplicated list. A module named on the root and again on a subcommand is
-// one module, and a repeated name would have it asked for a stance twice.
+// deduplicated list.
 func TestModuleTakenInByTwoLevelsAppearsOnce(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Include("cache")
@@ -237,8 +233,7 @@ func TestCommandTakingNothingInHasAnEmptyParticipatingSet(t *testing.T) {
 
 // TestIncludeOfAnUnregisteredModuleNamesTheCommand pins the diagnostic for a
 // host that wrote a module name without importing the package that registers
-// it. The registry says which name is unknown; which command wrote it is the
-// one thing only the tree knows.
+// it.
 func TestIncludeOfAnUnregisteredModuleNamesTheCommand(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	serve := a.Root().Sub("serve")
@@ -257,10 +252,8 @@ func TestIncludeOfAnUnregisteredModuleNamesTheCommand(t *testing.T) {
 	}
 }
 
-// TestLeafWithoutDoIsRefused pins that a command a run can select states what
-// it does. Falling back to a depth would turn the omission into the deepest
-// drive there is, which is the one outcome a host that forgot Do did not ask
-// for.
+// TestLeafWithoutDoIsRefused pins that a command a run can select states
+// what it does.
 func TestLeafWithoutDoIsRefused(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Sub("serve").Include("cache")
@@ -287,9 +280,7 @@ func TestCommandWithSubcommandsNeedsNoDo(t *testing.T) {
 // TestAllNodesWalksEveryCommandShallowestFirst pins what the arguments are
 // registered over: every command of the tree, not the selected one's path,
 // since the search for the selected command reads a command line whose
-// arguments have to be registered already. A command comes after the ones
-// above it, which is what lets a level register the modules the levels above
-// it have not.
+// arguments have to be registered already.
 func TestAllNodesWalksEveryCommandShallowestFirst(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Sub("cluster").Sub("add").Do(core.StagePrepare, nil)
@@ -307,9 +298,7 @@ func TestAllNodesWalksEveryCommandShallowestFirst(t *testing.T) {
 }
 
 // TestALevelRegistersWhatTheLevelsAboveItDoNot pins where an argument sits:
-// on the shallowest command of a path that takes its module in. A deeper
-// command inherits it, and a second definition there would shadow the one the
-// layering tool is bound to.
+// on the shallowest command of a path that takes its module in.
 func TestALevelRegistersWhatTheLevelsAboveItDoNot(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil))
 	a.Root().Include("cache")
@@ -333,12 +322,8 @@ func TestALevelRegistersWhatTheLevelsAboveItDoNot(t *testing.T) {
 	}
 }
 
-// TestTheLocatorVariableIsReadFromTheProcessEnvironment pins which environment
-// a run's locator comes from. The values are read out of a snapshot of the
-// process's own environment and the unclaimed-variable diagnostic scans that
-// snapshot too, so <PREFIX>_CONFIG is read there as well: were it read anywhere
-// else, a run would take its primary source from one environment and its
-// values from another, and nothing on a normal path would show it.
+// TestTheLocatorVariableIsReadFromTheProcessEnvironment pins which
+// environment a run's locator comes from.
 func TestTheLocatorVariableIsReadFromTheProcessEnvironment(t *testing.T) {
 	t.Setenv("MYAPP_CONFIG", "file:///app.yaml")
 	content := map[string]any{"cache": map[string]any{"addr": "from-file:1"}}
@@ -358,10 +343,7 @@ func TestTheLocatorVariableIsReadFromTheProcessEnvironment(t *testing.T) {
 }
 
 // TestTheReservedArgumentCarriesItsOwnPlaceholder pins that the one argument
-// this module reserves reads like the ones the modules declare. Every other
-// argument seats its placeholder in the Value handed to the command-line
-// library; this one carries no declaration, so the placeholder goes in the
-// usage text, and without it the library would name the Go type instead.
+// this module reserves reads like the ones the modules declare.
 func TestTheReservedArgumentCarriesItsOwnPlaceholder(t *testing.T) {
 	a, stdout, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "--help")
 	a.Root().Sub("serve").Do(core.StagePrepare, nil)

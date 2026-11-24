@@ -35,8 +35,8 @@ func envTaggedLoader(t *testing.T) *loader {
 
 // TestContainerJSONRejectsARepeatedKeyAtAnyDepth pins that the repeated-key
 // rule is the parser's, not the top-level object's: an object inside a list
-// element is read by the same walk, so a key given twice there is refused too.
-// The standard decoder would keep the second and drop the first without a word.
+// element is read by the same walk, so a key given twice there is refused
+// too.
 func TestContainerJSONRejectsARepeatedKeyAtAnyDepth(t *testing.T) {
 	t.Setenv("MYAPP_SERVER__SEEDS", `[{"email":"ada@example.com","email":"grace@example.com"}]`)
 	l := envContainerLoader(t, envContainerOptions{}, map[string]Item{
@@ -54,10 +54,9 @@ func TestContainerJSONRejectsARepeatedKeyAtAnyDepth(t *testing.T) {
 	}
 }
 
-// TestContainerMemberNamesAnswerToTheConfigTagFirst pins the member-name rule
-// when a field carries both tags: the config tag is the name, and the json tag
-// does not become a second accepted spelling. A struct inside a container takes
-// the same names as one outside it.
+// TestContainerMemberNamesAnswerToTheConfigTagFirst pins the member-name
+// rule when a field carries both tags: the config tag is the name, and the
+// json tag does not become a second accepted spelling.
 func TestContainerMemberNamesAnswerToTheConfigTagFirst(t *testing.T) {
 	t.Run("the config tag names the member", func(t *testing.T) {
 		t.Setenv("MYAPP_SERVER__MEMBERS", `[{"wire-name":"x"}]`)

@@ -40,9 +40,8 @@ func TestDecodeYieldsDefaultsIntoZeroStruct(t *testing.T) {
 	}
 }
 
-// TestDecodeDoesNotConsultMountPrototype pins that collection is the only time
-// the prototype is read. Changing it afterwards must not change what a module
-// decodes, or two registries sharing one prototype would see each other.
+// TestDecodeDoesNotConsultMountPrototype pins that collection is the only
+// time the prototype is read.
 func TestDecodeDoesNotConsultMountPrototype(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
@@ -88,9 +87,8 @@ func TestPrototypeSharedAcrossRegistriesIsIsolated(t *testing.T) {
 	}
 }
 
-// TestDecodeUnknownPathLeavesTargetUntouched pins that a path nobody declared
-// is not an error. A declared path always exists, the base layer having built
-// it, so this only happens when a caller decodes something it never declared.
+// TestDecodeUnknownPathLeavesTargetUntouched pins that a path nobody
+// declared is not an error.
 func TestDecodeUnknownPathLeavesTargetUntouched(t *testing.T) {
 	defaults := decodeOptions{Addr: "localhost:6379"}
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &defaults}}}))
@@ -125,6 +123,8 @@ func requiredSetup(t *testing.T) (*reader, *loader) {
 	)
 }
 
+// TestRequiredMissingAcrossThreeLayers checks that a required item missing
+// from every layer is ErrMissingRequired.
 func TestRequiredMissingAcrossThreeLayers(t *testing.T) {
 	r, _ := requiredSetup(t)
 
@@ -139,9 +139,8 @@ func TestRequiredMissingAcrossThreeLayers(t *testing.T) {
 }
 
 // TestDefaultLayerDoesNotSatisfyRequired pins the rule the whole judgment
-// stands on: the carrier struct always has a value, so counting it would make
-// a required item and one that took the zero value the same thing. The
-// declared default here is deliberately not empty.
+// stands on: the carrier struct always has a value, so counting it would
+// make a required item and one that took the zero value the same thing.
 func TestDefaultLayerDoesNotSatisfyRequired(t *testing.T) {
 	r, l := requiredSetup(t)
 	if got := l.v.Get("remote.addr"); got != "unset-but-not-empty" {
@@ -153,6 +152,8 @@ func TestDefaultLayerDoesNotSatisfyRequired(t *testing.T) {
 	}
 }
 
+// TestRequiredSatisfiedByOneLayerAlone checks that any one layer satisfies a
+// required item.
 func TestRequiredSatisfiedByOneLayerAlone(t *testing.T) {
 	// The environment is given before the loader is built, as it is for a
 	// run: it is read once, when loading begins.
@@ -192,9 +193,7 @@ func TestRequiredSatisfiedByOneLayerAlone(t *testing.T) {
 }
 
 // TestRequiredNotCheckedGlobally pins that the judgment happens at Decode
-// rather than in one sweep over the manifest. The manifest holds the items of
-// modules this run will not enable, and failing on theirs would break the
-// stance that lets a default implementation stand down.
+// rather than in one sweep over the manifest.
 func TestRequiredNotCheckedGlobally(t *testing.T) {
 	otherDefaults := requiredOptions{}
 	r, _ := readerOver(t,
@@ -276,10 +275,8 @@ func TestDecodeWritesEveryLayer(t *testing.T) {
 	}
 }
 
-// TestDecodeNeedsAPointerToStruct pins that a target Decode cannot write into
-// panics instead of returning. What the caller passes is fixed in the source,
-// not in anyone's configuration, so there is no run in which the same call
-// site works; a host handed an error here could only re-raise it.
+// TestDecodeNeedsAPointerToStruct pins that a target Decode cannot write
+// into panics instead of returning.
 func TestDecodeNeedsAPointerToStruct(t *testing.T) {
 	r, _ := readerOver(t, declaring("cache", Schema{Namespace: "cache", Mounts: []Mount{{Value: &decodeOptions{}}}}))
 
@@ -343,11 +340,8 @@ func TestDecodeRefusesATargetThatCyclesBack(t *testing.T) {
 	_ = r.Decode("cache", &target)
 }
 
-// TestDecodeReadsAnInlinedEmbeddedField pins that the expansion and the decode
-// walk derive one and the same path for an embedded field. They are separate
-// implementations of one rule, and a module that declared cache.addr while
-// reading cache.embedded-options.addr would fail at neither end: the key would
-// simply never arrive.
+// TestDecodeReadsAnInlinedEmbeddedField pins that the expansion and the
+// decode walk derive one and the same path for an embedded field.
 func TestDecodeReadsAnInlinedEmbeddedField(t *testing.T) {
 	type inlineTarget struct {
 		EmbeddedOptions
@@ -369,11 +363,7 @@ func TestDecodeReadsAnInlinedEmbeddedField(t *testing.T) {
 }
 
 // TestContainerKeepsTheKeysTheSourceWrote pins that the inner keys of a
-// container leaf reach the module as the source wrote them. They are the
-// user's own data and are not in the manifest, so folding them to lower case
-// rewrites the configuration rather than normalising a name this module owns:
-// a label written Zone would arrive as zone, and the module that reads it back
-// under the name it published would find nothing there.
+// container leaf reach the module as the source wrote them.
 func TestContainerKeepsTheKeysTheSourceWrote(t *testing.T) {
 	type holder struct {
 		Labels map[string]string `config:"labels"`
@@ -405,15 +395,9 @@ func TestContainerKeepsTheKeysTheSourceWrote(t *testing.T) {
 	}
 }
 
-// TestContainerElementTakesItsJSONTagAsWritten pins the leg of the field-name
-// rule that only a container element exercises: a field naming itself with a
-// json tag is written in the source under that tag. The rule is one rule for
-// the whole tree, so a camel-cased tag has to reach the field it names.
-//
-// This is the same defect as the keys above wearing a second face. Folding the
-// source did not merely rename the key here: the element field kept its zero
-// value and nothing reported it, so a setting written in the file had no
-// effect and no diagnostic said so.
+// TestContainerElementTakesItsJSONTagAsWritten pins the leg of the
+// field-name rule that only a container element exercises: a field naming
+// itself with a json tag is written in the source under that tag.
 func TestContainerElementTakesItsJSONTagAsWritten(t *testing.T) {
 	type tier struct {
 		TierName string `json:"tierName"`
@@ -451,11 +435,9 @@ func TestContainerElementTakesItsJSONTagAsWritten(t *testing.T) {
 	}
 }
 
-// TestSourceWritingNothingLeavesEveryLeafItsDefault pins that a key the source
-// wrote with no value behind it is not a value it gave, whatever kind of leaf
-// stands there. Reading a container from what the source wrote rather than
-// from the layering tool puts the two on different paths, and the meaning of
-// an empty key must not come to depend on the type behind it.
+// TestSourceWritingNothingLeavesEveryLeafItsDefault pins that a key the
+// source wrote with no value behind it is not a value it gave, whatever kind
+// of leaf stands there.
 func TestSourceWritingNothingLeavesEveryLeafItsDefault(t *testing.T) {
 	type holder struct {
 		Labels map[string]string `config:"labels"`
@@ -491,10 +473,9 @@ func TestSourceWritingNothingLeavesEveryLeafItsDefault(t *testing.T) {
 	}
 }
 
-// TestContainerKeepsItsKeysWhenThePathIsWrittenFlat pins that a source writing
-// a path as one dotted key reaches the same value as one writing it nested.
-// Both spellings are accepted, so reaching the untouched tree only by the
-// nested one would let the same document mean two things.
+// TestContainerKeepsItsKeysWhenThePathIsWrittenFlat pins that a source
+// writing a path as one dotted key reaches the same value as one writing it
+// nested.
 func TestContainerKeepsItsKeysWhenThePathIsWrittenFlat(t *testing.T) {
 	type holder struct {
 		Labels map[string]string `config:"labels"`
@@ -523,10 +504,7 @@ func TestContainerKeepsItsKeysWhenThePathIsWrittenFlat(t *testing.T) {
 }
 
 // TestOneHolderCannotWriteIntoAnother pins the promise decodeInto states: a
-// container arrives as a copy. A field whose target type is any receives the
-// node of the parsed source itself unless it is copied, so a holder writing
-// into what it was handed would reach both the next holder and the tree every
-// later read comes from.
+// container arrives as a copy.
 func TestOneHolderCannotWriteIntoAnother(t *testing.T) {
 	type holder struct {
 		Anys map[string]any `config:"anys"`

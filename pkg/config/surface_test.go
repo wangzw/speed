@@ -11,17 +11,8 @@ import (
 	"testing"
 )
 
-// TestNoExportedFunctionHandsOutAnUnexportedType pins the edge of what a host
-// can reach. An exported function whose result is a type of this package's own
-// that the package does not export opens a way in that no document describes:
-// the caller holds a value it cannot name, and every exported method on it is
-// callable. The loader is the case in point. It is internal to this package,
-// staged in an order only App and Load know, and a Reader taken from it before
-// the command line is bound reports every required item given there as
-// missing.
-//
-// The package's non-test sources are read as they are written, so a new entry
-// of that shape is caught where it is added.
+// TestNoExportedFunctionHandsOutAnUnexportedType pins the edge of what a
+// host can reach.
 func TestNoExportedFunctionHandsOutAnUnexportedType(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {

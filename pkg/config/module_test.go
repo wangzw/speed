@@ -38,14 +38,6 @@ func TestModuleRegistersItselfWithTheProcessRegistry(t *testing.T) {
 }
 
 // TestModuleDeclaresOnlyTheDeliveryOfTheReader pins the descriptor.
-//
-// The reader is built by loading, ahead of the drive, so the module has nothing
-// to construct and nothing to judge: a New would let a drive that was never
-// handed the reader construct one the run did not load, and a claim of
-// Exclusive would keep the dependency closure of a module that requires the
-// reader from taking this one in, which a later case observes. The reader holds
-// no connection or file, so there is no Stop or Close to run on it either; a
-// Serve would make the module an entry point.
 func TestModuleDeclaresOnlyTheDeliveryOfTheReader(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -105,9 +97,7 @@ func requiringTheReader() *core.Registry {
 }
 
 // TestAModuleRequiringTheReaderBringsTheConfigModuleIntoItsClosure pins what
-// leaving Exclusive off the declaration buys. Naming the one module that
-// requires the reader on a command is enough for the config module to be among
-// the participants, with no line of the host's own about it.
+// leaving Exclusive off the declaration buys.
 func TestAModuleRequiringTheReaderBringsTheConfigModuleIntoItsClosure(t *testing.T) {
 	got, err := requiringTheReader().Closure([]string{"consumer"})
 	if err != nil {
@@ -118,11 +108,8 @@ func TestAModuleRequiringTheReaderBringsTheConfigModuleIntoItsClosure(t *testing
 	}
 }
 
-// TestAReaderNobodySuppliedFailsAsTheConfigModuleHavingNoInstance pins what a
-// host that never supplied the reader is told. The module is in the closure of
-// whoever requires the reader and is constructed ahead of it; it has no New, so
-// the failure is the module's own and says its instance can only come from the
-// host.
+// TestAReaderNobodySuppliedFailsAsTheConfigModuleHavingNoInstance pins what
+// a host that never supplied the reader is told.
 func TestAReaderNobodySuppliedFailsAsTheConfigModuleHavingNoInstance(t *testing.T) {
 	reg := requiringTheReader()
 	participants, err := reg.Closure([]string{"consumer"})

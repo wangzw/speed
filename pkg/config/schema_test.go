@@ -26,6 +26,8 @@ func TestZeroOriginsMeansPrimaryAndEnv(t *testing.T) {
 	}
 }
 
+// TestExplicitOriginsReplaceTheDefault checks that declared origins replace
+// the default set.
 func TestExplicitOriginsReplaceTheDefault(t *testing.T) {
 	type carrier struct {
 		Addr string

@@ -46,6 +46,8 @@ func pathsOf(byPath map[string]*manifestItem) []string {
 	return slices.Sorted(maps.Keys(byPath))
 }
 
+// TestFieldPathTagPrecedence checks that a field takes its name from the
+// config tag before the json tag.
 func TestFieldPathTagPrecedence(t *testing.T) {
 	type carrier struct {
 		Tagged   string `config:"alpha" json:"beta"`
@@ -59,6 +61,7 @@ func TestFieldPathTagPrecedence(t *testing.T) {
 	}
 }
 
+// TestCamelToKebab checks the lower-kebab form of Go field names.
 func TestCamelToKebab(t *testing.T) {
 	cases := map[string]string{
 		"PoolSize":  "pool-size",
@@ -74,6 +77,8 @@ func TestCamelToKebab(t *testing.T) {
 	}
 }
 
+// TestKeySegmentCharsetRejects checks that a key segment outside the allowed
+// characters is refused.
 func TestKeySegmentCharsetRejects(t *testing.T) {
 	type underscore struct {
 		Field string `config:"pool_size"`
@@ -110,6 +115,8 @@ func TestKeySegmentCharsetRejects(t *testing.T) {
 	}
 }
 
+// TestSkipsUndecodableFields checks that fields no source can give are
+// skipped.
 func TestSkipsUndecodableFields(t *testing.T) {
 	type inner struct {
 		Addr string
@@ -135,6 +142,8 @@ func TestSkipsUndecodableFields(t *testing.T) {
 	}
 }
 
+// TestNonNilStructPointerExpands checks that a non-nil struct pointer
+// expands into items.
 func TestNonNilStructPointerExpands(t *testing.T) {
 	type tls struct {
 		ServerName string
@@ -160,6 +169,8 @@ type ringB struct {
 	A *ringA
 }
 
+// TestTypeCycleNamesFieldAndType checks that a cyclic type names the field
+// and the type.
 func TestTypeCycleNamesFieldAndType(t *testing.T) {
 	a := &ringA{}
 	b := &ringB{A: a}
@@ -172,6 +183,8 @@ func TestTypeCycleNamesFieldAndType(t *testing.T) {
 	}
 }
 
+// TestSameTypeOnSiblingBranchesIsNotCycle checks that the same type on two
+// sibling branches is not a cycle.
 func TestSameTypeOnSiblingBranchesIsNotCycle(t *testing.T) {
 	type node struct {
 		Name string
@@ -187,6 +200,8 @@ func TestSameTypeOnSiblingBranchesIsNotCycle(t *testing.T) {
 	}
 }
 
+// TestDeepNestingHasNoDepthLimit checks that deep nesting expands without a
+// depth limit.
 func TestDeepNestingHasNoDepthLimit(t *testing.T) {
 	const depth = 20
 	nested := reflect.StructOf([]reflect.StructField{{Name: "Leaf", Type: reflect.TypeFor[string]()}})
@@ -200,6 +215,8 @@ func TestDeepNestingHasNoDepthLimit(t *testing.T) {
 	}
 }
 
+// TestEnvNameDerivation checks how a path derives an environment variable
+// name.
 func TestEnvNameDerivation(t *testing.T) {
 	type redis struct {
 		MaxConns int
@@ -217,6 +234,8 @@ func TestEnvNameDerivation(t *testing.T) {
 	}
 }
 
+// TestPinnedEnvNameWins checks that a pinned environment variable name wins
+// over the derived one.
 func TestPinnedEnvNameWins(t *testing.T) {
 	type carrier struct {
 		Colour string
@@ -230,6 +249,8 @@ func TestPinnedEnvNameWins(t *testing.T) {
 	}
 }
 
+// TestNoPrefixDisablesDerivedEnvNamesOnly checks that no host prefix
+// disables derived names but keeps pinned ones.
 func TestNoPrefixDisablesDerivedEnvNamesOnly(t *testing.T) {
 	type carrier struct {
 		Colour   string
@@ -247,6 +268,8 @@ func TestNoPrefixDisablesDerivedEnvNamesOnly(t *testing.T) {
 	}
 }
 
+// TestEmptyNamespaceLandsAtTopLevel checks that an empty namespace puts
+// items at the top level.
 func TestEmptyNamespaceLandsAtTopLevel(t *testing.T) {
 	type carrier struct {
 		LogLevel string
@@ -261,6 +284,7 @@ func TestEmptyNamespaceLandsAtTopLevel(t *testing.T) {
 	}
 }
 
+// TestContainerFieldsAreLeaves checks that a container field is a leaf.
 func TestContainerFieldsAreLeaves(t *testing.T) {
 	type endpoint struct {
 		Addr string
@@ -289,6 +313,8 @@ func TestContainerFieldsAreLeaves(t *testing.T) {
 	}
 }
 
+// TestFlagOriginRequiresFlagName checks that an item taking the command line
+// must declare a flag name.
 func TestFlagOriginRequiresFlagName(t *testing.T) {
 	type carrier struct {
 		Addr string
@@ -302,6 +328,8 @@ func TestFlagOriginRequiresFlagName(t *testing.T) {
 	}
 }
 
+// TestSensitiveRequiresDescription checks that a sensitive item must carry a
+// description.
 func TestSensitiveRequiresDescription(t *testing.T) {
 	type carrier struct {
 		Password string
@@ -315,6 +343,8 @@ func TestSensitiveRequiresDescription(t *testing.T) {
 	}
 }
 
+// TestOrphanItemKeyRejected checks that an Items key reaching no field is
+// refused.
 func TestOrphanItemKeyRejected(t *testing.T) {
 	type redis struct {
 		Addr string
@@ -330,6 +360,8 @@ func TestOrphanItemKeyRejected(t *testing.T) {
 	}
 }
 
+// TestMountValueMustCarryAStruct checks that a mount must carry a struct or
+// a pointer to one.
 func TestMountValueMustCarryAStruct(t *testing.T) {
 	var absent *struct{ Addr string }
 	cases := map[string]any{
@@ -378,9 +410,7 @@ func TestTextUnmarshalerStructIsALeaf(t *testing.T) {
 // TestEmbeddedStructInlinesWithoutASegment pins the embedding semantics the
 // path rules borrow along with the json tag convention: the fields of an
 // embedded struct join the enclosing path, and the embedded type names
-// nothing. An embedded unexported type is skipped like any unexported field,
-// its exported fields included: skipping an unexported field is a rule of its
-// own and takes precedence over the promotion encoding/json would do.
+// nothing.
 func TestEmbeddedStructInlinesWithoutASegment(t *testing.T) {
 	byPath := expandOne(t, Schema{Mounts: mount(&embedder{})}, "")
 	want := []string{"addr", "name"}
@@ -451,9 +481,8 @@ type pointerEmbedder struct {
 }
 
 // TestUndeclaredContainerTakesThePrimarySourceAlone pins the origins a
-// container leaf resolves to when its module declared none: the primary config
-// source alone. The ordinary zero value carries the environment, and a map
-// resolving to it would read a variable whose flat text it could never convert.
+// container leaf resolves to when its module declared none: the primary
+// config source alone.
 func TestUndeclaredContainerTakesThePrimarySourceAlone(t *testing.T) {
 	type carrier struct {
 		Labels map[string]string
@@ -469,9 +498,7 @@ func TestUndeclaredContainerTakesThePrimarySourceAlone(t *testing.T) {
 }
 
 // TestContainerDeclaringEnvOriginIsAccepted pins that the environment is an
-// origin a container may name. The value is JSON and replaces the whole
-// container, so the declaration has a form to honour; the collection pass must
-// let it through and derive the variable name like any other item.
+// origin a container may name.
 func TestContainerDeclaringEnvOriginIsAccepted(t *testing.T) {
 	type carrier struct {
 		Labels map[string]string
@@ -486,9 +513,7 @@ func TestContainerDeclaringEnvOriginIsAccepted(t *testing.T) {
 }
 
 // TestContainerDeclaringFlagOriginRejected is the command-line half of the
-// same defect, on the other container shape. The command line has no form for
-// a container in this release, so naming it there is still a misspelling of
-// the origins.
+// same defect, on the other container shape.
 func TestContainerDeclaringFlagOriginRejected(t *testing.T) {
 	type endpoint struct {
 		Addr string
@@ -521,10 +546,8 @@ func TestStringListMayDeclareEnvAndFlag(t *testing.T) {
 	}
 }
 
-// TestMultiCharShortNameIsASchemaDefect pins the declaration half of the short
-// name rule. The command-line syntax reads -ab as the two short names a and b
-// written together, so a two-character short name is an argument the help
-// output would advertise and the parser could never match as one.
+// TestMultiCharShortNameIsASchemaDefect pins the declaration half of the
+// short name rule.
 func TestMultiCharShortNameIsASchemaDefect(t *testing.T) {
 	type carrier struct {
 		Addr string
@@ -539,14 +562,8 @@ func TestMultiCharShortNameIsASchemaDefect(t *testing.T) {
 }
 
 // TestACommandLineNameNoArgumentCanReachIsASchemaDefect pins the names the
-// command-line syntax can never match, each decided by the declaration alone.
-//
-// A short name is one byte to the command-line library, which panics when it is
-// handed a character that takes more than one, and a dash as a short name is
-// the start of a long one. A long name that begins with a dash is read as a
-// syntax error, and one holding an equals sign is cut at it, so the name
-// looked up is never the one declared: the help output would advertise an
-// argument that nothing written on a command line reaches.
+// command-line syntax can never match, each decided by the declaration
+// alone.
 func TestACommandLineNameNoArgumentCanReachIsASchemaDefect(t *testing.T) {
 	type carrier struct {
 		Addr string

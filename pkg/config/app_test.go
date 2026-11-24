@@ -103,8 +103,7 @@ func TestExecuteStopsAtTheDeclaredDepth(t *testing.T) {
 }
 
 // TestCommandTakingNothingInDrivesWithNoModule pins the end of the range a
-// participating set covers. A command that assembles nothing still drives:
-// no module states anything, and the empty set is not read as every module.
+// participating set covers.
 func TestCommandTakingNothingInDrivesWithNoModule(t *testing.T) {
 	run := &treeRun{}
 	a, _, _ := treeApp(treeRegistry(t, run, nil), "version")
@@ -128,12 +127,6 @@ func TestCommandTakingNothingInDrivesWithNoModule(t *testing.T) {
 
 // TestADeclarationLevelModuleIsReachedButNotRun pins both halves of what the
 // second level does.
-//
-// The module is within reach of a collection -- the action asks the registry
-// and it answers -- and it is not run: it states no stance and is never
-// constructed. Those are two different questions about one module, and a
-// command whose work is applying migrations needs them answered differently:
-// it wants the tables of modules it must not build.
 func TestADeclarationLevelModuleIsReachedButNotRun(t *testing.T) {
 	run := &treeRun{}
 	a, _, _ := treeApp(treeRegistry(t, run, nil), "migrate")
@@ -161,14 +154,8 @@ func TestADeclarationLevelModuleIsReachedButNotRun(t *testing.T) {
 	}
 }
 
-// TestADeclarationLevelModulePutsNoArgumentOnTheCommandLine pins the half that
-// makes the level usable.
-//
-// A command whose work is applying migrations runs the engine and collects the
-// tables of modules it has no use for running. If taking those in put their
-// arguments on the command line, the command would be made to answer for a
-// listener address it never opens -- which is why taking them in at run level
-// was never a workable answer in the first place.
+// TestADeclarationLevelModulePutsNoArgumentOnTheCommandLine pins the half
+// that makes the level usable.
 func TestADeclarationLevelModulePutsNoArgumentOnTheCommandLine(t *testing.T) {
 	a, stdout, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "help", "migrate")
 	migrate := a.Root().Sub("migrate")
@@ -191,10 +178,6 @@ func TestADeclarationLevelModulePutsNoArgumentOnTheCommandLine(t *testing.T) {
 
 // TestWithFlagsPutsADeclarationLevelModulesArgumentOnTheCommandLine pins the
 // adjustment that reverses the half above.
-//
-// It does not make the module run and it does not make its required items be
-// checked: a module that is never constructed never decodes its configuration,
-// so the argument is one a run may give rather than one it must.
 func TestWithFlagsPutsADeclarationLevelModulesArgumentOnTheCommandLine(t *testing.T) {
 	a, stdout, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "help", "migrate")
 	migrate := a.Root().Sub("migrate")
@@ -212,14 +195,6 @@ func TestWithFlagsPutsADeclarationLevelModulesArgumentOnTheCommandLine(t *testin
 
 // TestAReportingCommandCollectsEveryArgumentWithoutRunningAnything pins the
 // one shape the flag adjustment exists for.
-//
-// A command that reports or checks the configuration has to offer every
-// module's arguments and construct none of them: it reads the values itself
-// rather than asking each module to, so nothing should be built and no
-// required item should be enforced. Both halves are observed here, and the
-// first is the load-bearing one -- take the arguments away and there is no
-// way for the operator to give the command the value it is being asked to
-// report on.
 func TestAReportingCommandCollectsEveryArgumentWithoutRunningAnything(t *testing.T) {
 	run := &treeRun{}
 	a, _, _ := treeApp(treeRegistry(t, run, nil), "check", "--greeter-addr=:1")
@@ -243,16 +218,9 @@ func TestAReportingCommandCollectsEveryArgumentWithoutRunningAnything(t *testing
 	}
 }
 
-// TestAnArgumentOfADeclarationLevelModuleSaysWhereItBelongs pins the diagnosis
-// for an argument that is absent because the module behind it is only
-// collected from.
-//
-// The module is taken in, so telling a host this command "does not take that
-// module in" is false of it, and the fix that sentence suggests -- add it to
-// the command's Include -- constructs a module the command was written not to
-// build. The adjustment that would accept the argument is the thing to name,
-// and this is the only place a host can be told about it: the argument is
-// registered nowhere, so the library knows only that it is unknown.
+// TestAnArgumentOfADeclarationLevelModuleSaysWhereItBelongs pins the
+// diagnosis for an argument that is absent because the module behind it is
+// only collected from.
 func TestAnArgumentOfADeclarationLevelModuleSaysWhereItBelongs(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "migrate", "--greeter-addr=:1")
 	migrate := a.Root().Sub("migrate")
@@ -276,11 +244,6 @@ func TestAnArgumentOfADeclarationLevelModuleSaysWhereItBelongs(t *testing.T) {
 
 // TestIncludeAllDeclarationsReachesEveryRegisteredModule pins the form that
 // does not need a list kept in step.
-//
-// A command collecting declarations would otherwise name every module with
-// tables, and a name left off that list is a table that never gets created --
-// silently, since being left out is not among the things that reach the
-// startup diagnostics.
 func TestIncludeAllDeclarationsReachesEveryRegisteredModule(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
 	var missed []string
@@ -305,11 +268,6 @@ func TestIncludeAllDeclarationsReachesEveryRegisteredModule(t *testing.T) {
 }
 
 // TestAModuleTakenInAtBothLevelsIsAParticipant pins which level wins.
-//
-// The two lists are two things the host wrote, and there is only one reading
-// of a module named in both: it runs. Reporting it as declaring alone would
-// leave a module that is constructed and serving out of the set that describes
-// what this command runs.
 func TestAModuleTakenInAtBothLevelsIsAParticipant(t *testing.T) {
 	run := &treeRun{}
 	a, _, _ := treeApp(treeRegistry(t, run, nil), "migrate")
@@ -335,10 +293,6 @@ func TestAModuleTakenInAtBothLevelsIsAParticipant(t *testing.T) {
 
 // TestADeclarationNameNoModuleRegisteredIsRefused pins that the second level
 // is checked the way the first is.
-//
-// A misspelt name at this level leaves declarations out with nothing said, and
-// the command goes on to report success: the failure is a table that was never
-// created, met later as a query against it.
 func TestADeclarationNameNoModuleRegisteredIsRefused(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "migrate")
 	migrate := a.Root().Sub("migrate")
@@ -357,11 +311,6 @@ func TestADeclarationNameNoModuleRegisteredIsRefused(t *testing.T) {
 
 // TestADeclarationLevelInclusionHoldsForEveryCommandUnderIt pins that the
 // second level is inherited the way the first is.
-//
-// What a level takes in holds for every command under it. The two levels are
-// no different there, so a host writes the modules its program collects
-// declarations from once, where they belong, rather than repeating them under
-// each command that needs them.
 func TestADeclarationLevelInclusionHoldsForEveryCommandUnderIt(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
 	declaring := false
@@ -383,13 +332,6 @@ func TestADeclarationLevelInclusionHoldsForEveryCommandUnderIt(t *testing.T) {
 
 // TestAllResourcesReachesTheDrive pins that what a host sets on an inclusion
 // survives the trip from the command tree to the registry.
-//
-// They sit far apart: the adjustment is set where the tree is written, before
-// anything is parsed, and it is read by whichever module asks the registry.
-// A step that dropped it would leave the call looking applied and doing
-// nothing -- which, for an override that installs a module's plugins onto a
-// handle it does not run on, is the difference between a host's deliberate
-// choice and a silent no-op.
 func TestAllResourcesReachesTheDrive(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
 	inForce := false
@@ -435,10 +377,9 @@ func TestLocatorArgumentIsAcceptedOnEitherSideOfTheSubcommand(t *testing.T) {
 	}
 }
 
-// TestPrimarySourceCarriesKeysOfModulesOutsideTheCommand pins the first of the
-// two directions the unknown-key check runs in, and the one that is easiest to
-// get backwards. One primary source is shared by every command, so judging it
-// by a command's participating set would make it wrong under every command.
+// TestPrimarySourceCarriesKeysOfModulesOutsideTheCommand pins the first of
+// the two directions the unknown-key check runs in, and the one that is
+// easiest to get backwards.
 func TestPrimarySourceCarriesKeysOfModulesOutsideTheCommand(t *testing.T) {
 	content := map[string]any{
 		"cache":   map[string]any{"addr": "from-file:1"},
@@ -461,8 +402,7 @@ func TestPrimarySourceCarriesKeysOfModulesOutsideTheCommand(t *testing.T) {
 }
 
 // TestPrimarySourceKeyNoModuleDeclaresIsRejected pins the other half of that
-// direction: judging by the whole manifest is not judging by nothing. A key no
-// module anywhere declares is a defect under every command.
+// direction: judging by the whole manifest is not judging by nothing.
 func TestPrimarySourceKeyNoModuleDeclaresIsRejected(t *testing.T) {
 	content := map[string]any{"cache": map[string]any{"adrr": "typo"}}
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, content), "--config=file:///app.yaml", "version")
@@ -473,10 +413,8 @@ func TestPrimarySourceKeyNoModuleDeclaresIsRejected(t *testing.T) {
 	}
 }
 
-// TestArgumentOfAModuleOutsideTheCommandIsRejected pins the second direction:
-// the command line is judged by the participating set. The argument exists in
-// the manifest and this command never registered it, and the fix is a
-// different command rather than a different spelling.
+// TestArgumentOfAModuleOutsideTheCommandIsRejected pins the second
+// direction: the command line is judged by the participating set.
 func TestArgumentOfAModuleOutsideTheCommandIsRejected(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version", "--cache-addr=x")
 	serve := a.Root().Sub("serve")
@@ -516,10 +454,7 @@ func TestSameArgumentIsAcceptedOnTheCommandThatTakesTheModuleIn(t *testing.T) {
 
 // TestBothSiblingsThatTakeOneModuleInCarryItsArguments pins that a command's
 // arguments are its own participating set's, and another command's
-// registration does not stand in for them. Two commands neither of which is
-// under the other can both take one module in, and a run selects either; an
-// argument defined on whichever of them is reached first would be unknown on
-// the other, which takes the module in just as much.
+// registration does not stand in for them.
 func TestBothSiblingsThatTakeOneModuleInCarryItsArguments(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "serve", "--cache-addr=given")
 	// check is reached before serve, whatever order the two are declared
@@ -542,10 +477,7 @@ func TestBothSiblingsThatTakeOneModuleInCarryItsArguments(t *testing.T) {
 }
 
 // TestArgumentOfAModuleTakenInTwiceReachesTheReader pins what registering on
-// the shallowest level comes to from outside. The value is written after the
-// subcommand, and the argument it lands in is the root's; a second definition
-// on the subcommand would shadow the one the layering tool is bound to and the
-// value would be read as the default.
+// the shallowest level comes to from outside.
 func TestArgumentOfAModuleTakenInTwiceReachesTheReader(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "serve", "--cache-addr=given")
 	a.Root().Include("cache")
@@ -583,10 +515,7 @@ func TestUnknownArgumentIsAnUnknownKey(t *testing.T) {
 }
 
 // TestUnknownSubcommandIsNotAConfigurationFailure pins the boundary of what
-// this module classifies. A word that is no command of the tree is the
-// command-line library's finding and stays its own: putting it under a
-// sentinel of this module's would claim a failure that is not about
-// configuration.
+// this module classifies.
 func TestUnknownSubcommandIsNotAConfigurationFailure(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "nonesuch")
 	a.Root().Sub("serve").Do(core.StagePrepare, nil)
@@ -626,8 +555,7 @@ func TestAskingForHelpIsNotAFailure(t *testing.T) {
 }
 
 // TestHelpForACommandListsItsOwnArguments pins that the two ways of asking
-// agree. Both are answered after the command path is located, so both list the
-// arguments of the command's participating set rather than the root's.
+// agree.
 func TestHelpForACommandListsItsOwnArguments(t *testing.T) {
 	for _, args := range [][]string{{"help", "serve"}, {"serve", "--help"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
@@ -656,9 +584,7 @@ func TestHelpForACommandListsItsOwnArguments(t *testing.T) {
 }
 
 // TestFailureBeforeTheLibraryTakesOverIsReported pins the one report this
-// module writes itself. Assembling the tree happens before the library has
-// anything to print with, so a failure there would otherwise reach the host as
-// a value nobody had shown anybody.
+// module writes itself.
 func TestFailureBeforeTheLibraryTakesOverIsReported(t *testing.T) {
 	a, _, stderr := treeApp(treeRegistry(t, &treeRun{}, nil), "serve")
 	a.Root().Sub("serve").Include("cache")
@@ -673,9 +599,7 @@ func TestFailureBeforeTheLibraryTakesOverIsReported(t *testing.T) {
 	}
 }
 
-// TestExecuteTwiceIsAProgrammingError pins the one run a tree has. The
-// registry behind it is driven once, and catching the second call here names
-// the tree rather than the registry.
+// TestExecuteTwiceIsAProgrammingError pins the one run a tree has.
 func TestExecuteTwiceIsAProgrammingError(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
 	a.Root().Sub("version").Do(core.StagePrepare, nil)
@@ -685,21 +609,14 @@ func TestExecuteTwiceIsAProgrammingError(t *testing.T) {
 	panicsWith(t, "a second Execute", func() { _ = a.Execute(t.Context()) })
 }
 
+// TestNewAppWithoutARegistryIsAProgrammingError checks that NewApp panics
+// when given no registry.
 func TestNewAppWithoutARegistryIsAProgrammingError(t *testing.T) {
 	panicsWith(t, "NewApp(nil)", func() { NewApp(nil) })
 }
 
 // TestNewAppWithoutTheConfigModuleIsAProgrammingError pins where a missing
 // registration is found, and that the message says what to do about it.
-//
-// Execute supplies the reader to the config module, and a registry made with
-// core.New does not inherit the registration the package makes in init. Left to
-// Execute, the omission would surface after the command line and the primary
-// source had been read, as the registry's account of a module that is not
-// registered; at NewApp the message is the call that has to be made.
-//
-// The module is looked for by its name. Another module delivering Reader is no
-// stand-in, since the name is what Execute supplies the reader under.
 func TestNewAppWithoutTheConfigModuleIsAProgrammingError(t *testing.T) {
 	standIn := core.New()
 	standIn.Register(core.Module{
@@ -728,15 +645,8 @@ func TestNewAppWithoutTheConfigModuleIsAProgrammingError(t *testing.T) {
 	NewApp(cured)
 }
 
-// TestExecuteSuppliesTheReaderToTheConfigModuleByName pins how the owner of the
-// reader is settled.
-//
-// A second module delivers Reader here, so claiming the reader by what it
-// implements would find two candidates registered from the one package and could
-// not tell them apart. Execute names the module instead, and what the name
-// decides is observable twice over: the run does not fail, and the module that
-// takes part is the config module, not the one that merely declares the same
-// capability.
+// TestExecuteSuppliesTheReaderToTheConfigModuleByName pins how the owner of
+// the reader is settled.
 func TestExecuteSuppliesTheReaderToTheConfigModuleByName(t *testing.T) {
 	reg := treeRegistry(t, &treeRun{}, nil)
 	reg.Register(core.Module{
@@ -774,14 +684,6 @@ func TestExecuteSuppliesTheReaderToTheConfigModuleByName(t *testing.T) {
 
 // TestExecuteSuppliesTheReaderOnlyAfterTheRunHasLoaded pins where the supply
 // sits in a run.
-//
-// The reader does not exist before the command line and the primary source have
-// been read, so the supply is the first step of a run that the registry can
-// refuse, and it comes after every step the user's input can fail. A command
-// line or a locator that is wrong therefore comes back as the error it is,
-// whatever the registry stands at. A registry that cannot take the reader is
-// found out by a run that got as far as the supply, with a panic that says why:
-// the call is wrong, not the data.
 func TestExecuteSuppliesTheReaderOnlyAfterTheRunHasLoaded(t *testing.T) {
 	// A registry whose config module already has an instance, which the host
 	// supplied ahead of Execute: a further supply to the module is refused.
@@ -863,10 +765,7 @@ func TestExecuteSuppliesTheReaderOnlyAfterTheRunHasLoaded(t *testing.T) {
 }
 
 // TestTheConfigModuleTakesPartInEveryDrive pins that a command tree does not
-// have to name the config module. A module whose instance was supplied takes
-// part in every drive, with its stance fixed at StateEnabled, and Execute
-// supplies the reader for every command, so a command that takes nothing in has
-// the module all the same.
+// have to name the config module.
 func TestTheConfigModuleTakesPartInEveryDrive(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version")
 	acted := false
@@ -892,10 +791,9 @@ func TestTheConfigModuleTakesPartInEveryDrive(t *testing.T) {
 	}
 }
 
-// TestTakingTheConfigModuleInIsHarmless pins that a tree which names the module
-// itself, or takes every module in and so names it without meaning to, runs as
-// one that does not. The module is a participant by the command tree and by the
-// supplied reader both, and takes part once.
+// TestTakingTheConfigModuleInIsHarmless pins that a tree which names the
+// module itself, or takes every module in and so names it without meaning
+// to, runs as one that does not.
 func TestTakingTheConfigModuleInIsHarmless(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -951,13 +849,8 @@ func suppliedOnlyApp(t *testing.T, args ...string) (*App, *strings.Builder) {
 	return a, stdout
 }
 
-// TestAModuleTakingPartOnlyBySupplyIsOutsideTheConfigurationInterface pins what
-// the command tree decides and a supplied instance does not. The command line,
-// the help output and the required items follow the participating set the tree
-// settles before the drive begins, and a module that joins the drive only
-// because its instance was supplied is not in it: the command line has no
-// argument for it, the help does not list it, and decoding its path does not
-// judge a required item nobody gave.
+// TestAModuleTakingPartOnlyBySupplyIsOutsideTheConfigurationInterface pins
+// what the command tree decides and a supplied instance does not.
 func TestAModuleTakingPartOnlyBySupplyIsOutsideTheConfigurationInterface(t *testing.T) {
 	t.Run("help does not list its argument", func(t *testing.T) {
 		a, stdout := suppliedOnlyApp(t, "--help")
@@ -1009,16 +902,8 @@ func TestAModuleTakingPartOnlyBySupplyIsOutsideTheConfigurationInterface(t *test
 }
 
 // TestASuppliedModuleTakenInForItsDeclarationsIsStaticToTheTree pins the two
-// halves of what it means to write a module at declaration level when the host
-// supplied its instance.
-//
-// The tree does not know about the supply, so it handles the module as the level
-// it was written at says: WithFlags puts the argument on the command line, and
-// the required item is not judged. The registry knows, and runs the module
-// whatever the tree wrote: it takes part, and the AllResources adjustment, which
-// belongs to a module reached for its declarations alone, lapses. The same
-// module taken in at run level is the control: its required item is judged, so
-// the absence of a verdict in the other cases is the level's doing.
+// halves of what it means to write a module at declaration level when the
+// host supplied its instance.
 func TestASuppliedModuleTakenInForItsDeclarationsIsStaticToTheTree(t *testing.T) {
 	declared := func(c *Command) { c.IncludeDeclarations("greeter").WithFlags().AllResources() }
 	for _, c := range []struct {
@@ -1091,9 +976,7 @@ func TestASuppliedModuleTakenInForItsDeclarationsIsStaticToTheTree(t *testing.T)
 }
 
 // TestAModuleReadsItsValuesInPrepareAndInNew pins that the reader is there
-// before the first module is asked for a stance. A module judges whether it can
-// start by its own configuration, so a reader that appeared only after Prepare
-// would leave every one of them with nothing to read.
+// before the first module is asked for a stance.
 func TestAModuleReadsItsValuesInPrepareAndInNew(t *testing.T) {
 	var inPrepare, inNew string
 	read := func(reg *core.Registry) string {
@@ -1141,13 +1024,8 @@ type treeLedgerBook struct{ entries int }
 
 func (b *treeLedgerBook) record() { b.entries++ }
 
-// TestParticipatingTellsWhetherTheDriveBegan pins the two ends of what Execute
-// leaves behind. Help is answered by the command-line library: no command runs,
-// nothing is supplied, and the result is nil, as it is for a drive that ran to
-// its end. The host that supplied an instance of its own before Execute then
-// asks the module the instance belongs to whether it takes part: not yet, and
-// the instance is still the host's to release; or it does, and the drive has
-// already run the module's Close on it.
+// TestParticipatingTellsWhetherTheDriveBegan pins the two ends of what
+// Execute leaves behind.
 func TestParticipatingTellsWhetherTheDriveBegan(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -1201,14 +1079,6 @@ func TestParticipatingTellsWhetherTheDriveBegan(t *testing.T) {
 // TestBooleanOnAMiddleLayerDoesNotHideTheSubcommand pins that a boolean
 // argument introduced by a middle command does not swallow the subcommand
 // name that follows it.
-//
-// Locating the selected command reads the command line, and an argument
-// written without a value is told apart from one whose value follows it only
-// by its registration. A layer registered after the search would have its
-// boolean take the next word -- the name of its own subcommand -- as a value,
-// and the command found would be the parent. What surfaced then was a
-// diagnostic saying the deeper command does not take in a module it does take
-// in, because that command's layer was never registered.
 func TestBooleanOnAMiddleLayerDoesNotHideTheSubcommand(t *testing.T) {
 	for _, order := range [][]string{
 		{"db", "migrate", "--dry-run", "--verbose"},
@@ -1300,14 +1170,6 @@ func greeterLine(t *testing.T, help string) string {
 // an argument says whether the command being described will ask for it, and
 // not what whichever command happened to register the argument first would
 // say.
-//
-// A reporting command collects every module's arguments without running any
-// of them, so on its page the argument is one a run may give; on the command
-// that runs the module the same argument is one a run cannot start without.
-// Both are one argument, and the two pages still have to say different
-// things about it. The reporting command is named on either side of serve,
-// since the command-line library orders siblings by name and which of them
-// registers an argument first follows that order.
 func TestTheRequiredMarkFollowsTheCommandWhoseHelpIsShown(t *testing.T) {
 	for _, reporter := range []string{"check", "zcheck"} {
 		tree := func(a *App) {
@@ -1340,10 +1202,7 @@ func TestTheRequiredMarkFollowsTheCommandWhoseHelpIsShown(t *testing.T) {
 }
 
 // TestTheRequiredMarkReachesACommandThatRunsWhatItsParentOnlyCollects pins
-// the same rule down one path rather than across siblings. The parent reaches
-// the module for its declarations and puts its argument on the command line,
-// and the child runs it: the argument is one and the same, and the child's
-// page is the one that says a run of it cannot start without the value.
+// the same rule down one path rather than across siblings.
 func TestTheRequiredMarkReachesACommandThatRunsWhatItsParentOnlyCollects(t *testing.T) {
 	tree := func(a *App) {
 		tool := a.Root().Sub("tool")
@@ -1398,15 +1257,9 @@ func TestAnArgumentGivenOnARunningChildSatisfiesTheRequiredItem(t *testing.T) {
 	}
 }
 
-// TestAReportingActionReadsACollectedModuleWithoutItsRequiredItems pins that a
-// module this run does not take in at run level has no required item judged,
-// whoever decodes its path.
-//
-// A command that reports the configuration reads every module's values in its
-// own action, and the modules it reads are ones it only collects: judging their
-// required items there would fail the report over a value only the command
-// that runs the module needs. The command that does run it still fails
-// without the value, from its action as from the module itself.
+// TestAReportingActionReadsACollectedModuleWithoutItsRequiredItems pins that
+// a module this run does not take in at run level has no required item
+// judged, whoever decodes its path.
 func TestAReportingActionReadsACollectedModuleWithoutItsRequiredItems(t *testing.T) {
 	decodeIn := func(command string, includeAtRunLevel bool) error {
 		var decoded error
@@ -1441,10 +1294,7 @@ func TestAReportingActionReadsACollectedModuleWithoutItsRequiredItems(t *testing
 
 // TestTheDiagnosisOfAnUnknownArgumentIsAboutTheSelectedCommand pins that the
 // fix an unknown argument is met with is read off the command the run
-// selected. A sibling that reaches the module for its declarations alone says
-// nothing about a command that does not take it in at all, and pointing that
-// command at WithFlags would send the host to change an inclusion it never
-// wrote.
+// selected.
 func TestTheDiagnosisOfAnUnknownArgumentIsAboutTheSelectedCommand(t *testing.T) {
 	a, _, _ := treeApp(treeRegistry(t, &treeRun{}, nil), "version", "--greeter-addr=:1")
 	check := a.Root().Sub("check")

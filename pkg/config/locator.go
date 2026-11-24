@@ -11,23 +11,14 @@ import (
 )
 
 // transports are the Source and Format implementations this binary carries,
-// indexed by the name each one answers for. They arrive as resources rather
-// than as capabilities: this module is constructed before any other instance
-// exists, so a capability lookup would find nothing, while resources are
-// settled before Run and answer the same at every stage.
+// indexed by the name each one answers for.
 type transports struct {
 	sources map[string]Source
 	formats map[string]Format
 }
 
-// collectTransports gathers the transports and formats, refusing two that
-// answer for the same name. Selection is an exact match rather than a contest
-// of priorities, so a duplicate leaves nothing to choose between; it is found
-// here, while the declaring modules are still in hand, rather than at the
-// moment the primary source is read.
-//
-// Names are registered and compared in lower case, so the case a declaration
-// is spelled in does not tell two of them apart.
+// collectTransports gathers the transports and formats, refusing two that answer
+// for the same name. Names are compared in lower case.
 func collectTransports(reg *core.Registry) (*transports, error) {
 	t := &transports{sources: map[string]Source{}, formats: map[string]Format{}}
 	declaredBy := map[string]string{}
@@ -55,18 +46,9 @@ func collectTransports(reg *core.Registry) (*transports, error) {
 	return t, nil
 }
 
-// locate gives the config locator of this run. It has to be settled before any
-// configuration is read and therefore cannot come out of the configuration
-// itself: the host's default, then <PREFIX>_CONFIG, then --config, each
-// overriding the one before it.
-//
-// With no prefix the environment leg does not apply at all: <PREFIX>_CONFIG is
-// a derived name and there is nothing to derive it from. The locator then
-// comes from the host's default or the command line.
-//
-// All three being silent is a legal configuration: there is no primary config
-// source, and the defaults, the environment and the command line carry the run
-// on their own.
+// locate gives the config locator of this run: the host's default, then
+// <PREFIX>_CONFIG, then --config, each overriding the one before it. All three
+// silent is a legal configuration with no primary config source.
 func locate(m *manifest, environ map[string]string, flagLocator string, flagGiven bool) string {
 	locator := m.host.DefaultLocator
 	if m.host.Prefix != "" {
@@ -80,17 +62,10 @@ func locate(m *manifest, environ map[string]string, flagLocator string, flagGive
 	return locator
 }
 
-// ReadPrimary reads the primary config source and puts it under the defaults
-// and above nothing. An empty locator means there is no primary source, which
-// is a legal configuration and not a failure.
-//
-// The content is checked before it is merged in. The layering tool folds the
-// keys of the map it is handed to lower case in place, so a check made
-// afterwards would no longer be looking at what the source wrote.
-//
-// A second call is a programming error rather than a second layer: the design
-// gives a run one primary source, and the tool merges rather than replaces, so
-// two reads would silently stack.
+// ReadPrimary reads the primary config source and puts it above the defaults. An
+// empty locator means there is no primary source. The content is checked before
+// it is merged in, since the layering tool folds keys in place. A second call
+// panics.
 func (l *loader) ReadPrimary(ctx context.Context, locator string) error {
 	if l.readPrimary {
 		panic("config: the primary config source was read twice. A run has one primary source, " +
@@ -113,10 +88,8 @@ func (l *loader) ReadPrimary(ctx context.Context, locator string) error {
 	return l.v.MergeConfigMap(content)
 }
 
-// clonedTree copies a parsed source so that the folding the layering tool
-// performs in place leaves the copy alone. Only the maps and lists on the way
-// down are rebuilt; the values at the leaves are what the parser produced and
-// are handed on as they are.
+// clonedTree copies a parsed source so the layering tool's in-place folding
+// leaves the copy alone.
 func clonedTree(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
@@ -137,9 +110,7 @@ func clonedTree(v any) any {
 }
 
 // read fetches the primary config source and parses it. The transport answers
-// "where do the bytes come from" and the format answers "how are they read",
-// and the two are chosen independently: a file source and a remote config
-// centre share the same parsers.
+// where the bytes come from and the format how they are read.
 func (t *transports) read(ctx context.Context, locator string) (map[string]any, error) {
 	parsed, err := url.Parse(locator)
 	if err != nil {
@@ -151,11 +122,6 @@ func (t *transports) read(ctx context.Context, locator string) (map[string]any, 
 	}
 	source, known := t.sources[parsed.Scheme]
 	if !known {
-		// The path is the scheme appended to the transport subpackage prefix,
-		// taken exactly as url.Parse produced it: the standard library has
-		// already lowercased the scheme and held it to ALPHA followed by
-		// [a-z0-9+.-], so normalising it again would only make the name in the
-		// message disagree with the key the lookup just failed on.
 		return nil, fmt.Errorf("%w: %q names the scheme %q, which no imported Source answers for. "+
 			"Import a transport that answers for it: by convention that is "+
 			"github.com/vislake/speed/pkg/config/source/%s. The convention is a lead, not a "+
@@ -177,14 +143,6 @@ func (t *transports) read(ctx context.Context, locator string) (map[string]any, 
 	formatName = strings.ToLower(formatName)
 	format, known := t.formats[formatName]
 	if !known {
-		// The name is quoted because a transport reports whatever it was told:
-		// on the remote leg that is the operator's own format query parameter,
-		// which may carry spaces or slashes. Case is not among them: the name
-		// is folded to lower case before the lookup, so the message names the
-		// key the lookup failed on. The path is built from that same string
-		// unconditionally, with no test of whether it looks like a path
-		// segment, and the lead below covers the odd path a degenerate name
-		// produces.
 		return nil, fmt.Errorf("%w: %q is in the %q format, which no imported Format parses. "+
 			"Import a parser for it: by convention that is "+
 			"github.com/vislake/speed/pkg/config/format/%s. The convention is a lead, not a "+
@@ -203,11 +161,8 @@ func (t *transports) read(ctx context.Context, locator string) (map[string]any, 
 	return content, nil
 }
 
-// fetchError classifies what a transport reported. A transport that refuses
-// the shape of the locator, such as a file source handed file://host/path,
-// says so with ErrMalformedLocator and keeps that classification: the host has
-// the same thing to do either way, which is to fix the locator it gave.
-// Anything else is the source being unreachable.
+// fetchError classifies what a transport reported, keeping the sentinel it
+// already carried.
 func fetchError(locator string, err error) error {
 	for _, sentinel := range []error{ErrMalformedLocator, ErrUndeterminedFormat, ErrSourceUnavailable} {
 		if errors.Is(err, sentinel) {

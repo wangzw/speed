@@ -1,10 +1,6 @@
-// Package yaml parses the YAML configuration format. It is the one place in
-// the configuration module that carries a third-party dependency, which is
-// why it is a package of its own: a host that configures itself in JSON never
-// imports it and never pays for it.
-//
-// Importing the package is all a host does with it, because the parser travels
-// as a resource of a module registered in init:
+// Package yaml parses the YAML configuration format, the one package in the
+// module that carries a third-party dependency. Importing the package is all a
+// host does with it:
 //
 //	import _ "github.com/vislake/speed/pkg/config/format/yaml"
 package yaml
@@ -21,62 +17,34 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// ModuleName is the name this parser registers under. Transports and formats
-// are named after where they live, so a registry listing says what a module is
-// without anybody opening it. It is exported for the host's command tree, which
-// takes modules in by name: a constant a rename carries along rather than a
-// literal it leaves behind.
+// ModuleName is the name this parser registers under.
 const ModuleName = "config.format.yaml"
 
-// The tags this parser judges keys by. YAML resolves an unquoted 1 to !!int
-// and a quoted "1" to !!str, which is exactly the distinction a config key
-// needs; a merge key carries a tag of its own and is therefore not a string
-// key either.
+// The tags this parser judges keys by.
 const (
 	stringTag = "!!str"
 	mergeTag  = "!!merge"
 )
 
-// init registers the module with the process registry, which is what makes a
-// blank import of this package enough to have YAML config sources parsed.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is this module's descriptor, exported for registries that do not
-// inherit the process-level registrations, such as the ones tests build with
-// core.New.
-//
-// It holds a resource and nothing else: a parser is stateless, has no
-// lifecycle and delivers no capability. The configuration module collects it
-// with core.Resources and never imports this package.
+// Module is this module's descriptor, for registries that do not inherit the
+// process-level registrations. It holds a resource and nothing else.
 func Module() core.Module {
 	return core.Module{Name: ModuleName, Resources: []any{format{}}}
 }
 
-// Compile-time proof that this parser satisfies the extension point it is
-// collected by: the resource is stored as any, so nothing else would catch a
-// signature that drifted from the interface.
 var _ config.Format = format{}
 
-// format is the parser itself. It holds no state: every call is answered out
-// of the data it is given.
 type format struct{}
 
-// Name reports the format name this parser is selected by. The name is matched
-// exactly, so it is the same string a file source derives from the .yaml and
-// .yml extensions.
+// Name reports the format name this parser is selected by.
 func (format) Name() string { return "yaml" }
 
-// Unmarshal decodes a YAML document into a tree of string-keyed maps.
-//
-// It decodes to the document tree and walks it rather than letting the library
-// decode straight into map[string]any: YAML permits keys of any type, and the
-// rule that a non-string key is refused anywhere in the tree needs the node
-// tags to hold to it. Values keep the types YAML resolves them to, so 5m stays
-// a string for a duration field to parse and 1 arrives as an integer.
-//
-// A document carrying nothing is an empty configuration rather than a failure:
-// a source with no settings is a legal way to run, and the layers below it
-// decide the values.
+// Unmarshal decodes a YAML document into a tree of string-keyed maps. It walks
+// the document tree so a non-string key anywhere is refused; values keep the
+// types YAML resolves them to. A document carrying nothing is an empty
+// configuration.
 func (format) Unmarshal(data []byte) (map[string]any, error) {
 	decoder := yamlv3.NewDecoder(bytes.NewReader(data))
 
@@ -115,10 +83,7 @@ func (format) Unmarshal(data []byte) (map[string]any, error) {
 	}
 }
 
-// refuseSecondDocument rejects a stream carrying more than one document. YAML
-// allows several in one file and a config source is one of them; decoding the
-// first and dropping the rest would leave the settings somebody wrote with no
-// effect and nothing said about it.
+// refuseSecondDocument rejects a stream carrying more than one document.
 func refuseSecondDocument(decoder *yamlv3.Decoder) error {
 	var extra yamlv3.Node
 	switch err := decoder.Decode(&extra); {
@@ -131,10 +96,8 @@ func refuseSecondDocument(decoder *yamlv3.Decoder) error {
 		"one document. Remove the --- separator and merge the settings into one", extra.Line)
 }
 
-// converter walks the document tree. It remembers the nodes on the current
-// path, because an anchor may hold an alias to itself: the library parses that
-// without complaint and leaves a cycle in the tree, which a walk with no
-// memory follows forever.
+// converter walks the document tree, remembering the nodes on the current path
+// so a self-referencing alias does not recurse forever.
 type converter struct {
 	onPath map[*yamlv3.Node]bool
 }
@@ -178,17 +141,11 @@ func (c *converter) value(node *yamlv3.Node) (any, error) {
 		}
 		return scalar, nil
 	}
-	// The zero kind is what an empty document decodes to.
 	return nil, nil
 }
 
 // mapping converts a mapping node, refusing every key that is not a string and
 // every key given twice.
-//
-// The library refuses a repeated key when it decodes into a map, and the walk
-// over the document tree is what bypasses that check, so it is made here.
-// Keeping either value drops the other, and a second section under one key
-// drops every setting of the first that the second does not repeat.
 func (c *converter) mapping(node *yamlv3.Node) (map[string]any, error) {
 	out := make(map[string]any, len(node.Content)/2)
 	lines := make(map[string]int, len(node.Content)/2)
@@ -213,9 +170,7 @@ func (c *converter) mapping(node *yamlv3.Node) (map[string]any, error) {
 }
 
 // stringKey gives the key a node names, refusing anything that is not a plain
-// string. Turning a number into its text silently would make 1 and "1" the
-// same key, and a config key is lowercase letters, digits and dashes in the
-// first place, so a number was never one.
+// string.
 func stringKey(node *yamlv3.Node) (string, error) {
 	resolved := node
 	seen := map[*yamlv3.Node]bool{}
@@ -250,8 +205,6 @@ func resolveAlias(node *yamlv3.Node) (*yamlv3.Node, error) {
 	return node.Alias, nil
 }
 
-// keyText renders a key for an error message, falling back to its kind when
-// the key is a whole collection rather than a scalar.
 func keyText(node *yamlv3.Node) string {
 	if node.Kind == yamlv3.ScalarNode {
 		return fmt.Sprintf("%q", node.Value)
@@ -259,7 +212,6 @@ func keyText(node *yamlv3.Node) string {
 	return "written here"
 }
 
-// describeTag names what YAML resolved a node to, in the words of the format.
 func describeTag(node *yamlv3.Node) string {
 	switch node.Kind {
 	case yamlv3.MappingNode:
@@ -273,8 +225,6 @@ func describeTag(node *yamlv3.Node) string {
 	return "of type " + node.Tag
 }
 
-// describe names what a converted value is, so the error says what was found
-// rather than what Go called it.
 func describe(value any) string {
 	switch value.(type) {
 	case []any:

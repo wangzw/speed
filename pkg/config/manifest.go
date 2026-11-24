@@ -11,63 +11,39 @@ import (
 	"unicode/utf8"
 )
 
-// leafKind is how a leaf takes a value. It decides which origins can give it
-// one, which form it takes on the command line, whether the flat
-// comma-separated list form applies to it, and whether it is overridden as a
-// whole.
+// leafKind is how a leaf takes a value.
 type leafKind uint8
 
 const (
 	// kindScalar is a single assignable value.
 	kindScalar leafKind = iota
-	// kindStringList is a list of strings, the one container the environment
-	// and the command line can give, comma separated and replaced as a whole.
+	// kindStringList is a list of strings given comma separated and replaced as
+	// a whole.
 	kindStringList
-	// kindContainer is a map or a list of structs: the primary source gives
-	// it, and gives it as a whole, because its keys are not in the manifest.
+	// kindContainer is a map or a list of structs, given as a whole.
 	kindContainer
 )
 
 // manifestItem is one input item: a leaf of a mounted struct together with the
-// metadata its module declared for it. Nested structs only contribute path
-// segments and are not items themselves.
+// metadata its module declared for it.
 type manifestItem struct {
-	// module is the name of the module that declared the item.
-	module string
-	// path is the complete path in the config data: namespace, mount path
-	// and field path.
-	path string
-	// key is the path relative to the namespace, which is how Items is keyed.
-	key string
-	// item is the declared metadata, taken as given.
-	item Item
-	// origins is item.Origins with the zero value resolved.
+	module  string
+	path    string
+	key     string
+	item    Item
 	origins Origin
-	// envName is the variable this item reads, empty when it reads none.
 	envName string
-	// typ is the type of the field the value lands in.
-	typ reflect.Type
-	// kind classifies typ for the layers that cannot give every shape.
-	kind leafKind
-	// def is the field's current value in the prototype, which is this
-	// item's default. Container values are copies, so the prototype is not
-	// reachable through the manifest. The host defaults document replaces it
-	// where the document names the path (see applyDefaults).
-	def any
+	typ     reflect.Type
+	kind    leafKind
+	def     any
 	// documented is whether the host defaults document gave this item its
-	// default. It is the half of the default layer that counts as somebody
-	// having supplied a value, and the help output reads it to tell a
-	// document-supplied required item from one nothing supplied.
+	// default.
 	documented bool
 }
 
-// expandSchema turns one module's declaration into its input items: it walks
-// the mounted structs down to the leaves, derives the paths and the
-// environment variable names, and checks what a single declaration can be
-// wrong about on its own.
-//
-// prefix is the host's environment variable prefix. With no prefix, derived
-// names do not apply; pinned ones still do, since they are not built from it.
+// expandSchema turns one module's declaration into its input items. prefix is
+// the host's environment variable prefix; with no prefix, derived names do not
+// apply while pinned ones still do.
 func expandSchema(module string, s Schema, prefix string) ([]*manifestItem, error) {
 	if d := pathDefect(s.Namespace); d != "" {
 		return nil, fmt.Errorf("%w: module %q declares namespace %q: %s",
@@ -110,24 +86,15 @@ func (e *expander) mount(index int, m Mount) error {
 	return e.walk(v, m.Path, []reflect.Type{v.Type()})
 }
 
-// walk expands one struct. rel is the path reached so far, relative to the
-// namespace; chain is the struct types on the way in, which is what turns a
-// self-referencing declaration into an error instead of a hang.
-//
-// An embedded field is inlined at rel rather than given a segment of its own,
-// which is the embedding semantics of encoding/json. The path rules are
-// borrowed from the json tag convention, and borrowing the embedding semantics
-// along with them is what keeps a third-party struct from carrying two sets of
-// expectations at once.
+// walk expands one struct. rel is the path reached so far; chain holds the
+// struct types on the way in, which turns a self-referencing declaration into an
+// error instead of a hang. An embedded field is inlined at rel, the embedding
+// semantics of encoding/json.
 func (e *expander) walk(v reflect.Value, rel string, chain []reflect.Type) error {
 	t := v.Type()
 	for i := range t.NumField() {
 		f := t.Field(i)
 		if f.PkgPath != "" {
-			// Unexported: no source can reach it. This holds for an embedded
-			// unexported type too, whose exported fields encoding/json would
-			// promote: skipping an unexported field is a rule of its own here
-			// and takes precedence over the embedding semantics.
 			continue
 		}
 		name, tagged, skip := fieldName(f)
@@ -178,11 +145,8 @@ func (e *expander) walk(v reflect.Value, rel string, chain []reflect.Type) error
 	return nil
 }
 
-// descend expands a nested struct, refusing a type that is already on the way
-// in. The check is on types rather than on a depth limit: a cycle is a defect
-// for certain, while depth is not, and a limit picked out of the air would one
-// day stop a legitimate declaration. The same type on two sibling branches is
-// not a cycle.
+// descend expands a nested struct, refusing a type already on the way in. The
+// same type on two sibling branches is not a cycle.
 func (e *expander) descend(v reflect.Value, key string, chain []reflect.Type, f reflect.StructField) error {
 	st := v.Type()
 	if slices.Contains(chain, st) {
@@ -200,15 +164,8 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 	item := e.schema.Items[key]
 	kind := classify(ft)
 	origins := resolveOrigins(item.Origins, kind)
-	// The declared set, not the resolved one, decides this: an item that
-	// declared nothing resolves to a set it never asked for, and killing it
-	// here would take down every undeclared map field.
-	//
-	// The environment is not in this check. A container takes it as JSON and
-	// replaces the whole value, which is a form it can honour (see
-	// envContainer); the command line has no such form, so declaring it there
-	// is still a defect that shows at collection rather than on the runs where
-	// somebody happens to write the argument.
+	// The declared set, not the resolved one, decides this. A container has no
+	// command-line form; the environment does take one as JSON.
 	if kind == kindContainer && item.Origins&OriginFlag != 0 {
 		return fmt.Errorf("%w: module %q gives %q the command line as an origin, and it is %s. "+
 			"A map or a list of structs has no form for the command line to give, so the "+
@@ -275,10 +232,7 @@ func (e *expander) leaf(key string, fv reflect.Value, ft reflect.Type) error {
 	return nil
 }
 
-// checkItemKeys refuses an Items key that reached no leaf. Every input item
-// lives in a carrier struct and therefore has a path, so a key that matches
-// none is a misspelling, and leaving it alone would drop a Required, a
-// FlagName or a Sensitive without a word.
+// checkItemKeys refuses an Items key that reached no leaf.
 func (e *expander) checkItemKeys() error {
 	for _, key := range slices.Sorted(maps.Keys(e.schema.Items)) {
 		if !e.keys[key] {
@@ -291,10 +245,8 @@ func (e *expander) checkItemKeys() error {
 	return nil
 }
 
-// shortNameDefect reports why a single-character short name is one no command
-// line can reach, or "" when it is not. The command-line library indexes a
-// short name by its one byte and panics on a character that takes more, and a
-// dash after the leading one is how a long name begins.
+// shortNameDefect reports why a short name is one no command line can reach, or
+// "" when it is not.
 func shortNameDefect(short string) string {
 	switch {
 	case short == "":
@@ -310,10 +262,7 @@ func shortNameDefect(short string) string {
 }
 
 // longNameDefect reports why a long name is one no command line can reach, or
-// "" when it is not. The command-line syntax reads a name beginning with a
-// dash as a syntax error, and cuts a name at its first equals sign to find the
-// value, so the name it looks up is never the one declared. The name is
-// written without the leading dashes, which the syntax adds.
+// "" when it is not. The name is written without the leading dashes.
 func longNameDefect(name string) string {
 	switch {
 	case strings.HasPrefix(name, "-"):
@@ -326,13 +275,9 @@ func longNameDefect(name string) string {
 	return ""
 }
 
-// fieldName derives the path segment of a field: the config tag first, the
-// json tag next, the field name in lower kebab case otherwise. A tag of "-"
-// keeps the field out, which is what it means on the structs that carry one.
-//
-// tagged reports that the name came from a tag rather than from the field
-// name, which is what tells an embedded field that is inlined from one that
-// names a segment of its own.
+// fieldName derives the path segment of a field: the config tag first, the json
+// tag next, the field name in lower kebab case otherwise. A tag of "-" keeps the
+// field out. tagged reports that the name came from a tag.
 func fieldName(f reflect.StructField) (name string, tagged, skip bool) {
 	for _, key := range [...]string{"config", "json"} {
 		tag, ok := f.Tag.Lookup(key)
@@ -351,16 +296,8 @@ func fieldName(f reflect.StructField) (name string, tagged, skip bool) {
 }
 
 // inlineEmbedded reports how an anonymous field takes part in a walk. An
-// embedded struct without an explicit tag is inlined: its fields join the
-// enclosing path without a segment of their own. An explicit config or json
-// tag names a segment as it does on any other field, since a name written by
-// hand was written to be used.
-//
-// inner is the struct to walk when inline is set; hollow marks an embedded nil
-// struct pointer, which is skipped for the same reason a named one is: there
-// are no defaults to read out of it. An embedded non-struct such as a defined
-// integer type is neither, and keeps contributing a segment named after its
-// type, which is what encoding/json does with it as well.
+// embedded struct without an explicit tag is inlined; an explicit tag names a
+// segment. hollow marks an embedded nil struct pointer, which is skipped.
 func inlineEmbedded(f reflect.StructField, fv reflect.Value, tagged bool) (inner reflect.Value, inline, hollow bool) {
 	if !f.Anonymous || tagged || decodesFromText(f.Type) {
 		return reflect.Value{}, false, false
@@ -386,12 +323,8 @@ func pathLabel(key string) string {
 	return fmt.Sprintf("%q", key)
 }
 
-// resolveOrigins settles the origins of one leaf. The zero value stands for
-// the ordinary combination, except on a container leaf: a map or a list of
-// structs takes the primary config source alone unless its module names another
-// origin. Reading the environment is a choice the container's encoding makes
-// visible -- JSON text, replaced whole -- so an undeclared map does not start
-// reading a variable nobody wrote.
+// resolveOrigins settles the origins of one leaf. A container leaf defaults to
+// the primary source alone.
 func resolveOrigins(declared Origin, kind leafKind) Origin {
 	if declared == 0 && kind == kindContainer {
 		return OriginPrimary
@@ -425,14 +358,7 @@ func camelToKebab(name string) string {
 //
 //	cache.redis.max-conns  ->  MYAPP_CACHE__REDIS__MAX_CONNS
 //
-// Double underscores separate levels and single ones belong to key names,
-// which is unambiguous only because a key segment cannot contain an
-// underscore of its own.
-//
-// This is the only place a variable name is built. Each item is bound to the
-// layering tool under the finished name, so the tool neither joins a prefix
-// nor rewrites a name of its own; its rewriting works on the whole name after
-// the prefix is on, which would reach into a pinned name as well.
+// This is the only place a variable name is built.
 func deriveEnvName(prefix, path string) string {
 	segments := strings.Split(path, ".")
 	for i, segment := range segments {
@@ -455,11 +381,9 @@ func pathDefect(path string) string {
 	return ""
 }
 
-// segmentDefect reports why one path segment is not a legal config key
-// segment, or "" when it is. Segments hold lowercase letters, digits and
-// hyphens, which is what makes the environment variable mapping reversible:
-// allow an underscore in a key and a.pool_size and a.pool-size derive the same
-// variable name while being different paths.
+// segmentDefect reports why one path segment is not a legal config key segment,
+// or "" when it is. Segments hold lowercase letters, digits and hyphens, which
+// keeps the environment variable mapping reversible.
 func segmentDefect(segment string) string {
 	if segment == "" {
 		return "it has an empty segment, and every segment names something"
@@ -475,13 +399,8 @@ func segmentDefect(segment string) string {
 	return ""
 }
 
-// envNameDefect reports why an environment variable name, or the prefix names
-// are derived from, is not one a POSIX shell can export, or "" when it is. The
-// set is letters, digits and underscores, not beginning with a digit, which is
-// what the derivation keeps to when it turns a hyphen into an underscore. A
-// name outside it is one the operator cannot set from a shell, and with an
-// equals sign in it one no environment can hold, so the values it was meant to
-// carry would stay their defaults and nothing would say so.
+// envNameDefect reports why an environment variable name, or a prefix, is not
+// one a POSIX shell can export, or "" when it is.
 func envNameDefect(name string) string {
 	for i, r := range name {
 		switch {
@@ -499,7 +418,6 @@ func envNameDefect(name string) string {
 	return ""
 }
 
-// classify decides how a leaf takes its value.
 func classify(t reflect.Type) leafKind {
 	switch t.Kind() {
 	case reflect.Slice, reflect.Array:
@@ -514,14 +432,6 @@ func classify(t reflect.Type) leafKind {
 }
 
 // booleanLeaf reports whether a leaf takes its value the way a boolean does.
-// It decides the value an argument written without one means, which is what
-// keeps the word after the argument from being read as its value, and it
-// decides that the item shows no placeholder. The POSIX reading of the two is
-// the command-line library's; what this answers is which leaves it applies to.
-//
-// The pointer is looked through, because a scalar pointer is a leaf of its own
-// and *bool is the shape a module uses when "nobody set it" has to be told
-// from "set to false".
 func booleanLeaf(t reflect.Type) bool {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -529,14 +439,10 @@ func booleanLeaf(t reflect.Type) bool {
 	return t.Kind() == reflect.Bool
 }
 
-// textUnmarshalerType is the interface a type uses to decode itself from a
-// string.
 var textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
 
-// decodesFromText reports whether a struct type takes its value from a string
-// of its own. Such a type is a leaf rather than a level of the path: expanding
-// time.Time would reach nothing but unexported fields and make the item
-// disappear.
+// decodesFromText reports whether a struct type takes its value from a string of
+// its own, and is therefore a leaf rather than a level of the path.
 func decodesFromText(t reflect.Type) bool {
 	if t.Implements(textUnmarshalerType) {
 		return true
@@ -545,8 +451,8 @@ func decodesFromText(t reflect.Type) bool {
 }
 
 // defaultValue reads a field's current value out of the prototype. Maps and
-// slices are copied, so that nothing reached through the manifest can write
-// back into a prototype two registries may share.
+// slices are copied, so nothing reached through the manifest writes back into a
+// shared prototype.
 func defaultValue(v reflect.Value) any {
 	switch v.Kind() {
 	case reflect.Map:
@@ -569,7 +475,6 @@ func defaultValue(v reflect.Value) any {
 	return v.Interface()
 }
 
-// joinPath appends a segment path to a prefix, either of which may be empty.
 func joinPath(prefix, rest string) string {
 	switch {
 	case prefix == "":
@@ -580,8 +485,6 @@ func joinPath(prefix, rest string) string {
 	return prefix + "." + rest
 }
 
-// typeName renders a type for an error message, keeping the package path so
-// the reader can find the declaration.
 func typeName(t reflect.Type) string {
 	if t.PkgPath() != "" && t.Name() != "" {
 		return t.PkgPath() + "." + t.Name()

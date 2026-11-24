@@ -79,8 +79,6 @@ func givePrimaryWhole(t *testing.T, l *loader, content map[string]any) {
 // TestDefaultsDocumentSetsScalarDefaults pins that a value in the document
 // replaces the prototype's field value as the item's default, and that both
 // spellings of a path reach it: one key holding the dots, and nested keys.
-// A key the document does not give keeps the prototype's value, the same
-// leaf-wise rule every other layer follows.
 func TestDefaultsDocumentSetsScalarDefaults(t *testing.T) {
 	l, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache.addr": "defaults:1",
@@ -137,11 +135,8 @@ func TestDocumentDefaultLosesToHigherLayers(t *testing.T) {
 }
 
 // TestDocumentContainerAppliesWhole pins that a container leaf named by the
-// document replaces the prototype's whole value rather than merging under it,
-// and that its inner keys arrive as the document wrote them. The keys are the
-// module's own data and are not leaves of the manifest, which is why the value
-// is replaced as one and why the layering tool's folding never touches it: the
-// mixed-case key is what tells this read path from the folded default layer.
+// document replaces the prototype's whole value rather than merging under
+// it, and that its inner keys arrive as the document wrote them.
 func TestDocumentContainerAppliesWhole(t *testing.T) {
 	l, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{"labels": map[string]any{"Zone": "cold"}},
@@ -177,10 +172,9 @@ func TestPrimarySourceReplacesDocumentContainerWhole(t *testing.T) {
 	}
 }
 
-// TestUnknownDefaultsKeyStopsTheStartup pins that the document is judged like
-// the primary source: a key no module declares is a startup failure, not a
-// value that quietly vanishes. The message names the document rather than the
-// primary source, which is where the reader has to go and fix it.
+// TestUnknownDefaultsKeyStopsTheStartup pins that the document is judged
+// like the primary source: a key no module declares is a startup failure,
+// not a value that quietly vanishes.
 func TestUnknownDefaultsKeyStopsTheStartup(t *testing.T) {
 	_, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{"unknown-setting": "x"},
@@ -196,11 +190,9 @@ func TestUnknownDefaultsKeyStopsTheStartup(t *testing.T) {
 	}
 }
 
-// TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup pins the second kind of
-// key the document may not give: the manifest has it, and the item does not
-// take the primary source. The defaults document feeds the layer the primary
-// source feeds, so the same items accept it; letting another through would
-// swallow a value written on purpose.
+// TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup pins the second kind
+// of key the document may not give: the manifest has it, and the item does
+// not take the primary source.
 func TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup(t *testing.T) {
 	items := map[string]Item{"addr": {Origins: OriginFlag, FlagName: "cache-addr"}}
 	_, err := loadDefaults(t, yamlParser(map[string]any{
@@ -219,11 +211,8 @@ func TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup(t *testing.T) {
 }
 
 // TestDefaultsDocumentSatisfiesRequired pins that the document counts as
-// somebody having given a value: it is the host declaring one on purpose, the
-// same act as writing the key in the configuration file. The prototype's field
-// value is not what satisfies the item, and the case tells the two apart by
-// reading back the document's value. Both spellings of a path reach the same
-// conclusion.
+// somebody having given a value: it is the host declaring one on purpose,
+// the same act as writing the key in the configuration file.
 func TestDefaultsDocumentSatisfiesRequired(t *testing.T) {
 	cases := map[string]map[string]any{
 		"flat":   {"cache.addr": "defaults:1"},
@@ -249,11 +238,8 @@ func TestDefaultsDocumentSatisfiesRequired(t *testing.T) {
 }
 
 // TestDocumentSilentOnRequiredItemKeepsPrototypeOut pins the half that stays
-// true: a document in the run does not make the prototype's field value count.
-// The item holds a non-zero value in the carrier struct and the document gives
-// another key, and Decode still reports the item missing. The message names
-// the four sources that can satisfy it and says the carrier struct's value is
-// not one of them.
+// true: a document in the run does not make the prototype's field value
+// count.
 func TestDocumentSilentOnRequiredItemKeepsPrototypeOut(t *testing.T) {
 	items := map[string]Item{"addr": {Required: true}}
 	l, err := loadDefaults(t, yamlParser(map[string]any{
@@ -312,11 +298,10 @@ func TestDocumentNullDoesNotSatisfyRequired(t *testing.T) {
 	}
 }
 
-// TestDocumentSuppliesRequiredStringList pins the case a skeleton leans on: an
-// endpoint list is a leaf the environment and the command line could also give,
-// and a required one the document supplies is satisfied through the same
-// judged read as any other required item. The decoded list is the document's,
-// not the prototype's.
+// TestDocumentSuppliesRequiredStringList pins the case a skeleton leans on:
+// an endpoint list is a leaf the environment and the command line could also
+// give, and a required one the document supplies is satisfied through the
+// same judged read as any other required item.
 func TestDocumentSuppliesRequiredStringList(t *testing.T) {
 	type endpointsOptions struct{ Endpoints []string }
 	prototype := endpointsOptions{Endpoints: []string{"proto-a", "proto-b"}}
@@ -343,11 +328,10 @@ func TestDocumentSuppliesRequiredStringList(t *testing.T) {
 	}
 }
 
-// TestDocumentSuppliesRequiredContainerLeaf pins the case the string list does
-// not reach: a map or a list of structs is a container leaf, read back from
-// the source trees rather than through the layering tool, and the required
-// rule governs that branch too. The decoded containers are the document's, not
-// the prototype's.
+// TestDocumentSuppliesRequiredContainerLeaf pins the case the string list
+// does not reach: a map or a list of structs is a container leaf, read back
+// from the source trees rather than through the layering tool, and the
+// required rule governs that branch too.
 func TestDocumentSuppliesRequiredContainerLeaf(t *testing.T) {
 	l, err := loadDefaults(t, yamlParser(map[string]any{
 		"cache": map[string]any{
@@ -376,8 +360,7 @@ func TestDocumentSuppliesRequiredContainerLeaf(t *testing.T) {
 
 // TestDocumentSuppliesRequiredPointerLeaf pins the other shape the required
 // rule governs: a scalar pointer whose prototype value is nil, the one shape
-// meansUnset reads as "nobody gave one". The document gives it, so the item is
-// satisfied and the pointer is filled from the document.
+// meansUnset reads as "nobody gave one".
 func TestDocumentSuppliesRequiredPointerLeaf(t *testing.T) {
 	type retriesOptions struct{ Retries *int }
 	prototype := retriesOptions{}
@@ -445,9 +428,7 @@ func TestDocumentSatisfiedRequiredValueLosesToHigherLayers(t *testing.T) {
 // TestDocumentDefaultGoesThroughTheTypeRules pins that the document's values
 // take the same conversion path as every other source's: they keep the types
 // the parser resolved, and the constraints on top of the conversion apply to
-// them. A duration is the sharpest probe, since it is one type whose rule no
-// library default gives -- it takes time.ParseDuration text and refuses a bare
-// number, whatever layer the number came from.
+// them.
 func TestDocumentDefaultGoesThroughTheTypeRules(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -531,9 +512,7 @@ func TestHelpRendersDocumentDefault(t *testing.T) {
 
 // TestHelpRendersDocumentListDefault pins the list half of the same rule: a
 // []string item whose value the document supplies renders the document's
-// entries. The document reaches the item as its parser gave it, a sequence of
-// interface values, so the renderer has to read through them rather than print
-// the interface itself.
+// entries.
 func TestHelpRendersDocumentListDefault(t *testing.T) {
 	type hostsOptions struct{ Hosts []string }
 	prototype := hostsOptions{Hosts: []string{"proto-a", "proto-b"}}

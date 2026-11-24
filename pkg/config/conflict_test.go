@@ -109,6 +109,8 @@ type ttlCarrier struct {
 	TTL string
 }
 
+// TestPathPrefixIntersectionConflict checks that a path that is a prefix of
+// another is refused as a conflict.
 func TestPathPrefixIntersectionConflict(t *testing.T) {
 	scalar := struct{ Redis string }{}
 	nested := struct{ PoolSize int }{}
@@ -133,6 +135,8 @@ func TestPathPrefixIntersectionConflictEitherWayRound(t *testing.T) {
 	)
 }
 
+// TestIdenticalPathConflict checks that two modules declaring the same path
+// conflict.
 func TestIdenticalPathConflict(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "cache.addr"},
 		declaring("alpha", Schema{Namespace: "cache", Mounts: []Mount{{Value: &addrCarrier{}}}}),
@@ -151,6 +155,8 @@ func TestMutuallyExclusiveImplementationsSharingAPathConflict(t *testing.T) {
 	)
 }
 
+// TestSameNamespaceDisjointPathsAllowed checks that two modules may share a
+// namespace with disjoint paths.
 func TestSameNamespaceDisjointPathsAllowed(t *testing.T) {
 	m := collect(t,
 		declaring("alpha", Schema{Namespace: "cache", Mounts: []Mount{{Value: &addrCarrier{}}}}),
@@ -180,6 +186,8 @@ func TestOverlappingMountPathsAllowed(t *testing.T) {
 	}
 }
 
+// TestFlagLongNameConflict checks that two modules declaring the same long
+// flag name conflict.
 func TestFlagLongNameConflict(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "listen"},
 		declaring("alpha", Schema{
@@ -193,6 +201,8 @@ func TestFlagLongNameConflict(t *testing.T) {
 	)
 }
 
+// TestFlagShortNameConflict checks that two modules declaring the same short
+// flag name conflict.
 func TestFlagShortNameConflict(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "l"},
 		declaring("alpha", Schema{
@@ -206,6 +216,8 @@ func TestFlagShortNameConflict(t *testing.T) {
 	)
 }
 
+// TestEnvNameConflictDerivedVsPinned checks that a derived and a pinned
+// environment variable name conflict.
 func TestEnvNameConflictDerivedVsPinned(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "MYAPP_A__ADDR"},
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
@@ -217,6 +229,8 @@ func TestEnvNameConflictDerivedVsPinned(t *testing.T) {
 	)
 }
 
+// TestEnvNameConflictTwoPinned checks that two pinned environment variable
+// names conflict.
 func TestEnvNameConflictTwoPinned(t *testing.T) {
 	collectRejects(t, []string{"alpha", "beta", "NO_COLOR"},
 		declaring("alpha", Schema{
@@ -230,6 +244,7 @@ func TestEnvNameConflictTwoPinned(t *testing.T) {
 	)
 }
 
+// TestReservedFlagConfig checks that a module may not declare --config.
 func TestReservedFlagConfig(t *testing.T) {
 	collectRejects(t, []string{"alpha", "config"},
 		declaring("alpha", Schema{
@@ -239,6 +254,7 @@ func TestReservedFlagConfig(t *testing.T) {
 	)
 }
 
+// TestReservedFlagHelp checks that a module may not declare --help.
 func TestReservedFlagHelp(t *testing.T) {
 	err := collectRejects(t, []string{"alpha", "help"},
 		declaring("alpha", Schema{
@@ -251,9 +267,8 @@ func TestReservedFlagHelp(t *testing.T) {
 	}
 }
 
-// TestReservedShortHelpFlag pins the short name the command-line library puts
-// on every command. It is judged before the duplicate check, so the module
-// that declares it is the one named however many others follow.
+// TestReservedShortHelpFlag pins the short name the command-line library
+// puts on every command.
 func TestReservedShortHelpFlag(t *testing.T) {
 	err := collectRejects(t, []string{"alpha", "h"},
 		declaring("alpha", Schema{
@@ -266,6 +281,8 @@ func TestReservedShortHelpFlag(t *testing.T) {
 	}
 }
 
+// TestReservedEnvConfig checks that a module may not claim the config
+// locator variable.
 func TestReservedEnvConfig(t *testing.T) {
 	carrier := struct{ Config string }{}
 	collectRejects(t, []string{"alpha", "MYAPP_CONFIG"},
@@ -300,6 +317,8 @@ func TestPinnedLocatorNameWithoutPrefixIsAllowed(t *testing.T) {
 	}
 }
 
+// TestDuplicateHostIdentityConflict checks that two HostIdentity
+// declarations conflict.
 func TestDuplicateHostIdentityConflict(t *testing.T) {
 	collectRejects(t, []string{"host", "second-host"},
 		identifying("host", HostIdentity{Prefix: "MYAPP"}),
@@ -309,16 +328,7 @@ func TestDuplicateHostIdentityConflict(t *testing.T) {
 
 // TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect pins the names
 // the environment layer reads to the set a POSIX shell can export: letters,
-// digits and underscores, not beginning with a digit. The derivation already
-// turns the hyphens of a path into underscores for that reason, and a prefix or
-// a pinned name outside the set undoes it -- a name with an equals sign in it
-// cannot be put in any environment at all, and one with a hyphen or a space
-// cannot be exported from a shell, so every value it was meant to carry stays
-// the default and nothing says so.
-//
-// Both the prefix and a pinned name are decided by the one declaration, and a
-// pinned name keeps the case it was written in, as conventional lower-case
-// names such as http_proxy are.
+// digits and underscores, not beginning with a digit.
 func TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect(t *testing.T) {
 	for _, prefix := range []string{"crm-app", "my app", "APP=1", "1APP"} {
 		reg := core.New()
@@ -355,6 +365,8 @@ func TestAnEnvironmentVariableNameAShellCannotSetIsASchemaDefect(t *testing.T) {
 	}
 }
 
+// TestHostIdentityReachesDerivation checks that the host prefix reaches
+// derived environment variable names.
 func TestHostIdentityReachesDerivation(t *testing.T) {
 	m := collect(t,
 		identifying("host", HostIdentity{Prefix: "MYAPP", DefaultLocator: "file:///etc/myapp.yaml"}),
@@ -385,11 +397,10 @@ func TestConflictMessageStableAcrossRegistrationOrders(t *testing.T) {
 	}
 }
 
-// TestASectionAndAnInputItemMayNotShareAPath holds that a namespace one module
-// declares and an input item another declares cannot land on the same path: the
-// source would have to read one path as a value for one module and a section for
-// the other. A module whose items have all moved to the settings store still
-// declares its namespace, so its section can meet another module's leaf.
+// TestASectionAndAnInputItemMayNotShareAPath holds that a namespace one
+// module declares and an input item another declares cannot land on the same
+// path: the source would have to read one path as a value for one module and
+// a section for the other.
 func TestASectionAndAnInputItemMayNotShareAPath(t *testing.T) {
 	item := struct{ Sub string }{}
 	collectRejects(t, []string{"alpha", "beta", "cache.sub"},

@@ -19,43 +19,24 @@ const (
 )
 
 // manifest is the complete set of input items of a run, collected from every
-// registered module. Everything downstream reads it: the environment variable
-// names are derived from it, the command line is assembled from it, and the
-// unknown-key and type checks are made against it.
+// registered module.
 type manifest struct {
-	// items are the input items in collection order: by module name, and
-	// within a module in declaration order.
-	items []*manifestItem
-	// byPath, byFlag, byShort and byEnv index the items by the names each
-	// layer addresses them with. An item missing a name is absent from the
-	// corresponding index.
-	byPath  map[string]*manifestItem
-	byFlag  map[string]*manifestItem
-	byShort map[string]*manifestItem
-	byEnv   map[string]*manifestItem
-	// interior maps every path an item's ancestors occupy to the item that
-	// put it there, which is what makes a path that is a leaf for one module
-	// and an interior node for another detectable.
+	items    []*manifestItem
+	byPath   map[string]*manifestItem
+	byFlag   map[string]*manifestItem
+	byShort  map[string]*manifestItem
+	byEnv    map[string]*manifestItem
 	interior map[string]*manifestItem
-	// sections maps every namespace a module declares, and its ancestors, to the
-	// module that declared it. A namespace is a section even when it carries no
-	// input items, which is what lets a source that still writes a key under it
-	// be refused by that key's full path rather than by the namespace.
+	// sections maps every namespace a module declares, and its ancestors, to
+	// the module that declared it.
 	sections map[string]string
-	// host is the declared host identity, zero when no module declared one.
-	host HostIdentity
-	// hasHost records whether a host identity was declared at all, which
-	// tells an absent declaration from one that declares empty strings.
-	hasHost bool
+	host     HostIdentity
+	hasHost  bool
 }
 
 // newManifest collects the declarations of every registered module and merges
-// them into one manifest, failing on the first conflict.
-//
-// The domain is every registered module, including the ones this run will not
-// enable: which modules run is not known until they state it, and two
-// implementations of the same capability must divide the paths between them
-// even though only one of them ever runs.
+// them into one manifest, failing on the first conflict. The domain is every
+// registered module, including the ones this run will not enable.
 func newManifest(reg *core.Registry) (*manifest, error) {
 	m := &manifest{
 		byPath:   make(map[string]*manifestItem),
@@ -107,15 +88,8 @@ func (m *manifest) collectHost(reg *core.Registry) error {
 }
 
 // declareSections records a module's namespace, and its ancestors, as sections
-// of the config data. A namespace is a section whether or not any item sits
-// under it: a module whose items have all moved elsewhere still owns the
-// section, and a source that writes a key under it is refused by that key's full
-// path.
-//
-// A section and an input item may not share a path: the same path would be a
-// value for one module and a section for the other, and no primary source can
-// express both. Two modules sharing a namespace is not a conflict, so a section
-// meeting a section is allowed; a section meeting a leaf is not.
+// of the config data. A section and an input item may not share a path; two
+// modules sharing a namespace is not a conflict.
 func (m *manifest) declareSections(module, namespace string) error {
 	if namespace == "" {
 		return nil
@@ -234,9 +208,6 @@ func (m *manifest) checkFlagNames(item *manifestItem) error {
 	if item.item.FlagShort == "" {
 		return nil
 	}
-	// The reserved short name is judged before the duplicate is. Judging it
-	// second would let the first module to declare -h through and report the
-	// second, naming a different party on each run.
 	if item.item.FlagShort == helpShort {
 		return fmt.Errorf("%w: module %q declares %q as the command-line short name of %q, and "+
 			"the command-line library provides it on every command as the short name of --%s. "+
@@ -252,13 +223,6 @@ func (m *manifest) checkFlagNames(item *manifestItem) error {
 }
 
 // checkEnvName refuses an environment variable name that is taken, or reserved.
-// A derived name and a pinned one meet in the same namespace, so either pair of
-// them can collide.
-//
-// The reserved name is the name itself, however the item arrived at it: a
-// pinned <PREFIX>_CONFIG hijacks the config locator exactly as a derived one
-// does. The prefix has to be there for the rule to apply at all, since
-// <PREFIX>_CONFIG is derived from it and there is no such name without one.
 func (m *manifest) checkEnvName(item *manifestItem) error {
 	if item.envName == "" {
 		return nil

@@ -6,12 +6,7 @@ import (
 )
 
 // TestSentinelSetMatchesDesignTable holds the sentinel set to the one the
-// design states, by name. A sentinel that were renamed, dropped or folded into
-// another breaks this case at compile time or on the distinctness check.
-//
-// The case does not count them. A number written here is a snapshot of the
-// design table rather than a rule it has to obey, and the day the table grows
-// it fails for having been right yesterday.
+// design states, by name.
 func TestSentinelSetMatchesDesignTable(t *testing.T) {
 	sentinels := map[string]error{
 		"ErrMalformedLocator":     ErrMalformedLocator,
