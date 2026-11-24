@@ -1,15 +1,3 @@
-/**
- * The impersonation notice's shared surface: the header chip, the account
- * menu's end item and the dismissal state that ties them to the banner.
- *
- * Covers the chip's disclosure contract (visible text as its name,
- * `aria-expanded` and `aria-controls`, toggling without moving focus), the
- * focus transfer a dismissal makes to the chip, the shared end attempt
- * (one call, disabled and busy while pending), and the dismissal reset
- * rules: a new grant, an identity change, an end, and a failed attempt
- * reset it; a re-read of the same grant does not.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -45,12 +33,9 @@ interface HostProps {
   readonly pending?: boolean
   readonly failureCode?: string | null
   readonly onEnd?: () => void
-  /** Renders the indicator in its icon-only form. */
   readonly compact?: boolean
 }
 
-/** A probe that exposes the region id and a dismissal action, so the
- * chip's aria-controls resolves and focus transfer is observable. */
 function Probe(): ReactElement {
   const notice = useImpersonationNotice()
   if (notice === null) {
@@ -66,7 +51,6 @@ function Probe(): ReactElement {
   )
 }
 
-/** The host's chip wiring: the controlled indicator over one provider. */
 function Chip({
   compact = false,
 }: {
@@ -114,8 +98,6 @@ function Host({
   )
 }
 
-/** Renders the host inside one stable provider tree, so a rerender with
- * new props updates the host in place instead of remounting it. */
 function renderHost(initial: HostProps) {
   const i18n = createAuthUiI18n()
   const tree = (props: HostProps): ReactElement => (
@@ -141,7 +123,6 @@ describe('ImpersonationIndicator', () => {
     expect(chip).toHaveAttribute('aria-expanded', 'true')
     const controls = chip.getAttribute('aria-controls')
     expect(controls).not.toBeNull()
-    // The id the chip names is the visible notice's own region id.
     expect(document.getElementById(controls as string)).not.toBeNull()
   })
 
@@ -150,8 +131,6 @@ describe('ImpersonationIndicator', () => {
     const chip = screen.getByRole('button', {
       name: zhCN.impersonation.impersonating,
     })
-    // The rail has no room for the label; the name and the disclosure
-    // attributes stay, so the control reads the same either way.
     expect(chip.textContent?.trim()).toBe('')
     expect(chip.querySelector('svg')).not.toBeNull()
     expect(chip).toHaveAttribute('aria-expanded', 'true')
@@ -167,8 +146,6 @@ describe('ImpersonationIndicator', () => {
     expect(chip).toHaveAttribute('aria-controls')
     await user.click(chip)
     expect(chip).toHaveAttribute('aria-expanded', 'false')
-    // The banner body is unmounted while hidden, so the reference goes
-    // with it.
     expect(chip).not.toHaveAttribute('aria-controls')
     expect(chip).toHaveFocus()
     await user.click(chip)
@@ -190,7 +167,6 @@ describe('ImpersonationIndicator', () => {
       }),
     ).toBeInTheDocument()
 
-    // Collapse first, then hover again: the hint follows the state.
     await user.unhover(chip)
     await user.click(chip)
     await waitFor(() =>
@@ -278,7 +254,6 @@ describe('provider-reading consumers', () => {
     readonly dismissible?: boolean
   }
 
-  /** Renders the two provider-reading consumers under one provider. */
   function renderBound({
     impersonation,
     onEnd = () => {},
@@ -311,7 +286,6 @@ describe('provider-reading consumers', () => {
     })
     expect(region).toBeInTheDocument()
     expect(chip()).toHaveAttribute('aria-expanded', 'true')
-    // The chip names the banner's own region.
     expect(chip()).toHaveAttribute('aria-controls', region.id)
   })
 
@@ -324,7 +298,6 @@ describe('provider-reading consumers', () => {
     expect(
       screen.queryByRole('region', { name: zhCN.impersonation.regionLabel }),
     ).not.toBeInTheDocument()
-    // The persistent indication survives the dismissal and takes focus.
     expect(chip()).toHaveAttribute('aria-expanded', 'false')
     expect(chip()).toHaveFocus()
   })
@@ -446,7 +419,6 @@ describe('dismissal reset', () => {
       identityKey: 'account-1',
     })
     await dismiss()
-    // A status poll / focus re-read hands the same grant again.
     rerenderHost({
       impersonation: { ...IMPERSONATION },
       identityKey: 'account-1',
@@ -455,9 +427,6 @@ describe('dismissal reset', () => {
   })
 
   it('does not reset when the grant id arrives after the dismissal', async () => {
-    // The dismissal was made while the status read was still pending.
-    // Only a change between two KNOWN grant ids is a new impersonation;
-    // the absent-to-known edge is the same grant filling in.
     const { rerenderHost } = renderHost({
       impersonation: { subject: SUBJECT },
       identityKey: 'account-1',

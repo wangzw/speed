@@ -1,44 +1,4 @@
-/**
- * useFlowDriver: the shared stepping engine of the sign-in family.
- *
- * Each channel form begins a login flow and then advances it step by
- * step, and the same loop serves them all: hand the reply to `advance`,
- * which either parks it as the current step for the view to render, or
- * -- when it is a ready step asking for the result -- takes the result
- * with `step: 'complete'`, or -- when it is a settled completion --
- * reports it upward once. `answer` sends one step's input and feeds the
- * reply back through the same loop.
- *
- * Only auth-core commits the session: `answerFlow` writes the tokens
- * when a completion settled a token issuance (a login completion opens
- * the session; a `link` or `enroll` completion does not touch it), so
- * the driver commits nothing itself and a component never holds login
- * state -- it observes a settled completion and fires its host callback.
- *
- * A submit whose own answer lost a concurrent commit race is not a
- * failure: auth-core rejects it with OperationSupersededError -- the
- * session is authenticated under the winner, not under this submit's
- * identity -- so the driver stays silent (no failure banner, no settled
- * callback) rather than reporting a stale success for an identity the
- * session is not running under. Every other rejection resolves to its
- * code and is reported through `onFailure`, which renders the
- * namespace's text for it.
- *
- * Second-factor state carrying: a `factor` step is chosen by sending
- * `{factor: id}`, and the challenge it opens is answered by sending the
- * challenge's own fields *plus* the same `factor` again (the server
- * reads the factor id on every answer of a `second` step). An `enroll`
- * step carries its `kind` the same way. The driver remembers only those
- * two identity keys from the last answer and merges them into the next
- * one, so a challenge field typed for a chosen factor rides with that
- * factor and nothing else does.
- *
- * An answer that may send a verification message (choosing an SMS second
- * factor, or a step that supplies a phone a method declared) also carries
- * the human-verification proof the deployment requires. The proof travels
- * in the answer body's own `human_proof` member, never the input map,
- * whose values the server caps far below a token's size.
- */
+/** The shared stepping engine of the sign-in family. */
 
 import { useCallback, useRef, useState } from 'react'
 import type { AuthSession, AuthnFlowState } from '@speed/auth-core'
@@ -49,14 +9,14 @@ import { answerStepFor, isOpenFlow } from './flow.js'
 import { allowedToStart } from './start-gate.js'
 import type { SignInBeforeStart } from './start-gate.js'
 
-/** The identity keys a multi-answer step carries across its sub-steps. */
+/** The identity keys a multi-answer step carries into its next answer. A
+ * `factor` step is chosen with `{factor: id}` and the challenge it opens is
+ * answered with the challenge's own fields plus that same `factor` (the
+ * server reads it on every `second` answer); an `enroll` step carries `kind`
+ * the same way. Remembering only these two keys lets a challenge field ride
+ * with its factor and nothing else. */
 const CARRY_KEYS = ['factor', 'kind'] as const
 
-/** The code the server answers a flow that is gone -- expired, already
- * consumed by a concurrent submit, or bound to another browser. A step
- * that fails with it cannot be answered any more, so the view returns to
- * the channel's first step to start a fresh flow (the family's error
- * table, design-web-auth-ui.md's "流程已失"). */
 const FLOW_INVALID = 'authn.flow_invalid'
 
 function pickCarry(input: Record<string, string>): Record<string, string> {
@@ -71,63 +31,53 @@ function pickCarry(input: Record<string, string>): Record<string, string> {
 }
 
 export interface FlowDriverCallbacks {
-  /** A failure's code and the rejection it came from; the component
-   * renders the namespace text for the code and may read facts the
-   * rejection itself carries (a 429's stated wait). */
+  /** A failure's code and the rejection it came from; the rejection may carry
+   * facts the component reads (a 429's stated wait). */
   readonly onFailure: (code: string, error: unknown) => void
   /** The flow settled with a completion outcome (fired once). */
   readonly onSettled: (state: SettledFlowState) => void
   /**
-   * This submit lost a concurrent commit race. The session is
-   * authenticated under the winner, so no failure is reported; a
-   * caller that spent a one-shot credential in the losing submit (a
-   * single-use SMS code) hears it here.
+   * This submit lost a concurrent commit race; the session is authenticated
+   * under the winner, so no failure is reported.
    */
   readonly onSuperseded?: () => void
-  /**
-   * Decides whether the flow may begin (see ./start-gate). It gates
-   * `start` only: a parked step's answers are the flow's own later
-   * steps, not a new start.
-   */
+  /** Decides whether the flow may begin; gates `start` only. */
   readonly beforeStart?: SignInBeforeStart
 }
 
 export interface FlowDriver {
   /** The open step the view renders, or null when idle or settled. */
   readonly step: OpenFlowState | null
-  /** The step the driver has parked right now, read synchronously: a
-   * handler's awaited call may resolve after the render that parked it,
-   * so the state copy above is not yet the reply's step. */
+  /** The step parked right now, read synchronously: an awaited handler may
+   * resolve after the render that parked it, so `step` is not yet it. */
   readonly currentStep: () => OpenFlowState | null
   /** A request is in flight. */
   readonly busy: boolean
-  /** Begin a login flow and drive its first reply. Resolves true when
-   * the reply was advanced (a step parked or the flow settled), false
-   * when a failure or a lost race was reported instead. */
+  /** Begin a login flow and drive its first reply. Resolves true when the
+   * reply advanced, false when a failure or lost race was reported instead. */
   start(request: Parameters<AuthSession['startFlow']>[0]): Promise<boolean>
   /** Drive an externally obtained reply (a readFlow's step). */
   absorb(reply: AuthnFlowState): Promise<boolean>
-  /** Answer the current step with the given input and, when the step may
-   * send a verification message, the human-verification proof the
-   * deployment requires. */
+  /** Answer the current step, with the human-verification proof when the step
+   * may send a verification message. */
   answer(input: Record<string, string>, humanProof?: string): Promise<boolean>
   /** Drop the current step and its carried identity keys. */
   reset(): void
 }
 
+/** The driver state and operations that advance one flow from start to
+ * settlement, reporting a failure or a settlement upward. */
 export function useFlowDriver(
   session: AuthSession,
   callbacks: FlowDriverCallbacks,
 ): FlowDriver {
   const [step, setStep] = useState<OpenFlowState | null>(null)
   const [busy, setBusy] = useState(false)
-  // The step a click will answer, read synchronously: a render that
-  // parked it and a handler that consumes it do not race through state.
+  // The step a click will answer, read synchronously so a render that parked
+  // it and a handler that consumes it do not race through state.
   const stepRef = useRef<OpenFlowState | null>(null)
   const carryRef = useRef<Record<string, string>>({})
-  // The host callbacks behind a ref, so the driver's own handlers stay
-  // identity-stable across renders and an effect that depends on the
-  // driver does not re-run on every render.
+  // Behind a ref so the driver's handlers stay identity-stable across renders.
   const callbacksRef = useRef(callbacks)
   callbacksRef.current = callbacks
 
@@ -136,10 +86,6 @@ export function useFlowDriver(
     setStep(value)
   }, [])
 
-  // Advance a reply: take a ready step's result, report a settlement, or
-  // park a step for the view. The loop only ever runs a ready step
-  // through `complete` once (a completion is a terminal outcome), so it
-  // is not an unbounded retry.
   const advance = useCallback(
     async (reply: AuthnFlowState): Promise<void> => {
       let current = reply
@@ -150,11 +96,9 @@ export function useFlowDriver(
           return
         }
         if (current.next.kind === 'complete') {
-          // Park the ready step and its sequence before taking the result:
-          // a refused complete is retried with this sequence, never with
-          // the step answered before it, whose one-time credential that
-          // answer already spent. A complete step renders nothing, so the
-          // rendered surface stays as it is until the outcome lands.
+          // Park the ready step and its sequence before taking the result: a
+          // refused complete is retried with this sequence, never with the
+          // previously answered step whose one-time credential is spent.
           stepRef.current = current
           const seq = current.seq
           try {
@@ -165,41 +109,32 @@ export function useFlowDriver(
             })
           } catch (error) {
             if (isOperationSuperseded(error)) {
-              // A lost commit race: the winner owns the session, so this
-              // submit leaves nothing to answer.
               carryRef.current = {}
               park(null)
               throw error
             }
             if (errorCodeOf(error) === FLOW_INVALID) {
-              // The flow is gone: `run` drops the parked step and reports it.
               throw error
             }
-            // Either the reply to the complete was lost (the flow may still
-            // be ready) or the completion landed and a read after it failed
-            // (the flow is terminal). Ask the flow itself; the answered step
-            // must not be offered again either way.
+            // Either the complete's reply was lost (the flow may still be ready)
+            // or the completion landed and a later read failed (terminal). Ask the
+            // flow itself; the answered step must not be offered again either way.
             let reread: AuthnFlowState | null
             try {
               reread = await session.readFlow()
             } catch {
-              // Neither answer settled it: keep the ready step as this
-              // submit's retry target.
               setStep(null)
               throw error
             }
             if (reread === null || !isOpenFlow(reread)) {
-              // The flow is terminal: the completion landed, and the
-              // failure is the read that followed it -- not a refused
-              // login. No step survives to resend.
+              // The flow is terminal: the completion landed and the failure is
+              // the read that followed it, not a refused login.
               carryRef.current = {}
               park(null)
               throw error
             }
-            // The flow is still open: keep its own step and sequence as the
-            // retry target, and drop the answered step so it cannot be sent
-            // again. A complete step renders nothing, so the rendered
-            // surface clears and the failure's own retry takes over.
+            // The flow is still open: keep its step and sequence as the retry
+            // target, and drop the answered step so it cannot be sent again.
             stepRef.current = reread
             setStep(null)
             throw error
@@ -221,15 +156,13 @@ export function useFlowDriver(
         return true
       } catch (error) {
         if (isOperationSuperseded(error)) {
-          // A lost concurrent commit is not this submit's failure -- the
-          // winner already fired its own callback (see the file header).
           callbacksRef.current.onSuperseded?.()
           return false
         }
         const code = errorCodeOf(error)
         if (code === FLOW_INVALID) {
-          // The flow is gone: drop the parked step so the channel's own
-          // first step renders again and the viewer starts a fresh one.
+          // Drop the parked step so the channel's own first step renders again
+          // and the viewer starts a fresh flow.
           carryRef.current = {}
           park(null)
         }
@@ -244,14 +177,9 @@ export function useFlowDriver(
 
   const start = useCallback(
     async (request: Parameters<AuthSession['startFlow']>[0]) => {
-      // The gate decides whether the flow begins; a refusal starts
-      // nothing and renders no error (see ./start-gate). It runs before
-      // the request, so `answer` -- the flow's own later steps -- is
-      // untouched. The busy flag is taken before the gate resolves too:
-      // an async gate (a host consent wall) suspends under the same
-      // pending indicator, so the channel's controls stay disabled for
-      // its duration and a second click cannot pass the gate and start a
-      // second flow.
+      // The busy flag is taken before the gate resolves too, so an async gate
+      // suspends under the pending indicator and a second click cannot pass it
+      // and start a second flow.
       setBusy(true)
       const allowed = await allowedToStart(callbacksRef.current.beforeStart, {
         method: request.method ?? '',

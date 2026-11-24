@@ -1,21 +1,8 @@
-/**
- * Step-switch focus in jsdom: a step that replaces the surface the viewer
- * was working in takes the focus that unmounted with it, while a step the
- * viewer had already tabbed or clicked away from is left alone. The old
- * surface's focused control is removed from the document, so focus has
- * fallen to the body by the time the new step commits; focus still resting
- * on another element is the viewer's and is never pulled away.
- */
 import { describe, expect, it } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useStepFocus } from './step-focus.js'
 
-/**
- * One surface of a channel plus a control outside it. The step's inner
- * element is keyed by the step name so a switch replaces it, exactly as
- * two different surfaces do.
- */
 function Surface({ step }: { step: string }) {
   const ref = useStepFocus(step)
   return (

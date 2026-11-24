@@ -1,69 +1,5 @@
-/**
- * ImpersonationBanner: the notice a host mounts in its app frame while the
- * session is impersonating.
- *
- * The component is purely presentational. It holds no session, issues no
- * request and reads no auth-core hook: the host tells it whether an
- * impersonation is current (`impersonation`), whether the one shared end
- * attempt is in flight (`pending`), that attempt's failure code
- * (`failureCode`) and success message (`successMessage`), and binds the
- * attempt itself (`onEnd`). The host mounts it for the whole shell, so the
- * banner can appear and disappear on any page without a remount of the
- * component itself.
- *
- * One polite live region is mounted for the component's lifetime, never
- * conditionally: empty while nothing is happening, filled with the
- * "acting as" announcement when an impersonation appears, and filled with
- * the end confirmation once the host's attempt settles (either its own
- * `successMessage`, or the "impersonation ended" text the component
- * announces when the impersonation it was displaying disappears -- the
- * latter covers an end made from another entry point, such as the account
- * menu). The announcement region is inserted empty and filled a frame
- * later, so a first mount that already has an impersonation -- the frame
- * mounting after a start, or a whole-page reload while impersonating --
- * is announced too. The confirmation therefore survives
- * the banner's own disappearance (the host clears `impersonation` after
- * re-reading the session) and stands until the next attempt or a page
- * reload replaces it.
- *
- * The visible notice is a named `region` landmark. Closing it
- * (`onDismiss`) unmounts that visible region while the live region above
- * stays mounted and keeps announcing; the host holds the dismissal and
- * moves focus to the header indicator. This component only renders the
- * result.
- *
- * The end control does not depend on `tenant` or `expiresAt`: those are
- * the host's status read, both are optional, and the control renders and
- * works even when neither arrived. The control starts the host's one
- * attempt: while `pending` it stays focusable and reports the state the
- * attempt gives it (`aria-disabled` and `aria-busy`), so starting the
- * attempt never moves focus off the control that started it; a failure
- * renders the answer's code text inside the banner while leaving the
- * control retryable. A bare 404 answering "there is no impersonation to
- * end" is the host's concern: its attempt treats that as settled, and this
- * component never inspects an HTTP status -- a failure code that reaches
- * it is rendered like any other.
- *
- * When the end succeeds and the host clears `impersonation`, the end
- * control leaves the document. If it held focus, the component gives
- * focus to the settlement section that remains in the banner slot and
- * carries the end's announcement, instead of letting the browser drop
- * focus to the document body; a viewer who moved focus elsewhere while
- * the attempt ran keeps their new resting place.
- *
- * The component never counts down and never acts at `expiresAt`; the
- * host re-reads the session when the impersonation expires.
- *
- * Layout: the four facts are one inline-flowing text block -- one
- * paragraph whose sentences run together and break by word (or
- * character) wherever the line ends, never one sentence per line. The end
- * and close controls share the row with that text, flush right; only
- * below `xs` do they take their own line. The subject and the tenant
- * identifier are capped and ellipsized -- the full value riding on the
- * element's title -- so neither an arbitrary display name nor a long
- * identifier can grow the bar past its single-line target or push the
- * controls out of it.
- */
+/** The notice a host mounts in its app frame while the session is
+ * impersonating: a presentational banner over host-supplied state. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
@@ -92,12 +28,15 @@ export interface ImpersonationBannerState {
   readonly tenant?: string
   /** When the impersonation ends, when known. */
   readonly expiresAt?: Date
-  /** The impersonation grant's stable identity. A new grant is a new
-   * impersonation, which is what a dismissal resets on -- not the subject,
-   * whose text may change without the grant changing. */
+  /** The grant's stable identity: a new grant is a new impersonation, which a
+   * dismissal resets on, unlike the subject, whose text may change within a
+   * grant. */
   readonly grantId?: string
 }
 
+/** The host owns the impersonation status, the shared end attempt and the
+ * dismissal; the banner owns the settlement it announces and the focus it
+ * hands over when the impersonation ends. */
 export interface ImpersonationBannerProps {
   /** The current impersonation, or null when none is active. */
   readonly impersonation: ImpersonationBannerState | null
@@ -123,14 +62,6 @@ export interface ImpersonationBannerProps {
   readonly regionId?: string
 }
 
-/** The notice's one wrapping row: the facts, then the controls. The 40px
- * floor is the design's single-line target (40 to 48px): one caption line
- * beside the small controls settles inside that range with the 4px
- * vertical padding, and each further text line grows the bar by a caption
- * line. The horizontal room is held as tight as the target allows: the
- * fixed sentences plus a normal display name fill the line at 1280, so
- * every pixel of padding and gap around them is width the text cannot
- * use. */
 const bannerSx = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -146,11 +77,6 @@ const bannerSx = {
   color: 'warning.contrastText',
 } as const
 
-/** The facts block: one paragraph, so the sentences share one text flow
- * and break at the line end instead of each occupying a line of its own.
- * Its flex base is zero, so line breaking never pushes the controls onto
- * a second row when the viewport is wide enough for them: the paragraph
- * takes whatever width the controls leave and wraps inside it. */
 const detailsSx = {
   flexGrow: 1,
   flexBasis: 0,
@@ -159,11 +85,6 @@ const detailsSx = {
   margin: 0,
 } as const
 
-/** The acting-as subject stays one line and ellipsizes, the full value on
- * the element's title. Its cap is the width the other three facts leave
- * at 1280, so a display name of any length keeps the paragraph inside the
- * design's single-line target; a normal name renders untruncated. Bottom
- * alignment keeps the inline block's text on the sentence's baseline. */
 const subjectSx = {
   display: 'inline-block',
   maxWidth: 'min(16ch, 100%)',
@@ -173,9 +94,6 @@ const subjectSx = {
   verticalAlign: 'bottom',
 } as const
 
-/** A long tenant identifier stays one line and ellipsizes; the full value
- * rides on the element's title. It is an inline block inside the facts
- * paragraph, so it keeps the surrounding text's baseline. */
 const tenantSx = {
   display: 'inline-block',
   maxWidth: 'min(24ch, 100%)',
@@ -184,10 +102,6 @@ const tenantSx = {
   whiteSpace: 'nowrap',
 } as const
 
-/** The controls sit at the end of the row and never shrink. The facts
- * block grows, so they close the row on the right without an automatic
- * margin; below `sm` they take a line of their own, flush right, so the
- * facts keep the full width on a phone. */
 const controlsSx = (theme: Theme) => ({
   display: 'flex',
   alignItems: 'center',
@@ -227,14 +141,11 @@ function ActingAs({ subject }: { readonly subject: string }): ReactElement {
   )
 }
 
-/** The separator between facts, decorative. */
 function FactSeparator(): ReactElement {
   return (
     <Box
       component="span"
       aria-hidden="true"
-      // Painted through CSS, not a text node: it is punctuation between
-      // the facts, not user-facing copy the host could translate.
       sx={{
         mx: 0.25,
         opacity: 0.75,
@@ -265,11 +176,7 @@ function HideIcon(): ReactElement {
 }
 
 /** The expiry line's text, or null when there is neither an instant nor a
- * formatted value. The formatter resolves the display zone (the host's,
- * then the browser's, then UTC) and the long tier names that zone beside
- * the time, so an operator reading a deadline knows which clock it is on.
- * It answers the empty string for a value that carries no instant -- a
- * malformed date renders no dated label with an empty value beside it. */
+ * formatted value; the formatter names the display zone. */
 function expiryText(
   formatTime: ReturnType<typeof useFormatInstant>,
   expiresAt: Date | null | undefined,
@@ -281,6 +188,11 @@ function expiryText(
   return text === '' ? null : text
 }
 
+/**
+ * Renders the banner and its permanent live region from host-supplied state,
+ * and starts the host's one end attempt; it never reads the session or counts
+ * down to `expiresAt`.
+ */
 export function ImpersonationBanner({
   impersonation,
   onEnd,
@@ -292,20 +204,14 @@ export function ImpersonationBanner({
   regionId,
 }: ImpersonationBannerProps) {
   const { t } = useAuthUiTranslation()
-  // The resolved display zone: the host's when usable, the browser's when
-  // not, UTC as the last resort.
   const formatTime = useFormatInstant()
-  // The end control stays focusable while its attempt is in flight, so
-  // the click has to be refused by the guard instead of MUI's native
-  // disabled state; a native disable would drop the focused control's
-  // focus to the document body.
+  // Refuse the click through the guard, not a native disabled state, so the
+  // focused end control keeps focus while its attempt runs.
   const guardedEnd = useActivationGuard(onEnd, { busy: pending })
 
-  // The end control unmounts when the impersonation it ended clears. Keep
-  // whether it held focus at that moment -- React calls a ref callback with
-  // null before the node leaves the document, so the active element still
-  // names it there -- and let the landing below tell a control that left
-  // with focus from one the operator already left.
+  // React calls a ref callback with null before the node leaves the document,
+  // so the active element still names the end control there; remember whether
+  // it held focus when the impersonation cleared.
   const settlementRef = useRef<HTMLDivElement | null>(null)
   const endControl = useRef<HTMLButtonElement | null>(null)
   const endHeldFocus = useRef(false)
@@ -324,13 +230,8 @@ export function ImpersonationBanner({
     endControl.current = null
   }, [])
 
-  // The end's success clears `impersonation`, which takes the end control
-  // out of the document with focus on it. Hand focus to the one element
-  // that stays in the banner slot: the settlement section that now carries
-  // the end's announcement. Nothing moves when the control did not hold
-  // focus (an end from the account menu keeps focus on that menu's own
-  // trigger) or when the operator moved focus elsewhere while the attempt
-  // ran -- their new resting place is left alone.
+  // Hand focus to the settlement section only when the end control left with
+  // it; an end from the account menu or focus the operator moved stays put.
   useEffect(() => {
     if (impersonation !== null || !endHeldFocus.current) {
       return
@@ -341,20 +242,9 @@ export function ImpersonationBanner({
     }
   }, [impersonation])
 
-  // The region stands for the component's whole life and inserts every
-  // message empty before writing it a frame later, so the announcement
-  // is reliable even on the very first mount with an impersonation
-  // already current -- a start that mounts the frame, or a reload while
-  // impersonating. A new impersonation also replaces the previous one's
-  // confirmation: a standing "impersonation ended" would describe a
-  // context that is gone. The transition from a displayed impersonation
-  // to none is a settlement by whatever entry point ended it, so the
-  // ended text is announced for that edge too.
-  //
-  // What the last commit displayed and whether the previous one ended
-  // are adjusted while rendering rather than in an effect: the message
-  // the commit carries is then already the settlement, and the region
-  // (not an effect) owns the empty-first write.
+  // The region lives for the component's whole life and writes each message
+  // empty first, so a first mount that already impersonates is announced; the
+  // subject and ended flag are already settled in this commit.
   const subject = impersonation?.subject ?? null
   const [displayedSubject, setDisplayedSubject] = useState<string | null>(
     subject,
@@ -376,29 +266,20 @@ export function ImpersonationBanner({
 
   return (
     <>
-      {/* The component's one live region, mounted for its whole life:
-          empty while idle, the start announcement while impersonating,
-          and the end confirmation afterwards. Its confirmation stays
-          here after the visible banner below is hidden or unmounted.
-          MUI's message slot carries `overflow: auto`; squeezed to the
-          1px clipped width it would overflow into a scroll container,
-          which Chromium treats as a keyboard focus stop. The hidden
-          branch keeps the slot non-scrollable, so the first Tab in the
-          banner reaches the end control. */}
+      {/* The one live region, mounted for the component's whole life. The
+          hidden branch keeps MUI's `overflow: auto` message slot from becoming
+          a scroll container, which Chromium treats as a keyboard focus stop. */}
       <Box
         ref={settlementRef}
-        // The settlement section is the focus target when the end control
-        // leaves with focus: a programmatic target, not a Tab stop.
+        // The focus target when the end control leaves with focus: a
+        // programmatic target, not a Tab stop.
         tabIndex={-1}
         sx={
           settlement !== null
             ? {
                 width: '100%',
-                // The settlement skin follows the region's written marker:
-                // the commit that sets the settlement leaves the region
-                // empty for two frames, so a skin that showed at once would
-                // paint an empty box. It stays clipped until the marker
-                // appears and unclips in the same frame as the text.
+                // The written marker appears with the text, so the skin stays
+                // clipped through the empty frames instead of painting a box.
                 '&:not(:has([data-announcement-written]))': {
                   ...visuallyHiddenSx,
                   '& .MuiAlert-message': { overflow: 'hidden' },
@@ -410,9 +291,8 @@ export function ImpersonationBanner({
               }
         }
       >
-        {/* The success skin is the Alert's, but the live role and the
-            empty-first write belong to the shared region inside it. The
-            Alert itself carries no role, so the announcement is made
+        {/* The live role and the empty-first write belong to the shared region
+            inside; the Alert carries no role, so the announcement is made
             once. */}
         <Alert severity="success" role="none" sx={{ width: '100%' }}>
           <AnnouncementRegion message={liveText} />
@@ -425,9 +305,6 @@ export function ImpersonationBanner({
           aria-label={t('impersonation.regionLabel')}
           sx={bannerSx}
         >
-          {/* One paragraph: the four statements share one text flow, so
-              the line breaks fall where the width ends, not between
-              sentences. */}
           <Typography component="p" variant="caption" sx={detailsSx}>
             <Box component="span" sx={{ fontWeight: 600 }}>
               <ActingAs subject={impersonation.subject} />
@@ -489,8 +366,6 @@ export function ImpersonationBanner({
             )}
           </Box>
           {failureCode !== null && (
-            // The failure belongs to the banner's own width, below the
-            // facts and the controls, not beside them.
             <Box sx={{ flexBasis: '100%' }}>
               <InlineError code={failureCode} />
             </Box>

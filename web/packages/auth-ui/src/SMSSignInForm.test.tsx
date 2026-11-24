@@ -1,23 +1,3 @@
-/**
- * SMSSignInForm behaviour: the phone step begins the sms login flow with
- * the country/local parts assembled into E.164 and the server's code
- * challenge flips the form to its code step (asserted on the request
- * bodies), the sent notice announces the assembled number, a pasted
- * international number switches the country and fills the local part, the
- * selector starts on the browser locale's region, the code answer takes
- * the ready step's result and fires onSignedIn (asserted on the store
- * token), a wrong code renders its text in one alert and keeps the code
- * step, resend repeats the send against the same number and clears the
- * code field, a successful send's stated resend interval shows a note that
- * counts down while a throttled hold counts down only in the failure
- * banner, changing the phone returns to the first step, a number too
- * short for its country is refused locally naming the calling code, a
- * superseded code answer renders the used-code notice and refuses a
- * re-submission of that exact code locally, the en-US bundle renders on an
- * English-starting instance, and the tree passes axe. Text expectations
- * read the bundle values, never inline language.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
@@ -54,17 +34,11 @@ const CN_E164 = '+8613800000001'
 const US_NATIONAL = '4155552671'
 const US_E164 = '+14155552671'
 
-/** A gate that asks for no proof, so a send leaves without the human block
- * standing over the initiating control (the block is not what the focus
- * cases measure). */
 const NO_HUMAN_GATE = {
   phone: { required: false, provider: 'off' },
   other: { required: false, provider: 'off' },
 } as const
 
-/** The login-flow starts a case's own interaction makes. Discovery and the
- * proof-of-work challenge are separate calls, so they never inflate a
- * send count. */
 function sends(harness: Harness) {
   return harness.calls.filter((call) => call.path === '/api/v1/auth/flows')
 }
@@ -73,7 +47,6 @@ const UI_KIT_ZH = uiKitResources['zh-CN'] as {
   readonly form: { readonly required: string }
 }
 
-/** Pick a country in the selector, searching by its ISO code. */
 async function selectCountry(
   user: ReturnType<typeof userEvent.setup>,
   code: string,
@@ -90,8 +63,6 @@ async function selectCountry(
   )
 }
 
-/** The server's code challenge for the sms method, optionally stating how
- * long the client must wait before another code may be requested. */
 function codeChallenge(resendAfter?: number) {
   return openFlow({
     seq: 1,
@@ -104,13 +75,11 @@ function codeChallenge(resendAfter?: number) {
   })
 }
 
-/** The failure banner's sentence naming a whole-second wait. */
 function waitSentence(seconds: number): string {
   const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
   return `${before}${seconds}${after}`
 }
 
-/** The one painted sentence inside a failure alert (the countdown). */
 function visibleSentence(alert: HTMLElement): HTMLElement | null {
   return alert.querySelector<HTMLElement>('span[aria-hidden="true"]')
 }
@@ -122,8 +91,6 @@ async function sendCode(national: string = CN_NATIONAL): Promise<void> {
   await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
 }
 
-/** Let every queued microtask turn run out, so an assertion about what did
- * *not* happen is made after the deferred send had every chance to leave. */
 async function settleMicrotasks(turns = 20): Promise<void> {
   await act(async () => {
     for (let turn = 0; turn < turns; turn += 1) {
@@ -132,7 +99,6 @@ async function settleMicrotasks(turns = 20): Promise<void> {
   })
 }
 
-/** A navigator.language override for the duration of one render. */
 function stubNavigatorLanguage(language: string): () => void {
   const own = Object.getOwnPropertyDescriptor(window.navigator, 'language')
   Object.defineProperty(window.navigator, 'language', {
@@ -177,10 +143,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('re-render the sent notice in the switched language', async () => {
-    // The notice is a translation of the number the code went to. It is
-    // rendered from state on every render, so switching the language after
-    // the send re-renders the sentence rather than leaving the language it
-    // was translated in at send time.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
     })
@@ -205,10 +167,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('name no token delivery on the code request -- the session delivery is auth-core’s', async () => {
-    // The phone step starts the flow; auth-core forces the cookie session
-    // (`delivery: 'session'`), so the request names no delivery of its own.
-    // A `'token'` here would be dead today and a live contradiction to the
-    // cookie model the moment that override lifted.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
     })
@@ -220,8 +178,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('answer the code and fire onSignedIn on completion', async () => {
-    // The method answers a correct code with a ready step (taken with
-    // `complete`), and that completion issues the tokens.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
       [LOGIN_ANSWER]: (call) => {
@@ -253,9 +209,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('renders a username refusal under the field of the parked single-field step', async () => {
-    // An unregistered number parks the flow at signup: the shared renderer
-    // shows the username step, and its refusal is the field's, not the
-    // channel's banner.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
       [LOGIN_ANSWER]: (call) => {
@@ -278,7 +231,6 @@ describe('SMSSignInForm', () => {
     const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
     await user.type(code, '123456')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
-    // The code answer parks the username step.
     const username = await screen.findByLabelText(zhCN.signInFlow.usernameLabel)
     await user.type(username, 'ada')
     await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
@@ -295,9 +247,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('replaces a username step whose flow is gone with a restart that starts a new flow', async () => {
-    // The flow is gone, so the answer cannot be retried on it: the notice's
-    // action returns to the channel's first step and issues a new start
-    // request for the number the dead flow was for.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
       [LOGIN_ANSWER]: (call) => {
@@ -343,8 +292,6 @@ describe('SMSSignInForm', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.signInFlow.signInAgain }),
     )
-    // The action is a new start request for the same number, and carries
-    // no answer to the dead flow.
     await waitFor(() => expect(sends(harness)).toHaveLength(2))
     expect(sends(harness)[1]?.options?.body).toMatchObject({
       method: 'sms',
@@ -377,9 +324,6 @@ describe('SMSSignInForm', () => {
     )
     const send = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
     await user.click(send)
-    // The flow begins and the control reports its own action in flight:
-    // focusable, aria-busy and aria-disabled, still holding the focus the
-    // activation gave it.
     await waitFor(() => {
       const current = screen.getByRole('button', {
         name: zhCN.smsSignIn.sendCode,
@@ -406,18 +350,12 @@ describe('SMSSignInForm', () => {
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(zhCN.smsSignIn.codeLabel), '000000')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
-    // The server collapses a wrong, expired, spent or exhausted code into
-    // this one answer, so the step says what it can: enter it again or ask
-    // for a new code. It never names the password this surface has no field
-    // for.
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         zhCN.smsSignIn.loginFailed,
       ),
     )
     expect(screen.queryByText(zhCN.errors.authn.login_failed)).toBeNull()
-    // The password channel's own label is the bundle's word for a
-    // password; a code refusal must not name it.
     expect(screen.getByRole('alert')).not.toHaveTextContent(
       zhCN.passwordSignIn.passwordLabel,
     )
@@ -446,8 +384,6 @@ describe('SMSSignInForm', () => {
     await user.type(code, '123456')
     const submit = screen.getByRole('button', { name: zhCN.smsSignIn.submit })
     await user.click(submit)
-    // The answer is in flight: the control that started it reports the
-    // flight, stays focusable and keeps the focus the activation gave it.
     await waitFor(() => {
       expect(submit).toHaveAttribute('aria-disabled', 'true')
       expect(submit).toHaveAttribute('aria-busy', 'true')
@@ -456,9 +392,6 @@ describe('SMSSignInForm', () => {
     const answers = () =>
       harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer')
     const answersBefore = answers().length
-    // Enter in the field is the browser's synthetic click on this submit:
-    // swallowed while the same answer is in flight, so one submit is one
-    // answer.
     code.focus()
     await user.keyboard('{Enter}')
     await act(async () => {
@@ -500,8 +433,6 @@ describe('SMSSignInForm', () => {
     const resend = screen.getByRole('button', {
       name: zhCN.smsSignIn.resendCode,
     })
-    // The resend did not start this write: it reports the scope's
-    // in-flight context without a spinner or a reason of its own.
     expect(resend).toHaveAttribute('aria-disabled', 'true')
     expect(resend).not.toHaveAttribute('aria-busy')
     expect(resend).not.toHaveAttribute('aria-describedby')
@@ -543,10 +474,6 @@ describe('SMSSignInForm', () => {
       ).toHaveAttribute('aria-busy', 'true'),
     )
 
-    // The code answer is still in flight when the viewer asks for another
-    // number. The send did not start that write, so it must report the
-    // context as unavailable instead of looking ready and swallowing the
-    // click in the form guard.
     await user.click(
       screen.getByRole('button', { name: zhCN.smsSignIn.editPhone }),
     )
@@ -563,8 +490,6 @@ describe('SMSSignInForm', () => {
     })
     expect(sends(harness)).toHaveLength(startsBefore)
 
-    // The hold lasts exactly as long as the answer: once it settles, the
-    // same control sends again.
     await act(async () => {
       resolveAnswer(authenticatedCompletion({ access_token: 'access-1' }))
     })
@@ -600,8 +525,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('keep the generic refusal for a step after the code', async () => {
-    // A second factor the flow parks after the code is not this form's code
-    // step: its refusal keeps the family's sentence for that step.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
       [LOGIN_ANSWER]: (call) => {
@@ -624,8 +547,6 @@ describe('SMSSignInForm', () => {
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText(zhCN.smsSignIn.codeLabel), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
-    // The second factor's own challenge renders through the shared step
-    // renderer; answering it wrong keeps the generic sentence.
     await user.type(
       await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
       '000000',
@@ -653,9 +574,6 @@ describe('SMSSignInForm', () => {
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
 
     const message = UI_KIT_ZH.phoneNumber.incomplete.replace('{{code}}', '86')
-    // The refusal belongs to the field: focus lands on the number, and the
-    // same message the control shows enters the form's status region, so a
-    // viewer who submitted from the button hears it.
     await waitFor(() => expect(phone).toHaveFocus())
     await waitFor(() =>
       expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(message),
@@ -664,10 +582,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('re-announce the same phone refusal on every refused submit', async () => {
-    // A live region announces a text change, not a value written again. The
-    // second submit repeats the same rejected number, so the region must
-    // pass through empty between the two announcements for a screen reader
-    // to speak the rejection again.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
     })
@@ -692,15 +606,11 @@ describe('SMSSignInForm', () => {
     try {
       await user.click(submit)
       await waitFor(() => expect(region).toHaveTextContent(message))
-      // The first rejection filled the region once.
       expect(mutations.length).toBeGreaterThan(0)
 
       mutations.length = 0
       await user.click(submit)
       await waitFor(() => expect(region).toHaveTextContent(message))
-      // Clearing the region and writing the message again are two changes:
-      // at least a removal and a new insertion (or two text-node rewrites)
-      // reached the DOM, so the repeated rejection is spoken again.
       expect(mutations.length).toBeGreaterThanOrEqual(2)
       expect(sends(harness)).toHaveLength(0)
     } finally {
@@ -709,12 +619,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('re-announce the sent notice when a resend of the same number succeeds', async () => {
-    // A live region announces a text change, not a value written again. A
-    // resend produces the same sentence as the first send, so the region
-    // must pass through empty between the two announcements for a screen
-    // reader to speak the successful resend, not only a refused one. The
-    // resend's request is held so the empty frame is committed before the
-    // same sentence returns.
     let releaseResend: (value: unknown) => void = () => {}
     let starts = 0
     const harness = makeHarness({
@@ -739,8 +643,6 @@ describe('SMSSignInForm', () => {
     await user.click(
       screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }),
     )
-    // The accepted resend cleared the region before its request left, so
-    // the same sentence that follows is a change rather than a rewrite.
     await waitFor(() =>
       expect(document.getElementById(SMS_NOTICE_ID)?.textContent).toBe(''),
     )
@@ -759,8 +661,6 @@ describe('SMSSignInForm', () => {
         releaseResend(codeChallenge())
       })
       await waitFor(() => expect(sends(harness)).toHaveLength(2))
-      // The same sentence is on screen again, written into the region
-      // that already stood empty.
       await waitFor(() => expect(region).toHaveTextContent(sent))
       expect(mutations.length).toBeGreaterThan(0)
     } finally {
@@ -769,10 +669,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('return to the phone step when the flow is gone (flow-invalid)', async () => {
-    // A step answered after the flow expired, was consumed, or was bound
-    // to another browser answers flow-invalid: the flow cannot continue,
-    // so the form returns to its first step to start a fresh one while
-    // its banner carries the code.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
       [LOGIN_ANSWER]: () => {
@@ -827,7 +723,6 @@ describe('SMSSignInForm', () => {
       [LOGIN_START]: () => codeChallenge(),
     })
     renderWithProviders(<SMSSignInForm session={harness.session} />)
-    // The hint is on screen before a submit.
     expect(screen.getByText(zhCN.smsSignIn.phoneHint)).toBeInTheDocument()
 
     const user = userEvent.setup()
@@ -836,9 +731,6 @@ describe('SMSSignInForm', () => {
     await user.type(phone, '138000')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
 
-    // The message names the calling code the typed length fails under. It
-    // appears under the field and in the form's status region (announced,
-    // not visible), so the assertion allows both.
     await waitFor(() =>
       expect(
         screen.getAllByText(
@@ -847,8 +739,6 @@ describe('SMSSignInForm', () => {
       ).toBeGreaterThan(0),
     )
     expect(phone).toHaveAttribute('aria-invalid', 'true')
-    // The invalid number never reaches the server, so its generic refusal
-    // copy is not what the viewer meets.
     expect(sends(harness)).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -861,8 +751,6 @@ describe('SMSSignInForm', () => {
     const user = userEvent.setup()
     await selectCountry(user, 'CN', '86')
     const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
-    // Eleven digits is a possible CN length, but `12` starts no CN number
-    // plan, so the number must be refused rather than sent.
     await user.type(phone, '12345678901')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
 
@@ -874,7 +762,6 @@ describe('SMSSignInForm', () => {
       ).toBeGreaterThan(0),
     )
     expect(phone).toHaveAttribute('aria-invalid', 'true')
-    // The impossible number never reaches the server.
     expect(sends(harness)).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -884,7 +771,6 @@ describe('SMSSignInForm', () => {
       [LOGIN_START]: () => codeChallenge(),
     })
     renderWithProviders(<SMSSignInForm session={harness.session} />)
-    // jsdom starts on en-US, so the selector starts on the US.
     expect(
       screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
     ).toHaveValue('🇺🇸 +1')
@@ -911,8 +797,6 @@ describe('SMSSignInForm', () => {
     await user.click(phone)
     await user.paste(CN_E164)
 
-    // China is selected and the local field holds the local part,
-    // grouped as it would be if typed.
     expect(
       screen.getByRole('combobox', { name: zhCN.smsSignIn.countryLabel }),
     ).toHaveValue('🇨🇳 +86')
@@ -965,18 +849,12 @@ describe('SMSSignInForm', () => {
       method: 'sms',
       input: { phone: CN_E164 },
     })
-    // The fresh code starts the field empty: the code step that returned
-    // carries no code typed against the code it invalidated.
     await waitFor(() =>
       expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toHaveValue(''),
     )
   })
 
   it('hold the resend control for the successful send’s stated interval and count the note down', async () => {
-    // The challenge states the wait before another code may be asked for:
-    // the resend control is held for it, and the note beside it -- the only
-    // explanation a successful send's hold has, since nothing failed --
-    // counts the seconds down until the control is usable again.
     vi.useFakeTimers()
     try {
       const harness = makeHarness({
@@ -991,9 +869,6 @@ describe('SMSSignInForm', () => {
           }}
         />,
       )
-      // Values go in through plain input events: user-event's own
-      // scheduling would need the fake clock advanced for every keystroke,
-      // which would also move the wait this test measures.
       fireEvent.change(screen.getByLabelText(zhCN.smsSignIn.phoneLabel), {
         target: { value: US_NATIONAL },
       })
@@ -1019,8 +894,6 @@ describe('SMSSignInForm', () => {
       ).toHaveTextContent(noteText(60))
       expect(screen.queryByRole('alert')).toBeNull()
 
-      // The held control is reachable and keeps the focus it holds, and
-      // activating it starts nothing.
       resend.focus()
       expect(resend).toHaveFocus()
       const sendsBefore = sends(harness).length
@@ -1033,7 +906,6 @@ describe('SMSSignInForm', () => {
       expect(sends(harness)).toHaveLength(sendsBefore)
       expect(resend).toHaveFocus()
 
-      // The note follows the clock down.
       act(() => {
         vi.advanceTimersByTime(1000)
       })
@@ -1043,8 +915,6 @@ describe('SMSSignInForm', () => {
       expect(resend).toHaveAttribute('aria-disabled', 'true')
       expect(resend).toHaveFocus()
 
-      // At the stated boundary the control is usable again and the note is
-      // gone; nothing failed, so no banner ever stood beside it.
       act(() => {
         vi.advanceTimersByTime(59_000)
       })
@@ -1059,10 +929,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('keep the code submit usable while only the resend waits out its interval', async () => {
-    // The wait belongs to the resend control alone. The viewer may already
-    // hold the previous code, so answering it stays open -- by the control
-    // and by Enter -- and the form's guard, which reads the write in flight
-    // rather than the hold, lets that answer leave.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(60),
       [LOGIN_ANSWER]: () =>
@@ -1122,8 +988,6 @@ describe('SMSSignInForm', () => {
     })
     expect(resend).not.toHaveAttribute('aria-disabled')
 
-    // The first send settled on the real clock; the resend's stated wait
-    // runs on the fake one so the two seconds pass instantly.
     vi.useFakeTimers()
     try {
       resend.focus()
@@ -1134,9 +998,6 @@ describe('SMSSignInForm', () => {
           await Promise.resolve()
         }
       })
-      // The throttled answer holds the control for the stated wait. No
-      // note stands beside it, so its own description names the wait the
-      // failure banner counts down.
       const held = screen.getByRole('button', {
         name: zhCN.smsSignIn.resendCode,
       })
@@ -1148,16 +1009,12 @@ describe('SMSSignInForm', () => {
       expect(held).toHaveFocus()
       expect(sends(harness)).toHaveLength(2)
 
-      // One wait indicator, inside the failure banner: its painted
-      // sentence names the wait, and no separate note stands beside it.
       const alert = screen.getByRole('alert')
       expect(visibleSentence(alert)).toHaveTextContent(waitSentence(2))
       expect(document.getElementById('sms-sign-in-resend-note')).toBeNull()
       const naming = screen.getAllByText(waitSentence(2))
       expect(naming.every((node) => alert.contains(node))).toBe(true)
 
-      // The painted sentence follows the clock down; the sentence
-      // assistive technology reads stays at the wait the answer stated.
       act(() => {
         vi.advanceTimersByTime(1000)
       })
@@ -1166,16 +1023,11 @@ describe('SMSSignInForm', () => {
       expect(held).toHaveAccessibleDescription(
         zhCN.smsSignIn.resendIn.replace('{{seconds}}', '1'),
       )
-      // One tick before the stated wait it is still held, so an
-      // implementation that waits less than the answer said cannot pass.
       act(() => {
         vi.advanceTimersByTime(999)
       })
       expect(held).toHaveAttribute('aria-disabled', 'true')
       expect(visibleSentence(alert)).toHaveTextContent(waitSentence(1))
-      // At the boundary the control is usable again and the painted
-      // sentence drops the number -- with no stale "0 seconds" -- while
-      // the result itself stays (no timer clears a banner).
       act(() => {
         vi.advanceTimersByTime(1)
       })
@@ -1187,8 +1039,6 @@ describe('SMSSignInForm', () => {
       expect(visibleSentence(alert)).not.toHaveTextContent('0')
       expect(screen.getByRole('alert')).toBe(alert)
       expect(screen.getByText(waitSentence(2))).toBeInTheDocument()
-      // The hold was a failure's, so no note ever joined the banner's
-      // countdown; at expiry there is still none.
       expect(document.getElementById('sms-sign-in-resend-note')).toBeNull()
       expect(held).not.toHaveAttribute('aria-describedby')
     } finally {
@@ -1197,9 +1047,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('hold the send control for a throttled send’s wait and keep its focus', async () => {
-    // A refused first send holds the phone step's control for the wait the
-    // answer stated. No note stands on this step, so the control's own
-    // description names the wait and the failure banner counts it down.
     vi.useFakeTimers()
     try {
       const harness = makeHarness({
@@ -1239,7 +1086,6 @@ describe('SMSSignInForm', () => {
       )
       expect(send).toHaveFocus()
       expect(screen.getByRole('alert')).toHaveTextContent(waitSentence(2))
-      // A second activation starts nothing.
       await act(async () => {
         fireEvent.click(send)
         for (let turn = 0; turn < 10; turn += 1) {
@@ -1247,8 +1093,6 @@ describe('SMSSignInForm', () => {
         }
       })
       expect(sends(harness)).toHaveLength(1)
-      // At the boundary the control is usable again, keeps its focus, and
-      // leaves no stale description behind.
       act(() => {
         vi.advanceTimersByTime(2000)
       })
@@ -1286,8 +1130,6 @@ describe('SMSSignInForm', () => {
       name: zhCN.smsSignIn.resendCode,
     })
     await user.click(resend)
-    // The resend started this write, so it is the busy control; the code
-    // submit beside it reports the context without a reason of its own.
     expect(resend).toHaveAttribute('aria-busy', 'true')
     const submit = screen.getByRole('button', { name: zhCN.smsSignIn.submit })
     expect(submit).toHaveAttribute('aria-disabled', 'true')
@@ -1320,10 +1162,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('release the old number’s resend hold when the viewer changes the phone', async () => {
-    // The successful send's challenge states a wait, so the code step holds
-    // the resend control and explains it with the note. That hold belongs
-    // to the old number's code session: returning to the phone step drops
-    // the note, so the new number's send must not stay disabled behind it.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(60),
     })
@@ -1346,9 +1184,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('return to the phone step from a step this channel cannot render', async () => {
-    // A redirect step is the host's to navigate, so the SMS form cannot
-    // complete it: the notice carries the exit back to this channel's own
-    // first step -- the phone number.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
       [LOGIN_ANSWER]: () =>
@@ -1387,8 +1222,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('raise the code-step actions to the 44px floor under a coarse pointer', async () => {
-    // Resend and change-phone are compact action buttons; on a
-    // finger-driven device each one gates up to the 44x44 floor.
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
     })
@@ -1403,12 +1236,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('render the used-code notice on a superseded answer and refuse the same code locally', async () => {
-    // A concurrent sign-in commits while this code answer is in flight:
-    // auth-core rejects it as superseded, but its own 2xx spent the
-    // single-use code. The form renders the used-code notice, clears the
-    // code field, and refuses a re-submission of that exact code locally
-    // rather than spending a round trip on the server's collapsed
-    // wrong-code answer.
     let releaseAnswer!: (value: unknown) => void
     const answerGate = new Promise((resolve) => {
       releaseAnswer = resolve
@@ -1436,14 +1263,9 @@ describe('SMSSignInForm', () => {
         harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
       ).toHaveLength(1),
     )
-    // The winning sign-in commits while this answer is in flight.
     await act(async () => {
       await harness.session.answerFlow({ seq: 2, step: 'complete', input: {} })
     })
-    // The released answer is this submit's own token-issuing completion:
-    // it 2xx'd, but the winner committed first, so auth-core rejects it
-    // as superseded -- which is exactly the case whose single-use code
-    // was spent by this very answer.
     await act(async () => {
       releaseAnswer(authenticatedCompletion({ access_token: 'access-social' }))
     })
@@ -1455,8 +1277,6 @@ describe('SMSSignInForm', () => {
     expect(onSignedIn).not.toHaveBeenCalled()
     await waitFor(() => expect(code).toHaveValue(''))
     const callsAfterSupersede = harness.calls.length
-    // Re-submitting the very code the superseded answer spent is refused
-    // locally: the notice stays and no request goes out.
     await user.type(code, '424242')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
     await waitFor(() =>
@@ -1497,10 +1317,6 @@ describe('SMSSignInForm', () => {
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
     })
-    // Rendered under the page h1 a real host page supplies: the form
-    // renders no heading of its own, and page-has-heading-one is
-    // determinate in jsdom now (see the axe helper header) -- a scan
-    // without that context fails instead of passing by indeterminacy.
     renderWithProviders(
       <div>
         <h1>Sign in</h1>
@@ -1536,7 +1352,6 @@ describe('SMSSignInForm', () => {
 
   it('start the selector on the host-scoped default country', () => {
     const harness = makeHarness({})
-    // jsdom's browser locale is en-US (the US); the host default wins.
     renderWithProviders(
       <PhoneCountryDefaultProvider country="CN">
         <SMSSignInForm session={harness.session} />
@@ -1562,10 +1377,8 @@ describe('SMSSignInForm', () => {
       screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }),
     )
     await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
-    // A standalone form has no presentational mode to report.
     expect(beforeStart).toHaveBeenCalledWith({ method: 'sms' })
     expect(sends(harness)).toHaveLength(0)
-    // No code step opened and no error rendered: the attempt never left.
     expect(
       screen.queryByLabelText(zhCN.smsSignIn.codeLabel),
     ).not.toBeInTheDocument()
@@ -1596,9 +1409,6 @@ describe('SMSSignInForm', () => {
     const send = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
     await user.click(send)
     await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
-    // The gate has not answered yet: the control that returned is already
-    // busy, so a second click cannot pass the same gate and start another
-    // flow, while the control stays focusable and focused.
     await waitFor(() => {
       const current = screen.getByRole('button', {
         name: zhCN.smsSignIn.sendCode,
@@ -1614,7 +1424,6 @@ describe('SMSSignInForm', () => {
     await waitFor(() =>
       expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument(),
     )
-    // The flow began once, not once per click.
     expect(sends(harness)).toHaveLength(1)
   })
 
@@ -1637,30 +1446,19 @@ describe('SMSSignInForm', () => {
         screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
         CN_NATIONAL,
       )
-      // Waiting for a code solves nothing: the block appears only for the
-      // send the viewer asks for.
       expect(fake.widgets).toHaveLength(0)
       const send = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
       const form = send.closest('form')!
       await user.click(send)
-      // The gate requires a proof and the widget holds no token yet. The
-      // control that asked stays mounted and reports the wait as busy, so
-      // it keeps the focus it had.
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
       expect(fake.widgets[0]?.siteKey).toBe('site-1')
       const held = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
       expect(held).toHaveAttribute('aria-busy', 'true')
       expect(held).toHaveAttribute('aria-disabled', 'true')
-      // Held, not natively disabled: the control keeps its place in the tab
-      // order and the focus it had.
       expect(held).not.toHaveAttribute('disabled')
       expect(sends(harness)).toHaveLength(0)
-      // A submit that bypasses the hidden control is still refused: the
-      // outstanding send owns the step and starts no second flow.
       fireEvent.submit(form)
       expect(sends(harness)).toHaveLength(0)
-      // The widget yields its token: the send the viewer already asked for
-      // leaves by itself, carrying it.
       act(() => {
         fake.token('token-1')
       })
@@ -1676,9 +1474,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('hold a resend on its proof and return to the code step when the viewer cancels', async () => {
-    // A send waiting on its proof is not a write in flight: the way out
-    // stays usable, cancelling drops the wait without leaving a request
-    // behind, and the code the viewer already holds is answerable again.
     const fake = installFakeTurnstile()
     try {
       const harness = makeHarness({
@@ -1708,7 +1503,6 @@ describe('SMSSignInForm', () => {
       })
       await waitFor(() => expect(sends(harness)).toHaveLength(1))
       await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
-      // The resend is held on a fresh proof.
       await user.click(
         screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }),
       )
@@ -1721,9 +1515,6 @@ describe('SMSSignInForm', () => {
       expect(cancel).toBeEnabled()
       expect(sends(harness)).toHaveLength(1)
       await user.click(cancel)
-      // Cancelling drops the held resend: the code step and its controls are
-      // back, none of them waiting, no request left on the way out, and the
-      // control that asked takes its focus back.
       const code = screen.getByLabelText(zhCN.smsSignIn.codeLabel)
       const resend = screen.getByRole('button', {
         name: zhCN.smsSignIn.resendCode,
@@ -1737,7 +1528,6 @@ describe('SMSSignInForm', () => {
       expect(submit).not.toHaveAttribute('aria-disabled')
       expect(submit).not.toHaveAttribute('aria-busy')
       expect(sends(harness)).toHaveLength(1)
-      // The code the viewer already held still signs in.
       await user.type(code, '123456')
       await user.click(submit)
       await waitFor(() =>
@@ -1753,11 +1543,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('abandon a held resend when the code in hand is submitted and keep the parked step it reaches', async () => {
-    // Submitting the code the viewer holds gives up the resend still
-    // waiting on its proof: the next code would invalidate the one being
-    // submitted. Without that, a proof arriving while the answer is in
-    // flight lets the held resend leave once the answer settles, starting
-    // a second SMS flow that replaces the second factor the answer parked.
     const fake = installFakeTurnstile()
     try {
       let starts = 0
@@ -1795,14 +1580,11 @@ describe('SMSSignInForm', () => {
       await waitFor(() => expect(starts).toBe(1))
       await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
 
-      // The resend waits on a fresh proof.
       await user.click(
         screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }),
       )
       await waitFor(() => expect(fake.widgets).toHaveLength(2))
 
-      // The code already in hand answers; submitting it abandons the held
-      // resend.
       await user.type(
         screen.getByLabelText(zhCN.smsSignIn.codeLabel),
         '123456',
@@ -1818,15 +1600,12 @@ describe('SMSSignInForm', () => {
         ).toHaveLength(1),
       )
 
-      // The proof arrives while that answer is still in flight.
       act(() => {
         fake.token('token-2')
       })
       await settleMicrotasks()
       expect(starts).toBe(1)
 
-      // The answer settles at a second factor: no second SMS flow leaves
-      // to replace the parked step.
       await act(async () => {
         resolveAnswer(
           openFlow({
@@ -1859,10 +1638,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('abandon a held resend when the code in hand is submitted and start nothing when the answer is refused', async () => {
-    // The refusal branch of the same path: submitting the code gives up
-    // the held resend, so a refused answer starts nothing by itself. The
-    // code step stays on screen and its resend is the viewer's to ask
-    // again -- the way out when the code in hand was wrong.
     const fake = installFakeTurnstile()
     try {
       let starts = 0
@@ -1931,13 +1706,11 @@ describe('SMSSignInForm', () => {
         }
       })
       await settleMicrotasks()
-      // The refused answer starts nothing; the code step keeps its resend.
       expect(starts).toBe(1)
       const resend = screen.getByRole('button', {
         name: zhCN.smsSignIn.resendCode,
       })
       expect(resend).not.toHaveAttribute('aria-disabled')
-      // Asking again is the viewer's click, which opens the block anew.
       await user.click(resend)
       await waitFor(() => expect(fake.widgets).toHaveLength(3))
       expect(starts).toBe(1)
@@ -1959,9 +1732,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('let the viewer abandon a send held on its proof by editing the number', async () => {
-    // On the phone step the way out of a held send is the number field
-    // itself: it stays editable, and the first edit drops the wait rather
-    // than leaving a request behind.
     const fake = installFakeTurnstile()
     try {
       const harness = makeHarness({
@@ -2006,9 +1776,6 @@ describe('SMSSignInForm', () => {
       [LOGIN_START]: () => codeChallenge(),
     })
     renderWithProviders(<SMSSignInForm session={harness.session} />)
-    // Entering the phone step solves nothing; the block is opened only by
-    // the send the viewer asks for, and that send leaves by itself once
-    // the proof is in hand.
     expect(
       harness.calls.filter(
         (call) => call.path === '/api/v1/auth/human/challenge',
@@ -2030,8 +1797,6 @@ describe('SMSSignInForm', () => {
   })
 
   it('clear the failure banner when a step after the code is answered again', async () => {
-    // Each answer is a new attempt, including a parked second factor: the
-    // previous refusal's banner goes when the next answer begins.
     let answers = 0
     const harness = makeHarness({
       [LOGIN_START]: () => codeChallenge(),
@@ -2122,8 +1887,6 @@ describe('SMSSignInForm', () => {
         screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
         CN_NATIONAL,
       )
-      // The first send is what opens the block; it leaves with the token
-      // the widget yields.
       expect(fake.widgets).toHaveLength(0)
       await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
       await waitFor(() => expect(fake.widgets).toHaveLength(1))
@@ -2136,15 +1899,9 @@ describe('SMSSignInForm', () => {
         input: { phone: CN_E164 },
         human_proof: 'token-1',
       })
-      // The send consumed the first token; the next send obtains a fresh
-      // one from a fresh block.
       const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
       await user.type(code, '123456')
       await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
-      // The flow parks on the second factor; choosing the SMS factor sends
-      // a code, so that answer is the one the block is opened for. The only
-      // SMS factor reads as its kind, not by the name it was registered
-      // with.
       const smsFactor = zhCN.signInFlow.factorKind.sms
       await waitFor(() =>
         expect(

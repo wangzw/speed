@@ -1,45 +1,4 @@
-/**
- * PasswordSignInForm: the password channel of the sign-in family.
- *
- * A controlled react-hook-form form over the session's login flow: the
- * identifier (a username or email -- the account contract's password login
- * name; a phone is not one, it belongs to the SMS channel) and the password
- * are sent as the flow's first step (`session.startFlow`, method
- * `password`), rendered through ui-kit's FormLayout and FormField
- * skeleton. The skeleton owns the <form>, the validation-error rendering
- * and the actions row; this component owns the submission, the busy state
- * (RHF's isSubmitting while the request is in flight) and the channel's
- * feedback scope (see internal/write-feedback): one whole-attempt failure
- * banner at a time, cleared as the next answer begins.
- *
- * A password step that does not complete immediately -- a forced password
- * change (the method answers `challenge` with a `new_password` field), a
- * required second factor, a factor to register -- is rendered by the
- * shared step renderer (see src/internal/flow-step.tsx) in place of this
- * form's own fields; the same flow is advanced step by step through
- * `session.answerFlow` until it settles. Nothing here navigates and
- * nothing reads the session state: a settled login fires onSignedIn once
- * and the host decides what happens next. The heading above the form is
- * host content -- the component renders no title of its own.
- *
- * A submit whose login lost a concurrent race (another sign-in -- the SMS
- * channel's, a social exchange, a second instance of this form --
- * committed to the session while this one was in flight) answers with
- * auth-core's OperationSupersededError; the shared driver treats that as
- * the lost race it is -- no failure banner and no onSignedIn (the winning
- * call fires its own exactly once), and the session being authenticated
- * now is the host's own snapshot to observe through its auth-core hooks.
- *
- * A refused submit (`authn.login_failed`) is this channel's own text and is
- * attached to the password field: the server collapses an unknown
- * identifier, a wrong password and a wrong code into that one code, so the
- * wording names the password without saying which half did not match, and
- * it never mentions a code this surface has no field for. The message is the
- * field's helper text -- associated through aria-describedby and marking the
- * field aria-invalid -- and focus moves to the password field once the
- * refusal lands, so the focused field carries the message to a screen
- * reader. Every other code renders through the whole-attempt banner.
- */
+/** The password channel of the sign-in family. */
 
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
@@ -65,6 +24,8 @@ import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
 
+/** The host supplies the session the login drives and the callbacks around
+ * it; the form owns the fields and the flow's step state. */
 export interface PasswordSignInFormProps {
   /** The session the password login drives. */
   readonly session: AuthSession
@@ -75,24 +36,15 @@ export interface PasswordSignInFormProps {
    * nothing and renders no error; only the first step is gated.
    */
   readonly beforeStart?: SignInBeforeStart
-  /**
-   * The identifier the form starts with. A host handing the viewer over
-   * after a registration whose auto-login was refused prefills the
-   * username the account was opened with.
-   */
+  /** The identifier the form starts with. */
   readonly defaultUsername?: string
   /**
    * The human-verification gate the deployment reported, when the host
-   * already read the discovery document (the sign-in screen does). Omitted,
-   * the form reads it when a parked step may send.
+   * already read the discovery document. Omitted, the form reads it when a
+   * parked step may send.
    */
   readonly humanGate?: AuthnHumanGate
-  /**
-   * Host content ahead of the submit key in the form's action row -- the
-   * sign-in screen puts its forgot-password entry here, so the entry and
-   * the primary action read as one group instead of the entry floating on
-   * a line of its own.
-   */
+  /** Host content ahead of the submit key in the form's action row. */
   readonly actionsLeading?: ReactNode
 }
 
@@ -105,6 +57,11 @@ interface PasswordFields {
  * password and a wrong code all answer under this one code. */
 const LOGIN_FAILED = 'authn.login_failed'
 
+/**
+ * The password channel: drives a `method: 'password'` login flow from the
+ * identifier and password fields, then renders any parked step through the
+ * shared step renderer. A settled login fires `onSignedIn` once.
+ */
 export function PasswordSignInForm({
   session,
   onSignedIn,
@@ -117,26 +74,18 @@ export function PasswordSignInForm({
   const form = useForm<PasswordFields>({
     defaultValues: { identifier: defaultUsername ?? '', password: '' },
   })
-  // The channel's own feedback scope: one failure banner at a time, cleared
-  // when a new answer begins.
   const feedback = useChannelFeedback()
-  // Whether this form's own fields are the mounted surface: a refusal of a
-  // later step (a second factor) has no password field to attach to and
-  // renders through the banner instead.
+  // False once a parked step replaces these fields: its refusals have no
+  // password field to attach to and render through the banner instead.
   const credentialsMounted = useRef(true)
-  // The password input node itself: RHF's setFocus would target the control
-  // the Controller's ref is attached to, which MUI's TextField forwards to
-  // its form-control wrapper rather than the input.
+  // MUI's TextField forwards a ref to its form-control wrapper, not the
+  // input, so RHF's setFocus would target the wrong node.
   const passwordInput = useRef<HTMLInputElement>(null)
 
   const driver = useFlowDriver(session, {
     beforeStart,
     onFailure: (code, error) => {
       if (code === LOGIN_FAILED && credentialsMounted.current) {
-        // The password field carries the refusal: the same helper-text
-        // channel its validation errors use, which MUI associates with the
-        // input (aria-describedby) and marks invalid. Focus moves there so
-        // the message is announced with the field it belongs to.
         form.setError('password', {
           type: 'server',
           message: t('passwordSignIn.loginFailed'),
@@ -152,17 +101,13 @@ export function PasswordSignInForm({
         onSignedIn?.()
       } catch {
         // A throwing host callback is not a login failure: the login
-        // committed, nothing here renders the host's error, and the
-        // containment keeps the throw out of this submit promise.
+        // committed and the throw stays out of this submit promise.
       }
     },
   })
 
   credentialsMounted.current = driver.step === null
 
-  // A new attempt begins at the first edit: the previous answer's message
-  // -- the password field's server refusal or a whole-attempt banner --
-  // stops describing the input as soon as the viewer changes it.
   const clearAttempt = (): void => {
     if (form.formState.errors.password !== undefined) {
       form.clearErrors('password')
@@ -170,9 +115,6 @@ export function PasswordSignInForm({
     feedback.reset()
   }
 
-  // The credentials form and the parked step are two surfaces of this
-  // channel; a switch between them moves focus to the new one's first
-  // control, while the form's first render moves nothing.
   const surfaceRef = useStepFocus(
     driver.step === null ? 'password-credentials' : stepKey(driver.step),
   )
@@ -190,24 +132,13 @@ export function PasswordSignInForm({
     })
   }
 
-  // The submit control shows busy from the moment RHF begins the submit,
-  // while the form's guard waits for the flow driver, whose flag is set
-  // inside the handler. RHF raises its own `isSubmitting` before calling
-  // the handler, so a guard judged by it would swallow the handler's very
-  // first call; `driver.busy` stays true until the request settles.
+  // RHF raises `isSubmitting` before calling the handler, so a guard judged
+  // by it would swallow the handler's first call; `driver.busy` stays true
+  // until the request settles.
   const submitBusy = form.formState.isSubmitting || driver.busy
 
-  // The form's own submit is guarded by the same in-flight state the
-  // submit control carries: Enter in a field (the browser's synthetic
-  // click on the submit button) and a programmatic submit are swallowed
-  // while the login is in flight, and the control that started it keeps
-  // focus.
   const guardedSubmit = useActivationGuard(onSubmit, { busy: driver.busy })
 
-  // A step the flow parked after the credentials were accepted (a forced
-  // password change, a second factor) replaces this form's fields: only
-  // one surface renders at a time. A second factor that sends a code
-  // carries the deployment's proof block above it and presents the proof.
   if (driver.step !== null) {
     return (
       <Box ref={surfaceRef} sx={{ display: 'contents' }}>
@@ -218,14 +149,10 @@ export function PasswordSignInForm({
           busy={driver.busy}
           onAttemptStart={() => feedback.reset()}
           onAnswer={(input, proof) => {
-            // Answering a step is a new attempt: the previous failure must
-            // not stand beside the step this answer parks.
             feedback.reset()
             void driver.answer(input, proof)
           }}
           onUnsupported={() => {
-            // The channel's first fields are the way out of a step it
-            // cannot render; the abandoned step's failure goes with it.
             feedback.reset()
             driver.reset()
           }}

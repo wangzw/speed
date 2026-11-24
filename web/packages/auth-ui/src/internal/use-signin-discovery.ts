@@ -1,27 +1,9 @@
-/**
- * useSignInDiscovery: the sign-in family's channel source.
- *
- * The ways in are the deployment's, not the host's: the screen reads the
- * discovery document (`session.listMethods`) once per session and renders
- * exactly what it names, so a method enabled or disabled server-side
- * reaches the surface without a frontend change. The read is a session
- * OPERATION on the session the screen already drives as a prop -- the
- * same seam every channel form uses -- rather than one of auth-core's
- * hooks (useAuthState/usePermission), so this package still reads no
- * host-attached session state of its own (see design-web-auth-ui.md).
- *
- * The result is one of three states: still loading, ready with the
- * document, or failed with the code to render. A failed read settles into
- * the error state instead of throwing out of the screen; bumping `attempt`
- * reads once more. `enabled: false` skips the read entirely, so a host
- * that injects the document itself (SSR, a test) fires no request.
- */
+/** The sign-in family's discovery-document read. */
 
 import { useEffect, useState } from 'react'
 import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 
-/** The discovery read's outcome. */
 export type SignInDiscovery =
   | { readonly status: 'loading' }
   | { readonly status: 'ready'; readonly discovery: AuthnMethodList }

@@ -1,18 +1,3 @@
-/**
- * SignOutButton behaviour: a click drives one real logout round-trip
- * through the bindRequestFn harness (asserted on method, path and
- * bodyless request) and clears the session token; while the logout is in
- * flight the button shows the busy label, stays focusable, carries
- * aria-disabled and aria-busy, and swallows a second activation. A rejected
- * logout renders the answer's code text in one alert and changes nothing
- * locally -- the store keeps its token and the button stays ready to
- * retry, and a retry after a transport failure clears the alert and
- * succeeds. A whitelisted code resolves to its own text in the current
- * language (asserted zh, then en after a language switch); an unlisted
- * code renders the unknown fallback. Text expectations read the bundle
- * values, never inline language.
- */
-
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -39,8 +24,6 @@ const LABEL_ZH = zhCN.signOut.label
 const BUSY_ZH = zhCN.signOut.busy
 const LABEL_EN = enUS.signOut.label
 
-/** A harness whose script carries the extra endpoints on top of the
- * login completion a sign-in needs. */
 function makeScriptedHarness(
   extra: Parameters<typeof makeHarness>[0] = {},
 ): Harness {
@@ -51,13 +34,10 @@ function makeScriptedHarness(
   })
 }
 
-/** Signs the harness session in through the real session operation: a
- * login completion taken from the flow's ready step. */
 async function signIn(harness: Harness): Promise<void> {
   await harness.session.answerFlow({ seq: 1, step: 'complete', input: {} })
 }
 
-/** The WCAG 2.1 contrast ratio between two hex colours. */
 function contrastRatio(a: string, b: string): number {
   const channel = (value: number): number => {
     const c = value / 255
@@ -77,23 +57,12 @@ function contrastRatio(a: string, b: string): number {
 
 describe('SignOutButton', () => {
   it('default the button to an inheriting color, never the primary palette color', async () => {
-    // A button defaulting to the primary palette color vanishes on the
-    // very surface it usually sits on -- an AppBar whose background IS
-    // the primary color. color="inherit" makes the text follow the
-    // ambient color: the AppBar's own contrastText there, the
-    // surrounding text color on a plain surface.
     const harness = makeScriptedHarness()
     await signIn(harness)
     renderWithProviders(<SignOutButton session={harness.session} />)
     const button = screen.getByRole('button', { name: LABEL_ZH })
     expect(button).toHaveClass(buttonClasses.colorInherit)
     expect(button).not.toHaveClass(buttonClasses.colorPrimary)
-    // The token relationship the inheritance relies on, guarded here
-    // because jsdom resolves no cascaded styles: while an AppBar keeps
-    // painting primary.main, its own contrastText must stay at WCAG AA
-    // distance from it, or an inherited control is legible nowhere.
-    // The composed real-browser proof is an e2e gate over the
-    // visible controls.
     const { theme } = createAppTheme()
     const ratio = contrastRatio(
       theme.palette.primary.main,
@@ -115,8 +84,6 @@ describe('SignOutButton', () => {
     expect(harness.calls[3]?.method).toBe('POST')
     expect(harness.calls[3]?.path).toBe('/api/v1/auth/logout')
     expect(harness.calls[3]?.options?.body).toBeUndefined()
-    // Success is the host's to observe; the button itself returns to
-    // its idle label, ready for the next (idempotent) click.
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: LABEL_ZH }),
@@ -137,13 +104,10 @@ describe('SignOutButton', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: LABEL_ZH }))
     const busy = await screen.findByRole('button', { name: BUSY_ZH })
-    // The clicked control started the write and must stay the focused
-    // element: a native disabled attribute drops focus to the body.
     expect(document.activeElement).toBe(busy)
     expect(busy).toHaveAttribute('aria-disabled', 'true')
     expect(busy).toHaveAttribute('aria-busy', 'true')
     expect(harness.calls).toHaveLength(4)
-    // A second activation is swallowed rather than starting another write.
     await user.click(busy)
     expect(harness.calls).toHaveLength(4)
     await act(async () => {
@@ -169,8 +133,6 @@ describe('SignOutButton', () => {
     const user = userEvent.setup()
     const idle = screen.getByRole('button', { name: LABEL_ZH })
     await user.click(idle)
-    // Wait for the in-flight frame, then refuse it: the landing must not
-    // be where the focus the in-flight state dropped is lost for good.
     await screen.findByRole('button', { name: BUSY_ZH })
     await act(async () => {
       rejectLogout(apiError(503, 'authn.unavailable'))
@@ -180,18 +142,11 @@ describe('SignOutButton', () => {
         zhCN.errors.authn.unavailable,
       ),
     )
-    // The refusal lands on the button that started it: focus stays there
-    // and the control is usable again for a retry.
     expect(document.activeElement).toBe(idle)
     expect(idle).not.toHaveAttribute('aria-disabled', 'true')
   })
 
   it('render a refused logout in one alert: the local session still ends', async () => {
-    // auth-core clears the local session and rejects the raw ApiError
-    // when the server's revocation is refused (a session it could not
-    // revoke is no longer trustworthy locally), so the viewer is signed
-    // out either way and the banner is what the refusal still owes: the
-    // answer's code text, against a button that is already signed out.
     const harness = makeScriptedHarness({
       [LOGOUT]: () => {
         throw apiError(503, 'authn.unavailable')
@@ -290,9 +245,6 @@ describe('SignOutButton', () => {
       },
     })
     await signIn(harness)
-    // Rendered under the page h1 a real host page supplies, like every
-    // axe scan in this package (page-has-heading-one is determinate in
-    // jsdom -- see the axe helper header).
     renderWithProviders(
       <div>
         <h1>Account</h1>

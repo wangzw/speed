@@ -1,10 +1,5 @@
-/**
- * auth-ui's scan tier: the widget-tier axe assertion (see
- * @speed/test-utils/axe's header) -- the sign-in surfaces are components
- * rendered in isolation, so `region` and landmark-one-main stay
- * disabled and page-has-heading-one asks its question against the page
- * heading the render harness supplies.
- */
+/** auth-ui's widget-tier axe assertion: the surfaces render in isolation, so
+ * the page-level landmark rules stay disabled. */
 export {
   BROWSER_DETERMINATIONS,
   expectNoAxeViolations,

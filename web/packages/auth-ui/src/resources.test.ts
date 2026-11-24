@@ -1,18 +1,3 @@
-/**
- * The auth-ui resource bundle must satisfy the same discipline every
- * resource-carrying package does: canonical language keys, full coverage
- * of the instance's supported set, identical leaf key sets across
- * languages -- and that discipline lives in @speed/i18n's
- * registerNamespace, so this test proves the bundle by registering it on
- * a fresh instance. A key added to one language file and forgotten in the
- * other fails here before any component can ship it.
- *
- * Language text is asserted against the shipped JSON bundles (the
- * repo-authorized home of CJK), never inline: a rendering test compares
- * t() output to the bundle value, which keeps sources and tests
- * CJK-free while proving the registered bundle is what renders.
- */
-
 import { describe, expect, it } from 'vitest'
 import { createI18n, registerNamespace } from '@speed/i18n'
 import { AUTH_UI_NAMESPACE, authUiResources } from './resources.js'
@@ -29,7 +14,6 @@ function newInstance(): ReturnType<typeof createI18n> {
   })
 }
 
-/** Every dotted leaf path of a resource section, in traversal order. */
 function leafPaths(value: unknown, prefix = ''): string[] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return [prefix]
@@ -122,11 +106,6 @@ describe('auth-ui resources', () => {
     const i18n = newInstance()
     registerNamespace(i18n, AUTH_UI_NAMESPACE, authUiResources)
     const fallback = i18n.t('errors.unknown', { ns: AUTH_UI_NAMESPACE })
-    // The errors section is nested per source (errors.authn.*,
-    // errors.client.*); each branch must resolve through the registered
-    // namespace to its own text. Which codes the sign-in surface maps to
-    // these keys -- and the unknown-code fallback rule -- is the
-    // error-text resolver's own test, alongside its source file.
     for (const key of [
       'errors.authn.login_failed',
       'errors.authn.flow_invalid',

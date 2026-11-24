@@ -1,17 +1,3 @@
-/**
- * ImpersonationBanner in a real browser: the live region is not a
- * scrollable keyboard stop, and focus reaches the banner's controls.
- *
- * The component mounts one visually hidden live region for its whole
- * life. MUI's alert message slot carries `overflow: auto`; squeezed into
- * the 1x1 clipped box a browser can treat it as a scroll container and
- * put it in the Tab order, which jsdom's layout-free DOM never shows.
- * These cases assert the browser fact directly -- axe's
- * `scrollable-region-focusable` rule finds nothing, and the first Tab
- * reaches the banner's own end control rather than a hidden region --
- * in the three states the region lives through: idle, announcing, and
- * after the impersonation disappears.
- */
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
@@ -24,12 +10,10 @@ import type { ImpersonationBannerState } from './ImpersonationBanner.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-/** The shipped en-US strings the cases assert on. */
 const END_LABEL = enUS.impersonation.end
 const ENDING_LABEL = enUS.impersonation.ending
 const ENDED_TEXT = enUS.impersonation.ended
 
-/** Render in en-US so the live region's measured text is Latin-only. */
 function renderBanner(ui: ReactElement) {
   return renderWithProviders(ui, { language: 'en-US' })
 }
@@ -38,9 +22,6 @@ const SUBJECT = 'Ada Lovelace'
 const TENANT = 'tenant-1'
 const EXPIRES_AT = new Date('2026-10-18T12:30:00Z')
 
-/** Runs only the focusability rule the tier is about, against the real
- * layout: the full page-oriented set would fail an isolated component
- * render for reasons this tier does not own. */
 async function scrollableRegionViolations(): Promise<readonly axe.Result[]> {
   const result = await axe.run(document, {
     runOnly: { type: 'rule', values: ['scrollable-region-focusable'] },
@@ -49,9 +30,6 @@ async function scrollableRegionViolations(): Promise<readonly axe.Result[]> {
   return result.violations
 }
 
-/** The shared end control in a real browser: starting the attempt must
- * not move focus off the button, either while it is in flight or after a
- * refusal settles on it, and the button must stay in the tab order. */
 describe('ImpersonationBanner end control in Chromium', () => {
   it('keeps focus on the end control through the attempt and a refusal', async () => {
     await page.viewport(900, 900)
@@ -92,22 +70,16 @@ describe('ImpersonationBanner end control in Chromium', () => {
     end.focus()
     await userEvent.click(end)
 
-    // In flight: the label changes on the same element, which still holds
-    // focus and reports the state without going natively disabled.
     expect(end.textContent).toBe(ENDING_LABEL)
     expect(document.activeElement).toBe(end)
     expect(end).toHaveAttribute('aria-disabled', 'true')
     expect(end).toHaveAttribute('aria-busy', 'true')
 
-    // It stays in the tab order while it cannot run: tabbing backwards
-    // from the host's own control lands on it rather than skipping it.
     const fail = screen.getByRole('button', { name: 'fail' })
     fail.focus()
     await userEvent.keyboard('{Shift>}{Tab}{/Shift}')
     expect(document.activeElement).toBe(end)
 
-    // A refused attempt settles while the control keeps focus, and the
-    // next activation is a new attempt rather than a repeated one.
     fireEvent.click(fail)
     await waitFor(() => {
       expect(end).not.toHaveAttribute('aria-busy', 'true')
@@ -148,8 +120,6 @@ describe('ImpersonationBanner live region in Chromium', () => {
       />,
     )
 
-    // The announcement is committed a tick after mount; wait for the
-    // event, not the clock.
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain(SUBJECT)
     })
@@ -160,17 +130,12 @@ describe('ImpersonationBanner live region in Chromium', () => {
     await userEvent.keyboard('{Tab}')
 
     expect(document.activeElement?.textContent).toBe(END_LABEL)
-    // The hidden live region precedes the visible banner in DOM order and
-    // must not have taken that Tab stop.
     expect(document.activeElement).not.toBe(screen.getByRole('status'))
   })
 
   it('keeps the live region mounted and quiet-looking after the impersonation disappears', async () => {
     await page.viewport(900, 900)
 
-    // The host shape the component is designed for: the impersonation is
-    // host state, and ending it clears that state. Clicking the banner's
-    // own control drives the real end edge.
     function Host() {
       const [impersonation, setImpersonation] =
         useState<ImpersonationBannerState | null>({ subject: SUBJECT })
@@ -197,8 +162,6 @@ describe('ImpersonationBanner live region in Chromium', () => {
     ;(document.activeElement as HTMLElement | null)?.blur()
     document.body.focus()
     await userEvent.keyboard('{Tab}')
-    // No visible control remains; the hidden region still must not enter
-    // the tab order.
     expect(document.activeElement).not.toBe(screen.getByRole('status'))
   })
 
@@ -225,14 +188,10 @@ describe('ImpersonationBanner live region in Chromium', () => {
     const status = screen.getByRole('status')
     const alert = status.closest('.MuiAlert-root') as HTMLElement
     expect(alert).not.toBeNull()
-    // The element carrying the skin is the Box the component styles around
-    // the alert; it is the one that clips or paints.
     const skin = alert.parentElement as HTMLElement
     expect(status.textContent).toBe('')
     expect(getComputedStyle(skin).clipPath).toBe('inset(50%)')
 
-    // The commit set the settlement. The region is still empty for two
-    // animation frames, and the skin must not paint an empty box in them.
     fireEvent.click(screen.getByRole('button', { name: 'settle' }))
     expect(status.textContent).toBe('')
     expect(getComputedStyle(skin).clipPath).toBe('inset(50%)')
@@ -240,7 +199,6 @@ describe('ImpersonationBanner live region in Chromium', () => {
     await waitFor(() => {
       expect(status.textContent).toBe(SETTLED)
     })
-    // The skin unclips in the same frame the text is painted.
     expect(getComputedStyle(skin).clipPath).toBe('none')
   })
 })

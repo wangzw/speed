@@ -1,23 +1,3 @@
-/**
- * The error-text whitelist contract, pinned in both directions against
- * the shipped bundles: ERROR_TEXT_CODES (the reachable-subset whitelist
- * of the sign-in and session surface) and the errors-section leaves of
- * each language file must name exactly the same codes -- errors.unknown
- * is the one errors-section key with no code, the fallback itself. A
- * code added to the whitelist without its two bundle keys, or a bundle
- * key added without its whitelist code, fails the equality pin here;
- * key parity between the two language files is enforced earlier, by
- * registerNamespace, so a key missing from one language fails
- * registration before any component can ship it.
- *
- * The render walk adds the value half: every whitelisted code must
- * resolve through the registered namespace to its own dedicated text in
- * both languages -- never the errors.unknown fallback and never a raw
- * key. Component-level render coverage (the role="alert" banner for a
- * given code) lives in inline-error.test.tsx; this file pins the
- * whole-list pairing that banner depends on.
- */
-
 import { describe, expect, it } from 'vitest'
 import { createElement, type ReactNode } from 'react'
 import { renderHook } from '@testing-library/react'
@@ -29,11 +9,6 @@ import { ERROR_TEXT_CODES, useAuthUiErrorText } from './error-text.js'
 
 type Bundle = typeof zhCN
 
-/**
- * The one errors-section leaf with no single whitelisted code: the bare-HTTP
- * family (client.http.<status>) resolves onto it, the whole status family
- * sharing one parameterized key.
- */
 const HTTP_FAMILY_LEAF = 'client.http'
 
 /** The code leaf keys of the errors section, e.g. 'authn.invalid_email'. */
@@ -52,7 +27,6 @@ function errorLeafKeys(bundle: Bundle): string[] {
   return leaves.sort()
 }
 
-/** The errors-section value a whitelisted code must resolve to. */
 function bundleText(bundle: Bundle, code: string): string {
   const [source, leaf] = code.split('.')
   const section = (
@@ -83,9 +57,6 @@ describe('error-text whitelist', () => {
   it('resolve every whitelisted code to its own text in both languages', async () => {
     const i18n = newInstance()
     for (const code of ERROR_TEXT_CODES) {
-      // Dedicated text, never the unknown fallback and never a raw key:
-      // fallbackLng is false, so a missing key would render as the key
-      // itself -- asserted against both failure shapes.
       const zh = i18n.t(`errors.${code}`, { ns: AUTH_UI_NAMESPACE })
       expect(zh, code).not.toBe(zhCN.errors.unknown)
       expect(zh, code).not.toBe(`errors.${code}`)

@@ -1,12 +1,3 @@
-/**
- * PasswordResetScreen's action row in a real browser: the send/submit key
- * and, once a code is out, the back and resend controls share one group
- * with the one spacing token between adjacent controls, and the primary
- * closes the row at the right edge. The old space-between row put the back
- * entry and the primary hundreds of pixels apart; these cases measure the
- * boxes jsdom cannot lay out.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -22,7 +13,6 @@ import type {
 import enUS from './locales/en-US.json' with { type: 'json' }
 import uiKitEnUS from '../../ui-kit/src/locales/en-US.json' with { type: 'json' }
 
-/** The one spacing token an action row puts between adjacent controls. */
 const ACTION_GAP = 8
 
 const SENT: PasswordResetSent = {
@@ -37,8 +27,6 @@ const OPERATIONS: PasswordResetOperations = {
   completeReset: () => Promise.resolve(),
 }
 
-/** The whole reset as a host binds it, for the cases that write a
- * password: the sent surface's submit verifies the code first. */
 const RESET_OPERATIONS: PasswordResetOperations = {
   requestReset: () => Promise.resolve(SENT),
   verifyReset: () =>
@@ -49,8 +37,6 @@ const RESET_OPERATIONS: PasswordResetOperations = {
 const NEW_PASSWORD = 'n3w-s3cret-pass'
 const CODE = '123456'
 
-/** A code request the case settles by hand, so a focus the viewer moves
- * while the send runs is observable. */
 function deferredRequest() {
   let settle: (value: PasswordResetSent) => void = () => undefined
   const requestReset = vi.fn(
@@ -62,8 +48,6 @@ function deferredRequest() {
   return { requestReset, settle: () => settle(SENT) }
 }
 
-/** A password write the case settles by hand, so a focus the viewer moves
- * while it runs is observable. */
 function deferredComplete() {
   let settle: () => void = () => undefined
   const completeReset = vi.fn(
@@ -75,7 +59,6 @@ function deferredComplete() {
   return { completeReset, settle: () => settle() }
 }
 
-/** Fill the identifier, code and both password fields, then submit. */
 async function writeThePassword(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<void> {
@@ -102,7 +85,6 @@ async function writeThePassword(
   )
 }
 
-/** The row an action belongs to, found by the row's own marker. */
 function actionRowOf(action: Element): HTMLElement {
   const row = action.closest<HTMLElement>('[data-action-row]')
   if (row === null) {
@@ -111,7 +93,6 @@ function actionRowOf(action: Element): HTMLElement {
   return row
 }
 
-/** The row's right content edge (the row may carry its own padding). */
 function contentRightOf(row: HTMLElement): number {
   const rowBox = row.getBoundingClientRect()
   return rowBox.right - Number.parseFloat(getComputedStyle(row).paddingRight)
@@ -153,8 +134,6 @@ describe('PasswordResetScreen action row in Chromium', () => {
     await user.keyboard('{Enter}')
     await screen.findByText(enUS.passwordReset.sentNotice)
 
-    // The identifier field left with the request surface; focus lands on
-    // the sent surface's first control, never on the document body.
     expect(document.activeElement).toBe(
       screen.getByLabelText(enUS.passwordReset.codeLabel),
     )
@@ -176,8 +155,6 @@ describe('PasswordResetScreen action row in Chromium', () => {
     await user.type(email, 'alice@example.com')
     await user.keyboard('{Enter}')
     await waitFor(() => expect(requestReset).toHaveBeenCalledTimes(1))
-    // The send is in flight and the operator tabs to the back entry, which
-    // both the request and the sent surface render.
     const back = screen.getByRole('button', {
       name: enUS.passwordReset.backToSignIn,
     })
@@ -189,16 +166,10 @@ describe('PasswordResetScreen action row in Chromium', () => {
       await Promise.resolve()
     })
     await screen.findByText(enUS.passwordReset.sentNotice)
-    // The request surface's fields were replaced, but the back entry the
-    // operator chose is still mounted: the switch must not take it back.
     expect(document.activeElement).toBe(back)
   })
 
   it('keeps the resend focused and busy while its proof is outstanding', async () => {
-    // The resend that asked keeps its focus while the block stands above
-    // it: an unmount or a native disable would drop it to the body. The
-    // focus half is a guardrail rather than a reproduction -- it already
-    // held before this change -- and it must keep holding.
     const fake = installFakeTurnstile()
     try {
       const user = userEvent.setup()
@@ -238,16 +209,12 @@ describe('PasswordResetScreen action row in Chromium', () => {
       await browserUserEvent.keyboard('{Enter}')
       await waitFor(() => expect(fake.widgets).toHaveLength(2))
       await waitFor(() => expect(resend).toHaveAttribute('aria-busy', 'true'))
-      // The block appeared while the control that asked for it stayed
-      // mounted and kept its focus.
       expect(
         screen.getByRole('group', {
           name: uiKitEnUS.humanVerification.groupLabel,
         }),
       ).toBeInTheDocument()
       expect(resend).toHaveFocus()
-      // Mounted, not natively disabled: it keeps its place in the tab order
-      // and the focus it had.
       expect(resend).not.toHaveAttribute('disabled')
     } finally {
       fake.restore()
@@ -290,14 +257,11 @@ describe('PasswordResetScreen action row in Chromium', () => {
     const resendBox = resend.getBoundingClientRect()
     const submitBox = submit.getBoundingClientRect()
     const row = actionRowOf(submit)
-    // All three controls are members of the one row.
     expect(actionRowOf(back)).toBe(row)
     expect(actionRowOf(resend)).toBe(row)
 
-    // One line.
     expect(Math.abs(backBox.top - submitBox.top)).toBeLessThanOrEqual(1)
     expect(Math.abs(resendBox.top - submitBox.top)).toBeLessThanOrEqual(1)
-    // Adjacent, one spacing token apart, primary last and right.
     expect(resendBox.left - backBox.right).toBeCloseTo(ACTION_GAP, 0)
     expect(submitBox.left - resendBox.right).toBeCloseTo(ACTION_GAP, 0)
     expect(Math.abs(submitBox.right - contentRightOf(row))).toBeLessThanOrEqual(
@@ -320,8 +284,6 @@ describe('PasswordResetScreen action row in Chromium', () => {
     const heading = await screen.findByRole('heading', {
       name: enUS.passwordReset.doneTitle,
     })
-    // The submit that started the write left with the form; focus lands on
-    // the surface that replaced it, never on the document body.
     expect(heading).toHaveAttribute('tabindex', '-1')
     expect(document.activeElement).toBe(heading)
   })
@@ -352,8 +314,6 @@ describe('PasswordResetScreen action row in Chromium', () => {
     await screen.findByRole('heading', {
       name: enUS.passwordReset.doneTitle,
     })
-    // The removal did not take the focus, so the landing must not take it
-    // back from the place the viewer chose.
     expect(document.activeElement).toBe(outside)
   })
 })

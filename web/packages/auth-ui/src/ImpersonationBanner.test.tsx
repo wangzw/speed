@@ -1,19 +1,3 @@
-/**
- * ImpersonationBanner behaviour: the presentational notice over the
- * host-owned end attempt.
- *
- * Covers the idle state (one mounted live region and nothing else), the
- * active banner (subject, tenant and expiry when given, the management
- * notice, a named region landmark), the shared attempt's presentation
- * (focusable, aria-disabled and aria-busy while pending, the failure code
- * rendered inside the banner, the success message announced and shown),
- * the dismissal (the visible region hides without unmounting, the close
- * control names itself, the live region keeps announcing), the host-driven
- * end edge, the tenant identifier's ellipsis with its full value as a
- * title, and an axe pass. Text expectations read the shipped bundles,
- * never inline language.
- */
-
 import { useState } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -53,16 +37,10 @@ const EXPIRY_ZH = zhCN.impersonation.expiresAt.replace(
   new Intl.DateTimeFormat('zh-CN', {
     dateStyle: 'medium',
     timeStyle: 'long',
-    // The harness renders in its fixed TEST_TIME_ZONE; the fixture states
-    // the same zone explicitly so it does not read the machine's.
     timeZone: TEST_TIME_ZONE,
   }).format(EXPIRES_AT),
 )
 
-/** The fixed text before a template's first placeholder. A negative
- * assertion built from a value the test never passes is always true, so
- * the "not stated" checks look for the label itself, independent of the
- * interpolated value. */
 function labelBeforeValue(template: string): string {
   const placeholder = template.indexOf('{{')
   return placeholder < 0 ? template : template.slice(0, placeholder)
@@ -71,10 +49,6 @@ function labelBeforeValue(template: string): string {
 const TENANT_LABEL_ZH = labelBeforeValue(zhCN.impersonation.tenant)
 const EXPIRY_LABEL_ZH = labelBeforeValue(zhCN.impersonation.expiresAt)
 
-/** Whether the element is clipped to the 1x1 visually-hidden box by
- * itself or an ancestor. jsdom renders no layout, but it resolves the
- * emotion class rules into computed styles, so the clip recipe of every
- * ancestor is observable. */
 function isVisuallyHidden(element: Element): boolean {
   for (
     let node: Element | null = element;
@@ -95,11 +69,6 @@ function isVisuallyHidden(element: Element): boolean {
   return false
 }
 
-/** The declaration emotion emitted for `property` in the rule that
- * targets the MUI message slot under one of `owner`'s classes. The
- * element's generated stylesheet is the thing a browser applies; the
- * focusability Chromium derives from a scroll container cannot be
- * measured in jsdom. */
 function messageSlotDeclaration(
   owner: Element,
   property: string,
@@ -130,7 +99,6 @@ function messageSlotDeclaration(
   return null
 }
 
-/** The banner's named region, visible or not. */
 function region(container: HTMLElement): HTMLElement | null {
   return container.querySelector<HTMLElement>('section[aria-label]')
 }
@@ -143,7 +111,6 @@ describe('ImpersonationBanner', () => {
     const liveRegions = screen.getAllByRole('status')
     expect(liveRegions).toHaveLength(1)
     expect(liveRegions[0]).toHaveTextContent('')
-    // No banner landmark, no end control, no region of any kind.
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
@@ -159,9 +126,6 @@ describe('ImpersonationBanner', () => {
         onEnd={() => {}}
       />,
     )
-    // The start is announced through the one live region that was
-    // already mounted before the impersonation appeared: inserted empty,
-    // filled on a later frame.
     const status = screen.getByRole('status')
     expect(status).toHaveTextContent('')
     await waitFor(() => expect(status).toHaveTextContent(ACTING_AS_ZH))
@@ -190,9 +154,6 @@ describe('ImpersonationBanner', () => {
     const notice = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,
     })
-    // The banner is the warning role's filled surface: the role's main is
-    // the fill and its contrastText is the label chosen to read on that
-    // fill in both modes. The pair only holds while the two stay together.
     const { palette } = createAppTheme().theme
     expect(notice).toHaveStyle({
       backgroundColor: palette.warning.main,
@@ -208,9 +169,6 @@ describe('ImpersonationBanner', () => {
         timeStyle: 'long',
         timeZone,
       }).format(EXPIRES_AT)
-    // The host's zone differs from the browser's, so the assertions below
-    // discriminate the provider's effect: an implementation that ignored
-    // it and fell back to the browser zone would render the other string.
     expect(formatter('Asia/Tokyo')).not.toBe(formatter(browserZone))
     renderWithProviders(
       <DisplayTimeZoneProvider timeZone="Asia/Tokyo">
@@ -245,11 +203,6 @@ describe('ImpersonationBanner', () => {
         timeStyle: 'long',
         timeZone,
       }).format(EXPIRES_AT)
-    // The host's zone differs from the browser's, so the assertions below
-    // discriminate the provider's effect: an implementation that ignored
-    // it and fell back to the browser zone would render the other string.
-    // The suite pins the browser zone (auth-ui's vitest.config.ts), so a
-    // value equal to it would not tell the two apart.
     expect(longFormatter('Europe/Berlin')).not.toBe(
       longFormatter(browserZone),
     )
@@ -264,8 +217,6 @@ describe('ImpersonationBanner', () => {
     const notice = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,
     })
-    // The deadline carries its zone name, so the operator reading it can
-    // tell which clock it is on; the medium default omits the zone.
     expect(notice).toHaveTextContent(
       zhCN.impersonation.expiresAt.replace(
         '{{expiresAt}}',
@@ -302,21 +253,14 @@ describe('ImpersonationBanner', () => {
       )
     }
     renderWithProviders(<Host />)
-    // Mounted empty before anything happens ...
     expect(screen.getByRole('status')).toHaveTextContent('')
     await userEvent.setup().click(screen.getByRole('button', { name: 'start' }))
-    // ... and filled on the tick after the impersonation appears.
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(ACTING_AS_ZH),
     )
   })
 
   it('mounts the live region empty on the first commit and fills it afterwards', () => {
-    // Server rendering is the one place the first commit is observable:
-    // effects do not run, so this markup is exactly what the first paint
-    // would show. The banner body states the acting-as line once; the
-    // live region must still be empty, or a first mount that is already
-    // impersonating would be born with its text and say nothing.
     const i18n = createAuthUiI18n()
     const markup = renderToStaticMarkup(
       <I18nextProvider i18n={i18n}>
@@ -329,9 +273,6 @@ describe('ImpersonationBanner', () => {
       </I18nextProvider>,
     )
     expect(markup).toContain('role="status"')
-    // The banner body states the acting-as line once -- the subject is its
-    // own element, so the line's text is split around it -- and the live
-    // region stays empty on the first commit.
     const [before = '', after = ''] = zhCN.impersonation.actingAs.split(
       '{{subject}}',
     )
@@ -341,9 +282,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('announces an impersonation that is already current on first mount', async () => {
-    // The frame mounts after a start, and a reload while impersonating
-    // mounts this component too: the region is born empty and filled on
-    // a later frame, so both cases are announced.
     renderWithProviders(
       <ImpersonationBanner
         impersonation={{ subject: SUBJECT }}
@@ -357,8 +295,6 @@ describe('ImpersonationBanner', () => {
 
   it('keeps the end control usable when tenant and expiry are unknown', async () => {
     const onEnd = vi.fn()
-    // `null` is what an unread optional field looks like at the wire
-    // boundary; the cast passes that shape through the declared type.
     const unread = { subject: SUBJECT, expiresAt: null as unknown as Date }
     renderWithProviders(
       <ImpersonationBanner impersonation={unread} onEnd={onEnd} />,
@@ -366,8 +302,6 @@ describe('ImpersonationBanner', () => {
     const notice = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,
     })
-    // Neither line is stated: the labels are looked for as fixed text,
-    // not as a value the test never passed.
     expect(notice).not.toHaveTextContent(TENANT_LABEL_ZH)
     expect(notice).not.toHaveTextContent(EXPIRY_LABEL_ZH)
     expect(notice).toHaveTextContent(ACTING_AS_ZH)
@@ -396,12 +330,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('falls back to the browser zone when the host’s display time zone is not an IANA name', () => {
-    // The provider forwards the host's value unvalidated, and the engine
-    // rejects an unknown zone with a RangeError; the shared entry resolves
-    // the chain to the browser's zone instead, so the banner survives and
-    // keeps its expiry line. The suite's vitest config pins a non-UTC
-    // browser zone: on a UTC runner this case would also hold for an
-    // implementation that fell straight through to UTC.
     const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone
     expect(browserZone).not.toBe('UTC')
     const browserExpiry = new Intl.DateTimeFormat('zh-CN', {
@@ -441,17 +369,11 @@ describe('ImpersonationBanner', () => {
     const ending = screen.getByRole('button', {
       name: zhCN.impersonation.ending,
     })
-    // The in-flight state rides on an operable element: no native disabled
-    // attribute, so the button keeps its place in the tab order ...
     expect(ending).not.toHaveAttribute('disabled')
-    // ... and says what it is doing to assistive technology.
     expect(ending).toHaveAttribute('aria-disabled', 'true')
     expect(ending).toHaveAttribute('aria-busy', 'true')
-    // The control can still take focus at any time.
     ending.focus()
     expect(ending).toHaveFocus()
-    // Activation while the attempt is in flight is swallowed: the shared
-    // attempt is not started twice.
     await userEvent.setup().click(ending)
     expect(onEnd).not.toHaveBeenCalled()
   })
@@ -470,7 +392,6 @@ describe('ImpersonationBanner', () => {
     })
     const alert = within(notice).getByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.unavailable)
-    // The control is back and a click is a new attempt.
     const end = screen.getByRole('button', { name: zhCN.impersonation.end })
     expect(end).not.toHaveAttribute('aria-disabled', 'true')
     expect(end).toBeEnabled()
@@ -479,8 +400,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('announces and shows the shared attempt success, and the text outlives the banner', async () => {
-    // The host's own shape: the attempt's success message arrives while
-    // the banner is still mounted, then the host clears `impersonation`.
     const { rerender } = renderWithProviders(
       <ImpersonationBanner
         impersonation={{ subject: SUBJECT }}
@@ -493,7 +412,6 @@ describe('ImpersonationBanner', () => {
     await waitFor(() =>
       expect(status).toHaveTextContent(zhCN.impersonation.ended),
     )
-    // The confirmed text is shown, not left inside the 1x1 hidden box.
     expect(isVisuallyHidden(status)).toBe(false)
 
     rerender(
@@ -504,8 +422,6 @@ describe('ImpersonationBanner', () => {
       />,
     )
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
-    // The confirmation stands in the live region after the banner is
-    // gone; a fresh mount inserts it empty and fills a frame later.
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
         zhCN.impersonation.ended,
@@ -514,10 +430,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('announces an end that settles outside the banner, without a success message', async () => {
-    // The account menu ends the impersonation: the message is the
-    // permanent region's ended text, derived from the displayed
-    // impersonation disappearing. The host clears its state in place, so
-    // the component observes the transition rather than remounting.
     function Host() {
       const [impersonation, setImpersonation] =
         useState<ImpersonationBannerState | null>({ subject: SUBJECT })
@@ -547,10 +459,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('lands focus on the settlement when the end control that started it unmounts', async () => {
-    // The success clears the impersonation, so the end control leaves the
-    // document with focus on it. Without a landing the browser drops focus
-    // to the body; the banner slot's remaining section -- the settlement
-    // that now carries the end's announcement -- takes it instead.
     function Host() {
       const [impersonation, setImpersonation] =
         useState<ImpersonationBannerState | null>({ subject: SUBJECT })
@@ -577,16 +485,11 @@ describe('ImpersonationBanner', () => {
     const status = screen.getByRole('status')
     const settlement = status.closest('.MuiAlert-root')?.parentElement
     expect(settlement).not.toBeNull()
-    // Focus moved off the body and onto the settlement section, never onto
-    // the unmounted control's place in the tab order.
     await waitFor(() => expect(settlement).toHaveFocus())
     expect(document.activeElement).not.toBe(document.body)
   })
 
   it('leaves focus alone when the operator moved it before the impersonation ended', async () => {
-    // The end settles from another entry point after the operator left the
-    // banner's end control; their chosen resting place must not be pulled
-    // back to the banner slot.
     function Host() {
       const [impersonation, setImpersonation] =
         useState<ImpersonationBannerState | null>({ subject: SUBJECT })
@@ -655,8 +558,6 @@ describe('ImpersonationBanner', () => {
       ),
     )
 
-    // The next impersonation is the current context: the stale
-    // confirmation must not cover its announcement.
     await user.click(screen.getByRole('button', { name: 'start again' }))
     const status = screen.getByRole('status')
     await waitFor(() =>
@@ -668,11 +569,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('keeps the hidden announcement region from becoming a scroll container', () => {
-    // MUI's message slot carries `overflow: auto`; squeezed to the 1px
-    // clipped width it would overflow into a scroll region, which
-    // Chromium makes a keyboard focus stop. jsdom cannot construct that
-    // focusability, so the emitted rule is the observable half: the
-    // hidden branch removes the scroll container.
     renderWithProviders(
       <ImpersonationBanner
         impersonation={{ subject: SUBJECT }}
@@ -680,7 +576,6 @@ describe('ImpersonationBanner', () => {
       />,
     )
     const status = screen.getByRole('status')
-    // The Alert is the region's skin; the clipping Box is its parent.
     const outer = status.closest('.MuiAlert-root')?.parentElement
     expect(outer).not.toBeNull()
     expect(messageSlotDeclaration(outer as Element, 'overflow')).toBe(
@@ -695,8 +590,6 @@ describe('ImpersonationBanner', () => {
         onEnd={() => {}}
       />,
     )
-    // The region is the announcement's carrier, but the banner itself
-    // states the same line: the region must stay visually hidden.
     const status = screen.getByRole('status')
     await waitFor(() => expect(status).toHaveTextContent(ACTING_AS_ZH))
     expect(isVisuallyHidden(status)).toBe(true)
@@ -712,8 +605,6 @@ describe('ImpersonationBanner', () => {
         regionId="impersonation-notice"
       />,
     )
-    // The visible region is gone entirely; the permanent live region is
-    // not, and still announces the start.
     expect(region(container)).toBeNull()
     expect(document.getElementById('impersonation-notice')).toBeNull()
     expect(
@@ -796,8 +687,6 @@ describe('ImpersonationBanner', () => {
     const tenant = screen.getByText(
       zhCN.impersonation.tenant.replace('{{tenant}}', longTenant),
     )
-    // The identifier stays one line and ellipsizes; the complete value is
-    // available on the title, so truncation never loses the fact.
     expect(tenant).toHaveAttribute('title', longTenant)
     expect(tenant).toHaveStyle({
       whiteSpace: 'nowrap',
@@ -807,11 +696,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('caps the acting-as subject so a display name cannot grow the bar', () => {
-    // The design's target is one text line at 1280 and at most two at 800.
-    // The fixed sentences leave room for only a short subject at 1280, so
-    // an unbounded display name wraps the paragraph and misses that. The
-    // subject is bounded like the tenant identifier; the row's own gaps
-    // and padding are held tight for the same width budget.
     const longSubject = 'Alexandria Konstantinopoulos'
     renderWithProviders(
       <ImpersonationBanner
@@ -824,14 +708,11 @@ describe('ImpersonationBanner', () => {
         onDismiss={() => {}}
       />,
     )
-    // The sentence still reads whole in the rendered text...
     expect(
       screen.getByRole('region', { name: zhCN.impersonation.regionLabel }),
     ).toHaveTextContent(
       zhCN.impersonation.actingAs.replace('{{subject}}', longSubject),
     )
-    // ...with the subject alone the bounded, ellipsized segment, its full
-    // value carried as a title, exactly like the tenant identifier.
     const subject = screen.getByText(longSubject)
     expect(subject).toHaveAttribute('title', longSubject)
     expect(getComputedStyle(subject)).toMatchObject({
@@ -841,14 +722,8 @@ describe('ImpersonationBanner', () => {
       whiteSpace: 'nowrap',
       verticalAlign: 'bottom',
     })
-    // jsdom does not resolve `min()`, so the cap is read off the emitted
-    // rule.
     expect(emittedStyleText()).toMatch(/max-width:\s*min\(16ch,\s*100%\)/)
 
-    // The width the row reserves for itself: everything outside the text
-    // is width the single line cannot use at 1280. jsdom renders no
-    // layout, so the line count itself is measured in the browser
-    // verification pass; these values are the ones it is measured against.
     const notice = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,
     })
@@ -871,24 +746,14 @@ describe('ImpersonationBanner', () => {
     const notice = screen.getByRole('region', {
       name: zhCN.impersonation.regionLabel,
     })
-    // The design's compact row: one flex line that wraps, small vertical
-    // padding.
     expect(getComputedStyle(notice).flexWrap).toBe('wrap')
     expect(getComputedStyle(notice).paddingTop).toBe('4px')
     expect(getComputedStyle(notice).paddingBottom).toBe('4px')
-    // The design's 40-48px single-line target, held as a floor.
     expect(getComputedStyle(notice).minHeight).toBe('40px')
 
-    // The four statements are children of ONE paragraph and flow inline:
-    // the line breaks fall by text flow, not one sentence per line.
     const facts = notice.firstElementChild as HTMLElement | null
     expect(facts?.tagName).toBe('P')
-    // Flex line breaking uses the paragraph's base size, not its shrunk
-    // size: a non-zero base pushes the controls onto their own row at
-    // widths where the wrapped text would still fit beside them.
     expect(getComputedStyle(facts as HTMLElement).flexBasis).toBe('0px')
-    // The facts take the room the controls leave, so the controls close
-    // the row on the right without an automatic margin.
     expect(getComputedStyle(facts as HTMLElement).flexGrow).toBe('1')
     const statements = within(facts as HTMLElement)
     const statementTexts = [
@@ -900,33 +765,22 @@ describe('ImpersonationBanner', () => {
       const node = statements.getByText(text)
       expect(getComputedStyle(node).display).not.toBe('block')
     }
-    // The acting-as line keeps the subject in its own bounded element so
-    // an arbitrary display name cannot grow the bar; the line itself stays
-    // inline beside the other facts.
     const subject = statements.getByText(SUBJECT)
     expect(getComputedStyle(subject).display).toBe('inline-block')
     expect(
       getComputedStyle(subject.parentElement as HTMLElement).display,
     ).not.toBe('block')
-    // The tenant identifier is an inline block, so it can ellipsize.
     expect(getComputedStyle(statements.getByText(TENANT_ZH)).display).toBe(
       'inline-block',
     )
 
-    // The controls share the row, at its end, from sm up: the region is
-    // the row they sit in.
     const end = screen.getByRole('button', { name: zhCN.impersonation.end })
     const close = screen.getByRole('button', { name: zhCN.impersonation.hide })
     expect(end.parentElement).toBe(close.parentElement)
     const controls = end.parentElement as HTMLElement
     expect(controls.parentElement).toBe(notice)
-    // The facts block grows into the free width, so the controls close the
-    // row on the right without an automatic margin. An auto margin here is
-    // the two-ends layout the action row rule forbids.
     expect(getComputedStyle(controls).marginLeft).not.toBe('auto')
 
-    // Below xs they take their own line, flush right: emotion emitted the
-    // breakpoint rule jsdom itself cannot evaluate.
     const emotionClass = Array.from(controls.classList).find((name) =>
       name.startsWith('css-'),
     )
@@ -941,8 +795,6 @@ describe('ImpersonationBanner', () => {
     expect(belowXs?.[1]).toContain('flex-basis:100%')
   })
 
-  /** Mounts the banner with a working host clear control, the real host
-   * shape the success tests exercise. */
   function ClearableHost() {
     const [impersonation, setImpersonation] =
       useState<ImpersonationBannerState | null>({ subject: SUBJECT })
@@ -960,14 +812,8 @@ describe('ImpersonationBanner', () => {
   }
 
   it('confirms the end while the banner is still mounted, and the confirmation outlives an explicit clear', async () => {
-    // A real host's end write settles over a network round trip: the
-    // success message can arrive before the host's own re-read clears
-    // `impersonation`. The confirmation must be readable while the banner
-    // is still on screen, and must stay after the host clears it.
     const user = userEvent.setup()
     renderWithProviders(<ClearableHost />)
-    // The confirmation is the host's success message; the host shape
-    // here has none, so the ended edge is what is announced.
     await user.click(screen.getByRole('button', { name: 'clear' }))
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
@@ -978,9 +824,6 @@ describe('ImpersonationBanner', () => {
   })
 
   it('passes axe with no violations while the banner is shown', async () => {
-    // The page heading the harness supplies answers
-    // page-has-heading-one, the way every axe scan in this package is
-    // rendered.
     renderWithProviders(
       <div>
         <h1>Page</h1>

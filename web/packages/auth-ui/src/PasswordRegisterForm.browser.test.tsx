@@ -1,18 +1,3 @@
-/**
- * PasswordRegisterForm in Chromium: the control that starts a write keeps
- * the focus it held. jsdom does not reproduce the focus loss a native
- * `disabled` causes -- it leaves the document's active element on the
- * control -- so these cases hold the subject in a real browser: the submit
- * keeps focus through the registration flight and the stated wait after
- * it, stays in the tab order while that wait holds, the retry action that
- * replaces it in the same slot keeps both the element and its focus, the
- * retry keeps that focus while the login it starts is in flight, and a
- * field an Enter submission started from keeps focus when the fields fall
- * back to read-only.
- *
- * The requests are answered by the shared session harness, never by a live
- * server.
- */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { userEvent } from 'vitest/browser'
@@ -43,13 +28,11 @@ const LABELS = {
   confirmPassword: zhCN.register.confirmPasswordLabel,
 } as const
 
-/** The failure banner's sentence naming a whole-second wait. */
 function waitSentence(seconds: number): string {
   const [before = '', after = ''] = zhCN.throttle.retryAfter.split('{{seconds}}')
   return `${before}${seconds}${after}`
 }
 
-/** A promise settled by the case rather than by the app. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -64,26 +47,22 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-/** Settle the next animation frame, where a browser moves focus. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** The registration requests the form has sent. */
 function registerCalls(harness: ReturnType<typeof makeHarness>) {
   return harness.calls.filter((call) => call.path === '/api/v1/auth/register')
 }
 
-/** The login-flow starts the form has sent. */
 function loginStartCalls(harness: ReturnType<typeof makeHarness>) {
   return harness.calls.filter(
     (call) => `${call.method} ${call.path}` === LOGIN_START,
   )
 }
 
-/** What the browser currently focuses, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -101,7 +80,6 @@ function registration(): unknown {
   }
 }
 
-/** Type every field; focus ends in the confirmation field. */
 async function fillFields(): Promise<void> {
   await userEvent.type(screen.getByLabelText(LABELS.username), USERNAME)
   await userEvent.type(screen.getByLabelText(LABELS.email), MAIL)
@@ -109,7 +87,6 @@ async function fillFields(): Promise<void> {
   await userEvent.type(screen.getByLabelText(LABELS.confirmPassword), PASSWORD)
 }
 
-/** Fill the fields, click the submit, and return that control. */
 async function fillAndSubmit(): Promise<HTMLElement> {
   await fillFields()
   const submit = screen.getByRole('button', { name: zhCN.register.submit })
@@ -138,8 +115,6 @@ describe('PasswordRegisterForm focus in Chromium', () => {
       expect(submit).toHaveAttribute('aria-busy', 'true')
     })
 
-    // Settling hands the surface to the auto-login's parked step; the
-    // flight case is done once the submit it started leaves the page.
     written.resolve(registration())
     await waitFor(() =>
       expect(
@@ -183,8 +158,6 @@ describe('PasswordRegisterForm focus in Chromium', () => {
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     expect(submit).not.toHaveAttribute('aria-busy', 'true')
 
-    // Reachable through the ordinary tab order: a natively disabled
-    // control is skipped, a focusable unavailable one is not.
     screen.getByLabelText(LABELS.confirmPassword).focus()
     await userEvent.tab()
     expect(
@@ -236,9 +209,6 @@ describe('PasswordRegisterForm focus in Chromium', () => {
     expect(retry).toBe(submit)
 
     await userEvent.click(retry)
-    // The retry's request leaving the page is the signal both
-    // implementations produce; the focus assertion below then holds the
-    // subject, so a regression fails there rather than on a wait.
     await waitFor(() => expect(loginStartCalls(harness)).toHaveLength(2))
     await nextFrame()
     expect(
@@ -268,8 +238,6 @@ describe('PasswordRegisterForm focus in Chromium', () => {
     const confirmPassword = screen.getByLabelText(LABELS.confirmPassword)
     confirmPassword.focus()
 
-    // Enter in a filled field is implicit form submission: the browser
-    // clicks the default submit button without moving focus off the field.
     await userEvent.keyboard('{Enter}')
 
     await waitFor(() =>
