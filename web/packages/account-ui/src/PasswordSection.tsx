@@ -49,7 +49,6 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -62,9 +61,11 @@ import {
 import type { AuthSession } from '@speed/auth-core'
 import { useStepUpGate } from '@speed/auth-core'
 import {
+  ActionButton,
   errorCodeOf,
   FORM_MAX_WIDTH,
   SectionCard,
+  useActivationGuard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
@@ -144,8 +145,11 @@ export function PasswordSection({
   })
 
   const pending = isPending && data === undefined
-  // Disabled through the whole attempt, including the refetches that follow
-  // the mutation, so no control changes context under a pending scope.
+  // In flight through the whole attempt, including the refetches that follow
+  // the mutation, so no control changes context under a pending scope. The
+  // attempt locks the fields and marks the submit button busy; none of them
+  // is natively disabled, because a focused control that becomes
+  // unfocusable drops the reader's focus.
   const busy = changePassword.isPending || feedback.pending
   // The form is withheld only when the answer says no password is set (a
   // provider-only account); an answer that did not say reads as one that
@@ -260,6 +264,11 @@ export function PasswordSection({
     void change({ current, newPassword })
   }
 
+  // Both the submit button's own guard and this form guard judge by the same
+  // state: while the attempt is in flight, an activation -- a click, or the
+  // Enter a field submits with -- reaches no second request.
+  const guardedSubmit = useActivationGuard(submit, { busy })
+
   return (
     <>
       <SectionCard title={t('password.title')}>
@@ -286,7 +295,7 @@ export function PasswordSection({
           <Box
             component="form"
             noValidate
-            onSubmit={submit}
+            onSubmit={guardedSubmit}
             sx={{
               display: 'flex',
               flexDirection: 'column',
@@ -302,7 +311,7 @@ export function PasswordSection({
                 autoComplete="current-password"
                 label={t('password.current.label')}
                 value={current}
-                disabled={busy}
+                slotProps={{ htmlInput: { readOnly: busy } }}
                 onChange={(event) => setCurrent(event.target.value)}
               />
             )}
@@ -313,7 +322,7 @@ export function PasswordSection({
               autoComplete="new-password"
               label={t('password.new.label')}
               value={newPassword}
-              disabled={busy}
+              slotProps={{ htmlInput: { readOnly: busy } }}
               error={fieldError === 'missingNew'}
               helperText={
                 fieldError === 'missingNew'
@@ -334,7 +343,7 @@ export function PasswordSection({
               autoComplete="new-password"
               label={t('password.confirm.label')}
               value={confirm}
-              disabled={busy}
+              slotProps={{ htmlInput: { readOnly: busy } }}
               error={fieldError === 'mismatch'}
               helperText={
                 fieldError === 'mismatch' ? t('password.mismatch') : undefined
@@ -355,9 +364,9 @@ export function PasswordSection({
                 alignSelf: 'stretch',
               }}
             >
-              <Button type="submit" variant="contained" disabled={busy}>
+              <ActionButton type="submit" emphasis="primary" busy={busy}>
                 {t(passwordSet ? 'password.submit' : 'password.submitFirst')}
-              </Button>
+              </ActionButton>
             </Box>
 
             {/* One scope's result, below the form it confirms. */}

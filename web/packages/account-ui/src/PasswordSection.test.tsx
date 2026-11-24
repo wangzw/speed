@@ -15,11 +15,15 @@
  * the account's back-off is in force; a code outside the whitelist
  * renders the unknown fallback rather than a raw key; and a change
  * refused with 401 authn.insufficient_user_authentication opens the
- * step-up dialog, a won step-up re-running it exactly once.
+ * step-up dialog, a won step-up re-running it exactly once. The in-flight
+ * cases pin the section's focus rule: the write makes the fields
+ * unchangeable, not unfocusable, so the field that submitted with Enter
+ * and the submit button itself keep the focus through the write and after
+ * it lands, and a further activation sends no second request.
  */
 
 import { describe, expect, it } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -58,6 +62,18 @@ function mount(
     <PasswordSection session={rig.session} withoutLoginName={withoutLoginName} />,
   )
   return { rig, ...rendered }
+}
+
+/** One answer held open, so a case can inspect the in-flight controls. */
+function deferredResponse(): {
+  readonly response: Promise<Response>
+  readonly release: (response: Response) => void
+} {
+  let release: (response: Response) => void = () => {}
+  const response = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  return { response, release }
 }
 
 describe('PasswordSection', () => {
@@ -761,5 +777,167 @@ describe('PasswordSection', () => {
     const readsBeforeRetry = reads
     await user.click(screen.getByRole('button', { name: zhCN.password.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
+
+  it('keeps the field that submitted with Enter focused through the in-flight write', async () => {
+    // The section's representative case. Enter in a field is the browser's
+    // implicit submission: the form submits through its submit button while
+    // the field keeps the focus. The write must make the fields unchangeable,
+    // not unfocusable -- natively disabling a focused field takes it out of
+    // the tab order and a real engine moves the focus to the document body --
+    // so the field stays focused and read-only through the write and after it
+    // lands.
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: true }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        return held.response
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const current = await screen.findByLabelText(zhCN.password.current.label)
+    const newPassword = screen.getByLabelText(zhCN.password.new.label)
+    const confirm = screen.getByLabelText(zhCN.password.confirm.label)
+    await user.type(current, 'old-pass')
+    await user.type(newPassword, 'new-pass')
+    await user.type(confirm, 'new-pass')
+    // The reader comes back to the new-password field and presses Enter.
+    await user.click(newPassword)
+    await user.keyboard('{Enter}')
+
+    await waitFor(() =>
+      expect(rig.calls.some((call) => call.method === 'PUT')).toBe(true),
+    )
+
+    // The field that made the request keeps its focus; every field stays
+    // focusable and unchangeable instead of natively disabled.
+    expect(newPassword).toHaveFocus()
+    for (const field of [current, newPassword, confirm]) {
+      expect(field).toHaveAttribute('readonly')
+      expect(field).not.toBeDisabled()
+    }
+    // The submit button reports the write in flight and stays focusable.
+    const submit = screen.getByRole('button', { name: zhCN.password.submit })
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(submit).not.toBeDisabled()
+
+    // A keystroke during the write changes nothing, and the form's implicit
+    // submission from a field reaches no second request.
+    await user.keyboard('x')
+    expect(newPassword).toHaveValue('new-pass')
+    await user.keyboard('{Enter}')
+    expect(rig.calls.filter((call) => call.method === 'PUT')).toHaveLength(1)
+
+    await act(async () => {
+      held.release(new Response(null, { status: 204 }))
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.password.changed,
+      ),
+    )
+    expect(newPassword).toHaveFocus()
+  })
+
+  it('refuses a direct form submission while the change is in flight', async () => {
+    // An implicit Enter is one way a form submits; the form's own guard has
+    // to judge a submit event aimed straight at the form too, which no
+    // button's guard sees. The fields stay filled for the whole write, so an
+    // unguarded second pass through `submit` would send the change again.
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: false }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        return held.response
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const newPassword = await screen.findByLabelText(zhCN.password.new.label)
+    const confirm = screen.getByLabelText(zhCN.password.confirm.label)
+    await user.type(newPassword, 'first-pass')
+    await user.type(confirm, 'first-pass')
+    const form = newPassword.closest('form')
+    expect(form).not.toBeNull()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.password.submitFirst }),
+    )
+    await waitFor(() =>
+      expect(rig.calls.some((call) => call.method === 'PUT')).toBe(true),
+    )
+
+    await act(async () => {
+      fireEvent.submit(form as HTMLFormElement)
+    })
+    expect(rig.calls.filter((call) => call.method === 'PUT')).toHaveLength(1)
+
+    await act(async () => {
+      held.release(new Response(null, { status: 204 }))
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.password.changedFirst,
+      ),
+    )
+  })
+
+  it('keeps the submit button focused while its own write is in flight', async () => {
+    const held = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: false }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        return held.response
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    const newPassword = await screen.findByLabelText(zhCN.password.new.label)
+    const confirm = screen.getByLabelText(zhCN.password.confirm.label)
+    await user.type(newPassword, 'first-pass')
+    await user.type(confirm, 'first-pass')
+    const submit = screen.getByRole('button', {
+      name: zhCN.password.submitFirst,
+    })
+    await user.click(submit)
+
+    await waitFor(() =>
+      expect(rig.calls.some((call) => call.method === 'PUT')).toBe(true),
+    )
+    // The control that started the write keeps the focus it had when it was
+    // activated, and the fields lock without leaving the tab order.
+    expect(submit).toHaveFocus()
+    expect(submit).toHaveAttribute('aria-busy', 'true')
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
+    expect(newPassword).toHaveAttribute('readonly')
+    expect(confirm).toHaveAttribute('readonly')
+
+    // A second activation of the control reaches no request.
+    await user.keyboard('{Enter}')
+    expect(rig.calls.filter((call) => call.method === 'PUT')).toHaveLength(1)
+
+    await act(async () => {
+      held.release(new Response(null, { status: 204 }))
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        zhCN.password.changedFirst,
+      ),
+    )
+    expect(submit).toHaveFocus()
   })
 })
