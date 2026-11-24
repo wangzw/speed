@@ -1,19 +1,7 @@
 /**
- * TenantSwitchAnnouncement: the one `role="status"` region that says which
- * tenant a selection switched to.
- *
- * It exists separately from TenantSwitcher because a host that renders the
- * rows inside its own menu (TenantMenuItems) closes that menu on a pick, and
- * a live region born and gone with a menu is not reliably announced. The host
- * mounts this region once, outside the menu, from its first render -- empty
- * until a selection fills it -- and hands it the switched-to tenant's name.
- *
- * The region is mounted empty and clipped from the start: a region that only
- * receives its text later is present before the text arrives, which is what
- * makes the first announcement reliable. `announcement` chooses whether the
- * confirmation is also painted (`inline`) or stays clipped for its whole
- * lifetime (`visually-hidden`); the region is in the accessibility tree either
- * way.
+ * The `role="status"` region that announces which tenant a selection
+ * switched to. The host mounts it once, outside the menu, from its first
+ * render.
  */
 
 import type { ReactElement } from 'react'
@@ -21,6 +9,8 @@ import Typography from '@mui/material/Typography'
 import { visuallyHiddenSx } from '@speed/ui-kit'
 import { useTenancyUiTranslation } from './internal/translation.js'
 
+/** The announcement region's props: the name of the tenant just switched
+ * to, and whether the text is painted inline or kept visually hidden. */
 export interface TenantSwitchAnnouncementProps {
   /** The display name of the tenant the last selection switched to, or null
    * before any selection. */
@@ -30,6 +20,7 @@ export interface TenantSwitchAnnouncementProps {
   readonly announcement?: 'inline' | 'visually-hidden'
 }
 
+/** Renders the switch confirmation region. */
 export function TenantSwitchAnnouncement({
   tenantName,
   announcement = 'visually-hidden',
