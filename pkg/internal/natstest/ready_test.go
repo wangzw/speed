@@ -12,26 +12,17 @@ import (
 	"github.com/vislake/speed/pkg/core/coretest"
 )
 
-// refused is the error a dial gets while nothing listens on the published port
-// yet: the shape net.DialTimeout actually returns, with the kernel's refusal
-// under a *net.OpError.
 func refused() error {
 	return &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}
 }
 
-// timeout is a net.Error whose deadline expired, as a dial with a timeout that
-// ran out reports it.
 type timeout struct{}
 
 func (timeout) Error() string   { return "i/o timeout" }
 func (timeout) Timeout() bool   { return true }
 func (timeout) Temporary() bool { return true }
 
-// TestOnlyConnectionFailuresAreRetried pins which dial failures count as "not
-// ready yet". A container that has just started refuses or resets the first
-// connection; a malformed address or an unresolvable host answers the same way
-// however long the wait runs, so the wait has to tell them apart instead of
-// spending its whole bound on either.
+// TestOnlyConnectionFailuresAreRetried pins which dial failures count as "not ready yet".
 func TestOnlyConnectionFailuresAreRetried(t *testing.T) {
 	for name, tc := range map[string]struct {
 		err  error
@@ -63,8 +54,8 @@ func TestOnlyConnectionFailuresAreRetried(t *testing.T) {
 	}
 }
 
-// TestAConnectionFailureIsRetriedUntilTheServerAnswers holds the wait to
-// retrying the class the classification admits.
+// TestAConnectionFailureIsRetriedUntilTheServerAnswers holds the wait to retrying the class the
+// classification admits.
 func TestAConnectionFailureIsRetriedUntilTheServerAnswers(t *testing.T) {
 	attempts := 0
 	err := waitReadyUntil(time.Now().Add(time.Second), time.Millisecond, func() error {
@@ -82,8 +73,8 @@ func TestAConnectionFailureIsRetriedUntilTheServerAnswers(t *testing.T) {
 	}
 }
 
-// TestAFailureAboutTheAddressEndsTheWaitAtOnce holds the wait to reporting a
-// failure that retrying cannot clear, rather than spending the bound on it.
+// TestAFailureAboutTheAddressEndsTheWaitAtOnce holds the wait to reporting a failure that retrying
+// cannot clear, rather than spending the bound on it.
 func TestAFailureAboutTheAddressEndsTheWaitAtOnce(t *testing.T) {
 	attempts := 0
 	failure := &net.AddrError{Err: "missing port in address", Addr: "127.0.0.1"}
@@ -99,9 +90,8 @@ func TestAFailureAboutTheAddressEndsTheWaitAtOnce(t *testing.T) {
 	}
 }
 
-// TestTheWaitEndsAtItsBound holds the wait to the bound it documents: a
-// connection failure that never clears is reported when the deadline passes,
-// not retried forever.
+// TestTheWaitEndsAtItsBound holds the wait to the bound it documents: a connection failure that
+// never clears is reported when the deadline passes, not retried forever.
 func TestTheWaitEndsAtItsBound(t *testing.T) {
 	attempts := 0
 	start := time.Now()

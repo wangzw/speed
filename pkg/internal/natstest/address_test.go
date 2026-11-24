@@ -2,8 +2,8 @@ package natstest
 
 import "testing"
 
-// TestServerURLFallsBackToTheComposeStack holds the URL and the dial address to
-// the values the fixture documents when no deployment has pointed it elsewhere.
+// TestServerURLFallsBackToTheComposeStack holds the URL and the dial address to the values the
+// fixture documents when no deployment has pointed it elsewhere.
 func TestServerURLFallsBackToTheComposeStack(t *testing.T) {
 	t.Setenv("SPEED_TEST_NATS_URL", "")
 
@@ -15,9 +15,8 @@ func TestServerURLFallsBackToTheComposeStack(t *testing.T) {
 	}
 }
 
-// TestServerURLFollowsTheEnvironment holds the fixture to reading the URL when
-// it is used: a case that sets the variable must reach the server it named,
-// not the one the package saw at start-up.
+// TestServerURLFollowsTheEnvironment holds the fixture to reading the URL when it is used: a case
+// that sets the variable must reach the server it named, not the one the package saw at start-up.
 func TestServerURLFollowsTheEnvironment(t *testing.T) {
 	const pointed = "nats://127.0.0.1:14222"
 	t.Setenv("SPEED_TEST_NATS_URL", pointed)
