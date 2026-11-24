@@ -261,10 +261,8 @@ class ModuleDirsForBlockTests(unittest.TestCase):
 
 
 class LocalReplacementsTests(unittest.TestCase):
-    """A replace directive in a dependency is ignored by consumers, so the
-    throwaway module must re-state every in-repository replacement the
-    imported modules rely on -- otherwise the example is validated against
-    whatever the proxy serves instead of against this checkout."""
+    """The scratch module re-states every in-repository replacement its
+    dependencies rely on."""
 
     def _tree(self, root: pathlib.Path) -> None:
         (root / "pkg" / "core").mkdir(parents=True)
@@ -440,13 +438,7 @@ class CheckCompleteBlockTests(unittest.TestCase):
 
 
 class CheckCompleteBlockWidthTests(unittest.TestCase):
-    """The go commands check_complete_block starts must take their width from
-    the caller.
-
-    A complete example is compiled for real, so its tidy, build and vet are
-    where this gate spends CPU. The script inherits GOMAXPROCS and GOFLAGS
-    from whoever runs it and adds only -mod=mod to the latter: never a -p of
-    its own, and never a GOMAXPROCS when the caller set none."""
+    """The go commands check_complete_block starts take their width from the caller."""
 
     workspace = m.Workspace("1.25", ROSTER)
 

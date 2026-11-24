@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end honesty gate: the journeys, their specs, and the tier's rules.
-
-A spec declares the journey it drives and the requirements it covers in its
-header:
-
-    // @journey journey-first-registration-to-personal-organization.md
-    // @covers REQ-signin-001, REQ-signup-001
-"""
+"""End-to-end honesty gate: the journeys, their specs, and the tier's rules."""
 
 from __future__ import annotations
 
@@ -33,7 +26,6 @@ RESTRICTED_LAYERS = (SPECS_DIR, HELPERS_DIR)
 
 REQ_ID = re.compile(r"REQ-[A-Za-z0-9-]+")
 
-# A spec's header declarations.
 JOURNEY_DECL = re.compile(r"@journey\s+([A-Za-z0-9._-]+\.md)")
 COVERS_DECL = re.compile(r"@covers\s+([^\n]*)")
 
@@ -42,10 +34,9 @@ COVERS_DECL = re.compile(r"@covers\s+([^\n]*)")
 CDP_COMMAND = re.compile(r"^[A-Za-z][A-Za-z0-9]*\.")
 ALLOWED_CDP_DOMAIN = "WebAuthn"
 
-# The forbidden source tokens. They are matched against comment-stripped text,
-# so a comment that merely mentions one is not a finding. The WebAuthn CDP
-# family is handled separately, because allowing it means reading the command
-# the send() names rather than exempting a bare token.
+# The forbidden source tokens, matched against comment-stripped text. The
+# WebAuthn CDP family is handled separately: allowing it means reading the
+# command send() names rather than exempting a bare token.
 FORBIDDEN_PATTERNS = [
     ("direct HTTP", re.compile(r"(?<![\w$.])fetch\s*\(")),
     ("direct HTTP", re.compile(r"\b(?:window|globalThis|self)\s*\.\s*fetch\b")),
@@ -99,10 +90,8 @@ ARTIFACT_PATH = re.compile(
 # The harness's per-run root, which the config may compose its paths from.
 ARTIFACT_ROOT_DECL = re.compile(r"\bARTIFACT_ROOT\s*=\s*(['\"`])([^'\"`]*)\1")
 
-# Source suffixes the token scan reads.
 SOURCE_SUFFIXES = (".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs")
 
-# --- layer rules -----------------------------------------------------------
 
 # Modules a spec or helper may not import: they reach around the product.
 RESTRICTED_BANNED_MODULES = {
@@ -299,7 +288,6 @@ def strip_comments(text: str) -> str:
             index += 1
             continue
 
-        # state == "template"
         output.append(char)
         if char == "\\" and index + 1 < size:
             output.append(text[index + 1])
@@ -341,7 +329,6 @@ def walk_files(root: str, suffix: str | tuple[str, ...]) -> list[str]:
     return found
 
 
-# --- registry parsing -------------------------------------------------------
 
 
 def _balanced(text: str, start: int, opening: str, closing: str) -> str:
@@ -413,15 +400,9 @@ def _covers_field(obj: str) -> list[str]:
 
 
 def parse_registry(text: str) -> list[dict[str, object]]:
-    """Parse the journeys.ts registry into a list of entry dicts.
-
-    The gate reads TypeScript rather than executing it, so the contract is the
-    literal shape documented in the module docstring: an array of object
-    literals with string fields and a string array. A declaration that cannot
-    be located is an infrastructure error rather than a silent empty registry,
-    because an unreadable registry would make every unreachable journey look
-    like a coverage gap.
-    """
+    """Parse the journeys.ts registry into a list of entry dicts: an array of
+    object literals with string fields; an unlocatable registry is an
+    infrastructure error, not a silent empty one."""
     declaration = re.search(
         r"\b(?:export\s+)?const\s+journeys\b[^=]*?=\s*(\[)", text
     )
@@ -443,7 +424,6 @@ def parse_registry(text: str) -> list[dict[str, object]]:
     return entries
 
 
-# --- checks -----------------------------------------------------------------
 
 
 def journey_documents(journeys_dir: str) -> dict[str, set[str]]:
@@ -590,10 +570,8 @@ def coverage_counts(
 ) -> tuple[int, int, int, int]:
     """The covered, pending, unreachable and unimplemented counts, one per document.
 
-    A journey a spec declares is covered; the registry's claim cannot override
-    the spec. Otherwise the registry's non-covered status decides, and a
-    journey left unaccounted for is counted in none of the four -- the coverage
-    finding names it.
+    A spec's declaration beats the registry's claim; a journey left unaccounted
+    for is in none of the four, and the coverage finding names it.
     """
     covered = pending = unreachable = unimplemented = 0
     for journey in documents:
@@ -646,8 +624,8 @@ def _scan_file(relative: str, text: str) -> list[str]:
 def _named_specifiers(clause: str) -> list[str] | None:
     """The names in an import clause, or None when it is not a named import.
 
-    A namespace (`* as fs`) or default (`fs`) binding cannot be proven to
-    touch only read functions, so the caller treats None as opaque.
+    A namespace (`* as fs`) or default binding cannot be proven to touch only
+    read functions, so the caller treats None as opaque.
     """
     match = NAMED_SPECIFIERS.search(clause)
     if match is None:

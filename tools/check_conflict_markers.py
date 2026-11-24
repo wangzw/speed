@@ -25,8 +25,7 @@ SNIFF = 8192
 def is_text(path: str) -> bool:
     """Report whether a file holds UTF-8 text rather than binary.
 
-    The read is bounded and the answer is a byte test, not a decode: a
-    marker is seven ASCII characters, so a file that decodes as UTF-8 is
+    A marker is seven ASCII characters, so a file that decodes as UTF-8 is
     worth scanning and one that does not is not.
     """
     try:

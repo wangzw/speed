@@ -23,16 +23,9 @@ CONSTRAINT_PREFIXES = ("//go:build ", "// +build ")
 # identifier-shaped runs is what is left.
 TAG_RE = re.compile(r"[A-Za-z0-9_]+")
 
-# The operating-system and architecture names go/build treats as platforms: its
-# KnownOS and KnownArch, in $GOROOT/src/internal/syslist/syslist.go. A file-name
-# element from either set restricts the file to that platform, so the sets are
-# wider than the ports `go tool dist list` prints; they include names no port
-# builds for any more (nacl, amd64p32) and names no port has yet (hurd, zos,
-# ppc, riscv). A constraint term from either set is a platform the run executes
-# on, not a tag a leg passes. The toolchain is not asked at gate time, which
-# keeps this gate a plain script; test_check_test_tiers.py holds the two sets to
-# syslist.go in the pinned toolchain and to the ports it builds for, so a
-# toolchain that adds a name fails that test until they agree.
+# The operating-system and architecture names go/build treats as platforms
+# (KnownOS/KnownArch), wider than `go tool dist list`: a term from either set is
+# the platform a run executes on, not a tag a leg passes.
 GOOS = frozenset({
     "aix", "android", "darwin", "dragonfly", "freebsd", "hurd", "illumos", "ios",
     "js", "linux", "nacl", "netbsd", "openbsd", "plan9", "solaris", "wasip1",
@@ -46,10 +39,8 @@ GOARCH = frozenset({
 })
 PLATFORM_TERMS = GOOS | GOARCH
 
-# The GitHub-hosted runner labels this gate knows, by the platform a job on
-# one executes on. A workflow naming any other runs-on value -- another
-# label, a list or an expression -- is an infrastructure error naming it,
-# since this gate would otherwise guess the platform its legs run on.
+# The GitHub-hosted runner labels this gate knows, by platform. Any other
+# runs-on value is an infrastructure error naming it.
 RUNNER_PLATFORMS = {
     "ubuntu-latest": ("linux", "amd64"),
     "ubuntu-26.04": ("linux", "amd64"),
@@ -66,21 +57,15 @@ RUNS_ON_RE = re.compile(r"^\s*runs-on:(.*)$", re.MULTILINE)
 # A token of a `//go:build` expression: an operator, a parenthesis or a term.
 CONSTRAINT_TOKEN_RE = re.compile(r"\s*(&&|\|\||!|\(|\)|[A-Za-z0-9_.]+)")
 
-# A skip method on a testing value. `Skip`, `Skipf` and `SkipNow` are the
-# three `testing` declares; `Skip` alone would also match a method of some
-# other type, which is why the file is held to importing `testing` as
-# well.
+# A skip method on a testing value: `Skip`, `Skipf` and `SkipNow`, matched only
+# in a file that imports `testing`.
 SKIP_RE = re.compile(r"\.Skip(Now|f)?\s*\(")
-# A line that imports the testing package: the one-line form, and a line
-# inside an import block, with or without an alias. The quote is matched
-# to the end of the line so that `"testing/fstest"` and a longer path
-# beginning with the same word are not one of them.
+# A line importing the testing package, one-line or in a block, with the quote
+# matched to end of line so `"testing/fstest"` is not one of them.
 TESTING_IMPORT_RE = re.compile(r'^\s*(?:import\s+)?(?:\w+\s+)?"testing"\s*$', re.MULTILINE)
 
-# What a Makefile line hands a leg: the tag list of a `-tags=` flag, and
-# the race detector's own always-on tag. The leading whitespace matters
-# for the second: a target named `test-race` carries the text `-race`
-# without passing it.
+# What a Makefile line hands a leg: the `-tags=` list and the race detector's
+# always-on tag. The leading whitespace keeps a `test-race` target from matching.
 TAGS_FLAG_RE = re.compile(r"-tags=(\S+)")
 RACE_FLAG_RE = re.compile(r"(?:^|\s)-race\b")
 
@@ -103,10 +88,8 @@ PREREQUISITE_RE = re.compile(r"[A-Za-z0-9_.-]+")
 def _infra(message: str) -> None:
     """Report an infrastructure failure and exit 2.
 
-    The exit-code contract (module docstring): 2 = infrastructure error,
-    and only 1 = a finding. SystemExit alone cannot carry the distinction
-    -- sys.exit("message") exits 1 -- so the message is printed to stderr
-    first and the bare code raised.
+    Only 1 is a finding. SystemExit cannot carry the code -- sys.exit("msg")
+    exits 1 -- so the message goes to stderr first and the bare code is raised.
     """
     print(message, file=sys.stderr)
     raise SystemExit(2)
@@ -115,9 +98,7 @@ def _infra(message: str) -> None:
 def walk_go_files(root: str):
     """Yield every Go file under root that belongs to this repository.
 
-    The skipped directories are compared by name at any depth, so a copy
-    of one inside a module is skipped too; the cost of that is a module
-    that genuinely names a package `go`, and this tree has none.
+    Skipped directories are matched by name at any depth.
     """
     for current, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in SKIPPED_DIRS]
@@ -129,9 +110,8 @@ def walk_go_files(root: str):
 def head_of(path: str) -> list[str]:
     """Return the lines before the package clause.
 
-    Go reads a build constraint from the file's head, before the package
-    clause, so a line after it is prose and not a constraint -- which is
-    what keeps a comment quoting one out of this gate's subject.
+    Go reads a build constraint only from the file's head, so a constraint
+    quoted after the package clause is prose.
     """
     lines = []
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
@@ -165,9 +145,8 @@ def makefile_text(root: str) -> str:
 def legs_in(text: str) -> set[str]:
     """Return the build tags the Makefile's legs establish.
 
-    A tag reaches a leg through `-tags=`, and the race detector adds its
-    own tag to any leg that passes `-race`; both are read from the file
-    rather than restated here, so the vocabulary has one home.
+    A tag reaches a leg through `-tags=`, and the race detector adds `-race`;
+    both are read from the file so the vocabulary has one home.
     """
     tags: set[str] = set()
     for match in TAGS_FLAG_RE.finditer(text):
@@ -240,9 +219,8 @@ def prerequisites_of(text: str) -> dict[str, list[str]]:
 def platforms_of_workflows(root: str) -> set[tuple[str, str]]:
     """Return the platforms the workflows' jobs run on, as (GOOS, GOARCH) pairs.
 
-    Every `runs-on` under .github/workflows is read and mapped through
-    RUNNER_PLATFORMS. A tree with no workflow runs on nothing, so each
-    platform-constrained file in it is compiled by no run.
+    Every `runs-on` under .github/workflows maps through RUNNER_PLATFORMS; a
+    tree with no workflow runs on nothing.
     """
     directory = os.path.join(root, ".github", "workflows")
     platforms: set[tuple[str, str]] = set()
@@ -348,8 +326,7 @@ def parse_plus_build(lines: list[str], where: str):
 def constraint_tree_of(path: str, where: str):
     """Return the parsed build constraint of a file, or None if it has none.
 
-    A `//go:build` line is the constraint when there is one, as for the
-    toolchain; the `// +build` lines are read only in a file without it.
+    `//go:build` wins when present; `// +build` lines are read only without it.
     """
     go_build, plus_build = [], []
     for line in head_of(path):

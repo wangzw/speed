@@ -1,12 +1,6 @@
-# Toolchain versions for local development, pinned by mise (https://mise.jdx.dev).
-# `mise install` from the repository root sets up everything `make check` needs.
-#
-# go (go.work's `go` directive), node (web/.nvmrc) and pnpm (web/package.json's
-# `packageManager`) MIRROR an authoritative source; starters/demo/Dockerfile's
-# golang and node image tags mirror the same sources. tools/check_toolchain.py
-# fails when a mirror drifts, so bump a mirror and its source together. The
-# remaining tools are pinned here and nowhere else, have no mirror, and are not
-# checked.
+# Toolchain versions for local development, pinned by mise: `mise install` sets
+# up what `make check` needs. The go, node and pnpm pins mirror go.work,
+# web/.nvmrc and web/package.json; the rest have no mirror and are not checked.
 
 [env]
 _.file = ".env"

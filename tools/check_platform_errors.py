@@ -10,9 +10,7 @@ import re
 import sys
 
 # The two modules `go.work` lists, relative to the repository root. A module
-# added to the workspace and not here would have its codes reported as
-# extras, which is the loud failure this gate exists for; keep the two in
-# step.
+# added there but not here would have its codes reported as extras.
 BACKEND_ROOTS = ("pkg", "starters")
 
 # The platform error-copy catalog: one directory, one JSON file per language.
@@ -67,12 +65,9 @@ FRONTEND_SKIPPED_DIRS = frozenset(
     {"node_modules", "dist", "build", "coverage", ".git", "site", ".cache"}
 )
 
-# Catalog entries the backend does not write and that stay anyway, each with
-# the reason: the files of this repository that refer to the code. The gate
-# re-runs the reference scan over the frontend tree, so a reason that names a
-# file which no longer mentions the code is reported as a stale exemption --
-# the list cannot rot into claims nobody checks. An entry whose code the
-# backend starts writing is reported as stale in the same way.
+# Codes the backend does not write but that stay, each naming the files that
+# refer to it. The gate re-scans those references, so a stale reason is a
+# finding and the list cannot rot.
 KEPT = {
     "admin.impersonation_reason_required": (
         "referenced by web/packages/product-shell/src/bootstrap.test.tsx as a "
@@ -150,9 +145,7 @@ KEPT = {
 }
 
 # Duplicate keys a language file may carry, by dotted path, with the reason
-# the lookup table still means one entry. A duplicate is normally a parse
-# accident -- the last copy wins and the other is silently gone -- so this
-# list is empty and an entry has to be argued for.
+# the lookup table still means one entry. Empty: an entry has to be argued for.
 DUPLICATES: dict[str, str] = {}
 
 
@@ -222,9 +215,8 @@ def _infra(message: str) -> None:
 def go_files(root: str) -> list[str]:
     """Every non-test Go file under the backend roots, sorted.
 
-    A backend root the workspace names but that is not a directory is an
-    infrastructure error, not an empty module: skipping it would shrink the
-    derived set silently and could leave an empty set looking clean.
+    A root the workspace names but that is not a directory is an
+    infrastructure error, not an empty module.
     """
     found: list[str] = []
     for name in BACKEND_ROOTS:
@@ -247,14 +239,9 @@ def _prefix_value(value: str) -> str | None:
 
 
 def derive(root: str) -> tuple[set[str], list[str], list[str]]:
-    """Return the writable keys, unresolved helper reports, and notes.
-
-    The keys are `<module>.<code>` with dashes normalized to underscores, the
-    form the @speed/api-client derives and the bundle keys on. The unresolved
-    reports are `prefix + param` helpers whose call sites this gate could not
-    read; a helper with no readable candidate at all is an infrastructure
-    error in main, because the derivation then checked nothing for it.
-    """
+    """Return the writable keys, unresolved helper reports, and notes: keys are
+    `<module>.<code>` with dashes as underscores. A helper with no readable
+    candidate is an infrastructure error in main."""
     paths = go_files(root)
     if not paths:
         _infra(f"error: no Go file under {', '.join(BACKEND_ROOTS)}/, so the backend's "
@@ -464,9 +451,8 @@ def referenced_frontend_files(root: str) -> list[tuple[str, str]]:
 def report_kept_reasons(root: str) -> list[str]:
     """Check each kept entry against the tree and return the stale ones.
 
-    A reason that names a file which no longer mentions the code is stale in
-    the same way an exemption the backend now covers is; both are findings,
-    so the list cannot rot into a set of claims nobody reads.
+    A reason naming a file that no longer mentions the code is stale, like an
+    exemption the backend now covers.
     """
     texts = referenced_frontend_files(root)
     stale: list[str] = []

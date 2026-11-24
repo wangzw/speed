@@ -36,13 +36,8 @@ class GateCase(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def seed_anchors(self) -> None:
-        """Seed the packages the four positive controls name.
-
-        Every case runs the whole gate, so the tree has to carry one package
-        per anchor or an unrelated check reports an infrastructure error. The
-        seeds are themselves compliant, so a case that adds one violation
-        sees only that one.
-        """
+        """Write one compliant package per positive-control anchor so a case's
+        own violation is the only finding."""
         for anchor in g.LOGGER_ANCHORS:
             self.write(
                 f"{anchor}/module.go",

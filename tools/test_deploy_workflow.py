@@ -27,12 +27,7 @@ def job_block(text: str, name: str) -> str:
 
 
 def condition_of(block: str) -> str:
-    """The block's first `if:` expression, folded onto one line.
-
-    A job block's own `if:` sits above its steps, so it is the first one found;
-    a step block's `if:` is found the same way. A folded scalar's continuation
-    lines are deeper than the `if:` key.
-    """
+    """The block's first `if:` expression, folded onto one line."""
     lines = block.splitlines()
     start = next(i for i, line in enumerate(lines) if re.match(r"^\s+if:", line))
     indent = len(lines[start]) - len(lines[start].lstrip())

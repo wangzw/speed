@@ -10,11 +10,11 @@ run:
 linters:
   default: standard
   enable:
-    - gosec        # security-focused static analysis
-    - bodyclose    # HTTP response bodies must be closed
-    - errorlint    # correct error wrapping and comparison
+    - gosec
+    - bodyclose
+    - errorlint
     - misspell
-    - rowserrcheck # database/sql Rows.Err() must be checked
+    - rowserrcheck
     - sqlclosecheck
 
   settings:

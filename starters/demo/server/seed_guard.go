@@ -69,13 +69,8 @@ func checkSeedCoverage(reader config.Reader) error {
 }
 
 // seedFromDefaults reports whether the effective seed accounts are the compiled
-// demonstration ones.
-//
-// config.EffectiveLayer is the primary answer: it reads the layer the value came
-// from and never the value, so the account list stays out of the answer even
-// though the item is sensitive. The fallback compares the effective list with
-// the compiled one, and an empty list is taken as the default because the
-// compiled list is not empty and an undeclared path decodes to nothing.
+// demonstration ones: config.EffectiveLayer answers by layer, never by value; the
+// fallback compares the lists, and an empty list means the default.
 func seedFromDefaults(reader config.Reader) (bool, error) {
 	layer, layerErr := config.EffectiveLayer(reader, seedAccountsPath)
 	if layerErr == nil {
@@ -89,10 +84,9 @@ func seedFromDefaults(reader config.Reader) (bool, error) {
 	return len(view.Accounts) == 0 || slices.Equal(view.Accounts, demoSeedAccounts()), nil
 }
 
-// firstExposedListener names the first listener, in name order, whose address
-// is not loopback. It answers an empty name when every listener is loopback, and
-// sorts the names so a run reporting a bad address reports the same one every
-// time rather than following map iteration order.
+// firstExposedListener names the first listener, in name order, whose address is
+// not loopback, and "" when every listener is loopback. The names are sorted so
+// a reported bad address is the same on every run.
 func firstExposedListener(reader config.Reader) (string, string, error) {
 	var cfg seedGuardHTTPConfig
 	if err := reader.Decode(seedGuardHTTPNamespace, &cfg); err != nil {

@@ -14,12 +14,8 @@ import sys
 SKIPPED_DIRS = {".git", "node_modules", "dist", ".cache", "__pycache__", "vendor"}
 
 # The floors the shared defaults must clear, before any caller's scale. They
-# live in their own file -- one that holds only floors -- rather than beside
-# the defaults, so a lowered default cannot lower its own floor in the same
-# edit. The workspace guard reads the same file. This file is the one entry
-# point for an intentional floor change: a change to it carries its reason in
-# the commit message, because a floor that moves without one is
-# indistinguishable from a default lowered along with it.
+# live in their own file so a lowered default cannot lower its own floor in the
+# same edit; a change here carries its reason in the commit message.
 TIME_FLOORS_FILE = os.path.join("web", "scripts", "test-time-floors.json")
 VITEST_FLOOR_KEY = "vitestCaseTimeoutMs"
 PLAYWRIGHT_FLOOR_KEY = "playwrightCaseTimeoutMs"
@@ -189,9 +185,7 @@ def is_go_test_file(relative: str) -> bool:
 def is_test_file(relative: str) -> bool:
     """A JavaScript/TypeScript test file or configuration, by path.
 
-    A Go file is decided separately, by `_test.go`, an import of
-    `"testing"`, or a package or directory whose name ends in `test` (see
-    `go_is_test_scope`); a JavaScript test file is decided by its path.
+    A Go file is decided separately by `go_is_test_scope`.
     """
     name = os.path.basename(relative)
     if relative.endswith(".go"):
@@ -234,8 +228,7 @@ def is_e2e_support(relative: str) -> bool:
 def is_vitest_scope(relative: str) -> bool:
     """A file whose case budgets are Vitest's: not a Playwright spec or helper.
 
-    The `e2e` tree's own `*.test.*` fixtures are Vitest suites and stay in
-    scope; its specs and non-test support are not.
+    The e2e tree's own `*.test.*` fixtures are Vitest suites and stay in scope.
     """
     if not is_javascript(relative):
         return False
@@ -243,11 +236,8 @@ def is_vitest_scope(relative: str) -> bool:
 
 
 def strip_comments(text: str) -> str:
-    """C-family comments blanked, string literals kept.
-
-    Import paths are string literals, so they survive; a quoted `import` in a
-    comment does not.
-    """
+    """C-family comments blanked, string literals kept, so import paths survive
+    and a quoted `import` in a comment does not."""
     chars = list(text)
     index, size = 0, len(text)
     while index < size:
@@ -276,11 +266,8 @@ def strip_comments(text: str) -> str:
 
 
 def go_imports(text: str) -> list[tuple[str, str | None]]:
-    """The (path, alias) of every import, alias None when none is written.
-
-    A dot import has the alias `.`. Both the single-line and the parenthesized
-    forms are read.
-    """
+    """The (path, alias) of every import, alias None when none is written; a dot
+    import has the alias `.`."""
     source = strip_comments(text)
     found: list[tuple[str, str | None]] = []
     for block in GO_IMPORT_BLOCK.finditer(source):
@@ -292,11 +279,7 @@ def go_imports(text: str) -> list[tuple[str, str | None]]:
 
 
 def go_import_specs(text: str) -> list[tuple[str, str | None, int]]:
-    """The (path, alias, offset) of every import, offset inside the path.
-
-    A dot import's alias is `.`; the offset points at the quoted path, so
-    `line_of` reports the import's own line.
-    """
+    """The (path, alias, offset) of every import, offset inside the quoted path."""
     source = strip_comments(text)
     found: list[tuple[str, str | None, int]] = []
     for block in GO_IMPORT_BLOCK.finditer(source):
@@ -317,11 +300,8 @@ def imports_go_testing(text: str) -> bool:
 def go_is_test_scope(relative: str, text: str) -> bool:
     """Whether a Go file is test-side code the gate reads.
 
-    Three shapes count: a `_test.go` file; any file importing `"testing"`
-    (the test-support packages, such as dbsuite or bussuite); and a file in
-    a package or directory whose name ends in `test`, the Go convention for
-    a helper package (coretest, provisioningtest). Product runtime code
-    matches none of them.
+    A `_test.go` file, a file importing `"testing"`, or a file in a package or
+    directory whose name ends in `test` counts; product code matches none.
     """
     if is_go_test_file(relative):
         return True
@@ -337,9 +317,8 @@ def go_is_test_scope(relative: str, text: str) -> bool:
 def go_runtime_names(text: str) -> set[str]:
     """The names under which this file binds the `runtime` package.
 
-    A dot import binds its exported names unqualified, which a qualifier scan
-    cannot follow; it is a documented blind spot, so the default name is
-    returned and the dot-imported call is left to review.
+    A dot import's unqualified names are a documented blind spot: the default
+    name is returned and the call is left to review.
     """
     names: set[str] = set()
     for path, alias in go_imports(text):
@@ -353,11 +332,10 @@ def go_runtime_names(text: str) -> set[str]:
 
 
 def js_os_bindings(text: str) -> tuple[set[str], dict[str, str]]:
-    """The module aliases and the member aliases of `os` in a JS source.
+    """The module aliases and member aliases of `os` in a JS source.
 
-    A module alias is a name holding the `os` namespace (`import os from
-    'node:os'`, `import * as o`, `const o = require('os')`); a member alias
-    maps a local name to the `cpus`/`availableParallelism` member it names.
+    A module alias holds the `os` namespace; a member alias maps a local name
+    to `cpus`/`availableParallelism`.
     """
     modules = {"os"}
     members: dict[str, str] = {}
@@ -626,11 +604,8 @@ def go_top_level_functions(
 
 
 def go_interface_spans(masked: str) -> list[tuple[int, int]]:
-    """The [start, end) bodies of `interface { ... }` type declarations.
-
-    An interface method declaration is a name followed by a parameter list,
-    which a call scan would otherwise read as a package-level call.
-    """
+    """The [start, end) bodies of `interface { ... }` type declarations, whose
+    method declarations a call scan would read as package-level calls."""
     spans: list[tuple[int, int]] = []
     for match in re.finditer(r"\binterface\s*\{", masked):
         opening = match.end() - 1
@@ -686,9 +661,8 @@ def go_package_level_literal_spans(masked: str) -> list[tuple[int, int]]:
 def go_coretest_bindings(text: str) -> tuple[set[str], list[int]]:
     """The names that qualify a coretest call, and the dot-import offsets.
 
-    A default import binds `coretest`, a named import binds its alias, and a
-    dot import binds the names unqualified, which a qualifier scan cannot
-    follow; its offset is returned for a finding of its own.
+    A default or named import binds a qualifier; a dot import's unqualified
+    names are returned as an offset for a finding of its own.
     """
     names: set[str] = set()
     dots: list[int] = []
@@ -868,11 +842,8 @@ def go_coretest_findings(files: list[tuple[str, str]]) -> list[str]:
 class UnterminatedSource(Exception):
     """The mask reached end of file inside a construct it cannot close.
 
-    A string, template literal, regular expression or block comment that is
-    never closed leaves every later line hidden from the scan. The caller
-    turns this into an infrastructure error naming the file, so a misread
-    can hide at most the text before the next delimiter, never the rest of
-    the file.
+    The caller turns it into an infrastructure error naming the file, so a
+    misread can hide at most the text before the next delimiter.
     """
 
     def __init__(self, kind: str, offset: int) -> None:
@@ -1570,14 +1541,9 @@ def function_body(source: str, name: str) -> str | None:
 
 
 def wait_condition_takes_larger_timeout(source: str) -> bool:
-    """Whether `waitForCondition` still passes the larger of its two budgets.
-
-    The async wait rule exempts this wrapper's `timeout` because the wrapper
-    takes `Math.max(options.timeout ?? 0, asyncUtilTimeout)`: a caller's `0`
-    or `500` cannot lower the budget. That premise is asserted, not assumed,
-    so a wrapper rewritten to use the caller's value directly stops the gate
-    instead of silently passing a narrowed wait.
-    """
+    """Whether `waitForCondition` still passes the larger of its two budgets:
+    the async wait rule exempts it because it takes
+    `Math.max(options.timeout ?? 0, asyncUtilTimeout)`, and this asserts that."""
     body = function_body(source, WAIT_CONDITION_NAME)
     if body is None:
         return False
@@ -1682,10 +1648,8 @@ def playwright_default_timeout(source: str) -> tuple[int, int] | None:
 def load_time_floors(root: str) -> tuple[dict[str, int] | None, str | None]:
     """The floors file, or (None, why) when it cannot be used.
 
-    A missing file, invalid JSON, or a key that is missing, non-finite
-    (`NaN`, `Infinity`) or not a positive number is an infrastructure error:
-    a case budget has nothing to be judged against, and passing silently
-    would be worse than stopping.
+    A missing file, invalid JSON, or a missing, non-finite or non-positive key
+    is an infrastructure error: nothing is left to judge a budget against.
     """
     path = os.path.join(root, TIME_FLOORS_FILE)
     if not os.path.isfile(path):
@@ -1735,10 +1699,9 @@ class Gate:
         self.files: list[tuple[str, str]] = []
 
     def load(self) -> int | None:
-        """Read every in-scope file, derive the shared defaults, and report.
+        """Read every in-scope file and derive the shared defaults.
 
-        Returns the exit code to use when the shared defaults cannot be read;
-        None means the scan can proceed.
+        Returns the exit code when they cannot be read; None means proceed.
         """
         found_vitest = False
         found_playwright_scope = False
@@ -1840,11 +1803,8 @@ class Gate:
             self.async_floor = floors[ASYNC_FLOOR_KEY]
 
             # The async wait rule exempts `waitForCondition`'s timeout because
-            # the wrapper takes the larger of the caller's value and the
-            # configured budget. That premise is checked, not assumed: a
-            # wrapper that started using the caller's value directly would
-            # make the exemption wrong, and passing the call silently would
-            # let a narrowed wait through.
+            # the wrapper takes the larger value. Passing the call silently
+            # would let a narrowed wait through, so the premise is checked.
             wait_condition = os.path.join(self.root, WAIT_CONDITION_FILE)
             if not os.path.isfile(wait_condition):
                 print(
@@ -1947,11 +1907,8 @@ class Gate:
         return problems
 
     def coretest_findings(self) -> list[str]:
-        """The coretest-init ruling, judged one directory at a time.
-
-        A directory's files share a package, so a helper defined in one
-        file can carry another file's package-level read to coretest.
-        """
+        """The coretest-init ruling, judged one directory at a time: a helper in
+        one file can carry another file's package-level read."""
         directories: dict[str, list[tuple[str, str]]] = {}
         for relative, text in self.files:
             if not relative.endswith(".go"):

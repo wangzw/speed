@@ -288,14 +288,7 @@ class Harness:
         self.config_path.write_text(json.dumps(values), encoding="utf-8")
 
     def script_with_fly_toml(self, text):
-        """A copy of the script in a scratch git checkout beside its own fly.toml.
-
-        The script reads fly.toml from the directory above it, so a case that
-        needs file values other than the repository's copies the script into a
-        throwaway checkout with that fly.toml next to it. The copy is a real
-        file, not a link, because the script resolves links back to the
-        repository before looking for fly.toml.
-        """
+        """A copy of the script in a scratch checkout beside its own fly.toml."""
         repo = self.root / "checkout"
         deploy = repo / "starters" / "demo" / "deploy"
         deploy.mkdir(parents=True)
@@ -351,14 +344,7 @@ class Harness:
 
 
 class RedeployScriptTest(unittest.TestCase):
-    """Cases for the decision logic, each asserting the exact calls it needs.
-
-    The stand-ins for flyctl, make, curl and python3 sit first on PATH, so a
-    command the script runs is a stub that logs it; nothing here reaches Fly or
-    a real deploy. A case therefore checks the specific call log it cares about
-    rather than a program-set assertion, which would hold for every case that
-    only ever logs its own stubs.
-    """
+    """Cases for the decision logic, each asserting the exact stub calls it needs."""
 
     def setUp(self):
         self.harness = Harness()

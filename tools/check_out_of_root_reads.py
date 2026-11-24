@@ -19,8 +19,8 @@ ASSIGNMENT = re.compile(rf"^{VARIABLE}\s*\?=\s*(.*)$", re.MULTILINE)
 def _scan(source: str) -> tuple[list[tuple[int, int, int, str]], str]:
     """Return every string literal and a copy with comments blanked out.
 
-    Each literal is (start, end, line, value); the copy keeps offsets and
-    newlines so a filepath.Join can be located in it.
+    Each literal is (start, end, line, value); the copy keeps offsets so a
+    filepath.Join can be located in it.
     """
     literals: list[tuple[int, int, int, str]] = []
     code = list(source)
@@ -94,10 +94,10 @@ def _blank(text: str, spans: list[tuple[int, int]]) -> str:
 def _join_paths(
     source: str, code: str, literals: list[tuple[int, int, int, str]]
 ) -> tuple[list[tuple[int, str]], set[int]]:
-    """Return each all-literal filepath.Join as (line, path), and the literals it used.
+    """Return each all-literal filepath.Join as (line, path), and its literals.
 
-    A Join with an argument that is not a single literal is left to the
-    per-literal pass, so its literal arguments are still checked.
+    A Join with a non-literal argument falls to the per-literal pass, so its
+    literal arguments are still checked.
     """
     skeleton = _blank(code, [(start, end) for start, end, _, _ in literals])
     joined: list[tuple[int, str]] = []

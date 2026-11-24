@@ -88,9 +88,8 @@ type seedAccount struct {
 }
 
 // check refuses an account the seed cannot write as the credential it is meant
-// to be. It is this command's own check because a list carries no item metadata,
-// so a misspelled field arrives here as a zero value and the account store would
-// otherwise write an account with no credential and report it seeded.
+// to be. It runs here because a list carries no item metadata, so a misspelled
+// field arrives as a zero value and would be written without a credential.
 func (a seedAccount) check() error {
 	if strings.TrimSpace(a.Identifier) == "" {
 		return errors.New("seed: an account under " + seedNamespace + "." + accountsItem +
@@ -130,9 +129,8 @@ func validateSeedInput(in seedInput) error {
 }
 
 // checkPlatformAdministrator refuses an account list with nobody the console
-// admits: the platform-administrator role is the only way to reach the
-// management surface, and no later command writes a binding for an account the
-// configuration does not mark.
+// admits: the platform-administrator role is the only way to reach management,
+// and no later command binds an account the configuration does not mark.
 func checkPlatformAdministrator(in seedInput) error {
 	for _, a := range in.Accounts {
 		if a.PlatformAdmin {
@@ -356,10 +354,8 @@ func seedModule() core.Module {
 	}
 }
 
-// seedDatabase writes the settings, the system tenant, the accounts, the
-// business tenants with their administrators, the memberships, and the
-// administration roles with their grants and bindings. It is idempotent and
-// touches nothing the configuration no longer names; a missing membership is
+// seedDatabase writes the settings, system tenant, accounts, business tenants,
+// memberships, and administration roles, idempotently. A missing membership is
 // filled only for a declared administrator, never for seed.members.
 func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	reader, err := core.Resolve[config.Reader](reg)
@@ -525,7 +521,6 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 			}
 			id, ok := accountIDs[name]
 			if !ok {
-				// checkTenants refused this before anything was written.
 				return fmt.Errorf("seed: the administrator %q of the tenant %q is not under seed.%s",
 					adminName, t.Name, accountsItem)
 			}
@@ -553,9 +548,8 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 }
 
 // seedAdminMembership ensures an administrator is an active member of the
-// tenant they administer: a missing row is written on every run, while an
-// existing row is left as it stands. It answers whether the account is an active
-// member, because the binding that follows has no effect without one.
+// tenant they administer: a missing row is written, an existing one left as is.
+// It answers whether the account is active, because the binding needs a member.
 func seedAdminMembership(ctx context.Context, memberships authn.Memberships,
 	tenantName string, id authn.AccountID,
 ) (bool, error) {
@@ -591,7 +585,6 @@ func seedSystemTenantAdmins(ctx context.Context, memberships authn.Memberships, 
 		}
 		id, ok := accountIDs[name]
 		if !ok {
-			// checkSystemAdmins refused this before anything was written.
 			return fmt.Errorf("seed: the system administrator %q is not under seed.%s",
 				adminName, accountsItem)
 		}
@@ -659,10 +652,9 @@ func tenantHoldsTombstone(ctx context.Context, roster tenant.Catalog, id string)
 	return found && got.Status == tenant.StatusDeleted, nil
 }
 
-// seedMembers writes the memberships the configuration names through the
-// membership seam, which answers ErrAccountNotFound for a missing account. A
-// membership is written only for an account this run created; an existing
-// account keeps whatever memberships the operator gave it.
+// seedMembers writes the configured memberships through the membership seam,
+// which answers ErrAccountNotFound for a missing account. It writes only for an
+// account this run created; an existing account keeps its memberships.
 func seedMembers(ctx context.Context, memberships authn.Memberships, members []seedMember,
 	accountIDs map[string]authn.AccountID, created map[string]bool, deleted map[string]bool,
 ) error {
@@ -677,7 +669,6 @@ func seedMembers(ctx context.Context, memberships authn.Memberships, members []s
 		}
 		id, ok := accountIDs[name]
 		if !ok {
-			// checkMembers refused this before anything was written.
 			return fmt.Errorf("seed: the member of the tenant %q names the account %q, which seed.%s "+
 				"does not declare", m.Tenant, m.Account, accountsItem)
 		}
@@ -780,10 +771,9 @@ func seedTenantSettings(ctx context.Context, store settings.Store, tenantName st
 	return nil
 }
 
-// seedOneAccount writes one configured account unless it is already there, and
-// answers its identifier and whether this run created it. An entry naming both
-// an email address and a username is found by either, and a create that loses
-// the race adopts the winner's account by re-reading both names.
+// seedOneAccount writes one configured account unless already there, answering
+// its identifier and whether this run created it. An entry naming both an email
+// and a username is found by either; a lost create race adopts the winner.
 func seedOneAccount(ctx context.Context, accounts authn.Accounts, admin authn.AccountAdmin,
 	a seedAccount,
 ) (authn.AccountID, bool, error) {
@@ -896,10 +886,9 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 	return kind, normalized, nil
 }
 
-// seedAdministration writes one domain's role, the grants the caller names, and
-// the builtin mark, each only when absent. The order is load-bearing: the mark
-// freezes the role before the grants would be added, so it comes last. A
-// personal-prefixed domain stays unfrozen.
+// seedAdministration writes one domain's role, the caller's grants, and the
+// builtin mark, each only when absent. The mark comes last: it freezes the role
+// before grants would be added. A personal-prefixed domain stays unfrozen.
 func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz.Seeder,
 	domain string, role authz.Role, descriptionKey string, grants []authz.Grant,
 ) error {
@@ -918,9 +907,8 @@ func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz
 }
 
 // seedRosterAdministration writes the tenant-admin role and builtin mark for
-// every non-personal, non-deleted tenant in the roster, then converges its grants
-// to the governed set. It reads the roster rather than the configuration because
-// it repairs a tenant it did not register.
+// every non-personal, non-deleted roster tenant, then converges its grants. It
+// reads the roster because it repairs tenants it did not register.
 func seedRosterAdministration(ctx context.Context, roster tenant.Catalog, manager authz.Manager,
 	seeder authz.Seeder, reconciler authz.Reconciler, auditor audit.Audit, catalog authz.Catalog,
 ) error {

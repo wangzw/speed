@@ -227,9 +227,8 @@ func newDemoNotifier(reg *core.Registry) (*demoNotifier, error) {
 func (*demoNotifier) Type() string { return demoNotificationJobType }
 
 // Handle turns one periodic job into one dispatch per active member of the
-// tenant the job belongs to. A member with no proved phone and no email address
-// is skipped rather than failed, because the delivery pipeline answers a missing
-// destination as a failed channel and would retry the whole job.
+// tenant. A member with no address is skipped rather than failed, because the
+// pipeline answers a missing destination as a failed channel and retries the job.
 func (n *demoNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn) (jobs.Result, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
@@ -272,9 +271,8 @@ func (n *demoNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progres
 }
 
 // notify addresses one recipient on the channels their account can be reached
-// on and submits one dispatch, rendered in the recipient's language, writing the
-// pruned channel set through the preference seam. The second result is false
-// when the account has no proved phone and no email address.
+// on, submits one dispatch in their language, and writes the pruned channel set.
+// The second result is false when the account has no proved phone or address.
 func (n *demoNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.AccountID, occurrenceID string) (demoNoticePlan, bool, error) {
 	identifiers, err := n.accounts.Identifiers(ctx, id)
 	if err != nil {
@@ -311,9 +309,8 @@ func (n *demoNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.
 }
 
 // localeFor answers the language a notice to id goes out in: the account's
-// stored preference, not the request's language, and the run's configured
-// default when no profile answers. The warning it logs names the type and
-// tenant, never the recipient.
+// stored preference, not the request's language, else the run's default. Its
+// warning names the type and tenant, never the recipient.
 func (n *demoNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id authn.AccountID) i18n.Locale {
 	readFailed := false
 	for _, profile := range n.profiles {
@@ -337,8 +334,7 @@ func (n *demoNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id aut
 
 // smsAddressable reports whether the type's sms template is in force for the
 // account's proved phone and locale. ErrNotSendable counts as addressable: the
-// platform's sending gate refuses it, and the delivery pipeline must record that
-// refusal rather than the fixture choosing another channel.
+// sending gate refuses it and the pipeline must record that refusal.
 func (n *demoNotifier) smsAddressable(locale string, identifiers []authn.Identifier) bool {
 	phone, _ := demoNoticeDestinations(identifiers)
 	if phone == "" {
@@ -370,10 +366,9 @@ func (n *demoNotifier) membersOf(ctx context.Context, tenantID string) ([]authn.
 	}
 }
 
-// wireDemoRecipient adds the layer that names the preference routes' recipient:
-// the caller's effective account, which is what an impersonation reads as the
-// impersonated one. It sits in the recording stage, inside the authentication
-// gateway and outside the authorization guard.
+// wireDemoRecipient adds the layer naming the preference routes' recipient: the
+// caller's effective account, which an impersonation reads as the impersonated
+// one. It sits in the recording stage, inside the gateway, outside the guard.
 func wireDemoRecipient(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if errors.Is(err, core.ErrMissingProvider) {
