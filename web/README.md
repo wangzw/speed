@@ -236,7 +236,9 @@ rather than in the commit gate.
   the dist/ tree plus the docs travel with the package; the negated entry
   keeps the incremental build info out of the tarball (see below).
 - `tsconfig.json` (typecheck) extends `../../tsconfig.base.json` with
-  `noEmit`; `tsconfig.build.json` emits declarations into `dist/` with
+  `noEmit`; a local gate run appends `--incremental`, which writes a
+  `tsconfig*.tsbuildinfo` beside the config, and CI does not append it;
+  `tsconfig.build.json` emits declarations into `dist/` with
   `rootDir: src` so tests and `test-utils/` never leak into the artifact.
   The build program is incremental: `incremental: true` with
   `tsBuildInfoFile` at `dist/tsconfig.build.tsbuildinfo`, so a repeat build

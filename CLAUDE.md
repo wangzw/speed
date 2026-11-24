@@ -160,6 +160,18 @@ vitest process runs every workspace member's suite as a project of
 `GATE_JOBS` cores, so a caller running segments in parallel divides its budget
 between the two.
 
+**Local frontend reruns reuse caches; CI does not.** `WEB_CACHE` (a Make
+variable, read from the same-named environment variable) is `off` when
+`CI` is set to anything but `false` and `on` otherwise; any other value
+fails the leg, and `WEB_CACHE=off` gives a cold run. When it is `on`,
+`web-check-static` runs ESLint with a content-hashed cache under each
+member's `node_modules/.cache/eslint/` and tsc with `--incremental`,
+which writes a `tsconfig*.tsbuildinfo` beside each config. The local
+ESLint plugin's `meta.version` hashes the rule sources and
+`web/pnpm-lock.yaml`, so a rule or dependency change invalidates the lint
+cache; the per-file cache stays sound only while no lint rule reads type
+information or another file.
+
 **The test reporter is pinned, not selected by the runner**, so a warning a
 passing case prints is in the log whichever way the gate was started. Under
 GitHub Actions the pinned `default` is followed by the `github-actions`
