@@ -10,9 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// clear empties both policy tables across tenants, so one case can run several
-// removals from a known state without a second handle. It goes through the
-// cross-tenant mark, which the seed does too.
 func clear(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	for _, table := range []string{"authz_grants", "authz_bindings"} {
@@ -22,9 +19,7 @@ func clear(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// The filter of a p rule reads the rule's own positions, and every position
-// a caller may name is legal while one past the rule is refused rather than
-// run.
+// TestAFilteredRemovalReadsEveryFieldPosition checks that a filtered removal reads every field position.
 func TestAFilteredRemovalReadsEveryFieldPosition(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -58,8 +53,6 @@ func TestAFilteredRemovalReadsEveryFieldPosition(t *testing.T) {
 				if err != nil {
 					t.Fatalf("a filter on position %d was refused: %v", c.index, err)
 				}
-				// Both tenants hold a grant, and only acme's matches, so the
-				// removal reaches one row and the other tenant's stays.
 				if n := count(t, handle, "authz_grants"); n != 1 {
 					t.Errorf("the removal left %d row(s), want the other tenant's alone", n)
 				}
@@ -68,9 +61,7 @@ func TestAFilteredRemovalReadsEveryFieldPosition(t *testing.T) {
 	})
 }
 
-// A filter value that is empty matches any value in its position, so a
-// removal naming an empty value deletes every one of the caller's rows and
-// no other tenant's.
+// TestAFilteredRemovalWithAnEmptyValueMatchesAny checks that a filtered removal with an empty value matches any.
 func TestAFilteredRemovalWithAnEmptyValueMatchesAny(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -88,15 +79,12 @@ func TestAFilteredRemovalWithAnEmptyValueMatchesAny(t *testing.T) {
 	})
 }
 
-// Several filter values name several positions, each one the position before
-// it plus one.
+// TestAFilteredRemovalAdvancesThroughSeveralValues checks that a filtered removal advances through several values.
 func TestAFilteredRemovalAdvancesThroughSeveralValues(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
 		seed(t, handle)
 
-		// Positions 2 and 3 are the resource and the action: "account" and
-		// "read" together match acme's grant alone.
 		if err := New(t.Context(), handle, "acme").RemoveFilteredPolicy("p", "p", 2, "account", "read"); err != nil {
 			t.Fatalf("removing acme's account-read grant: %v", err)
 		}
@@ -106,28 +94,22 @@ func TestAFilteredRemovalAdvancesThroughSeveralValues(t *testing.T) {
 	})
 }
 
-// A filter over a g rule removes the caller's bindings and no other table's
-// rows, and a filter naming another tenant's domain is refused rather than
-// run.
+// TestAFilteredRemovalOfABindingIsHeldToTheCaller checks that a filtered removal of a binding is held to the caller.
 func TestAFilteredRemovalOfABindingIsHeldToTheCaller(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
 		seed(t, handle)
 
-		// Position 1 of a g rule is the role.
 		if err := New(t.Context(), handle, "acme").RemoveFilteredPolicy("g", "g", 1, "roleA"); err != nil {
 			t.Fatalf("removing acme's roleA bindings: %v", err)
 		}
 		if n := count(t, handle, "authz_bindings"); n != 1 {
 			t.Errorf("the binding table holds %d row(s), want globex's alone", n)
 		}
-		// A g removal reaches authz_bindings alone: the grant table is untouched.
 		if n := count(t, handle, "authz_grants"); n != 2 {
 			t.Errorf("the grant table holds %d row(s), want it untouched", n)
 		}
 
-		// Position 2 of a g rule is its domain: naming globex through the acme
-		// adapter is refused.
 		err := New(t.Context(), handle, "acme").RemoveFilteredPolicy("g", "g", 2, "globex")
 		if !errors.Is(err, authz.ErrTenantMismatch) {
 			t.Errorf("a g filter naming globex gave %v, want ErrTenantMismatch", err)
@@ -138,28 +120,21 @@ func TestAFilteredRemovalOfABindingIsHeldToTheCaller(t *testing.T) {
 	})
 }
 
-// A read-only adapter binds the empty identifier, and every removal through
-// it is refused: a rule naming a domain is a mismatch, a removal naming no
-// domain is refused at the binding, and a filtered removal names no tenant
-// to act on.
+// TestAReadOnlyAdapterRefusesEveryRemoval checks that a read only adapter refuses every removal.
 func TestAReadOnlyAdapterRefusesEveryRemoval(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
 		seed(t, handle)
 		reader := New(t.Context(), handle, "")
 
-		// A p rule naming a domain is not the (empty) caller's.
 		err := reader.RemovePolicy("p", "p", []string{"roleA", "acme", "account", "read"})
 		if !errors.Is(err, authz.ErrTenantMismatch) {
 			t.Errorf("RemovePolicy naming a domain gave %v, want ErrTenantMismatch", err)
 		}
-		// A rule naming no domain is refused when the empty identifier reaches
-		// the statement.
 		err = reader.RemovePolicy("p", "p", []string{"roleA", "", "account", "read"})
 		if !errors.Is(err, tenant.ErrNoTenantInContext) {
 			t.Errorf("RemovePolicy naming no domain gave %v, want ErrNoTenantInContext", err)
 		}
-		// A filtered removal has no tenant to be held to.
 		if err := reader.RemoveFilteredPolicy("p", "p", 0, "roleA"); !errors.Is(err, authz.ErrTenantMismatch) {
 			t.Errorf("a filtered p removal through a reader gave %v, want ErrTenantMismatch", err)
 		}
@@ -176,7 +151,7 @@ func TestAReadOnlyAdapterRefusesEveryRemoval(t *testing.T) {
 	})
 }
 
-// A removal addressed by a rule's whole key reaches the caller's row alone.
+// TestRemovePolicyTouchesOnlyTheCallersIdenticalRow checks that remove policy touches only the callers identical row.
 func TestRemovePolicyTouchesOnlyTheCallersIdenticalRow(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -216,8 +191,7 @@ func TestRemovePolicyTouchesOnlyTheCallersIdenticalRow(t *testing.T) {
 	})
 }
 
-// A removal propagates the store's failure rather than swallowing it into a
-// success.
+// TestARemovalReportsTheStoresFailure checks that a removal reports the stores failure.
 func TestARemovalReportsTheStoresFailure(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -237,7 +211,6 @@ func TestARemovalReportsTheStoresFailure(t *testing.T) {
 	})
 }
 
-// soleTenant returns the tenant_id of the one row a table holds.
 func soleTenant(t *testing.T, handle *gorm.DB, table string) string {
 	t.Helper()
 	var id string

@@ -20,27 +20,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases built on this file drive this module's descriptor through a real
-// registry: the configuration module with a reader the real loader produced,
-// this module itself, and stand-ins for the four required capabilities and for
-// the entry point it takes up in Init. What a product built by hand cannot show
-// is which callback takes up which dependency — the manager and the catalog at
-// New, the entry point and the optional route-declaration surface at Init —
-// what a single missing capability does at resolution, and what the descriptor
-// says of its own delivery, which is none.
-//
-// This module delivers no capability, so no lookup returns its product the way
-// resolving the enforcement module's guard returns that one. A case that holds
-// what New took up registers this module's descriptor with its New wrapped to
-// record the product, which observes the instance without changing what New does.
-
-// managementBody is the configuration a default drive runs on: one endpoint of
-// the entry point, "public", that the management routes are mounted on.
 const managementBody = `{"authz": {"admin": {"endpoints": ["public"]}}}`
 
-// recordingModule is this module's descriptor with its New wrapped to record the
-// product it built. The wrapper records the instance and returns it unchanged,
-// so the descriptor behaves as it does when registered as it stands.
 func recordingModule(record *any) core.Module {
 	m := Module()
 	inner := m.New
@@ -55,49 +36,22 @@ func recordingModule(record *any) core.Module {
 	return m
 }
 
-// managementAssembly is one drive. The zero value mounts the management routes
-// on "public" with everything this module requires and a stand-in entry point;
-// each field takes one capability away, replaces one stand-in, or records the
-// product New built, so a case holds what a single missing capability or a
-// delivered instance does.
 type managementAssembly struct {
-	// body is the configuration. The zero value uses managementBody.
-	body string
-	// noManager, noCatalog, noGuard, noAudit, noVerification and noSubject leave
-	// out the stand-in for the required capability named, so the drive reaches
-	// resolution without it.
+	body                                                              string
 	noManager, noCatalog, noGuard, noAudit, noVerification, noSubject bool
-	// manager and catalog, when set, are the stand-ins delivered as those
-	// capabilities; a case that holds the product to what New took up sets them
-	// to the very instances it reads back.
-	manager authz.Manager
-	catalog authz.Catalog
-	// subject, when set, is the stand-in delivered as the caller's permission
-	// read; nil uses one that holds nothing.
-	subject authz.SubjectPermissions
-	// verification, when set, is the stand-in delivered as the signup-state
-	// read; nil uses one that reports no self-registration.
-	verification authn.SignupVerification
-	// noRouter leaves the entry point out, which fails Init.
-	noRouter bool
-	// router is the entry point stand-in; nil uses one that declares "public".
-	router speedhttp.Router
-	// gate is the optional route-declaration surface, taken up in Init when set.
-	gate authz.Gate
-	// writeGuard is the optional host seam a write route consults; set it to
-	// hold that Init takes up what the assembly delivers, nil to hold the
-	// absent-seam assembly.
-	writeGuard authz.WriteGuard
-	// identities is the optional host seam the role list reads a role's members
-	// through; nil holds the absent-seam assembly.
-	identities authz.AccountIdentityReader
-	// logger is the logging capability, taken up in Init; nil uses a recorder.
-	logger *slog.Logger
-	// record, when set, receives the product New built.
-	record *any
+	manager                                                           authz.Manager
+	catalog                                                           authz.Catalog
+	subject                                                           authz.SubjectPermissions
+	verification                                                      authn.SignupVerification
+	noRouter                                                          bool
+	router                                                            speedhttp.Router
+	gate                                                              authz.Gate
+	writeGuard                                                        authz.WriteGuard
+	identities                                                        authz.AccountIdentityReader
+	logger                                                            *slog.Logger
+	record                                                            *any
 }
 
-// drive advances the assembly to depth and runs action there.
 func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	body := a.body
@@ -188,8 +142,6 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	return reg.Drive(t.Context(), core.Drive{Depth: depth, Participants: names, Action: action})
 }
 
-// productOfAssembly narrows a recorded instance to this module's product, for a
-// case that reads back what a callback took up.
 func productOfAssembly(t *testing.T, instance any) *product {
 	t.Helper()
 	p, ok := instance.(*product)
@@ -199,9 +151,7 @@ func productOfAssembly(t *testing.T, instance any) *product {
 	return p
 }
 
-// Each callback takes up the dependency the design places on it: New takes
-// the policy manager and the permission catalog, and Init takes the entry
-// point and the optional route-declaration surface.
+// TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem checks that the assembly takes up its dependencies at the stage that reads them.
 func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) {
 	manager := &stubManager{}
 	catalog := newStubCatalog(authz.PermissionRoleRead)
@@ -284,9 +234,6 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 			t.Fatalf("the drive failed: %v", err)
 		}
 		p := productOfAssembly(t, instance)
-		// New leaves the module's default logger and a nil surface; the optional
-		// capabilities are taken up in Init. A module that took them up earlier
-		// would already hold the delivered instances here.
 		if p.gate != nil {
 			t.Error("New took up the declaration surface: it is taken up at Init")
 		}
@@ -296,11 +243,7 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// The six required capabilities are each another module's to deliver: a
-// command that brings this one in without the manager, the catalog, the
-// handler-internal guard, the audit capability, the
-// registration-verification read or the caller's permission read fails
-// resolution with ErrMissingProvider, before New builds anything.
+// TestAMissingRequiredCapabilityFailsResolution checks that a missing required capability fails resolution.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
 		"no manager":      {noManager: true},
@@ -325,10 +268,7 @@ func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	}
 }
 
-// A command that mounts the management routes and names no entry point fails
-// wiring with ErrNoRouter, naming this module: routes mounted nowhere are
-// mounted on nothing, and the fix is to write the entry point module's name into
-// the command.
+// TestNoEntryPointIsErrNoRouter checks that no entry point fails with ErrNoRouter.
 func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	err := managementAssembly{noRouter: true}.drive(t, core.StageInit, nil)
 	if !errors.Is(err, authz.ErrNoRouter) {
@@ -339,10 +279,7 @@ func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	}
 }
 
-// An endpoint the configuration lists but the entry point does not declare fails
-// Init with ErrUnknownEndpoint, naming the endpoint: it is the endpoint lookup
-// that reads the entry point, and a name it does not serve stops the startup
-// rather than mounting the management routes on an endpoint nobody serves.
+// TestAnUnknownEndpointIsErrUnknownEndpoint checks that an unknown endpoint fails with ErrUnknownEndpoint.
 func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	body := `{"authz": {"admin": {"endpoints": ["public", "ghost"]}}}`
 	err := managementAssembly{body: body}.drive(t, core.StageInit, nil)
@@ -354,10 +291,7 @@ func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	}
 }
 
-// A real registry takes the module in and mounts its whole route surface on the
-// configured endpoint, declaring every route open on the surface, and the
-// descriptor delivers nothing: this module carries no capability another module
-// resolves, and the routes are its only product.
+// TestARealRegistryMountsEveryManagementRouteAndDeliversNothing checks that a real registry mounts every management route and delivers nothing.
 func TestARealRegistryMountsEveryManagementRouteAndDeliversNothing(t *testing.T) {
 	router := newStubRouter("public")
 	gate := authztest.NewGate()

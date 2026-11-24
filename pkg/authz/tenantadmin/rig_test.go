@@ -18,32 +18,22 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// roleBody is the request a role write's cases send: a free-text description.
 type roleBody struct {
 	Description string `json:"description"`
 }
 
-// readRoute binds a read operation's typed handler behind the route's
-// identity-and-permission guard, the way the module mounts it.
 func readRoute(p *product, handler gin.HandlerFunc) gin.HandlerFunc {
 	return p.guardRoute(http.MethodGet, authz.PermissionTenantRoleRead, handler)
 }
 
-// writeRoute binds a write operation's typed handler behind the route's
-// identity-and-registration-and-permission guard, the way the module mounts it.
 func writeRoute(p *product, handler gin.HandlerFunc) gin.HandlerFunc {
 	return p.guardRoute(http.MethodPut, authz.PermissionTenantRoleManage, handler)
 }
 
-// rolePutRoute binds the role write's operation, the one route whose body the
-// module prescreens before the entry point binds it.
 func rolePutRoute(p *product) gin.HandlerFunc {
 	return writeRoute(p, prescreenRoleWrite(rolePutOperation.Handle(p.handleRolePut)))
 }
 
-// rig is the module with every dependency a case drives, built directly so a
-// case can call one handler with the exact identity and path parameters it wants
-// without bringing the entry point up.
 type rig struct {
 	t          *testing.T
 	p          *product
@@ -62,10 +52,6 @@ type rig struct {
 	locale     i18n.Locale
 }
 
-// newRig builds the module over the stubs. The catalog declares the permissions
-// a case names and governs the tenant role codes among them; the caller holds
-// the same set. The membership checker admits every account and the path-tenant
-// guard passes every request.
 func newRig(t *testing.T, perms ...authz.Permission) *rig {
 	t.Helper()
 	logs := &logBuffer{}
@@ -107,31 +93,23 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 	return r
 }
 
-// withNames assembles a roster whose identifiers map to the names given; an
-// identifier the map does not name keeps its identifier as its name.
 func (r *rig) withNames(byID map[string]string) *rig {
 	r.p.names = nameStub{byID: byID}
 	return r
 }
 
-// localizeWith assembles the message localizer and the request's language.
 func (r *rig) localizeWith(localizer i18n.Localizer, locale i18n.Locale) *rig {
 	r.p.localizer = localizer
 	r.locale = locale
 	return r
 }
 
-// withIdentities assembles the optional account identity reader. A rig without
-// this call has no reader, which is the legal assembly that reports an unknown
-// identity state.
 func (r *rig) withIdentities() *rig {
 	r.identities = &stubIdentities{byAccount: map[string]authz.AccountIdentity{}}
 	r.p.identities = r.identities
 	return r
 }
 
-// serve calls one handler with the identity the options build and the path
-// parameters given, over a real *gin.Context and a JSON body when one is given.
 func (r *rig) serve(handler gin.HandlerFunc, method, target string, params gin.Params, body any, opts ...authntest.Option) *httptest.ResponseRecorder {
 	r.t.Helper()
 	return r.dispatch(handler, method, target, params, body, func(ctx context.Context) context.Context {
@@ -139,7 +117,6 @@ func (r *rig) serve(handler gin.HandlerFunc, method, target string, params gin.P
 	})
 }
 
-// serveAnonymous calls one handler with no identity on the request.
 func (r *rig) serveAnonymous(handler gin.HandlerFunc, method, target string, params gin.Params) *httptest.ResponseRecorder {
 	r.t.Helper()
 	return r.dispatch(handler, method, target, params, nil, func(ctx context.Context) context.Context {
@@ -147,7 +124,6 @@ func (r *rig) serveAnonymous(handler gin.HandlerFunc, method, target string, par
 	})
 }
 
-// serveRaw sends a body that is a string as written.
 func (r *rig) serveRaw(handler gin.HandlerFunc, method, target string, params gin.Params, raw string) *httptest.ResponseRecorder {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -163,8 +139,6 @@ func (r *rig) serveRaw(handler gin.HandlerFunc, method, target string, params gi
 	return w
 }
 
-// dispatch builds the request, installs the context withCtx derives and calls
-// the handler.
 func (r *rig) dispatch(handler gin.HandlerFunc, method, target string, params gin.Params, body any, withCtx func(context.Context) context.Context) *httptest.ResponseRecorder {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -190,7 +164,6 @@ func (r *rig) dispatch(handler gin.HandlerFunc, method, target string, params gi
 	return w
 }
 
-// params builds gin path parameters from a key-value map.
 func params(pairs ...string) gin.Params {
 	out := make(gin.Params, 0, len(pairs)/2)
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -199,10 +172,6 @@ func params(pairs ...string) gin.Params {
 	return out
 }
 
-// writes returns the manager calls that change a table: a Put or a Delete. The
-// manager's reads — the role grants a subset check reads, most of all — are
-// legitimate before a refusal, so a case that holds "no write reached the
-// manager" asks for those and not for every call.
 func writes(calls []managerCall) []managerCall {
 	out := make([]managerCall, 0, len(calls))
 	for _, call := range calls {
@@ -215,7 +184,7 @@ func writes(calls []managerCall) []managerCall {
 	return out
 }
 
-// TestTheStubsStartEmpty holds the fixtures' own invariant.
+// TestTheStubsStartEmpty checks that the stubs start empty.
 func TestTheStubsStartEmpty(t *testing.T) {
 	if got := (&stubManager{}).recorded(); len(got) != 0 {
 		t.Errorf("a fresh stub manager recorded %d calls, want none", len(got))

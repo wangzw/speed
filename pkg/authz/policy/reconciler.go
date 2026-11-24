@@ -11,19 +11,6 @@ import (
 	tenancy "github.com/vislake/speed/pkg/tenant"
 )
 
-// ReconcileGrants converges a builtin tenant-admin role's grant set to grants
-// and removes from it only the grants named in retired that it currently holds.
-//
-// It acts on a builtin TenantAdminRole alone: another role, or a tenant-admin
-// role that is not builtin, is ErrReservedRole before any row is read. An absent
-// role is ErrUnknownRole and an empty tenant ErrTenantMismatch.
-//
-// The additions and removals are one transaction, and the role check takes the
-// role's row lock. A pair outside grants and outside retired is left as it
-// stands: deleting by set difference would let replicas erase each other's
-// grants during a rolling deployment. Once the transaction commits, this replica
-// reloads its snapshot and publishes authz.policy.changed; a call that writes
-// nothing does neither.
 func (p *product) ReconcileGrants(ctx context.Context, tenant string, role authz.Role,
 	grants, retired []authz.Grant,
 ) (added, removed int, err error) {
@@ -82,7 +69,6 @@ func (p *product) ReconcileGrants(ctx context.Context, tenant string, role authz
 		return nil
 	})
 	if err != nil {
-		// The transaction rolled back every row this call counted.
 		return 0, 0, err
 	}
 	if added == 0 && removed == 0 {

@@ -12,9 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheModuleProvidesTheInviteRoleSeam holds the descriptor: the invitation
-// role judgement is a provision of this module, so an assembly resolves it
-// without a stand-in.
+// TestTheModuleProvidesTheInviteRoleSeam checks that the module provides the invite role seam.
 func TestTheModuleProvidesTheInviteRoleSeam(t *testing.T) {
 	for _, provision := range Module().Provides {
 		if provision.Token == (*authn.InviteRolePolicy)(nil) {
@@ -24,9 +22,7 @@ func TestTheModuleProvidesTheInviteRoleSeam(t *testing.T) {
 	t.Error("the policy module's descriptor does not provide authn.InviteRolePolicy")
 }
 
-// TestTheModuleProvidesTheRoleBinder holds the descriptor: the acceptance's
-// in-transaction binding write is a provision of this module, so an assembly
-// resolves it without a stand-in.
+// TestTheModuleProvidesTheRoleBinder checks that the module provides the role binder.
 func TestTheModuleProvidesTheRoleBinder(t *testing.T) {
 	for _, provision := range Module().Provides {
 		if provision.Token == (*provisioning.RoleBinder)(nil) {
@@ -36,16 +32,10 @@ func TestTheModuleProvidesTheRoleBinder(t *testing.T) {
 	t.Error("the policy module's descriptor does not provide provisioning.RoleBinder")
 }
 
-// holder is a WriteGuard that refuses every binding. It is the host seam's
-// refusal the invitation role judgement has to carry as protected.
 type holder struct{ denied bool }
 
 func (h holder) Denied(context.Context, string, authz.WriteOp) (bool, error) { return h.denied, nil }
 
-// roleFixture writes the roles and bindings the role-judgement cases read: a
-// caller holding role management, an editor role within that held set, a role
-// carrying more than the caller holds, an empty role, and a caller holding no
-// role-management permission at all.
 func roleFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := newFixture(t)
@@ -67,18 +57,12 @@ func roleFixture(t *testing.T) *fixture {
 	mustPutGrant(t, ctx, f, "acme", "reader", "audit", "read")
 	mustPutBinding(t, ctx, f, "acme", "acct-2", "reader")
 
-	// The acceptance-time judgement replays the inviter's standing, which
-	// includes an active membership; every inviter these cases name is a member
-	// unless a case says otherwise.
 	f.membership = &membershipStub{member: true}
 
 	return f
 }
 
-// TestGrantableAnswersTheFourRefusals holds the issue-time judgement: an absent
-// role, the platform administrator, a caller short the role-management
-// permission, and a role carrying a permission the caller does not hold are told
-// apart; a role within the held set passes.
+// TestGrantableAnswersTheFourRefusals checks that grantable answers the four refusals.
 func TestGrantableAnswersTheFourRefusals(t *testing.T) {
 	f := roleFixture(t)
 	ctx := t.Context()
@@ -103,8 +87,7 @@ func TestGrantableAnswersTheFourRefusals(t *testing.T) {
 	}
 }
 
-// TestGrantableAsksTheWriteGuard holds the host seam: a tenant that protects
-// bindings refuses the role through the protected code.
+// TestGrantableAsksTheWriteGuard checks that grantable asks the write guard.
 func TestGrantableAsksTheWriteGuard(t *testing.T) {
 	f := roleFixture(t)
 	f.writeGuard = holder{denied: true}
@@ -113,11 +96,7 @@ func TestGrantableAsksTheWriteGuard(t *testing.T) {
 	}
 }
 
-// TestGrantableFailsClosedWithoutAMembershipChecker holds the assembly rule:
-// an invitation an account issues is accepted only after the inviter's
-// standing is replayed through the membership checker, so without one the
-// issue itself is refused rather than written into an invitation that could
-// never be accepted.
+// TestGrantableFailsClosedWithoutAMembershipChecker checks that grantable fails closed without a membership checker.
 func TestGrantableFailsClosedWithoutAMembershipChecker(t *testing.T) {
 	f := roleFixture(t)
 	f.membership = nil
@@ -130,10 +109,7 @@ func TestGrantableFailsClosedWithoutAMembershipChecker(t *testing.T) {
 	}
 }
 
-// TestGrantableJudgesThePermissionBeforeTheRole holds the order: a caller that
-// holds no role-management permission is refused with the same code whether the
-// role exists or not, so the two answers cannot be used to learn which role
-// names the tenant has.
+// TestGrantableJudgesThePermissionBeforeTheRole checks that grantable judges the permission before the role.
 func TestGrantableJudgesThePermissionBeforeTheRole(t *testing.T) {
 	f := roleFixture(t)
 	ctx := t.Context()
@@ -150,10 +126,7 @@ func TestGrantableJudgesThePermissionBeforeTheRole(t *testing.T) {
 	}
 }
 
-// TestGrantableAcceptsAHostCommand holds the host path: a host command
-// issuing an invitation has no acting account, and it may bind roles
-// directly, so the judgement is the role's existence, the
-// platform-administrator refusal and the write guard.
+// TestGrantableAcceptsAHostCommand checks that grantable accepts a host command.
 func TestGrantableAcceptsAHostCommand(t *testing.T) {
 	f := roleFixture(t)
 	ctx := t.Context()
@@ -174,9 +147,7 @@ func TestGrantableAcceptsAHostCommand(t *testing.T) {
 	}
 }
 
-// TestStillGrantableReplaysTheInvitersHeldSet holds the acceptance-time
-// judgement: the role has to still exist and every permission it carries has
-// to still be within the inviter's held set.
+// TestStillGrantableReplaysTheInvitersHeldSet checks that still grantable replays the inviters held set.
 func TestStillGrantableReplaysTheInvitersHeldSet(t *testing.T) {
 	f := roleFixture(t)
 	ctx := t.Context()
@@ -202,11 +173,7 @@ func TestStillGrantableReplaysTheInvitersHeldSet(t *testing.T) {
 	}
 }
 
-// TestStillGrantableReplaysTheInvitersStanding holds the rest of the replay: a
-// membership that is suspended keeps its bindings, so it has to be read
-// separately, and an inviter that still holds some permissions but not the
-// tenant's role-management permission may no longer have the invitation
-// honoured.
+// TestStillGrantableReplaysTheInvitersStanding checks that still grantable replays the inviters standing.
 func TestStillGrantableReplaysTheInvitersStanding(t *testing.T) {
 	t.Run("the inviter is no longer an active member", func(t *testing.T) {
 		f := roleFixture(t)
@@ -219,8 +186,6 @@ func TestStillGrantableReplaysTheInvitersStanding(t *testing.T) {
 
 	t.Run("the inviter lost role management but still holds a grant", func(t *testing.T) {
 		f := roleFixture(t)
-		// acct-2 holds the reader role, whose audit.read it therefore holds; it
-		// holds no tenant_role.manage.
 		err := f.StillGrantable(t.Context(), "acme", "reader", "acct-2")
 		if !errors.Is(err, authn.ErrForbidden) {
 			t.Errorf("StillGrantable with an inviter that lost role management = %v, want ErrForbidden", err)
@@ -246,9 +211,7 @@ func TestStillGrantableReplaysTheInvitersStanding(t *testing.T) {
 	})
 }
 
-// TestBindRoleTxWritesThroughTheCallersTransaction holds the in-transaction
-// binding write: it writes the binding on the handle it is handed, and the caller
-// that rolls the transaction back leaves no binding behind.
+// TestBindRoleTxWritesThroughTheCallersTransaction checks that bind role TX writes through the callers transaction.
 func TestBindRoleTxWritesThroughTheCallersTransaction(t *testing.T) {
 	f := roleFixture(t)
 	ctx := t.Context()
@@ -268,7 +231,6 @@ func TestBindRoleTxWritesThroughTheCallersTransaction(t *testing.T) {
 		t.Fatalf("acct-2 holds %d binding(s), want the seeded reader and the new editor", len(bindings))
 	}
 
-	// A transaction that rolls back writes nothing.
 	if err = f.BindRoleTxRollback(ctx); err != nil {
 		t.Fatalf("the rolled-back write: %v", err)
 	}
@@ -283,7 +245,6 @@ func TestBindRoleTxWritesThroughTheCallersTransaction(t *testing.T) {
 	}
 }
 
-// BindRoleTxRollback runs BindRoleTx for acct-1 and rolls the transaction back.
 func (f *fixture) BindRoleTxRollback(ctx context.Context) error {
 	rolled := errors.New("roll back")
 	err := f.handle.Transaction(func(tx *gorm.DB) error {

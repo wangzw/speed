@@ -8,14 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// routeKey identifies one route: the HTTP method and the path pattern the entry
-// point matched. The same pattern reached by another method is another route.
 type routeKey struct{ method, path string }
 
-// gate is the route declaration surface authz.Gate describes. It holds the
-// catalog it was built over, and verify checks every declared permission against
-// it once, after the Init window closes. A route redeclared is one kind or the
-// other, never both; Require and Open each clear the other.
 type gate struct {
 	mu      sync.Mutex
 	reqs    map[routeKey]authz.Permission
@@ -33,8 +27,6 @@ func newGate(catalog authz.Catalog) *gate {
 	}
 }
 
-// Require implements authz.Gate. It records that (method, path) needs perm, and
-// drops an open registration of the same route.
 func (g *gate) Require(method, path string, perm authz.Permission) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -43,8 +35,6 @@ func (g *gate) Require(method, path string, perm authz.Permission) {
 	delete(g.open, k)
 }
 
-// Open implements authz.Gate. It records that (method, path) needs no
-// permission, and drops a requirement of the same route.
 func (g *gate) Open(method, path string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -53,8 +43,6 @@ func (g *gate) Open(method, path string) {
 	delete(g.reqs, k)
 }
 
-// Covered implements authz.Gate. It reports whether (method, path) carries any
-// declaration at all, open or requiring a permission.
 func (g *gate) Covered(method, path string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -65,8 +53,6 @@ func (g *gate) Covered(method, path string) bool {
 	return g.open[k]
 }
 
-// requirement returns the permission (method, path) needs, and whether it was
-// declared to need one.
 func (g *gate) requirement(method, path string) (authz.Permission, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -80,10 +66,6 @@ func (g *gate) isOpen(method, path string) bool {
 	return g.open[routeKey{method, path}]
 }
 
-// verify holds every declared permission to the catalog and to the translation,
-// and reports the first it does not hold, wrapped around
-// authz.ErrUnknownPermission. It runs once after the Init window closes, so a
-// bad declaration is a startup failure rather than a route that decides nothing.
 func (g *gate) verify() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()

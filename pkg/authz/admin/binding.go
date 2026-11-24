@@ -10,8 +10,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// handleBindingList answers GET /api/v1/system/tenants/:tenant/bindings: every
-// role binding of the tenant.
 func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindingListBody, error) {
 	bindings, err := p.manager.Bindings(ctx, in.Tenant)
 	if err != nil {
@@ -24,9 +22,6 @@ func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindin
 	return bindingListBody{Bindings: bindingViewsOf(bindings, tenantName)}, nil
 }
 
-// handleBindingOf answers GET
-// /api/v1/system/tenants/:tenant/bindings/:account: every binding the account
-// holds within the tenant.
 func (p *product) handleBindingOf(ctx context.Context, in tenantAccountInput) (accountBindingListBody, error) {
 	bindings, err := p.manager.BindingsOf(ctx, in.Tenant, in.Account)
 	if err != nil {
@@ -47,9 +42,6 @@ func bindingViewsOf(bindings []authz.Binding, tenantName string) []AuthzAdminBin
 	return views
 }
 
-// handleBindingPut answers PUT
-// /api/v1/system/tenants/:tenant/bindings/:account/:role: it binds a role to an
-// account within the tenant. An empty account is a 400.
 func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct{}, error) {
 	if in.Account == "" {
 		return struct{}{}, badRequest()
@@ -79,13 +71,6 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 	return struct{}{}, nil
 }
 
-// handleBindingDelete answers DELETE
-// /api/v1/system/tenants/:tenant/bindings/:account/:role: it removes an account's
-// binding to a role within the tenant.
-//
-// A caller may not remove its own tenant-admin binding: the manager reads no
-// actor, so the rule is made here, before the audit and the manager. Another
-// administrator removes it.
 func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (struct{}, error) {
 	if in.Account == "" {
 		return struct{}{}, badRequest()
@@ -117,8 +102,6 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 	return struct{}{}, nil
 }
 
-// removingOwnBinding reports whether the account the delete names is the
-// effective account the request is made for.
 func removingOwnBinding(ctx context.Context, account string) bool {
 	id, ok := authn.FromContext(ctx)
 	if !ok {

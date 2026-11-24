@@ -20,9 +20,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// dialect is one database the adapter is exercised on: how to open a handle of
-// it, and the policy tables' DDL for it. The pairs differ only in the timestamp
-// type, as the migrations do.
 type dialect struct {
 	name string
 	open func(t *testing.T) *gorm.DB
@@ -54,8 +51,6 @@ var sqliteDDL = []string{
 	`CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role)`,
 }
 
-// sqliteSeq keeps each in-memory database of its own, so two handles opened in
-// one case do not share one by name.
 var sqliteSeq atomic.Int64
 
 func sqliteDialect() dialect {
@@ -75,15 +70,8 @@ func sqliteDialect() dialect {
 	}
 }
 
-// allDialects lists how to reach every database the adapter is exercised on,
-// SQLite first.
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name a database whose opener would fail for want of one.
 var allDialects = []func() dialect{sqliteDialect}
 
-// onEachDialect runs one case on every database the adapter is exercised on.
 func onEachDialect(t *testing.T, run func(t *testing.T, d dialect)) {
 	t.Helper()
 	for _, makeDialect := range allDialects {
@@ -101,10 +89,6 @@ func closePool(t *testing.T, handle *gorm.DB) {
 	t.Cleanup(func() { pool.Close() })
 }
 
-// tenantFilter returns the real statement filter the tenant catalog has
-// installed on the handles the database module opens, taken from the module's
-// own declarations. Using it here is what makes the load case discriminate:
-// without the filter installed, the cross-tenant mark would change nothing.
 func tenantFilter(t *testing.T) gorm.Plugin {
 	t.Helper()
 	for _, resource := range catalog.Module().Resources {
@@ -117,8 +101,6 @@ func tenantFilter(t *testing.T) gorm.Plugin {
 	return nil
 }
 
-// open builds a handle with the policy tables created, and the tenant filter
-// installed unless withoutFilter is set.
 func open(t *testing.T, d dialect, withoutFilter bool) *gorm.DB {
 	t.Helper()
 	handle := d.open(t)
@@ -135,12 +117,8 @@ func open(t *testing.T, d dialect, withoutFilter bool) *gorm.DB {
 	return handle
 }
 
-// crossing is the context the adapter's own statements carry, for a case that
-// reads or writes the tables directly.
 func crossing() context.Context { return tenant.CrossTenant(context.Background()) }
 
-// seed writes two tenants' grants and bindings around the model, so both a
-// load and a filtered read have more than one tenant to tell apart.
 func seed(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	statements := []string{
@@ -158,8 +136,6 @@ func seed(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// policies renders every rule a model holds as "sec field field …", for a case
-// to compare a whole load at once.
 func policies(m casbinmodel.Model) []string {
 	var out []string
 	for _, sec := range []string{"p", "g"} {
@@ -182,9 +158,7 @@ func count(t *testing.T, handle *gorm.DB, table string) int64 {
 	return n
 }
 
-// A load reads every tenant's rows, because the deciding process holds all
-// of them; the cross-tenant mark the adapter binds at construction is what
-// lets it.
+// TestLoadPolicyReadsEveryTenant checks that load policy reads every tenant.
 func TestLoadPolicyReadsEveryTenant(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -209,8 +183,6 @@ func TestLoadPolicyReadsEveryTenant(t *testing.T) {
 			t.Errorf("the loaded policy is %v, want both tenants' rows %v", got, want)
 		}
 
-		// The control: the same read without the mark is refused rather than
-		// reading across tenants.
 		var rows []grantRow
 		err = handle.WithContext(context.Background()).Find(&rows).Error
 		if !errors.Is(err, tenant.ErrNoTenantInContext) {
@@ -219,9 +191,7 @@ func TestLoadPolicyReadsEveryTenant(t *testing.T) {
 	})
 }
 
-// A rule whose domain is not the caller's is refused before any statement is
-// issued, and the same rule through the tenant's own adapter is written — so
-// the refusal is the tenant check and not a constraint of the schema.
+// TestAWriteForAnotherTenantIsRefused checks that a write for another tenant is refused.
 func TestAWriteForAnotherTenantIsRefused(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -255,7 +225,7 @@ func TestAWriteForAnotherTenantIsRefused(t *testing.T) {
 	})
 }
 
-// SavePolicy is not implemented: the adapter returns its own sentinel.
+// TestSavePolicyIsNotImplemented checks that save policy is not implemented.
 func TestSavePolicyIsNotImplemented(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -269,8 +239,7 @@ func TestSavePolicyIsNotImplemented(t *testing.T) {
 	})
 }
 
-// The two rules map onto the two tables field by field, and the mapping reads
-// back the same way.
+// TestRulesMapToColumns checks that rules map to columns.
 func TestRulesMapToColumns(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -325,7 +294,6 @@ func TestRulesMapToColumns(t *testing.T) {
 			t.Error("the binding row was written without a granted_at")
 		}
 
-		// The reverse: the rows read back into the rule shapes.
 		m, err := casbinmodel.NewModelFromString(authz.ModelText)
 		if err != nil {
 			t.Fatalf("building the model: %v", err)
@@ -340,13 +308,9 @@ func TestRulesMapToColumns(t *testing.T) {
 	})
 }
 
-// A rule with no tenant is refused three ways over: the filter refuses the write
-// when it is installed, the identifier refuses the empty value to be bound where
-// no filter is, and the table's CHECK refuses a row written around the model.
+// TestAnEmptyTenantIsRefused checks that an empty tenant is refused.
 func TestAnEmptyTenantIsRefused(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
-		// First, no filter: the empty identifier is refused at the binding, and
-		// the CHECK refuses a row written as raw SQL.
 		plain := open(t, d, true)
 		err := New(t.Context(), plain, "").AddPolicy("p", "p", []string{"roleA", "", "account", "read"})
 		if !errors.Is(err, tenant.ErrNoTenantInContext) {
@@ -358,7 +322,6 @@ func TestAnEmptyTenantIsRefused(t *testing.T) {
 			t.Error("the table accepted a row whose tenant column is empty")
 		}
 
-		// Then with the filter: it refuses the same write ahead of the database.
 		filtered := open(t, d, false)
 		err = New(t.Context(), filtered, "").AddPolicy("p", "p", []string{"roleA", "", "account", "read"})
 		if !errors.Is(err, tenant.ErrNoTenantInContext) {
@@ -370,15 +333,12 @@ func TestAnEmptyTenantIsRefused(t *testing.T) {
 	})
 }
 
-// A filtered removal reaches only the caller's rows, and a filter naming
-// another tenant's domain is refused rather than run.
+// TestRemoveFilteredPolicyIsHeldToTheTenant checks that remove filtered policy is held to the tenant.
 func TestRemoveFilteredPolicyIsHeldToTheTenant(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
 		seed(t, handle)
 
-		// Field 1 of a p rule is its domain: naming globex through the acme
-		// adapter is refused.
 		err := New(t.Context(), handle, "acme").RemoveFilteredPolicy("p", "p", 1, "globex")
 		if !errors.Is(err, authz.ErrTenantMismatch) {
 			t.Errorf("a filtered removal naming globex gave %v, want ErrTenantMismatch", err)
@@ -387,9 +347,6 @@ func TestRemoveFilteredPolicyIsHeldToTheTenant(t *testing.T) {
 			t.Errorf("the refused removal left %d row(s), want both", n)
 		}
 
-		// Field 2 is the resource, and both tenants hold a grant on "account":
-		// the removal takes acme's matching grant and leaves globex's, so a
-		// removal that crossed tenants would be seen.
 		if err := New(t.Context(), handle, "acme").RemoveFilteredPolicy("p", "p", 2, "account"); err != nil {
 			t.Fatalf("removing acme's account grants: %v", err)
 		}
@@ -402,7 +359,7 @@ func TestRemoveFilteredPolicyIsHeldToTheTenant(t *testing.T) {
 	})
 }
 
-// A removal addressed by a rule's whole key removes exactly that tenant's row.
+// TestRemovePolicyTouchesOneRow checks that remove policy touches one row.
 func TestRemovePolicyTouchesOneRow(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)

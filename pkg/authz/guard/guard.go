@@ -1,11 +1,4 @@
-// Package guard is the authorization enforcement module. It delivers four
-// faces: the request-path middleware on the authorizing stage, the
-// route-declaration registry behind authz.Gate, the handler-internal Guard API,
-// and the authentication capability's decision seam authn.Decider.
-//
-// The middleware and the decider share one translation from a permission to the
-// (object, action) pair the engine matches on, one declaration table, and one
-// read of the tenant.
+// Package guard is the authorization enforcement module: the request-path middleware, the route-declaration surface, the handler-internal guard and the authentication capability's decider.
 package guard
 
 import (
@@ -33,8 +26,6 @@ import (
 // ModuleName is this module's name in the registry.
 const ModuleName = "authz.guard"
 
-// The names of the metric: the counter, the meter it is created on, and the
-// attribute that tells the outcomes apart.
 const (
 	decisionsInstrument = ModuleName + ".decisions"
 	outcomeAttribute    = "outcome"
@@ -45,13 +36,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers. It delivers the route-declaration
 // anchor, the handler-internal Guard API and the decision seam, each
-// exclusively.
-//
-// It requires the engine and the catalog, both delivered exclusively by the
-// policy module. The HTTP entry point is taken up in Init rather than declared
-// as a requirement; the logger and the meter provider are optional.
-//
-// Prepare states StateEnabled and never StateAuto.
+// exclusively, and prepares as StateEnabled and never StateAuto.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -125,9 +110,7 @@ func Module() core.Module {
 				return nil
 			}
 			if err := p.gate.verify(); err != nil {
-				// A failed Start must not leave the resolved translation
-				// installed: a later assembly sharing the process would read a set
-				// this one never accepted.
+				// A failed Start must not leave the resolved translation installed: a later assembly sharing the process would read a set it did not resolve.
 				translation.Reset()
 				return err
 			}
@@ -144,15 +127,9 @@ func Module() core.Module {
 	}
 }
 
-// Guard is the handler-internal decision API: a handler asks this module one
-// question about one permission after the middleware has let the request
-// through. It only tightens what the route declaration already decided and
-// never widens it.
-//
-// It lives here and not in the root package because its signature takes a
-// *gin.Context. Its writing method is named RequirePermission rather than
-// Require because the same product also delivers authz.Gate, whose Require takes
-// a method and a path.
+// Guard answers whether the identity on a request may do one permission after
+// the middleware has let the request through. It only tightens what the route
+// declaration already decided and never widens it.
 type Guard interface {
 	// Allowed answers whether the identity on the request may do perm in the
 	// request's own domain — the tenant it resolved to, or the platform domain
@@ -170,8 +147,6 @@ type Guard interface {
 	RequirePermissionIn(c *gin.Context, perm authz.Permission, domain authz.Domain) bool
 }
 
-// product is this module's product. It implements authn.Decider, the
-// handler-internal Guard, and holds the declaration table the middleware reads.
 type product struct {
 	enforcer    authz.Enforcer
 	catalog     authz.Catalog
@@ -191,15 +166,12 @@ var (
 	_ authz.Gate    = (*product)(nil)
 )
 
-// Require implements authz.Gate.
 func (p *product) Require(method, path string, perm authz.Permission) {
 	p.gate.Require(method, path, perm)
 }
 
-// Open implements authz.Gate.
 func (p *product) Open(method, path string) { p.gate.Open(method, path) }
 
-// Covered implements authz.Gate.
 func (p *product) Covered(method, path string) bool { return p.gate.Covered(method, path) }
 
 func productOf(instance any) (*product, bool) {
@@ -207,8 +179,6 @@ func productOf(instance any) (*product, bool) {
 	return p, ok
 }
 
-// optional takes up a capability that may be absent. Absence is the legal
-// configuration and leaves the zero value; any other failure stops the startup.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	v, err := core.Resolve[T](reg)
 	switch {
@@ -222,10 +192,6 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	return zero, false, fmt.Errorf("%s: taking up %s: %w", ModuleName, what, err)
 }
 
-// wire takes up what the middleware reads, registers it on every guarded
-// endpoint and writes the startup diagnostics. A name the entry point does not
-// declare is ErrUnknownEndpoint and stops the startup. The process's translation
-// set is resolved here, as it is by the policy module.
 func (p *product) wire(reg *core.Registry) error {
 	if err := translation.Resolve(reg); err != nil {
 		return err
@@ -274,8 +240,6 @@ func undeclaredName(m undeclaredMode) string {
 	return closedValue
 }
 
-// middlewareFor builds the layer registered on one endpoint. The layer declares
-// the authorizing stage and sits after the tenant admission anchor.
 func (p *product) middlewareFor(endpoint string) speedhttp.Middleware {
 	return speedhttp.Middleware{
 		Name:     ModuleName,
@@ -288,8 +252,7 @@ func (p *product) middlewareFor(endpoint string) speedhttp.Middleware {
 	}
 }
 
-// handle is the request-path decision. It reads the declaration table top down
-// and stops at the first row it hits.
+// handle reads the declaration table top down and stops at the first matching row.
 func (p *product) handle(c *gin.Context, realm string) {
 	path := c.FullPath()
 	if path == "" {
@@ -315,8 +278,6 @@ func (p *product) handle(c *gin.Context, realm string) {
 	p.enforce(c, perm, realm)
 }
 
-// enforce decides a route that declared a required permission. An engine error
-// is an outage (503), a false is a denial (403), a true passes.
 func (p *product) enforce(c *gin.Context, perm authz.Permission, realm string) {
 	ctx := c.Request.Context()
 	id, hasIdentity := authn.FromContext(ctx)
@@ -332,8 +293,7 @@ func (p *product) enforce(c *gin.Context, perm authz.Permission, realm string) {
 	}
 	object, action, ok := translation.Lookup(perm)
 	if !ok {
-		// A permission the translation does not hold is one this module cannot
-		// express; the safe answer is a denial.
+		// A permission the translation does not hold is one this module cannot express; the safe answer is a denial.
 		p.conclude(c, decision{outcome: denied, permission: perm}, realm)
 		return
 	}
@@ -354,7 +314,6 @@ func (p *product) enforce(c *gin.Context, perm authz.Permission, realm string) {
 	}
 }
 
-// conclude counts a decision, records a refusal and writes its answer.
 func (p *product) conclude(c *gin.Context, d decision, realm string) {
 	p.counts[d.outcome].Add(1)
 	if d.outcome.passes() {
@@ -381,8 +340,6 @@ func (p *product) conclude(c *gin.Context, d decision, realm string) {
 	}
 }
 
-// domainOf reads the policy domain a handler-internal decision runs in when the
-// domain is not named.
 func domainOf(c *gin.Context) authz.Domain {
 	if tenantID, ok := tenant.FromContext(c.Request.Context()); ok {
 		return authz.Domain(tenantID)
@@ -390,17 +347,14 @@ func domainOf(c *gin.Context) authz.Domain {
 	return authz.PlatformDomain
 }
 
-// Allowed implements Guard.
 func (p *product) Allowed(c *gin.Context, perm authz.Permission) (bool, error) {
 	return p.allowedIn(c, perm, domainOf(c))
 }
 
-// RequirePermission implements Guard.
 func (p *product) RequirePermission(c *gin.Context, perm authz.Permission) bool {
 	return p.requireIn(c, perm, domainOf(c))
 }
 
-// RequirePermissionIn implements Guard.
 func (p *product) RequirePermissionIn(c *gin.Context, perm authz.Permission, domain authz.Domain) bool {
 	return p.requireIn(c, perm, domain)
 }
@@ -436,9 +390,6 @@ func (p *product) requireIn(c *gin.Context, perm authz.Permission, domain authz.
 	return true
 }
 
-// registerMetrics reports the decision counts through the metric capability,
-// when the assembly carries one. The capability is optional and reporting the
-// counts changes no decision.
 func (p *product) registerMetrics() error {
 	if p.meter == nil {
 		return nil
@@ -466,8 +417,6 @@ func (p *product) registerMetrics() error {
 	return nil
 }
 
-// dropMeter withdraws the counter's callback, so that a meter provider
-// outliving this module stops reading a product that has been closed.
 func (p *product) dropMeter() error {
 	if p.metrics == nil {
 		return nil

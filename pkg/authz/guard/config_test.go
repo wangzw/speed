@@ -13,34 +13,21 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The configuration cases drive the real loader over a real body, so each item
-// reads as an assembly reads it. This module's section is declared here by the
-// schema under test, since the descriptor's resources are not this file's to
-// hold and a stub reader would agree with any declaration whatsoever.
-
-// readConfigBody decodes and resolves this module's section out of body through
-// the real loader.
 func readConfigBody(t *testing.T, body string) (resolved, error) {
 	t.Helper()
 	reader := authztest.ConfigReader(t, core.Module{Name: ModuleName, Resources: []any{schema()}}, body)
 	return readConfig(reader)
 }
 
-// endpointsOnly is a section carrying an endpoint list and no undeclared item,
-// so the item's declared default is what the case reads back.
 func endpointsOnly(list string) string {
 	return `{"authz":{"guard":{"endpoints":` + list + `}}}`
 }
 
-// withUndeclared is a section carrying both items, undeclared written even when
-// empty.
 func withUndeclared(list, undeclared string) string {
 	return `{"authz":{"guard":{"endpoints":` + list + `,"undeclared":"` + undeclared + `"}}}`
 }
 
-// TestReadConfigFailsWithoutTheEndpointList holds that the key is required
-// with no default, and that the failure is the decoder's own, which names
-// the path.
+// TestReadConfigFailsWithoutTheEndpointList checks that read config fails without the endpoint list.
 func TestReadConfigFailsWithoutTheEndpointList(t *testing.T) {
 	for name, body := range map[string]string{
 		"no section at all":        `{}`,
@@ -65,8 +52,7 @@ func TestReadConfigFailsWithoutTheEndpointList(t *testing.T) {
 	}
 }
 
-// TestReadConfigRefusesAnEndpointListItCannotRunOn holds the three shapes
-// that are authn.ErrInvalidConfig, each naming the key.
+// TestReadConfigRefusesAnEndpointListItCannotRunOn checks that read config refuses an endpoint list it cannot run on.
 func TestReadConfigRefusesAnEndpointListItCannotRunOn(t *testing.T) {
 	for name, list := range map[string]string{
 		"an empty list":            `[]`,
@@ -96,8 +82,7 @@ func TestReadConfigRefusesAnEndpointListItCannotRunOn(t *testing.T) {
 	}
 }
 
-// TestReadConfigRefusesAnEndpointNamedTwice holds the duplicate, with the
-// endpoint and the key in the message and the namespace once.
+// TestReadConfigRefusesAnEndpointNamedTwice checks that read config refuses an endpoint named twice.
 func TestReadConfigRefusesAnEndpointNamedTwice(t *testing.T) {
 	got, err := readConfigBody(t, endpointsOnly(`["public", "admin", "public"]`))
 	if err == nil {
@@ -117,11 +102,8 @@ func TestReadConfigRefusesAnEndpointNamedTwice(t *testing.T) {
 	}
 }
 
-// TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed holds the disposition:
-// with nothing written it is closed, the two written values read back, and
-// every other value is refused rather than read towards a disposition.
+// TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed checks that the undeclared default is closed and the set is closed.
 func TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed(t *testing.T) {
-	// Nothing written: the declared default, closed.
 	got, err := readConfigBody(t, endpointsOnly(`["public"]`))
 	if err != nil {
 		t.Fatalf("readConfig with no undeclared item: %v", err)
@@ -130,7 +112,6 @@ func TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed(t *testing.T) {
 		t.Fatalf("the default undeclared disposition is %v, want closed", got.undeclared)
 	}
 
-	// The two values in the set read back as themselves.
 	for value, want := range map[string]undeclaredMode{
 		closedValue: undeclaredClosed,
 		openValue:   undeclaredOpen,
@@ -144,7 +125,6 @@ func TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed(t *testing.T) {
 		}
 	}
 
-	// Every value outside the set is refused, the key named.
 	for _, value := range []string{"true", "OPEN", "Open", "refuse", "on", "open,closed"} {
 		got, err := readConfigBody(t, withUndeclared(`["public"]`, value))
 		if err == nil {
@@ -162,9 +142,7 @@ func TestTheUndeclaredDefaultIsClosedAndTheSetIsClosed(t *testing.T) {
 	}
 }
 
-// TestReadConfigAcceptsDistinctConcreteNames is the other half of the rules
-// above: a list of distinct concrete names runs, and leaves the undeclared
-// disposition at its default.
+// TestReadConfigAcceptsDistinctConcreteNames checks that read config accepts distinct concrete names.
 func TestReadConfigAcceptsDistinctConcreteNames(t *testing.T) {
 	got, err := readConfigBody(t, endpointsOnly(`["public", "admin"]`))
 	if err != nil {
@@ -178,9 +156,7 @@ func TestReadConfigAcceptsDistinctConcreteNames(t *testing.T) {
 	}
 }
 
-// TestTheGuardInputsAreReadFromThePrimarySourceAlone holds the declaration
-// of the two keys: the endpoint list required, and both items settable
-// nowhere but the primary source.
+// TestTheGuardInputsAreReadFromThePrimarySourceAlone checks that the guard inputs are read from the primary source alone.
 func TestTheGuardInputsAreReadFromThePrimarySourceAlone(t *testing.T) {
 	s := schema()
 	if s.Namespace != ModuleName {
@@ -210,8 +186,7 @@ func TestTheGuardInputsAreReadFromThePrimarySourceAlone(t *testing.T) {
 	}
 }
 
-// TestNoDefaultForTheEndpointListAndAClosedDefaultForUndeclared holds the
-// declared defaults: no list, and a closed disposition.
+// TestNoDefaultForTheEndpointListAndAClosedDefaultForUndeclared checks that no default for the endpoint list and a closed default for undeclared.
 func TestNoDefaultForTheEndpointListAndAClosedDefaultForUndeclared(t *testing.T) {
 	if len(configDefaults.Endpoints) != 0 {
 		t.Fatalf("the declared default list is %v, want none", configDefaults.Endpoints)

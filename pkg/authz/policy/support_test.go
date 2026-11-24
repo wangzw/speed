@@ -19,9 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// applyMigration runs one of this module's own migration files, so the tables a
-// case writes into are the ones the module ships rather than a copy written out
-// in the test.
 func applyMigration(t *testing.T, handle *gorm.DB, name string) {
 	t.Helper()
 	sql, err := fs.ReadFile(migrationsFS, name)
@@ -38,10 +35,6 @@ func applyMigration(t *testing.T, handle *gorm.DB, name string) {
 	}
 }
 
-// newProductOver builds a product over a real SQLite handle with the tenant
-// filter installed and the policy tables created from the module's own
-// migration. Nothing is wired and nothing is started: a case sets the optional
-// capabilities it needs and calls begin or wire itself.
 func newProductOver(t *testing.T) *product {
 	t.Helper()
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
@@ -63,8 +56,6 @@ func newProductOver(t *testing.T) *product {
 	}
 }
 
-// mustBuildCatalog builds the catalog from a registry and fails the case on a
-// declaration the catalog refuses.
 func mustBuildCatalog(t *testing.T, reg *core.Registry) *catalog {
 	t.Helper()
 	c, err := buildCatalog(reg)
@@ -74,9 +65,6 @@ func mustBuildCatalog(t *testing.T, reg *core.Registry) *catalog {
 	return c
 }
 
-// wireProduct supplies the given optional capabilities to a registry and wires
-// the product against it, so that the subscription reads them the way an
-// assembly delivers them.
 func wireProduct(t *testing.T, p *product, bus event.Bus) {
 	t.Helper()
 	reg := core.New()
@@ -89,8 +77,6 @@ func wireProduct(t *testing.T, p *product, bus event.Bus) {
 	}
 }
 
-// allowed asks the product whether an account may act, failing the case on an
-// error rather than reading it as a denial.
 func allowed(t *testing.T, ctx context.Context, p *product, account, domain, object, action string) bool {
 	t.Helper()
 	ok, err := p.Allowed(ctx, authz.Query{
@@ -102,9 +88,6 @@ func allowed(t *testing.T, ctx context.Context, p *product, account, domain, obj
 	return ok
 }
 
-// seedPolicy writes one role, its grant and a binding straight into the tables
-// under the cross-tenant mark, bypassing the manager so that a case can tell a
-// reload apart from the write that would have carried it.
 func seedPolicy(t *testing.T, p *product, tenant, role, account, object, action string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -131,8 +114,6 @@ func seedPolicy(t *testing.T, p *product, tenant, role, account, object, action 
 	}
 }
 
-// pollUntil reports whether cond became true within the bound. It polls rather
-// than sleeps a fixed time, so the case ends the moment the condition holds.
 func pollUntil(t *testing.T, within time.Duration, cond func() bool) bool {
 	t.Helper()
 	deadline := time.Now().Add(within)
@@ -145,10 +126,6 @@ func pollUntil(t *testing.T, within time.Duration, cond func() bool) bool {
 	return cond()
 }
 
-// recordingBus is an event bus that keeps what it was given and lets a case
-// drive its handlers directly. It stands in for the memory module's bus, whose
-// constructor is unexported: assembling that module through a registry would
-// turn each case into an integration test.
 type recordingBus struct {
 	mu        sync.Mutex
 	published []event.Event
@@ -181,7 +158,6 @@ func (b *recordingBus) events() []event.Event {
 	return append([]event.Event(nil), b.published...)
 }
 
-// deliver runs every handler subscribed to a type, the way a backend would.
 func (b *recordingBus) deliver(t *testing.T, eventType string, evt event.Event) {
 	t.Helper()
 	b.mu.Lock()

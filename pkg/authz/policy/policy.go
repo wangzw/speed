@@ -1,9 +1,4 @@
-// Package policy is the authorization policy module: the policy tables and
-// their migrations, the store the engine reads and writes through, the
-// permission catalog, the policy snapshot the enforcement path reads, the
-// management surface over the policy data, and the account lifecycle cleanup.
-//
-// The Casbin engine and the database it reads live here and nowhere else.
+// Package policy is the authorization policy module: the policy tables and migrations, the engine, the permission catalog, the manager, the seeding and reconciliation surfaces, and the lifecycle hooks.
 package policy
 
 import (
@@ -38,14 +33,11 @@ const ModuleName = "authz.policy"
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// policyChangedEventType is the type name of the event a write publishes so
-// that the other replicas reload their snapshots.
 const policyChangedEventType = "authz.policy.changed"
 
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
@@ -56,14 +48,9 @@ var migrationsFS = func() fs.FS {
 
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// It delivers the engine, the subject-permission read, the catalog, the manager,
-// the seeding surface and the converging surface, each exclusively.
-//
-// The database is the one hard dependency. The roster, the membership checker,
-// the tenant lock, the bus and the logger are taken up in Init and each is
-// optional.
+// Module is the descriptor a host registers. It delivers the engine, the
+// subject-permission read, the catalog, the manager and the seeding and
+// converging surfaces, each exclusively; its one hard dependency is the database.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -157,9 +144,7 @@ func Module() core.Module {
 			if p, ok := productOf(instance); ok {
 				p.stopRefresh()
 			}
-			// Stop runs at the end of every drive, so a later assembly sharing the
-			// process resolves its own translation set rather than reading this
-			// one's.
+			// Stop runs at the end of every drive, so a later assembly resolves its own translation set.
 			translation.Reset()
 			return nil
 		},
@@ -183,9 +168,6 @@ var (
 	_ provisioning.RoleBinder   = (*product)(nil)
 )
 
-// product is this module's product and the implementation of the enforcement
-// engine, the catalog, the manager, the seeding surface, the converging surface
-// and the account lifecycle hook.
 type product struct {
 	handle          *gorm.DB
 	dialect         db.Dialect
@@ -196,40 +178,25 @@ type product struct {
 	catalog *catalog
 	logger  *slog.Logger
 
-	// The rest is settled in wire, before any request is served.
-	bus        event.Bus
-	roster     tenant.Catalog
-	membership authz.MembershipChecker
-	// membershipReads lets the account-administration lock also cover the active
-	// business tenants the account belongs to without administering: an ownership
-	// transfer makes an active member the owner.
+	bus             event.Bus
+	roster          tenant.Catalog
+	membership      authz.MembershipChecker
 	membershipReads authn.Memberships
-	// writeGuard tells the tenant-administrator counter which domains are not
-	// business tenants.
-	writeGuard authz.WriteGuard
+	writeGuard      authz.WriteGuard
 
-	holder policy.Holder
-	// tenantLock serialises the writes that judge a tenant's
-	// tenant-administrator floor.
+	holder     policy.Holder
 	tenantLock authz.TenantLock
-	// reloadMu serialises the reload path, so two concurrent loads cannot
-	// install their results out of order.
-	reloadMu sync.Mutex
+	reloadMu   sync.Mutex
 
 	cancelRefresh context.CancelFunc
 	refreshDone   chan struct{}
 }
 
-// productOf narrows an instance to this module's product. An instance of
-// another shape is left alone.
 func productOf(instance any) (*product, bool) {
 	p, ok := instance.(*product)
 	return p, ok
 }
 
-// wire resolves the process's permission translation, takes up the optional
-// capabilities, and subscribes to the change event. The translation is resolved
-// first because it is the vocabulary the policy data is written in.
 func (p *product) wire(reg *core.Registry) error {
 	if err := translation.Resolve(reg); err != nil {
 		return err
@@ -269,17 +236,13 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.bus = bus
-		// The subscriptions belong to Init: a bus freezes its subscription table
-		// when it starts, so a subscriber that arrived later would miss earlier
-		// events.
+		// The subscriptions belong to Init: a bus freezes its subscription table when it starts, so a subscriber arriving late is never called.
 		bus.Subscribe(policyChangedEventType, ModuleName, p.onChanged)
 		bus.Subscribe(authn.EventMembershipChanged, ModuleName, p.onMembershipChanged)
 	}
 	return nil
 }
 
-// optional takes up a capability that may be absent. Absence is legal and leaves
-// the zero value; any other failure stops the startup.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	v, err := core.Resolve[T](reg)
 	switch {
@@ -293,9 +256,6 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	return zero, false, fmt.Errorf("%s: taking up %s: %w", ModuleName, what, err)
 }
 
-// begin runs the startup checks and loads the first snapshot. The
-// platform-domain check runs first, the load is bounded by the configured
-// timeout, and the model self-check runs before the refresh starts.
 func (p *product) begin(ctx context.Context) error {
 	if p.roster != nil {
 		if err := checkPlatformDomain(ctx, p.roster); err != nil {
@@ -318,8 +278,6 @@ func (p *product) begin(ctx context.Context) error {
 	return nil
 }
 
-// Allowed implements authz.Enforcer. A snapshot that has not been loaded is
-// unavailable rather than a denial.
 func (p *product) Allowed(ctx context.Context, q authz.Query) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -331,10 +289,6 @@ func (p *product) Allowed(ctx context.Context, q authz.Query) (bool, error) {
 	return snapshot.Allowed(q)
 }
 
-// Held implements authz.SubjectPermissions. It maps each held (object, action)
-// pair back through the catalog and answers the permission names once each,
-// sorted. A snapshot that has not been loaded and an engine failure are both
-// unavailable rather than an empty set.
 func (p *product) Held(ctx context.Context, domain authz.Domain, subject string) ([]authz.Permission, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -364,40 +318,30 @@ func (p *product) Held(ctx context.Context, domain authz.Domain, subject string)
 	return held, nil
 }
 
-// Declared implements authz.Catalog.
 func (p *product) Declared() []authz.Permission { return p.catalog.Declared() }
 
-// TenantGoverned implements authz.Catalog.
 func (p *product) TenantGoverned() []authz.Permission { return p.catalog.TenantGoverned() }
 
-// Governed implements authz.Catalog.
 func (p *product) Governed(perm authz.Permission) bool { return p.catalog.Governed(perm) }
 
-// Has implements authz.Catalog.
 func (p *product) Has(perm authz.Permission) bool { return p.catalog.Has(perm) }
 
-// ObjectAction answers the (object, action) pair a permission translates to.
 func (p *product) ObjectAction(perm authz.Permission) (object, action string, ok bool) {
 	return p.catalog.ObjectAction(perm)
 }
 
-// PermissionOf answers the permission a (object, action) pair translates back
-// to, and whether any declared permission translates to it.
 func (p *product) PermissionOf(object, action string) (authz.Permission, bool) {
 	return p.catalog.PermissionOf(object, action)
 }
 
-// DescriptionKey implements authz.Catalog.
 func (p *product) DescriptionKey(perm authz.Permission) (key string, ok bool) {
 	return p.catalog.DescriptionKey(perm)
 }
 
-// Metadata implements authz.Catalog.
 func (p *product) Metadata(perm authz.Permission) (authz.PermissionMeta, bool) {
 	return p.catalog.Metadata(perm)
 }
 
-// swap reads the whole policy and installs it as the current snapshot.
 func (p *product) swap(ctx context.Context) error {
 	p.reloadMu.Lock()
 	defer p.reloadMu.Unlock()
@@ -409,8 +353,6 @@ func (p *product) swap(ctx context.Context) error {
 	return nil
 }
 
-// reload swaps the snapshot, keeping the one in place when the load fails. A
-// cancellation is recorded at Debug; every other failure at Error.
 func (p *product) reload(ctx context.Context) {
 	if err := p.swap(ctx); err != nil {
 		if ctx.Err() != nil {
@@ -423,14 +365,12 @@ func (p *product) reload(ctx context.Context) {
 	}
 }
 
-// onChanged reloads on a change event published by another replica.
 func (p *product) onChanged(ctx context.Context, _ event.Event) error {
 	p.reload(ctx)
 	return nil
 }
 
-// publish sends the change event after a write. A failure is recorded and goes
-// no further: the row is already in the database.
+// A publish failure is recorded and goes no further: the row is already committed.
 func (p *product) publish(ctx context.Context) {
 	if p.bus == nil {
 		return
@@ -441,8 +381,6 @@ func (p *product) publish(ctx context.Context) {
 	}
 }
 
-// startRefresh begins the periodic reload, unless the configured interval is
-// zero.
 func (p *product) startRefresh(ctx context.Context) {
 	if p.refreshInterval <= 0 {
 		return
@@ -465,8 +403,6 @@ func (p *product) startRefresh(ctx context.Context) {
 	}()
 }
 
-// stopRefresh cancels the ticker and waits for its goroutine to return, so a
-// reload in flight does not outlive Stop.
 func (p *product) stopRefresh() {
 	if p.cancelRefresh == nil {
 		return

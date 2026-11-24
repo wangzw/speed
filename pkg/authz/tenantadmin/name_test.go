@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheViewsNameTheTenantName holds the tenant management views to the
-// name: the policy store keys every row by the internal identifier, and a
-// client reads the name.
+// TestTheViewsNameTheTenantName checks that the views name the tenant name.
 func TestTheViewsNameTheTenantName(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.withNames(map[string]string{"t1": "acme"})
@@ -57,10 +55,7 @@ func TestTheViewsNameTheTenantName(t *testing.T) {
 	}
 }
 
-// TestTheAuditDetailNamesTheTenantName holds the writes' mandatory audit row to
-// the name: the path resolved to the internal identifier before the handler
-// runs, and a tenant detail carrying that identifier would put it in a table
-// operators read.
+// TestTheAuditDetailNamesTheTenantName checks that the audit detail names the tenant name.
 func TestTheAuditDetailNamesTheTenantName(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleManage)
 	r.withNames(map[string]string{"t1": "acme"})

@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 )
 
-// viewString reads one JSON member of a decoded view as text.
 func viewString(t *testing.T, view map[string]json.RawMessage, key string) string {
 	t.Helper()
 	raw, ok := view[key]
@@ -24,7 +23,6 @@ func viewString(t *testing.T, view map[string]json.RawMessage, key string) strin
 	return text
 }
 
-// viewInt reads one JSON member of a decoded view as an integer.
 func viewInt(t *testing.T, view map[string]json.RawMessage, key string) int {
 	t.Helper()
 	raw, ok := view[key]
@@ -38,7 +36,6 @@ func viewInt(t *testing.T, view map[string]json.RawMessage, key string) int {
 	return n
 }
 
-// viewBool reads one JSON member of a decoded view as a boolean.
 func viewBool(t *testing.T, view map[string]json.RawMessage, key string) bool {
 	t.Helper()
 	raw, ok := view[key]
@@ -52,7 +49,6 @@ func viewBool(t *testing.T, view map[string]json.RawMessage, key string) bool {
 	return b
 }
 
-// viewIsNull reports whether the view carries key and its value is JSON null.
 func viewIsNull(t *testing.T, view map[string]json.RawMessage, key string) bool {
 	t.Helper()
 	raw, ok := view[key]
@@ -62,7 +58,6 @@ func viewIsNull(t *testing.T, view map[string]json.RawMessage, key string) bool 
 	return strings.TrimSpace(string(raw)) == "null"
 }
 
-// roleViews decodes the role list answer into one map per view.
 func roleViews(t *testing.T, body string) []map[string]json.RawMessage {
 	t.Helper()
 	var got struct {
@@ -72,7 +67,6 @@ func roleViews(t *testing.T, body string) []map[string]json.RawMessage {
 	return got.Roles
 }
 
-// roleListView sends the role list route and returns its first view.
 func roleListView(t *testing.T, r *rig) map[string]json.RawMessage {
 	t.Helper()
 	w := r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet,
@@ -87,9 +81,7 @@ func roleListView(t *testing.T, r *rig) map[string]json.RawMessage {
 	return views[0]
 }
 
-// TestTheRoleListReportsUsageAndManagement holds the role view's role-usage
-// fields: the free-text description, the grant count, the active member count
-// and whether the caller may manage the role's grants.
+// TestTheRoleListReportsUsageAndManagement checks that the role list reports usage and management.
 func TestTheRoleListReportsUsageAndManagement(t *testing.T) {
 	t.Run("a custom role carries its free text and its permission count", func(t *testing.T) {
 		r := newRig(t, authz.PermissionTenantRoleRead)
@@ -163,8 +155,7 @@ func TestTheRoleListReportsUsageAndManagement(t *testing.T) {
 	})
 }
 
-// TestThePermissionCatalogReportsGovernanceMetadata holds the catalog view's
-// group, dangerous and grantable members.
+// TestThePermissionCatalogReportsGovernanceMetadata checks that the permission catalog reports governance metadata.
 func TestThePermissionCatalogReportsGovernanceMetadata(t *testing.T) {
 	perms := []authz.Permission{authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage}
 	r := newRig(t, perms...)
@@ -206,10 +197,7 @@ func TestThePermissionCatalogReportsGovernanceMetadata(t *testing.T) {
 	}
 }
 
-// TestTheRolePutAcceptsFreeTextDescription holds the role write's body: a
-// description is accepted, the removed description key reaches nothing, and a
-// description longer than authz.RoleDescriptionMax is a 400 answered before the
-// manager.
+// TestTheRolePutAcceptsFreeTextDescription checks that the role put accepts free text description.
 func TestTheRolePutAcceptsFreeTextDescription(t *testing.T) {
 	t.Run("the description alone reaches the manager", func(t *testing.T) {
 		r := newRig(t)
@@ -269,8 +257,7 @@ func TestTheRolePutAcceptsFreeTextDescription(t *testing.T) {
 	})
 }
 
-// TestTheRoleBindingsRouteIsMounted holds the role usage read: the path the
-// role page's member list uses answers a page of the role's bindings.
+// TestTheRoleBindingsRouteIsMounted checks that the role bindings route is mounted.
 func TestTheRoleBindingsRouteIsMounted(t *testing.T) {
 	r := newRig(t)
 	r.manager.bindings = []authz.Binding{{Tenant: "t1", Account: "acct-1", Role: "editor"}}

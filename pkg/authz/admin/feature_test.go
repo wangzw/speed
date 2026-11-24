@@ -6,9 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 )
 
-// TestTheModuleDeclaresTheAuthorizationAdminFeature holds the declaration the
-// frontend gates the authorization management surface on: one static Spec with
-// the exact name.
+// TestTheModuleDeclaresTheAuthorizationAdminFeature checks that the module declares the authorization admin feature.
 func TestTheModuleDeclaresTheAuthorizationAdminFeature(t *testing.T) {
 	want := feature.Spec{Name: "authz.admin"}
 	var got []feature.Spec

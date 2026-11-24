@@ -11,7 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// rolesByRole decodes the role list answer and indexes its views by role name.
 func rolesByRole(t *testing.T, body string) map[string]map[string]json.RawMessage {
 	t.Helper()
 	out := make(map[string]map[string]json.RawMessage)
@@ -21,9 +20,7 @@ func rolesByRole(t *testing.T, body string) map[string]map[string]json.RawMessag
 	return out
 }
 
-// TestTheRoleListCountsOnlyActiveMembers holds the member count's measure: one
-// tenant-wide binding read, one batch identity read, and only the accounts the
-// reader reports active are counted.
+// TestTheRoleListCountsOnlyActiveMembers checks that the role list counts only active members.
 func TestTheRoleListCountsOnlyActiveMembers(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.withIdentities()
@@ -74,9 +71,7 @@ func TestTheRoleListCountsOnlyActiveMembers(t *testing.T) {
 	}
 }
 
-// TestTheRoleListMemberCountIsUnknownWithoutAReader holds the absent seam's
-// degradation: a tenant with bindings still reports an unknown count, not a
-// count of zero.
+// TestTheRoleListMemberCountIsUnknownWithoutAReader checks that the role list member count is unknown without a reader.
 func TestTheRoleListMemberCountIsUnknownWithoutAReader(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -92,9 +87,7 @@ func TestTheRoleListMemberCountIsUnknownWithoutAReader(t *testing.T) {
 	}
 }
 
-// TestTheRoleListWhoseIdentityReaderFailsIsA503 holds the error rule: an
-// identity read that cannot answer fails the whole role list, never a count of
-// zero.
+// TestTheRoleListWhoseIdentityReaderFailsIsA503 checks that the role list whose identity reader fails is a 503.
 func TestTheRoleListWhoseIdentityReaderFailsIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.withIdentities()
@@ -111,9 +104,7 @@ func TestTheRoleListWhoseIdentityReaderFailsIsA503(t *testing.T) {
 	}
 }
 
-// TestTheRoleListWhoseHeldSetCannotBeReadIsA503 holds can_manage's failure
-// rule: the caller's held set is read for the field, and an unreadable one is a
-// 503 rather than a list that says the caller may manage nothing.
+// TestTheRoleListWhoseHeldSetCannotBeReadIsA503 checks that the role list whose held set cannot be read is a 503.
 func TestTheRoleListWhoseHeldSetCannotBeReadIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.manager.roles = []authz.RoleRecord{{Tenant: "t1", Role: "editor"}}
@@ -125,8 +116,7 @@ func TestTheRoleListWhoseHeldSetCannotBeReadIsA503(t *testing.T) {
 	}
 }
 
-// TestThePermissionCatalogWhoseHeldSetCannotBeReadIsA503 holds grantable's
-// failure rule.
+// TestThePermissionCatalogWhoseHeldSetCannotBeReadIsA503 checks that the permission catalog whose held set cannot be read is a 503.
 func TestThePermissionCatalogWhoseHeldSetCannotBeReadIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.subject.fail(errors.New("the policy snapshot is unavailable"))
@@ -140,9 +130,7 @@ func TestThePermissionCatalogWhoseHeldSetCannotBeReadIsA503(t *testing.T) {
 	}
 }
 
-// TestTheRoleBindingPageReportsIdentityAndCursors holds the role usage read's
-// page: the role filter, the account cursor, the identity fields and the
-// unknown identity state.
+// TestTheRoleBindingPageReportsIdentityAndCursors checks that the role binding page reports identity and cursors.
 func TestTheRoleBindingPageReportsIdentityAndCursors(t *testing.T) {
 	first := time.Date(2024, 5, 6, 7, 8, 9, 0, time.FixedZone("plus-one", 3600))
 	r := newRig(t)
@@ -232,10 +220,7 @@ func TestTheRoleBindingPageReportsIdentityAndCursors(t *testing.T) {
 	}
 }
 
-// TestTheRoleBindingPageWithoutAnIdentityReader holds the absent seam's
-// degradation: the page still answers 200 with its bindings and cursor, and each
-// row carries an empty display name and a null activity instead of inventing an
-// inactive account.
+// TestTheRoleBindingPageWithoutAnIdentityReader checks that the role binding page without an identity reader.
 func TestTheRoleBindingPageWithoutAnIdentityReader(t *testing.T) {
 	first := time.Date(2024, 5, 6, 7, 8, 9, 0, time.FixedZone("plus-one", 3600))
 	r := newRig(t)
@@ -280,10 +265,7 @@ func TestTheRoleBindingPageWithoutAnIdentityReader(t *testing.T) {
 	}
 }
 
-// TestTheRoleBindingPageIsGovernedReadOnly holds the route's decision and its
-// shape refusals: it is a read behind authz.tenant.role.read, filters by the
-// path role, refuses a negative limit, caps an oversized one and refuses the
-// caller right after a failed identity read.
+// TestTheRoleBindingPageIsGovernedReadOnly checks that the role binding page is governed read only.
 func TestTheRoleBindingPageIsGovernedReadOnly(t *testing.T) {
 	t.Run("a refused caller reaches no manager", func(t *testing.T) {
 		r := newRig(t)

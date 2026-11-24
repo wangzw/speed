@@ -6,8 +6,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// handleGrantList answers GET /api/v1/system/tenants/:tenant/roles/:role/grants:
-// every permission grant the role holds.
 func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListBody, error) {
 	grants, err := p.manager.Grants(ctx, in.Tenant, authz.Role(in.Role))
 	if err != nil {
@@ -24,10 +22,6 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 	return grantListBody{Grants: views}, nil
 }
 
-// handleGrantPut answers PUT
-// /api/v1/system/tenants/:tenant/roles/:role/grants/:permission: it grants a
-// permission to a role. A permission the catalog does not hold, or one the
-// translation has no row for, is a 400 before the manager is touched.
 func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)
@@ -62,9 +56,6 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 	return struct{}{}, nil
 }
 
-// handleGrantDelete answers DELETE
-// /api/v1/system/tenants/:tenant/roles/:role/grants/:permission: it revokes a
-// permission from a role. A permission the translation has no row for is a 400.
 func (p *product) handleGrantDelete(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)

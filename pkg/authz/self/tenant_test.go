@@ -17,8 +17,6 @@ import (
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// quietLogging delivers a logger that discards every record, so the roster's
-// startup diagnostics do not reach the process default logger.
 type quietLogging struct{}
 
 func (quietLogging) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
@@ -29,11 +27,6 @@ type quietRedaction struct{}
 func (quietRedaction) AddKeys(...string)              {}
 func (quietRedaction) AddPattern(string, log.Matcher) {}
 
-// tenantContext returns a context belonging to tenant id, entered through the
-// roster module's own Catalog.Enter — the one seam that writes a tenant into a
-// context — over a real SQLite roster. The module under test reads that same
-// seam, so a case observes the tenant the request resolved to rather than a
-// value the test wrote into a context by hand.
 func tenantContext(t *testing.T, id tenant.ID) context.Context {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "roster.db"), nil)

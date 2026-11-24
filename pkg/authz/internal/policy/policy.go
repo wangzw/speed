@@ -1,6 +1,4 @@
-// Package policy loads the process's policy into an immutable snapshot and
-// holds the one the enforcement path reads. It owns the one place the Casbin
-// engine is constructed and is imported by the policy module alone.
+// Package policy loads the process's policy into an immutable snapshot and holds the one the enforcement path reads.
 package policy
 
 import (

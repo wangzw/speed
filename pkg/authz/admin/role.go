@@ -11,9 +11,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// handleRoleList answers GET /api/v1/system/tenants/:tenant/roles: every role of
-// the tenant. A failed member count or held-permission read is a 503, never a
-// zero count or an empty set.
 func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListBody, error) {
 	roles, err := p.manager.Roles(ctx, in.Tenant)
 	if err != nil {
@@ -42,13 +39,8 @@ func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListB
 	return roleListBody{Roles: views}, nil
 }
 
-// errNoIdentity is what a role list reports when the request carries no
-// identity.
 var errNoIdentity = speedhttp.Fault{Status: http.StatusServiceUnavailable}
 
-// heldPermissions reads the caller's effective permissions in the platform
-// domain through SubjectPermissions. A read that fails is a 503, never an empty
-// set.
 func (p *product) heldPermissions(ctx context.Context) (map[authz.Permission]bool, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -66,8 +58,6 @@ func (p *product) heldPermissions(ctx context.Context) (map[authz.Permission]boo
 	return set, nil
 }
 
-// canManageRoles reports whether the caller holds authz.role.manage in the
-// platform domain. A read that fails is a 503, never "cannot manage".
 func (p *product) canManageRoles(ctx context.Context) (bool, error) {
 	held, err := p.heldPermissions(ctx)
 	if err != nil {
@@ -76,9 +66,6 @@ func (p *product) canManageRoles(ctx context.Context) (bool, error) {
 	return held[authz.PermissionRoleManage], nil
 }
 
-// roleMemberCounts counts the active members of every role. With no identity
-// reader a count is null, never zero; an account the host does not know is left
-// out.
 func (p *product) roleMemberCounts(ctx context.Context, tenant string, roles []authz.RoleRecord) (map[authz.Role]*int, error) {
 	counts := make(map[authz.Role]*int, len(roles))
 	if p.identities == nil {
@@ -122,8 +109,6 @@ func (p *product) roleMemberCounts(ctx context.Context, tenant string, roles []a
 	return counts, nil
 }
 
-// accountIdentities resolves the accounts a role-usage read names. A reader that
-// cannot answer is a 503, never an empty or inactive set.
 func (p *product) accountIdentities(ctx context.Context, tenant string, accounts []string) (map[string]authz.AccountIdentity, error) {
 	if p.identities == nil {
 		return nil, nil
@@ -137,10 +122,6 @@ func (p *product) accountIdentities(ctx context.Context, tenant string, accounts
 	return identities, nil
 }
 
-// handleRolePut answers PUT /api/v1/system/tenants/:tenant/roles/:role: it
-// creates or rewrites a role without the builtin mark. An absent description
-// leaves the stored text, an explicit empty string clears it, and a description
-// longer than authz.RoleDescriptionMax is a 400.
 func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	if in.Description != nil && utf8.RuneCountInString(*in.Description) > authz.RoleDescriptionMax {
@@ -176,8 +157,6 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 	return struct{}{}, nil
 }
 
-// handleRoleDelete answers DELETE /api/v1/system/tenants/:tenant/roles/:role: it
-// removes a role, which revokes its grants and bindings with it.
 func (p *product) handleRoleDelete(ctx context.Context, in roleInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteRole); err != nil {
@@ -202,5 +181,4 @@ func (p *product) handleRoleDelete(ctx context.Context, in roleInput) (struct{},
 	return struct{}{}, nil
 }
 
-// roleChange names the kind of record a role write changes.
 const roleChange = "role"

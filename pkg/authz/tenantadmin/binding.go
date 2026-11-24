@@ -7,17 +7,11 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// The role usage read's page size: the default and the ceiling.
 const (
 	defaultRoleBindingPageSize = 50
 	maxRoleBindingPageSize     = 200
 )
 
-// handleRoleBindingList answers GET
-// /api/v1/tenants/:tenant/roles/:role/bindings: one page of the accounts the
-// role is bound to. The cursor is the last account on the page; one extra row is
-// read to tell a full last page from one with a successor. A role with no
-// binding is an empty page and an empty cursor, not an error.
 func (p *product) handleRoleBindingList(ctx context.Context, in roleBindingListInput) (roleBindingPageBody, error) {
 	limit := in.Limit
 	switch {
@@ -54,8 +48,6 @@ func (p *product) handleRoleBindingList(ctx context.Context, in roleBindingListI
 	}, nil
 }
 
-// handleBindingList answers GET /api/v1/tenants/:tenant/bindings: every role
-// binding of the tenant.
 func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindingListBody, error) {
 	bindings, err := p.manager.Bindings(ctx, in.Tenant)
 	if err != nil {
@@ -68,8 +60,6 @@ func (p *product) handleBindingList(ctx context.Context, in tenantInput) (bindin
 	return bindingListBody{Bindings: bindingViewsOf(bindings, tenantName)}, nil
 }
 
-// handleBindingOf answers GET /api/v1/tenants/:tenant/bindings/:account: every
-// binding the account holds within the tenant.
 func (p *product) handleBindingOf(ctx context.Context, in tenantAccountInput) (accountBindingListBody, error) {
 	bindings, err := p.manager.BindingsOf(ctx, in.Tenant, in.Account)
 	if err != nil {
@@ -82,11 +72,6 @@ func (p *product) handleBindingOf(ctx context.Context, in tenantAccountInput) (a
 	return accountBindingListBody{Bindings: bindingViewsOf(bindings, tenantName)}, nil
 }
 
-// handleBindingPut answers PUT
-// /api/v1/tenants/:tenant/bindings/:account/:role: it binds a role to an account
-// within the tenant. Before the host write guard, the audit and the manager it
-// checks a non-empty account, a role that is not platform-admin, the caller's
-// held set, the account's membership, and the role's subset of the held set.
 func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct{}, error) {
 	if in.Account == "" {
 		return struct{}{}, badRequest()
@@ -129,13 +114,6 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 	return struct{}{}, nil
 }
 
-// handleBindingDelete answers DELETE
-// /api/v1/tenants/:tenant/bindings/:account/:role: it removes an account's
-// binding to a role within the tenant.
-//
-// A caller may not remove its own tenant-admin binding: the manager reads no
-// actor, so the rule is made here, before the host write guard, the audit and
-// the manager.
 func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (struct{}, error) {
 	if in.Account == "" {
 		return struct{}{}, badRequest()

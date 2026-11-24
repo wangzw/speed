@@ -1,22 +1,5 @@
 package guard_test
 
-// The cases built on this file hold what only the whole chain can decide: which
-// layer refuses a request on a real endpoint, what the answer looks like on the
-// socket, and where the guard's own decisions land among the layers outside it.
-// The entry point, the gateway, the resolution layer, the admission layer and
-// this module are the real modules on loopback ports the system picks, assembled
-// by the real registry. The engine, the catalog, the roster, the memberships and
-// the credential backend are stand-ins: the engine's answer is what a case
-// chooses, and the credential backend hands back the caller a bearer token names.
-//
-// The endpoints are three. "public" carries the whole chain — the gateway, the
-// resolution layer, the admission layer and this module. "internal" carries this
-// module alone, which is the assembly the design gives its no-identity 401: a
-// gateway that is absent or does not guard the endpoint leaves this layer the one
-// that can refuse an anonymous request. "plain" is served by the entry point and
-// guarded by nothing, which is the endpoint this module's own endpoint list does
-// not name.
-
 import (
 	"context"
 	"encoding/json"
@@ -47,8 +30,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/resolve"
 )
 
-// The endpoint names the assembly declares, and the tenant the roster maps the
-// request's name to.
 const (
 	publicEndpoint   = "public"
 	internalEndpoint = "internal"
@@ -56,25 +37,15 @@ const (
 
 	tenantName = "acme"
 
-	// tenantIdentifier is what the roster maps the name to. It differs from the
-	// name so that a query built from the identifier and one built from the
-	// name cannot be confused.
 	tenantIdentifier = "t-acme"
 
-	// listeningMsg is the record the entry point writes once an endpoint's
-	// address is bound. It is the only place outside the process that says which
-	// port the system picked for an endpoint configured on port 0.
 	listeningMsg = "an HTTP listener is listening"
 )
 
-// waitLimit bounds every wait and every request, so a startup or a request that
-// never answers fails the case with a message and not the binary at the global
-// timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// record is one log record a case reads back.
 type record struct {
 	level slog.Level
 	msg   string
@@ -118,8 +89,6 @@ func (r *recorder) all() []record {
 	return append([]record(nil), *r.records...)
 }
 
-// namedLogger delivers the logging capability over one logger, so that the
-// entry point's records — which carry the bound address — reach the case.
 type namedLogger struct{ logger *slog.Logger }
 
 func (l namedLogger) Named(string) *slog.Logger { return l.logger }
@@ -130,11 +99,6 @@ type noRules struct{}
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// credentials is the credential backend the gateway verifies through: the bearer
-// token names the caller, and the account is the token unchanged in the library
-// namespace. It also writes its own part of the challenge, naming both carriers
-// the way this module's no-identity 401 does, so that the two challenges a case
-// compares are built by the same rule.
 type credentials struct{}
 
 func (credentials) Name() string { return "stub" }
@@ -159,9 +123,6 @@ func (credentials) Challenge(realm string, _ bool) []string {
 	return []string{`Bearer realm="` + realm + `"`, `Cookie realm="` + realm + `"`}
 }
 
-// roster is the tenant catalog: the one name the cases send, mapped to a
-// distinct identifier, so that a query built from the name and one built from
-// the identifier cannot be confused.
 type roster struct{ tenant.Catalog }
 
 func (roster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
@@ -171,25 +132,16 @@ func (roster) ByName(_ context.Context, name string) (tenant.Tenant, bool, error
 	return tenant.Tenant{}, false, nil
 }
 
-// memberships is the account module's memberships: alice is a member of the one
-// tenant, named by the identifier the roster resolves.
 type memberships struct{ authn.Memberships }
 
 func (memberships) IsMember(_ context.Context, id authn.AccountID, tenantID string) (bool, error) {
 	return string(id) == "alice" && tenantID == tenantIdentifier, nil
 }
 
-// chain is one assembly, and the one thing a case varies in it: the disposition
-// a guarded endpoint gives a route nobody declared.
 type chain struct {
-	// undeclared is written to authz.guard.undeclared when set; empty leaves the
-	// closed default.
 	undeclared string
 }
 
-// body is the configuration the assembly loads. The gateway, the resolution
-// layer and the admission layer guard "public" alone; this module guards
-// "public" and "internal"; "plain" carries no layer.
 func (c chain) body() string {
 	undeclared := ""
 	if c.undeclared != "" {
@@ -217,18 +169,14 @@ func (c chain) body() string {
 	}`
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// reached reports whether the request got through to the handler behind the
-// chain.
 func (rp reply) reached() bool { return rp.status == nethttp.StatusOK && rp.body == "reached" }
 
-// problemDoc is the default response body a case reads back.
 type problemDoc struct {
 	Type   string `json:"type"`
 	Status int    `json:"status"`
@@ -244,13 +192,10 @@ func decodeProblem(t *testing.T, body string) problemDoc {
 	return p
 }
 
-// reached is the handler every route serves: it answers 200 and says so, which
-// is how a case reads that the request got through the chain.
 func reached(c *gin.Context) {
 	c.String(nethttp.StatusOK, "reached")
 }
 
-// provide is a stand-in module delivering one capability over one instance.
 func provide(name string, token core.Token, instance any) core.Module {
 	return core.Module{
 		Name:     name,
@@ -259,20 +204,6 @@ func provide(name string, token core.Token, instance any) core.Module {
 	}
 }
 
-// registrant is the module that makes the registrations a real registrant makes:
-// routes on the entry point and declarations on this module's route declaration
-// surface, both in its Init. It requires the entry point, the declaration
-// surface and the gateway's Exempt surface, so its Init runs after all three.
-//
-// /orders is declared to need authz.PermissionAccountRead; /open is declared
-// open and registered Exempt on the gateway, so an anonymous request reaches
-// this layer with it; /guard-api is declared open too, and its handler asks the
-// handler-internal Guard API for authz.PermissionAccountRead, so a case can read
-// what query the handler API puts to the engine; /nobody carries no declaration
-// at all.
-//
-// Its Serve closes servedCh, which is what tells a case the assembly has bound
-// its addresses and is serving.
 func registrant(servedCh chan struct{}) core.Module {
 	return core.Module{
 		Name: "stand-in.registrant",
@@ -328,7 +259,6 @@ func registrant(servedCh chan struct{}) core.Module {
 	}
 }
 
-// live is what a case holds while the assembly serves.
 type live struct {
 	t         *testing.T
 	addresses map[string]string
@@ -336,8 +266,6 @@ type live struct {
 	client    *nethttp.Client
 }
 
-// send issues one request against a bound endpoint and reads the answer off the
-// socket.
 func (l *live) send(endpoint, method, path string, edits ...func(*nethttp.Request)) reply {
 	l.t.Helper()
 	addr, ok := l.addresses[endpoint]
@@ -363,9 +291,6 @@ func (l *live) send(endpoint, method, path string, edits ...func(*nethttp.Reques
 	return reply{status: resp.StatusCode, header: resp.Header.Clone(), body: string(body)}
 }
 
-// decided reports whether this module wrote a record naming the outcome at the
-// level, which is how a case reads that a decision was recorded and not only
-// answered.
 func (l *live) decided(level slog.Level, outcome string) bool {
 	for _, rec := range l.logs.all() {
 		if strings.Contains(rec.msg, guard.ModuleName) && rec.attrs["outcome"] == outcome && rec.level == level {
@@ -375,7 +300,6 @@ func (l *live) decided(level slog.Level, outcome string) bool {
 	return false
 }
 
-// outcomes lists the outcome values this module recorded, for a failure message.
 func (l *live) outcomes() []string {
 	var out []string
 	for _, rec := range l.logs.all() {
@@ -386,17 +310,10 @@ func (l *live) outcomes() []string {
 	return out
 }
 
-// asAlice puts alice's bearer credential on a request.
 func asAlice(r *nethttp.Request) { r.Header.Set("Authorization", "Bearer alice") }
 
-// inAcme puts the tenant name on a request, so the resolution layer resolves a
-// tenant for it.
 func inAcme(r *nethttp.Request) { r.Header.Set("X-Tenant", tenantName) }
 
-// run builds the assembly with enforcer as the engine, drives it to Serve on
-// loopback ports the system picks, and hands use the running endpoints. The
-// assembly is stopped and closed when the case returns, and the drive has to come
-// back clean.
 func run(t *testing.T, c chain, enforcer *authztest.Enforcer, use func(l *live)) {
 	t.Helper()
 	gin.SetMode(gin.ReleaseMode)
@@ -477,25 +394,18 @@ func run(t *testing.T, c chain, enforcer *authztest.Enforcer, use func(l *live))
 		addresses: addresses,
 		logs:      logs,
 		client: &nethttp.Client{
-			Timeout: limit,
-			// A connection of its own per request, so that no idle connection
-			// holds the drain when the assembly stops.
+			Timeout:   limit,
 			Transport: &nethttp.Transport{DisableKeepAlives: true},
 		},
 	})
 	stop()
 }
 
-// realmChallenge is the challenge this module writes for a no-identity 401 on an
-// endpoint, and the rule the gateway's challenge follows here: both carriers,
-// each naming the endpoint as its realm.
 func realmChallenge(endpoint string) string {
 	return `Bearer realm="` + endpoint + `", Cookie realm="` + endpoint + `"`
 }
 
-// TestAnOpenRouteIsLetThroughForAnyIdentity holds the first row of the
-// design's decision table on the chain: a route declared open is let through
-// whatever the request carries, and the engine is never asked.
+// TestAnOpenRouteIsLetThroughForAnyIdentity checks that an open route is let through for any identity.
 func TestAnOpenRouteIsLetThroughForAnyIdentity(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	run(t, chain{}, enforcer, func(l *live) {
@@ -520,9 +430,7 @@ func TestAnOpenRouteIsLetThroughForAnyIdentity(t *testing.T) {
 	})
 }
 
-// TestARequiredRouteWithNoIdentityIsTheGateways401Shape holds the design's
-// no-identity 401 on the chain, and that it is the same shape the gateway
-// writes for the same condition.
+// TestARequiredRouteWithNoIdentityIsTheGateways401Shape checks that a required route with no identity is the gateways 401 shape.
 func TestARequiredRouteWithNoIdentityIsTheGateways401Shape(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	run(t, chain{}, enforcer, func(l *live) {
@@ -554,11 +462,7 @@ func TestARequiredRouteWithNoIdentityIsTheGateways401Shape(t *testing.T) {
 	})
 }
 
-// TestAnAllowedIdentityReachesTheHandlerOnTheChain holds the pass: an identity
-// the engine allows reaches the handler, and the query this module put to the
-// engine names the account whose credential the gateway verified and the tenant
-// identifier the resolution layer resolved — never the name the request
-// carried.
+// TestAnAllowedIdentityReachesTheHandlerOnTheChain checks that an allowed identity reaches the handler on the chain.
 func TestAnAllowedIdentityReachesTheHandlerOnTheChain(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -575,9 +479,7 @@ func TestAnAllowedIdentityReachesTheHandlerOnTheChain(t *testing.T) {
 	})
 }
 
-// TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone holds that the
-// middleware has no platform-domain fallback: a request that resolved a
-// tenant decides in the tenant's domain alone.
+// TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone checks that the middleware decides in the tenants own domain alone.
 func TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(q authz.Query) bool { return q.Domain == authz.PlatformDomain })
@@ -594,10 +496,7 @@ func TestTheMiddlewareDecidesInTheTenantsOwnDomainAlone(t *testing.T) {
 	})
 }
 
-// TestTheHandlerGuardDecidesInTheTenantsOwnDomain holds that the handler API
-// reads the tenant off the request the way the middleware does: its query
-// names the tenant identifier the roster resolved, never the name and never
-// the platform domain while a tenant is on the request.
+// TestTheHandlerGuardDecidesInTheTenantsOwnDomain checks that the handler guard decides in the tenants own domain.
 func TestTheHandlerGuardDecidesInTheTenantsOwnDomain(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(q authz.Query) bool { return q.Domain == authz.Domain(tenantIdentifier) })
@@ -614,9 +513,7 @@ func TestTheHandlerGuardDecidesInTheTenantsOwnDomain(t *testing.T) {
 	})
 }
 
-// TestADenialOnTheChainIsA403WithoutThePermission holds the 403 of a policy
-// denial on the chain: this module's problem type, and a detail that names the
-// class of the refusal and never the permission the route asked for.
+// TestADenialOnTheChainIsA403WithoutThePermission checks that a denial on the chain is a 403 without the permission.
 func TestADenialOnTheChainIsA403WithoutThePermission(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return false })
@@ -641,9 +538,7 @@ func TestADenialOnTheChainIsA403WithoutThePermission(t *testing.T) {
 	})
 }
 
-// TestAnEngineErrorOnTheChainIsA503AndNotADenial holds that an engine failure is
-// a 503, never a 403 and never a pass: reading an outage as a denial turns a
-// recoverable failure into a permanent permission conclusion.
+// TestAnEngineErrorOnTheChainIsA503AndNotADenial checks that an engine error on the chain is a 503 and not a denial.
 func TestAnEngineErrorOnTheChainIsA503AndNotADenial(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Failing(errors.New("the engine is down"))
@@ -664,10 +559,7 @@ func TestAnEngineErrorOnTheChainIsA503AndNotADenial(t *testing.T) {
 	})
 }
 
-// TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen holds the
-// undeclared disposition on the chain: a route nobody declared is refused with
-// this module's 403 under the closed default, and let through to the handler when
-// the disposition is open.
+// TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen checks that an undeclared route is refused by default and let through when open.
 func TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen(t *testing.T) {
 	t.Run("closed by default", func(t *testing.T) {
 		enforcer := authztest.NewEnforcer()
@@ -694,11 +586,7 @@ func TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen(t *testing.T) 
 	})
 }
 
-// TestAGuardedEndpointDecidesAndAnEndpointLeftOutOfTheListDoesNot holds the
-// control the design gives the endpoint list: an endpoint this module names
-// carries its decisions, and an endpoint left out of the list carries none,
-// so the same route reaches its handler there with no authorization layer in
-// front of it.
+// TestAGuardedEndpointDecidesAndAnEndpointLeftOutOfTheListDoesNot checks that a guarded endpoint decides and an endpoint left out of the list does not.
 func TestAGuardedEndpointDecidesAndAnEndpointLeftOutOfTheListDoesNot(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	run(t, chain{}, enforcer, func(l *live) {

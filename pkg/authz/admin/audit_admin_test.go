@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// TestTheAuditVocabularyIsPinned holds the literal values of the action
-// names, the outcome values and the detail keys this module writes.
+// TestTheAuditVocabularyIsPinned checks that the audit vocabulary is pinned.
 func TestTheAuditVocabularyIsPinned(t *testing.T) {
 	actions := map[string]string{
 		"role put":       actionRolePut,
@@ -56,9 +55,7 @@ func TestTheAuditVocabularyIsPinned(t *testing.T) {
 	}
 }
 
-// TestEachActionIDIsFresh holds that newActionID mints a fresh identifier per
-// write and is not a constant: two writes must carry two different ids, so the
-// rows of one write are linked to that write and not to another.
+// TestEachActionIDIsFresh checks that each action ID is fresh.
 func TestEachActionIDIsFresh(t *testing.T) {
 	a, b := newActionID(), newActionID()
 	if a == "" || b == "" {
@@ -69,9 +66,7 @@ func TestEachActionIDIsFresh(t *testing.T) {
 	}
 }
 
-// TestTheEmittedDetailKeysAreTheLiterals holds the keys the module writes on
-// the wire of the audit row without going through the module's own
-// constants: a consumer keying on "action_id" or "tenant" must find them.
+// TestTheEmittedDetailKeysAreTheLiterals checks that the emitted detail keys are the literals.
 func TestTheEmittedDetailKeysAreTheLiterals(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))

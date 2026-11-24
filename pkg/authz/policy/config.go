@@ -8,8 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// The configuration items this module accepts, relative to its namespace, and
-// the full path a failure names.
 const (
 	loadTimeoutItem     = "load-timeout"
 	loadTimeoutKey      = ConfigNamespace + "." + loadTimeoutItem
@@ -17,13 +15,10 @@ const (
 	refreshIntervalKey  = ConfigNamespace + "." + refreshIntervalItem
 )
 
-// configDefaults is what this module is worth without a configuration file: a
-// five-second load timeout and no periodic reload.
 var configDefaults = moduleConfig{
 	LoadTimeout: 5 * time.Second,
 }
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// LoadTimeout bounds the startup load of the whole policy; a load that has
 	// not finished within it fails the startup.
@@ -34,14 +29,11 @@ type moduleConfig struct {
 	RefreshInterval time.Duration `config:"refresh-interval"`
 }
 
-// resolution is the configuration this module runs on.
 type resolution struct {
 	loadTimeout     time.Duration
 	refreshInterval time.Duration
 }
 
-// resolve turns the declared configuration into what the module uses. A
-// non-positive timeout and a negative refresh interval are refused.
 func (c moduleConfig) resolve() (resolution, error) {
 	if c.LoadTimeout <= 0 {
 		return resolution{}, fmt.Errorf("%w: %s is %s, and the load of the whole policy must be "+
@@ -56,7 +48,6 @@ func (c moduleConfig) resolve() (resolution, error) {
 	return resolution{loadTimeout: c.LoadTimeout, refreshInterval: c.RefreshInterval}, nil
 }
 
-// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -74,7 +65,6 @@ func schema() config.Schema {
 	}
 }
 
-// readConfig decodes this module's section and validates it.
 func readConfig(reader config.Reader) (resolution, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

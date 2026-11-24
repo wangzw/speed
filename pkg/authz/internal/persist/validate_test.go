@@ -9,12 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// pRuleOfTwoFields and gRuleOfFourFields are model texts whose p and g rules are
-// deliberately of the wrong arity, so that loading a row of the adapter's shape
-// into the model fails (a p rule is checked for a size other than its own, a g
-// rule for one shorter than its own). They exist to drive LoadPolicy's failure
-// path; the model the process enforces with is the root package's and is not
-// this shape.
 const pRuleOfTwoFields = `[request_definition]
 r = sub, dom, obj, act
 [policy_definition]
@@ -39,7 +33,7 @@ e = some(where (p.eft == allow))
 m = g(r.sub, p.sub, r.dom, r.obj) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
 `
 
-// A rule that does not carry one field per column of its table is refused.
+// TestARuleOfTheWrongLengthIsRefused checks that a rule of the wrong length is refused.
 func TestARuleOfTheWrongLengthIsRefused(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -67,8 +61,7 @@ func TestARuleOfTheWrongLengthIsRefused(t *testing.T) {
 	})
 }
 
-// A policy type the adapter has no table for is refused as such, on both the
-// write and the filtered removal.
+// TestAnUnknownPolicyTypeIsRefused checks that an unknown policy type is refused.
 func TestAnUnknownPolicyTypeIsRefused(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -92,9 +85,7 @@ func TestAnUnknownPolicyTypeIsRefused(t *testing.T) {
 	})
 }
 
-// A rule that cannot be loaded is reported by the policy type it belongs to
-// and not by its values: the error names the p or g rule, never the role,
-// the tenant, the resource or the action it carries.
+// TestLoadPolicyNamesTheRuleAndNotItsValues checks that load policy names the rule and not its values.
 func TestLoadPolicyNamesTheRuleAndNotItsValues(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)
@@ -129,8 +120,7 @@ func TestLoadPolicyNamesTheRuleAndNotItsValues(t *testing.T) {
 	})
 }
 
-// A read that fails is reported with the read it was, so the failure can be
-// told from a load of the other table.
+// TestLoadPolicyNamesAReadFailure checks that load policy names a read failure.
 func TestLoadPolicyNamesAReadFailure(t *testing.T) {
 	onEachDialect(t, func(t *testing.T, d dialect) {
 		handle := open(t, d, false)

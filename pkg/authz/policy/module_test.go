@@ -12,7 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// A write announces itself on the bus so the other replicas reload.
+// TestAWritePublishesTheChangeEvent checks that a write publishes the change event.
 func TestAWritePublishesTheChangeEvent(t *testing.T) {
 	p := newProductOver(t)
 	bus := newRecordingBus()
@@ -30,9 +30,7 @@ func TestAWritePublishesTheChangeEvent(t *testing.T) {
 	}
 }
 
-// A change delivered from another replica reloads the snapshot: a row the write
-// path did not carry is picked up only once the change arrives, so the reload
-// is what makes it visible and not the row reaching the table.
+// TestADeliveredChangeReloadsTheSnapshot checks that a delivered change reloads the snapshot.
 func TestADeliveredChangeReloadsTheSnapshot(t *testing.T) {
 	p := newProductOver(t)
 	bus := newRecordingBus()
@@ -45,8 +43,6 @@ func TestADeliveredChangeReloadsTheSnapshot(t *testing.T) {
 		t.Fatalf("an empty policy allowed a query")
 	}
 
-	// The row is written straight into the table, so this replica's snapshot
-	// does not know it until a reload runs.
 	seedPolicy(t, p, "acme", "roleA", "acc1", "account", "read")
 	if allowed(t, ctx, p, "acc1", "acme", "account", "read") {
 		t.Fatalf("the snapshot picked up a row no reload saw")
@@ -58,9 +54,7 @@ func TestADeliveredChangeReloadsTheSnapshot(t *testing.T) {
 	}
 }
 
-// The refresh interval controls the periodic reload: zero starts none, and a
-// positive one reloads without any event, so a change this replica never hears
-// about still reaches the snapshot.
+// TestTheRefreshIntervalControlsThePeriodicReload checks that the refresh interval controls the periodic reload.
 func TestTheRefreshIntervalControlsThePeriodicReload(t *testing.T) {
 	ctx := t.Context()
 
@@ -88,9 +82,7 @@ func TestTheRefreshIntervalControlsThePeriodicReload(t *testing.T) {
 	}
 }
 
-// A load that does not finish within the configured timeout fails the startup
-// and leaves no snapshot in place: a process that began serving from a
-// half-read policy would answer from rows it cannot vouch for.
+// TestTheLoadTimeoutFailsTheStartupWithNoSnapshot checks that the load timeout fails the startup with no snapshot.
 func TestTheLoadTimeoutFailsTheStartupWithNoSnapshot(t *testing.T) {
 	p := newProductOver(t)
 	holdReadsUntilCancelled(t, p.handle)
@@ -105,9 +97,6 @@ func TestTheLoadTimeoutFailsTheStartupWithNoSnapshot(t *testing.T) {
 	}
 }
 
-// holdReadsUntilCancelled makes every read of the policy wait until its
-// statement's context is done, standing for a load that does not finish within
-// its timeout.
 func holdReadsUntilCancelled(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	err := handle.Callback().Query().Before("gorm:query").Register("test:hold", func(tx *gorm.DB) {
@@ -118,9 +107,7 @@ func holdReadsUntilCancelled(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// Concurrent reloads are serialised: a load reads the whole table and then
-// installs it, and two loads running at once could install out of order and
-// leave a staler snapshot in place.
+// TestConcurrentReloadsDoNotOverlap checks that concurrent reloads do not overlap.
 func TestConcurrentReloadsDoNotOverlap(t *testing.T) {
 	p := newProductOver(t)
 	ctx := t.Context()

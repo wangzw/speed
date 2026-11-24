@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// counterRoster is a tenant catalog carrying a fixed list. The counter reads
-// the roster through List; a case that scripts a failure answers it instead.
 type counterRoster struct {
 	tenant.Catalog
 	tenants []tenant.Tenant
@@ -25,8 +23,6 @@ func (r counterRoster) List(context.Context) ([]tenant.Tenant, error) {
 	return append([]tenant.Tenant(nil), r.tenants...), nil
 }
 
-// counterWriteGuard scripts which domains the host refuses as personal or
-// otherwise off-limits to business management, and an unreadable answer.
 type counterWriteGuard struct {
 	denied map[string]bool
 	err    error
@@ -39,9 +35,6 @@ func (g counterWriteGuard) Denied(_ context.Context, id string, _ authz.WriteOp)
 	return g.denied[id], nil
 }
 
-// bindTenantAdmin writes one tenant-administrator binding straight into the
-// table, bypassing the manager so that a case sets up exactly the rows it
-// names.
 func bindTenantAdmin(t *testing.T, p *product, tenantID, account string) {
 	t.Helper()
 	if err := p.crossing(t.Context()).Exec(
@@ -51,7 +44,6 @@ func bindTenantAdmin(t *testing.T, p *product, tenantID, account string) {
 	}
 }
 
-// activeTenants builds the roster rows the counter judges.
 func activeTenants(ids ...string) []tenant.Tenant {
 	out := make([]tenant.Tenant, 0, len(ids))
 	for _, id := range ids {
@@ -60,13 +52,9 @@ func activeTenants(ids ...string) []tenant.Tenant {
 	return out
 }
 
-// TestSoleTenantAdminTenantFindsTheOnlyBusinessAdministrator holds the hit: the
-// account holds the one tenant-administrator binding of an active business
-// tenant, so this tenant is the one a deletion would leave ungoverned.
+// TestSoleTenantAdminTenantFindsTheOnlyBusinessAdministrator checks that SoleTenantAdminTenant finds the only business administrator.
 func TestSoleTenantAdminTenantFindsTheOnlyBusinessAdministrator(t *testing.T) {
 	p := newProductOver(t)
-	// acc1 shares acme with acc2 and is globex's only administrator, so globex
-	// is the tenant the answer names.
 	bindTenantAdmin(t, p, "acme", "acc1")
 	bindTenantAdmin(t, p, "acme", "acc2")
 	bindTenantAdmin(t, p, "globex", "acc1")
@@ -81,8 +69,7 @@ func TestSoleTenantAdminTenantFindsTheOnlyBusinessAdministrator(t *testing.T) {
 	}
 }
 
-// A second tenant administrator means the tenant can lose this account and stay
-// governed: the answer is not sole.
+// TestASecondTenantAdministratorAllowsTheDeletion checks that a second tenant administrator allows the deletion.
 func TestASecondTenantAdministratorAllowsTheDeletion(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
@@ -98,8 +85,7 @@ func TestASecondTenantAdministratorAllowsTheDeletion(t *testing.T) {
 	}
 }
 
-// A personal tenant is the host's policy and is not a business tenant: the
-// host's write guard refuses it, so the counter leaves it out.
+// TestAPersonalTenantIsNotCounted checks that a personal tenant is not counted.
 func TestAPersonalTenantIsNotCounted(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "personal-acc1", "acc1")
@@ -117,8 +103,7 @@ func TestAPersonalTenantIsNotCounted(t *testing.T) {
 	}
 }
 
-// A disabled tenant is not in service, so its administrator floor is not a
-// reason to keep the account.
+// TestADisabledTenantIsNotCounted checks that a disabled tenant is not counted.
 func TestADisabledTenantIsNotCounted(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
@@ -135,7 +120,7 @@ func TestADisabledTenantIsNotCounted(t *testing.T) {
 	}
 }
 
-// The platform domain is not a business tenant.
+// TestThePlatformDomainIsNotCounted checks that the platform domain is not counted.
 func TestThePlatformDomainIsNotCounted(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, string(authz.PlatformDomain), "acc1")
@@ -150,7 +135,7 @@ func TestThePlatformDomainIsNotCounted(t *testing.T) {
 	}
 }
 
-// An account with no tenant-administrator binding has no floor to protect.
+// TestAnAccountWithNoTenantAdminBindingIsNotSole checks that an account with no tenant admin binding is not sole.
 func TestAnAccountWithNoTenantAdminBindingIsNotSole(t *testing.T) {
 	p := newProductOver(t)
 	p.roster = counterRoster{tenants: activeTenants("acme")}
@@ -164,8 +149,7 @@ func TestAnAccountWithNoTenantAdminBindingIsNotSole(t *testing.T) {
 	}
 }
 
-// A roster that cannot answer is a failure, never "no sole tenant": reading it
-// as permission would let the deletion through when the floor is unknown.
+// TestTheCounterFailsClosedWhenTheRosterCannotAnswer checks that the counter fails closed when the roster cannot answer.
 func TestTheCounterFailsClosedWhenTheRosterCannotAnswer(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
@@ -176,7 +160,7 @@ func TestTheCounterFailsClosedWhenTheRosterCannotAnswer(t *testing.T) {
 	}
 }
 
-// A host write guard that cannot answer is a failure too.
+// TestTheCounterFailsClosedWhenTheGuardCannotAnswer checks that the counter fails closed when the guard cannot answer.
 func TestTheCounterFailsClosedWhenTheGuardCannotAnswer(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
@@ -188,8 +172,7 @@ func TestTheCounterFailsClosedWhenTheGuardCannotAnswer(t *testing.T) {
 	}
 }
 
-// With no write guard assembled every active tenant counts as a business
-// tenant.
+// TestWithoutAWriteGuardEveryActiveTenantCounts checks that without a write guard every active tenant counts.
 func TestWithoutAWriteGuardEveryActiveTenantCounts(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "personal-acc1", "acc1")
@@ -206,9 +189,7 @@ func TestWithoutAWriteGuardEveryActiveTenantCounts(t *testing.T) {
 	}
 }
 
-// With no roster assembled a process cannot say which tenants are in service,
-// so the answer is a failure rather than a pass for an account holding any
-// tenant-administrator binding.
+// TestTheCounterFailsClosedWithoutARoster checks that the counter fails closed without a roster.
 func TestTheCounterFailsClosedWithoutARoster(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
@@ -218,8 +199,7 @@ func TestTheCounterFailsClosedWithoutARoster(t *testing.T) {
 	}
 }
 
-// The answer is deterministic when several active business tenants each have
-// this account as their only administrator: it names the first by identifier.
+// TestTheCounterAnswersTheFirstTenantByIdentifier checks that the counter answers the first tenant by identifier.
 func TestTheCounterAnswersTheFirstTenantByIdentifier(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "zulu", "acc1")
@@ -235,11 +215,7 @@ func TestTheCounterAnswersTheFirstTenantByIdentifier(t *testing.T) {
 	}
 }
 
-// TestLockAccountAdministrationSerialisesOneTenantsDeletions holds the lock
-// a deletion takes: one holding of the lock excludes another account's
-// deletion in the same tenant, so the two cannot each read the other's
-// binding as present and then together leave the tenant with no
-// administrator.
+// TestLockAccountAdministrationSerialisesOneTenantsDeletions checks that lock account administration serialises one tenants deletions.
 func TestLockAccountAdministrationSerialisesOneTenantsDeletions(t *testing.T) {
 	p := newProductOver(t)
 	bindTenantAdmin(t, p, "acme", "acc1")
@@ -272,8 +248,6 @@ func TestLockAccountAdministrationSerialisesOneTenantsDeletions(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	// Releasing twice is idempotent; the second call must not release anything
-	// the second deletion now holds.
 	first()
 	first()
 
@@ -287,8 +261,7 @@ func TestLockAccountAdministrationSerialisesOneTenantsDeletions(t *testing.T) {
 	}
 }
 
-// An account with no tenant-administrator binding locks nothing and answers a
-// release that is safe to call.
+// TestLockAccountAdministrationLocksNothingForAnUnboundAccount checks that lock account administration locks nothing for an unbound account.
 func TestLockAccountAdministrationLocksNothingForAnUnboundAccount(t *testing.T) {
 	p := newProductOver(t)
 	release, err := p.LockAccountAdministration(t.Context(), "acc-with-no-binding")

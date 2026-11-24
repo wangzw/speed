@@ -8,18 +8,14 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// TestThePolicyProductAnswersTheMemberRoleSeam holds that this module delivers
-// the optional seam the member listing reads: an assembly that takes the policy
-// module in can show each member's roles without the membership store learning
-// about policy.
+// TestThePolicyProductAnswersTheMemberRoleSeam checks that the policy product answers the member role seam.
 func TestThePolicyProductAnswersTheMemberRoleSeam(t *testing.T) {
 	if _, ok := any(newFixture(t).product).(authn.MemberRoleReader); !ok {
 		t.Fatal("the policy product does not implement authn.MemberRoleReader")
 	}
 }
 
-// TestTheModuleProvidesTheMemberRoleSeam holds the descriptor: the seam is a
-// provision of this module, so an assembly resolves it without a stand-in.
+// TestTheModuleProvidesTheMemberRoleSeam checks that the module provides the member role seam.
 func TestTheModuleProvidesTheMemberRoleSeam(t *testing.T) {
 	for _, provision := range Module().Provides {
 		if provision.Token == (*authn.MemberRoleReader)(nil) {
@@ -29,9 +25,7 @@ func TestTheModuleProvidesTheMemberRoleSeam(t *testing.T) {
 	t.Error("the policy module's descriptor does not provide authn.MemberRoleReader")
 }
 
-// TestMemberRolesAnswersOneTenantByName holds the bulk read: every account's
-// role names in one tenant, ascending and without duplicates, and no account of
-// another tenant.
+// TestMemberRolesAnswersOneTenantByName checks that member roles answers one tenant by name.
 func TestMemberRolesAnswersOneTenantByName(t *testing.T) {
 	p := newFixture(t).product
 	reader, ok := any(p).(authn.MemberRoleReader)
@@ -63,8 +57,7 @@ func TestMemberRolesAnswersOneTenantByName(t *testing.T) {
 	}
 }
 
-// TestMemberRolesRefusesAnEmptyTenant holds the seam's stated refusal: a read
-// that names no tenant names no rows.
+// TestMemberRolesRefusesAnEmptyTenant checks that member roles refuses an empty tenant.
 func TestMemberRolesRefusesAnEmptyTenant(t *testing.T) {
 	p := newFixture(t).product
 	reader, ok := any(p).(authn.MemberRoleReader)

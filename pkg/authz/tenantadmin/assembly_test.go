@@ -20,12 +20,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// tenantBody is the configuration a default drive runs on: one endpoint of the
-// entry point, "api", that the tenant management routes are mounted on.
 const tenantBody = `{"authz": {"tenantadmin": {"endpoints": ["api"]}}}`
 
-// recordingModule is this module's descriptor with its New wrapped to record
-// the product it built.
 func recordingModule(record *any) core.Module {
 	m := Module()
 	inner := m.New
@@ -40,33 +36,24 @@ func recordingModule(record *any) core.Module {
 	return m
 }
 
-// tenantAssembly is one drive. The zero value mounts the routes on "api" with
-// everything this module requires, a stand-in entry point and a path-tenant
-// guard; each field takes one capability away, replaces one stand-in, or records
-// the product New built.
 type tenantAssembly struct {
-	body string
-	// The required capabilities, each removable by the matching no* flag.
+	body                                                                            string
 	noManager, noCatalog, noSubject, noMembership, noGuard, noAudit, noVerification bool
 	manager                                                                         authz.Manager
 	catalog                                                                         authz.Catalog
 	subject                                                                         authz.SubjectPermissions
 	membership                                                                      authz.MembershipChecker
 	verification                                                                    authn.SignupVerification
-	// noRouter leaves the entry point out, which fails Init.
-	noRouter bool
-	router   speedhttp.Router
-	// routeGuard is the tenant administration guard; nil delivers one that
-	// passes.
-	routeGuard   speedhttp.TenantAdminRouteGuard
-	noRouteGuard bool
-	gate         authz.Gate
-	writeGuard   authz.WriteGuard
-	logger       *slog.Logger
-	record       *any
+	noRouter                                                                        bool
+	router                                                                          speedhttp.Router
+	routeGuard                                                                      speedhttp.TenantAdminRouteGuard
+	noRouteGuard                                                                    bool
+	gate                                                                            authz.Gate
+	writeGuard                                                                      authz.WriteGuard
+	logger                                                                          *slog.Logger
+	record                                                                          *any
 }
 
-// drive advances the assembly to depth and runs action there.
 func (a tenantAssembly) drive(t *testing.T, depth core.Stage, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	body := a.body
@@ -103,9 +90,6 @@ func (a tenantAssembly) drive(t *testing.T, depth core.Stage, action func(ctx co
 		reg.Register(standIn("stand-in.catalog", catalog, (*authz.Catalog)(nil)))
 		names = append(names, "stand-in.catalog")
 	}
-	// The subset judgement reads the role's grants through the manager and maps
-	// them through the catalog, so the stand-in manager is handed the stand-in
-	// catalog the product takes up.
 	if stub, ok := manager.(*stubManager); ok {
 		stub.catalog = catalog
 	}
@@ -177,7 +161,6 @@ func (a tenantAssembly) drive(t *testing.T, depth core.Stage, action func(ctx co
 	return reg.Drive(t.Context(), core.Drive{Depth: depth, Participants: names, Action: action})
 }
 
-// productOfAssembly narrows a recorded instance to this module's product.
 func productOfAssembly(t *testing.T, instance any) *product {
 	t.Helper()
 	p, ok := instance.(*product)
@@ -187,8 +170,7 @@ func productOfAssembly(t *testing.T, instance any) *product {
 	return p
 }
 
-// TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem holds which
-// callback takes up which dependency.
+// TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem checks that the assembly takes up its dependencies at the stage that reads them.
 func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) {
 	manager := &stubManager{}
 	catalog := newStubCatalog(authz.PermissionTenantRoleRead)
@@ -268,8 +250,7 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// TestAMissingRequiredCapabilityFailsResolution holds that each required
-// capability's absence fails resolution before New builds anything.
+// TestAMissingRequiredCapabilityFailsResolution checks that a missing required capability fails resolution.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]tenantAssembly{
 		"no manager":      {noManager: true},
@@ -295,7 +276,7 @@ func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	}
 }
 
-// TestNoEntryPointIsErrNoRouter holds the entry point's requirement.
+// TestNoEntryPointIsErrNoRouter checks that no entry point fails with ErrNoRouter.
 func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	err := tenantAssembly{noRouter: true}.drive(t, core.StageInit, nil)
 	if !errors.Is(err, authz.ErrNoRouter) {
@@ -306,7 +287,7 @@ func TestNoEntryPointIsErrNoRouter(t *testing.T) {
 	}
 }
 
-// TestAnUnknownEndpointIsErrUnknownEndpoint holds the endpoint lookup.
+// TestAnUnknownEndpointIsErrUnknownEndpoint checks that an unknown endpoint fails with ErrUnknownEndpoint.
 func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	body := `{"authz": {"tenantadmin": {"endpoints": ["api", "ghost"]}}}`
 	err := tenantAssembly{body: body}.drive(t, core.StageInit, nil)
@@ -318,8 +299,7 @@ func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	}
 }
 
-// TestAMissingPathTenantGuardRefusesTheMount holds the path-tenant seam: a
-// tenant-scoped route mounted without the guard is refused at startup.
+// TestAMissingPathTenantGuardRefusesTheMount checks that a missing path tenant guard refuses the mount.
 func TestAMissingPathTenantGuardRefusesTheMount(t *testing.T) {
 	err := tenantAssembly{noRouteGuard: true}.drive(t, core.StageInit, nil)
 	if err == nil {
@@ -330,8 +310,7 @@ func TestAMissingPathTenantGuardRefusesTheMount(t *testing.T) {
 	}
 }
 
-// TestARealRegistryMountsEveryRouteAndDeliversNothing holds the descriptor end
-// to end.
+// TestARealRegistryMountsEveryRouteAndDeliversNothing checks that a real registry mounts every route and delivers nothing.
 func TestARealRegistryMountsEveryRouteAndDeliversNothing(t *testing.T) {
 	router := newStubRouter("api")
 	gate := authztest.NewGate()

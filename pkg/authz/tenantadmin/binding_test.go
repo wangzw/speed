@@ -11,8 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit holds the
-// binding delete route's decision.
+// TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit checks that an unauthorised binding delete reaches no manager and writes no audit.
 func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -33,8 +32,7 @@ func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.
 	}
 }
 
-// TestDeletingABindingAsksForTenantRoleManageAndLandsOneSuccessRow holds the
-// delete route's happy path.
+// TestDeletingABindingAsksForTenantRoleManageAndLandsOneSuccessRow checks that deleting a binding asks for tenant role manage and lands one success row.
 func TestDeletingABindingAsksForTenantRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
@@ -57,8 +55,7 @@ func TestDeletingABindingAsksForTenantRoleManageAndLandsOneSuccessRow(t *testing
 	}
 }
 
-// TestDeletingABindingTheManagerRefusesIsMapped holds the delete route's failure
-// paths, including the last-tenant-administrator floor.
+// TestDeletingABindingTheManagerRefusesIsMapped checks that deleting a binding the manager refuses is mapped.
 func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 	t.Run("a tenant mismatch is a 400", func(t *testing.T) {
 		r := newRig(t)
@@ -105,7 +102,7 @@ func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 	})
 }
 
-// TestABindingWriteWhoseAuditDoesNotLandIsA503 holds the mandatory audit's grip.
+// TestABindingWriteWhoseAuditDoesNotLandIsA503 checks that a binding write whose audit does not land is a 503.
 func TestABindingWriteWhoseAuditDoesNotLandIsA503(t *testing.T) {
 	r := newRig(t)
 	r.audit.fail(errors.New("the audit store is down"))
@@ -120,8 +117,7 @@ func TestABindingWriteWhoseAuditDoesNotLandIsA503(t *testing.T) {
 	}
 }
 
-// TestAnonymousRequestsAreRefusedOnEveryBindingRoute holds the caller check on
-// the binding routes.
+// TestAnonymousRequestsAreRefusedOnEveryBindingRoute checks that anonymous requests are refused on every binding route.
 func TestAnonymousRequestsAreRefusedOnEveryBindingRoute(t *testing.T) {
 	cases := map[string]struct {
 		handler func(*product) gin.HandlerFunc
@@ -155,8 +151,7 @@ func TestAnonymousRequestsAreRefusedOnEveryBindingRoute(t *testing.T) {
 	}
 }
 
-// TestABindingReadWhoseManagerFailsIsMapped holds the binding reads' failure
-// path.
+// TestABindingReadWhoseManagerFailsIsMapped checks that a binding read whose manager fails is mapped.
 func TestABindingReadWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("the list", func(t *testing.T) {
 		r := newRig(t)
@@ -181,8 +176,7 @@ func TestABindingReadWhoseManagerFailsIsMapped(t *testing.T) {
 	})
 }
 
-// TestTheBindingListViewCarriesEveryField holds the binding list's response
-// shape.
+// TestTheBindingListViewCarriesEveryField checks that the binding list view carries every field.
 func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 	r := newRig(t)
 	r.manager.bindings = []authz.Binding{
@@ -207,9 +201,7 @@ func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 	}
 }
 
-// TestABindingWriteCarriesTheRoleAndTheAuditObject holds the binding write's
-// landing: the role reaches the manager and the mandatory row's object is the
-// account.
+// TestABindingWriteCarriesTheRoleAndTheAuditObject checks that a binding write carries the role and the audit object.
 func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
@@ -228,8 +220,7 @@ func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 	}
 }
 
-// TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused holds the rule
-// the manager cannot enforce because it reads no actor.
+// TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused checks that removing the caller's own tenant administrator binding is refused.
 func TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused(t *testing.T) {
 	const caller = "test-account"
 	r := newRig(t)
@@ -252,8 +243,7 @@ func TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused(t *testing.T) 
 	}
 }
 
-// TestRemovingAnotherAccountsTenantAdministratorBindingIsAllowed holds the
-// rule's boundary.
+// TestRemovingAnotherAccountsTenantAdministratorBindingIsAllowed checks that removing another account's tenant administrator binding is allowed.
 func TestRemovingAnotherAccountsTenantAdministratorBindingIsAllowed(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
@@ -270,8 +260,7 @@ func TestRemovingAnotherAccountsTenantAdministratorBindingIsAllowed(t *testing.T
 	}
 }
 
-// TestRemovingTheCallersOwnOtherBindingIsAllowed holds that the self-removal
-// refusal names the tenant-admin role.
+// TestRemovingTheCallersOwnOtherBindingIsAllowed checks that removing the caller's own other binding is allowed.
 func TestRemovingTheCallersOwnOtherBindingIsAllowed(t *testing.T) {
 	const caller = "test-account"
 	r := newRig(t)

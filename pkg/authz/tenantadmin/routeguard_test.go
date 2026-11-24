@@ -9,8 +9,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// mountOn builds an engine from the routes the module actually mounts on an
-// endpoint, applying the tenant administration guard the way mount does.
 func (r *rig) mountOn() *gin.Engine {
 	r.t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -21,10 +19,7 @@ func (r *rig) mountOn() *gin.Engine {
 	return e
 }
 
-// TestEveryRouteIsWrappedWithTheTenantAdminGuard holds that the mount
-// applies the guard to the whole closed set, and that it is the stricter
-// one: the shared identity guard would leave the platform domain addressable
-// on a surface that does not administer it.
+// TestEveryRouteIsWrappedWithTheTenantAdminGuard checks that every route is wrapped with the tenant admin guard.
 func TestEveryRouteIsWrappedWithTheTenantAdminGuard(t *testing.T) {
 	r := newRig(t)
 	r.p.mount(newStubRouter("api"))
@@ -36,11 +31,7 @@ func TestEveryRouteIsWrappedWithTheTenantAdminGuard(t *testing.T) {
 	}
 }
 
-// TestThePathTenantGuardRefusesBeforeTheHandler holds the ordering the
-// design states: the path-tenant layer runs before the handler's own
-// identity and permission checks, so a request whose path tenant does not
-// match the resolved tenant is answered with the bare 404 and nothing
-// downstream runs.
+// TestThePathTenantGuardRefusesBeforeTheHandler checks that the path tenant guard refuses before the handler.
 func TestThePathTenantGuardRefusesBeforeTheHandler(t *testing.T) {
 	r := newRig(t)
 	r.routeGuard.refuseWith(http.StatusNotFound)
@@ -61,9 +52,7 @@ func TestThePathTenantGuardRefusesBeforeTheHandler(t *testing.T) {
 	}
 }
 
-// TestThePathTenantGuardCoversEveryRoute holds that the refusal reaches every
-// mount, not one path: the writes are wrapped too, so a write cannot slip past
-// the tenant check by its method.
+// TestThePathTenantGuardCoversEveryRoute checks that the path tenant guard covers every route.
 func TestThePathTenantGuardCoversEveryRoute(t *testing.T) {
 	cases := []struct{ method, path string }{
 		{http.MethodGet, "/api/v1/tenants/other/permissions"},

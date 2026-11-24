@@ -8,10 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// MembershipRemoved is the synchronous half of the platform-domain cascade:
-// a removal of the account's membership of the platform tenant withdraws
-// every binding the account holds there, and leaves its bindings elsewhere
-// and every other account's bindings alone.
+// TestMembershipRemovedWithdrawsThePlatformBindings checks that membership removed withdraws the platform bindings.
 func TestMembershipRemovedWithdrawsThePlatformBindings(t *testing.T) {
 	p := newFixture(t).product
 	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.PlatformAdminRole), "acct-1", "tenant", "read")
@@ -26,17 +23,13 @@ func TestMembershipRemovedWithdrawsThePlatformBindings(t *testing.T) {
 	assertBindingCount(t, p, "acme", "acct-1", 1)
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-2", 1)
 
-	// A retry after a failure finds no row to remove and is no work and no
-	// error.
 	if err := p.MembershipRemoved(t.Context(), authn.AccountID("acct-1"), string(authz.PlatformDomain)); err != nil {
 		t.Fatalf("repeating MembershipRemoved: %v", err)
 	}
 	assertBindingCount(t, p, string(authz.PlatformDomain), "acct-1", 0)
 }
 
-// A membership removed in a business tenant clears that tenant's bindings
-// and leaves the account's bindings in every other tenant, the platform
-// domain included.
+// TestMembershipRemovedInABusinessTenantClearsItsOwnBindings checks that membership removed in a business tenant clears its own bindings.
 func TestMembershipRemovedInABusinessTenantClearsItsOwnBindings(t *testing.T) {
 	p := newFixture(t).product
 	seedPolicy(t, p, string(authz.PlatformDomain), string(authz.PlatformAdminRole), "acct-1", "tenant", "read")
@@ -49,9 +42,7 @@ func TestMembershipRemovedInABusinessTenantClearsItsOwnBindings(t *testing.T) {
 	assertBindingCount(t, p, "acme", "acct-1", 0)
 }
 
-// The guard refuses the removal of an account that is the only tenant
-// administrator binding of the tenant: the tenant would be left with nobody who
-// may govern it.
+// TestCheckMembershipRemovalRefusesTheLastTenantAdmin checks that check membership removal refuses the last tenant admin.
 func TestCheckMembershipRemovalRefusesTheLastTenantAdmin(t *testing.T) {
 	p := newFixture(t).product
 	seedBinding(t, p, "acme", "acct-1", string(authz.TenantAdminRole))
@@ -62,9 +53,7 @@ func TestCheckMembershipRemovalRefusesTheLastTenantAdmin(t *testing.T) {
 	}
 }
 
-// Another tenant administrator keeps the check satisfied, and a role that is not
-// tenant-admin is not counted: the floor is the tenant-administrator binding,
-// not every binding.
+// TestCheckMembershipRemovalAllowsAnotherAdministratorOrNoAdministrator checks that check membership removal allows another administrator or no administrator.
 func TestCheckMembershipRemovalAllowsAnotherAdministratorOrNoAdministrator(t *testing.T) {
 	p := newFixture(t).product
 	seedBinding(t, p, "acme", "acct-1", string(authz.TenantAdminRole))
@@ -79,8 +68,7 @@ func TestCheckMembershipRemovalAllowsAnotherAdministratorOrNoAdministrator(t *te
 	}
 }
 
-// The count is the named tenant's: being the only tenant administrator of one
-// tenant says nothing about another.
+// TestCheckMembershipRemovalCountsOnlyTheNamedTenant checks that check membership removal counts only the named tenant.
 func TestCheckMembershipRemovalCountsOnlyTheNamedTenant(t *testing.T) {
 	p := newFixture(t).product
 	seedBinding(t, p, "acme", "acct-1", string(authz.TenantAdminRole))

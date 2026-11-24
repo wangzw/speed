@@ -7,9 +7,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheRoleWriteCarriesTheFreeTextDescription holds the write: the body's
-// free-text description reaches the manager as the record's Description, and the
-// stored key stays empty because the request no longer declares one.
+// TestTheRoleWriteCarriesTheFreeTextDescription checks that the role write carries the free text description.
 func TestTheRoleWriteCarriesTheFreeTextDescription(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleManage)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/tenants/t1/roles/ops",
@@ -27,9 +25,7 @@ func TestTheRoleWriteCarriesTheFreeTextDescription(t *testing.T) {
 	}
 }
 
-// TestTheRoleWriteIgnoresTheRemovedDescriptionKey holds the removal: the
-// request no longer declares description_key, so a client that still sends
-// it reaches nothing.
+// TestTheRoleWriteIgnoresTheRemovedDescriptionKey checks that the role write ignores the removed description key.
 func TestTheRoleWriteIgnoresTheRemovedDescriptionKey(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleManage)
 	w := r.serve(rolePutRoute(r.p), http.MethodPut, "/api/v1/tenants/t1/roles/ops",

@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// stubEnforcer records every query and answers from a function, so a case can
-// hold both what the decider put to the engine and what it did with the answer.
 type stubEnforcer struct {
 	mu     sync.Mutex
 	answer func(authz.Query) (bool, error)
@@ -39,8 +37,6 @@ func (s *stubEnforcer) queries() []authz.Query {
 	return slices.Clone(s.asked)
 }
 
-// identity builds the identity a request would carry, centred on account. Any
-// further option, such as WithActor, makes it what it makes it.
 func identity(t *testing.T, account authn.AccountID, opts ...authntest.Option) authn.Identity {
 	t.Helper()
 	opts = append([]authntest.Option{authntest.WithAccount(account)}, opts...)
@@ -52,8 +48,7 @@ func identity(t *testing.T, account authn.AccountID, opts ...authntest.Option) a
 	return id
 }
 
-// A known action is translated to the engine's (object, action) pair and put to
-// the engine with the actor's key and the decision's tenant.
+// TestDecideTranslatesAndQueries checks that decide translates and queries.
 func TestDecideTranslatesAndQueries(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -74,8 +69,7 @@ func TestDecideTranslatesAndQueries(t *testing.T) {
 	}
 }
 
-// A known action the engine refuses is a denial without an error, and the
-// action has no fallback: one query is put.
+// TestDecideCarriesADenial checks that Decide carries a denial.
 func TestDecideCarriesADenial(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return false, nil }
@@ -94,9 +88,7 @@ func TestDecideCarriesADenial(t *testing.T) {
 	}
 }
 
-// An action the translation does not hold is refused without an error, and the
-// engine is never asked: a denial is the safe answer for an action this module
-// cannot express.
+// TestDecideRefusesAnUnknownAction checks that decide refuses an unknown action.
 func TestDecideRefusesAnUnknownAction(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -125,7 +117,7 @@ func TestDecideRefusesAnUnknownAction(t *testing.T) {
 	}
 }
 
-// An engine error is carried out and is neither a denial nor a permission.
+// TestDecideCarriesAnEngineError checks that Decide carries an engine error.
 func TestDecideCarriesAnEngineError(t *testing.T) {
 	boom := errors.New("the store is down")
 	enforcer := &stubEnforcer{}
@@ -142,11 +134,7 @@ func TestDecideCarriesAnEngineError(t *testing.T) {
 	}
 }
 
-// authn.tenant.access decides four ways: a match in the tenant's own domain is an
-// allow with one query; a miss there falls back to the platform domain, where a
-// match is an allow and a miss is a denial, each with two queries; and a decision
-// already in the platform domain, the tenant being empty, is one query with no
-// fallback to run.
+// TestTenantAccessDecidesFourWays checks that tenant access decides four ways.
 func TestTenantAccessDecidesFourWays(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -213,9 +201,7 @@ func TestTenantAccessDecidesFourWays(t *testing.T) {
 	}
 }
 
-// A non-tenant-access action puts exactly one query, whatever its domain: an
-// account-level action whose decision names no tenant is decided in the
-// platform domain, and a tenant-level action in the tenant's own domain.
+// TestANonAccessActionDecidesInOneQuery checks that a non access action decides in one query.
 func TestANonAccessActionDecidesInOneQuery(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -251,8 +237,7 @@ func TestANonAccessActionDecidesInOneQuery(t *testing.T) {
 	}
 }
 
-// The three impersonation actions decide in the platform domain whatever
-// tenant the decision names.
+// TestImpersonationDecidesInThePlatformDomain checks that impersonation decides in the platform domain.
 func TestImpersonationDecidesInThePlatformDomain(t *testing.T) {
 	for _, c := range []struct {
 		action authn.Action
@@ -269,8 +254,6 @@ func TestImpersonationDecidesInThePlatformDomain(t *testing.T) {
 			}
 			p := &product{enforcer: enforcer}
 
-			// The platform administrator holds no binding in acme. The decision
-			// must still be allowed, because it is asked in the platform domain.
 			allow, err := p.Decide(t.Context(), authn.Decision{
 				Action: c.action,
 				Actor:  identity(t, "acct-platform"),
@@ -284,8 +267,6 @@ func TestImpersonationDecidesInThePlatformDomain(t *testing.T) {
 				t.Fatalf("the engine was asked %v, want one query in the platform domain", got)
 			}
 
-			// The tenant administrator holds the grant in acme only. The
-			// decision must refuse it, and a query in acme would be the defect.
 			enforcer.answer = func(q authz.Query) (bool, error) { return q.Domain == "acme", nil }
 			allow, err = p.Decide(t.Context(), authn.Decision{
 				Action: c.action,
@@ -303,7 +284,7 @@ func TestImpersonationDecidesInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// The subject is the effective account.
+// TestDecideTakesTheEffectiveAccount checks that Decide takes the effective account.
 func TestDecideTakesTheEffectiveAccount(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -332,10 +313,7 @@ func TestDecideTakesTheEffectiveAccount(t *testing.T) {
 	}
 }
 
-// The module's own descriptor is driven through a real registry, holding what a
-// decider built by hand cannot: that New takes the engine up from the registry
-// the way a host's command does, and that the module provides the seam
-// authn.Decider under the name the command tree uses.
+// TestTheRegistryDeliversTheDecider checks that the registry delivers the decider.
 func TestTheRegistryDeliversTheDecider(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	enforcer.Answer(func(authz.Query) bool { return true })
@@ -346,11 +324,7 @@ func TestTheRegistryDeliversTheDecider(t *testing.T) {
 
 	var delivered authn.Decider
 	err := reg.Drive(t.Context(), core.Drive{
-		Depth: core.StageNew,
-		// The name is a literal and not ModuleName: the host writes the
-		// published key into its command tree, so a rename that left the
-		// constant and its uses agreeing would break that host with the tests
-		// still green.
+		Depth:        core.StageNew,
 		Participants: []string{"authz.guard"},
 		Action: func(ctx context.Context, reg *core.Registry) error {
 			d, err := core.Resolve[authn.Decider](reg)
@@ -384,10 +358,7 @@ func TestTheRegistryDeliversTheDecider(t *testing.T) {
 	}
 }
 
-// The module requires the catalog as it requires the engine: a command that
-// brings this module in without a catalog fails the startup, so a host that
-// provides an engine but no policy catalog learns it is incomplete rather than
-// starting a decider whose route declarations can check nothing.
+// TestTheRegistryRefusesWithoutACatalog checks that the registry refuses without a catalog.
 func TestTheRegistryRefusesWithoutACatalog(t *testing.T) {
 	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
@@ -401,7 +372,7 @@ func TestTheRegistryRefusesWithoutACatalog(t *testing.T) {
 	}
 }
 
-// A second provider of the decision seam fails the startup.
+// TestASecondDeciderFailsTheStartup checks that a second decider fails the startup.
 func TestASecondDeciderFailsTheStartup(t *testing.T) {
 	reg := authztest.Registry(t, guardedBody, Module())
 	authztest.AddProvider(reg, authztest.EnforcerProvider(authztest.NewEnforcer()))
@@ -421,13 +392,10 @@ func TestASecondDeciderFailsTheStartup(t *testing.T) {
 	}
 }
 
-// refusingDecider is a second implementation of the seam, delivered by a
-// stand-in module that claims nothing exclusively.
 type refusingDecider struct{}
 
 func (refusingDecider) Decide(context.Context, authn.Decision) (bool, error) { return false, nil }
 
-// stubPermissions answers the platform-domain read the impersonation rule makes.
 type stubPermissions struct {
 	held     map[string][]authz.Permission
 	err      error
@@ -447,8 +415,7 @@ func (s *stubPermissions) Held(_ context.Context, domain authz.Domain, subject s
 	return s.held[subject], nil
 }
 
-// An impersonation may not target an account holding a platform permission:
-// that account is an administrator, and administrators are never impersonated.
+// TestDecideRefusesAnAdministratorTarget checks that decide refuses an administrator target.
 func TestDecideRefusesAnAdministratorTarget(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -474,9 +441,7 @@ func TestDecideRefusesAnAdministratorTarget(t *testing.T) {
 	}
 }
 
-// A target holding no platform permission passes the impersonation rule, and a
-// decision that is not an impersonation start never reads the target's
-// permissions at all.
+// TestDecideAllowsANonAdministratorTargetAndSkipsOtherActions checks that decide allows a non administrator target and skips other actions.
 func TestDecideAllowsANonAdministratorTargetAndSkipsOtherActions(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
@@ -505,8 +470,7 @@ func TestDecideAllowsANonAdministratorTargetAndSkipsOtherActions(t *testing.T) {
 	}
 }
 
-// A permission read that fails is an outage, not an empty set: the target's
-// rank is unknown and the impersonation does not start.
+// TestDecideCarriesAPermissionReadFailure checks that Decide carries a permission read failure.
 func TestDecideCarriesAPermissionReadFailure(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }

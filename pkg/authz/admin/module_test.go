@@ -23,9 +23,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// TestTheDescriptorNamesWhatItRequiresAndDelivers holds the descriptor's shape:
-// the required capabilities, the logger as the one optional one, and that this
-// module delivers no capability of its own.
+// TestTheDescriptorNamesWhatItRequiresAndDelivers checks that the descriptor names what it requires and delivers.
 func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName || ModuleName != "authz.admin" {
@@ -57,7 +55,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabled holds the stance.
+// TestPrepareStatesEnabled checks that Prepare states enabled.
 func TestPrepareStatesEnabled(t *testing.T) {
 	module := Module()
 	reader := authntest.ConfigReader(t, module, `{"authz": {"admin": {"endpoints": ["public"]}}}`)
@@ -74,16 +72,14 @@ func TestPrepareStatesEnabled(t *testing.T) {
 	}
 }
 
-// TestImportingThePackageRegistersTheModuleWithTheProcess holds the init.
+// TestImportingThePackageRegistersTheModuleWithTheProcess checks that importing the package registers the module with the process.
 func TestImportingThePackageRegistersTheModuleWithTheProcess(t *testing.T) {
 	if _, ok := core.ProcessRegistry.Lookup(ModuleName); !ok {
 		t.Fatalf("the process registry holds no module named %s", ModuleName)
 	}
 }
 
-// TestEndpointsAreRequiredAndRefuseAsterisk holds the endpoint list's shape: an
-// absent or empty list is refused, and the wildcard that stands for every
-// endpoint is refused.
+// TestEndpointsAreRequiredAndRefuseAsterisk checks that endpoints are required and refuse asterisk.
 func TestEndpointsAreRequiredAndRefuseAsterisk(t *testing.T) {
 	t.Run("an empty list is refused", func(t *testing.T) {
 		if _, err := (moduleConfig{}).resolve(); !errors.Is(err, authn.ErrInvalidConfig) {
@@ -91,9 +87,6 @@ func TestEndpointsAreRequiredAndRefuseAsterisk(t *testing.T) {
 		}
 	})
 	t.Run("an absent item is refused by a real reader", func(t *testing.T) {
-		// The item is declared required, so the loader refuses a body that gives
-		// it no value before this module's own check runs; either way the read
-		// is refused.
 		reader := authntest.ConfigReader(t, Module(), `{}`)
 		if _, err := readConfig(reader); err == nil {
 			t.Fatal("reading a body with no endpoints was accepted, want a refusal")
@@ -116,9 +109,7 @@ func TestEndpointsAreRequiredAndRefuseAsterisk(t *testing.T) {
 	})
 }
 
-// TestAnUnknownAdminEndpointFailsInit holds the start-time check: an endpoint
-// name the entry point does not declare stops the startup and the failure names
-// it.
+// TestAnUnknownAdminEndpointFailsInit checks that an unknown admin endpoint fails init.
 func TestAnUnknownAdminEndpointFailsInit(t *testing.T) {
 	router := newStubRouter("public")
 	err := assembly{
@@ -133,9 +124,7 @@ func TestAnUnknownAdminEndpointFailsInit(t *testing.T) {
 	}
 }
 
-// TestARealRouterMountsEveryManagementRoute holds the descriptor end to end: the
-// module mounts its closed set of routes on the configured endpoint and declares
-// each of them open on the route-declaration surface.
+// TestARealRouterMountsEveryManagementRoute checks that a real router mounts every management route.
 func TestARealRouterMountsEveryManagementRoute(t *testing.T) {
 	router := newStubRouter("public")
 	gate := authztest.NewGate()
@@ -170,19 +159,10 @@ func TestARealRouterMountsEveryManagementRoute(t *testing.T) {
 	}
 }
 
-// assembly drives the module's descriptor through a real registry with a stub
-// router and stand-ins for the required capabilities. It is how the descriptor's
-// wiring — what Init takes up, which endpoints it mounts on, what a name the
-// entry point does not declare fails with — is observed.
 type assembly struct {
-	// body is the configuration, JSON; the default declares one endpoint of the
-	// entry point, "public".
-	body string
-	// router is supplied as the entry point; a nil one leaves the capability
-	// out, which must fail Init.
+	body   string
 	router speedhttp.Router
-	// gate is supplied as the route-declaration surface when set.
-	gate authz.Gate
+	gate   authz.Gate
 }
 
 func (a assembly) drive(t *testing.T, action func(*core.Registry)) error {
@@ -227,9 +207,7 @@ func (a assembly) drive(t *testing.T, action func(*core.Registry)) error {
 	})
 }
 
-// TestThePermissionTheRouteAsksFor holds that every route asks the handler for
-// the permission its method implies: a read asks for role.read and a write for
-// role.manage.
+// TestThePermissionTheRouteAsksFor checks that the permission the route asks for.
 func TestThePermissionTheRouteAsksFor(t *testing.T) {
 	t.Run("a read asks for role.read", func(t *testing.T) {
 		r := newRig(t)
@@ -248,9 +226,7 @@ func TestThePermissionTheRouteAsksFor(t *testing.T) {
 	})
 }
 
-// TestTheDecisionIsAskedInThePlatformDomain holds the domain the handler
-// asks the guard to decide in: the platform domain, whatever tenant the path
-// names.
+// TestTheDecisionIsAskedInThePlatformDomain checks that the decision is asked in the platform domain.
 func TestTheDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	r.serve(readRoute(r.p, roleListOperation.Handle(r.p.handleRoleList)), http.MethodGet, "/api/v1/system/tenants/other/roles", params("tenant", "other"), nil)
@@ -259,8 +235,7 @@ func TestTheDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	}
 }
 
-// TestADeniedCallerIsRefusedBeforeTheManager holds that a decision shortfall
-// ends the handler before anything else: the manager is never called.
+// TestADeniedCallerIsRefusedBeforeTheManager checks that a denied caller is refused before the manager.
 func TestADeniedCallerIsRefusedBeforeTheManager(t *testing.T) {
 	r := newRig(t)
 	r.guard.allow = false
@@ -273,10 +248,7 @@ func TestADeniedCallerIsRefusedBeforeTheManager(t *testing.T) {
 	}
 }
 
-// TestAnAnonymousCallerGetsA401 holds that a request with no identity is refused
-// as a 401 before the guard is asked and before the manager is called, and that
-// the answer is the shape the admission and authorization layers write for the
-// same condition: no problem type and the realm challenge.
+// TestAnAnonymousCallerGetsA401 checks that an anonymous caller gets a 401.
 func TestAnAnonymousCallerGetsA401(t *testing.T) {
 	r := newRig(t)
 	w := r.serveAnonymous(rolePutRoute(r.p), http.MethodPut, "/api/v1/system/tenants/t1/roles/r1",
@@ -298,8 +270,7 @@ func TestAnAnonymousCallerGetsA401(t *testing.T) {
 	}
 }
 
-// TestAGuardOutageIsA503 holds that an outage from the guard, which is not a
-// denial, is answered as the guard wrote it and nothing else runs.
+// TestAGuardOutageIsA503 checks that a guard outage is a 503.
 func TestAGuardOutageIsA503(t *testing.T) {
 	r := newRig(t)
 	r.guard.err = errors.New("the engine is unavailable")
@@ -313,9 +284,7 @@ func TestAGuardOutageIsA503(t *testing.T) {
 	}
 }
 
-// TestTheMandatoryAuditLandsBeforeTheWrite holds the write path's order: the
-// mandatory row lands before the manager is called, and a row that does not land
-// refuses the write with a 503.
+// TestTheMandatoryAuditLandsBeforeTheWrite checks that the mandatory audit lands before the write.
 func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	t.Run("a landing row precedes the write", func(t *testing.T) {
 		r := newRig(t)
@@ -346,9 +315,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	})
 }
 
-// TestAFailedWriteLeavesAFailedRow holds that a write the manager refuses is
-// closed with a failed audit row linked to the permitted one by the action
-// identifier.
+// TestAFailedWriteLeavesAFailedRow checks that a failed write leaves a failed row.
 func TestAFailedWriteLeavesAFailedRow(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrBuiltinRole)
@@ -369,8 +336,7 @@ func TestAFailedWriteLeavesAFailedRow(t *testing.T) {
 	}
 }
 
-// TestTheFailureToAnswerMapping holds the closed mapping from a manager failure
-// to its answer, including the problem type each refusal carries.
+// TestTheFailureToAnswerMapping checks that the failure to answer mapping.
 func TestTheFailureToAnswerMapping(t *testing.T) {
 	for name, tc := range map[string]struct {
 		err      error
@@ -403,9 +369,7 @@ func TestTheFailureToAnswerMapping(t *testing.T) {
 	}
 }
 
-// TestAGrantOnAnUnknownPermissionIsRefusedBeforeTheManager holds the grant
-// route's own check: a permission the catalog does not hold is a 400 and the
-// manager is not called.
+// TestAGrantOnAnUnknownPermissionIsRefusedBeforeTheManager checks that a grant on an unknown permission is refused before the manager.
 func TestAGrantOnAnUnknownPermissionIsRefusedBeforeTheManager(t *testing.T) {
 	t.Run("an undeclared permission", func(t *testing.T) {
 		r := newRig(t)
@@ -440,9 +404,7 @@ func TestAGrantOnAnUnknownPermissionIsRefusedBeforeTheManager(t *testing.T) {
 	})
 }
 
-// TestABindingCarriesTheNaturalKeys holds that the binding route passes the
-// tenant, the account and the role from the path to the manager and lands the
-// mandatory row first.
+// TestABindingCarriesTheNaturalKeys checks that a binding carries the natural keys.
 func TestABindingCarriesTheNaturalKeys(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
@@ -460,8 +422,7 @@ func TestABindingCarriesTheNaturalKeys(t *testing.T) {
 	}
 }
 
-// TestTheCatalogRouteShowsTheDeclaredPermissions holds that the permission route
-// answers the catalog's declared permissions as views.
+// TestTheCatalogRouteShowsTheDeclaredPermissions checks that the catalog route shows the declared permissions.
 func TestTheCatalogRouteShowsTheDeclaredPermissions(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead, authz.PermissionRoleManage)
 	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
@@ -479,8 +440,7 @@ func TestTheCatalogRouteShowsTheDeclaredPermissions(t *testing.T) {
 	}
 }
 
-// TestTheManagementRoutesServeOnTheRealEntryPoint checks that the management
-// routes answer through the real entry point.
+// TestTheManagementRoutesServeOnTheRealEntryPoint checks that the management routes serve on the real entry point.
 func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	logs := newCapturedLogs()
 	body := `{
@@ -504,9 +464,6 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	reg.Register(standIn("stand-in.verification", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
 	reg.Register(standIn("stand-in.subject", &stubSubjectPermissions{}, (*authz.SubjectPermissions)(nil)))
 	reg.Register(standIn("stand-in.logger", loggerStub{logger: slog.New(logs)}, (*log.Logger)(nil)))
-	// The entry point's own Serve binds the address and writes the listening
-	// record; this module sorts after it by name, so its Serve runs once the
-	// address is bound and the channel is a deterministic signal.
 	reg.Register(core.Module{
 		Name:  "stand-in.serve",
 		New:   func(context.Context, *core.Registry) (any, error) { return struct{}{}, nil },
@@ -549,10 +506,6 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	if mounted != http.StatusUnauthorized {
 		t.Fatalf("a mounted route answered %d, want 401: the request carries no identity", mounted)
 	}
-	// The anonymous request reaches the handler through the real router, which
-	// mounted it with the endpoint's name as the realm: the 401 is the shape the
-	// admission and authorization layers write — no problem type, and the realm
-	// challenge naming the endpoint.
 	code, header, body := requestOf(t, "http://"+address+"/api/v1/system/permissions")
 	if code != http.StatusUnauthorized {
 		t.Fatalf("the anonymous request answered %d, want 401", code)
@@ -568,13 +521,10 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	}
 }
 
-// waitLimit bounds every wait, so a startup that never reaches Serve fails the
-// case with a message and not the binary at the global timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// statusOf sends a GET and returns the status code.
 func statusOf(t *testing.T, url string) int {
 	t.Helper()
 	client := &http.Client{Timeout: waitLimit(), Transport: &http.Transport{DisableKeepAlives: true}}
@@ -587,8 +537,6 @@ func statusOf(t *testing.T, url string) int {
 	return resp.StatusCode
 }
 
-// requestOf sends a GET and returns the status, the headers and the body, so a
-// case can hold the shape of an answer besides its status.
 func requestOf(t *testing.T, url string) (int, http.Header, string) {
 	t.Helper()
 	client := &http.Client{Timeout: waitLimit(), Transport: &http.Transport{DisableKeepAlives: true}}

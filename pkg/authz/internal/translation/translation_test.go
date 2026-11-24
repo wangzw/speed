@@ -11,19 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// A module that declares a permission of its own declares how it translates it.
-// These cases resolve a process's translation over such a declaration and hold
-// what the resolved set is: the module's row beside the built-in ones, the
-// built-in rows unchanged, and the three shapes of a declared row that fail the
-// resolution.
-
-// declaredPermission is a permission of a module's own, beyond the ones the
-// capability carries.
 const declaredPermission = authz.Permission("crm.deal.read")
 
-// declaredModule builds a stand-in module that declares the given permission
-// rows of its own: the permission spec listing them and the translation spec
-// beside it, the way a business module carries both.
 func declaredModule(name string, rows map[authz.Permission]authz.Translation) core.Module {
 	return core.Module{
 		Name: name,
@@ -34,9 +23,6 @@ func declaredModule(name string, rows map[authz.Permission]authz.Translation) co
 	}
 }
 
-// resolveModules installs the process's translation set over the given stand-in
-// modules. The built-in-only set is restored when the case ends, so one case's
-// rows do not reach the next.
 func resolveModules(t *testing.T, modules ...core.Module) {
 	t.Helper()
 	reg := core.New()
@@ -49,15 +35,11 @@ func resolveModules(t *testing.T, modules ...core.Module) {
 	t.Cleanup(Reset)
 }
 
-// resolveDeclared installs the process's translation set over one stand-in
-// module that declares the given rows.
 func resolveDeclared(t *testing.T, rows map[authz.Permission]authz.Translation) {
 	t.Helper()
 	resolveModules(t, declaredModule("stand-in.business", rows))
 }
 
-// sortedKeys gives the rows' permissions in order, so the fixture's permission
-// spec does not depend on map iteration order.
 func sortedKeys(rows map[authz.Permission]authz.Translation) []authz.Permission {
 	keys := make([]authz.Permission, 0, len(rows))
 	for p := range rows {
@@ -67,9 +49,7 @@ func sortedKeys(rows map[authz.Permission]authz.Translation) []authz.Permission 
 	return keys
 }
 
-// The built-in set is exactly the rows this capability carries: every
-// permission of the two vocabularies maps to its one (object, action) pair,
-// and the set holds no row beyond them.
+// TestTheBuiltinSetIsTheWholeClosedSet checks that the builtin set is the whole closed set.
 func TestTheBuiltinSetIsTheWholeClosedSet(t *testing.T) {
 	want := map[authz.Permission][2]string{
 		authz.PermissionTenantAccess:        {"tenant", "access"},
@@ -117,12 +97,8 @@ func TestTheBuiltinSetIsTheWholeClosedSet(t *testing.T) {
 	}
 }
 
-// The union does not change a built-in row: every row this capability carries
-// still translates to the same (object, action) after a module's row is added.
+// TestTheBuiltinRowsSurviveTheUnion checks that the builtin rows survive the union.
 func TestTheBuiltinRowsSurviveTheUnion(t *testing.T) {
-	// The rows as they stand before any module's is added. Reading them first is
-	// what makes the case an assertion: comparing the set after the resolution
-	// with itself would pass whatever the resolution did to it.
 	before := make(map[authz.Permission][2]string, len(Builtin()))
 	for _, key := range Builtin() {
 		object, action, _ := Lookup(key)
@@ -145,10 +121,7 @@ func TestTheBuiltinRowsSurviveTheUnion(t *testing.T) {
 	}
 }
 
-// A module may not disagree with a row already in the set, on either axis of
-// the pair: a row that names a permission already translated as another pair
-// fails the resolution, wrapped around the same sentinel the declaration
-// check uses, and the failed resolution installs nothing.
+// TestATranslationConflictFailsResolution checks that a translation conflict fails resolution.
 func TestATranslationConflictFailsResolution(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -170,9 +143,6 @@ func TestATranslationConflictFailsResolution(t *testing.T) {
 			if !errors.Is(err, authz.ErrUnknownPermission) {
 				t.Fatalf("resolving a disagreeing row = %v, want an error wrapping ErrUnknownPermission", err)
 			}
-			// The diagnostic names both pairs — the declared one and the one in
-			// force — so it says what the module asked for and what it is up
-			// against.
 			for _, want := range []string{
 				strconv.Quote(tc.declared.Object), strconv.Quote(tc.declared.Action),
 				strconv.Quote("account"), strconv.Quote("read"),
@@ -190,10 +160,7 @@ func TestATranslationConflictFailsResolution(t *testing.T) {
 	}
 }
 
-// Every registered module's rows reach the process's translation, not just the
-// first module's: a process that carries two business modules decides on both of
-// their declared permissions, so a resolution that stopped at the first module
-// would leave the second module's routes untranslatable.
+// TestEachModulesRowReachesTheTranslation checks that each module's row reaches the translation.
 func TestEachModulesRowReachesTheTranslation(t *testing.T) {
 	first := authz.Permission("crm.a.read")
 	second := authz.Permission("crm.b.write")
@@ -217,10 +184,7 @@ func TestEachModulesRowReachesTheTranslation(t *testing.T) {
 	}
 }
 
-// Every row of a module reaches the process's translation, not just the first: a
-// module that declares more than one permission of its own has each of them
-// translatable, so a resolution that stopped after the first row would leave the
-// rest untranslatable.
+// TestEveryRowOfAModuleReachesTheTranslation checks that every row of a module reaches the translation.
 func TestEveryRowOfAModuleReachesTheTranslation(t *testing.T) {
 	first := authz.Permission("crm.a.read")
 	second := authz.Permission("crm.b.write")
@@ -240,9 +204,7 @@ func TestEveryRowOfAModuleReachesTheTranslation(t *testing.T) {
 	}
 }
 
-// A row that agrees with one already in the set is kept once and is not a
-// failure: a module may re-declare a built-in row, and two modules may
-// declare one permission between them.
+// TestAnAgreeingTranslationRowIsKept checks that an agreeing translation row is kept.
 func TestAnAgreeingTranslationRowIsKept(t *testing.T) {
 	t.Run("a module may re-declare a built-in row", func(t *testing.T) {
 		reg := core.New()
@@ -277,7 +239,7 @@ func TestAnAgreeingTranslationRowIsKept(t *testing.T) {
 	})
 }
 
-// Two permissions may not translate to one pair.
+// TestASharedPairFailsResolution checks that a shared pair fails resolution.
 func TestASharedPairFailsResolution(t *testing.T) {
 	t.Run("a module row reusing a carried row's pair", func(t *testing.T) {
 		moduleRow := authz.Permission("crm.account.read")
@@ -292,7 +254,6 @@ func TestASharedPairFailsResolution(t *testing.T) {
 		if !errors.Is(err, authz.ErrUnknownPermission) {
 			t.Fatalf("resolving a module row sharing a carried row's pair = %v, want an error wrapping ErrUnknownPermission", err)
 		}
-		// The diagnostic names the pair and the permission already carrying it.
 		for _, want := range []string{`"account"`, `"read"`, strconv.Quote(string(authz.PermissionAccountRead))} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the collision error %q does not name %s", err, want)
@@ -325,10 +286,7 @@ func TestASharedPairFailsResolution(t *testing.T) {
 	})
 }
 
-// A declared row with an empty object or action fails the resolution: the engine
-// matches a permission on its pair alone, so a permission whose pair is empty is
-// one no grant can distinguishably carry, and a route that names it would pass
-// the declaration check and then be refused on every request.
+// TestAnEmptyTranslationRowFailsResolution checks that an empty translation row fails resolution.
 func TestAnEmptyTranslationRowFailsResolution(t *testing.T) {
 	cases := []struct {
 		name     string

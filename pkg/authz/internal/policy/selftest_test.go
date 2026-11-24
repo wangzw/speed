@@ -7,15 +7,14 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// The model text the process enforces with passes the self-check.
+// TestSelfCheckAcceptsTheModelText checks that self check accepts the model text.
 func TestSelfCheckAcceptsTheModelText(t *testing.T) {
 	if err := SelfCheck(authz.ModelText); err != nil {
 		t.Fatalf("SelfCheck refused the model text: %v", err)
 	}
 }
 
-// A model whose matcher lost a clause is refused, and every fixture that
-// disagrees is named.
+// TestSelfCheckRefusesATamperedModel checks that selfCheck refuses a tampered model.
 func TestSelfCheckRefusesATamperedModel(t *testing.T) {
 	cases := []struct {
 		name     string

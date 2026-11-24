@@ -8,7 +8,6 @@ import (
 	casbinmodel "github.com/casbin/casbin/v3/model"
 )
 
-// The fixed facts the self-check is built from.
 const (
 	checkDomainA = "selfcheck-a"
 	checkDomainB = "selfcheck-b"
@@ -18,23 +17,17 @@ const (
 	checkAction  = "read"
 )
 
-// fixture is one assertion about the model's behaviour: the policy rows it is
-// given and the query it puts, with the answer the model must give.
 type fixture struct {
 	name     string
-	grants   [][4]string // role, domain, object, action
-	bindings [][3]string // account, role, domain
-	query    [4]string   // account, domain, object, action
+	grants   [][4]string
+	bindings [][3]string
+	query    [4]string
 
-	// again asks the query a second time and holds the second answer to the
-	// first.
 	again bool
 
 	want bool
 }
 
-// fixtures are the whole self-check: each case turns on a clause a wrong model
-// text silently changes.
 var fixtures = []fixture{
 	{
 		name:     "a role's grant reaches the account bound to it in the same domain",
@@ -109,8 +102,6 @@ func SelfCheck(text string) error {
 		strings.Join(reports, "; "))
 }
 
-// runFixture evaluates one fixture on a fresh model, so that no case's rows
-// reach another's.
 func runFixture(text string, f fixture) (bool, error) {
 	model, err := casbinmodel.NewModelFromString(text)
 	if err != nil {
@@ -120,8 +111,7 @@ func runFixture(text string, f fixture) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	// The fixtures are written into the model alone: there is no store to
-	// persist through, and auto-save is left off so the rows stay in memory.
+	// The fixtures are written into the model alone, with auto-save off, so no row reaches a store.
 	enforcer.EnableAutoSave(false)
 	for _, g := range f.grants {
 		_, err = enforcer.AddPolicy(g[0], g[1], g[2], g[3])

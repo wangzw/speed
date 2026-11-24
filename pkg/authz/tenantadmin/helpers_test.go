@@ -22,9 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The stubs implement the root interfaces and the handler-internal guard the
-// module takes up, so a stub and an interface cannot drift apart without failing
-// the build.
 var (
 	_ authz.Manager                   = (*stubManager)(nil)
 	_ authz.Catalog                   = (*stubCatalog)(nil)
@@ -39,8 +36,6 @@ var (
 	_ speedhttp.TenantAdminRouteGuard = (*stubRouteGuard)(nil)
 )
 
-// managerCall is one call the stub manager recorded: the method's name and the
-// arguments that name a row, so a case can hold what the handler passed on.
 type managerCall struct {
 	op      string
 	tenant  string
@@ -53,9 +48,6 @@ type managerCall struct {
 	roleRec authz.RoleRecord
 }
 
-// stubManager is a stand-in authz.Manager. It records every call, answers reads
-// from what a case set, and fails every method with the same error when one is
-// set.
 type stubManager struct {
 	mu       sync.Mutex
 	calls    []managerCall
@@ -63,14 +55,9 @@ type stubManager struct {
 	grants   []authz.GrantRecord
 	bindings []authz.Binding
 	err      error
-	// catalog maps a grant back to a permission, the way the product's catalog
-	// does. The rig sets it to the catalog the product takes up.
-	catalog authz.Catalog
+	catalog  authz.Catalog
 }
 
-// RoleSubsetHeld is the anti-escalation judgement the binding route asks the
-// manager for. It maps the role's grants through the catalog the rig delivered,
-// so a case holds the same answer the policy module gives.
 func (m *stubManager) RoleSubsetHeld(_ context.Context, tenant string, role authz.Role,
 	held map[authz.Permission]bool,
 ) (bool, error) {
@@ -195,7 +182,6 @@ func (m *stubManager) ClearAccountBindings(_ context.Context, tenant, account st
 	return m.errNow()
 }
 
-// GrantCounts counts the grants a case put in the stub, grouped by role.
 func (m *stubManager) GrantCounts(_ context.Context, tenant string) (map[authz.Role]int, error) {
 	m.record(managerCall{op: "GrantCounts", tenant: tenant})
 	if err := m.errNow(); err != nil {
@@ -210,8 +196,6 @@ func (m *stubManager) GrantCounts(_ context.Context, tenant string) (map[authz.R
 	return counts, nil
 }
 
-// BindingsOfRole filters the stub's bindings the way the real manager does: by
-// role, after the account cursor, and up to a positive limit.
 func (m *stubManager) BindingsOfRole(_ context.Context, tenant string, role authz.Role, after string, limit int) ([]authz.Binding, error) {
 	m.record(managerCall{op: "BindingsOfRole", tenant: tenant, role: role, after: after, limit: limit})
 	if err := m.errNow(); err != nil {
@@ -232,8 +216,6 @@ func (m *stubManager) BindingsOfRole(_ context.Context, tenant string, role auth
 	return out, nil
 }
 
-// stubCatalog is a stand-in authz.Catalog over a fixed set of permissions and a
-// governed subset. It records every Governed and Has query.
 type stubCatalog struct {
 	mu          sync.Mutex
 	perms       []authz.Permission
@@ -260,7 +242,6 @@ func newStubCatalog(perms ...authz.Permission) *stubCatalog {
 	}
 }
 
-// govern marks the permissions, which must already be declared, as governed.
 func (c *stubCatalog) govern(perms ...authz.Permission) *stubCatalog {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -338,7 +319,6 @@ func (c *stubCatalog) DescriptionKey(p authz.Permission) (key string, ok bool) {
 	return c.keys[p], true
 }
 
-// Metadata answers the governance metadata a case gave a declared permission.
 func (c *stubCatalog) Metadata(p authz.Permission) (authz.PermissionMeta, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -348,8 +328,6 @@ func (c *stubCatalog) Metadata(p authz.Permission) (authz.PermissionMeta, bool) 
 	return c.metadata[p], true
 }
 
-// stubSubjectPermissions answers Held from what a case scripts and records the
-// domain and subject it was asked about.
 type stubSubjectPermissions struct {
 	mu       sync.Mutex
 	held     []authz.Permission
@@ -391,8 +369,6 @@ func (s *stubSubjectPermissions) asked() ([]authz.Domain, []string) {
 	return append([]authz.Domain(nil), s.domains...), append([]string(nil), s.subjects...)
 }
 
-// stubMembership answers IsMember from what a case scripts and records the
-// tenant and account it was asked about.
 type stubMembership struct {
 	mu       sync.Mutex
 	member   bool
@@ -418,9 +394,6 @@ func (m *stubMembership) asked() ([]string, []string) {
 	return append([]string(nil), m.tenants...), append([]string(nil), m.accounts...)
 }
 
-// stubIdentities is a stand-in authz.AccountIdentityReader. It answers the
-// identities a case scripted for the accounts a read names and records what it
-// was asked.
 type stubIdentities struct {
 	mu        sync.Mutex
 	byAccount map[string]authz.AccountIdentity
@@ -471,14 +444,11 @@ func (s *stubIdentities) lastAsked() []string {
 	return append([]string(nil), s.asked[len(s.asked)-1]...)
 }
 
-// writeGuardCall is one question the stand-in write guard was asked.
 type writeGuardCall struct {
 	tenant string
 	op     authz.WriteOp
 }
 
-// stubWriteGuard is a stand-in authz.WriteGuard. Its zero value permits every
-// write and records what it was asked.
 type stubWriteGuard struct {
 	mu     sync.Mutex
 	calls  []writeGuardCall
@@ -502,8 +472,6 @@ func (g *stubWriteGuard) asked() []writeGuardCall {
 func (g *stubWriteGuard) refuse()        { g.mu.Lock(); g.denied = true; g.mu.Unlock() }
 func (g *stubWriteGuard) fail(err error) { g.mu.Lock(); g.err = err; g.mu.Unlock() }
 
-// stubGuard is a stand-in guard.Guard. It records the permission and domain
-// every decision asked about and answers from one setting.
 type stubGuard struct {
 	mu      sync.Mutex
 	allow   bool
@@ -565,7 +533,6 @@ func (g *stubGuard) domainsAsked() []authz.Domain {
 	return append([]authz.Domain(nil), g.domains...)
 }
 
-// recordingAudit keeps the rows it was asked to write and can be told to fail.
 type recordingAudit struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -587,10 +554,8 @@ func (a *recordingAudit) entries() []audit.Entry {
 
 func (a *recordingAudit) fail(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
 
-// mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }
 
-// stubEndpoint records the routes registered on it.
 type stubEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -612,7 +577,6 @@ func (e *stubEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// stubRouter is a stand-in speedhttp.Router over a fixed set of endpoints.
 type stubRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*stubEndpoint
@@ -650,10 +614,6 @@ func (r *stubRouter) endpoint(name string) *stubEndpoint {
 	return r.endpoints[name]
 }
 
-// stubRouteGuard stands in for the tenant administration guard. It records that
-// it wrapped a handler and answers with the status a case scripts, or passes
-// the request through when refuse is false. The shared guard is recorded
-// separately so a case can hold that this module applies the stricter one.
 type stubRouteGuard struct {
 	mu      sync.Mutex
 	wrapped int
@@ -662,9 +622,6 @@ type stubRouteGuard struct {
 	status  int
 }
 
-// Guard is the shared identity guard. The tenant administration surface must
-// not use it, because it would leave the platform domain addressable; a case
-// asserts sharedCount stays zero.
 func (g *stubRouteGuard) Guard(next gin.HandlerFunc) gin.HandlerFunc {
 	g.mu.Lock()
 	g.shared++
@@ -695,8 +652,6 @@ func (g *stubRouteGuard) wrapCount() int {
 	return g.wrapped
 }
 
-// sharedCount is how often the shared guard was applied. The tenant
-// administration surface applies the stricter one alone.
 func (g *stubRouteGuard) sharedCount() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -710,19 +665,16 @@ func (g *stubRouteGuard) refuseWith(status int) {
 	g.status = status
 }
 
-// loggerStub delivers the logging capability over a recorder.
 type loggerStub struct{ logger *slog.Logger }
 
 func (l loggerStub) Named(string) *slog.Logger { return l.logger }
 func (loggerStub) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes redaction registrations and masks nothing.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// logBuffer collects what the module logs.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -744,8 +696,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// stubLocalizer renders a message from an in-memory index the way the engine
-// does.
 type stubLocalizer struct {
 	index         map[i18n.Locale]map[i18n.Key]string
 	defaultLocale i18n.Locale
@@ -774,7 +724,6 @@ func (s stubLocalizer) Translate(locale i18n.Locale, key i18n.Key, _ i18n.Args) 
 
 var _ i18n.Localizer = stubLocalizer{}
 
-// standIn is a module that delivers instance for the tokens named.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -787,8 +736,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// fakeSignupVerification answers the acting account's self-registration state
-// with what a case scripts and counts the reads.
 type fakeSignupVerification struct {
 	mu     sync.Mutex
 	state  authn.SignupState
@@ -827,16 +774,12 @@ func (v *fakeSignupVerification) lastAccount() authn.AccountID {
 	return v.lastID
 }
 
-// identityNames stands in for the roster's id-to-name seam over fixtures
-// whose identifiers double as their names.
 type identityNames struct{}
 
 func (identityNames) TenantNameOf(_ context.Context, id string) (string, error) {
 	return id, nil
 }
 
-// nameStub answers the names a case maps and keeps the identifier as the
-// name of every row the map does not name.
 type nameStub struct{ byID map[string]string }
 
 func (a nameStub) TenantNameOf(_ context.Context, id string) (string, error) {

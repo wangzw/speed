@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// TestTheAuditVocabularyIsPinned holds the literal values of the action names,
-// the outcome values and the detail keys this module writes.
+// TestTheAuditVocabularyIsPinned checks that the audit vocabulary is pinned.
 func TestTheAuditVocabularyIsPinned(t *testing.T) {
 	actions := map[string]string{
 		"role put":       actionRolePut,
@@ -56,9 +55,7 @@ func TestTheAuditVocabularyIsPinned(t *testing.T) {
 	}
 }
 
-// TestTheTenantActionsAreThePlatformActionsPrefixed holds that the tenant
-// surface's action names are distinguishable from the platform surface's: no
-// tenant action is one the platform surface writes.
+// TestTheTenantActionsAreThePlatformActionsPrefixed checks that the tenant actions are the platform actions prefixed.
 func TestTheTenantActionsAreThePlatformActionsPrefixed(t *testing.T) {
 	platform := []string{
 		"authz.role.put", "authz.role.delete", "authz.grant.put", "authz.grant.delete",
@@ -77,8 +74,7 @@ func TestTheTenantActionsAreThePlatformActionsPrefixed(t *testing.T) {
 	}
 }
 
-// TestEachActionIDIsFresh holds that newActionID mints a fresh identifier per
-// write.
+// TestEachActionIDIsFresh checks that each action ID is fresh.
 func TestEachActionIDIsFresh(t *testing.T) {
 	a, b := newActionID(), newActionID()
 	if a == "" || b == "" {
@@ -89,8 +85,7 @@ func TestEachActionIDIsFresh(t *testing.T) {
 	}
 }
 
-// TestTheEmittedDetailKeysAreTheLiterals holds the keys the module writes on the
-// wire of the audit row without going through the module's own constants.
+// TestTheEmittedDetailKeysAreTheLiterals checks that the emitted detail keys are the literals.
 func TestTheEmittedDetailKeysAreTheLiterals(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(errors.New("the store is down"))

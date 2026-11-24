@@ -12,8 +12,7 @@ import (
 	"testing"
 )
 
-// TestTheSentinelSetIsClosed checks that the package declares exactly the
-// sentinel names the failure table lists, with distinct messages.
+// TestTheSentinelSetIsClosed checks that the sentinel set is closed.
 func TestTheSentinelSetIsClosed(t *testing.T) {
 	sentinels := []struct {
 		name string
@@ -63,11 +62,6 @@ func TestTheSentinelSetIsClosed(t *testing.T) {
 	}
 }
 
-// rootSentinelDecls reads the root package's non-test files and returns every
-// package-level variable declared from a call to errors.New, keyed by name; the
-// value is the message the call is given. A sentinel is a stable errors.New
-// value a caller judges with errors.Is, so that constructor is the shape read: a
-// var of another shape is not a sentinel and is not part of the set.
 func rootSentinelDecls(t *testing.T) map[string]string {
 	t.Helper()
 	dir := thisPackageDir(t)
@@ -87,9 +81,6 @@ func rootSentinelDecls(t *testing.T) map[string]string {
 	return found
 }
 
-// collectSentinels adds to into the package-level variables of file declared
-// from a call to errors.New, keyed by name. A var whose value is not such a call
-// is skipped.
 func collectSentinels(t *testing.T, file *ast.File, into map[string]string) {
 	t.Helper()
 	for _, decl := range file.Decls {
@@ -116,8 +107,6 @@ func collectSentinels(t *testing.T, file *ast.File, into map[string]string) {
 	}
 }
 
-// errorsNewMessage reports the string errors.New is given when expr is a call to
-// errors.New, and whether expr is such a call.
 func errorsNewMessage(expr ast.Expr) (string, bool) {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
@@ -145,9 +134,6 @@ func errorsNewMessage(expr ast.Expr) (string, bool) {
 	return message, true
 }
 
-// thisPackageDir is this test file's directory, the root package pkg/authz. It is
-// read from the file's own location so that the reading finds the sources
-// wherever go test is run from.
 func thisPackageDir(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

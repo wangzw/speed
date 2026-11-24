@@ -19,9 +19,6 @@ import (
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// tenantFilter returns the real statement filter the tenant catalog installs on
-// the handles an assembly hands a module, taken from the module's own
-// declarations.
 func tenantFilter(t *testing.T) gorm.Plugin {
 	t.Helper()
 	for _, resource := range tenantcatalog.Module().Resources {
@@ -34,12 +31,8 @@ func tenantFilter(t *testing.T) gorm.Plugin {
 	return nil
 }
 
-// fixture is a product over a real handle with the policy tables created and
-// the tenant filter installed.
 type fixture struct{ *product }
 
-// newFixture delivers a SQLite handle through the database module, installs the
-// tenant filter, creates the policy tables and starts the product.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
@@ -76,8 +69,7 @@ func (f *fixture) allow(t *testing.T, account, domain string) bool {
 	return allowed
 }
 
-// A role, its grant and a binding written through the manager decide a query on
-// the granting tenant and no other.
+// TestManagerWritesDecideByTenant checks that manager writes decide by tenant.
 func TestManagerWritesDecideByTenant(t *testing.T) {
 	f := newFixture(t)
 
@@ -114,7 +106,7 @@ func TestManagerWritesDecideByTenant(t *testing.T) {
 	}
 }
 
-// A grant or a binding naming a role that was not created is refused.
+// TestManagerRefusesAnUnknownRole checks that manager refuses an unknown role.
 func TestManagerRefusesAnUnknownRole(t *testing.T) {
 	f := newFixture(t)
 	err := f.PutGrant(t.Context(), authz.GrantRecord{Tenant: "acme", Role: "ghost", Resource: "account", Action: "read"})
@@ -127,8 +119,7 @@ func TestManagerRefusesAnUnknownRole(t *testing.T) {
 	}
 }
 
-// A builtin role's grants are fixed: it cannot be deleted, its grants cannot be
-// changed, and it cannot be rewritten.
+// TestManagerRefusesToChangeABuiltinRole checks that manager refuses to change a builtin role.
 func TestManagerRefusesToChangeABuiltinRole(t *testing.T) {
 	f := newFixture(t)
 	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: "system", Role: "operator", DescriptionKey: "k"}); err != nil {
@@ -140,8 +131,6 @@ func TestManagerRefusesToChangeABuiltinRole(t *testing.T) {
 	if err := f.DeleteRole(t.Context(), "system", "operator"); !errors.Is(err, authz.ErrBuiltinRole) {
 		t.Errorf("DeleteRole on a builtin role gave %v, want ErrBuiltinRole", err)
 	}
-	// A builtin role can be bound to an account: that is how platform
-	// operations are handed out.
 	if err := f.PutBinding(t.Context(), authz.Binding{Tenant: "system", Account: "acc9", Role: "operator"}); err != nil {
 		t.Errorf("PutBinding a builtin role: %v", err)
 	}
@@ -152,13 +141,10 @@ func TestManagerRefusesToChangeABuiltinRole(t *testing.T) {
 	if err := f.DeleteGrant(t.Context(), grant); !errors.Is(err, authz.ErrBuiltinRole) {
 		t.Errorf("DeleteGrant on a builtin role gave %v, want ErrBuiltinRole", err)
 	}
-	// Rewriting an existing builtin role is refused.
 	err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: "system", Role: "operator", DescriptionKey: "changed"})
 	if !errors.Is(err, authz.ErrBuiltinRole) {
 		t.Errorf("PutRole over a builtin role gave %v, want ErrBuiltinRole", err)
 	}
-	// The refusals leave the role standing: a refused delete that removed the
-	// row anyway would still lock the operator out.
 	roles, err := f.Roles(t.Context(), "system")
 	if err != nil {
 		t.Fatalf("Roles: %v", err)
@@ -168,9 +154,7 @@ func TestManagerRefusesToChangeABuiltinRole(t *testing.T) {
 	}
 }
 
-// The refusal belongs to the builtin flag and not to roles in general: a role
-// that is not builtin keeps its write paths, so the guard is not wider than the
-// defect it answers.
+// TestManagerStillChangesANonBuiltinRole checks that manager still changes a non builtin role.
 func TestManagerStillChangesANonBuiltinRole(t *testing.T) {
 	f := newFixture(t)
 	const tenant = "acme"
@@ -192,13 +176,11 @@ func TestManagerStillChangesANonBuiltinRole(t *testing.T) {
 	}
 }
 
-// A role write never carries the builtin mark, whether it creates or
-// rewrites the role.
+// TestManagerRefusesARoleWriteCarryingTheBuiltinMark checks that manager refuses a role write carrying the builtin mark.
 func TestManagerRefusesARoleWriteCarryingTheBuiltinMark(t *testing.T) {
 	f := newFixture(t)
 	const tenant = "acme"
 
-	// A rewrite of an existing plain role cannot promote it.
 	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "editor", DescriptionKey: "k"}); err != nil {
 		t.Fatalf("PutRole: %v", err)
 	}
@@ -214,8 +196,6 @@ func TestManagerRefusesARoleWriteCarryingTheBuiltinMark(t *testing.T) {
 		t.Errorf("the refused rewrite changed the role's mark: %+v", roles)
 	}
 
-	// A creation cannot carry it either: builtin with no grants is a role
-	// whose permissions can never be written.
 	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: tenant, Role: "frozen", Builtin: true, DescriptionKey: "k"}); !errors.Is(err, authz.ErrBuiltinRole) {
 		t.Errorf("PutRole creating a builtin role gave %v, want ErrBuiltinRole", err)
 	}
@@ -224,7 +204,7 @@ func TestManagerRefusesARoleWriteCarryingTheBuiltinMark(t *testing.T) {
 	}
 }
 
-// The builtin mark has its own write.
+// TestManagerMarksARoleBuiltin checks that manager marks a role builtin.
 func TestManagerMarksARoleBuiltin(t *testing.T) {
 	f := newFixture(t)
 	const tenant = "acme"
@@ -251,14 +231,12 @@ func TestManagerMarksARoleBuiltin(t *testing.T) {
 	if !roles[0].Builtin {
 		t.Errorf("Roles = %+v, want the role marked builtin", roles)
 	}
-	// The mark leaves the rest of the record as it stood.
 	if roles[0].DescriptionKey != "k" {
 		t.Errorf("the mark changed the description key to %q, want it kept", roles[0].DescriptionKey)
 	}
 }
 
-// An empty tenant argument is refused: a row belonging to no tenant reaches no
-// tenant's decision.
+// TestManagerRefusesAnEmptyTenant checks that manager refuses an empty tenant.
 func TestManagerRefusesAnEmptyTenant(t *testing.T) {
 	f := newFixture(t)
 	if err := f.PutRole(t.Context(), authz.RoleRecord{Role: "roleA", DescriptionKey: "k"}); !errors.Is(err, authz.ErrTenantMismatch) {
@@ -269,8 +247,7 @@ func TestManagerRefusesAnEmptyTenant(t *testing.T) {
 	}
 }
 
-// Deleting a binding removes it, and the account-deletion hook clears every
-// binding the account holds.
+// TestDeleteBindingAndAccountCleanup checks that delete binding and account cleanup.
 func TestDeleteBindingAndAccountCleanup(t *testing.T) {
 	f := newFixture(t)
 	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: "acme", Role: "roleA", DescriptionKey: "k"}); err != nil {
@@ -286,7 +263,6 @@ func TestDeleteBindingAndAccountCleanup(t *testing.T) {
 		t.Errorf("a removed binding still decided")
 	}
 
-	// Rebind in two tenants and delete the account: both rows go.
 	if err := f.PutRole(t.Context(), authz.RoleRecord{Tenant: "globex", Role: "roleG", DescriptionKey: "k"}); err != nil {
 		t.Fatalf("PutRole(globex): %v", err)
 	}
@@ -309,8 +285,6 @@ func TestDeleteBindingAndAccountCleanup(t *testing.T) {
 		}
 	}
 
-	// The cleanup is idempotent: a second delivery of the deletion is no work
-	// and no error.
 	if err := f.AccountDeleted(t.Context(), authn.AccountID("acc1")); err != nil {
 		t.Fatalf("AccountDeleted a second time: %v", err)
 	}
@@ -321,10 +295,7 @@ func TestDeleteBindingAndAccountCleanup(t *testing.T) {
 	}
 }
 
-// buildCatalog unions every registered module's PermissionSpec: a permission
-// two modules declare is kept once, one only a single module declares still
-// arrives, Declared answers a copy while Has reads the set, and
-// DescriptionKey reports the key of a declared permission.
+// TestCatalogUnionsTheDeclaredSpecs checks that catalog unions the declared specs.
 func TestCatalogUnionsTheDeclaredSpecs(t *testing.T) {
 	spec := func(perms ...authz.Permission) authz.PermissionSpec {
 		keys := make(map[authz.Permission]string, len(perms))
@@ -347,8 +318,6 @@ func TestCatalogUnionsTheDeclaredSpecs(t *testing.T) {
 	if len(declared) != 3 {
 		t.Fatalf("the catalog declares %v, want the three distinct permissions", declared)
 	}
-	// Declared answers a copy: trimming what it hands back does not disturb the
-	// next reader.
 	declared[0] = authz.Permission("mutated")
 	if c.Declared()[0] == authz.Permission("mutated") {
 		t.Errorf("Declared handed back the catalog's own slice")
@@ -369,7 +338,6 @@ func TestCatalogUnionsTheDeclaredSpecs(t *testing.T) {
 	}
 }
 
-// rosterStub is a tenant catalog carrying a fixed set of identifiers.
 type rosterStub struct{ ids map[tenant.ID]bool }
 
 func (r rosterStub) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
@@ -403,8 +371,7 @@ func (rosterStub) EnterRegistered(context.Context, tenant.ID) (context.Context, 
 	return nil, nil
 }
 
-// A roster with no tenant carrying the platform domain stops the startup;
-// one that carries it passes.
+// TestCheckPlatformDomain checks that check platform domain.
 func TestCheckPlatformDomain(t *testing.T) {
 	ctx := t.Context()
 	err := checkPlatformDomain(ctx, rosterStub{ids: map[tenant.ID]bool{"acme": true}})

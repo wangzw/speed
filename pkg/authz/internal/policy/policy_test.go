@@ -16,11 +16,8 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// sqliteSeq keeps each in-memory database of its own.
 var sqliteSeq atomic.Int64
 
-// tableDDL creates the three policy tables the adapter reads and the manager
-// writes. The tests here read only authz_grants and authz_bindings.
 var tableDDL = []string{
 	`CREATE TABLE authz_grants (
 		tenant_id  TEXT NOT NULL CHECK (tenant_id <> ''),
@@ -37,7 +34,6 @@ var tableDDL = []string{
 		PRIMARY KEY (tenant_id, account_id, role))`,
 }
 
-// openHandle opens an in-memory SQLite database with the policy tables created.
 func openHandle(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := fmt.Sprintf("file:%s_%d?mode=memory&cache=shared", t.Name(), sqliteSeq.Add(1))
@@ -58,7 +54,6 @@ func openHandle(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// seed writes one grant and one binding for each of two tenants.
 func seed(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	statements := []string{
@@ -76,8 +71,7 @@ func seed(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// Load reads every tenant's policy and the snapshot answers each tenant's query
-// on its own rows.
+// TestLoadReadsEveryTenantAndAnswersByDomain checks that load reads every tenant and answers by domain.
 func TestLoadReadsEveryTenantAndAnswersByDomain(t *testing.T) {
 	handle := openHandle(t)
 	seed(t, handle)
@@ -93,10 +87,10 @@ func TestLoadReadsEveryTenantAndAnswersByDomain(t *testing.T) {
 		want    bool
 	}{
 		{"acc1", "acme", true},
-		{"acc1", "globex", false}, // the binding is in acme
+		{"acc1", "globex", false},
 		{"acc2", "globex", true},
 		{"acc2", "acme", false},
-		{"acc1", "acme", true}, // a repeat is the same answer
+		{"acc1", "acme", true},
 	}
 	for _, c := range cases {
 		got, err := snapshot.Allowed(authz.Query{Subject: c.subject, Domain: c.domain, Object: "account", Action: "read"})
@@ -109,8 +103,7 @@ func TestLoadReadsEveryTenantAndAnswersByDomain(t *testing.T) {
 	}
 }
 
-// A load whose context has already ended fails with the context's error rather
-// than reading on.
+// TestLoadHonoursTheContext checks that load honours the context.
 func TestLoadHonoursTheContext(t *testing.T) {
 	handle := openHandle(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -120,7 +113,7 @@ func TestLoadHonoursTheContext(t *testing.T) {
 	}
 }
 
-// The holder hands back what was swapped in, and nil before the first swap.
+// TestHolderSwapsAtomically checks that holder swaps atomically.
 func TestHolderSwapsAtomically(t *testing.T) {
 	var h Holder
 	if h.Get() != nil {
@@ -133,8 +126,6 @@ func TestHolderSwapsAtomically(t *testing.T) {
 	if h.Get() != first {
 		t.Fatalf("the holder did not hand back the swapped snapshot")
 	}
-	// The second swap hands back the snapshot it replaced, so a caller can act on
-	// the version it retired.
 	second := &Snapshot{}
 	if previous := h.Swap(second); previous != first {
 		t.Fatalf("the second swap replaced %v, want the first snapshot", previous)
@@ -144,14 +135,12 @@ func TestHolderSwapsAtomically(t *testing.T) {
 	}
 }
 
-// A reader takes one whole snapshot: the pointer is replaced as a whole
-// while readers run, so a concurrent read sees either the old policy or the
-// new one and never a mixture of the two.
+// TestConcurrentReadsSeeOneWholeSnapshot checks that concurrent reads see one whole snapshot.
 func TestConcurrentReadsSeeOneWholeSnapshot(t *testing.T) {
 	allows := openHandle(t)
 	seed(t, allows)
 
-	refuses := openHandle(t) // no rows: the same query matches nothing
+	refuses := openHandle(t)
 
 	first, err := Load(t.Context(), allows, authz.ModelText)
 	if err != nil {
@@ -221,9 +210,6 @@ func TestConcurrentReadsSeeOneWholeSnapshot(t *testing.T) {
 	wg.Wait()
 }
 
-// heldFixture seeds a policy in which acc1 holds two roles in acme, both
-// granting account read and one granting role read, and acc2 holds one role in
-// globex.
 func heldFixture(t *testing.T) *gorm.DB {
 	t.Helper()
 	handle := openHandle(t)
@@ -246,9 +232,7 @@ func heldFixture(t *testing.T) *gorm.DB {
 	return handle
 }
 
-// Held answers the union over a subject's roles in one domain, keeps a pair two
-// roles share once, answers an unbound subject with nothing and leaves another
-// tenant's grant out.
+// TestHeldAnswersTheUnionInOneDomain checks that held answers the union in one domain.
 func TestHeldAnswersTheUnionInOneDomain(t *testing.T) {
 	snapshot, err := Load(t.Context(), heldFixture(t), authz.ModelText)
 	if err != nil {

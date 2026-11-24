@@ -23,16 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The refresh interval is configuration, not a setting: it is needed before a
-// settings store can exist and its value shapes the ticker a startup raises.
-// The cases here hold the three consequences: an assembly with no event bus and
-// no settings store starts with it and reloads on its schedule, a negative value
-// is refused at startup, and the settings surface no longer declares the key.
-
-// policyAssembly builds a registry holding the policy module over a real SQLite
-// database and the configuration reader the body produces. No settings store
-// and no event bus are supplied, so every value the module acts on here comes
-// from the configuration alone.
 func policyAssembly(t *testing.T, body string) (*core.Registry, db.Database, []string) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil)
@@ -50,9 +40,7 @@ func policyAssembly(t *testing.T, body string) (*core.Registry, db.Database, []s
 	return reg, database, []string{module.Name, stand.name}
 }
 
-// A configured refresh interval drives the periodic reload without a
-// settings store or an event bus: a row written behind the module's back
-// reaches the snapshot only when the ticker reloads it.
+// TestTheConfiguredRefreshIntervalDrivesThePeriodicReload checks that the configured refresh interval drives the periodic reload.
 func TestTheConfiguredRefreshIntervalDrivesThePeriodicReload(t *testing.T) {
 	reg, database, names := policyAssembly(t, `{"authz":{"policy":{"refresh-interval":"5ms"}}}`)
 
@@ -93,9 +81,7 @@ func TestTheConfiguredRefreshIntervalDrivesThePeriodicReload(t *testing.T) {
 	}
 }
 
-// A negative refresh interval names no duration and stops the startup: zero is
-// the off value the item is given, and a negative one is a configuration mistake
-// the pass over the configuration reports rather than reading as "off".
+// TestANegativeConfiguredRefreshIntervalIsRefusedAtStartup checks that a negative configured refresh interval is refused at startup.
 func TestANegativeConfiguredRefreshIntervalIsRefusedAtStartup(t *testing.T) {
 	reg, _, names := policyAssembly(t, `{"authz":{"policy":{"refresh-interval":"-1s"}}}`)
 
@@ -111,9 +97,7 @@ func TestANegativeConfiguredRefreshIntervalIsRefusedAtStartup(t *testing.T) {
 	}
 }
 
-// The settings surface no longer declares the refresh interval: the item is
-// configuration now, so a write through the settings store is refused as a key
-// no declaration covers rather than landing in a row nothing reads.
+// TestTheSettingsStoreNoLongerDeclaresTheRefreshInterval checks that the settings store no longer declares the refresh interval.
 func TestTheSettingsStoreNoLongerDeclaresTheRefreshInterval(t *testing.T) {
 	store := settingsStoreOver(t, policy.Module())
 	err := store.Set(context.Background(), settings.Write{
@@ -127,9 +111,6 @@ func TestTheSettingsStoreNoLongerDeclaresTheRefreshInterval(t *testing.T) {
 	}
 }
 
-// plantPolicy writes one role, its grant and a binding straight into the tables,
-// bypassing the manager so that the write publishes no change and swaps no
-// snapshot: only a reload reads these rows.
 func plantPolicy(t *testing.T, handle *gorm.DB, tenant, role, account, object, action string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -156,10 +137,6 @@ func plantPolicy(t *testing.T, handle *gorm.DB, tenant, role, account, object, a
 	}
 }
 
-// settingsStoreOver builds the store the settings module delivers in an assembly
-// that holds the declaring modules' declarations. The declaring modules are
-// registered for their declarations alone, the way the key table reads every
-// registered module's: they do not take part in the drive.
 func settingsStoreOver(t *testing.T, declaring ...core.Module) settings.Store {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil)
@@ -192,8 +169,6 @@ func settingsStoreOver(t *testing.T, declaring ...core.Module) settings.Store {
 	return store
 }
 
-// applySettingsMigrations runs the settings module's own SQLite migrations, read
-// out of the declaration it registers.
 func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	var tree fs.FS
@@ -225,14 +200,10 @@ func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// decodesNothing is the configuration reader of an assembly that configures
-// nothing, which leaves every declared default in place.
 type decodesNothing struct{}
 
 func (decodesNothing) Decode(string, any) error { return nil }
 
-// acceptingBus takes every event and delivers none: the store publishes a change
-// after each write, and nothing here subscribes to it.
 type acceptingBus struct{}
 
 func (acceptingBus) Publish(context.Context, event.Event) error { return nil }

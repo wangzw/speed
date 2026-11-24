@@ -8,9 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/configtest"
 )
 
-// TestTheEndpointListDecodesToTheAPIEndpointByDefault holds the default through
-// the real loader, not only the literal: a configuration that names nothing gets
-// the API endpoint the tenant layers guard.
+// TestTheEndpointListDecodesToTheAPIEndpointByDefault checks that the endpoint list decodes to the API endpoint by default.
 func TestTheEndpointListDecodesToTheAPIEndpointByDefault(t *testing.T) {
 	reader := configtest.Reader(t, "{}", Module())
 	var cfg moduleConfig
@@ -26,8 +24,7 @@ func TestTheEndpointListDecodesToTheAPIEndpointByDefault(t *testing.T) {
 	}
 }
 
-// TestTheEndpointListDefaultsToTheAPIEndpoint holds the module's worth without a
-// configuration file and refuses the shapes it cannot run on.
+// TestTheEndpointListDefaultsToTheAPIEndpoint checks that the endpoint list defaults to the API endpoint.
 func TestTheEndpointListDefaultsToTheAPIEndpoint(t *testing.T) {
 	if got := configDefaults.Endpoints; len(got) != 1 || got[0] != "api" {
 		t.Fatalf("the defaults name %v, want [api]", got)

@@ -11,8 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 )
 
-// A declaration is read back as the kind it was made: a required permission,
-// or open.
+// TestGateRecordsRequirementsAndOpenRoutes checks that gate records requirements and open routes.
 func TestGateRecordsRequirementsAndOpenRoutes(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.PermissionAccountRead))
 	g.Require("GET", "/accounts", authz.PermissionAccountRead)
@@ -39,9 +38,7 @@ func TestGateRecordsRequirementsAndOpenRoutes(t *testing.T) {
 	}
 }
 
-// A declaration is one kind or the other, and redeclaring a route flips it:
-// a Require after an Open leaves only the requirement, an Open after a
-// Require leaves only the open registration.
+// TestGateDeclarationIsOneOrTheOther checks that gate declaration is one or the other.
 func TestGateDeclarationIsOneOrTheOther(t *testing.T) {
 	t.Run("a Require drops the open registration of the same route", func(t *testing.T) {
 		g := newGate(authztest.NewCatalog(authz.PermissionAccountRead))
@@ -70,9 +67,7 @@ func TestGateDeclarationIsOneOrTheOther(t *testing.T) {
 	})
 }
 
-// verify holds every declared permission to the catalog: a declaration of a
-// permission the catalog holds passes, and one the catalog does not hold
-// fails with ErrUnknownPermission, naming the route and the permission.
+// TestGateVerifyHoldsPermissionsToTheCatalog checks that gate verify holds permissions to the catalog.
 func TestGateVerifyHoldsPermissionsToTheCatalog(t *testing.T) {
 	t.Run("a declared permission the catalog holds passes", func(t *testing.T) {
 		g := newGate(authztest.NewCatalog(authz.PermissionAccountRead, authz.PermissionAuditRead))
@@ -102,9 +97,7 @@ func TestGateVerifyHoldsPermissionsToTheCatalog(t *testing.T) {
 	})
 }
 
-// A route never declared carries no declaration of either kind, and the key
-// is the (method, path) pair: a method never declared on a declared path is
-// as undeclared as a path never seen.
+// TestGateLeavesAnUndeclaredRouteUncovered checks that gate leaves an undeclared route uncovered.
 func TestGateLeavesAnUndeclaredRouteUncovered(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.PermissionAccountRead))
 	g.Require("GET", "/accounts", authz.PermissionAccountRead)
@@ -124,14 +117,11 @@ func TestGateLeavesAnUndeclaredRouteUncovered(t *testing.T) {
 	}
 }
 
-// verify holds every declaration to the catalog, not just the first it
-// meets.
+// TestGateVerifyChecksEveryDeclaration checks that gate verify checks every declaration.
 func TestGateVerifyChecksEveryDeclaration(t *testing.T) {
 	inCatalog := translation.Builtin()
 	catalog := authztest.NewCatalog(inCatalog...)
 
-	// The out-of-catalog permission sits among many in-catalog ones, so a verify
-	// that only checked the first declaration would nearly always miss it.
 	for i := 0; i < 500; i++ {
 		g := newGate(catalog)
 		for _, p := range inCatalog {
@@ -145,10 +135,7 @@ func TestGateVerifyChecksEveryDeclaration(t *testing.T) {
 	}
 }
 
-// A declared permission the catalog holds but the translation cannot express
-// fails verify the same way: the request path decides through the
-// translation, so such a route would deny every request forever with no
-// startup symptom.
+// TestGateVerifyHoldsPermissionsToTheTranslation checks that gate verify holds permissions to the translation.
 func TestGateVerifyHoldsPermissionsToTheTranslation(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.Permission("authz.guard.test.untranslatable")))
 	g.Require("GET", "/x", authz.Permission("authz.guard.test.untranslatable"))
@@ -157,8 +144,6 @@ func TestGateVerifyHoldsPermissionsToTheTranslation(t *testing.T) {
 	if !errors.Is(err, authz.ErrUnknownPermission) {
 		t.Fatalf("verify() = %v, want an error wrapping ErrUnknownPermission for a catalogued-but-untranslatable permission", err)
 	}
-	// The wording distinguishes this refusal from the catalog one: both wrap the
-	// same sentinel, and the caller reads which check refused from the text.
 	for _, want := range []string{"GET", "/x", "authz.guard.test.untranslatable", "translation"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("verify()'s error %q does not name %q", err, want)
@@ -166,8 +151,7 @@ func TestGateVerifyHoldsPermissionsToTheTranslation(t *testing.T) {
 	}
 }
 
-// The declaration table is written by modules in the Init window and read on
-// the request path, so its reads and writes are taken under a lock.
+// TestTheGateIsSafeUnderConcurrentUse checks that the gate is safe under concurrent use.
 func TestTheGateIsSafeUnderConcurrentUse(t *testing.T) {
 	g := newGate(authztest.NewCatalog(authz.PermissionAccountRead, authz.PermissionAuditRead))
 	const rounds = 300
@@ -178,8 +162,6 @@ func TestTheGateIsSafeUnderConcurrentUse(t *testing.T) {
 		go func(w int) {
 			defer wg.Done()
 			for i := 0; i < rounds; i++ {
-				// The same keys on purpose: writes to one entry collide when the
-				// lock is gone.
 				g.Require("GET", "/accounts", authz.PermissionAccountRead)
 				g.Open("GET", "/health")
 				g.Require("POST", "/accounts", authz.PermissionAuditRead)

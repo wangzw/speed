@@ -8,9 +8,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// checkPlatformDomain refuses to start when the roster holds no tenant whose
-// identifier is the platform domain: the platform policy rows are that tenant's
-// rows. The check runs only in an assembly that has a roster.
 func checkPlatformDomain(ctx context.Context, roster tenant.Catalog) error {
 	_, found, err := roster.Get(ctx, tenant.ID(authz.PlatformDomain))
 	if err != nil {

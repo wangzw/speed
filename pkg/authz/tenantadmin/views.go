@@ -16,18 +16,22 @@ import (
 type AuthzTenantAdminPermissionView struct {
 	_ struct{} `description:"One permission of the tenant-governed set."`
 
+	// Permission is the permission name as the catalog declares it.
 	Permission string `json:"permission" required:"true" description:"The permission name as the catalog declares it, for example authz.tenant.role.read. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string."`
 
+	// Description is the permission's description rendered in the request's language, empty when none is available.
 	Description string `json:"description" required:"true" description:"The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback."`
 
+	// Group is the group the declaring module places the permission in.
 	Group string `json:"group" required:"true" description:"The group the declaring module places the permission in, for example authorization or membership. Empty when the module gave it no group; a client groups such a permission as it sees fit."`
 
+	// Dangerous reports whether granting the permission widens the grantee's power over other accounts or over the tenant's policy.
 	Dangerous bool `json:"dangerous" required:"true" description:"True when granting the permission widens the grantee's power over other accounts or over the tenant's policy; a client calls such a permission out before an operator grants it."`
 
+	// Grantable reports whether the caller holds the permission in the tenant and may grant it.
 	Grantable bool `json:"grantable" required:"true" description:"True when the caller holds the permission in the tenant and may therefore grant it to a role. A permission the caller does not hold is still listed: the catalog is the whole governed set, not the caller's grantable subset."`
 }
 
-// permissionViewOf builds one permission's view from the governed catalog.
 func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission, grantable bool) AuthzTenantAdminPermissionView {
 	view := AuthzTenantAdminPermissionView{Permission: string(perm), Grantable: grantable}
 	if meta, ok := p.catalog.Metadata(perm); ok {
@@ -46,18 +50,26 @@ func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission, g
 type AuthzTenantAdminRoleView struct {
 	_ struct{} `description:"One role of a tenant as the role routes report it."`
 
-	Tenant  string `json:"tenant" required:"true" description:"The name of the tenant the role belongs to."`
-	Role    string `json:"role" required:"true" description:"The role name within the tenant. A role is never renamed: the name is the key a binding holds."`
-	Builtin bool   `json:"builtin" required:"true" description:"True for a builtin role: the tenant management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
+	// Tenant is the name of the tenant the role belongs to.
+	Tenant string `json:"tenant" required:"true" description:"The name of the tenant the role belongs to."`
+	// Role is the role's name within the tenant.
+	Role string `json:"role" required:"true" description:"The role name within the tenant. A role is never renamed: the name is the key a binding holds."`
+	// Builtin marks a role this face may neither rewrite nor remove, nor change its grants.
+	Builtin bool `json:"builtin" required:"true" description:"True for a builtin role: the tenant management face can neither rewrite nor remove it, nor change its grants. The mark is set by the host that seeds the policy data and is never cleared."`
 
+	// Description is the role's description in the request's language.
 	Description string `json:"description" required:"true" description:"The role's description in the request's language: a builtin role's key is rendered through the message localizer (falling back to the key), and a role the management face created carries the operator's free text as written."`
 
+	// PermissionCount is how many permission grants the role holds within the tenant.
 	PermissionCount int `json:"permission_count" required:"true" description:"How many permission grants the role holds within the tenant. A role holding none answers zero."`
 
+	// MemberCount is how many active members hold the role, nil when no identity reader is assembled.
 	MemberCount *int `json:"member_count" required:"true" nullable:"true" description:"How many active members hold the role within the tenant. Null when the assembly delivers no account identity reader: the count cannot be told apart from an unavailable identity state, so it is not reported as zero."`
 
+	// CanManage reports whether the caller holds authz.tenant.role.manage in the tenant.
 	CanManage bool `json:"can_manage" required:"true" description:"True when the caller holds authz.tenant.role.manage in the tenant, which decides whether a client renders the grant and revoke controls."`
 
+	// CreatedAt is when the role was written.
 	CreatedAt time.Time `json:"created_at" required:"true" description:"When the role was written, as an RFC 3339 instant in UTC."`
 }
 
@@ -74,8 +86,6 @@ func (p *product) roleViewOf(ctx context.Context, r authz.RoleRecord, permission
 	}
 }
 
-// roleDescription resolves a role's description: a builtin role's key localised,
-// or the operator's free text.
 func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) string {
 	if !r.Builtin {
 		return r.Description
@@ -93,16 +103,20 @@ func (p *product) roleDescription(ctx context.Context, r authz.RoleRecord) strin
 type AuthzTenantAdminGrantView struct {
 	_ struct{} `description:"One permission grant of a role: the permission it was written as, and the (resource, action) pair the policy engine matches on."`
 
-	Tenant     string    `json:"tenant" required:"true" description:"The name of the tenant the grant belongs to."`
-	Role       string    `json:"role" required:"true" description:"The role holding the grant."`
-	Permission string    `json:"permission" required:"true" description:"The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries."`
-	Resource   string    `json:"resource" required:"true" description:"The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed."`
-	Action     string    `json:"action" required:"true" description:"The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed."`
-	CreatedAt  time.Time `json:"created_at" required:"true" description:"When the grant was written, as an RFC 3339 instant in UTC."`
+	// Tenant is the name of the tenant the grant belongs to.
+	Tenant string `json:"tenant" required:"true" description:"The name of the tenant the grant belongs to."`
+	// Role is the role holding the grant.
+	Role string `json:"role" required:"true" description:"The role holding the grant."`
+	// Permission is the permission the pair translates to, empty when no declared permission matches.
+	Permission string `json:"permission" required:"true" description:"The permission the (resource, action) pair translates to, for example authz.tenant.role.manage; the empty string when the pair matches no declared permission, which is a grant left from a vocabulary this process no longer carries."`
+	// Resource is the resource the grant matches on.
+	Resource string `json:"resource" required:"true" description:"The resource the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed."`
+	// Action is the action the grant matches on.
+	Action string `json:"action" required:"true" description:"The action the grant matches on, kept beside the permission so an untranslatable grant can still be diagnosed."`
+	// CreatedAt is when the grant was written.
+	CreatedAt time.Time `json:"created_at" required:"true" description:"When the grant was written, as an RFC 3339 instant in UTC."`
 }
 
-// grantViewOf builds one grant's view. A pair no declared permission translates
-// to leaves the permission field empty and the pair on the view.
 func (p *product) grantViewOf(g authz.GrantRecord, tenantName string) AuthzTenantAdminGrantView {
 	view := AuthzTenantAdminGrantView{
 		Tenant:    tenantName,
@@ -121,9 +135,13 @@ func (p *product) grantViewOf(g authz.GrantRecord, tenantName string) AuthzTenan
 type AuthzTenantAdminBindingView struct {
 	_ struct{} `description:"One role binding: an account holds a role within a tenant."`
 
-	Tenant    string    `json:"tenant" required:"true" description:"The name of the tenant the binding belongs to."`
-	Account   string    `json:"account" required:"true" description:"The account the role is bound to."`
-	Role      string    `json:"role" required:"true" description:"The role bound to the account."`
+	// Tenant is the name of the tenant the binding belongs to.
+	Tenant string `json:"tenant" required:"true" description:"The name of the tenant the binding belongs to."`
+	// Account is the account the role is bound to.
+	Account string `json:"account" required:"true" description:"The account the role is bound to."`
+	// Role is the role bound to the account.
+	Role string `json:"role" required:"true" description:"The role bound to the account."`
+	// GrantedAt is when the binding was written.
 	GrantedAt time.Time `json:"granted_at" required:"true" description:"When the binding was written, as an RFC 3339 instant in UTC."`
 }
 
@@ -149,14 +167,19 @@ func bindingViewsOf(bindings []authz.Binding, tenantName string) []AuthzTenantAd
 type AuthzTenantAdminRoleBindingView struct {
 	_ struct{} `description:"One account holding a role within a tenant, as the role usage read shows it."`
 
+	// Account is the account the role is bound to.
 	Account string `json:"account" required:"true" description:"The account the role is bound to."`
 
+	// DisplayName is the account's display name, empty when no identity reader is assembled or the account is unknown.
 	DisplayName string `json:"display_name" required:"true" description:"The account's display name, as the host's account identity reader reports it. Empty when the assembly delivers no identity reader or the reader knows no name for the account."`
 
+	// Username is the account's login username, empty when no identity reader is assembled or the account has none.
 	Username string `json:"username" required:"true" description:"The account's login username, as the host's account identity reader reports it: unique, user-facing, and not an identifier of the account. Empty when the assembly delivers no identity reader or the account has none; it is never a fallback to another login identifier."`
 
+	// Active reports whether the account is still active, nil when the state is unknown.
 	Active *bool `json:"active" required:"true" nullable:"true" description:"Whether the account is still active. Null when the assembly delivers no account identity reader or the reader does not know the account: an unavailable identity state is reported as unknown, never as false."`
 
+	// GrantedAt is when the binding was written.
 	GrantedAt time.Time `json:"granted_at" required:"true" description:"When the binding was written, as an RFC 3339 instant in UTC."`
 }
 
@@ -184,8 +207,6 @@ func roleBindingViewsOf(bindings []authz.Binding, identities map[string]authz.Ac
 	return views
 }
 
-// roleMemberCounts counts the active members of every role. With no identity
-// reader a count is null, never zero.
 func (p *product) roleMemberCounts(ctx context.Context, tenant string, roles []authz.RoleRecord) (map[authz.Role]*int, error) {
 	counts := make(map[authz.Role]*int, len(roles))
 	if p.identities == nil {
@@ -229,8 +250,6 @@ func (p *product) roleMemberCounts(ctx context.Context, tenant string, roles []a
 	return counts, nil
 }
 
-// accountIdentities resolves the accounts a role-usage read names. A reader that
-// cannot answer is a 503, never an empty or inactive set.
 func (p *product) accountIdentities(ctx context.Context, tenant string, accounts []string) (map[string]authz.AccountIdentity, error) {
 	if p.identities == nil {
 		return nil, nil

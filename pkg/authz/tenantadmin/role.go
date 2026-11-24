@@ -7,9 +7,6 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// handleRoleList answers GET /api/v1/tenants/:tenant/roles: every role of the
-// tenant. A held set that cannot be read is a 503, never a role list that says
-// the caller may manage nothing.
 func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListBody, error) {
 	roles, err := p.manager.Roles(ctx, in.Tenant)
 	if err != nil {
@@ -39,9 +36,6 @@ func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListB
 	return roleListBody{Roles: views}, nil
 }
 
-// handleRolePut answers PUT /api/v1/tenants/:tenant/roles/:role: it creates or
-// rewrites a role without the builtin mark. A reserved role name is refused
-// unconditionally before the host write guard, the audit and the manager.
 func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	if err := refuseRoleRowWrite(role); err != nil {
@@ -80,9 +74,6 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 	return struct{}{}, nil
 }
 
-// handleRoleDelete answers DELETE /api/v1/tenants/:tenant/roles/:role: it
-// removes a role, which revokes its grants and bindings with it. A reserved role
-// name is refused unconditionally.
 func (p *product) handleRoleDelete(ctx context.Context, in roleInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	if err := refuseRoleRowWrite(role); err != nil {

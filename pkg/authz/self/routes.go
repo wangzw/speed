@@ -10,15 +10,10 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// pathPermissions is the route's absolute path.
 var pathPermissions = authzSelfSpec.ResolvePath(pathPermissionsFragment)
 
-// realmKey is where the name of the endpoint the route was mounted on is put
-// for the handler to read back as the realm of its 401.
 const realmKey = "authz.self.realm"
 
-// withRealm binds a handler to the endpoint it was mounted on, so the endpoint
-// reaches it as the realm of its 401.
 func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set(realmKey, endpoint)
@@ -26,8 +21,6 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// realmOf reads back the endpoint the route was mounted on; it is empty when the
-// handler is called directly.
 func realmOf(c *gin.Context) string {
 	if v, ok := c.Get(realmKey); ok {
 		if name, ok := v.(string); ok {
@@ -37,9 +30,6 @@ func realmOf(c *gin.Context) string {
 	return ""
 }
 
-// mount resolves every configured endpoint on the entry point and registers the
-// permission read on each, behind the identity check and bound to that
-// endpoint's realm. Every name is looked up before any route is registered.
 func (p *product) mount(router speedhttp.Router) error {
 	type target struct {
 		name     string
@@ -60,8 +50,6 @@ func (p *product) mount(router speedhttp.Router) error {
 	return nil
 }
 
-// declareOpen records the route as needing no permission on the
-// route-declaration surface, when one is present.
 func (p *product) declareOpen() {
 	if p.gate == nil {
 		return

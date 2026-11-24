@@ -24,57 +24,25 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases built on this file drive a real registry through this module's
-// descriptor: the configuration module with a reader the real loader produced,
-// the entry point module itself, this module, and stand-ins for the capabilities
-// it takes. What a product assembled by hand cannot show is which callback takes
-// up which dependency — the engine and the catalog at New, the entry point at
-// Init — and what the registry itself says of the descriptor's three deliveries,
-// each exclusive.
-
-// assemblyBody is the configuration a default drive runs on: one endpoint of the
-// entry point, "public", which this module guards.
 const assemblyBody = `{
 	"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
 	"authz": {"guard": {"endpoints": ["public"]}}
 }`
 
-// anchorStandIn delivers the admission anchor this module names in the
-// middleware's After. The ordering anchor is named and never called, so a type
-// carrying the one marker method stands where the real admission layer would.
 type anchorStandIn struct{}
 
 func (anchorStandIn) AdmissionLayer() {}
 
-// assembly is one drive. The zero value guards "public" with everything this
-// module requires and a real entry point; each field takes one thing away or
-// adds one, so a case holds what a single missing or doubled dependency does.
 type assembly struct {
-	// body is the configuration. The zero value uses assemblyBody.
-	body string
-	// noRouter leaves the entry point module out of the command.
-	noRouter bool
-	// noEnforcer and noCatalog leave out the stand-in for the capability named,
-	// so the drive reaches resolution without it.
+	body                  string
+	noRouter              bool
 	noEnforcer, noCatalog bool
-	// enforcer and catalog, when set, are the stand-ins the assembly delivers. A
-	// case that holds the product to what New took up sets them to the very
-	// instances it reads back.
-	enforcer authz.Enforcer
-	catalog  authz.Catalog
-	// extra are further modules to register, each a participant under its own
-	// name: a registrant that declares a route from its own Init.
-	extra []core.Module
-	// supplied are further capabilities, each a stand-in module: the optional
-	// logger and meter provider, or a second provider of a face.
-	supplied []authztest.Provider
+	enforcer              authz.Enforcer
+	catalog               authz.Catalog
+	extra                 []core.Module
+	supplied              []authztest.Provider
 }
 
-// drive advances the assembly to depth and runs action there. The entry point's
-// declarations are served to the reader whether or not the entry point takes
-// part, the way a command tree written by hand leaves them, so the noRouter case
-// still loads the http section and instead leaves the module out of the
-// registered set.
 func (a assembly) drive(t *testing.T, depth core.Stage, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	body := a.body
@@ -124,8 +92,6 @@ func (a assembly) drive(t *testing.T, depth core.Stage, action func(ctx context.
 	return reg.Drive(t.Context(), core.Drive{Depth: depth, Participants: names, Action: action})
 }
 
-// productOfAssembly resolves the module's product under one of the faces it
-// delivers, for a case that reads back what a callback took up.
 func productOfAssembly(t *testing.T, reg *core.Registry) *product {
 	t.Helper()
 	guardAPI, err := core.Resolve[Guard](reg)
@@ -139,9 +105,7 @@ func productOfAssembly(t *testing.T, reg *core.Registry) *product {
 	return p
 }
 
-// Each callback takes up the dependency the design places on it: New takes
-// the engine and the catalog, building the declaration table over the
-// catalog; Init takes the entry point and the optional capabilities.
+// TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem checks that the assembly takes up its dependencies at the stage that reads them.
 func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) {
 	enforcer := authztest.NewEnforcer()
 	catalog := authztest.NewCatalog(authz.PermissionAccountRead)
@@ -206,9 +170,6 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 		if err != nil {
 			t.Fatalf("the drive failed: %v", err)
 		}
-		// New leaves the module's default logger and a nil meter; the optional
-		// capabilities are taken up in Init. A module that took them up earlier
-		// would already hold the delivered instances here.
 		if product.logger == logger {
 			t.Error("New took up the delivered logger: the optional capabilities are taken up at Init")
 		}
@@ -218,9 +179,7 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// The registry answers the three faces this module delivers, and all three
-// are one instance of its product: a module that asked for the declaration
-// anchor and one that asked for the seam decide from the same table.
+// TestTheAssemblyAnswersAllThreeFacesExclusively checks that the assembly answers all three faces exclusively.
 func TestTheAssemblyAnswersAllThreeFacesExclusively(t *testing.T) {
 	t.Run("the registry answers each face from one instance", func(t *testing.T) {
 		var gate authz.Gate
@@ -263,9 +222,7 @@ func TestTheAssemblyAnswersAllThreeFacesExclusively(t *testing.T) {
 	})
 }
 
-// The engine and the catalog are required as each other: a command that
-// brings this module in without either fails resolution with
-// ErrMissingProvider, before New builds anything.
+// TestAMissingEngineOrCatalogFailsResolution checks that a missing engine or catalog fails resolution.
 func TestAMissingEngineOrCatalogFailsResolution(t *testing.T) {
 	for name, a := range map[string]assembly{
 		"no engine":  {noEnforcer: true},
@@ -280,9 +237,7 @@ func TestAMissingEngineOrCatalogFailsResolution(t *testing.T) {
 	}
 }
 
-// A second provider of any of the three faces fails the startup: each is
-// claimed exclusively, and the stand-in claims nothing, so the guard
-// module's own claim is what catches it.
+// TestASecondProviderOfAnyFaceFailsAssembly checks that a second provider of any face fails assembly.
 func TestASecondProviderOfAnyFaceFailsAssembly(t *testing.T) {
 	for name, p := range map[string]authztest.Provider{
 		"the declaration anchor": authztest.GateProvider(authztest.NewGate()),
@@ -298,10 +253,7 @@ func TestASecondProviderOfAnyFaceFailsAssembly(t *testing.T) {
 	}
 }
 
-// A command that guards routes and names no entry point fails wiring with
-// ErrNoRouter, naming this module: guarding endpoints nothing serves guards
-// nothing, and the fix is to write the entry point module's name into the
-// command.
+// TestAGuardWithNoEntryPointFailsAssembly checks that a guard with no entry point fails assembly.
 func TestAGuardWithNoEntryPointFailsAssembly(t *testing.T) {
 	err := assembly{noRouter: true}.drive(t, core.StageInit, nil)
 	if !errors.Is(err, authz.ErrNoRouter) {
@@ -312,10 +264,7 @@ func TestAGuardWithNoEntryPointFailsAssembly(t *testing.T) {
 	}
 }
 
-// An endpoint the configuration guards but the entry point does not declare
-// fails Init with ErrUnknownEndpoint, naming the endpoint: it is the endpoint
-// lookup that reads the entry point, and a name it does not serve stops the
-// startup rather than leaving a guard registered nowhere.
+// TestAGuardedEndpointTheEntryPointDoesNotServeFailsAssembly checks that a guarded endpoint the entry point does not serve fails assembly.
 func TestAGuardedEndpointTheEntryPointDoesNotServeFailsAssembly(t *testing.T) {
 	body := `{
 		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}}},
@@ -330,13 +279,10 @@ func TestAGuardedEndpointTheEntryPointDoesNotServeFailsAssembly(t *testing.T) {
 	}
 }
 
-// A route that declares a permission the catalog does not hold fails Start
-// with ErrUnknownPermission, naming the route and the permission.
+// TestADeclaredPermissionOutsideTheCatalogFailsAssembly checks that a declared permission outside the catalog fails assembly.
 func TestADeclaredPermissionOutsideTheCatalogFailsAssembly(t *testing.T) {
 	err := assembly{
 		extra: []core.Module{registrantModule},
-		// A logger the case captures keeps the module's startup diagnostics off
-		// the test output; the drive reaches wire, which writes them.
 		supplied: []authztest.Provider{
 			{Name: "stand-in.logger", Token: (*log.Logger)(nil), Instance: logStub{logger: slog.New(newRecorder())}},
 		},
@@ -351,9 +297,7 @@ func TestADeclaredPermissionOutsideTheCatalogFailsAssembly(t *testing.T) {
 	}
 }
 
-// A module that declares a permission of its own declares its translation
-// row beside it — the permission in the catalog and the (object, action)
-// pair beside it.
+// TestAModuleDeclaredTranslationRowLetsAssemblyStart checks that a module declared translation row lets assembly start.
 func TestAModuleDeclaredTranslationRowLetsAssemblyStart(t *testing.T) {
 	permission := authz.Permission("crm.deal.read")
 	t.Cleanup(translation.Reset)
@@ -370,10 +314,6 @@ func TestAModuleDeclaredTranslationRowLetsAssemblyStart(t *testing.T) {
 	}
 }
 
-// translationRegistrant is a module that carries a permission of its own and its
-// translation row, and declares a route that needs it from its own Init — the two
-// halves a business module declares for a permission beyond this capability's
-// own.
 func translationRegistrant(permission authz.Permission) core.Module {
 	return core.Module{
 		Name:     "stand-in.business",
@@ -396,10 +336,7 @@ func translationRegistrant(permission authz.Permission) core.Module {
 	}
 }
 
-// Start holds the declarations to the catalog before it registers the metric
-// callback: a route on a permission outside the catalog aborts the startup,
-// and the meter is never asked for the counter, so a layer that did not
-// start registers nothing on a provider that outlives it.
+// TestStartAbortsBeforeRegisteringTheCounter checks that start aborts before registering the counter.
 func TestStartAbortsBeforeRegisteringTheCounter(t *testing.T) {
 	provider := sdkmetric.NewMeterProvider()
 	probe := &meterProbe{MeterProvider: provider}
@@ -424,9 +361,6 @@ func TestStartAbortsBeforeRegisteringTheCounter(t *testing.T) {
 	}
 }
 
-// meterProbe records whether the module asked it for a meter, which is how a
-// case reads that registerMetrics ran. It stands over a real provider, so a
-// registration that does happen is valid.
 type meterProbe struct {
 	metric.MeterProvider
 	mu    sync.Mutex
@@ -446,8 +380,7 @@ func (p *meterProbe) askedForMeter() bool {
 	return p.asked
 }
 
-// The module names its logger for itself, so its lines are recognisable in a
-// host's log.
+// TestTheLoggerIsNamedForTheModule checks that the logger is named for the module.
 func TestTheLoggerIsNamedForTheModule(t *testing.T) {
 	var name string
 	err := assembly{supplied: []authztest.Provider{
@@ -461,8 +394,6 @@ func TestTheLoggerIsNamedForTheModule(t *testing.T) {
 	}
 }
 
-// namedLog delivers the logging capability over one logger and records the name
-// it is handed, so a case can hold what the module passes to Named.
 type namedLog struct {
 	logger *slog.Logger
 	name   *string

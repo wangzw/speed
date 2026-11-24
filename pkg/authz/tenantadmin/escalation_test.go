@@ -8,16 +8,9 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// The anti-escalation rules, each with a case that holds the refusal and holds
-// that nothing downstream ran: no write guard question, no audit row and no
-// manager call.
-
-// response is one answer a case drives.
 type response struct{ status int }
 
-// TestPlatformAdminIsRefusedByRoleNameUnconditionally holds the first rule:
-// a write whose role segment is platform-admin is refused with the protected
-// code on every route, and nothing downstream runs.
+// TestPlatformAdminIsRefusedByRoleNameUnconditionally checks that platform admin is refused by role name unconditionally.
 func TestPlatformAdminIsRefusedByRoleNameUnconditionally(t *testing.T) {
 	const reserved = string(authz.PlatformAdminRole)
 	cases := map[string]func(*rig) *response{
@@ -68,9 +61,7 @@ func TestPlatformAdminIsRefusedByRoleNameUnconditionally(t *testing.T) {
 	}
 }
 
-// TestTheTenantAdminRoleRowAndItsGrantsAreProtected holds the second rule: the
-// tenant-administrator role row and its grants cannot be created, rewritten or
-// deleted through this surface, and nothing downstream runs.
+// TestTheTenantAdminRoleRowAndItsGrantsAreProtected checks that the tenant admin role row and its grants are protected.
 func TestTheTenantAdminRoleRowAndItsGrantsAreProtected(t *testing.T) {
 	const reserved = string(authz.TenantAdminRole)
 	cases := map[string]func(*rig) *response{
@@ -109,13 +100,9 @@ func TestTheTenantAdminRoleRowAndItsGrantsAreProtected(t *testing.T) {
 	}
 }
 
-// TestBindingTenantAdminIsAllowedSubjectToTheOtherRules holds the deliberate
-// boundary: the resident tenant administrator role row is protected, but
-// binding an account to it is allowed when the caller holds the whole governed
-// set, the account is a member and the last-administrator rule permits it.
+// TestBindingTenantAdminIsAllowedSubjectToTheOtherRules checks that binding tenant admin is allowed subject to the other rules.
 func TestBindingTenantAdminIsAllowedSubjectToTheOtherRules(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
-	// The tenant-admin role holds the whole governed set.
 	r.manager.grants = []authz.GrantRecord{
 		{Tenant: "t1", Role: authz.TenantAdminRole, Resource: "tenant_role", Action: "read"},
 		{Tenant: "t1", Role: authz.TenantAdminRole, Resource: "tenant_role", Action: "manage"},
@@ -132,10 +119,9 @@ func TestBindingTenantAdminIsAllowedSubjectToTheOtherRules(t *testing.T) {
 	}
 }
 
-// TestAGrantOutsideTheGovernedSetIsABadRequest holds the third rule: a grant
-// write names only a governed permission.
+// TestAGrantOutsideTheGovernedSetIsABadRequest checks that a grant outside the governed set is a bad request.
 func TestAGrantOutsideTheGovernedSetIsABadRequest(t *testing.T) {
-	const ungoverned = authz.PermissionSessionRead // declared and translated, but not governed
+	const ungoverned = authz.PermissionSessionRead
 	r := newRig(t, ungoverned)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/tenants/t1/roles/r1/grants/"+string(ungoverned),
@@ -152,11 +138,10 @@ func TestAGrantOutsideTheGovernedSetIsABadRequest(t *testing.T) {
 	assertRefusedBeforeDownstream(t, r)
 }
 
-// TestAGrantTheCallerDoesNotHoldIsProtected holds the fourth rule: a caller
-// may not grant a permission it does not hold.
+// TestAGrantTheCallerDoesNotHoldIsProtected checks that a grant the caller does not hold is protected.
 func TestAGrantTheCallerDoesNotHoldIsProtected(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
-	r.subject.answer(authz.PermissionTenantRoleRead) // holds read, not manage
+	r.subject.answer(authz.PermissionTenantRoleRead)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
 		"/api/v1/tenants/t1/roles/r1/grants/"+string(authz.PermissionTenantRoleManage),
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionTenantRoleManage)), nil)
@@ -172,8 +157,7 @@ func TestAGrantTheCallerDoesNotHoldIsProtected(t *testing.T) {
 	assertRefusedBeforeDownstream(t, r)
 }
 
-// TestAnUnreadableHeldSetIsA503 holds the direction of the permission read: a
-// failure is a 503 and is never read as an empty set or a permit.
+// TestAnUnreadableHeldSetIsA503 checks that an unreadable held set is a 503.
 func TestAnUnreadableHeldSetIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.subject.fail(authz.ErrPolicyUnavailable)
@@ -186,12 +170,10 @@ func TestAnUnreadableHeldSetIsA503(t *testing.T) {
 	assertRefusedBeforeDownstream(t, r)
 }
 
-// TestABindingToARoleHigherThanTheCallerIsProtected holds the fifth rule: a
-// binding may not hand out a role holding a permission the caller does not
-// hold.
+// TestABindingToARoleHigherThanTheCallerIsProtected checks that a binding to a role higher than the caller is protected.
 func TestABindingToARoleHigherThanTheCallerIsProtected(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
-	r.subject.answer(authz.PermissionTenantRoleRead) // holds read only
+	r.subject.answer(authz.PermissionTenantRoleRead)
 	r.manager.grants = []authz.GrantRecord{
 		{Tenant: "t1", Role: "editor", Resource: "tenant_role", Action: "manage"},
 	}
@@ -207,8 +189,7 @@ func TestABindingToARoleHigherThanTheCallerIsProtected(t *testing.T) {
 	assertRefusedBeforeDownstream(t, r)
 }
 
-// TestABindingToARoleWithinTheCallerSetIsAllowed holds the subset rule's
-// boundary: every one of the role's grants is one the caller holds.
+// TestABindingToARoleWithinTheCallerSetIsAllowed checks that a binding to a role within the caller set is allowed.
 func TestABindingToARoleWithinTheCallerSetIsAllowed(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead, authz.PermissionTenantRoleManage)
 	r.manager.grants = []authz.GrantRecord{
@@ -222,9 +203,7 @@ func TestABindingToARoleWithinTheCallerSetIsAllowed(t *testing.T) {
 	}
 }
 
-// TestABindingToANonMemberIsABadRequest holds the membership rule: an account
-// that is not an active member of the tenant is a 400, and nothing downstream
-// runs.
+// TestABindingToANonMemberIsABadRequest checks that a binding to a non member is a bad request.
 func TestABindingToANonMemberIsABadRequest(t *testing.T) {
 	r := newRig(t)
 	r.membership.allow(false)
@@ -244,8 +223,7 @@ func TestABindingToANonMemberIsABadRequest(t *testing.T) {
 	assertRefusedBeforeDownstream(t, r)
 }
 
-// TestAMembershipCheckerThatCannotAnswerIsA503 holds the membership read's
-// failure direction.
+// TestAMembershipCheckerThatCannotAnswerIsA503 checks that a membership checker that cannot answer is a 503.
 func TestAMembershipCheckerThatCannotAnswerIsA503(t *testing.T) {
 	r := newRig(t)
 	r.membership.fail(errors.New("the membership store is down"))
@@ -258,9 +236,7 @@ func TestAMembershipCheckerThatCannotAnswerIsA503(t *testing.T) {
 	assertRefusedBeforeDownstream(t, r)
 }
 
-// TestAnEmptyBindingAccountIsRefusedBeforeAnythingRuns holds the binding write
-// and delete shape rule: the empty account names no row, so it is a 400 before
-// the membership check, the write guard, the audit and the manager.
+// TestAnEmptyBindingAccountIsRefusedBeforeAnythingRuns checks that an empty binding account is refused before anything runs.
 func TestAnEmptyBindingAccountIsRefusedBeforeAnythingRuns(t *testing.T) {
 	for name, drive := range map[string]func(*rig) int{
 		"the write": func(r *rig) int {
@@ -287,8 +263,7 @@ func TestAnEmptyBindingAccountIsRefusedBeforeAnythingRuns(t *testing.T) {
 	}
 }
 
-// TestARoleTheManagerRefusesIsMapped holds the closed failure mapping for a
-// reserved role reported by the manager itself.
+// TestARoleTheManagerRefusesIsMapped checks that a role the manager refuses is mapped.
 func TestARoleTheManagerRefusesIsMapped(t *testing.T) {
 	r := newRig(t)
 	r.manager.fail(authz.ErrReservedRole)
@@ -302,9 +277,6 @@ func TestARoleTheManagerRefusesIsMapped(t *testing.T) {
 	}
 }
 
-// assertRefusedBeforeDownstream holds that a refusal reached none of the stages
-// after the anti-escalation checks: the host write guard was not asked, no audit
-// row landed and the manager was not called.
 func assertRefusedBeforeDownstream(t *testing.T, r *rig) {
 	t.Helper()
 	if got := r.writeGuard.asked(); len(got) != 0 {

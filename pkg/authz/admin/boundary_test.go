@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// The import paths the rules below are about.
 const (
 	moduleImportPath = "github.com/vislake/speed/pkg"
 	adminPath        = moduleImportPath + "/authz/admin"
@@ -23,21 +22,12 @@ const (
 	ginPath          = "github.com/gin-gonic/gin"
 )
 
-// listed is what these checks read about the admin package: its import path and
-// the imports of its non-test files. go list reports the test files' imports
-// separately, and the rules are about production code, so those are not asked
-// for.
 type listed struct {
 	ImportPath string
 	// Imports are the imports of the package's non-test files that build here.
 	Imports []string
 }
 
-// adminImports lists the admin package with go list and returns the imports of
-// its non-test files. The pattern names the package by its import path, so the
-// listing does not depend on the directory the tests run from. -e keeps the
-// package in the listing even when it does not compile, with its imports as the
-// parser read them.
 func adminImports(t *testing.T) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json=ImportPath,Imports", adminPath)
@@ -57,13 +47,6 @@ func adminImports(t *testing.T) []string {
 	return p.Imports
 }
 
-// requiredImports are the packages the admin module's non-test code takes. The
-// decision values it writes through — the Manager and the Catalog read face —
-// live in the root package, and the handler-internal decision API, Guard, lives
-// in the guard subpackage. The rest are the modules it consumes: gin for the
-// handlers, and the authn, http, audit, core and log modules. The tenant comes
-// from the route's path parameter and not from the tenant package, so that one
-// is not here.
 var requiredImports = []string{
 	rootPath,
 	guardPath,
@@ -75,11 +58,6 @@ var requiredImports = []string{
 	ginPath,
 }
 
-// missingImports is the presence rule: every required import is listed. Reading
-// the decision values from the root package and the decision API from the guard
-// subpackage is what keeps this module the interface's consumer and not the
-// implementation's; the module imports are what make it a route surface on the
-// entry point, a reader of identities and a writer of audits.
 func missingImports(imports []string) []string {
 	var out []string
 	for _, want := range requiredImports {
@@ -93,15 +71,6 @@ func missingImports(imports []string) []string {
 	return out
 }
 
-// forbiddenImports is the exclusion rule: the admin package imports neither the
-// policy subpackage of this directory (nor, through it, Casbin or gorm), nor the
-// internal library packages that hold the engine and its store, nor the db
-// module, nor the tenant package. The Manager, the Catalog and the record types
-// live in the root package; reaching the implementation would put the engine and
-// its store into a command that only mounts the management routes, and the
-// tenant comes from the route's path parameter rather than from a roster this
-// module reads. gin is a leaf's to hold and the standard library is always
-// allowed, so neither is reported.
 func forbiddenImports(imports []string) []string {
 	var out []string
 	for _, imp := range imports {
@@ -121,12 +90,7 @@ func forbiddenImports(imports []string) []string {
 	return out
 }
 
-// TestTheAdminImportsTheInterfaceNotTheImplementation is the executable form
-// of the packaging decision's dependency statement for this module: the
-// Manager and the Catalog come from the root package and the decision API
-// from the guard subpackage, the routes are mounted through the http module,
-// and the policy subpackage, Casbin, gorm and the db module are not in the
-// non-test imports.
+// TestTheAdminImportsTheInterfaceNotTheImplementation checks that the admin imports the interface not the implementation.
 func TestTheAdminImportsTheInterfaceNotTheImplementation(t *testing.T) {
 	imports := adminImports(t)
 	for _, v := range missingImports(imports) {
@@ -137,9 +101,7 @@ func TestTheAdminImportsTheInterfaceNotTheImplementation(t *testing.T) {
 	}
 }
 
-// TestTheListingReadsTheModule is the positive control: a listing that came
-// back empty, or that never named the module, would let the rules pass while
-// looking at nothing.
+// TestTheListingReadsTheModule checks that the listing reads the module.
 func TestTheListingReadsTheModule(t *testing.T) {
 	imports := adminImports(t)
 	if len(imports) == 0 {
@@ -153,10 +115,7 @@ func TestTheListingReadsTheModule(t *testing.T) {
 	}
 }
 
-// TestTheBoundaryRulesFailOnAViolation holds each rule to be a rule and not a
-// check that accepts anything: a missing required import is reported and the
-// full set is not, and a policy, Casbin, gorm or db import is reported while gin
-// and a standard-library import are not.
+// TestTheBoundaryRulesFailOnAViolation checks that the boundary rules fail on a violation.
 func TestTheBoundaryRulesFailOnAViolation(t *testing.T) {
 	if got := missingImports(slices.Clone(requiredImports)); len(got) != 0 {
 		t.Errorf("the presence rule reports %q on the full set, want none", got)

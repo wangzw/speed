@@ -11,7 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// writeRouteCase is one write and the kind the guard must be told it is.
 type writeRouteCase struct {
 	name   string
 	op     authz.WriteOp
@@ -22,7 +21,6 @@ type writeRouteCase struct {
 	body   any
 }
 
-// writeRouteCases builds one write route of each kind.
 func writeRouteCases() []writeRouteCase {
 	const (
 		rolePutTarget    = "/api/v1/tenants/t1/roles/r1"
@@ -73,7 +71,7 @@ func writeRouteCases() []writeRouteCase {
 	}
 }
 
-// TestEveryWriteConsultsTheWriteGuard holds the seam's range and its vocabulary.
+// TestEveryWriteConsultsTheWriteGuard checks that every write consults the write guard.
 func TestEveryWriteConsultsTheWriteGuard(t *testing.T) {
 	for _, c := range writeRouteCases() {
 		t.Run(c.name, func(t *testing.T) {
@@ -96,9 +94,7 @@ func TestEveryWriteConsultsTheWriteGuard(t *testing.T) {
 	}
 }
 
-// TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager holds the deny
-// direction: the route answers 403 with the protected code and neither lands
-// a mandatory audit row nor reaches the manager.
+// TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager checks that a denied write is refused before the audit and the manager.
 func TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager(t *testing.T) {
 	for _, c := range writeRouteCases() {
 		t.Run(c.name, func(t *testing.T) {
@@ -121,7 +117,7 @@ func TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager(t *testing.T) {
 	}
 }
 
-// TestAWriteGuardThatCannotAnswerIsA503 holds the failure direction.
+// TestAWriteGuardThatCannotAnswerIsA503 checks that a write guard that cannot answer is a 503.
 func TestAWriteGuardThatCannotAnswerIsA503(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.writeGuard.fail(errors.New("the guard's store is down"))
@@ -138,7 +134,7 @@ func TestAWriteGuardThatCannotAnswerIsA503(t *testing.T) {
 	}
 }
 
-// TestReadsDoNotConsultTheWriteGuard holds the seam's direction.
+// TestReadsDoNotConsultTheWriteGuard checks that reads do not consult the write guard.
 func TestReadsDoNotConsultTheWriteGuard(t *testing.T) {
 	r := newRig(t)
 	reads := []struct {
@@ -165,7 +161,7 @@ func TestReadsDoNotConsultTheWriteGuard(t *testing.T) {
 	}
 }
 
-// TestTheWriteGuardIsOptional holds the seam's absence.
+// TestTheWriteGuardIsOptional checks that the write guard is optional.
 func TestTheWriteGuardIsOptional(t *testing.T) {
 	r := newRig(t, authz.PermissionTenantRoleRead)
 	r.p.writeGuard = nil
@@ -179,7 +175,7 @@ func TestTheWriteGuardIsOptional(t *testing.T) {
 	}
 }
 
-// TestTheWriteGuardIsTakenUpFromTheAssembly holds the wiring.
+// TestTheWriteGuardIsTakenUpFromTheAssembly checks that the write guard is taken up from the assembly.
 func TestTheWriteGuardIsTakenUpFromTheAssembly(t *testing.T) {
 	t.Run("a delivered guard is taken up", func(t *testing.T) {
 		guard := &stubWriteGuard{}
@@ -205,9 +201,7 @@ func TestTheWriteGuardIsTakenUpFromTheAssembly(t *testing.T) {
 	})
 }
 
-// TestTheWriteGuardIsAskedAfterTheShapeAndEscalationChecks holds the ordering
-// the design states: a request the route refuses on shape or escalation never
-// reaches the seam.
+// TestTheWriteGuardIsAskedAfterTheShapeAndEscalationChecks checks that the write guard is asked after the shape and escalation checks.
 func TestTheWriteGuardIsAskedAfterTheShapeAndEscalationChecks(t *testing.T) {
 	t.Run("an undeclared grant permission", func(t *testing.T) {
 		r := newRig(t)
