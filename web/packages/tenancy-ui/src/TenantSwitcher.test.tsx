@@ -104,6 +104,22 @@ describe('TenantSwitcher', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument()
   })
 
+  it('marks the page behind the open menu inert and lifts it on close', async () => {
+    const { container } = renderSwitcher()
+    // The page behind an open modal overlay leaves the tab order, not
+    // only the accessibility tree; the menu's own portal is the
+    // foreground and never inert itself.
+    expect(container).not.toHaveAttribute('inert')
+
+    const user = userEvent.setup()
+    const { other } = await openMenu(user)
+    await waitFor(() => expect(container).toHaveAttribute('inert'))
+    expect(document.querySelector('.MuiModal-root')).not.toHaveAttribute('inert')
+
+    await user.click(other)
+    await waitFor(() => expect(container).not.toHaveAttribute('inert'))
+  })
+
   it('never re-trigger a selection from the current-tenant row', async () => {
     const { onSelect } = renderSwitcher()
     const user = userEvent.setup()

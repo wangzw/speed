@@ -4,7 +4,7 @@
  * through `onSelect`.
  */
 
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Button from '@mui/material/Button'
 import type { ButtonProps } from '@mui/material/Button'
@@ -12,6 +12,7 @@ import Box from '@mui/material/Box'
 import Divider from '@mui/material/Divider'
 import Menu from '@mui/material/Menu'
 import type { SxProps, Theme } from '@mui/material/styles'
+import { useInertBackground } from '@speed/ui-kit'
 import { useTenancyUiTranslation } from './internal/translation.js'
 import { TenantMenuItems } from './TenantMenuItems.js'
 import { TenantSwitchAnnouncement } from './TenantSwitchAnnouncement.js'
@@ -92,6 +93,8 @@ export function TenantSwitcher({
   const [selectedName, setSelectedName] = useState<string | null>(null)
 
   const menuOpen = anchorEl !== null
+  const menuRef = useRef<HTMLDivElement>(null)
+  useInertBackground(menuOpen, menuRef)
   const currentTenant =
     tenants.find((tenant) => tenant.id === currentTenantId) ?? null
   const closeMenu = (): void => setAnchorEl(null)
@@ -145,6 +148,7 @@ export function TenantSwitcher({
         />
       </Box>
       <Menu
+        ref={menuRef}
         id={menuId}
         anchorEl={anchorEl}
         open={menuOpen}
