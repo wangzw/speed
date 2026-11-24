@@ -1,212 +1,6 @@
 /**
- * IdentifiersSection: the identifier surface of the account page, grouped by
- * how the account uses an email address or phone number.
- *
- * The identifiers are the account's own, read off the profile
- * (GET /api/v1/auth/me, authn.profile.get): the spec ships no dedicated
- * identifier-list route, and the profile answer carries each identifier's
- * own id, kind, value, proven flag, whether it is a sign-in way and whether
- * it is the default contact. Each row
- * names the kind (email, phone or username, mapped through a guarded
- * vocabulary, a value outside it rendering the generic identifier label) and
- * the value, with the server's `proven` answer (the ways of establishing
- * ownership that actually prove it -- email-code, sms-code,
- * idp:<provider> -- versus the ones that only record an assertion: invite,
- * admin, import-unverified, self). `verified_at` cannot answer that question: every
- * stored identifier carries one, including a username written at
- * registration as `self`. A username is a login name with no ownership to
- * prove, so its row carries no ownership chip. An email or phone row carries
- * a two-value ownership chip: `proven` true reads `verified`, false reads
- * `unverified`, whatever channel established the identifier.
- *
- * The section splits the account's identifiers into two lists. The sign-in
- * ways list holds every username and every email address or phone number the
- * profile marks `sign_in`; the contacts list holds every registered email
- * address and phone number, because registering an address is what makes it
- * a contact -- the position is not a separate choice. The same record can
- * appear in both lists while it is also a sign-in way; whether an email or
- * phone signs in is a group decision, never a per-row switch, so the
- * contacts list carries no sign-in control. A username is always a sign-in
- * way, has no contact position, and is never in the contacts list.
- *
- * The sign-in ways list is grouped by kind, and each group renders its
- * controls and one sentence, never the addresses or numbers as rows: the
- * address a group chooses reads in the control itself. A username is a login
- * name by definition, so its group states that with the sentence naming the
- * username and offers no sign-in switch; the name is fixed, so the group also
- * states it cannot be changed or removed and renders no removal action. The
- * email group's switch
- * states whether the account uses email to sign in; while it is on, a picker
- * chooses one of the proved addresses, written as one step-up action so a won
- * challenge lands the same end state (the pre-chosen address turned off and
- * the new one turned on) rather than replaying only one of the row writes.
- * While it is off, the picker gives way to a note, and turning it back on
- * restores the address this visit switched off, then the default contact (the
- * address the account falls back to), then the earliest proved address,
- * through that same protected write. The phone group toggles its representative row, and
- * while that number does not sign in the group says so rather than naming it
- * as a sign-in way, so the sentence and the enable action agree.
- *
- * A host that splits the surface with `axis` gets the same blocks in the view
- * it shows: the contact axis's own table carries the default-contact choice
- * and the row actions on each address, and the sign-in axis renders the kind
- * groups alone, without the merged view's sign-in ways heading. The merged
- * view's contact list keeps the default-contact radio on the row and renders
- * verification and removal as the same row actions the table uses. The
- * control reads every row of its kind in both views; the login-ways page
- * keeps no per-address rows of its own.
- *
- * A group's sign-in write is PUT
- * /api/v1/auth/identifiers/{id} (authn.login.updateIdentifier) with
- * `sign_in`: turning it on moves the value into the sign-in ways list, and
- * turning it off only leaves that list (the value stays a contact). Only a
- * proved value can be put into sign-in (REQ-account-065); an unproved address
- * is still a contact, because registering it establishes that position. The
- * sign-in group write and the default contact need a fresh authentication, so
- * a refusal opens the step-up dialog like the section's other gated writes.
- * Putting a proved value into sign-in rotates this session's credential, so
- * that write runs inside an identity-transition window; taking it out does
- * not.
- *
- * A proved email address also offers the default-contact choice, a radio
- * that sets `default_contact: true` on the chosen row: the server clears the
- * previous default in the same write. The choice renders once per email
- * record, in the contacts list (the list that record's state makes
- * canonical), so one address never offers two controls for one position.
- *
- * A row whose identifier carries an id has a remove action beside its other
- * row actions, sitting behind the ui-kit danger ConfirmDialog -- removing an
- * identifier is irreversible (it is re-established only by walking the route
- * that proves it again). The removal is DELETE
- * /api/v1/auth/identifiers/{id}
- * (authn.login.removeIdentifier). The account module refuses to remove the
- * account's last way to log in with a 409, whose code text renders above
- * the list; a refused removal re-reads the profile, so a guard that read a
- * stale list converges on the server's answer. The removal does not replace
- * the caller's credential, so it runs outside the identity-transition
- * window that the credential-rotating writes below use. A username is
- * permanent and carries no removal action: a removal requested outside this
- * surface is refused with authn.username_immutable. An account with a password
- * signs in with a username or an email address chosen as a sign-in way, so
- * while exactly one such identifier is on the profile and it is an email, that
- * row's remove action gives way to a note, because removing it would leave the
- * password without a login name. Another such identifier, or an account with
- * no password at all, keeps the action enabled. Phone numbers are not counted
- * -- they sign in through their own code route. The server remains the
- * authority on the last way in; the note states the one case the profile can
- * reveal.
- *
- * An unverified email row carries a verify action beside its remove action
- * (the removal is withheld while the row is the password account's only login
- * name; the verification is not). The action proves the
- * address the row already shows: POST /api/v1/auth/identifiers re-sends a code
- * to that same
- * address -- the route accepts the account's own address as a re-add of its
- * proof -- and POST /api/v1/auth/identifiers/verify submits the code. The write
- * is idempotent, so the refetched row flips to `verified`. The address stays
- * fixed in this flow: a row's value is not editable here, and choosing another
- * address belongs to the add face or the verification section. The action is
- * withheld while the profile's `verification.state` is `pending`, because that
- * section and the host's banner already offer the same code and two concurrent
- * requests would overwrite the one pending record. It is also withheld on a
- * deployment with no email channel, which could not send the code. After a
- * send the row's resend is held for the server's interval; when the send
- * succeeded, the row's own note states that wait. A throttled attempt's
- * hold gets no note: its failure banner names the wait and counts it down.
- *
- * Below the lists is the add face: POST /api/v1/auth/identifiers
- * (authn.login.addIdentifier) with a kind and a value. An account holds at
- * most one username, and the server answers a second one with the same
- * refusal as a name someone else took -- copy cannot distinguish them -- so
- * the add face does not offer the username kind once the profile lists one.
- * A username is a login name with no ownership to prove, so it is written
- * in one step; a username already in use is answered 409 (authn.username_taken,
- * or the identifier route's own authn.conflict for the same collision), and
- * because that is the expected outcome of the one write this face exists
- * for, the section names the username on its value field rather than
- * rendering the code's account-state sentence. An
- * email sends a code to it (the answer is state "pending") and the code is
- * submitted through POST /api/v1/auth/identifiers/verify
- * (authn.login.verifyIdentifier); only the matching code writes the address,
- * with the proof. A new address joins the contacts list at once and is not a
- * sign-in way. The email branch is
- * unavailable on a deployment with no email channel (a 503). The one-step
- * username write replaces this session's credential and revokes the
- * account's other sessions, so its success refetches the profile and the
- * session list; the email send and the code's verification do neither, so
- * they refetch only the profile. An address another account has reserved or
- * proved is answered 409 authn.email_taken -- the claim is atomic, so the
- * refusal is the address's, and the value field carries it. The code's
- * verification answers the same code when the address was taken after the
- * code was requested; the face returns to the value field rather than
- * asking for a code nothing can accept.
- *
- * An email address is checked against the server's own rule before it is
- * sent -- trimmed, printable ASCII, exactly one @ with a part on each
- * side, at most 254 bytes -- so a malformed address is refused in the
- * field instead of making a round trip that can only answer the generic
- * bad-request. The value submitted is the trimmed one. A 400 the server
- * still answers for the email kind renders the same field message rather
- * than the account-state banner; a username's 400 (a reserved name, or a
- * shape it cannot normalize) renders the value field's own message. The
- * three refusals are distinguishable: taken, reserved, and shape. A
- * bad-request that is not the username's own shape answer stays the
- * banner's: on this route it may describe another value. Closing
- * the add face clears the whole attempt: the failure banner, the field
- * error, the success notice and the sent-code step.
- *
- * Only the writes that change how the account signs in ask for a fresh
- * authentication: the one-step username add, putting a proved value into
- * sign-in, setting the default contact, removing an identifier and a
- * verification whose proof changes how the account signs in. A 401
- * authn.insufficient_user_authentication opens the step-up dialog with the
- * write's inputs remembered, and a won challenge re-runs that one write
- * exactly once. When the deployment cannot raise the session at all, the
- * dialog's re-login exit records the write in the shared step-up resume
- * store -- the page and the operation, for the removals and the sign-in
- * switches that carry no one-time code -- and the surface replays it once
- * when it mounts again after the new sign-in; a code step and the add
- * face's typed address are left for the person to redo. The email send and
- * the row resend carry no fresh
- * authentication of their own, so a step-up refusal that reached them would
- * render the code's own failure text instead of opening a dialog. Proving an
- * address normally rotates nothing and asks for nothing, but the consequence
- * the server attaches to the proof -- an address that would become the
- * default contact or the account's only address -- can still answer the
- * step-up refusal; the add face's verify and the row's verify then arm the
- * dialog with the same code and replay it once a challenge is won, without
- * opening an identity-transition window (the verification still rotates no
- * credential). A successful write refetches the profile so the rows converge
- * on the server's answer. The one-step username add and putting a value into
- * sign-in replace this session's credential as they commit, so each runs
- * inside an identity-transition window (session.beginIdentityTransition)
- * that closes once the refetch that follows the write has settled; a read
- * still carrying the outgoing credential is discarded instead of ending the
- * session. The email send and the code's verification rotate nothing and run
- * outside the window. Only the username add and putting a value into sign-in
- * refetch the session list, because those are the writes that revoke the
- * account's other sessions.
- *
- * The section has one failure slot: removal, add, row verification, the
- * sign-in switch and the default-contact choice share it, so a failure renders
- * exactly one role="alert" banner. The slot is one control group -- the row
- * actions and the add face are one section -- so its region sits below the
- * add face, after the whole group.
- *
- * The section takes the session (the step-up dialog drives it) and the two
- * optional add-face flags, while the profile read and the writes travel on
- * the shared access token through the generated calls.
- *
- * An email code send also presents the deployment's human-verification
- * proof when its gate requires one. The gate comes from the methods
- * document (or from a `humanGate` a host already read). The block appears
- * only once an email send has been asked for: the add face and a row show
- * no challenge until then, and the send the viewer asked for leaves by
- * itself when the proof arrives. The control that asked stays mounted and
- * busy while the proof is outstanding, and the block appears beside it. A
- * username write and every verification send no message, so they present
- * none and are not gated by the block. Each landing or refused send obtains
- * a fresh proof, because the single-use one was spent.
+ * IdentifiersSection: the identifier surface of the account page, grouped
+ * into the sign-in ways and the contact addresses.
  */
 
 import { Fragment } from 'react'
@@ -274,55 +68,31 @@ import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
+/**
+ * The host supplies the session, the axis this occurrence manages and
+ * which add kinds to offer; the section reads and edits the account's
+ * login identifiers.
+ */
 export interface IdentifiersSectionProps {
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
-  /**
-   * Whether the add surface offers the email kind. The host reads the
-   * deployment's `authn.identifiers.email` feature and passes the
-   * answer, optionally narrowing it by its own product choice; false
-   * removes the email option from the add face. Defaults to true, so a
-   * host that does not gate identifiers keeps the full face.
-   */
+  /** Whether the add surface offers the email kind. Defaults to true. */
   readonly emailAvailable?: boolean
-  /**
-   * Whether the add surface offers the username kind. False removes it
-   * (an email-only product), leaving the email kind alone. Defaults to
-   * true. An account that already lists a username never offers the kind
-   * regardless of this prop.
-   */
+  /** Whether the add surface offers the username kind. Defaults to true; an
+   * account that already lists a username never offers it. */
   readonly offerUsername?: boolean
-  /**
-   * The human-verification gate the deployment reported, when the host
-   * already read the discovery document. Omitted, the section reads the
-   * methods document itself.
-   */
+  /** The deployment's human-verification gate, when the host already read the
+   * discovery document; omitted, the section reads it itself. */
   readonly humanGate?: AuthnHumanGate
-  /**
-   * The host's current path, sent as the step-up flow's `return_to`: a
-   * redirect method's round trip lands back on the page that started it, so
-   * that page reads the refusal. It is also the page a re-login returns to
-   * and replays the recorded write on. Omitted, the deployment's default
-   * return target applies.
-   */
+  /** The host's current path, sent as the step-up flow's `return_to` and the
+   * page a re-login returns to. */
   readonly returnPath?: string
-  /**
-   * Which axis this occurrence manages. 'both' (the default) offers the
-   * sign-in switch, the default-contact choice and both lists; 'signIn'
-   * removes the contact controls and the contacts list, for a host that
-   * shows the contact surface elsewhere; 'contact' removes the sign-in
-   * switch and the sign-in list, for the same reason in the other direction.
-   */
+  /** Which axis this occurrence manages: 'both' (the default), 'signIn'
+   * (no contact controls or list) or 'contact' (no sign-in switch or list). */
   readonly axis?: 'both' | 'signIn' | 'contact'
-  /**
-   * Whether the section renders its own add entry. False leaves the action to
-   * the host, which opens the form through `openAddSignal`.
-   */
+  /** Whether the section renders its own add entry. */
   readonly showAddButton?: boolean
-  /**
-   * A counter the host increments to open the add form; every change after
-   * the first opens it.
-   */
+  /** A counter the host increments to open the add form. */
   readonly openAddSignal?: number
 }
 
@@ -338,11 +108,7 @@ interface ContactActionsProps {
   readonly canDefault?: boolean
   readonly isDefault?: boolean
   readonly canRemove?: boolean
-  /**
-   * The action of this row whose own write is in flight. Only that action
-   * reports busy; the row's other actions and its siblings are unavailable
-   * while the scope's write runs.
-   */
+  /** The action whose own write is in flight; only it reports busy. */
   readonly busyAction?: RowActionKey
   /** A write in this scope is in flight, so the actions cannot run now. */
   readonly scopeUnavailable?: boolean
@@ -356,7 +122,6 @@ interface ContactActionsProps {
   readonly onRemoveRef?: (node: HTMLButtonElement | null) => void
 }
 
-/** One action of a row, with the state its own control carries. */
 interface RowAction {
   readonly key: RowActionKey
   readonly label: string
@@ -365,7 +130,7 @@ interface RowAction {
   /** The action cannot run now: its own precondition is unmet, or a write in
    * the scope is in flight. */
   readonly unavailable: boolean
-  /** Given only when the action's own precondition, not the scope's write,
+  /** Given only when the action's own precondition, not a scope write,
    * stops it. */
   readonly unavailableReason?: string
   readonly tone?: 'danger'
@@ -373,13 +138,8 @@ interface RowAction {
   readonly refCallback?: (node: HTMLButtonElement | null) => void
 }
 
-/** One contact row's actions in their fixed order: verify it, make it the
- * default, remove it. A contacts-table row offers the default action only
- * while it is not already the default -- the row's chip already states that
- * position -- and a merged-view row does not, because its radio already
- * carries that choice. A row with one action renders that action alone; a row
- * with several renders one small action row; a row with none renders
- * nothing. */
+/** One contact row's actions in their fixed order. A row with one action
+ * renders it alone; several render one small action row. */
 function ContactActions({
   canVerify,
   verifyOpen = false,
@@ -412,9 +172,7 @@ function ContactActions({
     })
   }
   if (canDefault && onSetDefault !== undefined && !isDefault) {
-    // The row already carries the "Default contact" chip when it is the
-    // default, so the action would repeat that position without offering
-    // anything: it is absent rather than rendered unavailable.
+    // The default row's chip already states the position.
     actions.push({
       key: 'defaultContact',
       label: t('identifiers.axes.defaultContact'),
@@ -479,12 +237,8 @@ interface SignInSwitchProps {
   readonly onChange: () => void
 }
 
-/**
- * One sign-in switch. It saves on change: while its own write is in flight,
- * or while another write in the scope runs, the change is swallowed and the
- * input reports `aria-disabled` instead of turning natively disabled, so a
- * keyboard user keeps their place.
- */
+/** It reports `aria-disabled` instead of turning natively disabled, so a
+ * keyboard user keeps their place. */
 function SignInSwitch({
   checked,
   label,
@@ -522,12 +276,8 @@ interface DefaultContactChoiceProps {
   readonly onChange: () => void
 }
 
-/**
- * The default-contact radio on one email row. It saves on change, so the
- * input reports `aria-disabled` and the change is guarded instead of the
- * input turning natively disabled; an unmet precondition is explained by a
- * visually hidden sentence the input points at.
- */
+/** An unmet precondition is explained by a visually hidden sentence the input
+ * points at. */
 function DefaultContactChoice({
   checked,
   label,
@@ -572,45 +322,35 @@ function DefaultContactChoice({
   )
 }
 
-/** The identifier kinds the authn account module records
- * (pkg/authn's IdentifierKind), one bundle key each under
- * identifiers.kind. A value outside the list renders the generic
- * "other" label, never a raw value. */
+/** A value outside the list renders the generic "other" label, never raw. */
 const KNOWN_IDENTIFIER_KINDS = new Set<string>([
   'email',
   'phone',
   'username',
 ])
 
-/** The kinds the add face offers here: a username and an email. A phone is
- * added through its own two-step surface (the SMS routes), not this one. */
+/** A phone is added through its own two-step surface, not this one. */
 type AddKind = 'email' | 'username'
 
-/** The email send a pending proof is waiting on: the add face's address, or
- * a row's resend to the address it already shows. */
 type PendingSend =
   | { readonly step: 'add'; readonly value: string }
   | { readonly step: 'row'; readonly address: string }
 
-/** The change the sign-in switch asks for. */
 type AxisChange = {
   readonly signIn: boolean
 }
 
-/** One row's end state in a sign-in-email selection. The whole selection is
- * one step-up action, so a won challenge replays every row it needs. */
+/** The whole selection is one step-up action, so a won challenge replays
+ * every row it needs. */
 type SignInSelectionChange = {
   readonly id: string
   readonly value: string
   readonly signIn: boolean
 }
 
-/** The two lists the identifiers are grouped into. A username is always a
- * sign-in way; every registered email address or phone number is a contact. */
 type IdentifierGroup = 'signIn' | 'contact'
 
-/** The update write in flight, and which control started it, so only that
- * control reports busy and its siblings report unavailable. */
+/** Only the initiating control reports busy; its siblings report unavailable. */
 type PendingUpdate =
   | {
       readonly kind: 'flags'
@@ -620,19 +360,13 @@ type PendingUpdate =
   | { readonly kind: 'select' }
   | { readonly kind: 'default'; readonly id: string }
 
-/** Where focus belongs when a write takes its initiating control out of the
- * document: the recorded order names the neighbour, the control is what
- * tells a focus the write took from a focus the operator moved away. */
 interface LandingRecord {
   readonly id: string
   readonly order: readonly string[]
   readonly control: HTMLElement | null
 }
 
-/** The write a step-up dialog is armed for, so a won challenge re-runs
- * exactly it: a removal, the username add, the sign-in switch of a row, the
- * default-contact choice, either verification step or a whole sign-in-email
- * selection. The code-send steps never arm the gate. */
+/** The code-send steps never arm the gate. */
 type SectionAction =
   | { readonly step: 'remove'; readonly id: string }
   | { readonly step: 'add'; readonly kind: AddKind; readonly value: string }
@@ -650,22 +384,13 @@ type SectionAction =
       readonly changes: readonly SignInSelectionChange[]
     }
 
-/** The row flow's resend note id, referenced by the resend control while it
- * counts down. */
 const ROW_RESEND_NOTE_ID = 'identifiers-row-resend-note'
 
-/** The scope this surface's re-login resume record carries. */
 const RESUME_SCOPE = 'identifiers'
 
-/**
- * The recorded operation as this section's own action, or null when the step
- * carries a value that must not be persisted. The two verification steps
- * carry a one-time code and the add face carries the address the person
- * typed; neither is recorded, so after a new sign-in the person redoes them.
- * The remaining writes (a removal, the sign-in switches, the default contact
- * and a whole sign-in-email selection) are pure requests over identifiers the
- * list already names.
- */
+/** The recorded operation as this section's action, or null when the step
+ * carries a value that must not be persisted: a one-time code or the typed
+ * address, which the person redoes after a new sign-in. */
 function resumableAction(value: unknown): SectionAction | null {
   if (typeof value !== 'object' || value === null) {
     return null
@@ -734,14 +459,8 @@ function resumableAction(value: unknown): SectionAction | null {
   }
 }
 
-/**
- * Whether focus was lost when the initiating control's container left the
- * document. A write that removes its own control hands focus to a neighbour,
- * but only if the operator had not moved focus elsewhere while the write was
- * in flight: the browser drops focus to the body (or leaves it on a detached
- * node) in that case, while a connected control outside the container means
- * the operator chose that place.
- */
+/** Whether focus was lost when the container left; a connected control
+ * outside it means the operator moved focus. */
 function focusFellWith(removed: HTMLElement | null): boolean {
   const active = document.activeElement
   if (active === null || active === document.body) {
@@ -753,7 +472,6 @@ function focusFellWith(removed: HTMLElement | null): boolean {
   return removed !== null && removed.contains(active)
 }
 
-/** The pending-state placeholder, read aloud as one loading announcement. */
 function IdentifierListSkeleton({ label }: { readonly label: string }) {
   const widths = [
     { primary: '40%', secondary: '56%' },
@@ -772,11 +490,8 @@ function IdentifierListSkeleton({ label }: { readonly label: string }) {
   )
 }
 
-/** The grouping facts one profile row carries. `sign_in` can be true on an
- * unproved row written under the old behaviour, so the axis's presence and
- * the row's proved state are read separately: the list membership follows
- * the server's flag, the sign-in switch is offered only where the value is
- * proved. */
+/** `sign_in` can be true on an unproved row, so list membership follows the
+ * server's flag while the switch is offered only for a proved value. */
 function axesOf(row: {
   readonly kind?: string
   readonly sign_in?: boolean
@@ -794,12 +509,16 @@ function axesOf(row: {
   }
 }
 
-/** Whether a row belongs to the contacts list: every registered email
- * address and phone number. A username is a login name only. */
+/** A username is a login name only. */
 function isContact(row: { readonly kind?: string }): boolean {
   return row.kind !== 'username'
 }
 
+/**
+ * The identifiers surface: adds, verifies and removes the account's login
+ * identifiers through its own endpoints, every write settling the section's
+ * result region.
+ */
 export function IdentifiersSection({
   session,
   emailAvailable = true,
@@ -827,52 +546,31 @@ export function IdentifiersSection({
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
   const updateIdentifier = useAuthnLoginUpdateIdentifier()
-  // The email send waiting on a proof the gate requires: the add face's
-  // address, or a row's resend. The gate is read and the proof obtained
-  // only while this is set, so neither face shows a challenge until its
-  // send is asked for. Once the proof arrives the send leaves by itself.
+  // The send waiting on a proof; the challenge shows only once a send asks.
   const [pendingSend, setPendingSend] = useState<PendingSend | null>(null)
-  // The deployment's human-verification gate and this section's proof.
-  // Only an email code send presents it: a username write and every
-  // verification send no message.
-  // Only an email code send presents a proof here, and an address is not a
-  // phone number: the section runs the other surface's mechanism.
   const human = useHumanVerification(session, {
     scope: 'other',
     enabled: pendingSend !== null,
     ...(humanGate === undefined ? {} : { gate: humanGate }),
   })
-  // A host that already read the discovery document hands the gate in; a
-  // standalone section learns it through the hook once a send asks for one.
   const gateDocument = humanGate ?? human.gate
   const needsProof = humanGateNeedsProof(gateDocument, 'other')
-  // The last-line guard of the send itself: a required proof that is not
-  // in hand keeps an email send from leaving.
+  // A required proof that is not in hand keeps an email send from leaving.
   const proofBlocked = needsProof && human.proof === null
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
-  // The address whose email sign-in this visit switched off. Turning the
-  // group back on restores it before falling back to the default contact, so
-  // the viewer's own last choice wins. Component-local memory: it is not
-  // persisted, and it never outlives the mount.
+  // Turning the group back on restores this address before the default
+  // contact. Component-local and never persisted.
   const [lastDisabledSignInEmail, setLastDisabledSignInEmail] = useState<{
     readonly id: string
     readonly value: string
   } | null>(null)
-  // The section's one feedback scope: removal, add and both verification
-  // flows share this slot, so the section shows at most one result at a time
-  // and one failure never stands beside another.
+  // One slot for removal, add and both verification flows.
   const feedback = useWriteFeedback()
-  // The scope's non-code failure source: a failure the server's code text
-  // describes too broadly (a taken username, an address another account
-  // proved in between). It occupies the same result position as the region's
-  // failure, and the two are mutually exclusive.
+  // Mutually exclusive with the region: a failure the code text describes
+  // too broadly (a taken username, an address proved in between).
   const [failureText, setFailureText] = useState<string | null>(null)
 
-  // The row whose removal is its own write in flight, and the update write's
-  // initiating control (the sign-in switch, the picker, or a default-contact
-  // choice). Only the initiating control reports busy; every sibling reports
-  // unavailable without a reason while the scope's write runs.
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null)
   const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null)
   const removeAttempt = useRef(0)
@@ -900,46 +598,32 @@ export function IdentifiersSection({
     }
   }
 
-  // The rendered row actions, by identifier id or row key, so a landed write
-  // can hand focus to the neighbour that replaces a control leaving the
-  // document. The add region is the group container a write with no
-  // neighbour falls back to.
+  // Row actions by id or row key, so a landed write hands focus to the
+  // neighbour; the add region is the fallback.
   const removeButtons = useRef(new Map<string, HTMLButtonElement>())
   const defaultButtons = useRef(new Map<string, HTMLButtonElement>())
   const verifyButtons = useRef(new Map<string, HTMLButtonElement>())
   const addEntry = useRef<HTMLButtonElement | null>(null)
   const addRegion = useRef<HTMLDivElement | null>(null)
 
-  // The writes that take their initiating control out of the document. Each
-  // record is made before the write and consumed by the layout effect that
-  // runs once the control leaves.
+  // Each record is made before the write and consumed once the control leaves.
   const removalLanding = useRef<LandingRecord | null>(null)
   const defaultLanding = useRef<LandingRecord | null>(null)
   const verifyLanding = useRef<LandingRecord | null>(null)
   const addLanding = useRef<LandingRecord | null>(null)
   const addForm = useRef<HTMLFormElement | null>(null)
   const rowVerifyForm = useRef<HTMLFormElement | null>(null)
-  // Set on the success that closes a form, so the layout effect can tell
-  // that close from the operator's own cancel.
+  // Set on the success that closes a form, so the landing can tell it from
+  // the operator's own cancel.
   const addLanded = useRef(false)
-  // Whether the add face was open on the previous commit, so the opening
-  // commit -- not every render while it stays open -- moves focus in.
+  // Only the opening commit moves focus in.
   const addWasOpen = useRef(false)
   const verifyLanded = useRef(false)
-  // The code step's own field: focus returns to the value field when the
-  // operator goes back to it.
   const sentToBefore = useRef<string | null>(null)
 
-  // The add face's own state. addOpen shows the form; addKind picks the
-  // kind; addValue holds the entry; sentTo is the address a code went to,
-  // or null while the value is being entered; code is the answer.
-  // fieldErrorKey is the value field's own error (an ill-formed email, the
-  // server's bad-request answer to one, or an address another account
-  // already holds), rendered under that field rather than in the banner.
   const [addOpen, setAddOpen] = useState(false)
-  // Whether the re-read that follows a landed add has settled. The form
-  // closes as soon as the write lands; the landing waits for this, because
-  // the entry that reopens the form is decided by the re-read's answer.
+  // The form closes as soon as the write lands; the landing waits for this,
+  // because the re-read decides the entry that reopens the form.
   const [addReadSettled, setAddReadSettled] = useState(true)
   const [addKind, setAddKind] = useState<AddKind>(
     emailAvailable ? 'email' : 'username',
@@ -949,12 +633,8 @@ export function IdentifiersSection({
   const [code, setCode] = useState('')
   const [fieldErrorKey, setFieldErrorKey] = useState<string | null>(null)
 
-  // The row flow's own state. rowVerify is the row whose verification is open
-  // (null when none is); rowSentTo is that address once its code has been
-  // requested; rowCode is the answer; rowCodeInvalid marks a refused code in
-  // the field. rowResendUntil / rowNow drive the resend countdown. The key
-  // names the list occurrence that opened the flow, so a record in both
-  // lists shows the form in the row the viewer acted on.
+  // The key names the list occurrence that opened the flow, so a record in
+  // both lists shows the form in the row the viewer acted on.
   const [rowVerify, setRowVerify] = useState<{
     readonly key: string
     readonly value: string
@@ -963,23 +643,15 @@ export function IdentifiersSection({
   const [rowCode, setRowCode] = useState('')
   const [rowCodeInvalid, setRowCodeInvalid] = useState(false)
   const [rowResendUntil, setRowResendUntil] = useState(0)
-  // Whether that hold came from a landed send's `resend_after`. Only that
-  // hold gets the row's note: a hold a throttled failure started is
-  // explained by the shared banner, which counts the same wait down.
+  // Only a landed send's hold gets the row's note; a throttled failure's
+  // banner counts the same wait down.
   const [rowResendFromSuccess, setRowResendFromSuccess] = useState(false)
   const [rowNow, setRowNow] = useState(() => Date.now())
 
-  // Hand focus to the code field when the code step mounts. The sent
-  // notice's live region handles its own empty birth frame; it is empty
-  // again when the flow returns to the value field, because the step's
-  // region unmounts with it.
   const addCodeRef = useRef<HTMLInputElement>(null)
-  // The add face's value input, focused when the server refuses the value.
   const valueInput = useRef<HTMLInputElement>(null)
-  // A refusal asks for focus once the attempt has settled: the value field
-  // is read-only while a write is in flight, and the refusal also re-reads
-  // the profile, so moving focus from the refusal itself would race the
-  // refetch.
+  // Focus moves once the attempt settles: the value field is read-only while
+  // a write is in flight.
   const focusValuePending = useRef(false)
   useEffect(() => {
     if (sentTo !== null) {
@@ -987,15 +659,13 @@ export function IdentifiersSection({
     }
   }, [sentTo])
 
-  // In flight through the whole attempt, including the refetches that follow
-  // the mutation, so no control changes context under a pending scope.
+  // In flight through the refetches that follow.
   const addBusy =
     addIdentifier.isPending || verifyIdentifier.isPending || feedback.pending
   const writeBusy =
     removeIdentifier.isPending || updateIdentifier.isPending || feedback.pending
-  // A send waiting on its human-verification proof is not a write in flight:
-  // only the send or resend control that asked waits, and the ways out of the
-  // wait -- cancel, back, a switch, the code already in hand -- stay usable.
+  // A send waiting on its proof is not a write, so the ways out of the wait
+  // stay usable.
   const scopeBlocked = writeBusy || addBusy
   useEffect(() => {
     if (addBusy || !focusValuePending.current) {
@@ -1005,9 +675,7 @@ export function IdentifiersSection({
     valueInput.current?.focus()
   }, [addBusy])
 
-  // Tick the row flow's countdown only while one is running, and stop the
-  // timer at its own expiry rather than leaving it ticking for the rest of
-  // the mount.
+  // Stop the timer at its own expiry rather than ticking for the whole mount.
   useEffect(() => {
     if (rowResendUntil <= Date.now()) {
       return undefined
@@ -1033,9 +701,7 @@ export function IdentifiersSection({
         void add(action.kind, action.value)
         return
       case 'flags': {
-        // The replay has no click of its own: the row the action names says
-        // which switch started it, so that switch reports busy while the
-        // replayed write runs.
+        // The row the action names says which switch started it.
         const via =
           (rows ?? []).find((row) => row.id === action.id)?.kind === 'phone'
             ? 'phoneSwitch'
@@ -1058,11 +724,8 @@ export function IdentifiersSection({
     }
   })
 
-  // The re-login exit records the write a new sign-in must re-issue. Only the
-  // operations with no one-time code are recorded; the add face's typed
-  // address and the two code steps are left for the person to redo. The record
-  // is bound to the account the session snapshot carries, so it never replays
-  // for an account a later sign-in lands on.
+  // The record is bound to the snapshot's account, so it never replays for an
+  // account a later sign-in lands on.
   const rememberRelogin = useCallback(() => {
     if (returnPath === undefined) {
       return
@@ -1078,8 +741,6 @@ export function IdentifiersSection({
     }
   }, [returnPath, gate.peek, session])
 
-  // The page a re-login returns to replays the recorded write once, through
-  // the gate's own replay, so a second shortfall opens the challenge again.
   // The profile must have loaded: a removal's confirmation names the row from
   // the list it acted on.
   const resumed = useRef(false)
@@ -1112,10 +773,8 @@ export function IdentifiersSection({
 
   const pending = isPending && data === undefined
   const rows = !pending && data !== undefined ? data.identifiers : undefined
-  // A password signs an account in through a username or an email address
-  // chosen as a sign-in way. With exactly one of those on the profile, that
-  // row's removal is withheld and explained; the server still judges the last
-  // way in on the write itself, so this is the visible half of the same rule.
+  // The server still judges the last way in on the write itself; this is the
+  // visible half of the same rule.
   const passwordSet = data?.password_set === true
   const loginNameCount =
     rows === undefined
@@ -1123,22 +782,14 @@ export function IdentifiersSection({
       : rows.filter(
           (row) => row.kind === 'username' || (row.kind === 'email' && row.sign_in),
         ).length
-  // An account holds at most one username. The server answers a second
-  // username with the same 409 authn.conflict as a name someone else took,
-  // so once the profile lists one the add face does not offer that kind:
-  // the client never sends a write whose refusal the copy cannot describe.
+  // The client never sends a write whose refusal the copy cannot describe.
   const usernamePresent =
     rows !== undefined && rows.some((row) => row.kind === 'username')
-  // A pending account carries one contact awaiting proof, managed by
-  // ContactVerificationSection. Offering an email add here as well would put a
-  // second pending address on the account, so the kind leaves this face until
-  // the account is verified.
+  // A pending contact belongs to ContactVerificationSection; a second pending
+  // address must not exist on one account.
   const verificationPending = data?.verification?.state === 'pending'
-  // A row's verify action is offered only where it can work: an unverified
-  // email row, on a deployment with an email channel, while the account as a
-  // whole is not pending. A pending account's code flow belongs to the
-  // verification section and the host's banner; a second concurrent request
-  // would overwrite the one pending record.
+  // A pending account's code flow belongs to the verification section; a
+  // second concurrent request would overwrite the one pending record.
   const rowVerifyAvailable = emailAvailable && !verificationPending
   const rowRemainingSeconds = Math.max(
     0,
@@ -1152,31 +803,17 @@ export function IdentifiersSection({
   if (offerUsername && !usernamePresent) {
     addKinds.push('username')
   }
-  // The selector's value: the chosen kind while it is still offered, and
-  // otherwise the first offered one (the profile can change under an open
-  // form). With no offered kind the face renders nothing, so the fallback
-  // is never shown.
+  // The chosen kind while still offered, else the first offered one (the
+  // profile can change under an open form).
   const formKind: AddKind = addKinds.includes(addKind)
     ? addKind
     : (addKinds[0] ?? 'username')
-  // On the contact axis the host opens the add face from the block header:
-  // while the face is open it stands where the list stood, so the form
-  // replaces the list the way the phone block's form replaces its row,
-  // rather than sitting below a whole table of addresses. The sign-in axis
-  // renders the sign-in groups alone and offers no add face, so it never
-  // reaches this branch.
+  // On the contact axis the open add face replaces the list it stood for.
   const addFaceReplacesList =
     axis === 'contact' && addOpen && addKinds.length > 0
-  // A settled read that lists none, or one whose body omitted the key,
-  // hands the section to the EmptyState, whose title stands in for the
-  // hidden h2 header at its own level (headingLevel="h2" below) -- the
-  // heading order never skips a level, and "no identifiers" is only ever
-  // claimed for an answer that genuinely listed none.
   const showHeader = pending || (rows !== undefined && rows.length > 0)
 
-  /** The identifier ids the current view renders as contact rows, in their
-   * rendered order: the contact axis's email table, or the merged view's
-   * contact list. */
+  /** The identifier ids the current view renders as contact rows. */
   function visibleIds(all: readonly AuthnProfileIdentifier[]): string[] {
     const visible =
       axis === 'contact'
@@ -1198,10 +835,8 @@ export function IdentifiersSection({
     return visible.map((row, index) => `contact:${row.id ?? index}`)
   }
 
-  // A landed removal takes its row out of the document. Focus goes to the
-  // next row's remove control, else the previous one, else the section's
-  // container -- in the commit that removes the row, and only when the
-  // removal is what took focus; an operator who moved elsewhere keeps it.
+  // Focus goes to the next row's remove control, else the previous one, else
+  // the container; a place the operator chose is kept.
   useLayoutEffect(() => {
     const target = removalLanding.current
     if (target === null) {
@@ -1236,9 +871,8 @@ export function IdentifiersSection({
     addRegion.current?.focus()
   }, [rows])
 
-  // A landed default-contact action stops existing on its row, which stays.
-  // Focus goes to the same action on a neighbour, else the section's
-  // container, under the same focus test as a removal.
+  // The action stops existing on its row, which stays; focus goes to a
+  // neighbour's same action, else the container.
   useLayoutEffect(() => {
     const target = defaultLanding.current
     if (target === null) {
@@ -1274,9 +908,8 @@ export function IdentifiersSection({
     addRegion.current?.focus()
   }, [rows])
 
-  // A landed row verification closes its form and, once the profile
-  // refreshes, drops the row's verify action. Focus goes to the next row's
-  // verify action, else the previous one, else the section's container.
+  // The refreshed row drops its verify action; focus goes to the next row's,
+  // else the previous one, else the container.
   useLayoutEffect(() => {
     if (!verifyLanded.current || rowVerify !== null) {
       return
@@ -1311,10 +944,8 @@ export function IdentifiersSection({
     addRegion.current?.focus()
   }, [rowVerify])
 
-  // A landed write that closes the add face takes its form out of the
-  // document: focus returns to the entry that reopens it. The form closes
-  // before the re-read, so the landing waits for the re-read to settle: the
-  // entry it decides from is the one the refreshed profile leaves behind.
+  // Focus returns to the entry that reopens the form; the landing waits for
+  // the re-read that decides which entry that is.
   useLayoutEffect(() => {
     if (!addLanded.current || addOpen || !addReadSettled) {
       return
@@ -1336,10 +967,8 @@ export function IdentifiersSection({
     addRegion.current?.focus()
   }, [addOpen, addReadSettled])
 
-  // Opening the add face removes its entry, which is where the operator's
-  // focus was: hand it to the form's first field. A face the host opened
-  // through its signal leaves the operator's focus where it was, unless the
-  // browser already dropped it to the body.
+  // The opening removes the entry, so focus goes to the form's first field
+  // unless the operator moved it elsewhere.
   useLayoutEffect(() => {
     if (!addOpen) {
       addWasOpen.current = false
@@ -1358,9 +987,8 @@ export function IdentifiersSection({
     first?.focus()
   }, [addOpen])
 
-  // The code step's own controls leave when the operator goes back to the
-  // value step: focus returns to the value field unless the operator moved
-  // it elsewhere.
+  // Going back to the value step returns focus to the value field unless the
+  // operator moved it elsewhere.
   useLayoutEffect(() => {
     const previous = sentToBefore.current
     sentToBefore.current = sentTo
@@ -1374,17 +1002,14 @@ export function IdentifiersSection({
     valueInput.current?.focus()
   }, [sentTo])
 
-  /** Refetch the profile alone. Registering or proving a contact address, the
-   * default-contact choice and a removal change only what the profile
-   * reports: none of them replaces this session's credential or revokes the
-   * account's other sessions. */
+  /** None of these writes replaces this session's credential or revokes
+   * other sessions. */
   async function invalidateProfile(): Promise<void> {
     await queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() })
   }
 
-  /** Refetch what a credential-changing write changes: the profile's
-   * identifiers, and the session list, because the one-step username add and
-   * putting a value into sign-in revoke the account's other sessions. */
+  /** The one-step username add and putting a value into sign-in revoke the
+   * account's other sessions, so the session list is refetched too. */
   async function invalidateAfterWrite(): Promise<void> {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() }),
@@ -1394,21 +1019,14 @@ export function IdentifiersSection({
     ])
   }
 
-  /** Clear the section's shared result position: the slot and the
-   * non-code failure source alike. */
   function clearFailure(): void {
     feedback.reset()
     setFailureText(null)
   }
 
-  /** Open the add face through its one entry, so the component's own button
-   * and the host's `openAddSignal` leave the section in the same state: the
-   * row flow on another row closes and the shared result slot clears, because
-   * one code flow runs at a time on this section. */
+  /** One code flow runs at a time on this section. */
   function openAdd(): void {
     closeRowVerify()
-    // A landing still waiting on the previous write's re-read belongs to a
-    // form the operator has left; the reopened face is a fresh attempt.
     addLanded.current = false
     addLanding.current = null
     setAddReadSettled(true)
@@ -1416,9 +1034,7 @@ export function IdentifiersSection({
     setAddOpen(true)
   }
 
-  /** Settle the add face back to closed with no trace of the attempt: the
-   * failure banner, the field error, the success notice and the sent-code
-   * step all belong to the form that is going away. */
+  /** Everything the attempt left belongs to the form that is going away. */
   function closeAdd(): void {
     setAddOpen(false)
     setPendingSend(null)
@@ -1430,11 +1046,8 @@ export function IdentifiersSection({
   }
 
   function remove(id: string): Promise<void> {
-    // Captured before the write: the refetched profile drops the row, so the
-    // confirmation's name must be read from the list this attempt acted on.
+    // Captured before the write: the refetched profile drops the row.
     const identifierValue = rows?.find((row) => row.id === id)?.value ?? ''
-    // The row's own control leaves with the row when the removal lands, so
-    // the landing record is made before it unmounts.
     const control = removeButtons.current.get(id) ?? null
     if (control !== null) {
       removalLanding.current = {
@@ -1449,8 +1062,7 @@ export function IdentifiersSection({
       try {
         await removeIdentifier.mutateAsync({ id })
       } catch (error) {
-        // The row stays: there is no neighbour to land on, and a step-up
-        // replay makes its own record.
+        // The row stays, so there is no landing; a replay makes its own.
         removalLanding.current = null
         const failure = errorCodeOf(error)
         const reason = stepUpReasonOf(failure)
@@ -1458,15 +1070,11 @@ export function IdentifiersSection({
           gate.arm({ step: 'remove', id }, reason)
           return null
         }
-        // The refusal is the server's judgement on the current state, which
-        // this mount's guard may have read stale (another session removed a
-        // login name first): re-read so the list and the withheld-removal
-        // note converge on what the server sees.
+        // This mount's guard may have read stale, so converge on the server.
         await invalidateProfile()
         throw error
       }
       await invalidateProfile()
-      // Translated when the attempt settles; it names the identifier removed.
       return t('identifiers.removed', {
         value: identifierValue,
         interpolation: { escapeValue: false },
@@ -1474,11 +1082,8 @@ export function IdentifiersSection({
     }).finally(done)
   }
 
-  /** Write a row's sign-in axis. Putting a proved value into sign-in rotates
-   * the caller's credential, so that write runs inside the identity-transition
-   * window; taking it out does not. A refusal re-reads the profile, so a
-   * selection the client offered but the server rejects converges on the
-   * server's answer. */
+  /** Putting a proved value into sign-in rotates the credential, so that
+   * write runs inside the identity-transition window; taking it out does not. */
   function setFlags(
     id: string,
     value: string,
@@ -1516,14 +1121,9 @@ export function IdentifiersSection({
     }).finally(done)
   }
 
-  /** Set which proved email address is a sign-in way. The whole selection is
-   * one attempt, so a step-up refusal arms the gate with every row it needs
-   * and a won challenge lands the same end state -- not only the one row that
-   * met the refusal. The chosen address is written first (it rotates this
-   * session's credential, so the writes run inside the identity-transition
-   * window whose release waits for the refetch); the addresses it replaces
-   * are then turned off. A selection that only turns addresses off rotates
-   * nothing and re-reads the profile alone. */
+  /** The whole selection is one attempt, so a won challenge lands the same
+   * end state. The chosen address is written first, inside the transition
+   * window; the ones it replaces are then turned off. */
   function selectSignInEmail(
     changes: readonly SignInSelectionChange[],
   ): Promise<void> {
@@ -1571,14 +1171,10 @@ export function IdentifiersSection({
     }).finally(done)
   }
 
-  /** Make one proved email address the account's default contact. The server
-   * clears the previous choice in the same write, which is not a credential
-   * rotation. The write needs a fresh authentication like every change of
-   * what proves the account. */
+  /** The server clears the previous choice in the same write; it needs a
+   * fresh authentication like every change of what proves the account. */
   function setDefaultContact(id: string, value: string): Promise<void> {
-    // The landed choice takes this row's action out of the document, so the
-    // record is made before the write -- including the replay after a won
-    // step-up challenge, which re-enters here rather than through a click.
+    // The record is made before the write, including a step-up replay.
     const control = defaultButtons.current.get(id) ?? null
     if (control !== null) {
       defaultLanding.current = {
@@ -1593,8 +1189,7 @@ export function IdentifiersSection({
       try {
         await updateIdentifier.mutateAsync({ id, data: { default_contact: true } })
       } catch (error) {
-        // The row keeps its action on a refusal; a step-up replay makes its
-        // own landing record.
+        // The row keeps its action; a replay makes its own landing record.
         defaultLanding.current = null
         const reason = stepUpReasonOf(errorCodeOf(error))
         if (reason !== null) {
@@ -1619,31 +1214,24 @@ export function IdentifiersSection({
     }
     setFieldErrorKey(null)
     if (addOpen) {
-      // A landed write closes the form, taking the control that sent it out
-      // of the document; the record names the form for the focus test.
+      // The record names the form for the focus test.
       addLanding.current = { id: '', order: [], control: addForm.current }
     }
     return feedback.run(async () => {
       setFailureText(null)
       const presented = kind === 'email' && needsProof ? human.proof : null
-      /** Apply the write's answer: an address's code step, or the settled
-       * add that refetches the profile. */
       async function settleAdded(result: {
         readonly state?: string
       }): Promise<string | null> {
         if (result.state === 'pending') {
-          // An address the deployment can reach: the code is on its way and
-          // the answer is the next step, not a settled action.
+          // The code is on its way; the answer is the next step.
           setSentTo(value)
           setCode('')
           return null
         }
         addLanded.current = true
-        // The write landed: close the form now. A failed re-read must not
-        // leave the same add available for a second submit, and the landing
-        // can only be decided from the elements the read leaves behind, so
-        // it waits for the read to settle. Its rejection is contained for
-        // the same reason: the write already committed.
+        // Close now; the landing waits for the read, whose rejection is
+        // contained because the write already committed.
         setAddReadSettled(false)
         closeAdd()
         try {
@@ -1653,7 +1241,6 @@ export function IdentifiersSection({
         } finally {
           setAddReadSettled(true)
         }
-        // The confirmation names the changed kind (the sign-in identifier).
         return t('identifiers.add.added')
       }
       try {
@@ -1661,11 +1248,8 @@ export function IdentifiersSection({
           presented === null
             ? { kind, value }
             : { kind, value, human_proof: presented }
-        // A username is written in one step, and that write rotates this
-        // session's credential with it, so it runs inside an
-        // identity-transition window whose release waits for the refetch
-        // that follows. The email add only sends a code: it does not rotate
-        // the credential, so it runs outside the window.
+        // The username write rotates the credential, so it runs inside the
+        // window; the email add rotates nothing.
         if (kind === 'username') {
           return await runIdentityTransition(
             session,
@@ -1680,29 +1264,20 @@ export function IdentifiersSection({
         return await settleAdded(result)
       } catch (error) {
         const failure = errorCodeOf(error)
-        // Only the username write is a change of what proves the account;
-        // the email add registers a contact and is never gated.
+        // Only the username write proves the account; the email add is never
+        // gated.
         const reason = kind === 'username' ? stepUpReasonOf(failure) : null
         if (reason !== null) {
-          // A step-up refusal precedes the proof check, so the proof is
-          // still valid for the re-run.
           gate.arm({ step: 'add', kind, value }, reason)
           return null
         }
-        // The send reached its own checks, which spend the single-use
-        // proof: obtain a fresh one.
+        // The single-use proof was spent: obtain a fresh one.
         if (presented !== null) {
           human.consume()
         }
-        // A bad request for an email is the server refusing the address's
-        // shape -- the same rule the client checked -- so the field carries
-        // the message instead of the generic account-state banner. A taken
-        // address is the same field's failure: the claim is atomic, and the
-        // one value the viewer can change is the address. A username's bad
-        // request keeps the banner: the server's username
-        // rule also refuses shapes the client does not restate (the
-        // reserved static-credential prefix, a UUID-shaped name), which the
-        // kind's helper text describes rather than one blanket sentence.
+        // An email refusal is the address's, so the field carries it; a
+        // username's bad request keeps the banner because the server's rule
+        // refuses shapes the client does not restate.
         if (
           kind === 'email' &&
           (failure === 'authn.bad_request' || failure === 'authn.email_taken')
@@ -1718,11 +1293,8 @@ export function IdentifiersSection({
           kind === 'username' &&
           (failure === 'authn.username_taken' || failure === 'authn.conflict')
         ) {
-          // An existing username is the expected 409 of the one write this
-          // face exists for. The identifier route keeps its own conflict
-          // answer for the same collision; both mean the name is not
-          // available, and the name is the value the viewer changes, so the
-          // field carries the message.
+          // Both codes mean the name is unavailable, and the name is the
+          // value the viewer changes, so the field carries it.
           setFieldErrorKey('identifiers.add.usernameTaken')
           focusValuePending.current = true
           return null
@@ -1732,9 +1304,6 @@ export function IdentifiersSection({
           (failure === 'authn.username_reserved' ||
             failure === 'authn.username_invalid')
         ) {
-          // A login name the system keeps for itself, or one the server
-          // cannot normalize: the name is the value this face can change,
-          // so the field carries the message.
           setFieldErrorKey(
             failure === 'authn.username_reserved'
               ? 'identifiers.add.usernameReserved'
@@ -1755,24 +1324,18 @@ export function IdentifiersSection({
     return feedback.run(async () => {
       setFailureText(null)
       try {
-        // Proving an address carries no fresh authentication of its own and
-        // rotates nothing, so it opens no window. The consequence the server
-        // attaches to the proof -- an address that becomes the default
-        // contact or the account's only address -- can still answer a step-up
-        // refusal, which arms the gate with the same code.
+        // Opens no window: proving rotates nothing. A step-up refusal arms
+        // the gate with the same code.
         await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
         addLanded.current = true
-        // The re-read lands first, so the form's landing sees the entry the
-        // new profile leaves behind.
+        // The re-read lands first, so the landing sees the new entry.
         await invalidateProfile()
         closeAdd()
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === 'authn.email_taken') {
-          // The address was taken between the code request and the write
-          // (the write is the authoritative refusal): the value is what must
-          // change, so the face returns to it with the field's message
-          // instead of leaving the viewer on a code with nothing to answer.
+          // Taken after the code was requested: return to the value field
+          // rather than a code nothing can accept.
           setSentTo(null)
           setCode('')
           setFieldErrorKey('identifiers.add.emailTaken')
@@ -1789,9 +1352,8 @@ export function IdentifiersSection({
     })
   }
 
-  /** Open a row's verification flow on the address the row already shows.
-   * The add face closes, because one code flow runs at a time on this
-   * section. `key` names the list occurrence that opened it. */
+  /** One code flow runs at a time, so the add face closes; `key` names the
+   * list occurrence that opened it. */
   function openRowVerify(key: string, value: string): void {
     closeAdd()
     setRowCodeInvalid(false)
@@ -1802,7 +1364,6 @@ export function IdentifiersSection({
     setRowVerify({ key, value })
   }
 
-  /** Settle the row flow back to closed with no trace of the attempt. */
   function closeRowVerify(): void {
     setPendingSend(null)
     setRowVerify(null)
@@ -1814,9 +1375,7 @@ export function IdentifiersSection({
     clearFailure()
   }
 
-  /** Re-send a code to the row's fixed address. The route accepts the
-   * account's own address as a re-add of its proof, so this is the same
-   * write the add face makes, with the value already known. */
+  /** The route accepts the account's own address as a re-add of its proof. */
   function rowSend(address: string): Promise<void> {
     if (proofBlocked) {
       return Promise.resolve()
@@ -1845,8 +1404,7 @@ export function IdentifiersSection({
         setRowNow(Date.now())
         setRowSentTo(address)
         setRowCode('')
-        // The code is on its way; the sent-code step is the flow's own
-        // state, not a settled action.
+        // The sent-code step is the flow's own state, not a settled action.
         return null
       } catch (error) {
         if (presented !== null) {
@@ -1855,8 +1413,6 @@ export function IdentifiersSection({
         const retryAfter = retryAfterMsOf(error)
         if (retryAfter !== undefined) {
           setRowResendUntil(Date.now() + retryAfter)
-          // The failure's banner carries this hold's countdown; the row's
-          // note would repeat it.
           setRowResendFromSuccess(false)
           setRowNow(Date.now())
         }
@@ -1870,18 +1426,12 @@ export function IdentifiersSection({
   const rowSendRef = useRef(rowSend)
   rowSendRef.current = rowSend
 
-  /**
-   * Ask for an email code from the add face: send now when the gate is
-   * known to want no proof, otherwise hold the send and let the block
-   * obtain one; the effect below sends when it arrives.
-   */
+  /** Sends now when the gate wants no proof, else holds the send for the
+   * effect below. */
   function askAddEmail(value: string): void {
     if (pendingSend !== null) {
-      // A send is already waiting on its proof; asking again changes nothing.
       return
     }
-    // The attempt begins here, whichever path it takes: the previous
-    // result must not stand beside the verification the new one renders.
     clearFailure()
     setFieldErrorKey(null)
     if (
@@ -1895,10 +1445,7 @@ export function IdentifiersSection({
     setPendingSend({ step: 'add', value })
   }
 
-  /**
-   * Ask a row to resend to the address it already shows: the same awaited
-   * path as the add face, so one proof path serves both sends.
-   */
+  /** The same awaited path as the add face, so one proof path serves both. */
   function askRowSend(address: string): void {
     if (pendingSend !== null) {
       return
@@ -1916,15 +1463,8 @@ export function IdentifiersSection({
     setPendingSend({ step: 'row', address })
   }
 
-  // A send asked for while the gate held it leaves as soon as the gate is
-  // known and the proof it wants is in hand: the viewer's one request is
-  // not turned into a click followed by a second one. A gate still being
-  // read keeps the send waiting; a gate that wants nothing sends at once.
-  // The scope's own write in flight keeps it waiting too: the send joins
-  // the same feedback scope, so it must not start beside another attempt
-  // (a row's switch, a removal, a verification). Waiting on the proof is
-  // not a write, so the controls that leave the wait -- cancel, a switch,
-  // the code in hand -- stay usable while it is held here.
+  // A held send leaves once the gate is known, the proof is in hand and no
+  // other write of the scope is in flight.
   useEffect(() => {
     if (pendingSend === null || human.pending || gateDocument === null) {
       return
@@ -1951,18 +1491,13 @@ export function IdentifiersSection({
     writeBusy,
   ])
 
-  /** Submit the row flow's code. The write proves the address the send just
-   * named, so the refetched row loses its unverified chip. */
+  /** The refetched row loses its unverified chip. */
   function rowVerifyCode(nextCode: string): Promise<void> {
-    // Verifying the code already in hand calls off a row resend waiting on
-    // its proof: the late token must not send a second code that invalidates
-    // the one being proved, and the wait it left behind must not block later
-    // sends.
+    // A late token must not send a second code that invalidates this one.
     setPendingSend(null)
     const address = rowSentTo ?? rowVerify?.value ?? ''
     setRowCodeInvalid(false)
-    // The landed verification closes the row's form; the record names the
-    // form and the rows whose verify actions can take focus after it.
+    // The record names the form and the rows whose verify actions can follow.
     const openKey = rowVerify?.key
     if (openKey !== undefined) {
       verifyLanding.current = {
@@ -1974,11 +1509,8 @@ export function IdentifiersSection({
     return feedback.run(async () => {
       setFailureText(null)
       try {
-        // The row's verification proves the address without rotating the
-        // session or revoking the others, so it runs outside the window. The
-        // consequence the proof carries -- an address that becomes the only
-        // address, hence the automatic login way -- can still answer a step-up
-        // refusal, which arms the gate with the same code.
+        // Opens no window: proving rotates nothing. A step-up refusal arms
+        // the gate with the same code.
         await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
         verifyLanded.current = true
         setRowVerify(null)
@@ -1990,16 +1522,13 @@ export function IdentifiersSection({
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === 'authn.login_failed') {
-          // The code is the one value this flow can change: state the refusal
-          // in its field instead of the section's banner.
+          // The code is the one value this flow can change.
           setRowCodeInvalid(true)
           setRowCode('')
           return null
         }
         if (failure === 'authn.email_taken') {
-          // The address cannot be edited in this flow; the address-taken
-          // answer means another account proved it in between, and naming
-          // that is clearer than the code's account-state sentence.
+          // Another account proved the address in between.
           setFailureText('verification.addressTaken')
           return null
         }
@@ -2010,7 +1539,6 @@ export function IdentifiersSection({
         }
         throw error
       }
-      // The confirmation names the address it proved.
       return t('verification.verifiedDescription', {
         email: address,
         interpolation: { escapeValue: false },
@@ -2018,8 +1546,6 @@ export function IdentifiersSection({
     })
   }
 
-  /** The add face's submit: send or add on the value step, verify on the
-   * code step. */
   function submitAdd(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
     if (sentTo !== null) {
@@ -2029,8 +1555,7 @@ export function IdentifiersSection({
     if (axis === 'contact' || formKind === 'email') {
       const address = parseEmailAddress(addValue)
       if (address === null) {
-        // The client guard owns this attempt's result; a settled result from
-        // the previous attempt must not stand beside the field error.
+        // A settled result must not stand beside the field error.
         clearFailure()
         setFieldErrorKey('identifiers.add.invalidEmail')
         return
@@ -2044,8 +1569,6 @@ export function IdentifiersSection({
     }
   }
 
-  /** The row verification form's submit: ask for a code, or verify the one
-   * in hand. */
   function submitRowVerify(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
     if (rowSentTo === null) {
@@ -2057,9 +1580,8 @@ export function IdentifiersSection({
     }
   }
 
-  // Both forms are guarded: an implicit submission the submit button does
-  // not carry (Enter in a field, a programmatic submit) is swallowed while
-  // the write is in flight and while a required value is missing.
+  // An implicit submission is swallowed while the write is in flight and a
+  // required value is missing.
   const guardedAddSubmit = useActivationGuard(submitAdd, {
     busy: addBusy || pendingSend !== null,
     unavailable:
@@ -2072,9 +1594,8 @@ export function IdentifiersSection({
       writeBusy || (rowSentTo !== null && rowCode.trim() === ''),
   })
 
-  // Which action of the add face is in flight, and the reason a value step's
-  // send cannot run. The two mutations are shared with the row flow, so the
-  // open face is what tells this form's write apart.
+  // The mutations are shared with the row flow, so the open face tells this
+  // form's write apart.
   const addSendInFlight =
     (pendingSend !== null && pendingSend.step === 'add') ||
     (addIdentifier.isPending && addOpen)
@@ -2094,9 +1615,6 @@ export function IdentifiersSection({
       ? t('identifiers.add.value.helperEmail')
       : t('identifiers.add.value.helperUsername')
 
-  // The deployment's human-verification block. An email face renders it
-  // only while the send it asked for waits on a proof; it renders nothing
-  // when no proof is required.
   const humanBlock = (
     <HumanVerification
       scope="other"
@@ -2113,12 +1631,6 @@ export function IdentifiersSection({
     />
   )
 
-  // The lists, in the order the section renders them, with the keys their
-  // headings and empty notes read. The contact axis's own view renders its
-  // table instead, so it reads no group here. The sign-in axis renders one
-  // list per kind; the merged view renders the same kind lists inside its
-  // sign-in ways list, so an email or phone choice reads the same in both
-  // views, and keeps the contacts list beside it.
   interface GroupSpec {
     readonly key: IdentifierGroup
     /** Set when the list is one identifier kind rather than one axis. */
@@ -2171,37 +1683,22 @@ export function IdentifiersSection({
           ]
   const groupIdBase = useId()
 
-  /**
-   * One sign-in kind group: the group-level choice for that kind and the
-   * sentence stating what it chose. Neither view renders addresses or
-   * numbers as rows here -- the picker displays the chosen address, and the
-   * sentence names the username or phone. The sign-in axis names the group
-   * with its kind heading; the merged view renders the same block inside its
-   * sign-in ways list under the kind's accessible name, so an email or phone
-   * choice reads the same in both views. A username has no control, the email
-   * group has a toggle plus a picker, and the phone group has a toggle of its
-   * representative row.
-   */
+  /** One sign-in kind group: the kind's choice and the sentence stating it.
+   * Neither view renders addresses or numbers as rows here. */
   function renderSignInKind(
     spec: GroupSpec,
     allRows: readonly AuthnProfileIdentifier[],
   ) {
     const kind = spec.kind ?? ''
     const headingId = `${groupIdBase}-${kind}`
-    // The control reads every row of the kind: the email picker offers all
-    // proved addresses, and the phone toggle targets the representative row.
-    // The group renders no address rows of its own: the picker is where the
-    // chosen address reads, and the sentence states the username or phone.
     const kindRows = allRows.filter((row) => (row.kind ?? '') === kind)
     const signInRow =
       kindRows.find((row) => row.sign_in === true) ??
       kindRows.find((row) => row.proven === true) ??
       kindRows[0] ??
       null
-    // A username is always a login name, so its group carries no sign-in
-    // switch and no removal action: the name is permanent, and the group
-    // states that below the sentence naming it. The server refuses a removal
-    // requested outside this surface with authn.username_immutable.
+    // The name is permanent: no switch, no removal (the server answers
+    // authn.username_immutable for one requested elsewhere).
     const usernameRow = kind === 'username' ? (kindRows[0] ?? null) : null
     const emailSignInRow =
       kind === 'email'
@@ -2423,8 +1920,7 @@ export function IdentifiersSection({
                   )
                 })()
               ) : (
-                // The button offers to enable this phone, so the sentence must
-                // state the same thing: the number is not used to sign in.
+                // The sentence must agree with the enable action.
                 t('identifiers.usage.phoneNotSignIn')
               )}
             </Typography>
@@ -2443,21 +1939,10 @@ export function IdentifiersSection({
     )
   }
 
-  /**
-   * The row verification form both views render: the row's own address,
-   * fixed; the human-verification block; the code field once a code is out;
-   * and one action row whose controls keep one order -- cancel on the left,
-   * the resend in the middle once a code is out, and the primary send or
-   * verify closing the row on the right. After a send the resend stays
-   * unavailable for the server's interval. A hold a successful send started
-   * states the wait in the row's own note; a hold a throttled failure
-   * started gets no note, because the failure's banner names that wait and
-   * counts it down.
-   */
+  /** The row verification form both views render, on the row's fixed
+   * address: cancel, resend, then the primary send or verify. */
   function renderRowVerifyForm(address: string) {
-    // Which action of this form is in flight. The row send and the code's
-    // verification share the two mutations with the add face, so the open
-    // row flow is what tells this form's write apart.
+    // Shared mutations, so the open row flow tells this form's write apart.
     const rowSendInFlight =
       (pendingSend !== null && pendingSend.step === 'row') ||
       (addIdentifier.isPending && rowVerify !== null)
@@ -2465,9 +1950,8 @@ export function IdentifiersSection({
     const resendCountingDown = rowRemainingSeconds > 0
     const resendUnavailable =
       !rowSendInFlight && (scopeBlocked || resendCountingDown)
-    // A successful send's note states the wait; a throttled failure's banner
-    // counts it down but has no id to point at, so the control names the
-    // waiting state itself. The two explanations are exclusive.
+    // The two explanations are exclusive: a landed send's note, or the
+    // control naming the wait itself.
     const resendExplanation =
       resendCountingDown && rowResendFromSuccess
         ? { unavailableDescribedBy: ROW_RESEND_NOTE_ID }
@@ -2491,8 +1975,6 @@ export function IdentifiersSection({
             helperText={t('identifiers.add.value.helperEmail')}
             slotProps={{ htmlInput: { readOnly: true } }}
           />
-          {/* The email face's block appears only while a send it asked for
-              waits on its proof. */}
           {pendingSend !== null && pendingSend.step === 'row'
             ? humanBlock
             : null}
@@ -2571,9 +2053,7 @@ export function IdentifiersSection({
               </ActionButton>
             )}
           </ActionRow>
-          {/* A successful send's hold has no banner to explain it, so the
-              note states its wait. A throttled failure's banner counts the
-              same wait down, so this note stays away then. */}
+          {/* Only a landed send's hold has no banner, so it states its wait. */}
           {rowSentTo !== null &&
           rowRemainingSeconds > 0 &&
           rowResendFromSuccess ? (
@@ -2592,14 +2072,8 @@ export function IdentifiersSection({
     )
   }
 
-  /**
-   * One row in the contacts list. The per-record actions (the
-   * default-contact choice, verification and removal) render once per
-   * record, so one address never offers the same action twice: the
-   * default-contact radio stands below the row, and verification and
-   * removal sit as the row's own actions. Whether an email or phone signs in
-   * is a group decision, so no row carries a switch for it.
-   */
+  /** One contacts-list row; the per-record actions render once, and no row
+   * carries a sign-in switch because that is a group decision. */
   function renderContactRow(
     identifier: AuthnProfileIdentifier,
     index: number,
@@ -2610,26 +2084,16 @@ export function IdentifiersSection({
       ? t(`identifiers.kind.${kind}`)
       : t('identifiers.kind.other')
     const value = identifier.value ?? ''
-    // `proven` is the server's derivation of whether the way the identifier
-    // was established proves ownership. `verified_at` is present on every
-    // stored identifier (including a username written at registration as
-    // `self`), so it cannot answer that question.
+    // `verified_at` is present on every stored identifier, so it cannot answer
+    // ownership; every unproven channel reads the same way.
     const verified = identifier.proven === true
-    // The chip answers one question: has ownership of this identifier been
-    // proved? Every unproven channel reads the same way -- an
-    // administrator-asserted or imported address is an address its holder
-    // has not proved, not a third state.
     const stateLabel = verified
       ? t('identifiers.verified')
       : t('identifiers.unverified')
-    // A username proves no ownership, so it has no verification state to
-    // show.
+    // A username proves no ownership, so it has no chip.
     const showChip = kind !== 'username'
     const axes = axesOf(identifier)
     const rowKey = `contact:${id ?? index}`
-    // An unverified email is provable from its own row, unless the
-    // account-wide flow already owns that code (pending) or the deployment
-    // has no channel to send it.
     const canVerifyRow = rowVerifyAvailable && kind === 'email' && !verified
     const rowFlowOpen = canVerifyRow && rowVerify?.key === rowKey
     const lastLoginName =
@@ -2640,9 +2104,6 @@ export function IdentifiersSection({
     const canRemoveRow = id !== null && !lastLoginName
     const showActionsMenu = canVerifyRow || canRemoveRow
     const scopeUnavailable = scopeBlocked
-    // The action of this row whose own write is in flight (only a removal is
-    // offered on a merged-view row besides verification, which starts a
-    // form rather than a write).
     const busyAction: RowActionKey | undefined =
       id !== null && pendingRemoveId === id ? 'remove' : undefined
     return (
@@ -2792,11 +2253,7 @@ export function IdentifiersSection({
                       const axes = axesOf(row)
                       return (
                         <TableRow key={id ?? index}>
-                          {/* The address column carries the host's contact
-                              tables' shared width (the phone table beside
-                              this one writes the same value), so the badge
-                              and action columns of both tables land on one
-                              set of rails. */}
+                          {/* The shared width lands both tables on one set of rails. */}
                           <TableCell sx={{ width: '11rem' }}>
                             {row.value ?? ''}
                           </TableCell>
@@ -2890,20 +2347,13 @@ export function IdentifiersSection({
               </>
             ) : (
               groups.map((group) => {
-              // A sign-in list is one per kind over one axis, so the axis key
-              // alone would repeat: the kind keeps the React key and the
-              // heading id unique.
+              // The kind keeps the React key and the heading id unique.
               const groupKey = group.kind ?? group.key
               const headingId = `${groupIdBase}-${groupKey}`
-              // The sign-in axis renders its lists without headings (the
-              // host's own block names them), so it must not point
-              // aria-labelledby at an id no element carries.
+              // The sign-in axis renders no headings, so it points at no id.
               const showHeading =
                 axis !== 'signIn' && (axis === 'both' || groups.length > 1)
               if (group.key === 'signIn') {
-                // The sign-in axis has one list per kind; the merged view
-                // renders the same blocks inside its sign-in ways list, one
-                // per kind the profile holds a row for.
                 const kindSpecs =
                   axis === 'signIn'
                     ? [group]
@@ -3028,14 +2478,10 @@ export function IdentifiersSection({
                       fullWidth
                       label={t('identifiers.add.kind.label')}
                       value={formKind}
-                      // A selector that only changes the form's context: it
-                      // never starts this write, so it is never focused when
-                      // one begins. It stays natively disabled, and is
-                      // outside the lint rule's element set.
+                      // It never starts this write, so it stays natively disabled.
                       disabled={addBusy}
                       onChange={(event) => {
-                        // Changing the kind abandons a send waiting on its
-                        // proof.
+                        // Changing the kind abandons a held send.
                         setPendingSend(null)
                         setAddKind(event.target.value as AddKind)
                         setFieldErrorKey(null)
@@ -3071,8 +2517,7 @@ export function IdentifiersSection({
                     value={addValue}
                     slotProps={{ htmlInput: { readOnly: addBusy } }}
                     onChange={(event) => {
-                      // Editing the value abandons a send waiting on its
-                      // proof.
+                      // Editing the value abandons a held send.
                       setPendingSend(null)
                       setAddValue(event.target.value)
                       if (fieldErrorKey !== null) {
@@ -3083,8 +2528,6 @@ export function IdentifiersSection({
                   {pendingSend !== null && pendingSend.step === 'add'
                     ? humanBlock
                     : null}
-                  {/* Cancel leads the inline form's action row; the
-                      primary submit closes it on the right. */}
                   <ActionRow sx={{ width: '100%' }}>
                     <ActionButton
                       type="button"
@@ -3114,9 +2557,6 @@ export function IdentifiersSection({
                 </>
               ) : (
                 <>
-                  {/* The destination text stays through the step; as the
-                      announcement region it announces the code's landing
-                      once (inserted empty, then filled a frame later). */}
                   <AnnouncementRegion
                     message={t('identifiers.add.sent', {
                       value: sentTo,
@@ -3173,12 +2613,8 @@ export function IdentifiersSection({
         )}
       </Box>
 
-      {/* The section's one result position, below the whole control group --
-          the row actions and the add face whose writes share the slot -- so a
-          success and a failure can never stand together. It stays outside
-          AsyncSection so an empty list still shows it. The non-code failure
-          sentences occupy the same position and are mutually exclusive with
-          it. */}
+      {/* Outside AsyncSection so an empty list still shows it; the non-code
+          sentences share the position and are mutually exclusive. */}
       <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mt: 1 }} />
       {failureText !== null && (
         <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
@@ -3195,11 +2631,7 @@ export function IdentifiersSection({
         confirmLabel={t('identifiers.confirmLabel')}
         onCancel={() => setRemoveTarget(null)}
         onConfirm={() => {
-          // The confirmation's job ends at the confirming click: it closes
-          // before the write, so the row's own control (the write's
-          // initiator) holds focus while the removal runs and the section's
-          // result region reports the outcome without a modal standing over
-          // the list.
+          // Closes before the write, so the row's control holds focus.
           const id = removeTarget
           setRemoveTarget(null)
           if (id !== null) {

@@ -1,13 +1,6 @@
 /**
- * ProfileSection behaviour: the display-name surface over the profile
- * read (GET /api/v1/auth/me) and the profile write (PATCH /api/v1/auth/me).
- *
- * What this suite pins: the stored display name renders into the field; a
- * save PATCHes a one-field body under `display_name`, fills the success
- * live region and refetches the profile; a refused save renders its code
- * text in the banner (the write needs no fresh authentication, so no
- * step-up dialog opens); the inline mode writes on blur and on Enter; and a
- * load that failed renders the error state with a retry that refetches.
+ * ProfileSection checks the display-name surface over the profile read and
+ * the one-field PATCH.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -28,9 +21,7 @@ import { ProfileSection } from './ProfileSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** Mounts the section over a session-free rig that plants the bearer the
- * profile read and the PATCH ride: the section takes no session, so a raw
- * refusal surfaces directly. */
+/** Session-free, so a raw refusal surfaces directly. */
 function mount(respond: RealResponder) {
   const rig = makeRealClientRigWithoutSession(respond)
   rig.store.set('access-1')
@@ -83,8 +74,6 @@ describe('ProfileSection', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
     )
-    // The confirmation names the changed object (the display name) and sits
-    // below the control group it confirms -- the field and its save button.
     expect(zhCN.profile.saved).toContain(zhCN.profile.displayName.label)
     const saveButton = screen.getByRole('button', { name: zhCN.profile.save })
     expect(
@@ -94,7 +83,6 @@ describe('ProfileSection', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     const patch = rig.calls.find((call) => call.method === 'PATCH')
     expect(patch?.body).toEqual({ display_name: 'Grace' })
-    // The read converges on the account's own answer.
     expect(
       rig.calls.filter(
         (call) => call.method === 'GET' && call.path === PROFILE_PATH,
@@ -108,9 +96,7 @@ describe('ProfileSection', () => {
         return jsonResponse(200, profileBody({ display_name: 'Ada' }))
       }
       if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
-        // The write answers with the name as stored, which may differ from
-        // the body it accepted; the callback reports that answer, not the
-        // typed value.
+        // The callback reports the answer, not the typed value.
         return jsonResponse(200, { display_name: 'Grace Hopper' })
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
@@ -167,10 +153,7 @@ describe('ProfileSection', () => {
     await user.type(field, 'Grace')
     await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
 
-    // The PATCH settled, but the scope's attempt is still open on the
-    // refetch, so the field stays locked until the whole attempt settles.
-    // It is read-only rather than disabled: a field that goes natively
-    // disabled drops focus to the body.
+    // Read-only rather than disabled: a native disable drops focus to the body.
     await waitFor(() => expect(releaseRefetch).not.toBeNull())
     expect(field).toHaveAttribute('readonly')
     expect(field).not.toHaveAttribute('disabled')
@@ -202,8 +185,6 @@ describe('ProfileSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
-    // The failure renders in the same place as a success: below the control
-    // group, in the scope's region.
     const saveButton = screen.getByRole('button', { name: zhCN.profile.save })
     expect(
       saveButton.compareDocumentPosition(alert) &
@@ -222,8 +203,7 @@ describe('ProfileSection', () => {
     const user = userEvent.setup()
 
     const save = await screen.findByRole('button', { name: zhCN.profile.save })
-    // Nothing changed yet: the save is inert. It stays focusable and says
-    // why -- it is unavailable, not natively disabled.
+    // Unavailable, not natively disabled, so it stays focusable and says why.
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).not.toHaveAttribute('disabled')
     expect(save).not.toHaveAttribute('aria-busy')
@@ -231,8 +211,6 @@ describe('ProfileSection', () => {
     save.focus()
     expect(save).toHaveFocus()
 
-    // Click and the keyboard leave without a request, and a direct form
-    // submit is swallowed by the same rule.
     await user.click(save)
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -243,11 +221,9 @@ describe('ProfileSection', () => {
       name: zhCN.profile.displayName.label,
     })
     await user.type(field, '!')
-    // A changed name releases the control and clears its reason.
     expect(save).not.toHaveAttribute('aria-disabled', 'true')
     expect(save).not.toHaveAccessibleDescription()
 
-    // Restoring the account's own name makes it unavailable again.
     await user.clear(field)
     await user.type(field, 'Ada')
     expect(save).toHaveAttribute('aria-disabled', 'true')
@@ -282,9 +258,7 @@ describe('ProfileSection', () => {
     const save = screen.getByRole('button', { name: zhCN.profile.save })
     await user.click(save)
 
-    // The control that started the write reports busy and keeps focus; it
-    // is never natively disabled, and the field stays focusable while it
-    // cannot be changed.
+    // Never natively disabled: the control and field keep focus.
     await waitFor(() => expect(save).toHaveAttribute('aria-busy', 'true'))
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).not.toHaveAttribute('disabled')
@@ -297,9 +271,6 @@ describe('ProfileSection', () => {
       expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
     )
 
-    // The landing makes the name match the stored one again, so the save
-    // becomes unavailable with its reason -- the same element, still
-    // focused.
     await waitFor(() => expect(save).not.toHaveAttribute('aria-busy'))
     expect(save).toHaveAttribute('aria-disabled', 'true')
     expect(save).toHaveAccessibleDescription(zhCN.profile.saveUnavailable)
@@ -336,12 +307,9 @@ describe('ProfileSection', () => {
     field.focus()
     await user.keyboard('{Enter}')
 
-    // The field started the write: it stays put, read-only instead of
-    // disabled, and the Enter that submitted it did not take focus away.
     await waitFor(() => expect(field).toHaveAttribute('readonly'))
     expect(field).not.toHaveAttribute('disabled')
     expect(field).toHaveFocus()
-    // Enter while the write is in flight is swallowed by the guard.
     await user.keyboard('{Enter}')
     expect(rig.calls.filter((call) => call.method === 'PATCH')).toHaveLength(1)
 
@@ -371,10 +339,8 @@ describe('ProfileSection', () => {
     const field = await screen.findByRole('textbox', {
       name: zhCN.profile.displayName.label,
     })
-    // The inline mode carries no submit button: the field commits itself.
     expect(screen.queryByRole('button', { name: zhCN.profile.save })).toBeNull()
 
-    // A changed name lands when the field loses focus.
     await user.clear(field)
     await user.type(field, 'Grace')
     await user.tab()
@@ -383,12 +349,9 @@ describe('ProfileSection', () => {
     expect(afterBlur).toHaveLength(1)
     expect(afterBlur[0]?.body).toEqual({ display_name: 'Grace' })
 
-    // The refetch that follows the save settles before the next edit: the
-    // attempt's read-only lock is released, not a native disable.
     await waitFor(() => expect(field).not.toHaveAttribute('readonly'))
     expect(field).toHaveValue('Grace')
 
-    // Enter commits the next changed name through the form's submit.
     await user.clear(field)
     await user.type(field, 'Grace Hopper{Enter}')
     await waitFor(() => expect(stored).toBe('Grace Hopper'))
@@ -418,8 +381,6 @@ describe('ProfileSection', () => {
     await user.click(field)
     await user.keyboard('{Enter}')
 
-    // Enter on the account's own name is no write: no PATCH goes out and the
-    // region reports nothing, matching the non-inline button's unavailable rule.
     expect(rig.calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
     expect(screen.getByRole('status').textContent).toBe('')
   })
@@ -444,8 +405,7 @@ describe('ProfileSection', () => {
     await user.type(field, 'Grace')
     await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
 
-    // The write is not gated: the refusal's own text lands in the section's
-    // feedback region, and no dialog opens.
+    // Not gated: the refusal's text lands in the region and no dialog opens.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
     const saveButton = screen.getByRole('button', { name: zhCN.profile.save })
@@ -484,7 +444,6 @@ describe('ProfileSection', () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         reads += 1
-        // The first read settles the field; every later refresh fails.
         return reads === 1
           ? jsonResponse(200, profileBody({ display_name: 'Grace Hopper' }))
           : errorResponse(500, 'authn.unavailable')
@@ -503,8 +462,6 @@ describe('ProfileSection', () => {
       await queryClient.invalidateQueries()
     })
 
-    // The failed refresh keeps the settled field on screen under the stale
-    // notice, rather than replacing it with the error placeholder.
     expect(
       screen.getByRole('textbox', { name: zhCN.profile.displayName.label }),
     ).toHaveValue('Grace Hopper')
@@ -519,7 +476,6 @@ describe('ProfileSection', () => {
     ).toBeTruthy()
     expect(screen.queryByText(zhCN.profile.error.title)).toBeNull()
 
-    // The stale notice's retry is the section's own retry: it re-reads.
     const readsBeforeRetry = reads
     await user.click(screen.getByRole('button', { name: zhCN.profile.retry }))
     await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))

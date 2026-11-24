@@ -1,13 +1,5 @@
 /**
  * Whether the deployment offers any social sign-in.
- *
- * A host that wants to hide the whole social-bindings card when the
- * assembly carries no social provider asks here instead of reading the
- * discovery document itself: the answer is `session.listMethods()`'s
- * `kind: 'redirect'` entries. A read that fails answers "no provider", the
- * same direction the bindings surface takes for a document it cannot read;
- * the surface's own rows are not part of this answer, so a host keeps
- * showing the card while the account holds bound identities.
  */
 
 import { useEffect, useState } from 'react'
@@ -22,8 +14,11 @@ export interface SocialMethodsAvailability {
   readonly available: boolean
 }
 
-/** Reads the discovery document once per session and reports whether the
- * deployment serves a social (redirect) sign-in method. */
+/**
+ * Reads the discovery document once per session and reports whether the
+ * deployment serves a social (redirect) sign-in method. A failed read
+ * reports no provider.
+ */
 export function useSocialMethodsAvailable(
   session: AuthSession,
 ): SocialMethodsAvailability {

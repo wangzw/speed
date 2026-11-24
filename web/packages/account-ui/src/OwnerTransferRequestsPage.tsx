@@ -1,32 +1,6 @@
 /**
  * OwnerTransferRequestsPage: the account-level surface where a member
  * confirms or declines an organization's request to take its ownership.
- *
- * The page is deliberately account-level and outside every tenant scope.
- * A plain member is usually not allowed to read the organization's
- * profile, and the request is addressed to the person, not to the
- * organization whose ownership it moves -- so the whole credential is the
- * caller's own signed-in identity. Nothing here asks for a tenant
- * permission or requires the organization to be the current tenant.
- *
- * Two views share one route family: the list (GET
- * /api/v1/auth/me/owner-transfer-requests) shows every pending request
- * addressed to the caller across every organization; the detail view (GET
- * /api/v1/auth/me/owner-transfer-requests/{request}) reads one request in
- * whatever state it is, which is what a deep link opened after a decision
- * renders. The host chooses which view by passing `request`.
- *
- * Confirming is the only action that changes ownership: the server makes
- * the caller the owner, grants tenant-admin and leaves the previous owner
- * an active member with every binding it held. It is a deliberate
- * two-step confirmation, because it changes an organization's owner.
- * Declining is harmless -- ownership simply stays where it is -- so it
- * takes the single-step confirmation. Both are re-read through the same
- * invalidation: the lists, the detail, and the organization's profile
- * read, whose owner column a confirmation moves. A conflict (409) means
- * the request moved underneath the caller; the detail is re-read so the
- * page can name expiry or a finished request, and every other conflict
- * keeps one sentence because the answer cannot separate its causes.
  */
 
 import { useLayoutEffect, useRef, useState } from 'react'
@@ -64,36 +38,33 @@ import {
 import { AccountAsyncSection } from './internal/async-section.js'
 import { useAccountUiErrorText } from './internal/error-text.js'
 import { useAccountTimeZone } from './internal/time-zone.js'
-import { useAccountUiTranslation } from './internal/translation.js'/** The account-level transfer page's two views. */
+import { useAccountUiTranslation } from './internal/translation.js'
+
+/**
+ * The host addresses the request by path and supplies the routes and
+ * actions for opening it; the page reads and acts through the account's
+ * transfer endpoints.
+ */
 export interface OwnerTransferRequestsPageProps {
-  /**
-   * The request the detail view reads. Absent or empty renders the list.
-   */
+  /** The request the detail view reads. Absent or empty renders the list. */
   readonly request?: string
   /** Builds the detail view's address for one request; absent leaves the
-   * list's rows without a link and offers the host callback instead. */
+   * list's rows without a link. */
   readonly requestHref?: (id: string) => string
-  /** The host's action for a row the list cannot link itself: open the
-   * detail view for the request. */
+  /** The host's action for a row the list cannot link itself. */
   readonly onOpenRequest?: (id: string) => void
   /** The address of the list, for the detail view's way back. */
   readonly listHref?: string
-  /**
-   * The host's action to open an organization the caller now owns. Absent
-   * leaves the confirmation as the final word; a host with a tenant
-   * switcher opens the organization profile after a confirm.
-   */
+  /** The host's action to open an organization the caller now owns. */
   readonly onOpenOrganization?: (tenant: string) => void | Promise<unknown>
 }
 
-/** The local refusal codes this surface resolves. */
 const NOT_FOUND = 'transfer.not_found'
 const EXPIRED = 'transfer.expired'
 const NOT_PENDING = 'transfer.not_pending'
 const CONFLICT = 'transfer.conflict'
 const UNKNOWN = 'transfer.unknown'
 
-/** The status labels, from the generated view's closed set. */
 function statusLabel(
   t: ReturnType<typeof useAccountUiTranslation>['t'],
   status: MyTransferView['status'],
@@ -114,10 +85,8 @@ function statusLabel(
   }
 }
 
-/** The single-request read: `enabled` holds it back when no request is named. */
-
 /** A date-time as this account renders one, or the empty string when the
- * server sent a value the formatter cannot read. */
+ * formatter cannot read the value. */
 function displayInstant(
   value: string,
   language: string,
@@ -129,7 +98,8 @@ function displayInstant(
     : formatInstant(value, language, { timeZone })
 }
 
-/** The page. */
+/** The account-level surface where a member confirms or declines an
+ * organization's request to take its ownership. */
 export function OwnerTransferRequestsPage({
   request,
   requestHref,
@@ -209,7 +179,6 @@ export function OwnerTransferRequestsPage({
   )
 }
 
-/** One row's organization name and its two instants. */
 function RequestFacts({
   request,
   language,
@@ -236,7 +205,6 @@ function RequestFacts({
   )
 }
 
-/** The list's rows; each links to the detail view. */
 function RequestList({
   requests,
   requestHref,
@@ -310,7 +278,6 @@ function RequestList({
   )
 }
 
-/** The detail view: one request, confirm or decline while it is pending. */
 function RequestDetail({
   request,
   listHref,
@@ -329,40 +296,30 @@ function RequestDetail({
   const feedback = useWriteFeedback()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [declineOpen, setDeclineOpen] = useState(false)
-  // Which decision this scope started: only that control reports busy while
-  // the write runs; its sibling reports unavailable without a reason.
+  // Only the control that started the write reports busy.
   const [pendingAction, setPendingAction] = useState<
     'confirm' | 'decline' | null
   >(null)
-  // The card is the control group's focus landing once a landed decision
-  // takes both actions out of the document; the group element is captured
-  // when the write starts so the landing can tell a lost focus from one the
-  // operator moved elsewhere.
+  // The card is the focus landing when a landed decision removes both
+  // controls; the group is captured when the write starts so the landing can
+  // tell a lost focus from one the operator moved elsewhere.
   const cardRegion = useRef<HTMLDivElement | null>(null)
   const actionGroup = useRef<HTMLDivElement | null>(null)
   const pendingLanding = useRef<{
     readonly group: HTMLElement | null
   } | null>(null)
 
-  // A landed decision leaves the request in a terminal state, which unmounts
-  // the action group. Focus goes to the request card in the commit that
-  // removes the group, but only when the removal is what took focus: a
-  // connected control outside the group means the operator chose that place
-  // during the write, and it is left alone. A decision that settled with the
-  // request still in place (a refusal, an answer that still carries it)
-  // removed nothing, so its landing is dropped once the write is no longer
-  // in flight; a later terminal read of its own must not move focus.
+  // Focus moves to the card only when the group's removal is what took it; a
+  // connected control outside the group means the operator chose that place.
   useLayoutEffect(() => {
     const target = pendingLanding.current
     if (target === null || request === undefined) {
       return
     }
     if (request.status === 'pending') {
-      // Settled without removing the request (a refusal, or an answer that
-      // still carries it): there is nothing to land from. Judged on the
-      // read's settled answer rather than this render's, so a re-read that
-      // has already reported a terminal state is not mistaken for one that
-      // still carries the request before its own render commits.
+      // Judged on the read's settled answer, not this render's, so a re-read
+      // that already reported a terminal state is not mistaken for one that
+      // still carries the request.
       const reread = queryClient.getQueryData<{
         readonly request: MyTransferView
       }>(getTenantAdminMeTransferRequestQueryKey(request.id))
@@ -400,11 +357,8 @@ function RequestDetail({
     }
   }
 
-  /**
-   * Re-reads every read a decision moves, resolving once the detail read
-   * has settled: that answer is what reports the decision, so the write
-   * stays in flight -- and its controls out of reach -- until it lands.
-   */
+  /** Resolves on the detail read, keeping the write in flight until the
+   * decision is reported. */
   const invalidate = (tenant: string): Promise<void> => {
     void queryClient.invalidateQueries({
       queryKey: getTenantAdminMeTransferRequestsQueryKey(),
@@ -412,9 +366,8 @@ function RequestDetail({
     const reread = queryClient.invalidateQueries({
       queryKey: getTenantAdminMeTransferRequestQueryKey(request.id),
     })
-    // The organization's profile read lives on the tenant surface, whose
-    // reads are tenant-prefixed. Both the bare and the prefixed key are
-    // invalidated so either wiring converges on the new owner.
+    // The tenant surface's reads are tenant-prefixed, so invalidate both the
+    // bare and the prefixed key.
     void queryClient.invalidateQueries({
       queryKey: getTenantProfileGetQueryKey(tenant),
     })
@@ -492,9 +445,7 @@ function RequestDetail({
       description={t('transferRequests.detailDescription')}
     >
       <Box
-        // The request card is the action group's focus landing when a
-        // landed decision removes both controls: named by the section's
-        // title, and reachable by script without joining the Tab order.
+        // Reachable by script without joining the Tab order.
         ref={cardRegion}
         role="group"
         aria-label={request.tenant}
@@ -614,7 +565,6 @@ function RequestDetail({
   )
 }
 
-/** Whether focus was lost when the action group left the document. */
 function focusFellWith(removed: HTMLElement | null): boolean {
   const active = document.activeElement
   if (active === null || active === document.body) {
@@ -626,7 +576,6 @@ function focusFellWith(removed: HTMLElement | null): boolean {
   return removed !== null && removed.contains(active)
 }
 
-/** A synthetic failure the feedback scope classifies by its code. */
 function failure(code: string): Error & { readonly code: string } {
   return Object.assign(new Error(code), { code })
 }

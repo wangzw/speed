@@ -1,12 +1,6 @@
 /**
- * SessionsSection in a real browser: every row's sign-out action closes on
- * one right rail. The rows are a list, not a table, so there is no header
- * cell to line up with; what a reader sees is the action column of the
- * rows -- a short device name and a long one -- ending on the same vertical
- * line, and that line is the list's own content edge. Each action is a
- * labelled button carrying its sign-out icon, so the rail is the button's
- * own edge rather than a glyph's. jsdom lays nothing out, so only Chromium
- * can tell the rail from a per-row shrink-wrap.
+ * SessionsSection in a real browser: every row's sign-out action closes on one
+ * right rail, which only a laid-out tier can tell from a per-row shrink-wrap.
  */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'

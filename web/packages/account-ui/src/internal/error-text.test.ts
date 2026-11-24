@@ -1,36 +1,6 @@
 /**
- * The error-text whitelist contract, pinned in both directions against
- * the shipped bundles: ERROR_TEXT_CODES (the reachable-subset whitelist
- * of the signed-in account surface) and the errors-section leaves of
- * each language file must name exactly the same codes -- errors.unknown
- * is the one errors-section key with no code, the fallback itself. A
- * code added to the whitelist without its two bundle keys, or a bundle
- * key added without its whitelist code, fails the equality pin here; key
- * parity between the two language files is enforced earlier, by
- * registerNamespace, so a key missing from one language fails
- * registration before any component can ship it.
- *
- * The render walk adds the value half: every whitelisted code must
- * resolve through the registered namespace to its own dedicated text in
- * both languages -- never the errors.unknown fallback and never a raw
- * key. Component-level render coverage (the role="alert" banner for a
- * given code) lives in the component suites beside each failure path;
- * this file pins the whole-list pairing that the banner depends on.
- *
- * The wording policy of error-text.ts adds a third pin: the codes whose
- * failure context is identical to the sign-in surface's must stay
- * verbatim copies of the auth-ui texts for the same codes, in both
- * languages, so the same server answer reads the same on the account
- * page and the sign-in surface. The pin must live in this package's own
- * suite: another package's whitelist sharing some of these codes covers
- * them only as a side effect of its own whitelist, never as this
- * package's protection -- that package can narrow its whitelist for its
- * own reasons and silently drop the coverage. The shared codes are
- * pinned here, against the auth-ui bundles imported below as test data.
- * The account-only codes (insufficient_user_authentication,
- * impersonation_restricted, forbidden, login_identifier_required,
- * username_immutable, unsupported_media_type, factor_not_found) carry
- * account-authored texts and carry no copy claim to pin.
+ * Pins the error-text whitelist to the shipped bundles in both directions,
+ * and pins the codes that must stay verbatim copies of the auth-ui texts.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -45,32 +15,19 @@ import {
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '../resources.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import enUS from '../locales/en-US.json' with { type: 'json' }
-// The same-tier rule keeps this package from importing auth-ui's catalog
-// at runtime; the verbatim-copy pin below imports the source bundles
-// here, as test data only -- JSON data is no code dependency, so this
-// crosses no package boundary the rule draws.
+// Test data only: JSON is no code dependency, so the same-tier rule holds.
 import authUiZhCN from '../../../auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import authUiEnUS from '../../../auth-ui/src/locales/en-US.json' with { type: 'json' }
-// The platform catalog is the shipped source of the last-login-way sentence.
-// account-ui carries its own bundle, so the copy is pinned here to the source
-// text as test data, the same way the auth-ui copies above are.
+// The shipped source of the last-login-way sentence, pinned as test data.
 import platformErrorsZhCN from '../../../i18n/src/platform-errors/locales/zh-CN.json' with { type: 'json' }
 import platformErrorsEnUS from '../../../i18n/src/platform-errors/locales/en-US.json' with { type: 'json' }
 import { ERROR_TEXT_CODES, useAccountUiErrorText } from './error-text.js'
 
-/**
- * The one errors-section leaf with no single whitelisted code: the
- * bare-HTTP family (client.http.<status>) resolves onto it, the whole
- * status family sharing one parameterized key.
- */
+/** The whole client.http.<status> family shares this one parameterized key. */
 const HTTP_FAMILY_LEAF = 'client.http'
 
-/** A language bundle's errors section, structural so both packages'
- * bundles (account-ui's own and the auth-ui bundles imported as test
- * data) satisfy the helpers below. */
 type Bundle = { errors: unknown }
 
-/** The code leaf keys of the errors section, e.g. 'authn.bad_request'. */
 function errorLeafKeys(bundle: Bundle): string[] {
   const leaves: string[] = []
   for (const [source, codes] of Object.entries(
@@ -86,7 +43,6 @@ function errorLeafKeys(bundle: Bundle): string[] {
   return leaves.sort()
 }
 
-/** The errors-section value a whitelisted code must resolve to. */
 function bundleText(bundle: Bundle, code: string): string {
   const [source, leaf] = code.split('.')
   const section = (
@@ -95,7 +51,6 @@ function bundleText(bundle: Bundle, code: string): string {
   return section?.[leaf!] ?? ''
 }
 
-/** The flat, dotted-key catalog value of the platform error bundle. */
 function platformText(bundle: Bundle, code: string): string {
   return (bundle.errors as unknown as Record<string, string>)[code] ?? ''
 }
@@ -112,16 +67,8 @@ function newInstance(): ReturnType<typeof createI18n> {
   return i18n
 }
 
-/**
- * The whitelisted codes whose account-ui text is a verbatim copy of the
- * auth-ui text for the same code -- the codes error-text.ts's wording
- * policy names, restricted to the ones the auth-ui bundle actually
- * carries. The account-only codes and the client-transport family are
- * outside the claim: no auth-ui leaf exists for them.
- */
+/** The codes whose account-ui text must copy the auth-ui text verbatim. */
 const VERBATIM_CODES: readonly string[] = [
-  // authn: the problem codes both surfaces render for the same server
-  // answer -- the account page and the sign-in surface read them alike.
   'authn.bad_request',
   'authn.unsupported_region',
   'authn.login_failed',
@@ -145,9 +92,7 @@ describe('error-text whitelist', () => {
   it('resolve every whitelisted code to its own text in both languages', async () => {
     const i18n = newInstance()
     for (const code of ERROR_TEXT_CODES) {
-      // Dedicated text, never the unknown fallback and never a raw key:
-      // fallbackLng is false, so a missing key would render as the key
-      // itself -- asserted against both failure shapes.
+      // fallbackLng is false, so a missing key renders as the key itself.
       const zh = i18n.t(`errors.${code}`, { ns: ACCOUNT_UI_NAMESPACE })
       expect(zh, code).not.toBe(zhCN.errors.unknown)
       expect(zh, code).not.toBe(`errors.${code}`)
@@ -163,10 +108,7 @@ describe('error-text whitelist', () => {
   })
 
   it('renders each bare-HTTP status distinctly, carrying its status code', () => {
-    // A non-2xx with no readable envelope arrives as client.http.<status>.
-    // It is outside the fixed whitelist, so without the parameterized
-    // family it would collapse onto errors.unknown; the family leaf keeps
-    // the status visible and keeps different statuses apart.
+    // Without the parameterized family these would collapse onto errors.unknown.
     const i18n = newInstance()
     const { result } = renderHook(() => useAccountUiErrorText(), {
       wrapper: ({ children }: { readonly children: ReactNode }) =>
@@ -184,9 +126,6 @@ describe('error-text whitelist', () => {
   })
 
   it('names the wait a throttled ratelimit answer stated', () => {
-    // The address and quota layers refuse a throttled request with
-    // ratelimit.throttled and a Retry-After; the sentence names how long
-    // the caller must wait rather than only restating the refusal.
     const i18n = newInstance()
     const { result } = renderHook(() => useAccountUiErrorText(), {
       wrapper: ({ children }: { readonly children: ReactNode }) =>
@@ -202,11 +141,8 @@ describe('error-text whitelist', () => {
   })
 
   it('compose the shared session-lifecycle family and resolve each code to its own text', async () => {
-    // A session that dies mid-flight answers through the refresh leg with
-    // one of these codes; the account surface must render its own sentence
-    // for each, never the unknown fallback. The family is composed from
-    // @speed/i18n rather than re-listed, so this pin also keeps the set
-    // from being trimmed.
+    // Composed from @speed/i18n rather than re-listed, so this pin keeps the
+    // set from being trimmed.
     const whitelist = ERROR_TEXT_CODES as readonly string[]
     for (const code of SESSION_LIFECYCLE_ERROR_CODES) {
       expect(whitelist, `${code} must be whitelisted`).toContain(code)
@@ -231,11 +167,6 @@ describe('error-text whitelist', () => {
   })
 
   it('renders the shipped platform sentence for the last-login-way refusal', () => {
-    // The account page refuses to remove the last way to sign in; the answer
-    // is authn.last_login_method, and its text is the one the platform error
-    // catalog already ships. The copy in this package's bundle must be that
-    // sentence verbatim, in both languages, so the same server answer reads
-    // the same wherever the catalog is rendered.
     const code = 'authn.last_login_method'
     expect(bundleText(zhCN, code)).not.toBe('')
     expect(bundleText(enUS, code)).not.toBe('')
@@ -244,10 +175,8 @@ describe('error-text whitelist', () => {
   })
 
   it('name both a username and an email address in the missing-login-identifier text', () => {
-    // The wording is pinned through the bundle's own labels: either kind is a
-    // login name, and the proving channel does not decide that -- the text
-    // therefore carries no verified qualifier, and it must read the same for
-    // the set-password and remove-last-login-name refusals that share the code.
+    // Either kind is a login name, and proof does not decide that, so the text
+    // carries no verified qualifier.
     const zh = zhCN.errors.authn.login_identifier_required
     const en = enUS.errors.authn.login_identifier_required
     expect(zh).toContain(zhCN.identifiers.add.value.labelUsername)
@@ -260,9 +189,7 @@ describe('error-text whitelist', () => {
 
   it('keep every policy-named shared-answer text a verbatim copy of the auth-ui text for the same code', () => {
     for (const code of VERBATIM_CODES) {
-      // The auth-ui leaf is the copy's source: a missing or empty one
-      // fails here rather than passing a vacuous equality, in either
-      // language.
+      // A missing or empty source fails rather than passing a vacuous equality.
       const authZh = bundleText(authUiZhCN, code)
       const authEn = bundleText(authUiEnUS, code)
       expect(authZh, code).not.toBe('')
@@ -273,11 +200,6 @@ describe('error-text whitelist', () => {
   })
 
   it('keep every verbatim-listed code whitelisted', () => {
-    // The pin list must not drift into dead copy of its own: a code the
-    // whitelist no longer draws is a code the pin should stop claiming,
-    // not one it quietly stops enforcing -- the wording policy of
-    // error-text.ts names the same set, and the pairing test above
-    // already tied each whitelisted code to its two bundle leaves.
     for (const code of VERBATIM_CODES) {
       expect(
         (ERROR_TEXT_CODES as readonly string[]).includes(code),

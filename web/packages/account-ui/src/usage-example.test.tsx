@@ -1,24 +1,6 @@
 /**
- * usage-example.test.tsx -- the README quick start, compiled and run.
- *
- * The quick start wires the account page for a signed-in viewer: the
- * bilingual i18n instance with both namespaces registered (the
- * account-ui namespace for this package's strings, the ui-kit namespace
- * because the confirm dialogs speak ui-kit-namespace keys), the
- * AppThemeProvider tree and a QueryClientProvider (the account surfaces
- * read their data through the react-query hooks generated into
- * @speed/api-sdk over the host's client), and the host's own account page
- * composing the sections under a signed-in session.
- *
- * Why a real client: the component suites drive each surface in isolation
- * through the same real-client rig; the wiring the README documents -- the
- * session, the client bound to the api-sdk runtime, the providers, the
- * i18n instance, the theme and query providers, and the sections side by
- * side -- is a composition no single-component suite exercises. This file
- * is that journey: it renders the composed page over a real
- * @speed/api-client whose scripted fetch answers genuine Response
- * objects, walks one session revoke, and switches the whole page to the
- * other supported language.
+ * The README quick start, compiled and run: the composed account page over a
+ * real api-client, walking one revoke and switching the page's language.
  */
 
 import { describe, expect, it } from 'vitest'

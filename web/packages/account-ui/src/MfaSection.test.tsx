@@ -1,22 +1,6 @@
 /**
- * MfaSection behaviour: the factors read (GET /api/v1/auth/factors), the remove
- * route (DELETE /api/v1/auth/factors/{id}), the deployment's method discovery
- * (GET /api/v1/auth/methods) and the `purpose: 'enroll'` flow
- * (POST /api/v1/auth/flows/authenticated, POST /api/v1/auth/flows/answer).
- *
- * What this suite pins: the factors render with their kind, label and
- * status beside the enrollment entries the deployment reports -- only the
- * kinds GET /api/v1/auth/methods' mfa.factors lists are offered, so a deployment
- * without a passkey relying party shows no passkey entry; a remove
- * DELETE-s the factor and refetches the list; a remove refused with 401
- * step_up_required opens the step-up dialog, and a won step-up re-runs
- * exactly that removal once; a 409 (last factor) renders its code text;
- * and the TOTP enrollment starts its flow with the panel -- the
- * `webauthn` step's otpauth_uri is rendered as a QR symbol, the code is
- * answered under `step: 'enroll'`, a following `complete` step is taken
- * automatically so the reader confirms once, and the settled `enrolled`
- * refetches the factors and names the new row with the typed name; a
- * refused answer keeps the typed code and reports the refusal in the panel.
+ * MfaSection checks the factors list, the deployment's enrollment entries,
+ * the remove route and the enroll flow.
  */
 
 import { describe, expect, it, vi } from 'vitest'

@@ -1,9 +1,7 @@
 /**
- * The Retry-After a 429 carried, in milliseconds.
- *
- * Read structurally so the package stays independent of @speed/api-client's
- * concrete error class. A value that is absent or not a positive number means
- * the answer carried no interval, and the caller starts no countdown.
+ * The Retry-After a 429 carried, in milliseconds, read structurally so the
+ * package stays independent of @speed/api-client's error class. An absent or
+ * non-positive value reads as no interval.
  */
 export function retryAfterMsOf(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) {

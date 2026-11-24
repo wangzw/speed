@@ -1,16 +1,6 @@
 /**
- * BindingCallbackHandler behaviour: the link flow read back from the
- * callback route (GET /api/v1/auth/flows/current) and completed (POST
- * /api/v1/auth/flows/answer).
- *
- * What this suite pins: a ready flow is taken with `step: 'complete'`,
- * the `link` completion (state 'linked') fires onBound exactly once and
- * never signs anyone in; a flow still parked on a step holds the pending
- * notice (the handler waits for the provider's callback to land); a read
- * that failed renders its code text under a retry that re-reads the flow;
- * and a flow that no longer exists (a read that finds none, or a `complete`
- * exchange refused as authn.flow_invalid) is terminal when the host gives
- * onDismiss, keeping the retry only without one.
+ * BindingCallbackHandler checks the link flow read back and completed on the
+ * callback route, its terminal states, and that it never signs anyone in.
  */
 
 import { useState } from 'react'

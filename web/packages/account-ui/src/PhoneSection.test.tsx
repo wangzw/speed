@@ -1,36 +1,6 @@
 /**
- * PhoneSection behaviour: the two-step phone surface over POST /api/v1/auth/phone
- * (send a code) and POST /api/v1/auth/phone/verify (submit it).
- *
- * What this suite pins: the shared country/local control assembles the
- * number into E.164 and the send POSTs it under `phone`, advancing to the
- * code step whose sent notice names the assembled number; the host's
- * phone-country context sets the starting country, replacing the
- * browser-locale answer; an empty number
- * disables the send action; a number too short for its country is refused
- * locally with the calling code named and sends nothing; the verify POSTs
- * the code alone (the number is the server's own record); a verified
- * number fills the scope's region beneath the controls with a message
- * naming the number, while the sent notice stays outside the slot; a
- * refused send and a wrong code each render their code text in that
- * region; a landed verification settles its sentence before the profile
- * re-read starts, so the slot is never blank while the refresh is in
- * flight, contains a failed re-read instead of reporting the landed write
- * as a failure, and then hands the bound number to the host through
- * `onAdded` exactly once -- only while the section is still mounted, since
- * a read that settles after it unmounted notifies nothing -- keeping its
- * own success state on screen instead of the number-entry form while the
- * host dismisses it, and offering a Close action during the wait that
- * closes without a hand-over; the section's own confirmation still renders
- * for a standalone mount; the way
- * back to a different number
- * returns to the number step, and the send control that comes back with
- * it is not shown with a send's progress state while the profile re-read
- * is still open;
- * the send carries no fresh authentication, so a step-up refusal of it
- * renders its code text in that region rather than opening a dialog, while a
- * refused verify opens the dialog, settles nothing in the slot before the
- * replay, and replays the same code.
+ * PhoneSection checks the two-step phone surface: the E.164 send, the
+ * code-only verify, the host hand-over, and the refusals.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -212,7 +182,7 @@ describe('PhoneSection', () => {
   it('waits for the profile refresh before handing the number to the host', async () => {
     // The host closes its add form from `onAdded`. Notifying before the
     // profile read settles would leave the block behind the form showing
-    // the stale read (尚未绑定) beside the success sentence. The section
+    // the stale read (not yet linked) beside the success sentence. The section
     // therefore keeps its own success state -- never the number-entry form
     // -- until the invalidation's refetch has landed, and only then
     // notifies the host.

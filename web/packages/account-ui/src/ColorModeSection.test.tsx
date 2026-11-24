@@ -1,16 +1,6 @@
 /**
- * ColorModeSection behaviour: the three-valued color-mode select over the
- * profile self-write surface, GET/PATCH /api/v1/auth/me.
- *
- * What this suite pins: the three options render in their fixed order
- * (dark, light, system) and the account's stored color_mode is the
- * selected one; an account that has never saved a preference shows the
- * host's `effective` value; a choice PATCHes exactly `{ color_mode }` and
- * reports the written value through `onApplied` only after the write has
- * landed; a refused write leaves the control on the stored value and
- * renders the resolved code text in the section's own feedback region;
- * and the closed control passes an axe scan. Every write's request body
- * is pinned, so the PATCH contract is asserted from the wire up.
+ * ColorModeSection checks the three-valued color-mode select over the
+ * profile self-write surface, pinning each PATCH body.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -31,9 +21,7 @@ import { ColorModeSection } from './ColorModeSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** A stateful profile responder: GET answers the stored color mode, PATCH
- * merges the partial body into it (absent field unchanged) and answers
- * 200. */
+/** GET answers the stored mode; PATCH merges the partial body and answers 200. */
 function makeProfileResponder(initial: { color_mode?: string } = {}) {
   const stored: { color_mode?: string } = { ...initial }
   const respond: RealResponder = async (call: RealCall) => {
@@ -58,15 +46,11 @@ function makeProfileResponder(initial: { color_mode?: string } = {}) {
   return { respond, stored }
 }
 
-/** Opens the MUI select and picks the option whose accessible name is
- * `optionName`. */
 function chooseOption(combobox: HTMLElement, optionName: string): void {
   fireEvent.mouseDown(combobox)
   fireEvent.click(screen.getByRole('option', { name: optionName }))
 }
 
-/** Mounts the section over a session-free rig that plants the bearer the
- * profile read rides. */
 function mountSection(
   respond: RealResponder,
   effective: AppThemeModePreference,
@@ -96,7 +80,6 @@ describe('ColorModeSection', () => {
         name: zhCN.appearance.colorMode.title,
       }),
     ).toBeTruthy()
-    // The description is the control's own helper, under the select.
     const select = modeSelect()
     expect(select).toHaveAccessibleDescription(
       zhCN.appearance.colorMode.description,
@@ -108,7 +91,6 @@ describe('ColorModeSection', () => {
     )
 
     fireEvent.mouseDown(select)
-    // The fixed order is the section's own: dark, light, system.
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
       zhCN.appearance.colorMode.options.dark,
       zhCN.appearance.colorMode.options.light,
@@ -139,7 +121,6 @@ describe('ColorModeSection', () => {
     await waitFor(() =>
       expect(select).toHaveTextContent(zhCN.appearance.colorMode.options.dark),
     )
-    // The value came from `effective`, not from an empty stored field.
     await waitFor(() =>
       expect(
         rig.calls.filter(
@@ -176,8 +157,6 @@ describe('ColorModeSection', () => {
 
     chooseOption(select, zhCN.appearance.colorMode.options.dark)
 
-    // The write is in flight: the request is on the wire, and the host has
-    // not been told the preference was applied.
     await waitFor(() =>
       expect(
         rig.calls.filter((call) => call.method === 'PATCH'),
@@ -191,8 +170,6 @@ describe('ColorModeSection', () => {
     expect(onApplied).toHaveBeenCalledWith('dark')
     expect(stored.color_mode).toBe('dark')
 
-    // The accepted write renders a confirmation naming the chosen mode, in
-    // the same region a refusal would use.
     expect(
       screen.getByText(
         zhCN.appearance.colorMode.saved.replace(
@@ -204,12 +181,8 @@ describe('ColorModeSection', () => {
 
     const patches = rig.calls.filter((call) => call.method === 'PATCH')
     expect(patches).toHaveLength(1)
-    // The body is the partial update the endpoint documents: only the
-    // changed field, under its wire name.
     expect(patches[0]?.body).toEqual({ color_mode: 'dark' })
 
-    // The confirmed write invalidates the profile read, so the control
-    // converges on the stored value.
     await waitFor(() =>
       expect(
         rig.calls.filter(
@@ -229,7 +202,6 @@ describe('ColorModeSection', () => {
     )
     chooseOption(select, zhCN.appearance.colorMode.options.system)
 
-    // The stored value stays `system`; the copy reads as a behaviour.
     await waitFor(() => expect(stored.color_mode).toBe('system'))
     expect(
       await screen.findByText(zhCN.appearance.colorMode.savedSystem),
@@ -259,10 +231,7 @@ describe('ColorModeSection', () => {
     chooseOption(select, zhCN.appearance.colorMode.options.dark)
 
     const alert = await screen.findByRole('alert')
-    // The server's own code text, in the section's feedback region.
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
-    // A refused write leaves the control on the stored value, and the
-    // host is not told a preference was applied.
     expect(select).toHaveTextContent(zhCN.appearance.colorMode.options.light)
     expect(onApplied).not.toHaveBeenCalled()
   })

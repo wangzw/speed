@@ -1,23 +1,7 @@
 /**
- * PreferencesSection behaviour: the language and timezone selects over
- * the profile self-write surface, GET/PATCH /api/v1/auth/me.
- *
- * What this suite pins, per story: the stored profile values render into
- * the controls (including a stored timezone the engine's own list omits,
- * which must be added as its own option rather than silently displaying
- * the wrong one); a language change PATCHes the account FIRST and only a
- * confirmed write switches the instance (the manual slot and the account
- * move together), while a language CLEAR PATCHes the empty string,
- * leaves the device language where it was -- the empty string is not a
- * language to switch to -- and still refetches; each select owns a
- * feedback scope whose region sits beneath that select, so a refusal
- * renders there and one control's settled outcome never clears the
- * other's; a timezone change and a timezone CLEAR (the "not chosen"
- * choice, whose value is the empty string) PATCH the `time_zone` field;
- * and a settled load that failed renders the EmptyState error variant
- * with a retry that refetches. Every write's request body is pinned, so
- * the PATCH contract (partial update, empty string clears) is asserted
- * from the wire up.
+ * PreferencesSection checks the language and timezone selects over the
+ * profile self-write surface, pinning each PATCH body (an empty string
+ * clears).
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -42,16 +26,12 @@ import { PreferencesSection } from './PreferencesSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** The language label the component computes for `tag` under `ui`, through
- * the same helper and the same supported set (`@speed/test-utils`'s
- * bilingual pair), so the assertion tracks the engine's own naming. */
+/** Through the same helper, so the assertion tracks the engine's naming. */
 function languageLabel(tag: string, ui: string): string {
   return languageDisplayName(tag, ui, ['zh-CN', 'en-US'])
 }
 
-/** A stateful profile responder: GET answers the stored pair, PATCH merges
- * the partial body into it (absent field unchanged, empty string clears
- * -- the endpoint's contract) and answers 200. */
+/** An empty string clears; an absent field stays unchanged. */
 function makeProfileResponder(initial: { locale?: string; time_zone?: string }) {
   const stored: { locale?: string; time_zone?: string } = { ...initial }
   const respond: RealResponder = async (call: RealCall) => {
@@ -79,17 +59,13 @@ function makeProfileResponder(initial: { locale?: string; time_zone?: string }) 
   return { respond, stored }
 }
 
-/** Opens a MUI select and picks the option whose accessible name is
- * `optionName`, through the dispatched events the DataTable-pattern
- * suites use (mousedown opens the menu, the click on the rendered option
- * commits the choice). */
+/** mousedown opens the menu; the click on the rendered option commits. */
 function chooseOption(combobox: HTMLElement, optionName: string): void {
   fireEvent.mouseDown(combobox)
   fireEvent.click(screen.getByRole('option', { name: optionName }))
 }
 
-/** The control group of one select: the field root plus its own feedback
- * region, which renders directly beneath the field. */
+/** The field root plus its own feedback region beneath it. */
 function groupOf(combobox: HTMLElement): HTMLElement {
   const root = combobox.closest(`.${formControlClasses.root}`)
   if (root?.parentElement == null) {
@@ -98,13 +74,10 @@ function groupOf(combobox: HTMLElement): HTMLElement {
   return root.parentElement
 }
 
-/** The standing polite live region of one control group's scope. */
 function regionOf(group: HTMLElement): HTMLElement {
   return within(group).getByRole('status')
 }
 
-/** Mounts the section over a session-free rig that plants the bearer the
- * profile read rides. */
 function mountSection(respond: RealResponder) {
   const rig = makeRealClientRigWithoutSession(respond)
   rig.store.set('access-1')
@@ -133,7 +106,6 @@ describe('PreferencesSection', () => {
     })
     expect(timezone).toHaveTextContent('Asia/Tokyo')
 
-    // Both controls' values come from the one profile read.
     expect(
       rig.calls.filter((call) => call.path === PROFILE_PATH),
     ).toHaveLength(1)
@@ -151,9 +123,7 @@ describe('PreferencesSection', () => {
     const timezone = screen.getByRole('combobox', {
       name: zhCN.preferences.timezone.label,
     })
-    // The width cap sits on the field root (the combobox is the inner
-    // input); both controls are limited to a comfortable select width
-    // (24rem = 384px) rather than stretching across the page.
+    // 24rem = 384px, applied on the field root.
     for (const control of [language, timezone]) {
       const root = control.closest(`.${formControlClasses.root}`)
       expect(root).not.toBeNull()
@@ -162,10 +132,7 @@ describe('PreferencesSection', () => {
   })
 
   it('names each label-less select by its row title above the not-chosen placeholder', async () => {
-    // A fresh account holds no preference, so both selects render the "not
-    // chosen" placeholder. Each control's row title names it, and the
-    // accessible name rides the input; no floating InputLabel is rendered,
-    // so the title and the value never occupy one line.
+    // The row title names the control; no floating InputLabel is rendered.
     const { respond } = makeProfileResponder({})
     mountSection(respond)
 
@@ -175,8 +142,6 @@ describe('PreferencesSection', () => {
     const timezone = screen.getByRole('combobox', {
       name: zhCN.preferences.timezone.label,
     })
-    // The placeholder really is showing: the value line the title must not
-    // overlap.
     expect(language).toHaveTextContent(zhCN.preferences.language.notChosen)
     expect(timezone).toHaveTextContent(zhCN.preferences.timezone.notChosen)
 
@@ -184,14 +149,11 @@ describe('PreferencesSection', () => {
       [language, zhCN.preferences.language.label],
       [timezone, zhCN.preferences.timezone.label],
     ] as const) {
-      // The row title is a block of its own above the control, so it cannot
-      // sit on the value's line.
       const titleElement = screen.getByText(title)
       expect(
         titleElement.compareDocumentPosition(control) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()
-      // The control carries no MUI InputLabel to overlap the placeholder.
       const root = control.closest(`.${formControlClasses.root}`)
       expect(root).not.toBeNull()
       expect(root?.querySelector(`.${inputLabelClasses.root}`)).toBeNull()
@@ -205,7 +167,6 @@ describe('PreferencesSection', () => {
     const language = await screen.findByRole('combobox', {
       name: zhCN.preferences.language.label,
     })
-    // A fresh account's empty locale reads as the "not chosen" choice.
     expect(language).toHaveTextContent(zhCN.preferences.language.notChosen)
 
     chooseOption(language, languageLabel('en-US', 'zh-CN'))
@@ -216,16 +177,11 @@ describe('PreferencesSection', () => {
       (call) => call.method === 'PATCH' && call.path === PROFILE_PATH,
     )
     expect(patch).toBeDefined()
-    // The body is the partial update the endpoint documents: only the
-    // changed field, under its wire name.
     expect(patch?.body).toEqual({ locale: 'en-US' })
-    // The UI switched with the account: the heading now speaks en-US.
     expect(
       await screen.findByRole('heading', { name: enUS.preferences.title }),
     ).toBeTruthy()
-    // The landed write confirms itself in the language scope's region below
-    // the select, naming the control and the chosen value; the message was
-    // translated after the instance switched.
+    // Translated after the instance switched.
     const currentLanguage = screen.getByRole('combobox', {
       name: enUS.preferences.language.label,
     })
@@ -256,8 +212,6 @@ describe('PreferencesSection', () => {
     })
     chooseOption(language, languageLabel('en-US', 'zh-CN'))
 
-    // The language write switches the instance, so its confirmation and the
-    // page now speak en-US.
     const languageSaved = enUS.preferences.language.saved.replace(
       '{{value}}',
       languageLabel('en-US', 'en-US'),
@@ -274,8 +228,6 @@ describe('PreferencesSection', () => {
       ).toHaveTextContent(languageSaved),
     )
 
-    // A later timezone write settles in its own scope; the language scope's
-    // outcome stays exactly as it was.
     const timezone = screen.getByRole('combobox', {
       name: enUS.preferences.timezone.label,
     })
@@ -308,8 +260,6 @@ describe('PreferencesSection', () => {
 
     chooseOption(language, zhCN.preferences.language.notChosen)
 
-    // The clear reaches the account as the empty string, and the
-    // confirmed write still refetches the stored profile.
     await waitFor(() => expect(stored.locale).toBe(''))
     const patch = rig.calls.find(
       (call) => call.method === 'PATCH' && call.path === PROFILE_PATH,
@@ -323,15 +273,12 @@ describe('PreferencesSection', () => {
       ).toHaveLength(2),
     )
 
-    // No failure alert renders and the device keeps its current
-    // language: the empty string is not a language to switch to, so a
-    // successful clear must not be reported as a failed save.
+    // A successful clear must not read as a failed save.
     expect(screen.queryByRole('alert')).toBeNull()
     expect(i18n.language).toBe('zh-CN')
     await waitFor(() =>
       expect(language).toHaveTextContent(zhCN.preferences.language.notChosen),
     )
-    // The clearing write confirms with the follow-the-device sentence.
     await waitFor(() =>
       expect(regionOf(groupOf(language))).toHaveTextContent(
         zhCN.preferences.language.followsDevice,
@@ -357,20 +304,16 @@ describe('PreferencesSection', () => {
     chooseOption(language, languageLabel('en-US', 'zh-CN'))
 
     const alert = await screen.findByRole('alert')
-    // The server's own code text, in the same place a success lands: the
-    // language scope's region beneath the select.
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
     expect(groupOf(language)).toContainElement(alert)
     expect(
       language.compareDocumentPosition(alert) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    // The timezone control's own scope stays untouched.
     const timezone = screen.getByRole('combobox', {
       name: zhCN.preferences.timezone.label,
     })
     expect(regionOf(groupOf(timezone))).toHaveTextContent('')
-    // A refused write must not move the device language.
     expect(i18n.language).toBe('zh-CN')
   })
 
@@ -385,12 +328,8 @@ describe('PreferencesSection', () => {
     })
     expect(timezone).toHaveTextContent('Asia/Tokyo')
 
-    // A new zone: the PATCH carries it alone, under the profile's own
-    // field name.
     chooseOption(timezone, 'Europe/Berlin')
     await waitFor(() => expect(stored.time_zone).toBe('Europe/Berlin'))
-    // The timezone scope confirms beneath its own select, naming the control
-    // and the chosen zone.
     await waitFor(() =>
       expect(regionOf(groupOf(timezone))).toHaveTextContent(
         zhCN.preferences.timezone.saved.replace('{{value}}', 'Europe/Berlin'),
@@ -430,16 +369,12 @@ describe('PreferencesSection', () => {
       ).toHaveLength(1),
     )
 
-    // The write is held open: the select keeps focus and stays in the Tab
-    // sequence, locked by read-only rather than by the native disable
-    // that would take it out of the sequence.
+    // Read-only rather than native disabled, so focus and Tab order stay.
     expect(document.activeElement).toBe(timezone)
     expect(timezone).toHaveAttribute('aria-readonly', 'true')
     expect(timezone).toHaveAttribute('tabindex', '0')
     expect(timezone).not.toHaveAttribute('aria-disabled', 'true')
 
-    // PATCH-first: the displayed value has not moved, and a second
-    // activation cannot open the menu or start another write.
     expect(timezone).toHaveTextContent('Asia/Tokyo')
     fireEvent.mouseDown(timezone)
     expect(screen.queryByRole('listbox')).toBeNull()
@@ -447,10 +382,7 @@ describe('PreferencesSection', () => {
       rig.calls.filter((call) => call.method === 'PATCH'),
     ).toHaveLength(1)
 
-    // The sibling write-initiating control is locked the same way while a
-    // preference write is in flight, without being taken out of the Tab
-    // sequence either, and neither pointer nor keyboard can start a
-    // second write from it.
+    // The sibling control is locked the same way, pointer and keyboard.
     const language = screen.getByRole('combobox', {
       name: zhCN.preferences.language.label,
     })
@@ -506,8 +438,6 @@ describe('PreferencesSection', () => {
     await waitFor(() => expect(stored.locale).toBe('en-US'))
     await waitFor(() => expect(i18n.language).toBe('en-US'))
 
-    // The switch re-labels the control but does not replace it or move
-    // focus away: the selection that landed the write still holds focus.
     const switched = screen.getByRole('combobox', {
       name: enUS.preferences.language.label,
     })
@@ -527,10 +457,8 @@ describe('PreferencesSection', () => {
     })
     expect(timezone).toHaveTextContent('Asia/Tokyo')
 
-    // Back to "not chosen": the clearing value is the empty string.
     chooseOption(timezone, zhCN.preferences.timezone.notChosen)
     await waitFor(() => expect(stored.time_zone).toBe(''))
-    // The clearing write confirms with the follow-the-device sentence.
     await waitFor(() =>
       expect(regionOf(groupOf(timezone))).toHaveTextContent(
         zhCN.preferences.timezone.followsDevice,
@@ -542,10 +470,7 @@ describe('PreferencesSection', () => {
   })
 
   it('adds a stored timezone the engine list omits as its own option', async () => {
-    // The engine's list is narrowed for this test: the stored value is
-    // not in it, and the control must still offer (and show) it -- a
-    // select whose value matches no option would silently display
-    // another zone.
+    // A stored value outside the engine's list must still be offered.
     const supportedValues = vi
       .spyOn(Intl, 'supportedValuesOf')
       .mockReturnValue(['UTC'])
@@ -589,8 +514,6 @@ describe('PreferencesSection', () => {
       }),
     ).toBeNull()
 
-    // Retry is the error placeholder's only way forward, so it is the
-    // primary action, not a plain text button.
     const retry = screen.getByRole('button', { name: zhCN.preferences.retry })
     expect(retry).toHaveClass('MuiButton-contained')
 
@@ -630,8 +553,6 @@ describe('PreferencesSection', () => {
       await queryClient.invalidateQueries()
     })
 
-    // The failed refresh keeps the settled controls on screen under the
-    // stale notice rather than replacing them with the error placeholder.
     expect(
       screen.getByRole('combobox', {
         name: zhCN.preferences.timezone.label,

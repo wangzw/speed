@@ -1,22 +1,6 @@
 /**
- * rotation.ts -- the identity-transition test rig.
- *
- * A credential-rotating write is only observable through the composition a
- * production browser host builds: a cookie session (same-origin
- * credentials, the session's own restore() as the 401 leg) whose snapshot
- * the silent leg can end. This module builds that session, establishes
- * the authenticated snapshot a write starts from, and counts the
- * authenticated -> anonymous edges a shell acts on, so a case can assert
- * that a read landing with the outgoing credential did not end the
- * session.
- *
- * The caller's responder owns the changeover: it answers the restore reads
- * (`SESSION_PATH`, `PROFILE_PATH`, `FEATURES_PATH`) authenticated until the
- * write under test lands, then answers the reads that follow it 401. That
- * scripted 401 stands for a read issued under the credential being
- * replaced -- one already in flight, or one a focus, reconnect or
- * staleTime 0 issues in the same round; a read issued after the write's
- * response lands carries the new credential.
+ * The identity-transition test rig: a cookie session whose snapshot the
+ * silent leg can end, plus the authenticated-to-anonymous edge count.
  */
 
 import type { AuthSession } from '@speed/auth-core'
@@ -47,14 +31,9 @@ export interface RotationRig {
 }
 
 /**
- * Builds the cookie-session rig, restores the authenticated snapshot and
- * starts counting sign-out edges. The responder must answer the restore's
- * reads authenticated, or this throws rather than letting a case pin a
- * session it never established.
- *
- * Every `beginIdentityTransition` call is counted, so a case can tell a
- * step-up re-run's own window from the first attempt's: the wrapper
- * delegates to the session's own operation and only observes the count.
+ * The responder must answer the restore's reads authenticated, or this
+ * throws. Every `beginIdentityTransition` is counted, so a step-up re-run's
+ * window is told from the first attempt's.
  */
 export async function makeRotationRig(
   respond: RealResponder,
@@ -88,13 +67,8 @@ export async function makeRotationRig(
   }
 }
 
-/**
- * A profile-query observer standing in for the other account surfaces the
- * page carries: invalidating the profile query re-reads it, exactly as it
- * does when a neighbouring surface holds it. A section that does not read
- * the profile itself still causes the reads those surfaces issue after its
- * write.
- */
+/** Stands in for the other surfaces the page carries, so a section that does
+ * not read the profile still causes their post-write reads. */
 export function ProfileQueryObserver(): null {
   useProfileQuery()
   return null

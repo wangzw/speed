@@ -1,38 +1,6 @@
 /**
- * FlowStep: renders one step of an authn flow and reports the answer
- * back to the caller's driver.
- *
- * The step-up dialog and the enrollment panel both advance a flow one
- * answer at a time: each reads the current `AuthnStep` and answers it
- * with `session.answerFlow`. This component is the whole of what the two
- * share -- the rendering of a step's inputs and the shape of the answer
- * it builds -- so neither repeats the `next.kind` dispatch.
- *
- * What a step asks for, and under which answer step its input travels
- * (from the authn login engine's own vocabulary):
- *
- *  - `challenge`: the fields the flow asks for. Their input travels
- *    under the answer step the CALLER names -- `answer` in the flow's
- *    first factor, `factor` in its second -- because the record's state
- *    decides which steps are compatible, not the field list.
- *  - `factor`: the second-factor options to choose from; the chosen
- *    identifier travels under `factor` as the field `factor`.
- *  - `enroll`: the factor kinds the assembly takes in; the chosen kind
- *    travels under `enroll` as the field `kind`.
- *  - `webauthn`: the factor's own JSON. TOTP's `otpauth_uri`, when it
- *    parses, is rendered as a scannable QR symbol with a manual-entry
- *    disclosure for its base32 secret, beside a six-digit code field --
- *    the step's JSON is never shown as a blob; a passkey's creation or
- *    request options are driven by the WebAuthn ceremony
- *    (@speed/auth-core/webauthn), whose credential is reported under the
- *    answer step the CALLER names.
- *    Both answer under the same step a `challenge` step would, because the
- *    record's state decides it: `enroll` in a registration, `factor` in
- *    the second factor of a step-up.
- *  - `complete`: a single confirm that takes the flow's result with
- *    `step: 'complete'`.
- *  - `redirect`: an external URL, reported upward; the component never
- *    navigates.
+ * FlowStep: renders one step of an authn flow and reports the answer back to
+ * the caller's driver.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -54,9 +22,7 @@ import {
 } from '@speed/ui-kit'
 import { useAccountUiTranslation } from './translation.js'
 
-/** The bundle keys of the field names the family has wording for. A name
- * outside this map renders verbatim, so a server-side field the family
- * has no wording for shows its own name rather than a translated guess. */
+/** A name outside this map renders verbatim, never a translated guess. */
 const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
   identifier: 'flowStep.field.identifier',
   password: 'flowStep.field.password',
@@ -65,43 +31,32 @@ const FIELD_LABEL_KEYS: Readonly<Record<string, string>> = {
   code: 'flowStep.codeLabel',
 }
 
-/** The factor/enroll kinds the family has wording for. A known kind
- * renders its translated name; an unknown one renders the kind's own
- * name (the deployment's vocabulary, shown as given). */
+/** An unknown kind renders its own name, never a generic label. */
 const FACTOR_KIND_KEYS: Readonly<Record<string, string>> = {
   totp: 'mfa.factor.kind.totp',
   webauthn: 'mfa.factor.kind.webauthn',
   sms: 'mfa.factor.kind.sms',
 }
 
-/** A field name's display label (see the vocabulary above). */
 function fieldLabel(name: string, t: (key: string) => string): string {
   const key = FIELD_LABEL_KEYS[name]
   return key === undefined ? name : t(key)
 }
 
-/** A factor kind's display label (see the vocabulary above). */
 function factorKindLabel(kind: string, t: (key: string) => string): string {
   const key = FACTOR_KIND_KEYS[kind]
   return key === undefined ? kind : t(key)
 }
 
-/** A factor option as the choice labels read it. */
 interface FactorChoice {
   readonly kind: string
   readonly label?: string
 }
 
 /**
- * The labels a factor step renders, one per offered factor.
- *
- * A factor step answers "how do I prove it", so each entry's kind leads. A
- * kind offered once reads as its kind name alone, whatever name the factor
- * carries. Only when one kind is offered more than once does the entry's
- * own name distinguish the entries, after the kind ("Kind · Name"); an
- * unnamed entry keeps the kind alone in first position and takes its
- * ordinal from the second on ("Kind (2)"), so two entries never read the
- * same. `named` and `ordinal` build those two forms from the bundle.
+ * Labels a factor step's entries. A kind offered once reads as its kind name;
+ * a repeated kind is told apart by its own name, or from the second on by an
+ * ordinal, so two entries never read the same.
  */
 function factorChoiceLabels(
   factors: readonly FactorChoice[],
@@ -129,70 +84,41 @@ function factorChoiceLabels(
   })
 }
 
-/** One answer to a flow step: the answer step name and its input. */
 export interface FlowStepAnswer {
   readonly step: string
   readonly input?: Readonly<Record<string, string>>
 }
 
 export interface FlowStepProps {
-  /** The step to render. */
   readonly step: AuthnStep
-  /** The flow's step number (`seq`) the step arrived with. It advances with
-   * every reply the flow parks; the assertion ceremony's arrival effect keys
-   * on it together with the challenge, so a re-sent challenge starts a fresh
-   * ceremony while an ordinary re-render does not. */
+  /** The flow's step number (`seq`). The assertion ceremony keys on it with
+   * the challenge, so a re-sent challenge starts afresh and a re-render does
+   * not. */
   readonly sequence: number
-  /** True while the answer is in flight. The control that gave the answer
-   * shows the progress state and stays focusable, the step's fields turn
-   * read-only, and every other answer control refuses activation. */
+  /** True while the answer is in flight: fields turn read-only and other
+   * answer controls refuse activation. */
   readonly busy: boolean
-  /**
-   * True while the driver holds the step's primary action back without
-   * taking the form away -- a throttled answer's wait. The fields stay
-   * editable and a secondary control (cancel) stays usable; the controls
-   * that would send another answer are unavailable and describe the wait
-   * through `submitUnavailableDescribedBy` when the caller gives one.
-   */
+  /** True while a throttled answer's wait holds the primary action back: the
+   * fields stay editable and the held controls describe the wait through
+   * `submitUnavailableDescribedBy`. */
   readonly submitDisabled?: boolean
-  /**
-   * The id of text already on the page that explains what holds the step
-   * back -- the dialog's countdown line. The held controls describe
-   * themselves through it instead of repeating the text.
-   */
+  /** The id of the page text explaining what holds the step back. */
   readonly submitUnavailableDescribedBy?: string
-  /**
-   * The answer step a step travels under: `answer` in the flow's first
-   * factor, `factor` in its second, `enroll` in its registration. A
-   * `challenge` step's input and a `webauthn` step's credential both use
-   * it, because the record's state decides which steps are compatible.
-   */
+  /** The answer step the input travels under: `answer` in the first factor,
+   * `factor` in the second, `enroll` in a registration. */
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: FlowStepAnswer) => void
   /** Reports a `redirect` step's URL upward; the host navigates. */
   readonly onRedirect?: (url: string) => void
-  /**
-   * The id the challenge form carries when the host renders the submit
-   * control outside the step (in a dialog's actions row): the form then
-   * carries this id and renders no button of its own, and the host's
-   * `type="submit" form` button submits it.
-   */
+  /** The id the challenge form carries when the host renders the submit
+   * control outside the step; the form then renders no button of its own. */
   readonly formId?: string
-  /**
-   * A secondary control rendered in the step's own action row, before the
-   * primary submit -- a cancel control the host keeps beside the step's
-   * confirm instead of on a line of its own. Steps whose answer is a
-   * choice list render it below the list.
-   */
+  /** A secondary control rendered before the primary submit, or below a
+   * choice list. */
   readonly secondaryAction?: ReactNode
-  /**
-   * Values the step renders locked: a challenge field named here shows the
-   * value read-only with the sentence saying what it is, and the answer
-   * carries it. The step-up dialog uses this for the identifier and the phone
-   * number it already knows -- the account's own login name and its proved
-   * number.
-   */
+  /** Challenge fields rendered read-only with their value; the answer carries
+   * that value. */
   readonly lockedFields?: Readonly<Record<string, string>>
 }
 
@@ -211,17 +137,10 @@ export function FlowStep({
   lockedFields,
 }: FlowStepProps) {
   const { t } = useAccountUiTranslation()
-  // The free-text answer of a TOTP code field, and the typed values of a
-  // `challenge` step's fields.
   const [values, setValues] = useState<Record<string, string>>({})
-  // The option that started this step's answer, so the progress state sits
-  // on it while the rest of its group refuses another answer. The caller
-  // keys this component on the step identity, so a settled answer remounts
-  // the state.
   const [activated, setActivated] = useState<string | null>(null)
-  // The challenge form's submit is guarded as well as its button: an
-  // implicit submission from a field must be refused while the answer is in
-  // flight or the step is held.
+  // Guard the form's own submit too: a field's implicit submission must be
+  // refused while the answer is in flight or the step is held.
   const handleSubmit = (event: FormEvent): void => {
     event.preventDefault()
     onSubmit({ step: answerStep, input: { ...values, ...lockedFields } })
@@ -230,8 +149,6 @@ export function FlowStep({
     busy,
     unavailable: submitDisabled,
   })
-  // The wait's explanation applies only while the step is held, never while
-  // its own answer is in flight: a busy control gives no reason.
   const heldDescribedBy = submitDisabled
     ? submitUnavailableDescribedBy
     : undefined
@@ -365,7 +282,6 @@ export function FlowStep({
     )
   }
 
-  // challenge: one text field per requested field, submitted together.
   const external = formId !== undefined
   return (
     <Box component="form" id={formId} onSubmit={guardedSubmit} sx={{ mt: 2 }}>
@@ -382,9 +298,7 @@ export function FlowStep({
                 setValues({ ...values, [field.name]: event.target.value })
               }
               // Read-only, not disabled: the value stays readable, focusable
-              // and in the tab order, and it is what the answer carries.
-              // The same holds while the answer is in flight: the field is
-              // unchanged, not taken away.
+              // and in the tab order.
               slotProps={{
                 input: { readOnly: locked !== undefined || busy },
               }}
@@ -421,37 +335,22 @@ export function FlowStep({
 }
 
 interface TotpEnrollStepProps {
-  /** The step's `otpauth_uri`, or null when it carries none. */
   readonly uri: string | null
-  /** The six-digit code typed so far. */
   readonly code: string
   readonly onCodeChange: (code: string) => void
-  /** The step's answer is in flight; the confirm action shows the progress
-   * state and the code field stays read-only. */
   readonly busy: boolean
-  /** The step cannot be answered now -- a throttled answer's wait. */
   readonly unavailable: boolean
-  /** The id of the page text explaining what holds the step back. */
   readonly unavailableDescribedBy?: string
   readonly submitLabel: string
-  /** Reports the trimmed code; the caller answers the flow with it. */
   readonly onSubmit: (code: string) => void
   readonly secondaryAction?: ReactNode
 }
 
 /**
- * The authenticator-app enrolment block: the step's `otpauth_uri` as a
- * scannable QR symbol, a disclosure that shows the parsed base32 secret for
- * hand entry with a copy control, and the six-digit code field the app
- * generates.
- *
- * This wrapper owns the parse and the wording; the panel in @speed/ui-kit
- * owns the layout. The URI is never rendered as text: the panel shows the
- * parsed parts alone. A URI that does not parse renders neither the symbol
- * nor the manual block, and withholds the guidance that names a code to
- * scan, so the panel never advertises a code it did not draw. The code field
- * stays. The code is submitted only by the confirm control, never on
- * typing, and the field keeps its value while the caller reports a failure.
+ * The authenticator-app enrolment block, wrapping ui-kit's panel. The URI is
+ * never rendered as text; one that does not parse renders neither the QR
+ * symbol nor the manual-entry block, so the panel advertises no code it did
+ * not draw.
  */
 function TotpEnrollStep({
   uri,
@@ -481,9 +380,6 @@ function TotpEnrollStep({
           { label: t('flowStep.totpDigits'), value: String(otpauth.digits) },
           { label: t('flowStep.totpPeriod'), value: String(otpauth.period) },
         ]
-  // The wait the caller owns explains the control before a missing code
-  // does: the operator cannot type their way past the wait. The two
-  // explanations are exclusive by construction.
   const codeEmpty = code.trim() === ''
   const explanation =
     unavailable && unavailableDescribedBy !== undefined
@@ -534,48 +430,24 @@ function TotpEnrollStep({
 
 interface PasskeyPromptProps {
   readonly options: unknown
-  /** The flow's step number (`seq`), which advances with every reply. The
-   * arrival effect keys on it together with the challenge, so a re-sent
-   * challenge is a new ceremony while an ordinary re-render is not. */
+  /** The flow's step number (`seq`); see the arrival effect. */
   readonly sequence: number
   readonly busy: boolean
-  /** True while a throttled answer's wait holds the start/retry action back. */
   readonly unavailable: boolean
-  /** The id of the page text explaining what holds the step back. */
   readonly unavailableDescribedBy?: string
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: FlowStepAnswer) => void
-  /** The host's secondary control, rendered beside the start/retry action. */
   readonly secondaryAction?: ReactNode
 }
 
-/** The passkey ceremony step: drives the browser's WebAuthn ceremony and
- * reports the credential it returns.
- *
- * The two ceremonies start differently. An assertion step is the login
- * itself: the viewer already chose the passkey entry, so the step starts
- * its ceremony on arrival and never offers a start control. A registration
- * step waits for a click, because a creation ceremony needs the user
- * activation some browsers require.
- *
- * The ceremony can sit pending for as long as the browser waits on the
- * device, so the step shows an explicit waiting state: the waiting message
- * and a cancel control instead of leaving the start button's own state as
- * the only signal. The waiting notice is the shared announcement region: it mounts
- * empty and fills a frame later, so a screen reader announces it; focus
- * moves to the cancel control, since the control that had it unmounted.
- * Cancel is its own state transition,
- * taken at once: it shows the failure and retry without waiting for the
- * ceremony to settle, and only best-effort asks the browser to give up
- * (the credential API does not guarantee it honours an abort). A late
- * answer from an abandoned ceremony is discarded by attempt. Unmount
- * abandons the ceremony the same way. A browser without WebAuthn, a
- * dismissed prompt, a device that already holds the account's credential
- * and a failed ceremony each render their own message; the generic failure
- * sentence names the ceremony, so a failed registration does not read as a
- * failed sign-in. The retry action runs the ceremony again against the
- * same step. */
+/**
+ * The passkey ceremony step: drives the browser's WebAuthn ceremony and
+ * reports the credential it returns. An assertion step starts on arrival with
+ * no start control; a registration waits for a click because a creation
+ * ceremony needs user activation. Cancel fails at once and only best-effort
+ * aborts the ceremony; a late answer from an abandoned attempt is discarded.
+ */
 function PasskeyPrompt({
   options,
   sequence,
@@ -590,28 +462,21 @@ function PasskeyPrompt({
   const { t } = useAccountUiTranslation()
   const step = webauthnStepOf(options)
   const registering = step === 'register'
-  // An assertion step starts on arrival, so its first render is already the
-  // waiting state and the start control never flashes.
   const arrivalKey = assertionKey(options, sequence)
   const [working, setWorking] = useState(arrivalKey !== null)
   const [failure, setFailure] = useState<PasskeyFailure | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
-  // The ceremony currently being waited on. Cancel clears it before the
-  // failure renders, so the ceremony's late settlement and a retry's own
-  // attempt stay apart from this one.
+  // The ceremony being waited on. Cancel clears it first, so a late answer
+  // cannot be mistaken for a retry's.
   const pendingRef = useRef<{
     attempt: number
     controller: AbortController
   } | null>(null)
   const attemptRef = useRef(0)
-  // The latest `run`, read by the arrival effect. The effect keys on the
-  // step's challenge and sequence number rather than on this function or the
-  // options object, so a re-render leaves a running ceremony alone.
+  // The latest `run`, read by the arrival effect.
   const runRef = useRef<() => Promise<void>>(async () => {})
 
-  // Abandon the ceremony with the surface. An unmounted step has no flow
-  // to answer, so the attempt is invalidated and the browser is asked to
-  // give the ceremony up.
+  // Abandon the ceremony with the surface.
   useEffect(
     () => () => {
       const pending = pendingRef.current
@@ -621,9 +486,7 @@ function PasskeyPrompt({
     [],
   )
 
-  // The cancel control takes the focus the control that had it (the
-  // Continue button, or the entry that opened the step) held. The waiting
-  // notice's live region handles its own empty birth frame.
+  // The control that had focus unmounted, so focus moves to cancel.
   useEffect(() => {
     if (working) {
       cancelRef.current?.focus()
@@ -653,23 +516,13 @@ function PasskeyPrompt({
       }
     }
   }
-  // Publish the latest `run` for the arrival effect. This effect is
-  // declared before the arrival effect, so the assignment lands before the
-  // arrival effect reads it; a re-render refreshes it without restarting
-  // the ceremony.
+  // Declared before the arrival effect so `runRef` is current when it fires.
   useEffect(() => {
     runRef.current = run
   })
 
-  // An assertion step is the login: its arrival starts the ceremony, so the
-  // click that opened the step is the whole interaction. A registration
-  // step stays parked until the viewer clicks. The effect keys on the
-  // challenge and the step's sequence number rather than the options object,
-  // so an ordinary re-render does not restart the ceremony, while a new
-  // challenge -- or the same one re-sent in the flow's next step -- rebinds
-  // it. Under StrictMode's double mount the first ceremony is abandoned by
-  // this cleanup and the second starts cleanly; only the live attempt
-  // answers.
+  // Keyed on the challenge and sequence, not the options object: a re-render
+  // leaves the ceremony alone, a new or re-sent challenge restarts it.
   useEffect(() => {
     if (arrivalKey === null) {
       return
@@ -686,9 +539,6 @@ function PasskeyPrompt({
     const pending = pendingRef.current
     pendingRef.current = null
     pending?.controller.abort()
-    // Fail now. The ceremony's own rejection (if the abort reaches it) and
-    // its eventual settlement are both ignored: its attempt no longer
-    // matches pendingRef.
     setWorking(false)
     setFailure({ key: 'flowStep.passkeyCancelled' })
   }
@@ -750,14 +600,8 @@ function PasskeyPrompt({
   )
 }
 
-/** The identity of an assertion step's ceremony: the flow's step number plus
- * the server's challenge. A registration step returns `null` -- it starts on
- * a click -- and the arrival effect watches this value, so a re-render does
- * not restart the ceremony while a new challenge, or the same challenge in a
- * re-sent step, rebinds it. The sequence alone would also distinguish a
- * re-sent step, but the challenge keeps a reply that reuses a number
- * distinguishable. Options without a challenge still key on the step number,
- * so a mounted step runs once and a re-sent one runs again. */
+/** The identity of an assertion step's ceremony: the step number plus the
+ * challenge. A registration step returns `null` because it starts on a click. */
 function assertionKey(options: unknown, sequence: number): string | null {
   if (webauthnStepOf(options) !== 'assert') {
     return null
@@ -772,16 +616,11 @@ function assertionKey(options: unknown, sequence: number): string | null {
   return `assert:${sequence}:${challenge}`
 }
 
-/** A failed ceremony's message: the bundle key, and for the generic failure
- * the ceremony's action key the sentence interpolates, because a failed
- * registration and a failed sign-in read differently. */
 interface PasskeyFailure {
   readonly key: string
   readonly actionKey?: string
 }
 
-/** The message a failed ceremony renders, by the reason it carries and the
- * ceremony it ran. */
 function webauthnErrorKey(failure: unknown, registering: boolean): PasskeyFailure {
   const actionKey = registering
     ? 'flowStep.passkeyActionRegister'
@@ -801,10 +640,8 @@ function webauthnErrorKey(failure: unknown, registering: boolean): PasskeyFailur
   return { key: 'flowStep.passkeyFailed', actionKey }
 }
 
-/** The TOTP setup URI a step's options carry, or null when they carry none.
- * Only this one field of the step's JSON is rendered: the options are the
- * flow engine's answer, not a document to show, so a step without a usable
- * URI renders no payload at all. */
+/** The `otpauth_uri` a step's options carry, or null. Only this one field of
+ * the step's JSON is ever rendered. */
 function otpauthUriOf(options: unknown): string | null {
   if (typeof options !== 'object' || options === null) {
     return null

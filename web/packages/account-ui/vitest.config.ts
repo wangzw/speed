@@ -1,18 +1,9 @@
 /**
- * account-ui test configuration: jsdom DOM environment with the shared
- * jest-dom matcher setup, plus the workspace source aliases. Timeout and
- * coverage come from the workspace preset (web/vitest.shared.ts).
+ * account-ui test configuration: jsdom with the shared setup and the
+ * workspace source aliases.
  *
- * The step-up and account flows drive userEvent through real interactions
- * over a scripted client; the shared budget covers them under the
- * parallel workspace run.
- *
- * The aliases come from the workspace's single package map
- * (web/scripts/speed-aliases.mjs): every @speed/* specifier -- subpaths
- * included -- resolves onto its sibling's live src entry, because a
- * sibling's dist/ is never committed and not guaranteed to exist when
- * tests run. The map is the one place a specifier is added or moved, so
- * this list cannot drift from what src/ and test-utils/ import.
+ * Aliases resolve onto a sibling's live src entry, because a sibling's
+ * dist/ is not committed and not guaranteed to exist when tests run.
  */
 import { defineConfig } from 'vitest/config'
 import { speedAliases } from '../../scripts/speed-aliases.mjs'
@@ -25,8 +16,7 @@ export default defineConfig({
   test: sharedTestOptions({
     environment: 'jsdom',
     setupFiles: ['./test-utils/setup.ts'],
-    // The fallback-chain cases need a browser zone that differs from the
-    // terminal tier; see TEST_BROWSER_TIME_ZONE.
+    // A browser zone that differs from the terminal tier.
     env: { TZ: TEST_BROWSER_TIME_ZONE },
   }),
 })

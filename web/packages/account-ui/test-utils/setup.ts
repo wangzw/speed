@@ -1,6 +1,4 @@
 /**
- * vitest setup for account-ui tests: the workspace's shared setup side
- * effect (see @speed/test-utils/setup) -- jest-dom matchers plus the
- * explicit RTL cleanup between tests.
+ * vitest setup for account-ui tests: the workspace's shared setup.
  */
 import '@speed/test-utils/setup'

@@ -1,27 +1,15 @@
 /**
- * runIdentityTransition -- the window's lifecycle on every exit.
- *
- * The wrapper's only effect is the pair of calls it makes on the session:
- * begin before the write, release exactly once when the settle step has
- * settled -- or at once when the write or the settle step rejects. A suite
- * that exercised only the success path could not tell a release that also
- * runs on failure from one that never runs at all: a window left open by a
- * refused write would discard every genuine anonymous answer that follows,
- * and the user would never be signed out. These cases pin the release on
- * every exit and the result each path hands back.
+ * runIdentityTransition checks that the window is released exactly once on
+ * every exit. A window left open by a refused write would discard every
+ * genuine anonymous answer that follows.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { AuthSession } from '@speed/auth-core'
 import { runIdentityTransition } from './identity-transition.js'
 
-/**
- * A session stand-in that records the window: how many times it was
- * opened, how many times its release was invoked, and how many windows
- * are still open. The release follows the session's contract -- calling
- * it again is a no-op -- so a second call neither reopens nor
- * over-closes.
- */
+/** A session stand-in that records the window; a repeated release is a
+ * no-op, as the session's contract says. */
 function fakeSession() {
   let begins = 0
   let releaseCalls = 0
@@ -60,7 +48,6 @@ describe('runIdentityTransition', () => {
       fake.session,
       async () => 'written',
       async (written) => {
-        // The settle step receives the write's own answer.
         expect(written).toBe('written')
         return 'settled'
       },
@@ -114,8 +101,7 @@ describe('runIdentityTransition', () => {
     )
     const release = fake.lastRelease()
     expect(release).not.toBeNull()
-    // The wrapper already released the window; a second caller holding the
-    // same release must neither over-close it nor reopen anything.
+    // A second caller holding the same release neither over-closes nor reopens.
     release?.()
     release?.()
     expect(fake.begins()).toBe(1)
