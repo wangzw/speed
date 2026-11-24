@@ -21,12 +21,19 @@
 # GATE_JOBS is the CPU width each job's tools take, set to the hosted
 # runner's four cores; no tool detects the host's count. GOFLAGS=-count=1
 # reuses compiled artifacts from the caches below but never replays a test
-# result. The Go caches are keyed by go.work, the module sums, the toolchain
-# pin and the commit, with a prefix fallback to the newest matching entry, so
-# the job that saves one follows the history instead of freezing at the first
-# save. Only go-test saves them: the static and race jobs restore and compile
-# from them, but their own build outputs are not saved, so two jobs never race
-# to reserve one key and the race build outputs go uncached. golangci-lint's
+# result. Each Go writer stores its own cache entry: go-test writes
+# go-<os>-<hash>-<sha> with the non-race build outputs, the static job only
+# restores that entry, and each race job writes its own
+# go-race-<job>-<os>-<hash>-<sha> with its race build outputs. The race jobs
+# keep separate keys because -race builds different object IDs, so without a
+# race cache each run re-instruments the standard library and every
+# dependency. Every Go key is hashed over go.work, the module sums, the
+# toolchain pin and the commit, with a prefix fallback to the newest matching
+# entry, so each writer follows the history instead of freezing at the first
+# save. All three save only on a push to main: a pull request writes no Go
+# entry, so the 10 GB budget is not spent on one entry per pull-request
+# commit, and a pull
+# request reads main's entries through its base ref. golangci-lint's
 # cache is keyed by its configuration and the same sources and carries no
 # commit suffix: a hit means the entry already matches those inputs and the
 # run saves nothing, so it is populated by the first run after a change rather
@@ -183,11 +190,12 @@ jobs:
       - name: Run the Go build and unit tests
         run: make build test
 
-      # One job writes the Go caches. Four jobs saving one key at once make
-      # every save but the first fail on the reservation, so the rest restore
-      # only.
+      # Each writer stores its own key, so no two jobs reserve the same one.
+      # This one holds the non-race build outputs; the race jobs keep theirs
+      # under keys of their own. It is saved only on a push to main, so a pull
+      # request leaves no entry per commit in the 10 GB budget.
       - name: Save the Go caches
-        if: always() && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -197,9 +205,12 @@ jobs:
 
   # The race detector runs per module, so the two modules' runs overlap. Each
   # job names its module through MODULES=; check_ci_jobs.py holds the union of
-  # the two to the roster go.work lists. They restore the Go caches but never
-  # save them, so the race build outputs are not cached: one writer avoids two
-  # jobs racing to reserve the same key.
+  # the two to the roster go.work lists. Each race job stores its race build
+  # outputs under go-race-<job>-<os>-<hash>-<sha>, falling back to its own hash
+  # prefix, then its own OS prefix, then go-test's go-<os>-<hash>- entry,
+  # which still carries the module cache without the race outputs. A key per
+  # job keeps the two from reserving the same one, and both save only on a
+  # push to main, so pull requests do not fill the cache budget.
   go-race-pkg:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
@@ -226,13 +237,23 @@ jobs:
           path: |
             ${{ steps.go-cache.outputs.modcache }}
             ${{ steps.go-cache.outputs.buildcache }}
-          key: go-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
+          key: go-race-pkg-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
           restore-keys: |
+            go-race-pkg-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-
+            go-race-pkg-${{ runner.os }}-
             go-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-
-            go-${{ runner.os }}-
 
       - name: Run the pkg race detector
         run: make test-race MODULES=./pkg
+
+      - name: Save the pkg race build outputs
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.modcache }}
+            ${{ steps.go-cache.outputs.buildcache }}
+          key: go-race-pkg-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
 
   go-race-demo:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
@@ -260,13 +281,23 @@ jobs:
           path: |
             ${{ steps.go-cache.outputs.modcache }}
             ${{ steps.go-cache.outputs.buildcache }}
-          key: go-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
+          key: go-race-demo-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
           restore-keys: |
+            go-race-demo-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-
+            go-race-demo-${{ runner.os }}-
             go-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-
-            go-${{ runner.os }}-
 
       - name: Run the demo server race detector
         run: make test-race MODULES=./starters/demo/server
+
+      - name: Save the demo server race build outputs
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache-restore.outcome == 'success' && steps.go-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.modcache }}
+            ${{ steps.go-cache.outputs.buildcache }}
+          key: go-race-demo-${{ runner.os }}-${{ hashFiles('go.work', '**/go.sum', '.mise.toml') }}-${{ github.sha }}
 
   # Two jobs run the frontend gate. The static phase installs the dependencies
   # and the build phase reads that same install, so the two stay together; the
