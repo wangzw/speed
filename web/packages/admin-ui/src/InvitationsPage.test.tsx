@@ -1,12 +1,3 @@
-/**
- * InvitationsPage: the tenant invitation and membership page.
- *
- * It prompts for a tenant until one is chosen (the selector is fed by the
- * roster read), then lists the tenant's invitations and members and drives
- * the issue / revoke / remove writes, the membership write and the SSO
- * exemption toggle through the bundle.
- */
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { restoreRealTimers } from '@speed/test-utils/timers'
 import { waitForCondition } from '@speed/test-utils/wait'
@@ -54,10 +45,6 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
 const TENANT = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
-/**
- * The member-source labels a test injects into the namespace, so a
- * translated value is distinguishable from the raw one the record carries.
- */
 const SOURCE_LABELS = {
   admin: 'member-source-admin',
   initial: 'member-source-initial',
@@ -65,7 +52,6 @@ const SOURCE_LABELS = {
   jit: 'member-source-jit:{{provider}}',
 } as const
 
-/** Fills a locale template's placeholders with the values under test. */
 function fill(
   template: string,
   values: Readonly<Record<string, string>>,
@@ -76,17 +62,14 @@ function fill(
   )
 }
 
-/** The account reference a notice inserts for a resolved display name. */
 function byName(name: string): string {
   return fill(zhCN.common.accountReference.name, { name })
 }
 
-/** The account reference a notice inserts for an identifier alone. */
 function byIdentifier(identifier: string): string {
   return fill(zhCN.common.accountReference.identifier, { identifier })
 }
 
-/** The account reference a notice inserts when both resolve. */
 function byNameAndIdentifier(name: string, identifier: string): string {
   return fill(zhCN.common.accountReference.nameWithIdentifier, {
     name,
@@ -94,10 +77,6 @@ function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-/**
- * The fixture's shape is the generated row itself: the server-judged `state`,
- * the optional role and inviter names, and the nullable terminal instants.
- */
 function invitation(
   overrides: Partial<AuthnInviteInvitation> = {},
 ): AuthnInviteInvitation {
@@ -135,7 +114,6 @@ function member(overrides: Partial<AdminMember> = {}): AdminMember {
   }
 }
 
-/** One role of a tenant, as the tenant-domain read reports it. */
 function tenantRole(tenant: string, role: string): AdminTenantRole {
   return {
     builtin: false,
@@ -149,7 +127,6 @@ function tenantRole(tenant: string, role: string): AdminTenantRole {
   }
 }
 
-/** The account the picker finds: named "Ada", identified by an opaque id. */
 function account(overrides: Partial<AdminAccount> = {}): AdminAccount {
   return {
     id: 'acc-2',
@@ -172,10 +149,6 @@ async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
-/**
- * Opens one pending invitation row's action menu and selects an item. The
- * row's writes live behind the shared menu trigger, named for the row.
- */
 async function chooseInvitationAction(
   user: ReturnType<typeof userEvent.setup>,
   email: string,
@@ -190,7 +163,6 @@ async function chooseInvitationAction(
   return trigger
 }
 
-/** The titled section a heading opens, which holds its group's region. */
 function section(name: string): HTMLElement {
   const element = screen.getByRole('heading', { name }).closest('section')
   if (element === null) {
@@ -199,7 +171,6 @@ function section(name: string): HTMLElement {
   return element as HTMLElement
 }
 
-/** The remove control of the member row that shows the given display name. */
 function removeInRow(displayName: string): HTMLElement {
   const cell = screen.getByText(displayName)
   const row = cell.closest('tr')
@@ -222,7 +193,6 @@ function stubScrollIntoView(): ReturnType<typeof vi.fn> {
   return spy
 }
 
-/** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => {
@@ -244,11 +214,6 @@ function withTenant(
   )
 }
 
-/**
- * Asserts the header refresh is inert while a write is in flight: disabled
- * without the empty-scope explanation, and a forced activation issues no
- * invitation or member read.
- */
 async function expectRefreshInert(
   listInvitations: ReturnType<typeof vi.fn>,
   listMembers: ReturnType<typeof vi.fn>,
@@ -288,19 +253,13 @@ describe('InvitationsPage', () => {
     const operations = withTenant({ listInvitations, listMembers })
     renderWithProviders(<InvitationsPage />, { operations })
 
-    // Both reads are disabled while no tenant is chosen; the refresh
-    // control follows them instead of refetching with an empty tenant.
     const refresh = screen.getByRole('button', { name: zhCN.common.refresh })
     expect(refresh).toHaveAttribute('aria-disabled', 'true')
-    // The disabled control is described by the page's own "choose a tenant
-    // first" text.
     const describedBy = refresh.getAttribute('aria-describedby')
     expect(describedBy).not.toBeNull()
     expect(document.getElementById(describedBy as string)).toHaveTextContent(
       zhCN.invitations.needTenant.description,
     )
-    // A programmatic click exercises the guard directly: the control must
-    // stay inert even when reached from a script.
     fireEvent.click(refresh)
     await act(async () => {
       await Promise.resolve()
@@ -360,7 +319,6 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    // The member row carries the display name the member read answers.
     await screen.findAllByText('Member One')
     const invitationReads = listInvitations.mock.calls.length
     const memberReads = listMembers.mock.calls.length
@@ -387,8 +345,6 @@ describe('InvitationsPage', () => {
       const listMembers = vi.fn(() => Promise.resolve([member()]))
       const operations = withTenant({ listInvitations, listMembers })
       renderWithProviders(<InvitationsPage />, { operations })
-      // The link that carried the tenant arrives with a selection already
-      // made: both reads run for it and the selector shows its name.
       expect(await screen.findByText('ada@example.com')).toBeInTheDocument()
       expect(screen.queryByText(zhCN.invitations.needTenant.title)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toHaveTextContent('Acme')
@@ -419,9 +375,6 @@ describe('InvitationsPage', () => {
     expect(
       within(inviteTable).getByText(zhCN.invitations.status.pending),
     ).toBeInTheDocument()
-    // The invitation answers its inviter's readable identity itself; the
-    // cell shows the display name and keeps the full identity on hover. The
-    // member row carries its own display name.
     const inviter = screen.getByText('Demo Operator')
     expect(inviter).toBeInTheDocument()
     expect(inviter).toHaveAttribute('title', 'Demo Operator (operator)')
@@ -435,8 +388,6 @@ describe('InvitationsPage', () => {
         Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
       listMembers: () => Promise.resolve([]),
     })
-    // jsdom lays nothing out, so the pin's measurement is supplied: the
-    // table is wider than its scroll container.
     const scrollWidth = vi
       .spyOn(Element.prototype, 'scrollWidth', 'get')
       .mockReturnValue(600)
@@ -502,9 +453,6 @@ describe('InvitationsPage', () => {
     await user.click(screen.getByLabelText(zhCN.common.tenant))
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
 
-    // The role name belongs to the tenant it was chosen in; the next tenant
-    // starts from no grant, so the control no longer carries the old name
-    // and the issue body names no role at all.
     await waitForCondition(() => {
       expect(
         screen.getByLabelText(zhCN.invitations.issue.roleLabel),
@@ -554,9 +502,6 @@ describe('InvitationsPage', () => {
       await screen.findByRole('option', { name: 'tenant-inviter' }),
     )
 
-    // The same tenant's role read now reports no role management: the control
-    // leaves the form, but the role chosen while it was visible must not be
-    // sent behind the operator's back.
     canManage = false
     await act(async () => {
       await queryClient.refetchQueries()
@@ -590,8 +535,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     await waitForCondition(() => expect(listTenantRoles).toHaveBeenCalledWith('acme'))
-    // Until the read answers, whether the caller may grant roles is unknown, and
-    // a control that offered every role would be a guess.
     expect(
       screen.queryByLabelText(zhCN.invitations.issue.roleLabel),
     ).toBeNull()
@@ -636,15 +579,11 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     const namedCell = (await screen.findByText('Staff One')).closest('td')
     expect(namedCell).not.toBeNull()
-    // The cell carries the display name alone; the complete identity is the
-    // hover title.
     expect(namedCell).not.toHaveTextContent('(staff)')
     expect(screen.getByText('Staff One')).toHaveAttribute(
       'title',
       'Staff One (staff)',
     )
-    // The inviter is a name to read, not an identifier to reuse: the cell
-    // offers no copy control, matching the organization page.
     expect(within(namedCell as HTMLElement).queryAllByRole('button')).toHaveLength(
       0,
     )
@@ -665,8 +604,6 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations: unnamed })
     await pickTenant(user)
-    // An invitation with no inviter name leaves the cell blank, matching the
-    // organization page; it never says the account is unavailable.
     const inviteSection = section(zhCN.invitations.section.title)
     const row = (await within(inviteSection).findByText('ada@example.com')).closest(
       'tr',
@@ -683,8 +620,6 @@ describe('InvitationsPage', () => {
       within(inviteSection).queryByText(zhCN.common.accountUnavailable),
     ).toBeNull()
     expect(invitedByCell).not.toHaveTextContent('staff-1')
-    // Neither render issued a platform account read: the invitation row
-    // carries the identity it shows.
     expect(getAccount).not.toHaveBeenCalled()
   })
 
@@ -710,8 +645,6 @@ describe('InvitationsPage', () => {
     })
     const roleCell =
       row!.children[(roleHeader as HTMLTableCellElement).cellIndex]!
-    // No role is a blank cell, as on the organization page; the table never
-    // prints a stand-in label.
     expect(roleCell.textContent?.trim()).toBe('')
     expect(
       within(inviteSection).queryByText(zhCN.invitations.issue.roleNone),
@@ -720,9 +653,6 @@ describe('InvitationsPage', () => {
 
   it('names the platform member by the member read, never a lookup or the account id', async () => {
     const user = userEvent.setup()
-    // The member table's Username column shows exactly the username the
-    // member read carries: the header names that column, so the cell never
-    // composes the display name into it and never issues an account read.
     const getAccount = vi.fn(() => Promise.reject(new Error('forbidden')))
     const operations = withTenant({
       listMembers: () =>
@@ -767,9 +697,6 @@ describe('InvitationsPage', () => {
     const operations = withTenant({
       listMembers: () =>
         Promise.resolve([member({ display_name: 'Ada Lovelace' })]),
-      // The organization face has no platform account read; the member read's
-      // display name and username are the identity even when the lookup is
-      // refused.
       getAccount: () => Promise.reject(new Error('forbidden')),
     })
     renderWithProviders(<InvitationsPage tenant="acme" tenantMode />, {
@@ -785,8 +712,6 @@ describe('InvitationsPage', () => {
         name: zhCN.members.column.displayName,
       }),
     ).toBeInTheDocument()
-    // The username column renders the record's username beside the display
-    // name column, never the account id.
     expect(
       await within(memberSection).findByText('ada', { exact: true }),
     ).toBeInTheDocument()
@@ -824,16 +749,12 @@ describe('InvitationsPage', () => {
     const accountCell = row!.children[
       (accountHeader as HTMLTableCellElement).cellIndex
     ]
-    // The display name column carries the name; the username column carries
-    // the member record's username, never its id.
     expect(accountCell).toHaveTextContent('ada')
     expect(accountCell).not.toHaveTextContent('acc-1')
   })
 
   it('pages the organization member table through every member', async () => {
     const user = userEvent.setup()
-    // The read answers its rows and the cursor of the page that follows, so a
-    // full first page is not mistaken for the last one.
     const firstPage = Array.from({ length: 100 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
@@ -930,7 +851,6 @@ describe('InvitationsPage', () => {
     expect(
       await within(memberSection).findByText('Last Member'),
     ).toBeInTheDocument()
-    // Exactly one page advanced: no second read and no repeated cursor.
     expect(listMembers).toHaveBeenCalledTimes(2)
     expect(
       within(memberSection).getByText(
@@ -940,9 +860,6 @@ describe('InvitationsPage', () => {
   })
 
   it('treats an exact page as the last page without an empty next page', async () => {
-    // A full page with no next cursor is the last page; the table never reads
-    // past its last row into an empty page whose empty state would wrongly say
-    // the tenant has no members.
     const page = Array.from({ length: 100 }, (_, index) =>
       member({
         account: `acc-${String(index).padStart(3, '0')}`,
@@ -1020,8 +937,6 @@ describe('InvitationsPage', () => {
     expect(
       await within(memberSection).findByText('Member 0'),
     ).toBeInTheDocument()
-    // The first page is read again by no cursor at all, not by the cursor the
-    // second page left on the stack.
     await waitForCondition(() =>
       expect(listMembers).toHaveBeenLastCalledWith('acme', { limit: 100 }),
     )
@@ -1076,8 +991,6 @@ describe('InvitationsPage', () => {
     await user.click(screen.getByLabelText(zhCN.common.tenant))
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
 
-    // The new tenant's first read carries no cursor: the stack belonged to the
-    // tenant the viewer left, and no frame may hand its cursor to the new one.
     await waitForCondition(() => {
       expect(
         listMembers.mock.calls.some(([tenant]) => tenant === 'globex'),
@@ -1120,9 +1033,6 @@ describe('InvitationsPage', () => {
 
     const inviteSection = section(zhCN.invitations.section.title)
     await within(inviteSection).findByText('ada@example.com')
-    // The server reported a next page, so the list must offer the step to it;
-    // reading only the first page would leave the rest of the tenant's
-    // invitations unreachable.
     await user.click(
       within(inviteSection).getByRole('button', {
         name: zhCN.common.pager.next,
@@ -1181,8 +1091,6 @@ describe('InvitationsPage', () => {
     expect(
       await within(inviteSection).findByText('ada@example.com'),
     ).toBeInTheDocument()
-    // The first page is read again by no cursor at all, not by the cursor the
-    // second page left on the stack.
     await waitForCondition(() =>
       expect(listInvitations).toHaveBeenLastCalledWith('acme', {
         limit: 50,
@@ -1237,8 +1145,6 @@ describe('InvitationsPage', () => {
     await user.click(screen.getByLabelText(zhCN.common.tenant))
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
 
-    // The new tenant's first read carries no cursor: the stack belonged to the
-    // tenant the viewer left, and no frame may hand its cursor to the new one.
     await waitForCondition(() => {
       expect(
         listInvitations.mock.calls.some(([tenant]) => tenant === 'globex'),
@@ -1291,8 +1197,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
 
-    // The list opens on the pending state, so the operator's live work is
-    // what the table shows without a filter change.
     await screen.findByText('ada@example.com')
     expect(listInvitations).toHaveBeenCalledWith(
       'acme',
@@ -1306,8 +1210,6 @@ describe('InvitationsPage', () => {
     )
     await screen.findByText('second@example.com')
 
-    // A filter change is a new first page: the cursor collected under the
-    // previous filter is not carried into the new one.
     await user.click(screen.getByLabelText(zhCN.invitations.filter.label))
     await user.click(
       await screen.findByRole('option', {
@@ -1344,8 +1246,6 @@ describe('InvitationsPage', () => {
       (nameHeader as HTMLTableCellElement).cellIndex
     ]
     expect(nameCell!.textContent).toBe('')
-    // The username column names the row from the member read, never the
-    // recorded id.
     const usernameCell =
       row!.children[(usernameHeader as HTMLTableCellElement).cellIndex]
     expect(usernameCell).toHaveTextContent('ada')
@@ -1375,8 +1275,6 @@ describe('InvitationsPage', () => {
       operations,
     })
 
-    // The invitation's inviter comes from the invitation record's own
-    // resolved names; the member row carries its own display name.
     const memberSection = section(zhCN.members.title)
     expect(
       (await within(memberSection).findAllByText('Ada Lovelace')).length,
@@ -1384,10 +1282,7 @@ describe('InvitationsPage', () => {
     const invitationSection = section(zhCN.invitations.section.title)
     const inviter = await within(invitationSection).findByText('Ada Lovelace')
     expect(inviter).toHaveAttribute('title', 'Ada Lovelace (ada)')
-    // The member write form searches the platform account roster, so tenant
-    // mode does not render it.
     expect(screen.queryByLabelText(zhCN.members.write.accountLabel)).toBeNull()
-    // Nothing resolved through the platform account read.
     expect(getAccount).not.toHaveBeenCalled()
   })
 
@@ -1414,8 +1309,6 @@ describe('InvitationsPage', () => {
     })
 
     const invitationSection = section(zhCN.invitations.section.title)
-    // An invitation that carries no inviter names leaves the cell blank,
-    // never the recorded identifier and never a platform lookup.
     const row = (await within(invitationSection).findByText('ada@example.com')).closest(
       'tr',
     )
@@ -1461,8 +1354,6 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     const first = await screen.findByText('Staff One')
     const second = screen.getByText('Staff Two')
-    // Each row shows its own inviter's display name, with the full identity
-    // on hover.
     expect(first).toHaveAttribute('title', 'Staff One (staff-one)')
     expect(second).toHaveAttribute('title', 'Staff Two (staff-two)')
     expect(getAccount).not.toHaveBeenCalled()
@@ -1487,8 +1378,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     const inviter = await screen.findByText('Staff One')
-    // The display name is the whole identity here: no empty parentheses
-    // stand in for the username the account does not have.
     expect(inviter).toHaveAttribute('title', 'Staff One')
     expect(getAccount).not.toHaveBeenCalled()
   })
@@ -1519,11 +1408,6 @@ describe('InvitationsPage', () => {
     const header = (scope: HTMLElement, label: string): Element =>
       within(scope).getByRole('columnheader', { name: label })
 
-    // The invitation table keeps the email as the primary identity and every
-    // other fact from the sm floor up: status, inviter, expiry and the
-    // sent-at time are what the operator judges an invitation by, so none of
-    // them yields before the table's own primary identity. The role is the
-    // secondary fact both invitation tables state at the md tier.
     const inviteSection = section(zhCN.invitations.section.title)
     expect(columnVisibility(header(inviteSection, zhCN.invitations.column.email))).toBeNull()
     for (const label of [
@@ -1550,10 +1434,6 @@ describe('InvitationsPage', () => {
         [900, 200],
       ]),
     )
-    // The inviter is a long-text column, not the primary identity: the
-    // whole-cell cap -- 120px below md, the shared long-text cap from md up
-    // -- bounds it so a long display name cannot push the table past the sm
-    // floor; the complete "display name (username)" is the cell's title.
     const invitedByIdentity =
       await within(inviteSection).findByText(invitedByName)
     const invitedByCell = invitedByIdentity.closest('td')
@@ -1562,8 +1442,6 @@ describe('InvitationsPage', () => {
       'title',
       `${invitedByName} (operator)`,
     )
-    // The cell offers no copy control, matching the organization page, and
-    // never renders the recorded account id.
     expect(
       within(invitedByCell as HTMLElement).queryAllByRole('button'),
     ).toHaveLength(0)
@@ -1578,9 +1456,6 @@ describe('InvitationsPage', () => {
       ]),
     )
 
-    // The members table keeps the display name as the always-visible primary
-    // identity; the account identifier beside it survives from sm, active
-    // yields at that tier, source stays from md, SSO exemption from lg.
     const memberSection = section(zhCN.members.title)
     expect(columnVisibility(header(memberSection, zhCN.members.column.displayName))).toBeNull()
     expect(columnVisibility(header(memberSection, zhCN.members.column.username))).toEqual({
@@ -1662,7 +1537,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
     const inviteSection = section(zhCN.invitations.section.title)
-    // The expiry is a fixed choice, not a free-form time or date-time field.
     expect(
       inviteSection.querySelector('input[type="datetime-local"]'),
     ).toBeNull()
@@ -1687,7 +1561,6 @@ describe('InvitationsPage', () => {
     const sent = expiresSent[0]
     expect(sent).toBeDefined()
     const left = Date.parse(sent as string) - before
-    // One day from the request, not the form's seven-day default.
     expect(left).toBeGreaterThan(23 * 60 * 60 * 1000)
     expect(left).toBeLessThan(25 * 60 * 60 * 1000)
   })
@@ -1727,7 +1600,6 @@ describe('InvitationsPage', () => {
       await waitForCondition(() => {
         expect(expiresSent).toHaveLength(1)
       })
-      // Thirty days from the request, not the form's seven-day default.
       expect(expiresSent[0]).toBe(
         new Date(frozen + 30 * 24 * 60 * 60 * 1000).toISOString(),
       )
@@ -1737,10 +1609,6 @@ describe('InvitationsPage', () => {
   })
 
   it('issues an invitation with the default lifetime when none is chosen', async () => {
-    // The default lifetime is a property of the request body, not of the
-    // form's copy. Pin the clock so the expected expiry is the default
-    // itself, and the assertion fails for any other default instead of
-    // tracking whatever time the suite happens to run at.
     const frozen = new Date('2026-03-01T00:00:00Z').getTime()
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
@@ -1760,8 +1628,6 @@ describe('InvitationsPage', () => {
         screen.getByLabelText(zhCN.invitations.issue.emailLabel),
         'new@example.com',
       )
-      // The issue handler reads the clock synchronously, so freezing it
-      // immediately before the click makes the expected instant exact.
       vi.setSystemTime(frozen)
       fireEvent.click(
         screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
@@ -1874,7 +1740,6 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
-    // The one-time token is turned into the host's acceptance link, not dropped.
     expect(
       await screen.findByText(
         fill(zhCN.invitations.issued.link, { email: 'new@example.com' }),
@@ -1932,7 +1797,6 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
-    // With no builder the token is still surfaced, never silently dropped.
     expect(
       await screen.findByText(fill(zhCN.invitations.issued.token, { email: 'ada@example.com' })),
     ).toBeInTheDocument()
@@ -1955,8 +1819,6 @@ describe('InvitationsPage', () => {
       await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
       await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
       expect(await screen.findByText(expected)).toBeInTheDocument()
-      // The carrier did not deliver the invitation, so the operator still has
-      // to hand the link over: the token and its copy control stay.
       expect(screen.getByText('spd_inv_test_token')).toBeInTheDocument()
       expect(
         screen.getByRole('button', {
@@ -1970,8 +1832,6 @@ describe('InvitationsPage', () => {
     const user = userEvent.setup()
     const operations = withTenant({
       issueInvitation: () =>
-        // A sent notice means the recipient already holds the link, so the
-        // answer carries no token.
         Promise.resolve(issuedInvitationFixture({ email_delivery: 'sent' })),
     })
     renderWithProviders(<InvitationsPage />, { operations })
@@ -1981,8 +1841,6 @@ describe('InvitationsPage', () => {
     const emailed = await screen.findByText(
       fill(zhCN.invitations.issued.emailed, { email: 'ada@example.com' }),
     )
-    // Nothing was handed out, so the panel shows neither a token nor a
-    // control that would copy an empty value.
     const panel = emailed.closest('[role="status"]') as HTMLElement
     expect(within(panel).queryByText('spd_inv_test_token')).toBeNull()
     expect(
@@ -1998,9 +1856,6 @@ describe('InvitationsPage', () => {
   })
 
   it('keeps the copy control for a sent answer that still carries a token', async () => {
-    // Belt and braces: the panel keys off the value actually handed out, so a
-    // response that reports `sent` but still carries a token keeps its copy
-    // control rather than hiding the only copy.
     const user = userEvent.setup()
     const operations = withTenant({
       issueInvitation: () =>
@@ -2035,14 +1890,12 @@ describe('InvitationsPage', () => {
       fill(zhCN.invitations.issued.token, { email: 'ada@example.com' }),
     )
     expect(display.closest('[role="status"]')).not.toBeNull()
-    // The close control names the tenant and the invitee it belongs to.
     const close = screen.getByRole('button', {
       name: fill(zhCN.invitations.issued.closeAria, {
         tenant: 'acme',
         email: 'ada@example.com',
       }),
     })
-    // The panel carries the only copy of the link, so closing it asks first.
     await user.click(close)
     const dialog = await screen.findByRole('dialog')
     await user.click(
@@ -2060,8 +1913,6 @@ describe('InvitationsPage', () => {
       }),
     )
     expect(screen.queryByText('spd_inv_test_token')).toBeNull()
-    // The scope's success confirmation stands beside the display and is not
-    // the display: closing the display leaves it in place.
     expect(screen.getByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }))).toBeInTheDocument()
   })
 
@@ -2091,8 +1942,6 @@ describe('InvitationsPage', () => {
         email: 'ada@example.com',
       }),
     })
-    // Nothing is dropped when the delivery reached the address, so the panel
-    // closes without a confirmation.
     await user.click(close)
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(
@@ -2119,8 +1968,6 @@ describe('InvitationsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     await screen.findByText('spd_inv_test_token')
 
-    // A second attempt resets the creating scope and settles as a failure.
-    // The display is page state, not slot state: it survives both.
     await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -2154,11 +2001,6 @@ describe('InvitationsPage', () => {
     await waitForCondition(() => {
       expect(revoked).toEqual(['inv-1'])
     })
-    // The revoked row's menu is gone; focus lands on the invitation section's
-    // heading, and the success text is announced through its live region.
-    // The page behind the confirmation is aria-hidden until its exit
-    // transition ends, so the section is readable only after the dialog
-    // has left.
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     const invitationSection = section(zhCN.invitations.section.title)
     const heading = within(invitationSection).getByRole('heading', {
@@ -2176,8 +2018,6 @@ describe('InvitationsPage', () => {
   it('re-reads the list when a revoke answers invitation-terminal', async () => {
     const user = userEvent.setup()
     let terminal = false
-    // The shipped bundle drives the generated surface, so the refusal and
-    // the re-read are the ones the package ships, not a scripted stand-in.
     bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/system/tenants') {
         return { tenants: [TENANT] }
@@ -2208,8 +2048,6 @@ describe('InvitationsPage', () => {
         call.method === 'DELETE' &&
         call.path === '/api/v1/tenants/acme/invitations/inv-1'
       ) {
-        // The row moved between the read and the click: the server refuses
-        // the write without changing anything.
         terminal = true
         throw { status: 409, code: 'authn.invitation_terminal' }
       }
@@ -2218,8 +2056,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations: adminOperations })
     await pickTenant(user)
     await screen.findByText('ada@example.com')
-    // The "all" filter keeps the moved row on screen, so its new label is
-    // observable instead of the row dropping out of the pending list.
     await user.click(screen.getByLabelText(zhCN.invitations.filter.label))
     await user.click(
       await screen.findByRole('option', { name: zhCN.invitations.filter.all }),
@@ -2231,8 +2067,6 @@ describe('InvitationsPage', () => {
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    // No further operator action: the refused write re-reads the list, and
-    // the server's judgement replaces the stale pending label.
     await waitForCondition(() =>
       expect(
         within(section(zhCN.invitations.section.title)).getByText(
@@ -2245,8 +2079,6 @@ describe('InvitationsPage', () => {
   it('moves focus to the invitation heading when a terminal revoke empties the filter', async () => {
     const user = userEvent.setup()
     let terminal = false
-    // The shipped bundle drives the generated surface, so the refusal and
-    // the re-read are the ones the package ships, not a scripted stand-in.
     bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/system/tenants') {
         return { tenants: [TENANT] }
@@ -2255,8 +2087,6 @@ describe('InvitationsPage', () => {
         call.method === 'GET' &&
         call.path === '/api/v1/tenants/acme/invitations'
       ) {
-        // The server filters by status: the terminal row drops out of the
-        // default pending read, so the re-read removes it from the table.
         if (terminal && call.query?.status === 'pending') {
           return { invitations: [], next_cursor: '' }
         }
@@ -2290,8 +2120,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations: adminOperations })
     await pickTenant(user)
     await screen.findByText('ada@example.com')
-    // The default filter is pending: the re-read drops the now-terminal row,
-    // taking the menu that started the write with it.
     await chooseInvitationAction(
       user,
       'ada@example.com',
@@ -2299,9 +2127,6 @@ describe('InvitationsPage', () => {
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    // While the confirmation is on screen the rest of the page is
-    // aria-hidden, so the heading is readable only after the dialog has
-    // left. Wait for that rather than querying the closing state.
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     const heading = within(section(zhCN.invitations.section.title)).getByRole(
       'heading',
@@ -2349,8 +2174,6 @@ describe('InvitationsPage', () => {
       zhCN.invitations.resend,
     )
     const dialog = await screen.findByRole('dialog')
-    // The confirmation says the old link stops working and the expiry stays
-    // put; it no longer speaks of a lifetime in days.
     expect(dialog).toHaveTextContent(
       fill(zhCN.invitations.resendMessage, {
         email: 'ada@example.com',
@@ -2365,8 +2188,6 @@ describe('InvitationsPage', () => {
     await waitForCondition(() => {
       expect(resent).toEqual(['acme:inv-1'])
     })
-    // The resend answer carries the new one-time value, so the page shows it
-    // exactly as it does for a fresh issuance.
     expect(
       await screen.findByText('spd_inv_test_token'),
     ).toBeInTheDocument()
@@ -2375,8 +2196,6 @@ describe('InvitationsPage', () => {
         fill(zhCN.invitations.resent, { email: 'ada@example.com' }),
       ),
     ).toBeInTheDocument()
-    // The latest send sits beneath the row's issued time: the issued time is
-    // still created_at, not the resend's instant.
     expect(
       await screen.findByText(
         fill(zhCN.invitations.created.resentOnce, {
@@ -2396,8 +2215,6 @@ describe('InvitationsPage', () => {
   it('re-reads the list when a resend answers invitation-terminal', async () => {
     const user = userEvent.setup()
     let terminal = false
-    // The shipped bundle drives the generated surface, so the refusal and
-    // the re-read are the ones the package ships, not a scripted stand-in.
     bindAdminRequest((call) => {
       if (call.method === 'GET' && call.path === '/api/v1/system/tenants') {
         return { tenants: [TENANT] }
@@ -2428,9 +2245,6 @@ describe('InvitationsPage', () => {
         call.method === 'POST' &&
         call.path === '/api/v1/tenants/acme/invitations/inv-1/resend'
       ) {
-        // The row moved between the read and the click: the server refuses
-        // the resend without changing anything, so the list still shows the
-        // stale pending row until it is read again.
         terminal = true
         throw { status: 409, code: 'authn.invitation_terminal' }
       }
@@ -2439,8 +2253,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations: adminOperations })
     await pickTenant(user)
     await screen.findByText('ada@example.com')
-    // The "all" filter keeps the moved row on screen, so its new label is
-    // observable instead of the row dropping out of the pending list.
     await user.click(screen.getByLabelText(zhCN.invitations.filter.label))
     await user.click(
       await screen.findByRole('option', { name: zhCN.invitations.filter.all }),
@@ -2452,8 +2264,6 @@ describe('InvitationsPage', () => {
     )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    // No further operator action: the refused write re-reads the list, and
-    // the server's judgement replaces the stale pending label.
     await waitForCondition(() =>
       expect(
         within(section(zhCN.invitations.section.title)).getByText(
@@ -2486,8 +2296,6 @@ describe('InvitationsPage', () => {
     await screen.findByText('ada@example.com')
 
     expect(screen.getByText('tenant-inviter')).toBeInTheDocument()
-    // The issued time stays the row's own; the resend count and the latest
-    // send sit beneath it rather than replacing it.
     expect(
       screen.getByText(
         formatInstant('2026-10-15T12:00:00Z', 'zh-CN', {
@@ -2571,7 +2379,6 @@ describe('InvitationsPage', () => {
         }),
       ),
     ).toBeInTheDocument()
-    // A terminal invitation accepts no management action.
     const inviteSection = section(zhCN.invitations.section.title)
     for (const email of [
       'accepted@example.com',
@@ -2583,8 +2390,6 @@ describe('InvitationsPage', () => {
           name: fill(zhCN.invitations.actionsAria, { email }),
         }),
       ).toBeNull()
-      // Only a pending row has a deadline to act on: the terminal rows leave
-      // the deadline cell empty even though their records carry one.
       const row = within(inviteSection)
         .getByText(email)
         .closest('tr') as HTMLElement
@@ -2639,9 +2444,6 @@ describe('InvitationsPage', () => {
     ).toBeInTheDocument()
     first.unmount()
 
-    // A member with neither a display name nor a username resolves nothing,
-    // so the success copy stays neutral: the recorded id is a machine value
-    // the operator cannot match to a roster row.
     const unnamed = withTenant({
       listMembers: () =>
         Promise.resolve([member({ display_name: '', username: '' })]),
@@ -2656,11 +2458,6 @@ describe('InvitationsPage', () => {
     expect(notice).not.toHaveTextContent('acc-1')
   })
 
-  // The removal confirmation names the member the way the roster shows it:
-  // from the member read -- display name and login username, either alone.
-  // The account id is a machine value the operator cannot match against a
-  // roster row, so it never enters the sentence: a member with neither a
-  // display name nor a username gets the neutral sentence.
   const MEMBER_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
 
   async function openRemovalConfirmation(
@@ -2803,12 +2600,9 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    // No account chosen: the picker holds no id yet.
     expect(
       screen.getByRole('button', { name: zhCN.members.write.submit }),
     ).toHaveAttribute('aria-disabled', 'true')
-    // A display name finds the account; the write carries its id ("acc-2"),
-    // never the typed name.
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     await waitForCondition(() => {
@@ -2816,13 +2610,9 @@ describe('InvitationsPage', () => {
         { tenant: 'acme', account: 'acc-2', active: true, sso_exempt: false },
       ])
     })
-    // The landed write clears both the selection and the box that named it.
     expect(screen.getByLabelText(zhCN.members.write.accountLabel)).toHaveValue('')
   })
 
-  // The four success notices a member row's writes produce name the account
-  // in the shared four shapes and never by its opaque id. Each case asserts
-  // the recorded id is absent from the notice.
   const MEMBER_ACTIONS = [
     {
       action: 'remove',
@@ -2850,7 +2640,6 @@ describe('InvitationsPage', () => {
     { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
   ]
 
-  /** Runs one member write with the given identity and returns its notice. */
   async function driveMemberNotice(
     user: ReturnType<typeof userEvent.setup>,
     action: (typeof MEMBER_ACTIONS)[number]['action'],
@@ -2858,8 +2647,6 @@ describe('InvitationsPage', () => {
     identifiers: AdminAccount['identifiers'],
     expected: string,
   ): Promise<HTMLElement> {
-    // A member row names its account from the member read: the display name
-    // and login username it carries, never the opaque id.
     const username =
       identifiers.find((identifier) => identifier.kind === 'username')?.value ??
       ''
@@ -2885,8 +2672,6 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
 
     if (action === 'write') {
-      // The picker's option names the account by its display name beside the
-      // id, or by the id alone when it has none.
       const optionName =
         displayName === '' && identifiers.length === 0
           ? zhCN.common.accountUnavailable
@@ -2903,8 +2688,6 @@ describe('InvitationsPage', () => {
         screen.getByRole('button', { name: zhCN.members.write.submit }),
       )
     } else {
-      // The row's identity comes from the member read, so the action names
-      // the account as soon as the row renders.
       await screen.findByRole('button', { name: zhCN.members.remove })
       if (action === 'remove') {
         await user.click(
@@ -3024,8 +2807,6 @@ describe('InvitationsPage', () => {
           entry.path === '/api/v1/tenants/acme/members',
       ).length
 
-    // A landed write re-runs the member read, so the row it created is on
-    // screen without the operator pressing refresh.
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
@@ -3035,14 +2816,11 @@ describe('InvitationsPage', () => {
         }),
       ),
     ).toBeInTheDocument()
-    // The member row renders from the member read: display name and login
-    // username in their own columns.
     const memberSection = section(zhCN.members.title)
     expect(await within(memberSection).findByText('Ada')).toBeInTheDocument()
     expect(within(memberSection).getByText('ada')).toBeInTheDocument()
     expect(listReads()).toBe(2)
 
-    // A refused write leaves the list as it was: no read follows it.
     writeFails = true
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
@@ -3091,11 +2869,8 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
-    // The refusal is a permission denial, not a load failure: the
-    // permission text, and no retry (a retry would only be refused again).
     expect(await screen.findByText(zhCN.forbidden.title)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: zhCN.invitations.retry })).toBeNull()
-    // A read's refusal never settles into a write scope's slot.
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -3112,27 +2887,21 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
 
-    // The invitation section refuses the issue.
     await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     expect(await within(section(zhCN.invitations.section.title)).findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.conflict,
     )
 
-    // The member section refuses the removal.
     await screen.findAllByText('Operator')
     await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    // The modal hides the page from assistive technology until its exit
-    // transition ends; the region is readable after that.
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(await within(section(zhCN.members.title)).findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
 
-    // Neither section carries the other's text, and no page-level banner
-    // aggregates them.
     expect(
       within(section(zhCN.invitations.section.title)).queryByText(zhCN.errors.authn.forbidden),
     ).toBeNull()
@@ -3163,9 +2932,6 @@ describe('InvitationsPage', () => {
       screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
     )
 
-    // The tenant admission layer's refusal names the enterprise sign-in and
-    // offers the re-login exit. No local factor dialog opens, so the exit is
-    // the only banner on the page.
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
     expect(screen.getAllByRole('alert')).toHaveLength(1)
@@ -3176,8 +2942,6 @@ describe('InvitationsPage', () => {
     const relogin = screen.getByRole('button', { name: zhCN.stepUp.relogin })
     await expectNoAxeViolations()
 
-    // The exit ends the session so the host's session gate returns to the
-    // sign-in surface, where the operator signs in through the provider.
     await user.click(relogin)
     expect(logout).toHaveBeenCalledTimes(1)
   })
@@ -3222,10 +2986,6 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations, session })
     await pickTenant(user)
 
-    // A read the tenant admission layer refuses names the enterprise sign-in
-    // and offers the re-login exit, as a refused write does. No retry stands
-    // beside it: the same request would be refused again while the session is
-    // a local one.
     expect(
       await screen.findByText(zhCN.errors.authn.sso_required),
     ).toBeInTheDocument()
@@ -3234,8 +2994,6 @@ describe('InvitationsPage', () => {
     ).toBeNull()
     const relogin = screen.getByRole('button', { name: zhCN.stepUp.relogin })
 
-    // The exit ends the session so the host's session gate returns to the
-    // sign-in surface, where the operator signs in through the provider.
     await user.click(relogin)
     expect(logout).toHaveBeenCalledTimes(1)
   })
@@ -3286,8 +3044,6 @@ describe('InvitationsPage', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
 
-    // The failing row carries the marker and the resolved reason; the
-    // region carries the same text.
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
@@ -3328,9 +3084,6 @@ describe('InvitationsPage', () => {
     )
     expect(trigger).toHaveAttribute('aria-invalid', 'true')
 
-    // The issue and the revoke share the invitation scope: a new attempt
-    // starts from a clean result, so the refused row's marker and its inline
-    // reason do not outlive the result it described.
     await user.type(
       screen.getByLabelText(zhCN.invitations.issue.emailLabel),
       'new@example.com',
@@ -3357,14 +3110,12 @@ describe('InvitationsPage', () => {
     renderWithProviders(<InvitationsPage />, { operations })
     await pickTenant(user)
 
-    // Issue names the invitee.
     await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
     expect(
       await screen.findByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' })),
     ).toBeInTheDocument()
 
-    // The membership write names the chosen account.
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
@@ -3375,14 +3126,12 @@ describe('InvitationsPage', () => {
       ),
     ).toBeInTheDocument()
 
-    // The SSO exemption names the member by its readable identity.
     await screen.findAllByText('Operator')
     await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     expect(
       await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: byName('Operator') })),
     ).toBeInTheDocument()
 
-    // The removal names the removed member by the same identity.
     await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
@@ -3412,8 +3161,6 @@ describe('InvitationsPage', () => {
     await user.type(screen.getByLabelText(zhCN.invitations.issue.emailLabel), 'new@example.com')
     await user.click(screen.getByRole('button', { name: zhCN.invitations.issue.submit }))
 
-    // The tenant feeds every scope on the page: it is out of reach while
-    // the issue is in flight.
     expect(screen.getByLabelText(zhCN.common.tenant)).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -3427,14 +3174,12 @@ describe('InvitationsPage', () => {
       await screen.findByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' })),
     ).toBeInTheDocument()
 
-    // A member write lands in the other scope, so both carry a result.
     await screen.findAllByText('Operator')
     await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     expect(
       await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: byName('Operator') })),
     ).toBeInTheDocument()
 
-    // Another tenant makes both results describe a tenant left behind.
     await user.click(screen.getByLabelText(zhCN.common.tenant))
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
     expect(screen.queryByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }))).toBeNull()
@@ -3466,7 +3211,6 @@ describe('InvitationsPage', () => {
   })
 
   it('locks the scope to a controlled tenant and hides the selector', async () => {
-    // The URL names a different tenant: a controlled page ignores it.
     window.history.replaceState({}, '', '/admin/invitations?tenant=globex')
     try {
       const listInvitations = vi.fn(() =>
@@ -3558,8 +3302,6 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     await screen.findByText('Member One')
 
-    // The column, the row toggle and the form's checkbox all belong to the
-    // absent feature; nothing of the exemption remains.
     expect(
       screen.queryByRole('columnheader', {
         name: zhCN.members.column.ssoExempt,
@@ -3572,7 +3314,6 @@ describe('InvitationsPage', () => {
       screen.queryByLabelText(zhCN.members.write.ssoExemptLabel),
     ).toBeNull()
 
-    // The membership write still works, and carries no exemption field.
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (ada)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     await waitForCondition(() => {
@@ -3615,7 +3356,6 @@ describe('InvitationsPage', () => {
     expect(
       screen.getByText(fill(SOURCE_LABELS.jit, { provider: 'acme-idp' })),
     ).toBeInTheDocument()
-    // A source outside the closed set keeps the recorded text.
     expect(screen.getByText('import')).toBeInTheDocument()
   })
 
@@ -3765,8 +3505,6 @@ describe('InvitationsPage write controls stay focusable', () => {
 
     expect(toggle).toHaveFocus()
     expect(toggle).toHaveAttribute('aria-busy', 'true')
-    // The other control in the row belongs to the same scope: unavailable,
-    // not busy, and with no reason of its own.
     expect(remove).toHaveAttribute('aria-disabled', 'true')
     expect(remove).not.toHaveAttribute('aria-busy')
     expect(remove).not.toHaveAttribute('aria-describedby')
@@ -3925,7 +3663,6 @@ describe('InvitationsPage removal focus guards', () => {
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
     )
 
-    // The reader moves focus to another row while the write is in flight.
     const alpha = removeInRow('Alpha')
     alpha.focus()
     expect(alpha).toHaveFocus()
@@ -3971,9 +3708,6 @@ describe('InvitationsPage removal focus guards', () => {
 
     await user.click(removeInRow('Bravo'))
     const dialog = await screen.findByRole('dialog')
-    // The write lands but the re-read that confirms it fails. The failed
-    // read must drop the remembered row; otherwise a later successful read
-    // moves focus on its own.
     fail = true
     await user.click(
       within(dialog).getByRole('button', { name: zhCN.common.confirm }),
@@ -3982,9 +3716,6 @@ describe('InvitationsPage removal focus guards', () => {
     await waitForCondition(() => expect(screen.queryByRole('dialog')).toBeNull())
     fail = false
 
-    // The stale list still shows the removed row. Focus its control, then
-    // change the page: the control leaves with the old page and focus drops
-    // to the body, the one place a remembered removal would take over.
     const staleTrigger = removeInRow('Bravo')
     staleTrigger.focus()
     expect(staleTrigger).toHaveFocus()

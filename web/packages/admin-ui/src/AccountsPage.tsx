@@ -1,101 +1,3 @@
-/**
- * AccountsPage: the account-administration page of the console.
- *
- * It lists accounts (GET /api/v1/system/auth/accounts, narrowed by an identifier
- * prefix of one identifier kind), creates an account, and opens one
- * account's detail: its read-only fields, its registered factors, its
- * service secrets and its sessions, with the write controls the platform
- * declares a request body for -- create an account; change its status,
- * MFA requirement, display name, attributes and protected flag; reset its
- * password; add a login name or email; create a service secret; and the
- * body-free writes delete the account, reset its factors, revoke its
- * sessions, revoke a secret, revoke a session and remove a login
- * identifier named by hand.
- *
- * The list read takes the identifier prefix with its kind, because the
- * module's index is keyed by the two together (it refuses a prefix
- * without a kind): the toolbar carries a kind selector beside the prefix
- * box, and the applied filter is committed on submit so a keystroke never
- * fires a request. The toolbar also narrows the list by a display-name
- * prefix, by account status and by account kind, the other query
- * parameters the module's list endpoint declares. The display-name prefix
- * is the beginning of the stored name, compared as written (case-sensitive
- * and un-normalized), so the box sends the operator's text unchanged. Each
- * unset filter is left out of the request rather than sent empty.
- *
- * The list read is cursor-paginated: it answers with the next page's
- * cursor only, so the footer advances through a stack of the cursors each
- * visited page was read by, and a filter submission returns to the first
- * page. A cursor page carries no total, so the footer shows the page's
- * range without a count.
- *
- * The detail's factor, secret and session sections exist only while the
- * process serves their features (authn.admin.factors, authn.admin.secrets
- * and authn.admin.sessions): an absent feature unmounts the section and the
- * read it carries, so the page neither renders the control nor issues the
- * request. The reset-MFA, MFA-requirement, password-reset and secret-create
- * controls follow the same answer. The page itself is gated on authn.admin
- * by its route declaration; no page-level read depends on the answer, and
- * the identity unit it shares with every other surface skips its account
- * read when the feature is absent.
- *
- * The host may extend the list and the attribute editors without the page
- * knowing what the columns or the attributes mean: `extraColumns` inserts
- * its own columns (each declaring the priority that sheds it as the table's
- * container narrows) before the actions column, and `attributeFields`
- * replaces the raw-JSON attribute editors -- on the create form and on the
- * detail's patch -- with one text field per declared key. The patch keeps
- * the attributes it did not declare, so a host field edits its own keys
- * without dropping another writer's. With neither supplied, the output is
- * the page's own.
- *
- * The list and the detail's reads each stand behind their own
- * AsyncSection, so every one of them shows its loading, empty and
- * retryable-error states rather than settling a failed read into a
- * silently empty table. The detail and the create form are carried by
- * ui-kit's SidePanel: a row's Manage control only opens that account's
- * detail panel (it reports `aria-haspopup="dialog"` and never toggles
- * closed), and the page header's New account control opens the create
- * panel. Both are `wide`. The panel is modal, so the list keeps its
- * data, filters and scroll position without being clickable while it is
- * open, and closing goes through the panel's own control. The selected
- * account stays until the panel has animated out (its `onExited`), so the
- * exit renders the account rather than an empty panel.
- *
- * Every write reports through one feedback scope per control group, and
- * each region renders directly under the group that fired it: the panel's
- * sections carry their own scopes so a failure lands beside the controls
- * instead of behind the open modal, the two action rows in the detail
- * share one scope, each table shares one with its row actions, and the
- * list's row delete and the create success share the list's scope below
- * the table. Paging and a submitted filter change the list's context, so
- * both reset that scope before the new page is read. The panel is `busy`
- * while any scope inside it has a write in flight, so a write's result
- * always lands in a region that is still mounted. Every settled action
- * without a failure confirms with a message naming the account and, for a
- * row action, the row.
- *
- * A created service secret is a value handed out once. Its state is held
- * by the page, not by the panel content that unmounts on close, so a scope
- * reset cannot drop it; the display has its own close control and its
- * accessible name names the account. While it is displayed, a detail close
- * request first asks through a ConfirmDialog whether to discard it.
- *
- * Each write request body is the shape the module's OpenAPI fragment
- * declares for its endpoint, which the handler decodes; the account view
- * carries no identifier list (the module exposes identifier add/remove
- * but no identifier read), so identifier removal and add name the
- * identifier by hand.
- *
- * Every destructive write is confirmed through ui-kit's ConfirmDialog
- * before it fires; a delete that takes other records with it -- the account
- * delete, like the authorization page's role removal -- adds the danger
- * variant's two-step guard. Every read
- * and write is an operation on the console operations bundle, so the page
- * builds no client and writes no query key. The page opens with ui-kit's
- * PageHeader.
- */
-
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
@@ -169,35 +71,24 @@ import type {
   AdminCreateAccountInput,
 } from './operations.js'
 
-/** The account status's label, guarding the closed set. */
 const ACCOUNT_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 
-/** The identifier kinds the module's index is keyed by, in the order the
- * selector offers them. */
 const IDENTIFIER_KINDS = ['username', 'email', 'phone'] as const
 type IdentifierKind = (typeof IDENTIFIER_KINDS)[number]
 
-/** The account kinds the list read narrows by, in the order the filter offers them. */
 const ACCOUNT_KINDS = ['user', 'service'] as const
 
-/** The account statuses the list read narrows by, in the order the filter offers them. */
 const FILTER_STATUSES = ['active', 'disabled', 'deleted'] as const
 
-/** The list read's page size. Cursor pages carry no total, so the footer
- * shows this page's slot range and offers no size selector. */
 const ACCOUNTS_PAGE_SIZE = 100
 
-/** One service secret handed out once, held by the page across panel
- * closes so a scope reset cannot drop the only copy. */
 interface OneTimeSecret {
-  /** The account the secret belongs to: an internal scope, never rendered. */
   readonly accountId: string
   readonly accountName: string
   readonly label: string
   readonly secret: string
 }
 
-/** The detail's per-section feedback scopes, one per control group. */
 interface AccountDetailFeedback {
   readonly status: WriteFeedback
   readonly mfa: WriteFeedback
@@ -207,16 +98,7 @@ interface AccountDetailFeedback {
   readonly createSecret: WriteFeedback
 }
 
-/**
- * Whether focus was lost when the initiating control's row left the
- * document. A write that removes its own row hands focus to a neighbour,
- * but only if the operator had not moved focus elsewhere while the write
- * was in flight: the browser drops focus to the body (or leaves it on a
- * detached node inside the removed row) in that case, while a connected
- * control outside the row means the operator chose that place. `removed`
- * is the row element the initiating control stood in, captured at the
- * attempt's start.
- */
+/** Focus on the body or a detached node also counts as caused by the removal. */
 function focusFellWithRow(removed: HTMLElement | null): boolean {
   const active = document.activeElement
   if (active === null || active === document.body) {
@@ -234,12 +116,6 @@ function statusLabel(status: string, t: (key: string) => string): string {
     : t('accounts.status.other')
 }
 
-/**
- * One value of a closed set through this package's namespace, falling back
- * to the raw value when the bundle declares no leaf for it. The fallback
- * keeps a value the platform grows later readable instead of printing a
- * resource key.
- */
 function closedSetLabel(
   prefix: string,
   value: string,
@@ -250,10 +126,8 @@ function closedSetLabel(
   return i18n.exists(key, { ns: ADMIN_UI_NAMESPACE }) ? t(key) : value
 }
 
-/** One host-supplied list column, inserted before the row-actions column.
- * The priority is required: a host column that repeats across rows takes
- * its own ui-kit priority so a narrow container sheds it in the host's
- * chosen order; the page does not choose for it. */
+/** A host-supplied list column inserted before the row-actions column; its
+ * priority decides when a narrow container sheds it. */
 export type AccountsPageExtraColumn = DataTableColumn<AdminAccount> & {
   readonly priority: DataTableColumnPriority
 }
@@ -266,21 +140,17 @@ export interface AccountsPageAttributeField {
   readonly label: ReactNode
 }
 
+/** Props for AccountsPage: optional host columns and attribute fields. */
 export interface AccountsPageProps {
-  /**
-   * Host columns inserted after the page's own columns and before the
-   * row-actions column, so the controls stay the last cell of every row.
-   */
+  /** Host columns inserted before the row-actions column. */
   readonly extraColumns?: readonly AccountsPageExtraColumn[]
-  /**
-   * The account attributes the host declares, each edited as one text
-   * field in place of the raw-JSON attribute editor. Undeclared keys an
-   * edited account already carries are preserved. Absent, the page keeps
-   * the JSON editor.
-   */
+  /** Host-declared attribute fields replacing the raw-JSON editor; undeclared
+   * keys an edited account already carries are preserved. */
   readonly attributeFields?: readonly AccountsPageAttributeField[]
 }
 
+/** AccountsPage lists, creates and edits platform accounts and their
+ * factors, secrets and sessions. */
 export function AccountsPage({
   extraColumns,
   attributeFields,
@@ -309,62 +179,36 @@ export function AccountsPage({
   const [status, setStatus] = useState('')
   const [accountKindDraft, setAccountKindDraft] = useState('')
   const [accountKind, setAccountKind] = useState('')
-  // The cursor stack: cursors[i] is the cursor that reads page i ('' is the
-  // first page). The read answers with the next page's cursor only, so the
-  // page keeps the cursor each visited page was read by; "previous" steps
-  // back through the stack, and a fresh filter submission starts it over.
   const [cursors, setCursors] = useState<readonly string[]>([''])
   const [page, setPage] = useState(0)
-  // The selected account outlives the close request: the detail panel keeps
-  // rendering it through the exit transition, and `selectedId` is cleared
-  // only once the panel reports `onExited`.
   const [selectedId, setSelectedId] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [identifierToRemove, setIdentifierToRemove] = useState('')
-  // The one-time service secret is page state, not scope state: a scope
-  // reset must not drop the only copy of a value handed out once, and the
-  // display outlives the panel content that unmounts on close.
+  // The one-time secret is page state, not scope state: a scope reset must
+  // not drop its only copy, and the display outlives the panel content.
   const [oneTimeSecret, setOneTimeSecret] = useState<OneTimeSecret | null>(null)
-  // The control that opened each panel. A close that goes through the
-  // discard confirmation closes the dialog and the panel in one commit;
-  // the dialog's own focus restore then lands on the panel's close control,
-  // which unmounts with the panel and drops focus to the document. The page
-  // therefore returns focus to the opener itself once the panel has exited
-  // (the ordinary close is already restored by the panel, to this same
-  // control).
+  // A discard-confirmed close unmounts the panel's own close control with it,
+  // so the page restores focus to the opener once the panel has exited.
   const createTrigger = useRef<HTMLButtonElement | null>(null)
   const detailTrigger = useRef<HTMLButtonElement | null>(null)
-  // A detail close request while the secret is still open asks first.
   const [discardSecretOpen, setDiscardSecretOpen] = useState(false)
-  // The create panel's success belongs to the list's scope and may only be
-  // written after `onExited`: while the modal is open the page behind it is
-  // aria-hidden, so a notice written then would never be announced.
+  // Written after `onExited`: the page behind an open modal is aria-hidden,
+  // so a notice written then would never be announced.
   const createSuccess = useRef<string | null>(null)
-  // Each row's delete control, so a successful delete can hand focus to the
-  // adjacent row's control when the removed row leaves the document.
   const deleteButtons = useRef(new Map<string, HTMLButtonElement>())
-  // The row whose delete has started, with the row order at that moment and
-  // the row element itself: once that row leaves the list, focus moves to
-  // the next row's delete control, else the previous one, else the list
-  // container, so it never lands on the document body. The element is what
-  // tells a focus the removal took from a focus the operator moved away.
+  // The deleting row with its order and element: they name the neighbour that
+  // takes focus, and tell the removal's focus loss from the operator moving it.
   const deleteFocus = useRef<{
     readonly id: string
     readonly order: readonly string[]
     readonly row: HTMLElement | null
   } | null>(null)
-  // The row whose delete is in flight: only that row's control is busy; its
-  // siblings are unavailable without a reason while the scope is pending.
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(
     null,
   )
   const listRegion = useRef<HTMLDivElement | null>(null)
 
-  // The detail's sessions table: each row's revoke control, the session
-  // whose revoke is in flight, the row whose revoke started (with the row
-  // order and element at that moment), and the section heading a revoked
-  // last row leaves as the focus landing.
   const sessionButtons = useRef(new Map<string, HTMLButtonElement>())
   const [revokingSessionId, setRevokingSessionId] = useState<string | null>(
     null,
@@ -375,15 +219,9 @@ export function AccountsPage({
     readonly row: HTMLElement | null
   } | null>(null)
   const sessionsHeading = useRef<HTMLHeadingElement | null>(null)
-  // The secret whose revoke is in flight, so only its row is busy.
   const [revokingSecretId, setRevokingSecretId] = useState<string | null>(null)
 
-  // The list's feedback scope: the row-initiated delete and the create
-  // success share it, and its region stands below the list.
   const listWrite = useWriteFeedback()
-  // The detail's scopes, one per section. They live here rather than inside
-  // the content so the panel can be `busy` while any of them is in flight
-  // and `onExited` can clear them all.
   const detailStatusWrite = useWriteFeedback()
   const detailMfaWrite = useWriteFeedback()
   const detailPatchWrite = useWriteFeedback()
@@ -395,13 +233,6 @@ export function AccountsPage({
   const detailSessionWrite = useWriteFeedback()
   const detailIdentifierRemoveWrite = useWriteFeedback()
 
-  // The applied filters, committed together on submit so a keystroke never
-  // fires a request. The identifier prefix is sent with its kind (the
-  // module's index is keyed by the two together); the status and kind
-  // filters are each sent on their own, and an unset one is omitted. The
-  // cursor is part of the read's parameters, so each visited page caches
-  // under its own key and a filter submission (cursor back to '') reads the
-  // first page.
   const cursor = cursors[page] ?? ''
   const accountParams = useMemo(
     () => ({
@@ -418,23 +249,12 @@ export function AccountsPage({
   )
   const accounts = operations.useAccounts(accountParams)
 
-  // The footer pages through the cursor the read answered with. A cursor
-  // page carries no total, so the footer cannot judge where the last page
-  // is on its own: a read answered with no next cursor is the last page,
-  // and the footer marks its forward control unavailable there. A page
-  // whose read has not settled yet has no cursor to advance from either,
-  // so it marks the control unavailable too and this guard backs that up.
   function changePage(nextPage: number): void {
-    // A write in flight owns the list's context: paging away mid-write
-    // would let a result land against a list it no longer describes.
     if (listWrite.pending) {
       return
     }
-    // A page move leaves the row a settled delete was watching behind.
     deleteFocus.current = null
     if (nextPage === page - 1 && page > 0) {
-      // A page move is a change of the list's context: the previous page's
-      // result does not describe the page now shown.
       listWrite.reset()
       setPage(nextPage)
       return
@@ -446,8 +266,6 @@ export function AccountsPage({
     if (nextCursor === '') {
       return
     }
-    // One scope, one list: advancing drops the page it leaves behind's
-    // result.
     listWrite.reset()
     setCursors((previous) => {
       const grown = [...previous]
@@ -459,11 +277,6 @@ export function AccountsPage({
   const account = operations.useAccount({
     id: selectedId === '' ? undefined : selectedId,
   })
-  // The selected account's readable identity, as the panel title and a
-  // success notice name it. A row the list already carries names the panel
-  // even before the detail read settles, so the title never falls back to
-  // the account id; an absent read resolves nothing and the notice stays
-  // neutral instead of naming the recorded identifier.
   const selectedRow = accounts.data?.accounts.find((row) => row.id === selectedId)
   const selectedIdentity: AccountIdentityValue =
     account.data !== undefined
@@ -471,16 +284,9 @@ export function AccountsPage({
       : selectedRow !== undefined
         ? accountIdentityValue(selectedRow)
         : { name: undefined, username: undefined }
-  // The factors and secrets reads live in their feature-gated sections, so
-  // an absent feature takes the read with it. The sessions read stays here:
-  // the bulk revoke's confirmation in the action row needs to know whether
-  // the caller's own session is listed, and the read is disabled while the
-  // feature is absent.
   const sessions = operations.useAccountSessions({
     id: selectedId === '' || !sessionsPresent ? undefined : selectedId,
   })
-  // Whether the listed sessions include the caller's own, so the bulk revoke's
-  // confirmation can say the caller is signed out too.
   const sessionsIncludeCurrent =
     sessions.data?.some((row) => row.current === true) ?? false
 
@@ -491,9 +297,6 @@ export function AccountsPage({
   const revokeSession = operations.useRevokeSession()
   const removeIdentifier = operations.useRemoveIdentifier()
 
-  // The refresh action re-reads the list -- the one read describing the
-  // page body; the detail panel's reads live in the modal and re-read when
-  // it opens again -- and resets the list's feedback scope first.
   const pageRefresh = usePageRefresh(
     [pageRefreshRead('accounts', accounts)],
     () => {
@@ -502,10 +305,6 @@ export function AccountsPage({
     },
   )
 
-  // The write controls a detail section starts are marked busy or unavailable
-  // from the scope's own in-flight count, never from one mutation observer's
-  // `isPending`: overlapping attempts of the same group would otherwise
-  // disagree about which one is running.
   const detailFeedback: AccountDetailFeedback = {
     status: detailStatusWrite,
     mfa: detailMfaWrite,
@@ -515,8 +314,6 @@ export function AccountsPage({
     createSecret: detailCreateSecretWrite,
   }
 
-  // Any write in flight inside the panel makes the panel busy, so a close
-  // request cannot unmount the region the result is about to land in.
   const detailBusy =
     detailStatusWrite.pending ||
     detailMfaWrite.pending ||
@@ -534,8 +331,6 @@ export function AccountsPage({
     setDetailOpen(true)
   }
 
-  // A close request while the one-time secret is still open asks before
-  // discarding a value that cannot be shown again.
   function requestDetailClose(): void {
     if (oneTimeSecret !== null) {
       setDiscardSecretOpen(true)
@@ -544,10 +339,6 @@ export function AccountsPage({
     setDetailOpen(false)
   }
 
-  // The panel has animated out: only now drop the account it rendered, and
-  // reset every scope and draft the panel carried so opening it again (for
-  // any account) starts clean. The one-time secret is page state and is
-  // cleared only by its own close control or the discard confirmation.
   function detailExited(): void {
     setSelectedId('')
     setIdentifierToRemove('')
@@ -561,8 +352,6 @@ export function AccountsPage({
     detailSecretWrite.reset()
     detailSessionWrite.reset()
     detailIdentifierRemoveWrite.reset()
-    // A revoke focus target belongs to the panel that is going away; its
-    // row's next read is a fresh panel, not the one this landing named.
     sessionRevokeFocus.current = null
     setRevokingSessionId(null)
     setRevokingSecretId(null)
@@ -573,8 +362,6 @@ export function AccountsPage({
     }
   }
 
-  // A created account closes the panel; the list's confirmation waits for
-  // the exit so it is written into the page after it becomes reachable.
   function accountCreated(created: AdminAccount): void {
     createSuccess.current = accountNotice(
       t,
@@ -598,10 +385,8 @@ export function AccountsPage({
   }
 
   function deleteOne(row: AdminAccount): Promise<void> {
-    // The row order at the attempt's start is what names the neighbour to
-    // focus once the row leaves: the read answers with the rows minus the
-    // deleted one, so the order of the *next* render alone cannot say
-    // which row stood beside it. The activating row is marked so only its
+    // The order at the attempt's start names the neighbour to focus; the next
+    // render's order, already missing the row, cannot. Only the activating
     // control reports busy; its siblings are held without a reason.
     setDeletingAccountId(row.id)
     deleteFocus.current = {
@@ -630,11 +415,6 @@ export function AccountsPage({
     })
   }
 
-  // The delete confirmation names the account the way the roster does: its
-  // display name, and the login username beside it when the view carries one.
-  // An account with no display name is named by that username alone; neither
-  // gives the neutral sentence. The opaque id never enters the copy -- an
-  // operator cannot match it to a row.
   function deleteMessageFor(row: AdminAccount): string {
     const username = accountUsername(row.identifiers)
     if (row.display_name !== '') {
@@ -713,8 +493,6 @@ export function AccountsPage({
   }
 
   function revokeOneSecret(row: AdminAccountSecret): Promise<void> {
-    // Only the row whose revoke started reports busy; its siblings are held
-    // without a reason while the scope is pending.
     setRevokingSecretId(row.id)
     return detailSecretWrite.run(async () => {
       try {
@@ -738,9 +516,6 @@ export function AccountsPage({
   }
 
   function revokeOneSession(row: AdminAccountSession): Promise<void> {
-    // The row whose revoke started carries the busy state, and the row order
-    // and element at this moment name the neighbour that takes focus once
-    // the revoked row leaves the read.
     setRevokingSessionId(row.id)
     sessionRevokeFocus.current = {
       id: row.id,
@@ -785,15 +560,8 @@ export function AccountsPage({
       id: 'identity',
       header: t('accounts.column.identity'),
       cellWrap: 'nowrap',
-      // The identity an operator can match to a row: the display name and
-      // login username, either alone, or the neutral copy when the account
-      // has neither. The opaque account id is never shown or copied.
       cellFullValue: (row) =>
         identityLabel(row.display_name, accountUsername(row.identifiers)),
-      // The page's primary identity: it never hides, and the shared
-      // whole-cell cap -- which counts the copy control -- keeps it from
-      // pushing the actions off screen in a narrow container. The detail
-      // panel carries the full value.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (row) => (
         <Typography variant="body2" noWrap>
@@ -817,8 +585,6 @@ export function AccountsPage({
       cell: (row) =>
         row.mfa_required ? t('accounts.mfaYes') : t('accounts.mfaNo'),
     },
-    // Host columns sit between the page's own fields and the row's write
-    // controls, so the controls stay the last cell of every row.
     ...(extraColumns ?? []),
     {
       id: 'actions',
@@ -834,8 +600,6 @@ export function AccountsPage({
             aria-label={t('accounts.manageAria', {
               name: accountLabel(t, accountIdentityValue(row)),
             })}
-            // The panel is modal: this control only opens it. Closing is
-            // the panel's own exit, never a second click here.
             aria-haspopup="dialog"
             onClick={(event) => {
               detailTrigger.current = event.currentTarget
@@ -863,15 +627,8 @@ export function AccountsPage({
             onClick={() =>
               confirm.ask({
                 title: t('accounts.deleteTitle'),
-                // The roster names an account by its display name and, when
-                // the view carries one, its first login identifier; an empty
-                // display name with an identifier is named by that identifier
-                // alone, and no identity at all keeps the sentence neutral.
                 message: deleteMessageFor(row),
                 confirmLabel: t('common.confirm'),
-                // Deleting an account takes its identifiers, secrets and
-                // sessions with it and cannot be undone from the interface:
-                // the heavier two-step guard, never the plain single confirm.
                 doubleConfirm: true,
                 run: () => void deleteOne(row),
               })
@@ -901,9 +658,6 @@ export function AccountsPage({
       header: t('accounts.sessions.column.created'),
       cellWrap: 'nowrap',
       cell: (row) => {
-        // The primary identity also carries the current-session mark:
-        // this column never hides, so the safety hint survives every
-        // tier instead of disappearing with the low-priority id column.
         const formatted = formatTime(row.created_at)
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', columnGap: 1 }}>
@@ -957,10 +711,6 @@ export function AccountsPage({
           busy={
             detailSessionWrite.pending && revokingSessionId === row.id
           }
-          // A revoked row never reaches this table -- the session read
-          // excludes it -- so there is no revoked row to hold with a reason.
-          // The sibling of the row being revoked is held only while the
-          // scope is pending.
           unavailable={
             detailSessionWrite.pending && revokingSessionId !== row.id
           }
@@ -985,12 +735,9 @@ export function AccountsPage({
   ]
 
   const rows = accounts.data?.accounts
-  // The delete succeeded and the read no longer carries its row: hand focus
-  // to the same control on the adjacent row, otherwise to the list
-  // container, in the commit that removes the row rather than leaving it on
-  // the document body. Focus is handed over only when the removal is what
-  // took it; an operator who moved it elsewhere during the write keeps that
-  // place.
+  // Hand focus to the adjacent row's control, else the list container, in the
+  // commit that removes the row — only when the removal took it, not when the
+  // operator moved it during the write.
   useLayoutEffect(() => {
     const target = deleteFocus.current
     if (target === null) {
@@ -1024,10 +771,8 @@ export function AccountsPage({
     }
     listRegion.current?.focus()
   }, [rows])
-  // A revoked session leaves the read, so its control unmounts: focus goes
-  // to the next row's revoke control, else the previous one, else the
-  // section heading. The same focus test applies: a place the operator
-  // chose during the write is left alone.
+  // Focus goes to the next row's revoke control, else the previous one, else
+  // the section heading; a place the operator chose during the write stays.
   useLayoutEffect(() => {
     const target = sessionRevokeFocus.current
     if (target === null) {
@@ -1065,9 +810,6 @@ export function AccountsPage({
     }
     sessionsHeading.current?.focus()
   }, [sessions.data])
-  // The row a write started is marked busy only while that scope is
-  // pending; once it settles the siblings are available again (a successful
-  // delete or revoke removes the active row, a refused one leaves it).
   useEffect(() => {
     if (!listWrite.pending) {
       setDeletingAccountId(null)
@@ -1084,8 +826,6 @@ export function AccountsPage({
     }
   }, [detailSecretWrite.pending])
   const pending = accounts.isPending && rows === undefined
-  // Only a settled page names the next one: while a page read is in flight
-  // there is no cursor to advance from, and an empty one is the last page.
   const hasNextPage =
     accounts.data !== undefined && accounts.data.next_cursor !== ''
 
@@ -1100,10 +840,6 @@ export function AccountsPage({
         actions={
           <Box sx={{ display: 'flex', gap: 1 }}>
             <RefreshButton
-              // Refreshing changes the list scope's context: while one of
-              // its writes is in flight it is unavailable, so a late
-              // result cannot land against a list it no longer describes.
-              // While the list read is in flight it is marked busy.
               busy={pageRefresh.busy}
               writePending={listWrite.pending}
               label={t('common.refresh')}
@@ -1203,13 +939,8 @@ export function AccountsPage({
           <ActionButton
             type="button"
             emphasis="primary"
-            // A button-shaped context control: while one of the list's
-            // writes is in flight it stays focusable, reports unavailable
-            // and swallows activation without a reason.
             unavailable={listWrite.pending}
             onClick={() => {
-              // A submitted filter is a new list: the result written under
-              // the previous filter does not describe it.
               listWrite.reset()
               deleteFocus.current = null
               setIdentifier(identifierDraft.trim())
@@ -1217,8 +948,6 @@ export function AccountsPage({
               setDisplayName(displayNameDraft.trim())
               setStatus(statusDraft)
               setAccountKind(accountKindDraft)
-              // A submitted filter is a new list: return to its first page,
-              // which is read by the empty cursor.
               setCursors([''])
               setPage(0)
             }}
@@ -1240,10 +969,6 @@ export function AccountsPage({
             payload={rows}
             error={accounts.error}
             refreshing={accounts.isFetching}
-            // Only the first page treats an empty answer as "no accounts": a
-            // later page that comes back empty still renders the table (its
-            // own empty state) so the footer, and the page before it, stay
-            // reachable.
             empty={
               rows !== undefined && rows.length === 0 && page === 0
             }
@@ -1273,20 +998,8 @@ export function AccountsPage({
                 rows={settled}
                 columns={columns}
                 rowKey={(row) => row.id}
-                // The row-actions column is last, and at the mobile floor
-                // the primary cell and the actions together can be wider
-                // than the page content. Pinning the actions keeps Manage
-                // and Delete reachable while the main columns scroll under
-                // them; where the table already fits, the pin is inert.
                 pinLastColumn
-                // The primary cell stacks the display name over its first
-                // identifier, so the row is top-aligned: the copy control
-                // sits beside the identity line instead of dropping to the
-                // middle of a two-line cell.
                 rowVerticalAlign="top"
-                // The table stands in for the async section's empty branch on
-                // a later page, so it carries the same wording and heading
-                // level.
                 emptyTitle={t('accounts.empty.title')}
                 emptyDescription={t('accounts.empty.description')}
                 emptyHeadingLevel="h2"
@@ -1296,39 +1009,22 @@ export function AccountsPage({
         </Box>
       </SectionCard>
 
-      {/* The paging footer lives outside the async section's branches: it
-          is the control that changes the list's page, so it must survive
-          the page read it starts (a pending, failed or empty page would
-          otherwise unmount the one control that could return to the page
-          before it) and keep keyboard focus across the swap. */}
+      {/* The footer sits outside the async branches so the control that
+          started the page read survives a pending, failed or empty page. */}
       <Box sx={{ mt: 2 }}>
         <TablePager
-          // The cursor read reports no total. -1 asks the footer for the
-          // unknown-total wording instead of inventing a count.
           count={-1}
           page={page}
           rowsPerPage={ACCOUNTS_PAGE_SIZE}
-          // One size, so the footer offers no size selector and the
-          // callback below never fires.
           rowsPerPageOptions={[ACCOUNTS_PAGE_SIZE]}
           onPageChange={(nextPage) => changePage(nextPage)}
           onRowsPerPageChange={() => undefined}
           hasNext={hasNextPage}
-          // Changing the page is a change of the list's context, so both
-          // directions are unavailable while one of the list's writes is
-          // in flight (the same rule the toolbar's search and the header's
-          // refresh follow).
           unavailable={listWrite.pending}
-          // The list query's fetch is this page's read: the direction that
-          // started a page read is busy, and a read started elsewhere (a
-          // filter, a refresh) makes both directions unavailable.
           reading={accounts.isFetching}
         />
       </Box>
 
-      {/* The list's feedback: the row delete's result and the create
-          panel's success, which is written here only after the panel's
-          exit so the page is reachable when it appears. */}
       <WriteFeedbackRegion outcome={listWrite.outcome} sx={{ mb: 2 }} />
 
       <SidePanel
@@ -1406,11 +1102,6 @@ export function AccountsPage({
               )}
             </AdminAsyncSection>
 
-            {/* The action row's account-level actions share one scope: they
-                are the same control group and each message names the
-                account. Each control follows its own feature: resetting
-                factors belongs to the factors face, the bulk revocation to
-                the sessions face. */}
             {(factorsPresent || sessionsPresent) && (
               <>
                 <Box
@@ -1496,9 +1187,8 @@ export function AccountsPage({
                   ref={sessionsHeading}
                   component="h3"
                   variant="subtitle1"
-                  // A revoked last row leaves this heading as the focus
-                  // landing: focusable without entering the tab order, and
-                  // named by its own text.
+                  // A revoked last row focuses this heading: focusable, but
+                  // outside the tab order.
                   tabIndex={-1}
                   sx={{ mt: 2, mb: 1 }}
                 >
@@ -1589,8 +1279,6 @@ export function AccountsPage({
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
 
-      {/* A detail close request with an unclosed one-time secret confirms
-          first: a secret shown once cannot be recovered once discarded. */}
       <ConfirmDialog
         open={discardSecretOpen}
         title={t('accounts.createSecret.discardTitle')}
@@ -1618,13 +1306,6 @@ export function AccountsPage({
   )
 }
 
-/**
- * AccountFactorsSection: one account's registered factors.
- *
- * The page mounts it only while authn.admin.factors is present, so the
- * factor read lives and dies with the section: an absent feature renders no
- * heading and no table, and issues no request.
- */
 function AccountFactorsSection({ accountId }: { readonly accountId: string }) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
@@ -1703,15 +1384,6 @@ function AccountFactorsSection({ accountId }: { readonly accountId: string }) {
   )
 }
 
-/**
- * AccountSecretsSection: one account's service secrets.
- *
- * The page mounts it only while authn.admin.secrets is present, so the
- * secrets read, their table and the per-row revoke control all share the
- * feature's answer. The scope and the revoke action stay on the page: the
- * panel's busy state covers every scope inside it and the confirmation
- * dialog is the page's own.
- */
 function AccountSecretsSection({
   accountId,
   feedback,
@@ -1721,7 +1393,6 @@ function AccountSecretsSection({
 }: {
   readonly accountId: string
   readonly feedback: WriteFeedback
-  /** The secret whose revoke is in flight, so only its control is busy. */
   readonly revokingSecretId: string | null
   readonly confirm: PendingConfirmState
   readonly onRevoke: (row: AdminAccountSecret) => Promise<void>
@@ -1776,9 +1447,6 @@ function AccountSecretsSection({
           tone="danger"
           aria-label={t('accounts.secrets.revokeAria', { label: row.label })}
           busy={feedback.pending && revokingSecretId === row.id}
-          // A revoked secret keeps its own precondition's reason whether or
-          // not another row's revoke is running; a sibling held only by the
-          // running revoke carries no reason.
           unavailable={
             row.revoked ||
             (feedback.pending && revokingSecretId !== row.id)
@@ -1838,11 +1506,6 @@ function AccountSecretsSection({
   )
 }
 
-/**
- * Parses an optional attribute map the operator typed as a JSON object with
- * string values. Returns null when the text is not such an object, so a form
- * can mark the field and keep the submit unavailable.
- */
 function parseStringMap(text: string): Record<string, string> | null {
   try {
     const parsed: unknown = JSON.parse(text)
@@ -1862,21 +1525,11 @@ function parseStringMap(text: string): Record<string, string> | null {
   }
 }
 
-/**
- * The value one declared attribute key holds in the JSON attribute text.
- * Absent, empty or unparsable text reads as an empty value.
- */
 function attributeValueOf(text: string, key: string): string {
   const parsed = text.trim() === '' ? null : parseStringMap(text)
   return parsed?.[key] ?? ''
 }
 
-/**
- * Replaces one declared attribute key in the JSON attribute text, leaving
- * every key the host did not declare untouched. A blank value removes the
- * declared key, so an emptied field leaves no empty-string attribute
- * behind.
- */
 function withAttributeValue(text: string, key: string, value: string): string {
   const parsed = text.trim() === '' ? {} : (parseStringMap(text) ?? {})
   const next = { ...parsed }
@@ -1888,10 +1541,8 @@ function withAttributeValue(text: string, key: string, value: string): string {
   return JSON.stringify(next)
 }
 
-/** The ways an administrator may state an identifier's verification. */
 type VerifiedVia = '' | 'admin' | 'import-unverified'
 
-/** The create form's fields, in the shape react-hook-form holds them. */
 type CreateAccountFields = {
   kind: 'user' | 'service'
   displayName: string
@@ -1905,7 +1556,6 @@ type CreateAccountFields = {
   attributes: string
 }
 
-/** The values every opening of the create panel starts from. */
 const CREATE_ACCOUNT_DEFAULTS: CreateAccountFields = {
   kind: 'user',
   displayName: '',
@@ -1919,18 +1569,12 @@ const CREATE_ACCOUNT_DEFAULTS: CreateAccountFields = {
   attributes: '',
 }
 
-/** The create mutation as the operations bundle returns it. */
 type CreateAccountMutation = UseMutationResult<
   AdminAccount,
   unknown,
   AdminCreateAccountInput
 >
 
-/**
- * The bundle key of a create refusal the form words itself, or null for one
- * the scope's code text already covers. Only a user account carries a
- * username, so only its three username refusals are named here.
- */
 function createFailureKey(
   kind: CreateAccountFields['kind'],
   code: string,
@@ -1950,36 +1594,6 @@ function createFailureKey(
   }
 }
 
-/**
- * AccountCreateForm: the account-creation control (POST /api/v1/system/auth/accounts),
- * rendered inside the create panel. It names the fields the handler decodes
- * into its create request; a field left blank is not sent. A user account
- * requires a display name and a username: the username is the login name the
- * account is opened with, and the email address and phone number are
- * identifiers beside it, so neither of them can stand in for it. A service
- * account signs in with a service secret and so needs no username -- the
- * server exempts it from that requirement -- and only the display name is
- * required. The submit stays unavailable until the form could produce a usable
- * account, and the submit handler itself re-checks, so no path sends a
- * request the server is known to refuse. The fields flow through ui-kit's
- * form family (FormLayout's responsive grid of FormField adapters), kept two
- * columns wide in the panel and collapsed to one when the panel itself is
- * narrow. The attribute set is typed as a JSON object and marks the field
- * when it does not parse; when the host declares its attribute fields, one
- * text field per declared key replaces the JSON editor and writes back into
- * the same JSON value, so the create path and its payload keep one shape.
- *
- * A refused create settles the create panel's own scope, whose region stands
- * under the form with the fields kept for correction. A username the server
- * refuses is the username field's error instead: a name another account
- * holds, a name the system keeps for itself and a name it cannot normalize
- * each get their own message under the field, with focus moved to it. A
- * bad-request that is not the username's own shape answer stays the
- * scope's: on this route it may describe the email address or the password.
- * A landed create closes
- * the panel through the page: its success belongs to the list's scope and is
- * written there after the exit, when the page behind the modal is reachable.
- */
 function AccountCreateForm({
   form,
   feedback,
@@ -1994,7 +1608,6 @@ function AccountCreateForm({
   readonly onCreated: (created: AdminAccount) => void
 }) {
   const { t } = useAdminUiTranslation()
-  // The username input, focused when the server refuses the name.
   const usernameInput = useRef<HTMLInputElement | null>(null)
 
   // An array, not a fragment: MUI's Select walks its children to build the
@@ -2011,20 +1624,10 @@ function AccountCreateForm({
     </MenuItem>,
   ]
 
-  // The form names an account once it carries a display name and either a
-  // service kind or a username; a service account signs in with a service
-  // secret, so it needs no username, and a user account is opened with one
-  // (an email address or phone number beside it does not stand in for it).
-  // Before that the submit is unavailable, and the handler below refuses to
-  // send anyway.
   const watched = form.watch()
   const namesAnAccount =
     watched.displayName.trim() !== '' &&
     (watched.kind === 'service' || watched.username.trim() !== '')
-  // The two preconditions read differently: a missing display name is the
-  // first one an empty form meets, and a user account that has a display
-  // name but no username is missing the second. The submit names the one
-  // that is actually unmet.
   const submitUnavailableKey =
     watched.displayName.trim() === ''
       ? 'accounts.create.submitUnavailable'
@@ -2033,18 +1636,12 @@ function AccountCreateForm({
         : undefined
 
   const onSubmit: SubmitHandler<CreateAccountFields> = (values) => {
-    // The guard judges the trimmed values, so the request sends those same
-    // values: a username or phone wrapped in spaces otherwise passes here
-    // and is refused by the server. The email leg needs no local trim -- the
-    // server trims it.
     const username = values.username.trim()
     const phone = values.phone.trim()
     if (
       values.displayName.trim() === '' ||
       (values.kind !== 'service' && username === '')
     ) {
-      // A submit the client refused is still an attempt: the previous
-      // result must not stand beside the reasons this one did not fire.
       feedback.reset()
       form.clearErrors('username')
       return
@@ -2068,10 +1665,6 @@ function AccountCreateForm({
           ...(values.mfaRequired ? { mfa_required: true } : {}),
         })
       } catch (error) {
-        // Only a user account is opened with a username, so only its three
-        // username refusals get this form's own message; every other
-        // refusal (and every refusal of a service account) settles the
-        // scope's slot as before.
         const key = createFailureKey(values.kind, errorCodeOf(error))
         if (key === null) {
           throw error
@@ -2080,17 +1673,12 @@ function AccountCreateForm({
         usernameInput.current?.focus()
         return null
       }
-      // The form starts from the initial values on the next opening; the
-      // page closes the panel and confirms in the list's scope after exit.
       form.reset()
       onCreated(created)
       return null
     })
   }
 
-  // The form's own submit is guarded as well: an implicit submission the
-  // submit button does not carry (Enter in a field, a programmatic submit)
-  // is swallowed while the write is in flight or the form names no account.
   const guardedSubmit = useActivationGuard(onSubmit, {
     busy: feedback.pending,
     unavailable: !namesAnAccount,
@@ -2296,23 +1884,6 @@ function AccountCreateForm({
   )
 }
 
-/**
- * AccountCreatePanel: the create form's `wide` side panel, opened from the
- * page header. The form starts from its initial values on every opening,
- * and a landed create closes the panel. A modified form is not closed
- * directly: a close request asks through a default-variant ConfirmDialog
- * whether to discard the changes. While the create request is in flight the
- * panel is busy, and SidePanel then reports no close request at all.
- *
- * The failing attempt settles the panel's own scope, whose region is under
- * the form. The success is not written here: `onExited` hands the page the
- * moment the page behind is reachable again, and the page writes it into the
- * list's scope there.
- *
- * The discarding confirmation is a dialog stacked above the panel (both
- * stack at the modal tier; the dialog mounts later), and closing it returns
- * focus to the panel's own close control, which asked.
- */
 function AccountCreatePanel({
   open,
   attributeFields,
@@ -2339,11 +1910,6 @@ function AccountCreatePanel({
   const dirty = form.formState.isDirty
   const [discardOpen, setDiscardOpen] = useState(false)
 
-  // Opening starts from the initial values and without the previous
-  // attempt's result, so a reopened panel never shows a draft or a failure
-  // it already dismissed. `form` is react-hook-form's stable controller and
-  // the scope's `reset` keeps its identity, so the effect keys on the open
-  // flip alone.
   useEffect(() => {
     if (!open) {
       return
@@ -2402,16 +1968,6 @@ function AccountCreatePanel({
   )
 }
 
-/**
- * OneTimeSecretNotice: the display of a newly created service secret, a
- * value handed out once.
- *
- * Its state is the page's (`AccountDetailWrites` only renders it), so a
- * scope reset cannot drop the only copy. The notice is one polite live
- * region with an explicit close control whose accessible name names the
- * account and the secret's label; the page clears it on that control or on
- * the discard confirmation a detail close request raises.
- */
 function OneTimeSecretNotice({
   notice,
   onClose,
@@ -2439,26 +1995,6 @@ function OneTimeSecretNotice({
   )
 }
 
-/**
- * AccountDetailWrites: the account-level write controls the platform contract
- * declares a body for -- the status change, the MFA requirement, the patch
- * (display name / attributes / protected), the password reset, the
- * identifier add and the service-secret creation. Each is one control group
- * with its own feedback scope and a region directly under it, so a failure
- * lands beside the controls that fired it inside the still-open panel. The
- * account is passed settled, and the component is keyed by the account id at
- * its call site so a newly selected account starts from its own values.
- *
- * The one-time secret's state is the page's, passed in and reported back:
- * this component only renders the display under the create-secret group, so
- * remounting the panel content never loses the value.
- *
- * Three groups follow features rather than the page: the MFA requirement and
- * the password reset live on the factors face (authn.admin.factors) and the
- * secret creation on the secrets face (authn.admin.secrets). Their scopes
- * stay with the page -- its busy state covers them -- but their controls and
- * the one-time display render only while the feature is present.
- */
 function AccountDetailWrites({
   account,
   feedback,
@@ -2492,12 +2028,7 @@ function AccountDetailWrites({
   const createSecret = operations.useCreateSecret()
 
   const id = account.id
-  // The account's readable identity, as this panel's success notices name it.
   const identity = accountIdentityValue(account)
-  // Every control is seeded from the account as loaded, so a control shows
-  // the account's own value and a write fires only for a field the operator
-  // actually changed: a status or MFA change goes out only when it differs
-  // from the account's, and the patch carries only the fields that moved.
   const currentStatus: 'active' | 'disabled' =
     account.status === 'disabled' ? 'disabled' : 'active'
   const currentAttributes =
@@ -2518,22 +2049,15 @@ function AccountDetailWrites({
   const [identifierValue, setIdentifierValue] = useState('')
   const [secretLabel, setSecretLabel] = useState('')
   const [secretExpires, setSecretExpires] = useState('')
-  // The attributes editor's helper text, so the patch control can point at
-  // the existing error text instead of repeating the reason.
   const attributesFieldId = useId()
   const attributesHelperId = `${attributesFieldId}-helper-text`
 
-  // Declared attribute fields always hold serialized JSON the page wrote
-  // itself, so there is nothing to mark invalid there.
   const attributesInvalid =
     attributeFields === undefined &&
     attributes.trim() !== '' &&
     parseStringMap(attributes) === null
   const statusUnchanged = statusDraft === currentStatus
   const mfaUnchanged = (mfaDraft === 'true') === account.mfa_required
-  // The protected control keeps its 'unchanged' sentinel: selecting it, or
-  // leaving the control at the account's own value, is a no-op, and the patch
-  // carries a protected field only for a real change.
   const protectedUnchanged =
     protectedDraft === 'unchanged' || protectedDraft === currentProtected
   const patchUnchanged =
@@ -2541,10 +2065,6 @@ function AccountDetailWrites({
     attributes === currentAttributes &&
     protectedUnchanged
 
-  // Each write runs as one attempt on its group's scope. A 401 refused for a
-  // step-up shortfall is handed to the gate and settles `null` (the slot is
-  // empty from the attempt's own reset); the replay after a won challenge is
-  // a new attempt.
 
   function writeStatus(): void {
     void feedback.status.run(async () => {
@@ -2674,8 +2194,6 @@ function AccountDetailWrites({
       }
       setSecretLabel('')
       setSecretExpires('')
-      // The value is handed to the page, beside the slot: the display
-      // survives this scope's reset and the panel content's remount.
       onSecretCreated({
         accountId: id,
         accountName: accountLabel(t, identity),
@@ -2825,9 +2343,6 @@ function AccountDetailWrites({
           type="button"
           busy={feedback.patch.pending}
           unavailable={attributesInvalid || patchUnchanged}
-          // The field already carries the parse error, so the control points
-          // at it rather than rendering the same reason again; the
-          // no-change case has no text on the page to borrow.
           {...(attributesInvalid
             ? { unavailableDescribedBy: attributesHelperId }
             : { unavailableReason: t('accounts.patch.unchanged') })}

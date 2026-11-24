@@ -1,9 +1,3 @@
-/**
- * DashboardPage in a real browser: the recent-activity table at the
- * sm/md/lg floor widths with fixed data, and the overview's layout at
- * 768px. The KPI rows derive from the roster read, so the same fixed
- * roster feeds both panels.
- */
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { page } from 'vitest/browser'
@@ -29,7 +23,6 @@ const TENANTS = [
   tenantFixture({ name: 'Old', display_name: '', status: 'disabled' }),
 ]
 
-/** The shipped en-US dashboard strings the overview assertions read. */
 const DASHBOARD = (
   adminUiResources['en-US'] as unknown as {
     readonly dashboard: {
@@ -73,8 +66,6 @@ describe('DashboardPage horizontal overflow in Chromium', () => {
             Promise.resolve(accountFixture({ display_name: 'Ada Lovelace' })),
         }),
       )
-      // The recent-activity table exists only where the process serves
-      // audit.admin, so the suite declares the feature present.
       renderWithProviders(
         <AdminFeatureProvider hasFeature={() => true}>
           <DashboardPage />
@@ -88,13 +79,10 @@ describe('DashboardPage horizontal overflow in Chromium', () => {
   }
 })
 
-/** A viewport width pinned for the overview case. */
 const OVERVIEW_WIDTH = 768
 
-/** Positions within this many pixels count as the same grid track. */
 const TRACK_TOLERANCE = 2
 
-/** The distinct values a set of positions occupies, in document order. */
 function distinctPositions(values: readonly number[]): number[] {
   const positions: number[] = []
   for (const value of values) {
@@ -105,7 +93,6 @@ function distinctPositions(values: readonly number[]): number[] {
   return positions
 }
 
-/** How many positions fall on one track. */
 function countOnTrack(
   values: readonly number[],
   track: number,
@@ -132,7 +119,6 @@ describe('DashboardPage overview at 768px in Chromium', () => {
       </AdminFeatureProvider>,
       { operations, language: 'en-US' },
     )
-    // Wait for both reads behind the overview to settle.
     await screen.findByText('denied')
     await screen.findByText(DASHBOARD.kpi.tenants)
   }
@@ -187,7 +173,6 @@ describe('DashboardPage overview at 768px in Chromium', () => {
       getComputedStyle(objectHeader.closest('th') as HTMLElement).display,
     ).toBe('none')
 
-    // The result column is not only labelled but carries the row's value.
     expect(screen.getByText('denied')).toBeVisible()
   })
 })

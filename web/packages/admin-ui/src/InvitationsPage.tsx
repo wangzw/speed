@@ -1,81 +1,3 @@
-/**
- * InvitationsPage: the tenant invitation and membership page of the
- * console.
- *
- * Both surfaces are tenant-scoped (/api/v1/tenants/:tenant/...), so
- * the page opens with a tenant selector and keeps its reads disabled
- * until a tenant is chosen. It renders:
- *
- *  - the tenant's invitations: list them (address, status, role, inviter,
- *    expiry, sent-at), invite an address, resend or revoke a pending
- *    invitation, and filter the list by status with cursor pagination;
- *  - the tenant's members: list them (display name, account, active, SSO
- *    exemption, source) and remove a membership.
- *
- * The invitation list opens on the pending state: an operator's live work is
- * the invitations still waiting for an answer, while accepted, expired and
- * revoked rows are history reachable through the status filter. Every page
- * carries the server's cursor, so a tenant whose invitations span more than
- * one page can be walked to the end. A row's status is the server's
- * four-value `state`, rendered as the shared status chip with the terminal
- * moment under it (accepted, expired and revoked only). The inviter renders
- * from the invitation's own resolved display name and username -- no
- * platform account read -- and the role column shows the role the invitation
- * grants. Only a pending row offers actions: resend, revoke, and the copy
- * control for the one acceptance value this page just received.
- *
- * A member row renders from the member read on both surfaces: the display
- * name column and the login username column carry that row's `display_name`
- * and `username`, and the row's actions name the member the same way, so a
- * member row never issues a platform account read. The organization surface
- * (`tenantMode`) also omits the member write form, whose account field
- * searches the platform roster. No column offers the recorded account
- * identifier as its copy or hover value.
- *
- * Inviting an address mints an invitation the invitee accepts through the
- * tenant-facing invite surface; the console issues, resends and revokes, it
- * does not accept. The acceptance value is handed out once: it is displayed in
- * a page-held panel beside the invitation group's region, named for the tenant
- * and the invitee and closed through a confirmation that the value is being
- * dropped -- a delivery that reached the address carries no value, so its
- * panel closes directly. Every read and write is an operation on the console
- * operations bundle, so the page builds no client and writes no query key.
- *
- * The two titled sections are the page's two feedback scopes: the
- * invitation list (issue, resend and revoke) reports under its table, and the
- * member list (write, remove and SSO exemption) reports under its own.
- * A refusal marks the affected row inline with the same resolved text the
- * region shows and brings the region into view; a success names the
- * invitee or account it changed. The tenant seeds every write, so changing
- * it resets both scopes and disables the selector while either is in
- * flight. A request the tenant admission layer refuses because the tenant
- * requires enterprise single sign-on renders its resolved sentence with a
- * re-login exit: a refused write shows it under the region, and the
- * invitation list's failed read shows it in place of the retryable
- * placeholder (a retry cannot clear the refusal while the session is a
- * local one). The exit ends the session so the host's session gate returns
- * to its sign-in surface, where the operator signs in through the tenant's
- * provider. No local factor can clear that refusal, so the page opens no
- * step-up dialog and lists no factor. The page opens with ui-kit's
- * PageHeader.
- *
- * The role control is an affordance the target tenant's own role read
- * decides: each role carries the server's `can_manage` answer for
- * `authz.tenant.role.manage` in that tenant, and the control renders only
- * when that answer is yes. The server remains the authority for the subset
- * rule that decides whether the role may be handed out, judged in the target
- * tenant when the invitation is issued.
- *
- * The tenant scope is optionally controlled: `tenant` locks the page to the
- * given value and hides the selector, `defaultTenant` seeds the page's own
- * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
- * reports each re-selection. Given none of them the page opens on the URL's
- * parameter and the selector changes it, as before.
- *
- * The member table's SSO-exemption column, its toggle and the membership
- * form's exemption checkbox render only where `authn.admin.sso` is present.
- */
-
 import {
   useCallback,
   useEffect,
@@ -164,77 +86,47 @@ import type {
   AdminMember,
 } from './operations.js'
 
-/**
- * The id of the page's own "choose a tenant first" text. The disabled
- * refresh is described by it, so the explanation has one copy on the page.
- */
 const TENANT_HINT_ID = 'invitations-tenant-hint'
 
-/**
- * The member table's page size. The membership read answers the cursor of the
- * page that follows, so a full page is not mistaken for the last one and the
- * page never reads a probe row of its own.
- */
 const MEMBER_PAGE_SIZE = 100
 
-/**
- * The invitation table's page size. The server answers the cursor of the page
- * that follows, so a full page is not mistaken for the last one.
- */
 const INVITATION_PAGE_SIZE = 50
 
-/** The issue form's default lifetime, in days. */
 const DEFAULT_EXPIRY_DAYS = 7
 
-/** The lifetimes the issue form offers, in days. */
 const EXPIRY_CHOICES = [1, 7, 30] as const
 
-/** One day in milliseconds, for the issue form's lifetime. */
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** The invitation just issued or resent, with the tenant it belongs to. */
 interface IssuedNotice {
   readonly answer: AdminIssuedInvitation
   readonly tenant: string
 }
 
-/**
- * The member sources the membership surface writes by name. A `jit:<id>`
- * value names the provider a just-in-time membership came from.
- */
 const MEMBER_SOURCES = new Set<string>(['admin', 'initial', 'invite'])
 const JIT_SOURCE_PREFIX = 'jit:'
 
-/** The absolute RFC 3339 instant `days` from now, the issue form's expiry. */
 function expiryInstant(days: number): string {
   return new Date(Date.now() + days * DAY_MS).toISOString()
 }
 
+/** Props for InvitationsPage: the optional controlled tenant scope. */
 export interface InvitationsPageProps {
-  /**
-   * A controlled tenant scope: when given, the page's reads and writes name
-   * this tenant and the selector is not rendered. An empty string is a
-   * controlled "no tenant".
-   */
+  /** A controlled tenant; given, the reads and writes name it and the
+   * selector is hidden. Empty string is a controlled "no tenant". */
   readonly tenant?: string
-  /**
-   * The page's initial tenant when it is not controlled. Wins over the
-   * tenant query parameter.
-   */
+  /** The initial tenant when not controlled; wins over the query parameter. */
   readonly defaultTenant?: string
   /** Reports each re-selection made through the page's own selector. */
   readonly onTenantChange?: (tenant: string) => void
-  /**
-   * Tenant mode: the organization surface's configuration of the same page.
-   * The member write form is not rendered -- its account field searches the
-   * platform account roster -- so the page issues no `/api/v1/system`
-   * request. Invitations and members render from their own records' resolved
-   * names in both modes. The tenant is still the controlled prop the wrapper
-   * supplies.
-   */
+  /** Tenant mode (the organization surface): omits the member write form,
+   * whose account field reads the platform roster, so the page issues no
+   * `/api/v1/system` request. */
   readonly tenantMode?: boolean
 }
 
+/** InvitationsPage lists a tenant's invitations and members and drives their
+ * writes. */
 export function InvitationsPage({
   tenant: controlledTenant,
   defaultTenant,
@@ -243,14 +135,10 @@ export function InvitationsPage({
 }: InvitationsPageProps = {}) {
   const { t, i18n } = useAdminUiTranslation()
   const operations = useAdminOperations()
-  // Every invitation instant renders through the one entry, in the viewer's
-  // display zone; the shared pure helpers take it as an argument.
   const formatTime = useFormatInstant()
   const session = useAdminSession()
   const invitationLink = useAdminInvitationLink()
   const hasFeature = useAdminHasFeature()
-  // The member table's exemption column, toggle and the write form's
-  // checkbox exist only where the SSO surface does.
   const ssoExemption = hasFeature('authn.admin.sso')
 
   const [innerTenant, setInnerTenant] = useState(
@@ -263,10 +151,6 @@ export function InvitationsPage({
   const [role, setRole] = useState('')
   const [statusFilter, setStatusFilter] =
     useState<InvitationStatusFilter>('pending')
-  // The invitation table pages by cursor exactly as the member table does: the
-  // stack is tagged with the tenant it was read for, so a switch derives an
-  // empty first page synchronously, and the filter change resets it in its own
-  // handler.
   const [invitationCursorState, setInvitationCursorState] = useState<{
     readonly tenant: string
     readonly cursors: readonly string[]
@@ -279,11 +163,6 @@ export function InvitationsPage({
   const invitationPage = invitationCursorFrame.page
   const invitationCursor =
     invitationCursorFrame.cursors[invitationPage] ?? ''
-  // The member table pages by cursor: the cursors this page has collected,
-  // the index it is on, and the account identifier of the page's last row as
-  // the cursor of the next. The stack is tagged with the tenant it was read
-  // for, and a frame for another tenant derives as empty synchronously, so the
-  // first read after a switch carries no cursor even before the reset lands.
   const [memberCursorState, setMemberCursorState] = useState<{
     readonly tenant: string
     readonly cursors: readonly string[]
@@ -295,13 +174,7 @@ export function InvitationsPage({
       : { tenant, cursors: [''], page: 0 }
   const memberPage = memberCursorFrame.page
   const memberCursor = memberCursorFrame.cursors[memberPage] ?? ''
-  // The invitation just issued or resent, held with the tenant it belongs to
-  // so its acceptance token -- handed out once -- can be shown as the
-  // invitee's link rather than dropped, and named for that tenant.
   const [issued, setIssued] = useState<IssuedNotice | null>(null)
-  // The one-time panel is dropped only after the operator confirms; the
-  // confirmation is opened by the panel's close control, not held in the
-  // panel, because a delivery that carried no link has nothing to drop.
   const [closeIssuedOpen, setCloseIssuedOpen] = useState(false)
   const confirm = usePendingConfirm()
 
@@ -315,18 +188,9 @@ export function InvitationsPage({
   )
   const invitations = operations.useInvitations(tenant, invitationParams)
 
-  // The role control is the target tenant's own role-management affordance.
-  // The tenant-domain role read answers, per role, whether the caller holds
-  // `authz.tenant.role.manage` in that tenant; without that answer the page
-  // offers no way to grant a role, and a pending or failed read fails closed.
-  // The subset rule that decides whether the role may be handed out is the
-  // server's, judged in the target tenant when the invitation is issued.
   const tenantRoles = operations.useTenantRoles(tenant)
   const canManageRoles =
     tenantRoles.data?.some((candidate) => candidate.can_manage) === true
-  // The role choice belongs to the control that offered it. When the target
-  // tenant stops reporting role management the control leaves the form, so a
-  // value chosen earlier must not survive into the next issue request.
   useEffect(() => {
     if (!canManageRoles) {
       setRole('')
@@ -337,13 +201,9 @@ export function InvitationsPage({
     limit: MEMBER_PAGE_SIZE,
     ...(memberCursor === '' ? {} : { after: memberCursor }),
   })
-  // The member read answers the page envelope; the cursor beside the rows is
-  // what says another page follows.
   const memberRows = members.data?.members
-  // A landed removal drops its row from the re-read list, taking the control
-  // that started the write with it. The same control on the next row takes
-  // the focus, else the previous row's, else the list container: it never
-  // falls back to the document body.
+  // Focus goes to the same control on the next row, else the previous row's,
+  // else the list container — never the document body.
   useEffect(() => {
     const removed = removalFocus.current
     if (removed === null) {
@@ -388,59 +248,37 @@ export function InvitationsPage({
     }
     list.focus()
   }, [memberRows, members.error])
-  // An invitation's inviter renders from the invitation's own resolved
-  // display name and username, so no member-identity map and no platform
-  // account read stands between the row and its inviter.
   const issueInvitation = operations.useIssueInvitation()
   const revokeInvitation = operations.useRevokeInvitation()
   const resendInvitation = operations.useResendInvitation()
   const removeMember = operations.useRemoveMember()
   const setMemberSsoExempt = operations.useSetMemberSsoExempt()
 
-  // One scope per titled section: the invitation list (issue and revoke)
-  // and the member list (write, remove and SSO exemption).
   const invitationFeedback = useWriteFeedback()
   const membersFeedback = useWriteFeedback()
   const invitationRegionRef = useFailureScroll(invitationFeedback.outcome)
   const membersRegionRef = useFailureScroll(membersFeedback.outcome)
-  // A revoke moves focus to the invitation section's heading: under the
-  // default filter the revoked row leaves the list and takes the menu that
-  // started the write with it, while the heading stays put and names the
-  // section the result belongs to. A terminal refusal (409) also re-reads
-  // the list; when that leaves the row out of the current filter, focus
-  // follows the same path.
   const {
     sectionRef: invitationSectionRef,
     focusHeading: focusInvitationHeading,
   } = useSectionHeadingFocus()
 
-  // The row each scope's failure names, cleared when the attempt starts.
-  // The member marker also carries which of the row's two writes failed, so
-  // the inline marker sits on the control that was refused.
   const [failedInvitation, setFailedInvitation] = useState<string | null>(null)
   const [failedMember, setFailedMember] = useState<{
     readonly account: string
     readonly action: 'remove' | 'sso'
   } | null>(null)
-  // The member row write in flight, so its own control reports busy while
-  // the other controls in the scope report unavailable.
   const [pendingMemberWrite, setPendingMemberWrite] = useState<{
     readonly account: string
     readonly action: 'remove' | 'sso'
   } | null>(null)
-  // The invitation-scope control the in-flight write belongs to, so the
-  // issue form is unavailable (not busy) while a row's resend or revoke runs.
   const [pendingInvitationWrite, setPendingInvitationWrite] = useState<
     | { readonly kind: 'issue' }
     | { readonly kind: 'resend'; readonly id: string }
     | { readonly kind: 'revoke'; readonly id: string }
     | null
   >(null)
-  // The member list's container: the focus target when a removal leaves it
-  // with no adjacent row to take the departed control's place.
   const memberListRef = useRef<HTMLDivElement | null>(null)
-  // The member a landed removal took out, with the index it held, so the
-  // adjacent row's remove control can take the focus.
   const removalFocus = useRef<{
     readonly account: string
     readonly index: number
@@ -455,9 +293,6 @@ export function InvitationsPage({
     resolveErrorText,
   )
 
-  // The tenant is an argument of every write here: a change clears both
-  // slots and every row marker, since the old result would read as
-  // describing the tenant left behind.
   const resetPageFeedback = useCallback(() => {
     invitationFeedback.reset()
     membersFeedback.reset()
@@ -467,22 +302,11 @@ export function InvitationsPage({
   useEffect(() => {
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
-  // The cursor stack carries its tenant, so a switch already frames the first
-  // read as empty; this reset then drops the previous tenant's stack after the
-  // commit. Both matter: the derivation keeps the first post-switch read from
-  // carrying the old cursor, and the reset keeps a later switch back from
-  // resuming a page the operator left long ago. The refresh action keeps the
-  // current page, so the reset follows the tenant alone.
   useEffect(() => {
     setMemberCursorState({ tenant, cursors: [''], page: 0 })
     setInvitationCursorState({ tenant, cursors: [''], page: 0 })
-    // A role name is the target tenant's own identifier: one chosen in the
-    // tenant left behind may not exist in the tenant entered, so a switch
-    // starts from no grant on screen and in the issue body.
     setRole('')
     setCloseIssuedOpen(false)
-    // A pending removal belongs to the list left behind; its landing must
-    // not run against the new tenant's rows.
     removalFocus.current = null
     setPendingMemberWrite(null)
   }, [tenant])
@@ -491,9 +315,6 @@ export function InvitationsPage({
     onTenantChange?.(next)
   }
 
-  // A filter change is a new first page and a new scope: the cursor stack
-  // belonged to the previous filter, and a result or row marker written under
-  // it would read as describing the filter just left behind.
   const changeInvitationStatusFilter = (next: InvitationStatusFilter) => {
     setStatusFilter(next)
     setInvitationCursorState({ tenant, cursors: [''], page: 0 })
@@ -501,17 +322,10 @@ export function InvitationsPage({
     setFailedInvitation(null)
   }
 
-  // The tenant admission layer's SSO refusal cannot be cleared by any local
-  // factor: the exit ends the session so the host's session gate returns to
-  // its sign-in surface, where the operator signs in through the tenant's
-  // provider. Without a session there is no exit to offer.
   const relogin = useCallback(() => {
     void session?.logout().catch(() => undefined)
   }, [session])
 
-  // The refresh action re-reads both body reads -- the invitation list and
-  // the member list -- and resets both scopes and row markers first. The
-  // one-time acceptance panel belongs to the page, not a slot, and stays.
   const pageRefresh = usePageRefresh(
     [
       pageRefreshRead('invitations', invitations),
@@ -526,9 +340,6 @@ export function InvitationsPage({
     if (address === '') {
       return
     }
-    // The issue, resend and revoke share the invitation scope: this attempt
-    // starts from a clean result, so the refused row's marker and its inline
-    // reason do not stand beside the new answer.
     setFailedInvitation(null)
     setPendingInvitationWrite({ kind: 'issue' })
     void invitationFeedback
@@ -537,10 +348,6 @@ export function InvitationsPage({
           tenant,
           email: address,
           expiresAt: expiryInstant(expiryDays),
-          // The role travels only while the control that chose it is visible.
-          // When the target tenant's role read stops reporting role management,
-          // the control leaves the form and a value chosen earlier must not
-          // ride along behind it.
           ...(canManageRoles && grantedRole !== ''
             ? { role: grantedRole }
             : {}),
@@ -558,8 +365,6 @@ export function InvitationsPage({
   const requestResend = (invitation: AdminInvitation) => {
     confirm.ask({
       title: t('invitations.resendTitle'),
-      // Resending keeps the row's deadline: the confirmation says the old
-      // link stops working and names the expiry that does not move.
       message: t('invitations.resendMessage', {
         email: invitation.email,
         time: formatTime(invitation.expires_at),
@@ -604,16 +409,10 @@ export function InvitationsPage({
                 tenant,
                 id: invitation.id,
               })
-              // The row may leave the filtered list; focus lands on the
-              // section's heading, not on the removed row's menu.
               focusInvitationHeading()
               return t('invitations.revoked', { email: invitation.email })
             } catch (error) {
               setFailedInvitation(invitation.id)
-              // A terminal refusal leaves the row out of the current filter
-              // too, so focus does not fall back to the body when the re-read
-              // drops it. An "all" filter keeps the row, so its menu keeps
-              // focus there.
               if (
                 statusFilter !== 'all' &&
                 errorCodeOf(error) === INVITATION_TERMINAL_CODE
@@ -634,13 +433,6 @@ export function InvitationsPage({
   ) => {
     confirm.ask({
       title: t('members.removeTitle'),
-      // The confirmation names the member the way the roster does: by
-      // display name and, when the account view carries one, its login
-      // username. An empty display name is named by that username alone.
-      // The account id is a machine value the operator cannot match to a row,
-      // so an identity with neither name nor username (a pending, refused,
-      // missing or feature-gated account read) keeps the sentence neutral
-      // rather than falling back to it.
       message:
         identity.name === undefined
           ? identity.username === undefined
@@ -665,8 +457,6 @@ export function InvitationsPage({
                 tenant,
                 account: member.account,
               })
-              // The row the write takes away names its position before the
-              // re-read drops it.
               const rows = memberRows ?? []
               removalFocus.current = {
                 account: member.account,
@@ -726,9 +516,6 @@ export function InvitationsPage({
       .finally(() => setPendingMemberWrite(null))
   }
 
-  // A source the surface names renders its own label; a `jit:<id>` value
-  // names the provider that provisioned the membership; anything else is
-  // shown as the record carries it.
   const memberSourceLabel = (source: string): string => {
     let key: string | null = null
     let options: Record<string, string> | undefined
@@ -752,9 +539,6 @@ export function InvitationsPage({
       header: t('invitations.column.email'),
       cellWrap: 'nowrap',
       cellFullValue: (invitation) => invitation.email,
-      // The invitation's primary identity: never hidden, and the shared
-      // whole-cell cap -- which counts the copy control -- keeps the row
-      // actions on screen.
       contentMaxWidth: INVITATION_IDENTITY_MAX_WIDTH.email,
       cell: (invitation) => (
         <Typography variant="body2" noWrap>
@@ -766,8 +550,6 @@ export function InvitationsPage({
       id: 'status',
       header: t('invitations.column.status'),
       priority: 'high',
-      // The tag is one short word and stays whole; a terminal row's caption
-      // wraps inside the column instead of forcing the row wider.
       cellWrap: 'wrap',
       cell: (invitation) => {
         const status = invitation.state
@@ -797,13 +579,6 @@ export function InvitationsPage({
       priority: 'high',
       cellWrap: 'nowrap',
       contentMaxWidth: INVITATION_IDENTITY_MAX_WIDTH.invitedBy,
-      // The invitation answers its inviter's readable names itself, so the
-      // cell never issues a platform account read. It shows the display name
-      // alone; the complete "display name (username)" is the cell content's
-      // hover title. An invitation with no inviter name leaves the cell
-      // blank, as the organization page does. The column offers no copy
-      // control, matching the organization page's inviter column: this is a
-      // name to read, not an identifier to reuse.
       cell: (invitation) =>
         invitation.invited_by_name === undefined ||
         invitation.invited_by_name === '' ? null : (
@@ -824,9 +599,6 @@ export function InvitationsPage({
       header: t('invitations.column.expires'),
       priority: 'high',
       cellWrap: 'wrap',
-      // Expiry is only meaningful while the invitation can still be
-      // accepted; a terminal row already shows its own moment under the
-      // status. A pending row near its deadline says how much time is left.
       cell: (invitation) => {
         if (invitation.state !== 'pending') {
           return null
@@ -881,8 +653,6 @@ export function InvitationsPage({
       header: t('invitations.column.actions'),
       cellWrap: 'nowrap',
       cell: (invitation) => {
-        // A terminal invitation accepts no management action: the server
-        // refuses both resend and revoke, so the row offers neither.
         if (invitation.state !== 'pending') {
           return null
         }
@@ -924,8 +694,6 @@ export function InvitationsPage({
                   },
                 ]}
               />
-              {/* The acceptance value is handed out once: only the item just
-                  issued or resent has a value to copy. */}
               {current && issuedValue !== '' && (
                 <CopyButton
                   value={issuedValue}
@@ -959,28 +727,14 @@ export function InvitationsPage({
       cellFullValue: (member) =>
         member.display_name === '' ? undefined : member.display_name,
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      // The member read carries the account's display name, so the name is the
-      // row's primary identity without any platform account read. An account
-      // with no display name leaves this cell empty: the account model defines
-      // no fallback for the name, and the username column beside it still
-      // names the row.
       cell: (member) => member.display_name,
     },
     {
       id: 'username',
       header: t('members.column.username'),
-      // The display name beside it is the page's primary identity, so the
-      // composed identity is the secondary one: it sheds below the sm floor,
-      // where the primary cell and the row actions stay on screen, and
-      // remains visible at every tier floor from sm up.
       priority: 'high',
       cellWrap: 'nowrap',
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      // Both surfaces show the member record's login username beside its
-      // display name column, and the header names exactly that. Neither shows
-      // or copies the account id, and no account read is needed: the member
-      // read carries the username. A record with no username gets the neutral
-      // copy, never the display name repeated from the column beside it.
       cell: (member) =>
         member.username === '' ? (
           <Typography variant="body2">
@@ -993,9 +747,6 @@ export function InvitationsPage({
     {
       id: 'active',
       header: t('members.column.active'),
-      // The least important of the columns sm first shows: the name, the
-      // account and the row actions fit the sm floor together, so the status
-      // yields at that tier and returns from md up.
       priority: 'medium',
       cellWrap: 'nowrap',
       cell: (member) =>
@@ -1053,10 +804,6 @@ export function InvitationsPage({
   // exact-multiple last page reports none, so it never reads an empty page.
   const memberNextCursor = members.data?.next_cursor ?? ''
   const memberHasNext = memberNextCursor !== ''
-  // `keepPreviousData` leaves the previous page's envelope on screen while
-  // the next one loads, so its `next_cursor` still names that same page.
-  // Reading it again would push the same cursor twice; the control waits for
-  // the read to settle (and the pager is disabled while it runs).
   const nextMemberPage = () => {
     if (!memberHasNext || memberNextCursor === '' || members.isFetching) {
       return
@@ -1086,9 +833,6 @@ export function InvitationsPage({
     })
   }
 
-  // The invitation list pages by the server's cursor exactly as the member
-  // list does; the control is disabled while a page read or a write is in
-  // flight, so a kept previous page's cursor is never pushed twice.
   const invitationNextCursor = invitations.data?.next_cursor ?? ''
   const invitationHasNext = invitationNextCursor !== ''
   const nextInvitationPage = () => {
@@ -1125,9 +869,6 @@ export function InvitationsPage({
         : { ...current, page: current.page - 1 }
     })
   }
-  // The panel closes directly when it carries no value -- a delivered notice
-  // has no link to lose -- and asks for confirmation only when it is about to
-  // drop the one copy the operator holds.
   const requestCloseIssued = () => {
     if (issued === null) {
       return
@@ -1139,11 +880,6 @@ export function InvitationsPage({
     setCloseIssuedOpen(true)
   }
 
-  // The value the issued block hands over: the host's absolute acceptance
-  // link when it supplies a builder, the bare token otherwise. A notice whose
-  // delivery succeeded carries no token -- the recipient already holds the
-  // link -- so there is nothing to hand over and no control that would copy
-  // an empty value.
   const issuedToken = issued?.answer.token
   const issuedValue =
     issuedToken === undefined
@@ -1152,8 +888,6 @@ export function InvitationsPage({
         ? issuedToken
         : acceptanceUrl(invitationLink(issuedToken))
 
-  // The role control's own explanation: a failed role read says so where the
-  // operator would have chosen a role, with the retry beside it.
   let roleHelper: ReactNode
   if (!canManageRoles || !tenantRoles.isError) {
     roleHelper = undefined
@@ -1175,8 +909,6 @@ export function InvitationsPage({
     )
   }
 
-  // The issue control's one unmet precondition: the address is what the form
-  // is for, and it has no standing text of its own to point at.
   const issueExplanation: ActionButtonUnavailableExplanation | undefined =
     email.trim() === ''
       ? { unavailableReason: t('invitations.issue.emailRequired') }
@@ -1485,10 +1217,6 @@ export function InvitationsPage({
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
 
-      {/* The one-time value is cleared only after the operator confirms:
-          closing a panel that carries a link is the only moment the sole
-          copy is dropped. A delivered notice carries no value and closes
-          directly. */}
       <ConfirmDialog
         open={closeIssuedOpen}
         title={t('invitations.issued.closeTitle')}
@@ -1510,12 +1238,10 @@ interface MemberRowActionsProps {
   readonly failed: 'remove' | 'sso' | null
   readonly failureText: string | null
   readonly pending: boolean
-  /** The member row write in flight, if one is. */
   readonly pendingWrite: {
     readonly account: string
     readonly action: 'remove' | 'sso'
   } | null
-  /** Whether the SSO surface is present, so the toggle exists. */
   readonly ssoExemption: boolean
   readonly onRemove: (
     member: AdminMember,
@@ -1527,21 +1253,12 @@ interface MemberRowActionsProps {
   ) => void
 }
 
-/**
- * The member row's own actions. A landed write names the account the way the
- * row shows it -- from the member read, on both surfaces -- and never the
- * recorded identifier as a fallback.
- */
 function MemberRowActions(props: MemberRowActionsProps) {
   return (
     <MemberActionsBody {...props} identity={memberRowIdentity(props.member)} />
   )
 }
 
-/**
- * The member row's identity: the member read's own display name and login
- * username. Neither is an identifier standing in for the other.
- */
 function memberRowIdentity(member: AdminMember): AccountIdentityValue {
   return {
     name: member.display_name === '' ? undefined : member.display_name,
@@ -1564,8 +1281,6 @@ function MemberActionsBody({
   const errorId = `member-error-${encodeURIComponent(member.account)}`
   const ssoFailed = failed === 'sso'
   const removeFailed = failed === 'remove'
-  // Only the control that started the write reports busy; every other
-  // control in the scope is unavailable without a reason of its own.
   const ssoBusy =
     pendingWrite !== null &&
     pendingWrite.account === member.account &&
@@ -1620,12 +1335,6 @@ function MemberActionsBody({
   )
 }
 
-/**
- * The absolute URL for a host-built acceptance link: the builder may return
- * a host-relative path (the landing route) or an absolute URL, and the
- * operator copies it whole, so a path is resolved against the current origin.
- * A value that will not resolve is shown as it came.
- */
 function acceptanceUrl(link: string): string {
   try {
     return new URL(link, window.location.origin).toString()
@@ -1634,23 +1343,6 @@ function acceptanceUrl(link: string): string {
   }
 }
 
-/**
- * InvitationLinkNotice: the display of a just-issued invitation's acceptance
- * value -- the host-built link, or the bare token when the host supplies no
- * builder -- a value handed out once.
- *
- * Its state is the page's (`InvitationsPage` holds it beside the tenant it
- * was issued under), so a scope reset, a later failure or a context change
- * cannot drop the only copy; a second issuance in the same group replaces
- * it. The panel is one polite live region with an explicit close control
- * whose accessible name names the tenant and the invitee, and its copy
- * control hands over the complete value.
- *
- * A notice whose delivery succeeded carries no token: the recipient already
- * holds the link, so the panel says the invitation was emailed and offers no
- * copy control. A failed or unconfigured carrier leaves the token on the
- * answer, and the panel hands it over as before.
- */
 function InvitationLinkNotice({
   notice,
   value,
@@ -1668,8 +1360,6 @@ function InvitationLinkNotice({
     <OneTimeValuePanel
       message={
         emailed ? (
-          // The notice reached the address, so the invitation is the email's
-          // business: there is no link for the operator to hand over.
           t('invitations.issued.emailed', {
             email: notice.answer.invitation.email,
           })
@@ -1682,9 +1372,6 @@ function InvitationLinkNotice({
               : t('invitations.issued.token', {
                   email: notice.answer.invitation.email,
                 })}
-            {/* The notice's delivery outcome sits beside the one-time value: a
-                failed or unconfigured carrier is why the operator still has to
-                hand the link over themselves. */}
             <Typography
               component="span"
               variant="body2"
@@ -1716,16 +1403,6 @@ function InvitationLinkNotice({
   )
 }
 
-/**
- * MemberWriteForm: the membership-write control (PUT
- * /api/v1/tenants/:tenant/members/:account) -- it adds, suspends or
- * resumes a membership, naming the account chosen through the account
- * search picker, its active state, an optional source and, where the SSO
- * surface is present, the SSO exemption. A landed write clears the account
- * and source and resets the flags; a refused one keeps them to correct. The
- * write reports through the member section's scope, and a landed one names
- * the account it changed.
- */
 function MemberWriteForm({
   tenant,
   feedback,
@@ -1733,7 +1410,6 @@ function MemberWriteForm({
 }: {
   readonly tenant: string
   readonly feedback: WriteFeedback
-  /** Whether the SSO surface is present, so the exemption is writable. */
   readonly ssoExemption: boolean
 }) {
   const { t } = useAdminUiTranslation()
@@ -1744,8 +1420,6 @@ function MemberWriteForm({
   const [source, setSource] = useState('')
   const [active, setActive] = useState(true)
   const [ssoExempt, setSsoExempt] = useState(false)
-  // Whether this form's own write is in flight. A row write in the same
-  // scope keeps the submit unavailable without naming a reason.
   const [busy, setBusy] = useState(false)
   const scopePending = feedback.pending && !busy
 

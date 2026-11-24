@@ -1,5 +1,3 @@
-/** AccountsPage suite: create form and account attribute cases. */
-
 import { describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -67,18 +65,12 @@ describe('AccountsPage', () => {
 
     const alert = await within(panel).findByRole('alert')
     expect(alert).toHaveTextContent(FORBIDDEN_TEXT)
-    // The failure belongs to the create panel's own scope, inside the modal;
-    // the page behind it carries none.
     expect(outsideOf(panel, '[role="alert"]')).toEqual([])
-    // The fields stay for correction and the panel stays open.
     expect(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel)).toHaveValue('Grace')
     expect(screen.getByRole('dialog', { name: CREATE_PANEL_NAME })).toBe(panel)
   })
 
   it('names a taken email address in a creation failure instead of the fallback', async () => {
-    // Creating an account reserves the address, so a 409 email-taken is a
-    // refusal the operator can act on: the banner states it and names the
-    // value to change, never the generic unknown line.
     const user = userEvent.setup()
     const operations = withAccounts({
       createAccount: () => Promise.reject(EMAIL_TAKEN),
@@ -93,16 +85,12 @@ describe('AccountsPage', () => {
     const alert = await within(panel).findByRole('alert')
     expect(alert).toHaveTextContent(EMAIL_TAKEN_TEXT)
     expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
-    // The operator still holds the fields to correct the address.
     expect(within(panel).getByLabelText(zhCN.accounts.create.emailLabel)).toHaveValue(
       'grace@x.test',
     )
   })
 
   it('names a taken username on its field in a creation failure', async () => {
-    // A user account is opened with a login name, so a 409 username-taken is
-    // a refusal the field carries: the name is the value the operator
-    // changes, with focus moved there and no whole-form banner.
     const user = userEvent.setup()
     const operations = withAccounts({
       createAccount: () => Promise.reject(USERNAME_TAKEN),
@@ -159,8 +147,6 @@ describe('AccountsPage', () => {
   })
 
   it('keeps the username copy off a service account creation', async () => {
-    // A service account signs in with a service secret, so the username
-    // refusals are the user kind's own.
     const user = userEvent.setup()
     const operations = withAccounts({
       createAccount: () => Promise.reject(USERNAME_TAKEN),
@@ -178,9 +164,6 @@ describe('AccountsPage', () => {
   })
 
   it('leaves a password-policy refusal out of the username copy', async () => {
-    // authn.bad_request on this route may be the password policy or the
-    // email address, not the username's shape (that is username-invalid),
-    // so it keeps the scope's own sentence.
     const user = userEvent.setup()
     const operations = withAccounts({
       createAccount: () => Promise.reject(BAD_REQUEST),
@@ -215,12 +198,6 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
-    // The page writes the success only once the panel has gone. That is an
-    // ordering fact, and the exit is a real transition: a snapshot taken the
-    // instant the create settles races it (under load the transition can
-    // finish first, leaving nothing to look at). So the ordering is
-    // recorded as it happens -- every DOM batch is checked for the success
-    // text existing while a dialog is still mounted.
     const successAgainstOpenPanel: number[] = []
     let batches = 0
     const observer = new MutationObserver(() => {
@@ -241,7 +218,6 @@ describe('AccountsPage', () => {
       finishCreate?.(accountFixture({ display_name: 'Grace' }))
     })
 
-    // Only after the exit does it land, in the page's list region.
     await waitFor(() => {
       expect(
         screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
@@ -250,8 +226,6 @@ describe('AccountsPage', () => {
     const notice = await screen.findByText(CREATED_GRACE)
     observer.disconnect()
 
-    // The success was never on screen while the panel was: no batch saw
-    // both, and it lands outside the dialog, in the list's status region.
     expect(successAgainstOpenPanel).toEqual([])
     expect(notice.closest('[role="dialog"]')).toBeNull()
     expect(notice.closest('[role="status"]')).not.toBeNull()
@@ -275,8 +249,6 @@ describe('AccountsPage', () => {
     await search(user)
     await screen.findByText('Ada Lovelace')
 
-    // Start the row delete and confirm it through the two-step guard; it
-    // stays in flight (one attempt in the list scope).
     await user.click(screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
@@ -292,8 +264,6 @@ describe('AccountsPage', () => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
-    // While that write is in flight, a create lands in the same scope via
-    // the create panel's exit.
     const panel = await openCreate(user)
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
@@ -308,8 +278,6 @@ describe('AccountsPage', () => {
     })
     expect(await screen.findByText(CREATED_GRACE)).toBeInTheDocument()
 
-    // The delete settles last and replaces the create's confirmation: one
-    // slot, the last result wins.
     await act(async () => {
       finishDelete?.()
     })
@@ -338,15 +306,12 @@ describe('AccountsPage', () => {
       HANDED_OVER_CI,
     )
     expect(display.closest('[role="status"]')).not.toBeNull()
-    // The secret itself is the panel's value, offered beside a copy
-    // control: the message states only what was handed out.
     expect(within(panel).getByText('one-time-value')).toBeInTheDocument()
     expect(
       within(panel).getByRole('button', {
         name: zhCN.accounts.createSecret.copy,
       }),
     ).toBeInTheDocument()
-    // The explicit close control names the account it belongs to.
     const close = within(panel).getByRole('button', {
       name: fill(zhCN.accounts.createSecret.closeAria, {
         name: 'Operator',
@@ -355,8 +320,6 @@ describe('AccountsPage', () => {
       }),
     })
     expect(close).toBeInTheDocument()
-    // The slot's success confirmation stands beside the display, not in it;
-    // closing the display leaves the confirmation in place.
     expect(
       within(panel).getByText(SECRET_CREATED_CI),
     ).toBeInTheDocument()
@@ -392,8 +355,6 @@ describe('AccountsPage', () => {
       HANDED_OVER_CI,
     )
 
-    // A second attempt resets the creating scope and settles as a failure.
-    // The display is page state, not slot state: it survives both.
     await user.type(within(panel).getByLabelText(zhCN.accounts.createSecret.labelLabel), 'ci')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.createSecret.submit }))
     expect(await within(panel).findByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
@@ -425,7 +386,6 @@ describe('AccountsPage', () => {
       HANDED_OVER_CI,
     )
 
-    // Cancelling the discard keeps the panel and the unclosed secret.
     fireEvent.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
@@ -443,7 +403,6 @@ describe('AccountsPage', () => {
       within(panel).getByText(HANDED_OVER_CI),
     ).toBeInTheDocument()
 
-    // Confirming closes the panel and discards; reopening starts without it.
     fireEvent.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
@@ -455,8 +414,6 @@ describe('AccountsPage', () => {
         name: zhCN.accounts.createSecret.discardConfirm,
       }),
     )
-    // Both the confirmation and the panel must finish exiting before the
-    // page behind the modal is reachable again.
     await waitFor(() => {
       expect(
         screen.queryByRole('dialog', { name: DISCARD_SECRET_TITLE }),
@@ -485,10 +442,6 @@ describe('AccountsPage', () => {
     try {
       renderWithProviders(<AccountsPage />, { operations: withAccounts() })
       const panel = await openCreate(user)
-      // The warning belongs to the render that mounts the two
-      // verification-source selects, so it is checked as soon as the panel
-      // opens -- before the option list below, whose absence is the same
-      // defect's user-visible half but a slower, less precise signal.
       expect(fragmentWarnings).toEqual([])
       await user.click(within(panel).getByLabelText(zhCN.accounts.create.emailViaLabel))
       await screen.findByRole('option', { name: zhCN.accounts.create.via.admin })
@@ -508,9 +461,6 @@ describe('AccountsPage', () => {
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.revokeSessions }))
     await confirmDialog(user)
 
-    // MUI marks the page behind an open modal aria-hidden: the page-level
-    // notice would not be reachable, so the panel's own region must carry
-    // the confirmation.
     await waitFor(() => {
       expect(container).toHaveAttribute('aria-hidden', 'true')
     })
@@ -547,8 +497,6 @@ describe('AccountsPage', () => {
       ).not.toBeInTheDocument()
     })
 
-    // The exit cleared the panel's feedback: reopening shows no stale
-    // message from the previous visit.
     await user.click(screen.getByRole('button', { name: MANAGE_ACCOUNT_NAME }))
     panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
     expect(within(panel).queryByText(SECRET_REVOKED_CI)).toBeNull()
@@ -573,8 +521,6 @@ describe('AccountsPage', () => {
         { kind: 'user', display_name: 'Grace', username: 'grace' },
       ])
     })
-    // A landed create closes the panel; the next opening starts from the
-    // initial values.
     await waitFor(() => {
       expect(
         screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
@@ -593,9 +539,6 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     const panel = await openCreate(user)
-    // The guard trims before judging, so a padded value passes it; the
-    // request must carry the same trimmed values the guard judged rather
-    // than the raw input the server then refuses.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), '  grace  ')
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.phoneLabel), '  +8613800000000  ')
@@ -626,15 +569,10 @@ describe('AccountsPage', () => {
     const submit = within(panel).getByRole('button', { name: zhCN.accounts.create.submit })
     const form = panel.querySelector('form') as HTMLFormElement
 
-    // An empty form names nothing an account can be opened with: the submit
-    // is unavailable, and a submit of the form itself sends no request either
-    // -- the control is not the only guard.
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.submit(form)
     expect(created).toEqual([])
 
-    // A display name alone is not an account either, and the reason names
-    // the missing piece: a user account still needs its username.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     expect(submit).toHaveAccessibleDescription(
@@ -643,14 +581,11 @@ describe('AccountsPage', () => {
     fireEvent.submit(form)
     expect(created).toEqual([])
 
-    // A user account is opened with a username: an email address beside the
-    // display name does not stand in for it.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.emailLabel), 'grace@x.test')
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.submit(form)
     expect(created).toEqual([])
 
-    // Nor is the username alone an account without a display name.
     await user.clear(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel))
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     expect(submit).toHaveAttribute('aria-disabled', 'true')
@@ -660,7 +595,6 @@ describe('AccountsPage', () => {
     fireEvent.submit(form)
     expect(created).toEqual([])
 
-    // Both together make the account creatable.
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     await waitForCondition(() =>
       expect(submit).not.toHaveAttribute('aria-disabled', 'true'),
@@ -682,9 +616,6 @@ describe('AccountsPage', () => {
     const panel = await openCreate(user)
     const submit = within(panel).getByRole('button', { name: zhCN.accounts.create.submit })
 
-    // A service account signs in with a service secret, so the server
-    // exempts it from the login-identifier requirement, and the submit must
-    // be enabled on a display name alone before any identifier is given.
     await user.click(within(panel).getByLabelText(zhCN.accounts.create.kindLabel))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.create.kind.service }))
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Nightly')
@@ -711,7 +642,6 @@ describe('AccountsPage', () => {
       { operations },
     )
     const panel = await openCreate(user)
-    // The raw-JSON editor is replaced, not duplicated.
     expect(
       within(panel).queryByLabelText(zhCN.accounts.create.attributesLabel),
     ).toBeNull()
@@ -771,8 +701,6 @@ describe('AccountsPage', () => {
     await user.click(
       within(panel).getByRole('button', { name: zhCN.accounts.patch.submit }),
     )
-    // The declared key takes the typed value; the key the host did not
-    // declare survives the patch.
     await waitForCondition(() => {
       expect(patched).toEqual([
         {

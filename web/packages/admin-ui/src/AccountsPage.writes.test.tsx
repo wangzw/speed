@@ -1,5 +1,3 @@
-/** AccountsPage suite: write-control preconditions, per-write notices and result regions. */
-
 import { describe, expect, it } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -96,8 +94,6 @@ describe('AccountsPage', () => {
       name: zhCN.accounts.password.submit,
     })
     submit.focus()
-    // The control stays focusable while unavailable; every activation below
-    // reaches it and is swallowed.
     expect(submit).toHaveFocus()
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -156,11 +152,6 @@ describe('AccountsPage', () => {
 
     fireEvent.submit(form)
     await waitFor(() => expect(created).toHaveLength(1))
-    // The form's own submit is guarded as well as the button: a programmatic
-    // submit while the write is in flight does not start a second request.
-    // React Hook Form validates asynchronously, so the submit is flushed
-    // inside `act` -- an assertion right after the dispatch would pass even
-    // without the guard, before the handler ever ran.
     await act(async () => {
       fireEvent.submit(form)
     })
@@ -217,10 +208,6 @@ describe('AccountsPage', () => {
     })
   })
 
-  // Every account write's success notice names the account in the shared
-  // four shapes and never by its opaque id. The detail writes run with the
-  // selected account's view under test; the create and delete flows take
-  // the account object their write returns or the row it deletes.
   const WRITE_NOTICES: Readonly<
     Record<
       string,
@@ -282,7 +269,6 @@ describe('AccountsPage', () => {
     },
   }
 
-  /** The notice metadata for one detail write. */
   function noticeMeta(label: string): {
     readonly notice: string
     readonly unnamed: string
@@ -299,7 +285,6 @@ describe('AccountsPage', () => {
     { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
   ]
 
-  /** The identity label the console shows for one account view. */
   function identityLabelOf(
     displayName: string,
     identifiers: AdminAccount['identifiers'],
@@ -316,7 +301,6 @@ describe('AccountsPage', () => {
     return displayName !== '' ? displayName : zhCN.common.accountUnavailable
   }
 
-  /** Drives one detail write with the selected account's view as given. */
   async function driveDetailNotice(
     user: ReturnType<typeof userEvent.setup>,
     entry: (typeof ALL_DETAIL_WRITES)[number],
@@ -339,7 +323,6 @@ describe('AccountsPage', () => {
     return panel
   }
 
-  /** Confirms the account delete's two-step guard. */
   async function confirmDelete(
     user: ReturnType<typeof userEvent.setup>,
   ): Promise<void> {
@@ -449,7 +432,6 @@ describe('AccountsPage', () => {
     })
   })
 
-  /** Drives the create or delete flow for one account view. */
   async function driveListNotice(
     user: ReturnType<typeof userEvent.setup>,
     label: 'create' | 'delete',
@@ -513,8 +495,6 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.password.label), 'secret123')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.password.submit }))
 
-    // A write in one section makes the whole panel busy: the close control
-    // is disabled and Escape reports no close request at all.
     await waitFor(() =>
       expect(
         within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
@@ -551,14 +531,11 @@ describe('AccountsPage', () => {
     await openDetail(user)
     const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
-    // The status write fails in its own region.
     await user.click(within(panel).getByLabelText(zhCN.accounts.status.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.status.submit }))
     expect(await within(panel).findByRole('alert')).toHaveTextContent(FORBIDDEN_TEXT)
 
-    // The MFA write lands in its own region; the status failure stands
-    // because the two groups do not share a slot (nothing is aggregated).
     await user.click(within(panel).getByLabelText(zhCN.accounts.mfa.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.mfa.required }))
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.mfa.submit }))

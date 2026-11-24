@@ -1,5 +1,3 @@
-/** AccountsPage suite: page-level panel, layout and accessibility cases. */
-
 import { describe, expect, it } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -75,8 +73,6 @@ describe('AccountsPage', () => {
         ]),
     })
     renderWithProviders(<AccountsPage />, { operations })
-    // The page header actions are present before any search; the panel's
-    // controls join them once it is open.
     expect(
       hasCoarsePointerTouchTarget(
         screen.getByRole('button', { name: zhCN.common.refresh }),
@@ -118,7 +114,6 @@ describe('AccountsPage', () => {
     await search(user)
     await screen.findByText('Ada Lovelace')
 
-    // Nothing detail-shaped is inline before the panel opens.
     expect(
       screen.queryByRole('heading', { level: 2, name: DETAIL_PANEL_NAME }),
     ).toBeNull()
@@ -127,17 +122,13 @@ describe('AccountsPage', () => {
 
     await user.click(manage)
     const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
-    // Both panels take the `wide` tier: 52rem from the viewport's `sm` up.
     expect(elementWidthAt(emittedStyleText(), panel, 600)).toBe('52rem')
-    // The title names the account, and the detail's sections live inside the
-    // dialog -- not in the page flow below the table.
     expect(
       within(panel).getByRole('heading', { level: 2, name: DETAIL_PANEL_NAME }),
     ).toBeInTheDocument()
     expect(
       within(panel).getByRole('heading', { name: zhCN.accounts.writes.title }),
     ).toBeInTheDocument()
-    // The row control only opens: no in-page collapse control exists.
     expect(
       screen.queryByRole('button', { name: COLLAPSE_ACCOUNT_NAME }),
     ).not.toBeInTheDocument()
@@ -150,14 +141,10 @@ describe('AccountsPage', () => {
     await openDetail(user)
     const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
-    // Request the close. The panel is still sliding out, and during the
-    // transition it must still render the account: clearing the selection
-    // on the close request would leave a blank panel.
     fireEvent.click(within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }))
     const exiting = screen.getByRole('dialog', { name: DETAIL_PANEL_NAME })
     expect(within(exiting).getByText(DISPLAY_NAME_OPERATOR)).toBeInTheDocument()
 
-    // Only the exit transition's end removes the panel (and the account).
     await waitFor(() => {
       expect(
         screen.queryByRole('dialog', { name: DETAIL_PANEL_NAME }),
@@ -171,24 +158,18 @@ describe('AccountsPage', () => {
     const { container } = renderWithProviders(<AccountsPage />, {
       operations,
     })
-    // The create form is not part of the page flow any more.
     expect(container.querySelector('form')).toBeNull()
 
     const panel = await openCreate(user)
     expect(panel).toHaveAttribute('aria-modal', 'true')
-    // The create panel takes the `wide` tier as well.
     expect(elementWidthAt(emittedStyleText(), panel, 600)).toBe('52rem')
     const form = panel.querySelector('form')
     expect(form).not.toBeNull()
-    // The fields flow through FormLayout's two-column grid, which the
-    // panel's own container width keys (one column below `sm`).
     expect(form).toHaveStyle({ display: 'grid' })
     const css = emittedStyleText()
     expect(elementContainerRule(css, form as Element)).toMatch(
       /grid-template-columns:\s*repeat\(2,\s*1fr\)/,
     )
-    // The submit sits in FormLayout's actions row, which spans both tracks
-    // instead of taking a field cell.
     const submit = within(panel).getByRole('button', { name: zhCN.accounts.create.submit })
     const actions = submit.parentElement as HTMLElement
     expect(actions).toHaveStyle({ justifyContent: 'flex-end' })
@@ -200,7 +181,6 @@ describe('AccountsPage', () => {
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
 
-    // Untouched: the close request goes straight out, with no dialog.
     let panel = await openCreate(user)
     await user.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
@@ -214,8 +194,6 @@ describe('AccountsPage', () => {
       ).not.toBeInTheDocument()
     })
 
-    // Modified: the close request asks first. Cancelling keeps the panel
-    // and the typed values.
     panel = await openCreate(user)
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
     await user.click(
@@ -233,7 +211,6 @@ describe('AccountsPage', () => {
     panel = screen.getByRole('dialog', { name: CREATE_PANEL_NAME })
     expect(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel)).toHaveValue('Grace')
 
-    // Confirming discards and closes.
     await user.click(
       within(panel).getByRole('button', { name: PANEL_CLOSE_LABEL }),
     )
@@ -267,8 +244,6 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
-    // In flight: the panel is busy, so the close control is disabled and
-    // Escape reports no close request at all.
     const close = within(panel).getByRole('button', {
       name: PANEL_CLOSE_LABEL,
     })
@@ -307,8 +282,6 @@ describe('AccountsPage', () => {
         name: zhCN.accounts.create.discardConfirm,
       }),
     )
-    // Both the confirmation and the panel must finish exiting before the
-    // page behind is reachable again.
     await waitFor(() => {
       expect(
         screen.queryByRole('dialog', { name: DISCARD_DIALOG_NAME }),
@@ -318,7 +291,6 @@ describe('AccountsPage', () => {
       ).not.toBeInTheDocument()
     })
 
-    // The re-opened panel shows the initial values, not the discarded draft.
     const reopened = await openCreate(user)
     expect(within(reopened).getByLabelText(zhCN.accounts.create.displayNameLabel)).toHaveValue('')
     expect(within(reopened).getByLabelText(zhCN.accounts.create.usernameLabel)).toHaveValue('')
@@ -357,22 +329,12 @@ describe('AccountsPage', () => {
     const challenge = await screen.findByRole('dialog', {
       name: zhCN.stepUp.title,
     })
-    // The refusal handed to the gate settles null: the status group's slot
-    // stays empty, so no failure banner stands beside the step-up dialog.
-    // The control leaves its busy state when the attempt settles, which is
-    // also the moment a wrongly settled failure would render.
     await waitFor(() =>
       expect(save).not.toHaveAttribute('aria-disabled', 'true'),
     )
-    // Let the rejected attempt's promise chain settle before judging: the
-    // dialog opens inside the failure handler, ahead of the attempt's own
-    // settlement.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    // The step-up dialog hides the panel from assistive technology, so the
-    // assertion reads the panel's DOM directly: a wrongly settled failure
-    // still renders its alert there and must show up here.
     expect(panel.querySelectorAll('[role="alert"]')).toHaveLength(0)
     await user.click(within(challenge).getByRole('button', { name: zhCN.common.cancel }))
     await waitFor(() => expect(save).toHaveFocus())
@@ -387,8 +349,6 @@ describe('AccountsPage', () => {
     await openDetail(user)
     const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
 
-    // The modal hides the page behind from assistive technology; the panel
-    // is the part that stays in the accessibility tree.
     expect(container).toHaveAttribute('aria-hidden', 'true')
     expect(
       within(panel).getByRole('heading', { name: zhCN.accounts.factors.title }),
@@ -422,10 +382,6 @@ describe('AccountsPage', () => {
         secret: 'one-time',
       }),
     )
-    // The landed control stays focused and becomes unavailable, which opens
-    // its reason tooltip; that popper is portaled to the body, outside the
-    // modal's aria-hidden chain. The shared helper exempts a tooltip portal
-    // that carries no focusable control, so the scan runs with it open.
     expect(await screen.findByRole('tooltip')).toBeInTheDocument()
     await expectNoAxeViolations({
       decidedInBrowser: 'accountsOneTimeSecret',
@@ -450,9 +406,6 @@ describe('AccountsPage', () => {
 
     const header = (label: string): Element =>
       screen.getByRole('columnheader', { name: label })
-    // The type column is low and sheds first; the status column stays high,
-    // so a narrow container loses type before status; the identity (the
-    // primary column) and the row actions never hide.
     const kind = columnVisibility(header(zhCN.accounts.column.kind))
     const status = columnVisibility(header(zhCN.accounts.column.status))
     expect(kind).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
@@ -465,13 +418,9 @@ describe('AccountsPage', () => {
     })
     expect(columnVisibility(header(zhCN.accounts.column.actions))).toBeNull()
 
-    // The identity is the primary cell: the account id is neither a column
-    // nor a copy value.
     expect(screen.queryByText(id)).toBeNull()
     expect(screen.queryByText(id.slice(0, 8))).toBeNull()
 
-    // The identity's primary cell keeps the shared whole-cell cap: 160px
-    // below `md`, 200px from `md` up.
     const nameCell = screen.getByText('Ada Lovelace').closest('td')
     expect(nameCell).not.toBeNull()
     expect(containerMaxWidthOf(nameCell!.firstElementChild!)).toEqual(
@@ -507,8 +456,6 @@ describe('AccountsPage', () => {
     const cell = identity.closest('td')
     expect(cell).not.toBeNull()
 
-    // The email is a login identifier, never a stand-in for the username:
-    // it does not appear in the cell, its title or its copy value.
     expect(
       within(cell as HTMLElement).queryByText('ada@example.com'),
     ).toBeNull()
@@ -604,8 +551,6 @@ describe('AccountsPage', () => {
       return table as HTMLElement
     }
 
-    // Service secrets: the label is the primary identity, state high,
-    // expiry low.
     const secrets = await tableOf('ci')
     expect(
       columnVisibility(
@@ -632,8 +577,6 @@ describe('AccountsPage', () => {
       containerMaxWidthOf(within(secrets).getByText('ci')),
     ).toEqual(new Map([[0, 160], [900, 200]]))
 
-    // Sessions: created time is the primary identity, state high and the
-    // identifier low with its prefix as the visible text.
     const sessions = await tableOf(sessionId.slice(0, 8))
     expect(
       columnVisibility(
@@ -667,7 +610,6 @@ describe('AccountsPage', () => {
       ]),
     )
 
-    // Factors: the label is the primary identity, status high, kind medium.
     const factors = await tableOf('Authenticator')
     expect(
       columnVisibility(
@@ -742,7 +684,6 @@ describe('AccountsPage', () => {
     const plan = headers.indexOf('Plan')
     expect(plan).toBeGreaterThan(0)
     expect(plan).toBe(headers.indexOf(zhCN.accounts.column.actions) - 1)
-    // The host's priority, not the page's, decides when it sheds.
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: 'Plan' })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })

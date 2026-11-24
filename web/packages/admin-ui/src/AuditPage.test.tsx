@@ -1,15 +1,3 @@
-/**
- * AuditPage: the audit-query page.
- *
- * Its read renders the settled records as a table, the recorded time
- * through the resolved display zone in the current language, the actor
- * column as a readable identity resolved through
- * the account read (falling back to the recorded value, marked unresolved
- * when the read is refused), the server-side filters applied on submit,
- * cursor pagination, and a failed read settling into the retryable error
- * placeholder.
- */
-
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
@@ -56,11 +44,6 @@ const page = (entries: readonly AdminAuditRecord[], next = '') => ({
   next,
 })
 
-/**
- * Renders the page under a display zone the case can change. The zone
- * switcher sits inside the harness's own provider, so its value wins for
- * the page below it.
- */
 function ZoneSwitcher({
   zones,
 }: {
@@ -139,19 +122,11 @@ describe('AuditPage', () => {
     )
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
-    // The table's container is 1184px wide beside the console nav at a
-    // 1512px viewport: the object column is the first shed (it needs lg),
-    // while the actor and the outcome both clear that width, so a failed
-    // record is distinguishable without widening the window. Below sm the
-    // outcome hides too, leaving only the two anchor columns.
     expect(
       columnVisibility(
         screen.getByRole('columnheader', { name: zhCN.audit.column.object }),
       ),
     ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
-    // The header and the body each apply the column's visibility rule on
-    // their own, so assert the body cells too: a divergence between the two
-    // would otherwise pass with only the header checked.
     expect(
       columnVisibility(screen.getByText('tenant/acme').closest('td')!),
     ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
@@ -168,7 +143,6 @@ describe('AuditPage', () => {
     expect(
       columnVisibility(screen.getByText('ok').closest('td')!),
     ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
-    // The anchors never hide.
     expect(
       columnVisibility(
         screen.getByRole('columnheader', { name: zhCN.audit.column.time }),
@@ -197,17 +171,12 @@ describe('AuditPage', () => {
       [0, 160],
       [900, 200],
     ])
-    // The action is the primary identity: its cap grows at md. The cap
-    // sits on the wrapper that holds the text and the copy control
-    // together, so the control is counted inside the budget.
     const actionCell = screen.getByText(action).closest('td')
     expect(actionCell).toHaveAttribute('title', action)
     expect(containerMaxWidthOf(actionCell!.firstElementChild!)).toEqual(
       primaryCap,
     )
 
-    // The object and the actor are long-text columns that are not the
-    // primary identity: a flat cap that does not grow with the container.
     const objectCell = screen.getByText(object).closest('td')
     expect(objectCell).toHaveAttribute('title', object)
     expect(objectCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
@@ -215,8 +184,6 @@ describe('AuditPage', () => {
       containerMaxWidthOf(objectCell!.firstElementChild!),
     ).toEqual(new Map())
 
-    // The actor renders its resolved display name inside the capped box;
-    // the recorded identifier is neither a title nor a copy value.
     const actorText = await screen.findByText('Operator')
     const actorCell = actorText.closest('td')
     expect(actorCell).not.toHaveAttribute('title', 'acc-1')
@@ -285,7 +252,6 @@ describe('AuditPage', () => {
     })
     await user.click(screen.getByRole('button', { name: zhCN.audit.filters.apply }))
     await waitForCondition(() => {
-      // 09:30 and 10:00 in Tokyo (UTC+9) are 00:30 and 01:00 UTC.
       expect(seen.since).toBe('2026-10-15T00:30:00.000Z')
       expect(seen.until).toBe('2026-10-15T01:00:00.000Z')
     })
@@ -312,17 +278,12 @@ describe('AuditPage', () => {
       name: zhCN.audit.filters.apply,
     })
 
-    // 03:30 local is after the 2026-03-08 spring-forward, so it names an
-    // instant: 07:30Z.
     fireEvent.change(since, { target: { value: '2026-03-08T03:30' } })
     await user.click(apply)
     await waitForCondition(() => {
       expect(seen.at(-1)?.since).toBe('2026-03-08T07:30:00.000Z')
     })
 
-    // 02:30 local falls in the hour the spring-forward skips: no instant
-    // exists. The apply must be refused on the field, and the read must
-    // keep the bound it already had instead of silently running unbounded.
     const requestsBeforeRefusal = seen.length
     fireEvent.change(since, { target: { value: '2026-03-08T02:30' } })
     await user.click(apply)
@@ -332,8 +293,6 @@ describe('AuditPage', () => {
     ).toBeInTheDocument()
     expect(since).toHaveAttribute('aria-invalid', 'true')
     expect(since).toHaveFocus()
-    // The refusal starts no read at all; wait until the query is quiet so
-    // an erroneous request has had its chance to reach the backend.
     await waitFor(() => expect(queryClient.isFetching()).toBe(0))
     expect(seen).toHaveLength(requestsBeforeRefusal)
   })
@@ -374,8 +333,6 @@ describe('AuditPage', () => {
     const since = screen.getByLabelText(zhCN.audit.filters.since)
     const until = screen.getByLabelText(zhCN.audit.filters.until)
 
-    // A year outside the accepted range is not a time the zone skips; the
-    // field must say so rather than blaming the display zone.
     fireEvent.change(since, { target: { value: '10000-01-01T00:00' } })
     fireEvent.change(until, { target: { value: '2026-03-08T02:30' } })
     await user.click(
@@ -389,7 +346,6 @@ describe('AuditPage', () => {
       await screen.findByText(zhCN.audit.filters.timeUnavailable),
     ).toBeInTheDocument()
     expect(since).toHaveAttribute('aria-invalid', 'true')
-    // The first refused field takes the focus, even though both are wrong.
     expect(since).toHaveFocus()
     expect(until).not.toHaveFocus()
   })
@@ -415,8 +371,6 @@ describe('AuditPage', () => {
       await screen.findByText(zhCN.audit.filters.timeUnavailable),
     ).toBeInTheDocument()
 
-    // The refusal was set under zh-CN; a language change must repaint it from
-    // the key rather than leave the text it was set with.
     await act(async () => {
       await i18n.changeLanguage('en-US')
     })
@@ -445,9 +399,6 @@ describe('AuditPage', () => {
     })
     await screen.findByText('tenant.create')
 
-    // 2026-11-01 01:30 happens twice in New York: EDT at 05:30Z and EST at
-    // 06:30Z. The lower bound reads as the earlier occurrence, so the
-    // range starts at the first 01:30.
     fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
       target: { value: '2026-11-01T01:30' },
     })
@@ -476,8 +427,6 @@ describe('AuditPage', () => {
     })
     await screen.findByText('tenant.create')
 
-    // The upper bound reads as the second 01:30, so the range covers the
-    // repeated hour instead of stopping at its first occurrence.
     fireEvent.change(screen.getByLabelText(zhCN.audit.filters.until), {
       target: { value: '2026-11-01T01:30' },
     })
@@ -513,7 +462,6 @@ describe('AuditPage', () => {
     const since = screen.getByLabelText(zhCN.audit.filters.since)
     const apply = screen.getByRole('button', { name: zhCN.audit.filters.apply })
 
-    // Apply 06:30Z, the second 01:30 of New York's fall-back overlap.
     fireEvent.change(since, { target: { value: '2026-11-01T06:30' } })
     await user.click(apply)
     await waitForCondition(() => {
@@ -523,10 +471,6 @@ describe('AuditPage', () => {
     await user.click(
       screen.getByRole('button', { name: 'switch-display-zone' }),
     )
-    // The applied instant reads back as 01:30 in New York, a wall clock that
-    // names both 05:30Z and 06:30Z. The draft was generated from the applied
-    // instant, so it must resolve to that instant rather than to the earlier
-    // occurrence the field would pick for a new reading.
     await waitForCondition(() => {
       expect(since).toHaveValue('2026-11-01T01:30')
     })
@@ -538,8 +482,6 @@ describe('AuditPage', () => {
       screen.queryByText(zhCN.audit.export.applyFirst),
     ).not.toBeInTheDocument()
 
-    // Applying the unchanged draft keeps the bound; it must not move it an
-    // hour earlier.
     await user.click(apply)
     await waitFor(() => expect(queryClient.isFetching()).toBe(0))
     expect(
@@ -574,7 +516,6 @@ describe('AuditPage', () => {
     const until = screen.getByLabelText(zhCN.audit.filters.until)
     const apply = screen.getByRole('button', { name: zhCN.audit.filters.apply })
 
-    // Apply 05:30Z, the first 01:30 of New York's fall-back overlap.
     fireEvent.change(until, { target: { value: '2026-11-01T05:30' } })
     await user.click(apply)
     await waitForCondition(() => {
@@ -584,10 +525,6 @@ describe('AuditPage', () => {
     await user.click(
       screen.getByRole('button', { name: 'switch-display-zone' }),
     )
-    // The applied instant reads back as 01:30 in New York, a wall clock that
-    // names both 05:30Z and 06:30Z. The draft was generated from the applied
-    // instant, so it must resolve to that instant rather than to the later
-    // occurrence the field would pick for a new reading.
     await waitForCondition(() => {
       expect(until).toHaveValue('2026-11-01T01:30')
     })
@@ -599,9 +536,6 @@ describe('AuditPage', () => {
       screen.queryByText(zhCN.audit.export.applyFirst),
     ).not.toBeInTheDocument()
 
-    // Applying the unchanged draft keeps the bound; it must not move it an
-    // hour later. Re-read the list and observe the applied bound in the
-    // request, rather than waiting on the transient fetching flag.
     const requestsBefore = seen.length
     await user.click(apply)
     await user.click(screen.getByRole('button', { name: COPY.refresh }))
@@ -651,9 +585,6 @@ describe('AuditPage', () => {
     await user.click(
       screen.getByRole('button', { name: 'switch-display-zone' }),
     )
-    // 05:30Z reads as 14:30 the same day in Tokyo. The applied instant is
-    // unchanged; the draft is regenerated from it, so the export still
-    // carries the instant the operator applied.
     await waitForCondition(() => {
       expect(since).toHaveValue('2026-11-01T14:30')
     })
@@ -676,7 +607,6 @@ describe('AuditPage', () => {
     })
     await screen.findByText('tenant.create')
     const since = screen.getByLabelText(zhCN.audit.filters.since)
-    // 02:30 exists as a wall clock in UTC, so nothing is flagged yet.
     fireEvent.change(since, { target: { value: '2026-03-08T02:30' } })
     expect(
       screen.queryByText(zhCN.audit.filters.timeUnavailable),
@@ -685,8 +615,6 @@ describe('AuditPage', () => {
     await user.click(
       screen.getByRole('button', { name: 'switch-display-zone' }),
     )
-    // The same reading falls in New York's spring-forward gap. The draft
-    // is not applied, so it survives the zone change and is re-checked.
     expect(
       await screen.findByText(zhCN.audit.filters.timeUnavailable),
     ).toBeInTheDocument()
@@ -742,8 +670,6 @@ describe('AuditPage', () => {
       }),
     )
     renderWithProviders(<AuditPage />, { operations })
-    // The cell renders the neutral copy with the unresolved note; the
-    // recorded id is never the visible fallback.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
     expect(cell).not.toHaveTextContent('acc-1')
@@ -875,8 +801,6 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
     const prev = screen.getByRole('button', { name: zhCN.audit.prevPage })
-    // The first page has nothing behind it: the control is unavailable with
-    // no reason to give, and it stays keyboard reachable.
     expect(prev).toHaveAttribute('aria-disabled', 'true')
     expect(prev).not.toHaveAttribute('aria-describedby')
     prev.focus()
@@ -885,8 +809,6 @@ describe('AuditPage', () => {
     const requestsBefore = requests.length
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
-    // The pointer activation is refused by the control's own guard, before
-    // the handler's page-floor clamp runs: the dispatched click is cancelled.
     expect(fireEvent.click(prev)).toBe(false)
     await waitFor(() => expect(requests.length).toBe(requestsBefore))
     expect(prev).toHaveFocus()
@@ -911,8 +833,6 @@ describe('AuditPage', () => {
 
     await user.click(next)
     expect(await screen.findByText('tenant.disable')).toBeInTheDocument()
-    // The read answered with no further cursor; the control that moved the
-    // operator here becomes unavailable without losing their place.
     await waitForCondition(() => {
       expect(next).toHaveAttribute('aria-disabled', 'true')
     })
@@ -962,7 +882,6 @@ describe('AuditPage', () => {
     expect(
       within(header).queryByText((content) => content.startsWith(prefix)),
     ).toBeNull()
-    // The completion region is mounted empty before anything is refreshed.
     expect(within(header).getByRole('status').textContent).toBe('')
 
     await act(async () => {
@@ -989,7 +908,6 @@ describe('AuditPage', () => {
       }).format(new Date(state!.state.dataUpdatedAt)),
     )
     const label = await within(header).findByText(expected)
-    // The label sits in the refresh action's group, before the control.
     const refresh = within(header).getByRole('button', { name: COPY.refresh })
     expect(
       label.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -1028,8 +946,6 @@ describe('AuditPage', () => {
     await waitFor(() => expect(status.textContent).toBe(COPY.refreshed))
 
     await user.click(refresh)
-    // Cleared at the click, so the identical text is filled in again and
-    // announced a second time.
     expect(status.textContent).toBe('')
     await act(async () => {
       pending.shift()!(page([record]))
@@ -1061,7 +977,6 @@ describe('AuditPage', () => {
         within(header).getByRole('button', { name: COPY.refresh }),
       ).not.toHaveAttribute('aria-busy'),
     )
-    // The failure is carried by the stale hint, not by an announcement.
     expect(within(header).getByRole('status').textContent).toBe('')
   })
 
@@ -1114,9 +1029,6 @@ describe('AuditPage', () => {
       const control = await screen.findByRole('button', {
         name: zhCN.audit.export.label,
       })
-      // The explanation the operator needs before acting: the file covers
-      // every matching record, not the page on screen. Its text comes from
-      // the bundle and it sits with the control it explains.
       const note = screen.getByText(zhCN.audit.export.note)
       expect(control.parentElement).toContainElement(note)
       expect(control).toHaveAccessibleDescription(zhCN.audit.export.note)
@@ -1134,8 +1046,6 @@ describe('AuditPage', () => {
       await waitForCondition(() => {
         expect(control).not.toHaveAttribute('aria-busy')
       })
-      // The explanation is not a progress message: it stays after the
-      // export settles.
       expect(screen.getByText(zhCN.audit.export.note)).toBeInTheDocument()
     })
 
@@ -1184,8 +1094,6 @@ describe('AuditPage', () => {
         name: zhCN.audit.filters.apply,
       })
 
-      // Apply since=A. With the draft still showing A, the export goes out
-      // with the applied instant.
       fireEvent.change(since, { target: { value: '2026-10-15T09:30' } })
       await user.click(apply)
       expect(control).not.toHaveAttribute('aria-disabled', 'true')
@@ -1193,9 +1101,6 @@ describe('AuditPage', () => {
       await waitForCondition(() => expect(seen).toHaveLength(1))
       expect(seen[0]).toEqual({ since: '2026-10-15T00:30:00.000Z' })
 
-      // Changing the draft to C without applying makes the visible field
-      // disagree with the applied payload, so the export is refused: the
-      // operator sees the hint instead of exporting the older bound.
       fireEvent.change(since, { target: { value: '2026-10-15T10:30' } })
       expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(
@@ -1210,20 +1115,14 @@ describe('AuditPage', () => {
       })
       expect(seen).toHaveLength(1)
 
-      // Applying C makes the draft and the payload agree again; the export
-      // now carries C.
       await user.click(apply)
       expect(control).not.toHaveAttribute('aria-disabled', 'true')
       await user.click(control)
       await waitForCondition(() => expect(seen).toHaveLength(2))
       expect(seen[1]).toEqual({ since: '2026-10-15T01:30:00.000Z' })
-      // An export is not a page: it carries no cursor and no page size.
       expect(seen[1]).not.toHaveProperty('cursor')
       expect(seen[1]).not.toHaveProperty('limit')
 
-      // Every draft field takes part in the gate, not only the time bounds:
-      // a set the toolbar shows and the applied payload does not is refused
-      // until it is applied.
       for (const [label, value] of [
         [zhCN.audit.filters.action, 'tenant.create'],
         [zhCN.audit.filters.outcome, 'failed'],
@@ -1259,8 +1158,6 @@ describe('AuditPage', () => {
       })
       await screen.findByText('tenant.create')
 
-      // 02:30 local falls in the 2026-03-08 spring-forward gap: the field
-      // names no instant, so no read and no export may go out from it.
       fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
         target: { value: '2026-03-08T02:30' },
       })
@@ -1279,8 +1176,6 @@ describe('AuditPage', () => {
         screen.getByText(zhCN.audit.export.applyFirst),
       ).toBeInTheDocument()
       fireEvent.click(control)
-      // The export never runs without the lower bound the operator sees;
-      // wait for the query to go quiet so a stray request could surface.
       await waitFor(() => expect(queryClient.isFetching()).toBe(0))
       expect(seen).toHaveLength(0)
     })
@@ -1307,8 +1202,6 @@ describe('AuditPage', () => {
         await screen.findByText(zhCN.errors.client.httpForbidden),
       ).toBeInTheDocument()
 
-      // The old failure belongs to the export that already settled; a
-      // refused apply must not leave it standing beside the field error.
       fireEvent.change(screen.getByLabelText(zhCN.audit.filters.since), {
         target: { value: '2026-03-08T02:30' },
       })
@@ -1345,8 +1238,6 @@ describe('AuditPage', () => {
         await screen.findByText(zhCN.errors.client.httpForbidden),
       ).toBeInTheDocument()
 
-      // Reset returns the toolbar to its empty state, so the failure of an
-      // export the operator abandoned must not outlive it.
       await user.click(
         screen.getByRole('button', { name: zhCN.audit.filters.reset }),
       )
@@ -1391,10 +1282,8 @@ describe('AuditPage', () => {
         Number(minute),
         Number(second),
       )
-      // The name is the export's own instant, read in UTC.
       expect(Math.abs(instant - Date.now())).toBeLessThan(5 * 60 * 1000)
       expect(await capture.blobs()[0]!.text()).toBe(content)
-      // A download is its own confirmation; the page adds none.
       expect(screen.queryByRole('alert')).toBeNull()
     })
 
@@ -1423,9 +1312,6 @@ describe('AuditPage', () => {
       await waitForCondition(() => expect(calls).toBe(1))
       expect(control).toHaveAttribute('aria-busy', 'true')
 
-      // A second activation while the first is in flight issues nothing.
-      // Let the queries go quiet first, so a stray call has had its chance
-      // to reach the backend before the count is asserted.
       fireEvent.click(control)
       await waitFor(() => expect(queryClient.isFetching()).toBe(0))
       expect(calls).toBe(1)
@@ -1461,8 +1347,6 @@ describe('AuditPage', () => {
       await waitForCondition(() => {
         expect(control).toHaveAttribute('aria-busy', 'true')
       })
-      // In flight the control is unavailable in addition to busy, and the
-      // keyboard user who started the export keeps their place.
       expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(control).toHaveFocus()
 
@@ -1497,8 +1381,6 @@ describe('AuditPage', () => {
         target: { value: '2026-10-15T09:30' },
       })
 
-      // The reason is the hint the page already renders; the control stays
-      // reachable so its description can be read where the operator stands.
       expect(control).toHaveAttribute('aria-disabled', 'true')
       expect(control).toHaveAccessibleDescription(
         `${zhCN.audit.export.note} ${zhCN.audit.export.applyFirst}`,
@@ -1506,7 +1388,6 @@ describe('AuditPage', () => {
       control.focus()
       expect(control).toHaveFocus()
 
-      // Click, Enter and Space each reach the guard and issue nothing.
       await user.click(control)
       await user.keyboard('{Enter}')
       await user.keyboard(' ')
@@ -1544,7 +1425,6 @@ describe('AuditPage', () => {
         expect(await screen.findByText(text)).toBeInTheDocument()
         expect(control).not.toHaveAttribute('aria-disabled', 'true')
         expect(control).not.toHaveAttribute('aria-busy')
-        // The failure belongs to the action, not to the read's placeholder.
         expect(screen.queryByText(zhCN.audit.error.title)).toBeNull()
       },
     )
