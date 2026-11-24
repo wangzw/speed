@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { useState } from 'react'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -466,7 +467,7 @@ describe('PasswordResetScreen', () => {
         screen.getByRole('button', { name: zhCN.passwordReset.send }),
       ).not.toHaveAttribute('aria-disabled', 'true')
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -721,7 +722,7 @@ describe('PasswordResetScreen', () => {
       expect(resend).toHaveAttribute('aria-disabled', 'true')
       expect(resend).toHaveAccessibleDescription(waitSentence(3))
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1125,7 +1126,7 @@ describe('PasswordResetScreen', () => {
         identifier: MAIL,
       })
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -1199,7 +1200,7 @@ describe('PasswordResetScreen', () => {
       expect(stableSentence(alert)).toHaveTextContent(waitSentence(3))
       expect(screen.getByRole('alert')).toBe(alert)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
