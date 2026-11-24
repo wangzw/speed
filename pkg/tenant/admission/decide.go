@@ -14,25 +14,12 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// decide is the judgement over one request. The rows are tried in this order and
-// the first that applies ends it; the order is the design's, and several of the
-// properties the layer guarantees are properties of it:
-//
-//   - every refusal of a request that is not a member is the same 404, because
-//     the strength rows come after the membership row, so a caller that is not
-//     a member never meets a prompt only a member would meet;
-//   - an impersonation and a service account still go through the membership
-//     row, which is what makes a removed member's impersonation stop working;
-//   - an account let in by the permission model leaves the judgement there, and
-//     the tenant's strength requirements, which bind the tenant's members, are
-//     not asked of it.
+// decide is the judgement over one request. The rows are tried in this order and the first that
+// applies ends it; several of the layer's guarantees are properties of the order:
 func (l *layer) decide(ctx context.Context) decision {
 	id, identified := authn.FromContext(ctx)
 	owner, inTenant := tenant.FromContext(ctx)
 
-	// No tenant: the request is not about one. Rows that follow need a tenant
-	// to compare against, so an impersonation, which exists to be confined to
-	// one, is the single thing refused here.
 	if !inTenant {
 		if _, scoped := id.Scope(); identified && scoped {
 			return decision{outcome: scopeMismatch}
@@ -45,9 +32,6 @@ func (l *layer) decide(ctx context.Context) decision {
 		case authn.AccessOpen, authn.AccessOptional:
 			return decision{outcome: admitted}
 		}
-		// Required, or a level the gateway never recorded: there is no
-		// gateway in front of this endpoint, or it does not guard it. That is
-		// a defect of the assembly and the request is refused for it.
 		return decision{outcome: noIdentity}
 	}
 
@@ -60,8 +44,6 @@ func (l *layer) decide(ctx context.Context) decision {
 	return j.judge(scoped)
 }
 
-// judging is one request past the rows that need no reads. It remembers what it
-// read, so that the two rows that both need the provider's tenant ask once.
 type judging struct {
 	*layer
 	ctx    context.Context
@@ -83,21 +65,12 @@ func (j *judging) judge(scoped bool) decision {
 		return j.outsider(scoped)
 	}
 
-	// An impersonation was authenticated strongly by the account that began
-	// it, and a service account can neither step up nor sign in through an
-	// identity provider; asking either for what it cannot give would end every
-	// integration of a tenant the moment it switched a requirement on.
 	if j.id.Impersonating() || slices.Contains(j.id.Methods(), authn.MethodClientSecret) {
 		return decision{outcome: admitted}
 	}
 	return j.requirements()
 }
 
-// outsider decides a request of an account that is not a member: the permission
-// model is asked when there is one and the identity is not an impersonation,
-// and the answer is a refusal unless it says otherwise. An impersonation is
-// confined to its tenant and has no way in beside membership; only a caller
-// acting as itself may be let in.
 func (j *judging) outsider(scoped bool) decision {
 	if j.decider == nil || scoped {
 		return decision{outcome: notMember}
@@ -112,9 +85,6 @@ func (j *judging) outsider(scoped bool) decision {
 	return decision{outcome: notMember}
 }
 
-// requirements holds a member to what its tenant asks of how its members
-// authenticated: multi-factor first, then a sign-in through one of the tenant's
-// own identity providers.
 func (j *judging) requirements() decision {
 	mfa, err := j.mfaBinds()
 	if err != nil {
@@ -130,10 +100,8 @@ func (j *judging) requirements() decision {
 		}
 	}
 
-	// The sign-in requirement follows the same revision rule as multi-factor:
-	// turning it on binds the sessions established at or after the write, and
-	// one already authenticated keeps working until its next sign-in. A session
-	// the rule exempts passes without the provider check.
+	// The sign-in requirement follows the multi-factor revision rule: turning it
+	// on binds sessions established at or after the write.
 	sso, err := j.ssoBinds()
 	if err != nil {
 		return unavailableFor(err)
@@ -141,12 +109,6 @@ func (j *judging) requirements() decision {
 	if !sso {
 		return decision{outcome: admitted}
 	}
-	// The tenants the platform exempts are not held to this row. Its question
-	// is whether the session signed in through one of THIS tenant's own
-	// identity providers, and a tenant that has none can never answer yes: the
-	// platform's own tenant hosts the administration surface and its
-	// administrators, so holding it to the row would refuse every request
-	// there and close the console. The membership rows above still bind.
 	if slices.Contains(j.ssoExemptTenants, string(j.tenant)) {
 		return decision{outcome: admitted}
 	}
@@ -164,9 +126,6 @@ func (j *judging) requirements() decision {
 	if !exempt {
 		return j.stepUp(stepUpSSO)
 	}
-	// The emergency pass lifts the sign-in requirement and keeps the factor
-	// one: a tenant locked out of its provider is not a tenant whose members
-	// may then come in with a password alone.
 	short, err := j.belowMultiFactor()
 	if err != nil {
 		return unavailableFor(err)
@@ -185,10 +144,6 @@ func unavailableFor(err error) decision {
 	return decision{outcome: unavailable, cause: err}
 }
 
-// isMember reads whether the effective account belongs to the tenant, from the
-// memory when it holds an answer. For an impersonation the account is the
-// impersonated one, whose membership was checked when the impersonation began
-// and is checked again here, so that removing the member ends the impersonation.
 func (j *judging) isMember() (bool, error) {
 	key := cacheKey{account: j.id.Account(), tenant: j.tenant}
 	if v, found := j.cache.get(kindMember, key, j.ttl); found {
@@ -203,7 +158,6 @@ func (j *judging) isMember() (bool, error) {
 	return v, nil
 }
 
-// mayEnter asks the permission model whether a non-member may enter the tenant.
 func (j *judging) mayEnter() (bool, error) {
 	key := cacheKey{account: j.id.Account(), tenant: j.tenant}
 	if v, found := j.cache.get(kindAdmit, key, j.ttl); found {
@@ -222,9 +176,6 @@ func (j *judging) mayEnter() (bool, error) {
 	return allowed, nil
 }
 
-// askDecider asks a Decider, taking a panic in it for an error, which is the
-// contract the question is put under: an action is not carried out on a
-// Decider that failed, whichever way it failed.
 func askDecider(ctx context.Context, d authn.Decider, q authn.Decision) (allowed bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -234,8 +185,6 @@ func askDecider(ctx context.Context, d authn.Decider, q authn.Decision) (allowed
 	return d.Decide(ctx, q)
 }
 
-// ssoExempt reads whether the member holds the emergency pass. It is read only
-// for a request that failed the sign-in requirement.
 func (j *judging) ssoExempt() (bool, error) {
 	key := cacheKey{account: j.id.Account(), tenant: j.tenant}
 	if v, found := j.cache.get(kindExempt, key, j.ttl); found {
@@ -246,21 +195,11 @@ func (j *judging) ssoExempt() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("reading the membership row: %w", err)
 	}
-	// A membership that is not there, or is suspended, reads as no pass.
 	exempt := present && m.Active && m.SSOExempt
 	j.cache.put(kindExempt, key, exempt, j.ttl, epoch)
 	return exempt, nil
 }
 
-// belowMultiFactor reports whether the effective assurance level falls short of
-// multi-factor.
-//
-// An identity whose multi-factor level is an identity provider's declaration
-// keeps it only in the tenant that provider belongs to: the provider's
-// administrator is trusted for the tenant's own members, and a tenant that
-// requires multi-factor has not agreed to take another tenant's administrator's
-// word. Where the registry of providers is absent nobody's declaration can be
-// placed, so none counts.
 func (j *judging) belowMultiFactor() (bool, error) {
 	level := j.id.Assurance()
 	if level >= authn.AssuranceMulti && j.id.AssuranceFromIDP() {
@@ -275,13 +214,6 @@ func (j *judging) belowMultiFactor() (bool, error) {
 	return level < authn.AssuranceMulti, nil
 }
 
-// providerOwnsSession reports whether the identity provider the session was
-// signed in through belongs to this tenant. No provider, no registry to ask and
-// a provider the registry does not know all read as no.
-//
-// The registry answers an unknown provider with an empty tenant and no error; an
-// error is a failure to read, which refuses the request rather than reading as
-// an answer.
 func (j *judging) providerOwnsSession() (bool, error) {
 	if j.providerRead {
 		return j.providerOwns, j.providerErr
@@ -300,42 +232,19 @@ func (j *judging) providerOwnsSession() (bool, error) {
 	return j.providerOwns, nil
 }
 
-// errSettingLayer is the failure of a tenant the settings cannot name a layer
-// for.
 var errSettingLayer = errors.New("the tenant identifier is outside the settings' identifier domain")
 
-// mfaBinds reports whether the tenant's multi-factor requirement applies to
-// this session. It is the revision rule of binds applied to its key.
 func (j *judging) mfaBinds() (bool, error) {
 	return j.binds(requireMFAKey)
 }
 
-// ssoBinds reports whether the tenant's sign-in requirement applies to this
-// session. It is the revision rule of binds applied to its key.
 func (j *judging) ssoBinds() (bool, error) {
 	return j.binds(requireSSOKey)
 }
 
-// binds reports whether the requirement named by key applies to this session.
-//
-// Turning the policy on applies to members at their next sign-in, not to
-// sessions that already exist: a session authenticated before the moment the
-// effective value was written is exempt for its lifetime, and one established
-// at or after that moment must meet the requirement. The boundary is per layer.
-// The effective value is the platform row's OR the tenant row's, and each
-// enabled layer contributes its own row's revision; the session is exempt only
-// when it predates every one of them, so a requirement that was already on at
-// the platform is not lifted by a later tenant write. A tenant row of false
-// contributes nothing, which is what leaves the platform's revision standing.
-//
-// The comparison is at whole seconds. A row's write time carries sub-second
-// precision while a session's authentication time is whole seconds, so
-// comparing the instants directly would let a write in the same second as the
-// session's sign-in exempt that session. The session is exempt only when its
-// second is before the boundary's second.
-//
-// An enabled layer whose revision cannot be read does not exempt the session:
-// a missing revision must not silently weaken a requirement the layer holds on.
+// binds reports whether the requirement named by key applies to this session. A session authenticated
+// before the effective value's write is exempt; the boundary is the earliest enabled layer's revision,
+// compared at whole seconds. An enabled layer whose revision cannot be read does not exempt.
 func (j *judging) binds(key string) (bool, error) {
 	if j.store == nil {
 		return false, nil
@@ -345,8 +254,6 @@ func (j *judging) binds(key string) (bool, error) {
 	}
 	tenantLayer := settings.ForTenant(string(j.tenant))
 
-	// One read answers both layers from one snapshot: the effective value and
-	// the revision it was written at cannot then come from two states.
 	layers, err := settings.ReadLayers[bool](j.store, key, settings.Global(), tenantLayer)
 	if err != nil {
 		return false, fmt.Errorf("reading %s: %w", key, err)
@@ -358,9 +265,6 @@ func (j *judging) binds(key string) (bool, error) {
 		boundary time.Time
 	)
 
-	// The platform layer is the floor every tenant stands on. Its value is the
-	// declared default when it holds no row, and a default of true has no row
-	// and so no revision: such a requirement binds every session.
 	if platform.Value {
 		enabled = true
 		if !platform.Present || platform.WrittenAt.IsZero() {
@@ -369,8 +273,6 @@ func (j *judging) binds(key string) (bool, error) {
 		boundary = platform.WrittenAt
 	}
 
-	// The tenant layer contributes only through its own explicit row: a tenant
-	// row of false leaves the platform's revision to decide.
 	if tenantRow.Present && tenantRow.Value {
 		enabled = true
 		if tenantRow.WrittenAt.IsZero() {
@@ -386,24 +288,17 @@ func (j *judging) binds(key string) (bool, error) {
 	}
 	authenticated := j.id.AuthTime()
 	if authenticated.IsZero() {
-		// The gateway stamps a non-zero time on every identity it admits, so a
-		// zero one here is a broken assembly. Holding the session to the
+		// A zero time is a broken assembly; holding the session to the
 		// requirement is the safe reading.
 		return true, nil
 	}
 	return authenticated.Unix() >= boundary.Unix(), nil
 }
 
-// nameableLayer reports whether the settings can name a layer for the tenant: the
-// settings refuse an empty identifier and one with a blank or a control character
-// by panicking, and a request must not take that panic.
 func nameableLayer(id string) bool {
 	return id != "" && strings.IndexFunc(id, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) < 0
 }
 
-// checkTTL reads how long an answer may be remembered. It is an adjustment and
-// not a requirement: where it cannot be read, or holds a value outside its
-// domain, the declared default is used and the reading is reported.
 func (l *layer) checkTTL() time.Duration {
 	if l.store == nil {
 		return defaults.CheckTTL
@@ -422,10 +317,6 @@ func (l *layer) checkTTL() time.Duration {
 	return ttl
 }
 
-// reportTTL writes the Error line for a lifetime read as its default. The
-// setting is read on every request, so the same fault is written once and
-// again only when it changes or has been cleared in between; an empty problem
-// clears it.
 func (l *layer) reportTTL(problem, detail string) {
 	l.mu.Lock()
 	changed := detail != l.reportedTTL

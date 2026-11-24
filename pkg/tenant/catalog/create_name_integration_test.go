@@ -12,12 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// Two creations of different identifiers onto one name at once both find it
-// free, and the second insert meets the column's unique index. That is the same
-// conflict the check inside the write reports, and the caller is owed the same
-// answer for it: ErrNameConflict naming the holder, not the driver's
-// constraint violation. Names are immutable, so creation is the only path
-// that can race for one.
+// Two creations of different identifiers onto one name at once both find it free, and
+// the second insert meets the column's unique index.
 func TestAConcurrentNameConflictAtCreationIsReportedAsOne(t *testing.T) {
 	r := rosterOverPostgres(t)
 	ctx := context.Background()

@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// provisioningProduct assembles the product with the transaction-aware
-// stand-ins a provisioning case drives.
 func provisioningProduct() (*product, *fakeTxCatalog, *fakeTxManager, *fakeMembershipWriter) {
 	roster, manager, writer := &fakeTxCatalog{}, &fakeTxManager{}, &fakeMembershipWriter{}
 	return &product{
@@ -27,8 +25,8 @@ func provisioningProduct() (*product, *fakeTxCatalog, *fakeTxManager, *fakeMembe
 	}, roster, manager, writer
 }
 
-// A user account's provisioning writes the tenant row, the membership, the
-// role, its grants and the binding through the account's transaction.
+// TestProvisionAccountWritesTheFivePiecesOnTheAccountTransaction checks the five
+// writes on the account's transaction.
 func TestProvisionAccountWritesTheFivePiecesOnTheAccountTransaction(t *testing.T) {
 	tx := &gorm.DB{}
 	p, roster, manager, writer := provisioningProduct()
@@ -101,8 +99,8 @@ func TestProvisionAccountWritesNothingForAServiceAccount(t *testing.T) {
 	}
 }
 
-// A tenant the roster already holds is the idempotent replay: the remaining
-// steps still run, so a failure part-way through is completed on the next call.
+// TestProvisionAccountReplaysOnAnExistingTenant checks that an existing tenant
+// row is an idempotent replay and the remaining steps still run.
 func TestProvisionAccountReplaysOnAnExistingTenant(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	roster.createErr = tenant.ErrTenantExists
@@ -118,11 +116,8 @@ func TestProvisionAccountReplaysOnAnExistingTenant(t *testing.T) {
 	}
 }
 
-// A name another tenant holds is this module's exported refusal, and it wraps
-// the roster's own error so a caller may match either. It also carries
-// authn.ErrAccountExists, which is what the account module passes through: a
-// login therefore answers the name as taken rather than as an unavailable
-// dependency.
+// TestProvisionAccountNameConflictReturnsTheSentinel checks that a held name returns
+// this module's sentinel, wrapping the roster's error and authn.ErrAccountExists.
 func TestProvisionAccountNameConflictReturnsTheSentinel(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	roster.createErr = tenant.ErrNameConflict
@@ -159,11 +154,8 @@ func TestProvisionAccountStopsOnAnyOtherFailure(t *testing.T) {
 	}
 }
 
-// Every transaction-aware write hands its after-commit work to the collector on
-// the context the account module supplied. The collector runs the tenant row,
-// the membership, the role and the binding; the grant set is empty here, so its
-// write answers a nil closure exactly as the production write does, and the
-// creation's audit row is the collector's own addition.
+// TestProvisionAccountRegistersEveryAfterCommitClosure checks that every
+// transaction-aware write hands its after-commit work to the collector.
 func TestProvisionAccountRegistersEveryAfterCommitClosure(t *testing.T) {
 	p, roster, manager, writer := provisioningProduct()
 	ctx, after := provisioning.WithAfterCommit(context.Background())
@@ -191,9 +183,8 @@ func TestProvisionAccountRegistersEveryAfterCommitClosure(t *testing.T) {
 	}
 }
 
-// The creation's audit row is written after the account's transaction commits,
-// exactly once: a replay that finds the tenant row already there records
-// nothing.
+// TestProvisionAccountWritesTheCreationAuditAfterTheCommit checks that the row
+// is written once, after the commit, and not on a replay.
 func TestProvisionAccountWritesTheCreationAuditAfterTheCommit(t *testing.T) {
 	p, roster, _, _ := provisioningProduct()
 	facts := provisioning.AccountFacts{
@@ -227,8 +218,8 @@ func TestProvisionAccountWritesTheCreationAuditAfterTheCommit(t *testing.T) {
 	}
 }
 
-// A deletion clears the account's policy and writes the tombstone through the
-// account's transaction.
+// TestProvisionAccountDeletionWritesThroughTheAccountTransaction checks that a deletion
+// clears the policy and writes the tombstone in the account's transaction.
 func TestProvisionAccountDeletionWritesThroughTheAccountTransaction(t *testing.T) {
 	tx := &gorm.DB{}
 	p, roster, manager, _ := provisioningProduct()
@@ -265,8 +256,8 @@ func TestProvisionAccountDeletionWritesThroughTheAccountTransaction(t *testing.T
 	}
 }
 
-// A builtin tenant-admin role and an absent tenant row are both tolerated: the
-// tombstone makes the first harmless, and the second is no work.
+// TestProvisionAccountDeletionToleratesABuiltinRoleAndAMissingRow checks that a
+// builtin role refusal and an absent row are both tolerated.
 func TestProvisionAccountDeletionToleratesABuiltinRoleAndAMissingRow(t *testing.T) {
 	p, roster, manager, _ := provisioningProduct()
 	manager.deleteRoleErr = authz.ErrBuiltinRole

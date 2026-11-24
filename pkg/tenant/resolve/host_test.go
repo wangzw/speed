@@ -25,49 +25,24 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases that drive the resolution layer stand on a real assembly: the entry
-// point module itself, listening on a port the operating system picks, with
-// this module's own descriptor registered beside it. What the layer answers is
-// read off a socket, so the routing, the response shape and the chain order are
-// the entry point's and not a stand-in's. The roster, the logger and the
-// responder are stand-ins for the modules that deliver those capabilities.
-
-// waitLimit bounds every wait in these cases, so that a startup which never
-// reaches Serve fails the case with a message instead of the whole binary at the
-// global timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// guardedEndpoint is the one endpoint every assembly declares and the layer
-// guards.
 const guardedEndpoint = "public"
 
-// hostOptions is what one assembly is built from.
 type hostOptions struct {
-	// roster answers the resolution layer's lookups.
-	roster tenant.Catalog
-	// extractor is the extractor the configuration selects. Empty selects the
-	// header extractor.
+	roster    tenant.Catalog
 	extractor string
-	// responder, when set, is delivered as the ErrorResponder capability, so
-	// that it decides the shape of every error response.
 	responder speedhttp.ErrorResponder
-	// register runs in the Init callback of a module that depends on the entry
-	// point, with the guarded endpoint. It is where a case puts its routes and
-	// its own layers, the way a real registrant does.
-	register func(reg *core.Registry, ep speedhttp.Endpoint) error
+	register  func(reg *core.Registry, ep speedhttp.Endpoint) error
 }
 
-// host is one assembly that is serving.
 type host struct {
 	addr string
 	logs *recorder
 }
 
-// startHost builds an assembly from opts and runs it until the entry point is
-// serving. The run is ended when the case is, and a run that ends with an error
-// fails the case.
 func startHost(t *testing.T, opts hostOptions) *host {
 	t.Helper()
 	extractor := opts.extractor
@@ -158,9 +133,6 @@ func startHost(t *testing.T, opts hostOptions) *host {
 	return &host{addr: listening[0].attrs["address"], logs: logs}
 }
 
-// loadReader loads the configuration this assembly runs on through the real
-// loader: the entry point declares one endpoint on a port of the system's
-// choosing, and this module guards it with the extractor the case names.
 func loadReader(t *testing.T, extractor string) config.Reader {
 	t.Helper()
 	document := fmt.Sprintf(`{
@@ -179,8 +151,6 @@ func loadReader(t *testing.T, extractor string) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "TENANTRESOLVETEST", DefaultLocator: "file:" + path}},
 	})
-	// The declarations reach the load as the resources of registered modules,
-	// which is the only way one ever reaches it.
 	reg.Register(core.Module{Name: speedhttp.ModuleName, Resources: speedhttp.Module().Resources})
 	reg.Register(core.Module{Name: ModuleName, Resources: Module().Resources})
 
@@ -191,15 +161,12 @@ func loadReader(t *testing.T, extractor string) config.Reader {
 	return reader
 }
 
-// response is what a client got back.
 type response struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// send issues one request over a connection of its own and reads the response
-// to its end.
 func (h *host) send(t *testing.T, method, path string, header map[string]string) response {
 	t.Helper()
 	req, err := nethttp.NewRequestWithContext(t.Context(), method, "http://"+h.addr+path, nil)
@@ -225,8 +192,6 @@ func (h *host) send(t *testing.T, method, path string, header map[string]string)
 	return response{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// get is send for a GET carrying this tenant header. An empty name sends no
-// tenant header at all.
 func (h *host) get(t *testing.T, path, tenantName string) response {
 	t.Helper()
 	var header map[string]string
@@ -236,9 +201,6 @@ func (h *host) get(t *testing.T, path, tenantName string) response {
 	return h.send(t, nethttp.MethodGet, path, header)
 }
 
-// requireProblem asserts the default error shape: this status, the problem
-// details media type, and a body holding exactly the members a default response
-// writes for a Problem that carries a status and nothing else.
 func requireProblem(t *testing.T, got response, status int) {
 	t.Helper()
 	if got.status != status {
@@ -266,16 +228,12 @@ func requireProblem(t *testing.T, got response, status int) {
 	}
 }
 
-// record is one log record as a case reads it: the level, the message, and
-// every attribute, bound or passed, rendered as text.
 type record struct {
 	level slog.Level
 	msg   string
 	attrs map[string]string
 }
 
-// recorder is a slog handler that keeps what it is handed. Handlers derived from
-// it share its storage.
 type recorder struct {
 	mu      *sync.Mutex
 	records *[]record
@@ -316,8 +274,6 @@ func (r *recorder) all() []record {
 	return append([]record(nil), *r.records...)
 }
 
-// withMessage returns the records written with a message that starts with
-// prefix.
 func (r *recorder) withMessage(prefix string) []record {
 	var out []record
 	for _, rec := range r.all() {
@@ -328,10 +284,6 @@ func (r *recorder) withMessage(prefix string) []record {
 	return out
 }
 
-// standInLogger delivers the Logger capability over a recorder. Every logger it
-// hands out carries the name it was asked for as the attribute "logger", which
-// is how a case tells the logger a request's context carries — the entry
-// point's — from the one this module holds for itself.
 type standInLogger struct{ logs *recorder }
 
 func (l standInLogger) Named(name string) *slog.Logger {
@@ -342,16 +294,11 @@ func (standInLogger) Redaction() log.Redaction { return noRedaction{} }
 
 var _ log.Logger = standInLogger{}
 
-// noRedaction takes registrations and masks nothing: what these cases observe of
-// the Logger capability is where records go, not what is masked.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// fakeRoster answers ByName and Get from fixed tables, or with a fixed error.
-// The resolution layer tries ByName and then Get, and the path guard calls
-// both.
 type fakeRoster struct {
 	byName map[string]tenant.Tenant
 	byID   map[tenant.ID]tenant.Tenant

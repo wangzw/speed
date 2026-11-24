@@ -10,43 +10,20 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The tests in this file are about an instance a host supplies for this module,
-// to stand where the resolver its New builds would stand. Prepare and New do not
-// run for it, and every callback from Migrate to Close is handed it. The
-// callbacks recognise only the resolver this module builds, so what these tests
-// observe is what an instance of any other type is left to.
-
-// hostResolution is an instance of the host's own that delivers the capability
-// and is not the resolver this module builds. It has no behaviour of its own:
-// its methods are the nil interface's.
 type hostResolution struct{ tenant.Resolution }
 
-// wrappedResolver is a Resolution a host wrote around the resolver this module
-// builds: it delivers the capability and is not the type the callbacks act on.
-// The product is embedded, so its unexported methods are promoted along with
-// Register, and a callback that acted on whatever carries them would act on the
-// resolver inside.
 type wrappedResolver struct{ *resolver }
 
 var _ tenant.Resolution = wrappedResolver{}
 
-// quietResolver is a resolver selecting the header extractor whose startup line
-// goes nowhere, so that a case that seals one does not write to the process's
-// standard output.
 func quietResolver() *resolver {
 	r := newResolver(settings{extractor: HeaderExtractor, header: "X-Tenant"}, nil)
 	r.logger = slog.New(slog.DiscardHandler)
 	return r
 }
 
-// TestCallbacksActOnTheModulesOwnProduct is the control of the case below:
-// handed the resolver this module builds, Migrate opens its registration window,
-// Init goes on to look for the entry point it registers the layer on, and Start
-// shuts the window and settles the extractor. Without it the observations made
-// on a supplied instance could not move.
-//
-// The registry holds no entry point, so Init over the product ends in the
-// sentinel that says so, which is how the case sees Init reach it.
+// TestCallbacksActOnTheModulesOwnProduct checks that Migrate, Init and Start act on
+// the module's own resolver.
 func TestCallbacksActOnTheModulesOwnProduct(t *testing.T) {
 	m := Module()
 	ctx := context.Background()
@@ -73,15 +50,8 @@ func TestCallbacksActOnTheModulesOwnProduct(t *testing.T) {
 	}
 }
 
-// TestCallbacksLeaveASuppliedInstanceAlone pins that Migrate, Init and Start do
-// nothing for an instance the host supplied: they open no window, register no
-// layer and settle no extractor, whatever the instance carries.
-//
-// The wrapper is the sharper of the two. It carries the resolver's own methods,
-// so a callback that took any value having them for its product would pass over
-// the instance of a type of the host's own and still act here. Each observation
-// is made on a resolver nobody else has touched, so a change in it can only have
-// come from the callback just called.
+// TestCallbacksLeaveASuppliedInstanceAlone checks that the callbacks do nothing
+// for a host-supplied instance, even one carrying the resolver's methods.
 func TestCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 	m := Module()
 	ctx := context.Background()
@@ -109,7 +79,6 @@ func TestCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 		if inner.openWindow {
 			t.Error("Migrate opened the registration window of the resolver inside the wrapper")
 		}
-		// A callback that acted would fail here for want of an entry point.
 		if err := m.Init(ctx, core.New(), wrapped); err != nil {
 			t.Fatalf("Init over a wrapper: %v", err)
 		}
@@ -117,8 +86,6 @@ func TestCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 			t.Error("Init registered the built-in extractors on the resolver inside the wrapper")
 		}
 
-		// The owner opens the window of the resolver it built and fills it, and
-		// Start has to leave both as they are.
 		inner.open()
 		inner.registerBuiltins()
 		if err := m.Start(ctx, nil, wrapped); err != nil {

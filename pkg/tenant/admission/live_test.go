@@ -30,16 +30,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/resolve"
 )
 
-// The cases built on this file hold what only the whole chain can decide: where
-// the layer lands among the layers outside and inside it, which requests the
-// real gateway lets reach it, and that its 404 is the resolution layer's. The
-// entry point, the gateway, the resolution layer and the admission layer are the
-// real modules on a loopback port the system picks, assembled by the real
-// registry. The roster, the memberships, the credential backend and the audit,
-// rate-limiting and authorization layers are stand-ins: the last three are
-// layers that declare what the real ones declare, so that the placement the
-// constraints give is the one under test.
-
 const (
 	acme   = "acme"
 	globex = "globex"
@@ -48,13 +38,10 @@ const (
 	carol  = authn.AccountID("carol")
 )
 
-// waitLimit bounds every wait, so that a startup that never reaches Serve fails
-// the case with a message and not the binary at the global timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// record is a log record a case reads back.
 type record struct {
 	level slog.Level
 	msg   string
@@ -109,14 +96,11 @@ type namedLogger struct{ logger *slog.Logger }
 func (l namedLogger) Named(string) *slog.Logger { return l.logger }
 func (namedLogger) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes the redaction registrations of the gateway and masks nothing:
-// what these cases read is the records, not their masking.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// rosterStub is the tenant roster: name is identifier, both tenants served.
 type rosterStub struct{ tenant.Catalog }
 
 func (rosterStub) ByName(_ context.Context, name string) (tenant.Tenant, bool, error) {
@@ -131,7 +115,6 @@ func (rosterStub) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, err
 	return tenant.Tenant{}, false, nil
 }
 
-// membersStub is the account module's memberships.
 type membersStub struct {
 	authn.Memberships
 	members map[string]bool
@@ -141,7 +124,6 @@ func (m membersStub) IsMember(_ context.Context, id authn.AccountID, tenantID st
 	return m.members[string(id)+"@"+tenantID], nil
 }
 
-// credentials is the credential backend: the bearer token names the caller.
 type credentials struct{}
 
 func (credentials) Name() string { return "stub" }
@@ -158,14 +140,11 @@ func (credentials) Verify(_ context.Context, c authn.Credential) authn.Verdict {
 		AuthTime:  time.Now(),
 	}
 	if c.Value == "impersonating" {
-		// bob acting as alice, confined to acme.
 		p.Account, p.Actor, p.Session, p.Scope = alice, bob, "session-1", acme
 	}
 	return authn.Authenticated(p)
 }
 
-// layerModule is a module that registers one layer of its own on an endpoint,
-// declaring what a real layer of that kind declares.
 func layerModule(name, endpoint string, mw speedhttp.Middleware) core.Module {
 	mw.Name = name
 	mw.Handler = func(c *gin.Context) { c.Next() }
@@ -191,32 +170,19 @@ func layerModule(name, endpoint string, mw speedhttp.Middleware) core.Module {
 	}
 }
 
-// chain is one assembly, and what a case varies in it.
 type chain struct {
-	// noAudit and noLimiter leave out the layers that stand for those
-	// capabilities.
 	noAudit, noLimiter bool
-	// mountEndpoint is written to the gateway's ordinary mount endpoint when
-	// set.
-	mountEndpoint string
-	// admissionEndpoints is the admission layer's list; the default guards
-	// "public" alone.
+	mountEndpoint      string
 	admissionEndpoints string
-	// noAdmission leaves the admission layer out.
-	noAdmission bool
-	// lateOrders makes the audit and rate-limiting stand-ins carry an Order
-	// that prefers the inner edge of their own stage, so that where they land
-	// relative to admission is the stage order's doing rather than an Order.
-	lateOrders bool
+	noAdmission        bool
+	lateOrders         bool
 }
 
-// served is a running assembly.
 type served struct {
 	logs      *recorder
 	addresses map[string]string
 }
 
-// body is the configuration the assembly loads.
 func (c chain) body() string {
 	admitted := c.admissionEndpoints
 	if admitted == "" {
@@ -234,10 +200,6 @@ func (c chain) body() string {
 	}`, mount, admitted)
 }
 
-// run builds the assembly and runs it. With use set it waits for Serve and hands
-// the case the addresses; the run is ended when the case is. It returns what the
-// run returned when it ended before it served, which is how a startup failure
-// is read.
 func (c chain) run(t *testing.T, use func(s *served)) error {
 	t.Helper()
 	gateModule := gate.Module()
@@ -303,8 +265,6 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 			Order:    limiterOrder,
 		}))
 	}
-	// The authorization layer of the design: it shares admission's stage and
-	// points at the admission anchor, so the constraint is what puts it inside.
 	reg.Register(layerModule("authorization", "public", speedhttp.Middleware{
 		Provides: []core.Token{(*authorization)(nil)},
 		Stage:    speedhttp.StageAuthorize,
@@ -388,8 +348,6 @@ func (c chain) run(t *testing.T, use func(s *served)) error {
 	return nil
 }
 
-// authorization is the anchor of the authorization layer, which does not exist
-// yet; only its placement is under test.
 type authorization interface{ authorizing() }
 
 func reached(c *gin.Context) {
@@ -405,7 +363,6 @@ func reached(c *gin.Context) {
 	c.String(nethttp.StatusOK, "reached as %s in %q", who, tenantID)
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	header nethttp.Header
@@ -437,8 +394,6 @@ func (s *served) get(t *testing.T, endpoint, path, token, tenantName string) rep
 	return reply{status: resp.StatusCode, header: resp.Header.Clone(), body: string(body)}
 }
 
-// chainOf returns the layer names of one endpoint's chain listing, outermost
-// first, with the two layers the entry point puts outside everything left out.
 func chainOf(t *testing.T, logs *recorder, endpoint string) []string {
 	t.Helper()
 	for _, rec := range logs.withMessage("an HTTP endpoint's chain is assembled") {
@@ -448,8 +403,6 @@ func chainOf(t *testing.T, logs *recorder, endpoint string) []string {
 		var names []string
 		for _, part := range strings.Split(rec.attrs["chain"], " -> ") {
 			name, _, _ := strings.Cut(part, "(")
-			// The listing prefixes the first layer of a stage with the stage
-			// marker, joined by a space: "[identify] authn.gate".
 			if strings.HasPrefix(name, "[") {
 				_, rest, found := strings.Cut(name, "] ")
 				if found {
@@ -467,16 +420,8 @@ func chainOf(t *testing.T, logs *recorder, endpoint string) []string {
 	return nil
 }
 
-// TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization
-// reads the chain the real entry point assembled, the check the design lists as
-// not yet made: the position is derived from the After entries by the ordering
-// algorithm, and the algorithm was not run against an assembly when it was
-// written down. The authorization stand-in prefers the outermost position. The
-// audit and rate-limiting stand-ins carry the Orders of the real layers in the
-// first case and an Order that prefers to sit inside admission in the second, so
-// that no position asserted here follows from an Order alone; the third and
-// fourth leave one of them out, which is the assembly in which the other's
-// constraint is the only thing placing the layer.
+// TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization checks
+// the layer's place in the assembled chain: inside resolution, audit and rate limiting, outside authorization.
 func TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization(t *testing.T) {
 	for name, c := range map[string]chain{
 		"the Orders of the real layers": {},
@@ -508,10 +453,6 @@ func TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization
 				if at("authorization") <= admitAt {
 					t.Errorf("the chain %v does not put admission outside authorization", names)
 				}
-				// The layers that stand outside admission stand in the order
-				// the stages give: the gateway, then resolution, then rate
-				// limiting in the throttling stage, then the audit capture in
-				// the recording stage inside it.
 				order := []string{"authn.gate", "tenant.resolve"}
 				if !c.noLimiter {
 					order = append(order, "ratelimit")
@@ -532,11 +473,8 @@ func TestTheLayerSitsInsideResolutionAuditAndRateLimitingAndOutsideAuthorization
 	}
 }
 
-// TestTheStageOrderPlacesAdmissionWithoutTheOuterStages holds the placement in
-// an assembly that leaves out the recording stage and the throttling stage. The
-// stage order alone puts admission inside identity and outside authorization, so
-// the layer keeps that position without a constraint of its own and reports no
-// dropped one.
+// TestTheStageOrderPlacesAdmissionWithoutTheOuterStages holds the placement in an
+// assembly that leaves out the recording stage and the throttling stage.
 func TestTheStageOrderPlacesAdmissionWithoutTheOuterStages(t *testing.T) {
 	err := chain{noAudit: true, noLimiter: true}.run(t, func(s *served) {
 		names := chainOf(t, s.logs, "public")
@@ -559,9 +497,8 @@ func TestTheStageOrderPlacesAdmissionWithoutTheOuterStages(t *testing.T) {
 	}
 }
 
-// TestRealRequestsThroughTheWholeChain sends requests over the socket through
-// the real gateway, the real resolution layer and this layer, and reads the
-// answers.
+// TestRealRequestsThroughTheWholeChain checks the answers to real requests sent over
+// the socket through the gateway, the resolution layer and this layer.
 func TestRealRequestsThroughTheWholeChain(t *testing.T) {
 	err := chain{}.run(t, func(s *served) {
 		t.Run("a member is let through to the handler with the identity and the tenant", func(t *testing.T) {
@@ -621,11 +558,8 @@ func headersEqual(a, b nethttp.Header, ignore ...string) bool {
 	return true
 }
 
-// TestAnImpersonationIsOnlyLetIntoTheGuardedEndpointAndImpersonableRoutes holds
-// the contract between the layer and the gateway: the gateway reads the guard
-// and admits an impersonating identity to any route of an endpoint the guard
-// covers and to the routes registered Impersonable elsewhere, and this layer
-// confines it to its tenant there.
+// TestAnImpersonationIsOnlyLetIntoTheGuardedEndpointAndImpersonableRoutes checks that
+// an impersonating identity is confined to its tenant on guarded and impersonable routes.
 func TestAnImpersonationIsOnlyLetIntoTheGuardedEndpointAndImpersonableRoutes(t *testing.T) {
 	err := chain{}.run(t, func(s *served) {
 		t.Run("any route of the guarded endpoint, in its own tenant", func(t *testing.T) {
@@ -654,9 +588,8 @@ func TestAnImpersonationIsOnlyLetIntoTheGuardedEndpointAndImpersonableRoutes(t *
 	}
 }
 
-// TestWithoutTheLayerAnImpersonationReachesImpersonableRoutesAlone holds the
-// control: with no guard in the assembly the gateway admits an impersonating
-// identity to Impersonable routes alone, on every endpoint.
+// TestWithoutTheLayerAnImpersonationReachesImpersonableRoutesAlone holds the control:
+// with no guard in the assembly the gateway admits an impersonation to Impersonable routes alone.
 func TestWithoutTheLayerAnImpersonationReachesImpersonableRoutesAlone(t *testing.T) {
 	err := chain{noAdmission: true}.run(t, func(s *served) {
 		if got := s.get(t, "public", "/orders", "impersonating", acme); got.status == 200 {
@@ -671,10 +604,8 @@ func TestWithoutTheLayerAnImpersonationReachesImpersonableRoutesAlone(t *testing
 	}
 }
 
-// TestTheEndpointTheAuthenticationRoutesAreMountedOnIsNotOneTheLayerGuards
-// reproduces the gateway's refusal to start: the layer answers an impersonating
-// request that has no tenant with 404, so guarding the mount endpoint would leave
-// an impersonating caller unable to end the impersonation.
+// TestTheEndpointTheAuthenticationRoutesAreMountedOnIsNotOneTheLayerGuards checks that
+// guarding the authentication mount endpoint is refused at startup.
 func TestTheEndpointTheAuthenticationRoutesAreMountedOnIsNotOneTheLayerGuards(t *testing.T) {
 	t.Run("the mount endpoint is guarded by the layer", func(t *testing.T) {
 		err := chain{mountEndpoint: "public"}.run(t, nil)

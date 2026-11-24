@@ -22,11 +22,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// moduleBody is the configuration a default drive runs on: one endpoint of the
-// entry point, "api", that the profile routes are mounted on.
 const moduleBody = `{"tenant": {"profile": {"endpoints": ["api"]}}}`
 
-// recordingModule records the product New built.
 func recordingModule(record *any) core.Module {
 	m := Module()
 	inner := m.New
@@ -41,30 +38,16 @@ func recordingModule(record *any) core.Module {
 	return m
 }
 
-// moduleAssembly is one drive. The zero value mounts the routes on "api" with
-// everything the module requires and a stand-in entry point; each field takes
-// one capability away, replaces one stand-in, or records the product New built.
 type moduleAssembly struct {
-	body string
-	// noCatalog, noGuard, noAudit and noVerification leave out the stand-in for
-	// the required capability named.
+	body                                        string
 	noCatalog, noGuard, noAudit, noVerification bool
-	// noRouteGuard leaves out the optional tenant administration guard, which
-	// the mount refuses.
-	noRouteGuard bool
-	// noRouter leaves the entry point out, which fails Init.
-	noRouter bool
-	// router is the entry point stand-in; nil uses one that declares "api".
-	router speedhttp.Router
-	// gate is the optional route-declaration surface.
-	gate authz.Gate
-	// accounts is the optional account read surface the owner resolution uses;
-	// nil leaves the seam out, which is a legal assembly.
-	accounts authn.Accounts
-	// logger is the logging capability; nil uses a recorder.
-	logger *slog.Logger
-	// record, when set, receives the product New built.
-	record *any
+	noRouteGuard                                bool
+	noRouter                                    bool
+	router                                      speedhttp.Router
+	gate                                        authz.Gate
+	accounts                                    authn.Accounts
+	logger                                      *slog.Logger
+	record                                      *any
 }
 
 func (a moduleAssembly) drive(t *testing.T, depth core.Stage, action func(context.Context, *core.Registry) error) error {
@@ -133,17 +116,15 @@ func (a moduleAssembly) drive(t *testing.T, depth core.Stage, action func(contex
 	return reg.Drive(t.Context(), core.Drive{Depth: depth, Participants: names, Action: action})
 }
 
-// This module delivers no capability: it carries no product another module
-// resolves, and the routes are its only product.
+// TestThisModuleDeliversNothing checks that the module provides no capability.
 func TestThisModuleDeliversNothing(t *testing.T) {
 	if provides := Module().Provides; len(provides) != 0 {
 		t.Errorf("Provides = %+v, want none: this module delivers no capability", provides)
 	}
 }
 
-// The required capabilities are each another module's to deliver: a command
-// that brings this one in without the roster, the guard, the audit capability
-// or the verification read fails resolution with ErrMissingProvider.
+// TestAMissingRequiredCapabilityFailsResolution checks that each missing
+// required capability fails resolution with ErrMissingProvider.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]moduleAssembly{
 		"no catalog":      {noCatalog: true},
@@ -191,10 +172,8 @@ func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	}
 }
 
-// A mount with no tenant administration guard is refused: a profile route
-// mounted without it would let a caller authorized in one tenant reach
-// another's profile by naming it, and would let a caller address the platform
-// domain.
+// TestMountRefusesWithoutTheTenantAdministrationGuard checks that a mount with
+// no tenant administration guard is refused.
 func TestMountRefusesWithoutTheTenantAdministrationGuard(t *testing.T) {
 	err := moduleAssembly{noRouteGuard: true}.drive(t, core.StageInit, nil)
 	if err == nil {
@@ -227,9 +206,8 @@ func TestTheEndpointListRefusesShapesItCannotRunOn(t *testing.T) {
 	}
 }
 
-// A real registry mounts the module's whole route surface on the configured
-// endpoint and declares every route open, so the middleware lets a request
-// reach the handler, which makes the decision.
+// TestARealRegistryMountsEveryRouteAndDeclaresThemOpen checks that a real
+// registry mounts every route and declares them open.
 func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 	router := newStubRouter("api")
 	gate := authztest.NewGate()

@@ -19,11 +19,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// A role that may not read the roster's table is refused by the database, and
-// the refusal is no missing table: the table is there, and the fix
-// ErrRosterMissing names — the migration set — would not repair it. A listing
-// of the database's tables leaves out the ones the role holds no privilege on,
-// so the question the roster asks is one a missing privilege does not change.
+// A role that may not read the roster's table is refused by the database
+// without being reported as a missing roster.
 func TestAPermissionRefusedIsNotAMissingRosterOnPostgres(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	// The role is made before the table, so it holds no privilege on it.
@@ -45,7 +42,6 @@ func TestAPermissionRefusedIsNotAMissingRosterOnPostgres(t *testing.T) {
 		},
 		"SetStatus": func() error { return r.SetStatus(ctx, "t_acme", tenant.StatusDisabled) },
 		"Enter": func() error {
-			// An empty snapshot refuses the tenant, so the entry reads its row.
 			r.snap.Store(buildSnapshot(nil))
 			_, err := r.Enter(ctx, "t_acme")
 			return err
@@ -61,8 +57,6 @@ func TestAPermissionRefusedIsNotAMissingRosterOnPostgres(t *testing.T) {
 	}
 }
 
-// rosterCalls is every call of the roster's that reads or writes its table,
-// the entry reading the row an empty snapshot refuses.
 func rosterCalls(ctx context.Context, r *roster) map[string]func() error {
 	return map[string]func() error{
 		"a read of the whole roster": func() error { return r.read(ctx) },
@@ -81,7 +75,6 @@ func rosterCalls(ctx context.Context, r *roster) map[string]func() error {
 	}
 }
 
-// roleOf is the role a locator logs in as, quoted as an identifier.
 func roleOf(t *testing.T, dsn string) string {
 	t.Helper()
 	parsed, err := url.Parse(dsn)
@@ -91,8 +84,6 @@ func roleOf(t *testing.T, dsn string) string {
 	return pgx.Identifier{parsed.User.Username()}.Sanitize()
 }
 
-// createRosterTable creates the roster's table from the migration the module
-// ships for PostgreSQL, over a handle, and writes acme's row into it.
 func createRosterTable(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	applyMigrations(t, handle, "postgres")
@@ -101,11 +92,8 @@ func createRosterTable(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// A role that may use the roster's table but not the schema it is in fails
-// every statement as if the table were not there: PostgreSQL drops a schema the
-// role holds no USAGE on from the path it searches. The table is there all the
-// same, and the migration ErrRosterMissing names would not repair it, so the
-// failure is reported as it stands.
+// A role with no USAGE on the table's schema fails every statement without
+// being reported as a missing roster.
 func TestAMissingSchemaPrivilegeIsNotAMissingRosterOnPostgres(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	asRole := pgtest.DMLRole(t, dsn)
@@ -131,12 +119,8 @@ func TestAMissingSchemaPrivilegeIsNotAMissingRosterOnPostgres(t *testing.T) {
 	}
 }
 
-// The roster's table is looked for where the session's search path names, as
-// its statements look for it: a table in a schema the path names other than
-// public is there, so a refused permission on it is no missing table; and a
-// table only in a schema the path does not name is not where the statements
-// look, so the roster is missing — the migration, run over the same locator,
-// creates it where they look.
+// TestTheRosterIsLookedForWhereTheSearchPathNamesOnPostgres checks that the roster
+// is looked for in every schema the session's search path names, and nowhere else.
 func TestTheRosterIsLookedForWhereTheSearchPathNamesOnPostgres(t *testing.T) {
 	t.Run("a table on a path other than public", func(t *testing.T) {
 		dsn := pgtest.Acquire(t)
@@ -182,10 +166,8 @@ func TestTheRosterIsLookedForWhereTheSearchPathNamesOnPostgres(t *testing.T) {
 	})
 }
 
-// A statement of the roster's whose connection is lost fails for a reason no
-// migration repairs, and the question that would tell a missing table fails on
-// the same connection: nothing then says the table is not there, and the
-// failure is reported as it stands.
+// TestALostConnectionIsNotAMissingRosterOnPostgres checks that a lost
+// connection is reported as it stands, not as a missing roster.
 func TestALostConnectionIsNotAMissingRosterOnPostgres(t *testing.T) {
 	r := rosterOverPostgres(t)
 	if err := r.handle.Exec(insert("t_acme", "acme")).Error; err != nil {
@@ -215,8 +197,6 @@ func TestALostConnectionIsNotAMissingRosterOnPostgres(t *testing.T) {
 	}
 }
 
-// terminateWaiter ends the session of the one statement waiting for a lock in
-// the handle's database, once it is waiting.
 func terminateWaiter(t *testing.T, handle *gorm.DB, done <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -243,10 +223,8 @@ func terminateWaiter(t *testing.T, handle *gorm.DB, done <-chan error) {
 	t.Fatal("no statement came to wait for the lock")
 }
 
-// The search path is read as PostgreSQL reads it: for each setting, the names
-// read from it that are schemas of the database are the path PostgreSQL itself
-// searches, in order. A schema named after the session's role is there, so
-// that "$user" stands for something.
+// The search path is read as PostgreSQL reads it: the schemas named in a
+// setting, in the order PostgreSQL searches them.
 func TestASearchPathIsReadAsPostgreSQLReadsIt(t *testing.T) {
 	dsn := pgtest.Acquire(t)
 	owner := quiet(dbtest.Postgres(t, dsn, nil).DB())
@@ -263,8 +241,6 @@ func TestASearchPathIsReadAsPostgreSQLReadsIt(t *testing.T) {
 		`$user,Plain`, `mixed, "Mixed"`,
 	} {
 		t.Run(setting, func(t *testing.T) {
-			// The driver reads a plus in the locator's query as itself, so a
-			// blank is escaped as a percent sequence.
 			escaped := strings.ReplaceAll(url.QueryEscape(setting), "+", "%20")
 			session := quiet(dbtest.Postgres(t, dsn+"&search_path="+escaped, nil).DB())
 			var effective []string

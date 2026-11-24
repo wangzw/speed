@@ -18,24 +18,10 @@ import (
 	"github.com/vislake/speed/pkg/tenant/internal/tenantctx"
 )
 
-// The cases in this file are about how long the roster's own statements wait
-// for a connection and for a lock. pkg/db holds an in-memory SQLite database to
-// one connection, and a caller inside its own transaction on the delivered
-// handle holds that connection until its own call returns: a statement of the
-// roster's that waits for it is waiting for the caller. An in-process bus runs
-// a subscriber on its publisher's goroutine, inside whatever transaction the
-// publisher holds, and the subscriber enters the event's tenant. A lock another
-// connection holds is waited for as the engine waits for it, which
-// connectionWait does not reach.
-
-// connectionTimer is how long a case waits for a call bounded by
-// connectionWait before it reports the call as still waiting.
 func connectionTimer() time.Duration {
 	return connectionWait + coretest.Scale(3*time.Second)
 }
 
-// heldToOneConnection is enteringRoster over a pool of one connection, the
-// shape pkg/db delivers an in-memory database in.
 func heldToOneConnection(t *testing.T) *roster {
 	t.Helper()
 	r := enteringRoster(t)
@@ -47,10 +33,6 @@ func heldToOneConnection(t *testing.T) *roster {
 	return r
 }
 
-// insideTheCallersTransaction runs call inside a transaction the caller holds
-// on the roster's delivered handle, having written in it first, and returns
-// how long the call took and what it gave; a call still waiting after
-// connectionTimer fails the case.
 func insideTheCallersTransaction(t *testing.T, r *roster, call func() error) (time.Duration, error) {
 	t.Helper()
 	type result struct {
@@ -86,9 +68,6 @@ func insideTheCallersTransaction(t *testing.T, r *roster, call func() error) (ti
 	}
 }
 
-// requireNoAnswer asserts that a call gave a failure that is none of the
-// answers a caller acts on: neither refusal, and not the table's absence, which
-// is there all along.
 func requireNoAnswer(t *testing.T, what string, err error) {
 	t.Helper()
 	if err == nil || errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDisabled) ||
@@ -97,8 +76,6 @@ func requireNoAnswer(t *testing.T, what string, err error) {
 	}
 }
 
-// requireNoConnection asserts that a call gave up waiting for a connection,
-// and said so, with no answer about the tenant.
 func requireNoConnection(t *testing.T, what string, err error) {
 	t.Helper()
 	requireNoAnswer(t, what, err)
@@ -107,11 +84,8 @@ func requireNoConnection(t *testing.T, what string, err error) {
 	}
 }
 
-// An entry the snapshot would refuse reads the table, and inside the caller's
-// transaction on a database held to one connection that read cannot get one: it
-// gives up once connectionWait has passed, with no answer rather than either
-// refusal, and hands back a context that is no tenant's. An entry the snapshot
-// admits reads nothing, and answers at once.
+// TestAnEntryInsideTheCallersTransactionOnOneConnectionEndsWithoutAnAnswer checks
+// that an entry's table read gives up with ErrNoConnection and binds no tenant.
 func TestAnEntryInsideTheCallersTransactionOnOneConnectionEndsWithoutAnAnswer(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
@@ -160,9 +134,8 @@ func TestAnEntryInsideTheCallersTransactionOnOneConnectionEndsWithoutAnAnswer(t 
 	})
 }
 
-// A write of the roster runs on a connection of its own, and inside the
-// caller's transaction on a database held to one connection it cannot get one:
-// it gives up once connectionWait has passed, and nothing is written.
+// A roster write inside the caller's transaction on one connection gives up
+// once connectionWait has passed, writing nothing.
 func TestARosterWriteInsideTheCallersTransactionOnOneConnectionEnds(t *testing.T) {
 	t.Parallel()
 	for name, write := range map[string]func(r *roster) error{
@@ -194,15 +167,8 @@ func TestARosterWriteInsideTheCallersTransactionOnOneConnectionEnds(t *testing.T
 	}
 }
 
-// A reread of the whole roster — the refresher's, a write's once it has
-// committed, an entry's bringing the snapshot up to the table — inside the
-// caller's transaction on a database held to one connection gives up once
-// connectionWait has passed, with ErrNoConnection, and the snapshot it would
-// have replaced stays in force.
-//
-// Each reread holds the one slot reads of the table run in while it waits, so
-// a reread that waited for the caller for good would hold every other reread,
-// and every entry catching the snapshot up, with it.
+// TestAReadOfTheWholeRosterInsideTheCallersTransactionOnOneConnectionEnds checks
+// that a whole-roster reread gives up with ErrNoConnection and leaves the snapshot in force.
 func TestAReadOfTheWholeRosterInsideTheCallersTransactionOnOneConnectionEnds(t *testing.T) {
 	r := heldToOneConnection(t)
 	before := r.snap.Load()
@@ -216,9 +182,6 @@ func TestAReadOfTheWholeRosterInsideTheCallersTransactionOnOneConnectionEnds(t *
 	}
 }
 
-// rosterOverALockedFile is enteringRoster's roster over a database file, the
-// locator's parameters given, with another connection holding the whole
-// database in a transaction until the case ends.
 func rosterOverALockedFile(t *testing.T, parameters string) *roster {
 	t.Helper()
 	file := filepath.Join(t.TempDir(), "locked.db")
@@ -245,10 +208,6 @@ func rosterOverALockedFile(t *testing.T, parameters string) *roster {
 	return r
 }
 
-// lockedCalls are the calls of the roster's that read or write its table, each
-// with how many of its statements wait for a lock held on the whole database:
-// the statement that fails, and each read the call then makes to say what the
-// failure was — the conflict a write may have met, and the table's absence.
 func lockedCalls() map[string]struct {
 	call     func(r *roster) error
 	waitsFor int
@@ -282,29 +241,19 @@ func lockedCalls() map[string]struct {
 	}
 }
 
-// lockBusyTimeout is the busy timeout the locator in the case below sets: short
-// of the driver's default and of connectionWait, so that a lock wait held to
-// either is told apart from one held to the locator's.
 const lockBusyTimeout = time.Second
 
-// A statement of the roster's that meets a lock another connection holds on a
-// SQLite file waits for it for the connection's busy timeout, the one the
-// locator sets, whatever connectionWait is; so does each read the call makes to
-// say what the failure was. The call then ends with no answer: neither refusal,
-// and not the table's absence, since the table is there. connectionWait bounds
-// the wait for a connection only.
+// TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout checks that waiting for
+// another connection's lock is the engine's busy timeout, not connectionWait.
 func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 	t.Parallel()
 	for name, c := range lockedCalls() {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			r := rosterOverALockedFile(t, "?_pragma=busy_timeout(1000)")
-			// A wrong implementation applies the connection wait where the
-			// engine's busy timeout bounds the lock, so widening it makes that
-			// implementation need an hour while the right one still gives up
-			// after the locator's second. The bound is the busy timeout plus two
-			// seconds through GATE_TIME_SCALE alone; the hour is the wrong time
-			// stated to DeclaredAgainst.
+			// A wrong implementation applies the connection wait where the engine's busy timeout bounds the lock, so
+			// widening it makes it need an hour while the right one gives up after the locator's second. The bound is
+			// the busy timeout plus two seconds scaled; the hour is the wrong time shown to DeclaredAgainst.
 			r.connectWithin = time.Hour
 			most := time.Duration(c.waitsFor) * lockBusyTimeout
 			done := make(chan error, 1)
@@ -335,15 +284,8 @@ func TestAStatementOfTheRostersWaitsForALockForTheBusyTimeout(t *testing.T) {
 	}
 }
 
-// Inside a caller's transaction that has written to the roster's SQLite file, a
-// write of the roster's waits for the caller's write lock for the connection's
-// busy timeout, the one the locator sets, and then fails with the engine's
-// refusal and no answer, and nothing is written: the database module begins
-// the write's transaction IMMEDIATE, so it asks for the write lock at its BEGIN,
-// and the caller holds that lock until its own call returns. Only the BEGIN
-// waits; the reads the write then makes to say what the failure was do not,
-// since the caller holds no lock that stops a reader. An entry only reads, and
-// answers from the table.
+// TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeout
+// checks that such a write meets the caller's write lock at BEGIN and fails with the engine's refusal.
 func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeout(t *testing.T) {
 	t.Parallel()
 	for name, write := range map[string]func(r *roster) error{
@@ -361,12 +303,9 @@ func TestARosterWriteInsideTheCallersWriteTransactionOnAFileWaitsForTheBusyTimeo
 			t.Parallel()
 			r := rosterOn(t, openHandleAt(t, filepath.Join(t.TempDir(), "roster.db")+"?_pragma=busy_timeout(1000)"),
 				"sqlite", insert("t_acme", "acme"), "INSERT INTO tenants (id, name, status) VALUES ('t_paused', 'paused', 0)")
-			// A wrong implementation applies the connection wait where the
-			// engine's busy timeout bounds the lock, so widening it makes that
-			// implementation need an hour while the right one still gives up
-			// after the locator's second. The bound is the busy timeout plus two
-			// seconds through GATE_TIME_SCALE alone; the hour is the wrong time
-			// stated to DeclaredAgainst.
+			// A wrong implementation applies the connection wait where the engine's busy timeout bounds the lock, so
+			// widening it makes it need an hour while the right one gives up after the locator's second. The bound is
+			// the busy timeout plus two seconds scaled; the hour is the wrong time shown to DeclaredAgainst.
 			r.connectWithin = time.Hour
 			if err := r.read(context.Background()); err != nil {
 				t.Fatalf("reading the roster: %v", err)
@@ -442,8 +381,6 @@ func TestAConnectionThatCannotBeOpenedIsNotAMissingTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reaching the pool: %v", err)
 	}
-	// With no connection kept idle, the next statement opens one, and the
-	// directory the file was in is a file now.
 	pool.SetMaxIdleConns(0)
 	if err = os.RemoveAll(dir); err != nil {
 		t.Fatalf("removing the database's directory: %v", err)
@@ -480,9 +417,8 @@ func TestAnEntryWaitsForAConnectionThatComesFree(t *testing.T) {
 	}
 }
 
-// The caller's context ends the table read an entry makes, whether the read is
-// waiting for a connection or running: a caller that set a deadline is answered
-// by it rather than by connectionWait or by the read.
+// The caller's context ends the table read an entry makes, whether it is
+// waiting for a connection or running.
 func TestAnEntrysTableReadEndsWithTheCallersContext(t *testing.T) {
 	const deadline = 300 * time.Millisecond
 	requireEndedByTheCaller := func(t *testing.T, err error, took time.Duration) {
@@ -511,10 +447,6 @@ func TestAnEntrysTableReadEndsWithTheCallersContext(t *testing.T) {
 	t.Run("reading", func(t *testing.T) {
 		t.Parallel()
 		r := enteringRoster(t)
-		// The read of the row runs until its statement's context ends, and
-		// then fails with it, as a driver that honours a context does; a
-		// statement whose context is not the caller's runs long past the
-		// caller's deadline and reads the row.
 		var held atomic.Bool
 		if err := r.handle.Callback().Query().Before("gorm:query").Register("test:slow-row-read",
 			func(tx *gorm.DB) {

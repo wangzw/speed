@@ -11,12 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases here are the judgement table, row by row. Each row has a case that
-// takes it and, beside it, one that differs from it in the single fact the row
-// turns on and so lands in the next row: a row that was widened, narrowed or
-// moved is a row some neighbour's case lands in the wrong place.
-
-// notFound holds a reply to the one shape every 404 of this layer has.
 func notFound(t *testing.T, what string, rp reply) {
 	t.Helper()
 	if rp.status != nethttp.StatusNotFound {
@@ -35,8 +29,6 @@ func stepUp(t *testing.T, what string, rp reply, acr string) {
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("%s challenged with %q, want it to end with %q", what, got, want)
 	}
-	// The problem type tells the client what the challenge needs: the SSO
-	// challenge is its own code, because a local factor cannot satisfy it.
 	wantType := "urn:speed:authn:insufficient_user_authentication"
 	if acr == "sso" {
 		wantType = "urn:speed:authn:sso_required"
@@ -49,9 +41,8 @@ func stepUp(t *testing.T, what string, rp reply, acr string) {
 	}
 }
 
-// TestRowNoTenantContext holds the first row: a request with no tenant is not
-// about one, and is let through, except an impersonation, which exists to be
-// confined to a tenant and has none here.
+// TestRowNoTenantContext holds that a request with no tenant is let through, except
+// an impersonation, which is confined to a tenant and has none.
 func TestRowNoTenantContext(t *testing.T) {
 	t.Run("an anonymous request is admitted", func(t *testing.T) {
 		r := newRig(t)
@@ -73,8 +64,6 @@ func TestRowNoTenantContext(t *testing.T) {
 		r.onlyCounted(admitted)
 	})
 	t.Run("a request with no tenant and no identity on a route that needs one is admitted", func(t *testing.T) {
-		// The row comes first: whether a caller is identified is for the rows
-		// that have a tenant to compare against.
 		r := newRig(t)
 		rp := r.serve(r.bare(""))
 		if !rp.reached() {
@@ -109,9 +98,6 @@ func TestRowNoIdentity(t *testing.T) {
 		})
 	}
 	t.Run("a level the gateway never recorded is refused 401 and logged at Error", func(t *testing.T) {
-		// A context with no gateway behind it reads as AccessUnknown. The
-		// level Required, which the gateway records beside an identity, never
-		// reaches here without one, and authntest builds no such context.
 		r := newRig(t)
 		rp := r.serve(r.bare(acme))
 		if rp.status != nethttp.StatusUnauthorized {
@@ -184,8 +170,6 @@ func TestRowMembership(t *testing.T) {
 			authntest.WithBackend("static"))))
 	})
 	t.Run("the account asked about is the effective one, not the actor", func(t *testing.T) {
-		// bob acts as alice. alice is the member, so the impersonation goes
-		// through, and it ends when she stops being one.
 		r := newRig(t)
 		impersonating := r.as(acme, authntest.WithAccount(alice), authntest.WithActor(bob),
 			authntest.WithSession("s1"), authntest.WithScope(acme))
@@ -435,10 +419,6 @@ func TestRowMultiFactor(t *testing.T) {
 		stepUp(t, "acme falling back to the global row", r.serve(r.as(acme)), acrMultiFactor)
 		stepUp(t, "globex falling back to the global row", r.serve(r.as(globex)), acrMultiFactor)
 	})
-	// The effective value is the platform floor OR the tenant's own choice. A
-	// tenant row of false is a choice to leave the policy off, not a way to
-	// lower a floor the platform set: the next request is judged on the OR, the
-	// same value the tenant-facing view shows.
 	t.Run("the effective value is the global row OR the tenant's own row", func(t *testing.T) {
 		cases := []struct {
 			name     string
@@ -510,9 +490,6 @@ func TestRowSSO(t *testing.T) {
 		r.onlyCounted(stepUpSSO)
 	})
 	t.Run("a tenant the platform exempts is admitted without a provider", func(t *testing.T) {
-		// The platform's own tenant hosts the console and has no identity
-		// provider of its own: holding it to the row would refuse every request
-		// there, so the deployment names it as exempt.
 		r := requiring(t)
 		r.l.ssoExemptTenants = []string{acme}
 		rp := r.serve(r.as(acme))
@@ -623,9 +600,8 @@ func TestRowSSO(t *testing.T) {
 	})
 }
 
-// TestEffectiveAssurance holds the level the multi-factor requirement compares:
-// a multi-factor level an identity provider declared holds only in the tenant
-// that provider belongs to.
+// TestEffectiveAssurance holds that a multi-factor level an identity provider declared
+// counts only in that provider's tenant.
 func TestEffectiveAssurance(t *testing.T) {
 	declared := func(provider string) []authntest.Option {
 		return []authntest.Option{
@@ -738,10 +714,8 @@ func TestAnAdmittedRequestWritesNothing(t *testing.T) {
 	}
 }
 
-// TestNoTenantIdentifierTheSettingsRefuseReachesThem holds the guard in front of
-// the settings: an identifier outside their domain is a panic there, and the
-// layer must answer it with a refusal instead. The resolution layer writes only
-// identifiers the roster carries, so this is the layer not trusting that.
+// TestNoTenantIdentifierTheSettingsRefuseReachesThem holds that an identifier the
+// settings would panic on is refused instead.
 func TestNoTenantIdentifierTheSettingsRefuseReachesThem(t *testing.T) {
 	for id, want := range map[string]bool{
 		"": false, "ac me": false, "acme\n": false, "a\x00b": false, " ": false,

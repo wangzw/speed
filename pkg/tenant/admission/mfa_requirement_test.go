@@ -9,10 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestRequiresMFAAnswersPerActiveMembership holds the seam's question: it is
-// true when any tenant the account is an ACTIVE member of has require-mfa in
-// force, where the effective value is the platform row OR the tenant's own row,
-// the same floor the request-time judgement reads.
+// TestRequiresMFAAnswersPerActiveMembership checks that requires-MFA is true when
+// any tenant the account is an active member of has it in force.
 func TestRequiresMFAAnswersPerActiveMembership(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -82,10 +80,8 @@ func TestRequiresMFAAnswersPerActiveMembership(t *testing.T) {
 	}
 }
 
-// TestRequiresMFAFailsClosed holds the failure direction: a read that fails is
-// an error the caller refuses on, never an answer of "not required". An
-// assembly with no settings store has no requirement it could turn on, which is
-// the declared default, not a failure.
+// TestRequiresMFAFailsClosed holds the failure direction: a read that fails is an
+// error the caller refuses on, never an answer of "not required".
 func TestRequiresMFAFailsClosed(t *testing.T) {
 	t.Run("a settings read that fails is an error", func(t *testing.T) {
 		r := newRig(t)

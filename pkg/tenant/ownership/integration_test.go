@@ -1,12 +1,5 @@
 package ownership_test
 
-// The transactional cases: the real account, roster, policy and personal
-// modules and this module, over one SQLite database. They hold the property the
-// cross-module writes exist for — the roster row, the policy rows and the
-// memberships stand or fall together — and they are deliberately end to end
-// rather than over fakes: a transaction boundary is the one thing a fake
-// transaction cannot answer.
-
 import (
 	"context"
 	"errors"
@@ -41,14 +34,10 @@ import (
 	"github.com/vislake/speed/pkg/tenant/personal"
 )
 
-// recordingAudit accepts every row.
 type recordingAudit struct{}
 
 func (*recordingAudit) Record(context.Context, audit.Entry) error { return nil }
 
-// personalWriteGuard is the host's statement that a personal tenant is not a
-// business organization. The owner counter reads it to keep a personal tenant
-// from counting as an organization an account cannot leave.
 type personalWriteGuard struct{}
 
 func (personalWriteGuard) Denied(_ context.Context, tenantID string, _ authz.WriteOp) (bool, error) {
@@ -71,8 +60,6 @@ type assembly struct {
 	handle      *gorm.DB
 }
 
-// recordingInvitationRevoker records the tenants whose pending invitations the
-// deletion asked it to withdraw.
 type recordingInvitationRevoker struct {
 	mu      sync.Mutex
 	tenants []string
@@ -91,8 +78,6 @@ func (r *recordingInvitationRevoker) revoked() []string {
 	return append([]string(nil), r.tenants...)
 }
 
-// recordingDispatcher accepts every dispatch and records it, so a case can hold
-// what the module submitted to the notification capability.
 type recordingDispatcher struct {
 	mu         sync.Mutex
 	dispatched []notification.Dispatch
@@ -117,9 +102,6 @@ func (d *recordingDispatcher) reset() {
 	d.dispatched = nil
 }
 
-// testDefaultLocale is the deployment default every case assembles with. It is
-// deliberately not "en-US": a case expecting "en-US" could not tell a fallback
-// to the configured default from the value the module used to fall back to.
 const testDefaultLocale = "zh-CN"
 
 func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
@@ -127,32 +109,22 @@ func withAssembly(t *testing.T, body func(t *testing.T, a *assembly)) {
 	withI18nProfile(t, i18naccount.Module(), body)
 }
 
-// withI18nProfile assembles the same modules with profile standing in for the
-// i18n account bridge, so a case can hold what the ownership module does with a
-// preference it cannot read.
 func withI18nProfile(t *testing.T, profile core.Module, body func(t *testing.T, a *assembly)) {
 	t.Helper()
 	withI18nProfiles(t, []core.Module{profile}, body)
 }
 
-// withI18nProfiles assembles the same modules with several profiles, so a case
-// can hold which of them answers and which one fails.
 func withI18nProfiles(t *testing.T, profiles []core.Module, body func(t *testing.T, a *assembly)) {
 	t.Helper()
 	modules := append([]core.Module{i18ncatalog.Module()}, profiles...)
 	withI18n(t, modules, testDefaultLocale, body)
 }
 
-// withNoI18nEngine assembles the same modules without the catalog engine, so a
-// notice has no default language to fall back to.
 func withNoI18nEngine(t *testing.T, body func(t *testing.T, a *assembly)) {
 	t.Helper()
 	withI18n(t, []core.Module{i18naccount.Module()}, "", body)
 }
 
-// withI18n assembles the same modules with the i18n modules a case needs. A
-// non-empty defaultLocale declares the i18n configuration item the catalog
-// engine owns; a case that assembles no engine declares no such item.
 func withI18n(t *testing.T, i18nModules []core.Module, defaultLocale string, body func(t *testing.T, a *assembly)) {
 	t.Helper()
 	dsn := "file:" + filepath.Join(t.TempDir(), "ownership.db")
@@ -174,16 +146,10 @@ func withI18n(t *testing.T, i18nModules []core.Module, defaultLocale string, bod
 		standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)),
 		standIn("stand-in.write-guard", personalWriteGuard{}, (*authz.WriteGuard)(nil)),
 		standIn("stand-in.invitations", &recordingInvitationRevoker{}, (*authn.InvitationRevoker)(nil)),
-		// The shared tenant lock every path that judges a tenant's ownership or
-		// administrator floor takes. The policy module and the ownership module
-		// both take it up, so the account-administration lock and a transfer
-		// exclude each other the way a deployment's database lock does.
 		standIn("stand-in.tenant-lock", authz.NewInProcessTenantLock(), (*authz.TenantLock)(nil)),
 		standIn("stand-in.dispatcher", dispatcher, (*notification.Dispatcher)(nil)),
 		standIn("stand-in.logger", recordingLogger{handler: logs}, (*speedlog.Logger)(nil)),
 	}
-	// The engine answers the deployment default and resolves a recipient's
-	// stored preference through the profile.
 	modules = append(modules, i18nModules...)
 	reader := configtest.Reader(t, configuration, modules...)
 
@@ -283,8 +249,6 @@ func standIn(name string, instance any, token core.Token) core.Module {
 	}
 }
 
-// profileStandIn supplies one i18n profile without claiming the capability
-// exclusively, so a case can assemble more than one and hold which one answers.
 func profileStandIn(name string, profile i18n.Profile) core.Module {
 	return core.Module{
 		Name:     name,
@@ -293,8 +257,6 @@ func profileStandIn(name string, profile i18n.Profile) core.Module {
 	}
 }
 
-// transfer requests an ownership transfer and has the target confirm it, which
-// is the only path that changes ownership. It answers the request.
 func (a *assembly) transfer(t *testing.T, id, target string) tenant.TransferRequest {
 	t.Helper()
 	request, err := a.writer.RequestTransfer(t.Context(), tenant.ID(id), target, "")
@@ -307,8 +269,6 @@ func (a *assembly) transfer(t *testing.T, id, target string) tenant.TransferRequ
 	return request
 }
 
-// user opens a user account and answers it. Its personal tenant is created by
-// the account transaction.
 func (a *assembly) user(t *testing.T, username string) authn.Account {
 	t.Helper()
 	created, err := a.admin.Create(t.Context(), authn.CreateAccount{
@@ -320,8 +280,6 @@ func (a *assembly) user(t *testing.T, username string) authn.Account {
 	return created
 }
 
-// organization creates a business tenant with owner at its head: the roster
-// row, its tenant-admin role, the owner's membership and the owner's binding.
 func (a *assembly) organization(t *testing.T, id, name string, owner authn.Account) {
 	t.Helper()
 	if err := a.catalog.Create(t.Context(), tenant.Tenant{
@@ -342,7 +300,6 @@ func (a *assembly) organization(t *testing.T, id, name string, owner authn.Accou
 	}
 }
 
-// join makes an account an active member of the tenant.
 func (a *assembly) join(t *testing.T, id string, who authn.Account) {
 	t.Helper()
 	if err := a.memberships.Put(t.Context(), authn.Membership{
@@ -379,11 +336,6 @@ func (a *assembly) count(t *testing.T, table, where string, args ...any) int64 {
 	return n
 }
 
-// rosterRow reads the roster's storage row past the in-memory snapshot the
-// catalog serves. The snapshot is replaced only after a commit, so a failed
-// transaction leaves it reporting the state from before the write — the same
-// as a rollback, and the same as a tombstone that was never rolled back. Only
-// the table itself tells the two apart, so the rollback assertions read it.
 func (a *assembly) rosterRow(t *testing.T, id string) (tenant.Status, *time.Time) {
 	t.Helper()
 	var got struct {
@@ -397,9 +349,8 @@ func (a *assembly) rosterRow(t *testing.T, id string) (tenant.Status, *time.Time
 	return tenant.Status(got.Status), got.DeletedAt
 }
 
-// A transfer gives the target tenant-admin and writes the owner, all in one
-// transaction. Ownership is the only thing it changes: the previous owner stays
-// an active member holding the binding it had.
+// TestTransferOwnerHandsTheOrganizationOn checks the new owner's binding and
+// that the previous owner stays an active member holding its binding.
 func TestTransferOwnerHandsTheOrganizationOn(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -447,9 +398,8 @@ func TestTransferOwnerRefusesANonMember(t *testing.T) {
 	})
 }
 
-// A tenant no row carries is ErrInvalidTenant, and a tombstone ErrTenantDeleted:
-// the roster is read before the membership, so a missing tenant is not reported
-// as a missing member.
+// A tenant no row carries gives ErrInvalidTenant and a tombstone ErrTenantDeleted,
+// because the roster is read before the membership.
 func TestTransferOwnerReadsTheRosterBeforeTheMembership(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -488,9 +438,8 @@ func TestDeleteOrganizationRefusesAnOwnerThatChanged(t *testing.T) {
 	})
 }
 
-// A transfer carries the owner the caller observed: when an earlier transfer
-// already handed the organization on, the old owner's call from the stale read
-// is refused and the current owner stays.
+// TestTransferOwnerRefusesAnOwnerThatChanged checks that a stale owner's call is
+// refused and the current owner stays.
 func TestTransferOwnerRefusesAnOwnerThatChanged(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -507,8 +456,6 @@ func TestTransferOwnerRefusesAnOwnerThatChanged(t *testing.T) {
 			t.Fatalf("confirming the transfer: %v", checkErr)
 		}
 
-		// The tenant surface read the roster before the first transfer committed,
-		// so the old owner's next call still believes it owns the organization.
 		_, err = a.writer.RequestTransfer(t.Context(), "acme", third.ID.String(), owner.ID.String())
 		if !errors.Is(err, tenant.ErrOwnerChanged) {
 			t.Fatalf("the stale transfer gave %v, want ErrOwnerChanged", err)
@@ -522,8 +469,8 @@ func TestTransferOwnerRefusesAnOwnerThatChanged(t *testing.T) {
 	})
 }
 
-// A target whose account is deleted is refused: the account read reports no row,
-// which the transfer maps to ErrOwnerInactive before it opens the transaction.
+// TestTransferOwnerRefusesADeletedAccount checks that a deleted account is
+// ErrOwnerInactive before the transaction opens.
 func TestTransferOwnerRefusesADeletedAccount(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -553,9 +500,6 @@ func TestDeleteOrganizationWritesTheTombstoneAndCleansTheCoreRelations(t *testin
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
 		a.organization(t, "acme", "acme-org", owner)
-		// A grant has to exist before the deletion for the cleanup assertion to
-		// be able to fail: a tenant with no grant would leave the count at zero
-		// whether the cleanup ran or not.
 		if _, err := a.seeder.SeedGrants(t.Context(), "acme", authz.TenantAdminRole,
 			[]authz.Grant{{Resource: "deal", Action: "read"}}); err != nil {
 			t.Fatalf("seeding a grant: %v", err)
@@ -597,9 +541,6 @@ func TestDeleteOrganizationWritesTheTombstoneAndCleansTheCoreRelations(t *testin
 		}); !errors.Is(err, tenant.ErrNameConflict) {
 			t.Errorf("registering the deleted name gave %v, want ErrNameConflict", err)
 		}
-		// The deletion withdraws the tenant's pending invitations once it has
-		// committed: the invitation module owns those rows and is asked by
-		// tenant identifier.
 		if got := a.invitations.revoked(); len(got) != 1 || got[0] != "acme" {
 			t.Errorf("the invitation revoker was asked for %v, want [acme]", got)
 		}
@@ -631,9 +572,8 @@ func TestDeleteOrganizationRollsBackAFailedStep(t *testing.T) {
 	})
 }
 
-// A failure after the binding was written rolls the transfer back: the owner
-// stays, the target gains no binding, and the previous owner keeps its binding
-// and membership.
+// A failure after the binding is written rolls the transfer back, leaving the
+// owner, its binding and its membership in place.
 func TestTransferOwnerRollsBackAFailedStep(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")
@@ -749,11 +689,8 @@ func TestTransferOwnerRefusesAnInactiveAccount(t *testing.T) {
 	})
 }
 
-// TestTheAccountAdministrationLockCoversAMemberOnlyAccount holds the lock set
-// the suspension and deletion paths take: an active member of an active business
-// tenant that administers nothing is still covered, because a transfer gives it
-// the organization. Holding that lock blocks a transfer to the account, which is
-// exactly the interleaving the wider set exists to exclude.
+// TestTheAccountAdministrationLockCoversAMemberOnlyAccount checks that an active
+// member of an active business tenant is covered by the lock a transfer takes.
 func TestTheAccountAdministrationLockCoversAMemberOnlyAccount(t *testing.T) {
 	withAssembly(t, func(t *testing.T, a *assembly) {
 		owner := a.user(t, "alice")

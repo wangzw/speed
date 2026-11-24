@@ -13,11 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// readThrough loads a JSON document through the real configuration path and
-// hands back a reader this module's own section decodes from. The declaration is
-// what is exercised: that a key nobody wrote is refused at all comes from the
-// item being declared required, and a stub reader would agree with any
-// declaration whatsoever.
 func readThrough(t *testing.T, document string) config.Reader {
 	t.Helper()
 	return authntest.ConfigReader(t, core.Module{Name: ModuleName, Resources: Module().Resources}, document)
@@ -132,10 +127,8 @@ func TestPrepareTellsTheTwoAbsencesApart(t *testing.T) {
 	}
 }
 
-// TestTheEndpointListIsReadFromThePrimarySourceAlone holds the declaration of the
-// one key: required, and settable nowhere but the primary source. The list
-// decides what is guarded, so an environment variable or a flag that could
-// change it would be a way to switch the layer off for an endpoint.
+// TestTheEndpointListIsReadFromThePrimarySourceAlone holds the declaration of the one
+// key: required, and settable nowhere but the primary source.
 func TestTheEndpointListIsReadFromThePrimarySourceAlone(t *testing.T) {
 	item, declared := schema().Items[endpointsItem]
 	if !declared {
@@ -156,11 +149,7 @@ func TestTheEndpointListIsReadFromThePrimarySourceAlone(t *testing.T) {
 	}
 }
 
-// TestTheCeilingIsWhatTheCodeActsOn pins the lifetime ceiling by its literal
-// value. It is the bound of how long a removed member is still admitted by a
-// replica that has not heard of the removal, so a test that read it off the
-// constant would let the ceiling move with no failure. The declared rule and the
-// description restate it, and the three are held together.
+// TestTheCeilingIsWhatTheCodeActsOn pins the lifetime ceiling by its literal value.
 func TestTheCeilingIsWhatTheCodeActsOn(t *testing.T) {
 	if maxCheckTTL != 60*time.Second {
 		t.Fatalf("the lifetime ceiling is %v, want 60s", maxCheckTTL)
@@ -177,18 +166,13 @@ func TestTheCeilingIsWhatTheCodeActsOn(t *testing.T) {
 	}
 }
 
-// TestNoDefaultForTheEndpointList holds that the defaults carry no list: a
-// default of "every endpoint" would cover the endpoint the authentication routes
-// are mounted on.
+// TestNoDefaultForTheEndpointList holds that the defaults carry no endpoint list.
 func TestNoDefaultForTheEndpointList(t *testing.T) {
 	if len(configDefaults.Endpoints) != 0 {
 		t.Fatalf("the declared default list is %v, want none", configDefaults.Endpoints)
 	}
 }
 
-// readWithResolution loads a document with this module's section and the tenant
-// resolution layer's section both declared, the way a run that takes both
-// modules in declares them.
 func readWithResolution(t *testing.T, document string) config.Reader {
 	t.Helper()
 	type resolution struct {
@@ -207,12 +191,8 @@ func readWithResolution(t *testing.T, document string) config.Reader {
 	)
 }
 
-// TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover holds the subset
-// rule between the two tenant layers: an endpoint this layer guards but the
-// resolution layer does not is one where a request has no tenant context, and
-// the layer admits a non-impersonating request without one. The startup failure
-// is the only place that misconfiguration is visible, and it names both keys so
-// a host knows which list to change.
+// TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover checks that prepare
+// refuses an endpoint the resolution layer does not cover.
 func TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover(t *testing.T) {
 	body := `{"tenant":{
 		"resolve":{"endpoints":["api"]},
@@ -235,9 +215,8 @@ func TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover(t *testing.T) {
 	}
 }
 
-// TestPrepareAcceptsAnAdmissionListInsideTheResolutionList is the control: the
-// same lists with the extra endpoint removed start, so the refusal above is the
-// subset and not the surrounding configuration.
+// TestPrepareAcceptsAnAdmissionListInsideTheResolutionList is the control: prepare
+// accepts an admission list that sits inside the resolution list.
 func TestPrepareAcceptsAnAdmissionListInsideTheResolutionList(t *testing.T) {
 	body := `{"tenant":{
 		"resolve":{"endpoints":["api","admin"]},
@@ -252,10 +231,8 @@ func TestPrepareAcceptsAnAdmissionListInsideTheResolutionList(t *testing.T) {
 	}
 }
 
-// TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration holds the limit of the
-// check: a host may supply the resolution capability itself, and a command with
-// no resolution declaration has no list to compare against. The layer then
-// starts and the host owns the pairing, as it owns every supplied instance.
+// TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration holds that the subset
+// check runs only against a declared resolution endpoint list.
 func TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration(t *testing.T) {
 	got, err := prepare(readThrough(t, endpointsConfig(`["public"]`)))
 	if err != nil {
@@ -266,9 +243,8 @@ func TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration(t *testing.T) {
 	}
 }
 
-// TestResolveCarriesTheSSOExemptTenants holds the exemption list through the
-// module's own resolution: the names reach the layer, and an empty name is
-// refused like an empty endpoint name.
+// TestResolveCarriesTheSSOExemptTenants holds that resolve carries the SSO exemption
+// list and refuses an empty name.
 func TestResolveCarriesTheSSOExemptTenants(t *testing.T) {
 	got, err := moduleConfig{
 		Endpoints:        []string{"public"},

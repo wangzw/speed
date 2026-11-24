@@ -1,9 +1,5 @@
 package admin
 
-// The acceptance evidence for the tenant management surface: a tombstone is
-// readable but refuses every write, the process permission catalog carries no
-// tenant.delete code, and the two deletion surfaces decide differently.
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -14,11 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// A tombstone reads 200 with the deleted state and refuses every write with
-// 409, on both the platform and the tenant surface. The roster itself holds the
-// terminal rule (pkg/tenant/catalog's TestATombstoneRefusesEveryWrite); this
-// case holds that every management route maps it, and that no refused write
-// reaches the organization writer.
+// A tombstone reads 200 with the deleted state and refuses every write with 409, on
+// both the platform and the tenant surface.
 func TestATombstoneReadsAndRefusesEveryWrite(t *testing.T) {
 	t.Run("read", func(t *testing.T) {
 		r := newRig(t)
@@ -66,10 +59,6 @@ func TestATombstoneReadsAndRefusesEveryWrite(t *testing.T) {
 	for name, tc := range writes {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
-			// The tenant-surface guard decides by owner identity, so the caller
-			// is the row's owner and the permission guard would refuse a
-			// permission it was asked for. The platform routes are allowed
-			// through, so the only refusal left is the tombstone.
 			r.guard.allow = !tc.inTenant
 			r.catalog.held = tenant.Tenant{
 				ID: "t_acme", Name: "acme", Status: tenant.StatusDeleted,
@@ -95,9 +84,7 @@ func TestATombstoneReadsAndRefusesEveryWrite(t *testing.T) {
 	}
 }
 
-// The process permission catalog has no tenant.delete code. Deletion is decided
-// by owner identity on the tenant surface and by tenant.manage on the platform
-// surface, and no new permission exists for it.
+// The process permission catalog has no tenant.delete code.
 func TestThePermissionCatalogHasNoTenantDelete(t *testing.T) {
 	declared := map[authz.Permission]bool{}
 	for _, resource := range Module().Resources {
@@ -127,10 +114,8 @@ func TestThePermissionCatalogHasNoTenantDelete(t *testing.T) {
 	}
 }
 
-// Deletion is decided by owner identity on the tenant surface and by
-// tenant.manage on the platform surface. The tenant surface asks no permission:
-// the owner passes even when every permission decision would refuse, and the
-// guard is never consulted.
+// Deletion is decided by owner identity on the tenant surface and by tenant.manage on
+// the platform surface.
 func TestTheDeleteIsDecidedByOwnerIdentityOnTheTenantSurface(t *testing.T) {
 	t.Run("tenant surface", func(t *testing.T) {
 		r := newRig(t)

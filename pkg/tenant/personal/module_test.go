@@ -11,10 +11,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The descriptor is the module the registry knows, and the feature is static:
-// there is no configuration item that withdraws it. The module serves no HTTP
-// operation of its own: the account's transaction is the guarantee that a
-// personal tenant exists.
+// TestTheDescriptorIsStaticAndDeliversTheThreeCapabilities checks that the feature is
+// static, delivers its three capabilities and serves no operation of its own.
 func TestTheDescriptorIsStaticAndDeliversTheThreeCapabilities(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {

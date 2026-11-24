@@ -10,14 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The profile route and the registration's profile fields: the platform
-// surface carries the descriptive fields without letting them change anything
-// the roster resolves requests by.
-
-// profileWriteBody is the profile write's JSON body as a case sends it. The
-// handler's declared input also carries the path's identifier, which JSON does
-// not carry. The names are snake_case, the same shape the registration body
-// uses.
 type profileWriteBody struct {
 	DisplayName  string `json:"display_name"`
 	Description  string `json:"description"`
@@ -25,7 +17,6 @@ type profileWriteBody struct {
 	Website      string `json:"website"`
 }
 
-// fullProfile is every member present, which the profile route requires.
 func fullProfile() profileWriteBody {
 	return profileWriteBody{
 		DisplayName:  "Acme",
@@ -74,8 +65,7 @@ func TestTheCreateCarriesTheProfile(t *testing.T) {
 }
 
 // A profile outside the root package's domain is refused before the audit and
-// the provisioner: a registration that would store a website the caller was
-// never shown does not run.
+// the provisioner, so a registration that would store it does not run.
 func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 	r := newRig(t)
 	w := r.do(http.MethodPost, pathTenants, createBody{
@@ -92,10 +82,8 @@ func TestTheCreateRefusesAnInvalidProfile(t *testing.T) {
 	}
 }
 
-// TestTheProfileUpdateWritesOnlyTheProfile holds the write's seam: PATCH
-// /tenants/:tenant/profile reads the tenant for the 404 and calls SetProfile,
-// never Put or SetStatus, so it cannot undo a disable or a
-// deletion another path committed.
+// TestTheProfileUpdateWritesOnlyTheProfile holds that PATCH /tenants/:tenant/profile
+// reads the tenant and calls SetProfile, never Put or SetStatus.
 func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 	r := newRig(t)
 	created := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
@@ -138,9 +126,8 @@ func TestTheProfileUpdateWritesOnlyTheProfile(t *testing.T) {
 	}
 }
 
-// TestTheProfileUpdateWritesTheMandatoryAuditFirst holds the order: the
-// permitted row lands before SetProfile, names the platform surface, and links
-// to the failed row a refusal writes.
+// TestTheProfileUpdateWritesTheMandatoryAuditFirst holds that the permitted row
+// lands before SetProfile, names the platform surface and links to the failed row.
 func TestTheProfileUpdateWritesTheMandatoryAuditFirst(t *testing.T) {
 	r := newRig(t)
 	r.catalog.held = tenant.Tenant{ID: "t_acme", Name: "acme", Status: tenant.StatusActive}

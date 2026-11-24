@@ -1,8 +1,5 @@
 package admin
 
-// The target's account-level routes: they act on the caller's own identity, ask
-// no permission and carry no tenant context.
-
 import (
 	"net/http"
 	"testing"
@@ -13,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// requestForTarget is one pending request addressed to the default test account.
 func requestForTarget() tenant.TransferRequest {
 	return tenant.TransferRequest{
 		ID:          "22222222-2222-2222-2222-222222222222",

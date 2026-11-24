@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// TestIsNameHoldsTheSlugForm pins the name domain the roster enforces and the
-// username rule mirrors: three to sixty-three lower-case letters, digits and
-// dashes, beginning with a letter or a digit.
+// TestIsNameHoldsTheSlugForm checks the slug form of three to sixty-three
+// lower-case letters, digits and dashes, starting with a letter or a digit.
 func TestIsNameHoldsTheSlugForm(t *testing.T) {
 	for _, c := range []struct {
 		name string

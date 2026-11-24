@@ -14,19 +14,9 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// RequestTransfer implements tenant.OrganizationWriter.
-//
-// It records a pending request and changes nothing else: the roster's owner
-// column, the target's bindings and the previous owner's membership stay as they
-// are until the target confirms. The target must be an active account and an
-// active member of the tenant; the organization must have an owner; and the
-// caller's expectation, when it has one, must still match the roster row. An
-// existing pending request is refused rather than replaced, so a second request
-// cannot silently redirect an offer the target has not answered.
-//
-// The tenant lock is taken before the target's account read, and the membership
-// read inside the transaction takes the account's row lock, so a suspension
-// that commits before this call either is seen here or waits for it.
+// RequestTransfer implements tenant.OrganizationWriter: it records a pending request and changes
+// nothing else. The target must be an active account and member, the organization must have an
+// owner, and an existing pending request is refused.
 func (p *product) RequestTransfer(ctx context.Context, id tenant.ID, target, expectedOwner string) (tenant.TransferRequest, error) {
 	if err := checkTenant(id); err != nil {
 		return tenant.TransferRequest{}, err
@@ -118,12 +108,9 @@ func (p *product) RequestTransfer(ctx context.Context, id tenant.ID, target, exp
 	return request, nil
 }
 
-// CancelTransfer implements tenant.OrganizationWriter.
-//
-// The request must belong to the tenant in id and still be pending. The caller's
-// expectation, when it has one, must still match the roster row: an owner who
-// has been handed on cannot cancel the new owner's request. No result
-// notification is sent; cancelling is the requester's own action.
+// CancelTransfer implements tenant.OrganizationWriter. The request must belong
+// to the tenant in id and still be pending; a caller with an expectation must
+// still match the roster row. No result notification is sent.
 func (p *product) CancelTransfer(ctx context.Context, id tenant.ID, requestID, expectedOwner string) error {
 	if err := checkTenant(id); err != nil {
 		return err
@@ -199,14 +186,9 @@ func (p *product) PendingTransfer(ctx context.Context, id tenant.ID) (tenant.Tra
 	return requestOf(row), true, nil
 }
 
-// ConfirmTransfer implements tenant.OwnershipTarget.
-//
-// This is the only path that writes the roster's owner column from a request.
-// The request is re-read under the tenant lock, the target's account and
-// membership and the requester's ownership are checked again, and the owner
-// write, the tenant-admin binding, the request's confirmed state and the
-// after-commit rereads are one transaction. A request another writer resolved
-// first, or one whose window passed, is refused before anything is written.
+// ConfirmTransfer implements tenant.OwnershipTarget and is the only path that writes the roster's
+// owner column from a request. Under the tenant lock it re-checks the request, the target and the
+// requester, then writes the owner, the binding and the confirmed state in one transaction.
 func (p *product) ConfirmTransfer(ctx context.Context, requestID, target string) error {
 	now := time.Now().UTC()
 	if err := p.settleExpiredRequest(ctx, requestID, now); err != nil {
@@ -344,9 +326,6 @@ func (p *product) TransferFor(ctx context.Context, requestID, target string) (te
 	return requestOf(row), nil
 }
 
-// targetRow reads one request and holds it to the target. A request that does
-// not exist is ErrTransferNotFound and one addressed to another account is
-// ErrTransferNotTarget; a route answers both alike.
 func (p *product) targetRow(ctx context.Context, requestID, target string) (transferRow, bool, error) {
 	row, found, err := p.getRequest(ctx, p.database.DB(), requestID)
 	if err != nil {
@@ -361,8 +340,6 @@ func (p *product) targetRow(ctx context.Context, requestID, target string) (tran
 	return row, true, nil
 }
 
-// refusalOf refuses a request that cannot be acted on: one past its window is
-// reported as expired, and any other terminal state as not pending.
 func refusalOf(row transferRow, now time.Time) error {
 	switch statusOf(row.Status) {
 	case tenant.TransferPending:
@@ -428,10 +405,6 @@ func (p *product) confirmOwnerTx(ctx context.Context, tx *gorm.DB, id tenant.ID,
 	return after, nil
 }
 
-// requireActiveAccount reads the target's account and refuses one that is not
-// active. The read is made under the tenant lock; a suspension takes the same
-// lock once the account is an active member of the tenant, so the status cannot
-// change before the request or confirmation commits.
 func (p *product) requireActiveAccount(ctx context.Context, target string) error {
 	account, err := p.accounts.Get(ctx, authn.AccountID(target))
 	if errors.Is(err, authn.ErrAccountNotFound) {
@@ -446,8 +419,6 @@ func (p *product) requireActiveAccount(ctx context.Context, target string) error
 	return nil
 }
 
-// isTransferRefusal reports whether an error is one of the sentinels a caller
-// branches on, so it is returned as it stands rather than wrapped again.
 func isTransferRefusal(err error) bool {
 	for _, sentinel := range []error{
 		tenant.ErrInvalidTenant, tenant.ErrTenantDeleted, tenant.ErrOwnerNotMember,

@@ -10,13 +10,10 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The cases here hold the transaction-aware roster writes: they write in the
-// transaction they are handed, they return the reread for after its commit, and
-// they refuse what the context-taking writes refuse.
-
-// txAfter is one after closure a tx write handed back.
 type txAfter func(context.Context) error
 
+// TestCreateTxWritesInTheCallersTransaction checks that CreateTx writes inside the
+// caller's transaction.
 func TestCreateTxWritesInTheCallersTransaction(t *testing.T) {
 	r := rosterOver(t)
 	if err := r.read(context.Background()); err != nil {
@@ -44,6 +41,8 @@ func TestCreateTxWritesInTheCallersTransaction(t *testing.T) {
 	}
 }
 
+// TestCreateTxRereadsTheRosterOnlyAfterTheCallersCommit checks that CreateTx rereads
+// the roster only after the caller commits.
 func TestCreateTxRereadsTheRosterOnlyAfterTheCallersCommit(t *testing.T) {
 	r := rosterOver(t)
 	if err := r.read(context.Background()); err != nil {
@@ -70,6 +69,8 @@ func TestCreateTxRereadsTheRosterOnlyAfterTheCallersCommit(t *testing.T) {
 	}
 }
 
+// TestDeleteTxWritesInTheCallersTransaction checks that DeleteTx writes inside the
+// caller's transaction.
 func TestDeleteTxWritesInTheCallersTransaction(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	if err := r.read(context.Background()); err != nil {
@@ -90,6 +91,8 @@ func TestDeleteTxWritesInTheCallersTransaction(t *testing.T) {
 	}
 }
 
+// TestDeleteTxRereadsTheRosterOnlyAfterTheCallersCommit checks that DeleteTx rereads
+// the roster only after the caller commits.
 func TestDeleteTxRereadsTheRosterOnlyAfterTheCallersCommit(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	if err := r.read(context.Background()); err != nil {
@@ -118,6 +121,8 @@ func TestDeleteTxRereadsTheRosterOnlyAfterTheCallersCommit(t *testing.T) {
 	}
 }
 
+// TestTheTxVariantsKeepTheCtxVariantsRefusals checks that the tx variants keep the
+// context variants' refusals.
 func TestTheTxVariantsKeepTheCtxVariantsRefusals(t *testing.T) {
 	r := rosterOver(t, insert("t_acme", "acme"))
 	if err := r.read(context.Background()); err != nil {
@@ -137,9 +142,7 @@ func TestTheTxVariantsKeepTheCtxVariantsRefusals(t *testing.T) {
 	}
 }
 
-// GetTx reports a row no table carries as absent and a tombstone as present, so
-// a caller that has to distinguish the two reads the status rather than the
-// boolean.
+// GetTx reports a row no table carries as absent and a tombstone as present.
 func TestGetTxReportsAbsenceAndTheTombstone(t *testing.T) {
 	r := rosterOver(t, insertRow("t_gone", "gone", tenant.StatusDeleted, tenant.DisabledByOperator))
 	if err := r.read(context.Background()); err != nil {
@@ -162,9 +165,8 @@ func TestGetTxReportsAbsenceAndTheTombstone(t *testing.T) {
 	}
 }
 
-// SetOwnerTx refuses an identifier no row carries and a tombstone, writes
-// nothing for a transfer to the current owner, and answers no error for an
-// update that matched no row but left a live row behind.
+// SetOwnerTx refuses an unknown identifier and a tombstone, and writes nothing
+// for a transfer to the current owner.
 func TestSetOwnerTxRejectionBranches(t *testing.T) {
 	r := rosterOver(t,
 		insertOwner("t_acme", "acme", "alice"),
@@ -238,8 +240,6 @@ func TestSetOwnerTxRejectionBranches(t *testing.T) {
 	})
 }
 
-// insertOwner is one roster row written as a statement with its owner column,
-// which insert does not carry.
 func insertOwner(id, name, owner string) string {
 	return "INSERT INTO tenants (id, name, status, owner_account) VALUES ('" +
 		id + "', '" + name + "', 1, '" + owner + "')"

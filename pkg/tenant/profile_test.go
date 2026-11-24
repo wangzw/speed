@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// TestNormalizeTrimsTheProfile holds the normalization the write paths apply
-// before their validation: whitespace around each field is not part of the
-// value, while whitespace inside the description is kept.
+// TestNormalizeTrimsTheProfile checks that Normalize trims whitespace around each
+// field while keeping whitespace inside the description.
 func TestNormalizeTrimsTheProfile(t *testing.T) {
 	got := Profile{
 		DisplayName:  "  Acme Corporation \n",
@@ -50,8 +49,8 @@ func TestValidateAcceptsTheProfileDomain(t *testing.T) {
 	}
 }
 
-// TestValidateRefusesTheProfileOutsideItsDomain holds each bound and each shape
-// the profile refuses, through the sentinel a caller tells it apart by.
+// TestValidateRefusesTheProfileOutsideItsDomain checks each bound and shape the
+// profile refuses against ErrInvalidProfile.
 func TestValidateRefusesTheProfileOutsideItsDomain(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

@@ -8,15 +8,9 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// RequiresMFA implements authn.TenantMFARequirement: it reports whether any
-// tenant the account is an active member of has the multi-factor requirement in
-// force. The effective value of the switch is the platform row OR the tenant's
-// own row, the same floor the request-time judgement reads.
-//
-// An assembly with no settings store has no requirement it could turn on, so no
-// tenant reads as requiring one. A read that fails is carried out as an error
-// and the caller fails closed: a requirement that cannot be established is never
-// read as absent.
+// RequiresMFA implements authn.TenantMFARequirement: whether any tenant the account is an active
+// member of requires multi-factor, using the same platform OR tenant floor as the request-time
+// judgement. With no store nothing requires it; a failed read is an error, never absent.
 func (l *layer) RequiresMFA(ctx context.Context, id authn.AccountID) (bool, error) {
 	if l.store == nil {
 		return false, nil
