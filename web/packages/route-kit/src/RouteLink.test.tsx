@@ -1,9 +1,3 @@
-/**
- * RouteLink.tsx -- a link that navigates in-place. The href proves the
- * target is carried through; the click proves it pushes history (no full
- * reload) and that RouteView re-renders from the new URL.
- */
-
 import { fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { renderRouteTable } from '../test-utils/render.js'

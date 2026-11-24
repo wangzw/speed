@@ -1,10 +1,4 @@
-/**
- * The registration surface's shared vocabulary: what a product declares and
- * what the package hands back. These shapes are the host-visible contract
- * (see the package README's Stability section and AGENTS.md). Adding an
- * optional field is source-compatible; removing or narrowing an existing
- * export or field, or changing its meaning, is a breaking change.
- */
+/** The registration surface's shared vocabulary: what a product declares and what the package hands back. */
 
 import type { MouseEventHandler, ReactNode } from 'react'
 
@@ -21,33 +15,19 @@ export interface RouteContext {
 
 /** One page: a path pattern, its view, and optional navigation metadata. */
 export interface RouteDeclaration {
-  /** The path pattern, e.g. `/cases/:caseId`. Literal segments match by equality; `:name` captures one segment. */
+  /** The path pattern, e.g. `/cases/:caseId`; `:name` captures one segment. */
   readonly path: string
   /** The view this path renders when it matches. */
   readonly view: (context: RouteContext) => ReactNode
   /** The navigation label; a declaration without one does not contribute a nav item. */
   readonly label?: ReactNode
-  /**
-   * The permission code this page needs. It is data: this package carries it
-   * but never reads it -- authorization is the host composing a RouteGuard.
-   */
+  /** The permission code this page needs; data, never read here. */
   readonly permission?: string
-  /**
-   * The feature names this page needs, all of which must be present for the
-   * declaration to render and to appear in navigation. It is data: this
-   * package hands the names to the host's presence predicate and never
-   * interprets them. A declaration without this field (or with an empty
-   * list) is not gated and is unaffected by the predicate.
-   */
+  /** The feature names this page needs; data, handed to the host's presence predicate. */
   readonly requires?: readonly string[]
 }
 
-/**
- * The host's answer to "is this feature present?", handed to `RouteProvider`.
- * It is a structural shape: a host derives it from its own feature state
- * without a shared type edge. `pending` and `failed` are the two states in
- * which no gated declaration is present yet.
- */
+/** The host's answer to "is this feature present?", handed to `RouteProvider`. */
 export type RoutePresence =
   | { readonly state: 'pending' }
   | { readonly state: 'failed' }
@@ -59,34 +39,16 @@ export type RoutePresence =
 /** A product's pages: the one place it names which pages it is made of. */
 export type RouteTable = readonly RouteDeclaration[]
 
-/**
- * One navigation entry, derived from a `label`-bearing declaration. The
- * shape is structural so a shell's frame accepts it without a shared type
- * edge: its required fields are the frame's (`id`, `label`, `href`,
- * `selected`), and the optional `onClick` matches the frame's own optional
- * click field.
- */
+/** One navigation entry, derived from a `label`-bearing declaration; structural, so a shell's frame accepts it without a shared type edge. */
 export interface NavItem {
-  /**
-   * The declaring path pattern, stable across renders. In-app navigation
-   * targets this; it is basename-relative, like every path this package
-   * reads.
-   */
+  /** The declaring path pattern, stable across renders; in-app navigation targets it. */
   readonly id: string
   /** The declaration's label. */
   readonly label: ReactNode
-  /**
-   * The link target: the declaration's path with the router's basename
-   * included, so a new tab, a copied link and an unmodified click reach the
-   * same served URL.
-   */
+  /** The link target, with the router's basename included. */
   readonly href: string
   /** Whether the current URL selects this entry. */
   readonly selected: boolean
-  /**
-   * Attach this beside `href`: a plain primary click navigates in-app and
-   * every other click keeps the browser's behaviour (new tab, saved
-   * download, default navigation) instead of being swallowed.
-   */
+  /** A plain primary click navigates in-app; every other click keeps the browser's behaviour. */
   readonly onClick?: MouseEventHandler<HTMLElement>
 }

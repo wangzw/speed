@@ -1,11 +1,3 @@
-/**
- * pathing.ts -- the pure path algebra behind matching and selection:
- * segmentation, literal prefixes, the "sits below" test, the pattern
- * conflict test, and the first-match-wins declaration match. Asserted
- * against concrete inputs so a wrong branch (a missing segment boundary, an
- * end-anchored vs prefix match, a param-vs-literal confusion) is what fails.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   isMoreSpecific,
@@ -107,8 +99,6 @@ describe('isMoreSpecific', () => {
     expect(isMoreSpecific('/cases/:id', '/cases/:caseId')).toBe(false)
     expect(isMoreSpecific('/cases/new', '/cases/old')).toBe(false)
     expect(isMoreSpecific('/cases', '/cases/:id')).toBe(false)
-    // Neither pattern narrows the other: one is literal where the other
-    // takes a value, in opposite positions.
     expect(isMoreSpecific('/a/:x', '/:y/b')).toBe(false)
   })
 })

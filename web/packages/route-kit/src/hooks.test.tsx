@@ -1,11 +1,3 @@
-/**
- * hooks.ts -- the read side (useNavItems) and the imperative handle
- * (useNavigate). useNavItems is asserted to follow the live URL (its
- * selection flips after a link click, driven by the same table the view
- * matches), useNavigate to push history and re-render the view, and both to
- * fail fast outside a provider.
- */
-
 import { fireEvent, renderHook, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { MouseEventHandler, ReactElement, ReactNode } from 'react'
@@ -40,7 +32,6 @@ function Nav(): ReactElement {
   )
 }
 
-/** A frame that renders each entry as a plain anchor, the README's recipe. */
 function PlainNav(): ReactElement {
   const items = useNavItems()
   return (
@@ -69,7 +60,6 @@ describe('useNavItems', () => {
       'true',
     )
     expect(screen.getByTestId('nav-/')).toHaveAttribute('data-selected', 'false')
-    // The unlabeled child route contributes no entry.
     expect(screen.queryByTestId('nav-/cases/:caseId')).not.toBeInTheDocument()
   })
 
@@ -111,7 +101,6 @@ describe('useNavItems', () => {
       { path: '/console/', basename: '/console' },
     )
 
-    // The anchor href is the served URL a new tab or copied link opens.
     expect(screen.getByRole('link', { name: 'Cases' })).toHaveAttribute(
       'href',
       '/console/cases',
@@ -121,8 +110,6 @@ describe('useNavItems', () => {
       '/console',
     )
 
-    // The in-app handler navigates the declaration path, so the router
-    // applies the prefix exactly once.
     fireEvent.click(screen.getByRole('link', { name: 'Cases' }))
     await screen.findByText('case list')
     expect(window.location.pathname).toBe('/console/cases')
@@ -260,9 +247,6 @@ describe('navigation and matching share one narrowed surface', () => {
     { path: '/cases', view: () => null, label: 'Cases' },
   ]
 
-  // Expectations are literal, one per presence state: deriving them from
-  // presentDeclarations would let a broken narrowing rule agree with itself.
-  // The gated entry sits between the two ungated ones in table order.
   const cases: readonly (readonly [string, RoutePresence, readonly string[]])[] = [
     ['pending', { state: 'pending' }, ['nav-/', 'nav-/cases']],
     ['failed', { state: 'failed' }, ['nav-/', 'nav-/cases']],
@@ -373,7 +357,6 @@ describe('useNavItems click handler', () => {
         <RouteView />
       </>,
     )
-    // The return value is false when the event's default was prevented.
     expect(fireEvent.click(screen.getByTestId('go-/cases'), { metaKey: true })).toBe(
       true,
     )
@@ -381,12 +364,6 @@ describe('useNavItems click handler', () => {
     expect(screen.getByText('home')).toBeInTheDocument()
   })
 
-  /**
-   * The entry shape a shell frame accepts, mirrored from
-   * @speed/layout-kit's AppShellNavItem because this package imports no
-   * sibling. A NavItem must stay assignable to it without a shared type
-   * edge, which only the type checker can assert.
-   */
   interface FrameNavItem {
     readonly id: string
     readonly label: ReactNode
@@ -416,14 +393,6 @@ function HrefProbe({ to }: { readonly to: string }): ReactElement {
   )
 }
 
-/**
- * The click side of the pair. A button, not an anchor: jsdom queues a real
- * navigation task for every anchor click it is not told to prevent, so a
- * click the handler correctly leaves to the browser would surface later as
- * a navigation error instead of an assertion. The judgement reads the
- * element's `target` and `download` attributes and nothing else, so the
- * tests set those attributes on this button where they apply.
- */
 function ClickProbe({ to }: { readonly to: string }): ReactElement {
   const { onClick } = useRouteLinkProps(to)
   return (
@@ -481,8 +450,6 @@ describe('useRouteLinkProps', () => {
         <RouteView />
       </>,
     )
-    // The return value is false when the event's default was prevented; the
-    // handler must leave the event alone so the browser's own behaviour runs.
     expect(fireEvent.click(screen.getByTestId('link'), init)).toBe(true)
     expect(window.location.pathname).toBe('/')
     expect(screen.getByText('home')).toBeInTheDocument()

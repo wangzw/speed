@@ -1,10 +1,3 @@
-/**
- * RouteProvider.tsx -- the wiring between the registration surface and the
- * router. The positive case proves a router is actually installed over the
- * children (a consumer's useLocation reads the pinned URL); the negative
- * cases prove the consistency check runs at assembly, before children render.
- */
-
 import { render, screen } from '@testing-library/react'
 import { useLocation } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -48,9 +41,6 @@ describe('RouteProvider', () => {
       { path: '/cases', view },
       { path: '/cases', view },
     ]
-    // React reports a render-phase throw to console.error even when no error
-    // boundary catches it; this test's assertion is the throw itself, so the
-    // report is silenced for the one call rather than the assertion dropped.
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       expect(() =>
@@ -86,7 +76,6 @@ describe('RouteProvider', () => {
 
   it('throws at assembly when the fallback is missing', () => {
     const table: RouteTable = [{ path: '/', view }]
-    // A JS host can omit the required prop; the check catches it at runtime.
     const missing = undefined as unknown as (context: RouteContext) => ReactNode
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
