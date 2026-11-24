@@ -26,11 +26,7 @@ export const NATIVE_DISABLED_ELEMENTS = Object.freeze({
   ]),
 })
 
-/**
- * Each entry states why the control cannot hold focus when it becomes
- * unavailable; the scan test holds the list to the tree.
- * @type {ReadonlyArray<{ readonly file: string, readonly component: string, readonly reason: string }>}
- */
+/** The registered exemptions: file, declaring component, and reason. */
 export const NATIVE_DISABLED_EXEMPTIONS = Object.freeze([
   Object.freeze({
     file: 'packages/tenancy-ui/src/TenantSwitcher.tsx',

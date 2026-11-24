@@ -1,10 +1,6 @@
-/**
- * The shared real-client network rig for the workspace's journey tests: a real
+/** The shared real-client network rig for journey tests: a real
  * @speed/api-client client over a fetch stand-in, optionally over the session's
- * refresh seam (`refresh: false` leaves it out), with each package projecting
- * the observed request into its own recorded call shape, plus the shared
- * answer helpers.
- */
+ * refresh seam (`refresh: false` leaves it out), plus the shared answer helpers. */
 
 import {
   createClient,
