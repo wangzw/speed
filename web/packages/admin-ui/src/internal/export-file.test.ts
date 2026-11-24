@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { exportFileName, saveBlob } from './export-file.js'
 import { captureDownloads } from '../../test-utils/download.js'
 
@@ -37,10 +38,10 @@ describe('exportFileName', () => {
 describe('saveBlob', () => {
   let capture: ReturnType<typeof captureDownloads> | undefined
 
-  afterEach(() => {
+  afterEach(async () => {
     capture?.restore()
     capture = undefined
-    vi.useRealTimers()
+    await restoreRealTimers()
   })
 
   it('downloads the bytes under the given name and revokes the URL after a turn', () => {

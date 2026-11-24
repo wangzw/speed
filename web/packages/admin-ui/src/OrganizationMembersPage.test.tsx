@@ -17,6 +17,7 @@
 
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { attachSession } from '@speed/auth-core'
@@ -601,8 +602,8 @@ beforeEach(() => {
   attachTenantPermissions(FULL_TENANT_PERMISSIONS, 'acc-admin')
 })
 
-afterEach(() => {
-  vi.useRealTimers()
+afterEach(async () => {
+  await restoreRealTimers()
 })
 
 describe('the page structure', () => {
@@ -742,7 +743,7 @@ describe('the member search and paging', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS)
     })
-    vi.useRealTimers()
+    await restoreRealTimers()
     await waitFor(() =>
       expect(recorder.memberParams).toContainEqual({
         limit: 100,

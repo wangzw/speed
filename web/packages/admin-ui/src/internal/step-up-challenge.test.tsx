@@ -26,6 +26,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -643,7 +644,7 @@ describe('StepUpChallenge', () => {
         zhCN.errors.ratelimit.throttled,
       )
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -679,7 +680,7 @@ describe('StepUpChallenge', () => {
         new RegExp(zhCN.throttle.countdown.replace('{{seconds}}', '\\d+')),
       )
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
