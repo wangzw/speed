@@ -5,6 +5,13 @@
     // TypeScript 6 defaults `types` to [] (5.x included every visible
     // @types package), so the Node globals and `node:` built-ins the test
     // files use are named here.
-    "types": ["node"]
+    "types": ["node"],
+    // The suite hands the clock back through the shared restoreRealTimers
+    // helper (src/client.test.ts), and @speed/test-utils publishes no dist
+    // for type resolution, so the one specifier the tests import maps onto
+    // the sibling's source. Keep this in lockstep with what src/ imports.
+    "paths": {
+      "@speed/test-utils/timers": ["../../test-utils/src/timers.ts"]
+    }
   }
 }
