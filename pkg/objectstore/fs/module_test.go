@@ -16,21 +16,12 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// hostPrefix is the environment prefix the case's host identity carries. It is
-// one no machine exports variables under, so nothing outside the case reaches
-// the values.
 const hostPrefix = "SPEEDOBJECTSTOREFSTEST"
 
-// bodyFor is the configuration body a working assembly is built from, over the
-// given root.
 func bodyFor(root string) string {
 	return fmt.Sprintf(`{"objectstore.fs":{"root":%q}}`, root)
 }
 
-// loadFrom builds the real configuration loader over a JSON primary source
-// holding body, with this module registered so its declared items are known. It
-// answers the loader's error without failing the case, so a case about a missing
-// item can read it.
 func loadFrom(t testing.TB, body string) (config.Reader, error) {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -48,9 +39,6 @@ func loadFrom(t testing.TB, body string) (config.Reader, error) {
 	return config.Load(t.Context(), reg, nil)
 }
 
-// registryWithReader builds a registry carrying the configuration reader this
-// module reads its section from, which is what its Prepare and New need before
-// they run.
 func registryWithReader(t testing.TB, body string) *core.Registry {
 	t.Helper()
 	reader, err := loadFrom(t, body)
@@ -63,9 +51,8 @@ func registryWithReader(t testing.TB, body string) *core.Registry {
 	return reg
 }
 
-// TestTheDescriptorDeliversTheByteSeamExclusively holds the shape the design
-// names: the objectstore.Store claimed for this module alone, so a command names
-// exactly one backend, and the logging capability taken up optionally.
+// TestTheDescriptorDeliversTheByteSeamExclusively checks that the descriptor delivers the byte seam
+// exclusively and requires only the optional logging capability, with one input schema.
 func TestTheDescriptorDeliversTheByteSeamExclusively(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -89,12 +76,8 @@ func TestTheDescriptorDeliversTheByteSeamExclusively(t *testing.T) {
 	}
 }
 
-// TestTheRootItemTakesThePrimarySourceAlone holds the origin the design fixes
-// for this backend's one input item: the directory is read from the primary
-// configuration source alone, so neither an environment variable nor a
-// command-line argument can point a process's bytes elsewhere. A declared item
-// left at the zero origin would silently accept the environment as well, which
-// is what the assertion below tells apart.
+// A declared item left at the zero origin would silently accept the environment as well, which is
+// what the assertion below tells apart.
 func TestTheRootItemTakesThePrimarySourceAlone(t *testing.T) {
 	var schema config.Schema
 	found := false
@@ -116,8 +99,8 @@ func TestTheRootItemTakesThePrimarySourceAlone(t *testing.T) {
 	}
 }
 
-// TestPrepareStatesEnabledForARunnableConfiguration holds that a configuration
-// naming a directory lets the module state it runs.
+// TestPrepareStatesEnabledForARunnableConfiguration holds that a configuration naming a directory
+// lets the module state it runs.
 func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	reg := registryWithReader(t, bodyFor(filepath.Join(t.TempDir(), "root")))
 	got, err := Module().Prepare(t.Context(), reg)
@@ -129,9 +112,8 @@ func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 	}
 }
 
-// TestTheStanceRefusesARootThatNamesNoDirectory holds the premise this backend
-// states in Prepare: a root the loader accepted but that names no directory is
-// refused with the capability's invalid-config sentinel.
+// TestTheStanceRefusesARootThatNamesNoDirectory checks that an empty or blank root fails as
+// ErrInvalidConfig while a named directory passes.
 func TestTheStanceRefusesARootThatNamesNoDirectory(t *testing.T) {
 	for _, root := range []string{"", "   "} {
 		got, err := stance(&moduleConfig{Root: root})
@@ -147,9 +129,8 @@ func TestTheStanceRefusesARootThatNamesNoDirectory(t *testing.T) {
 	}
 }
 
-// TestAMissingRootFailsTheReader drives the real configuration loader: the item
-// the backend cannot run without is declared required, so a section that omits
-// it is refused when the module reads its own values.
+// TestAMissingRootFailsTheReader checks that a section with no root reads as a missing required
+// item.
 func TestAMissingRootFailsTheReader(t *testing.T) {
 	reader, err := loadFrom(t, `{"objectstore.fs":{}}`)
 	if err != nil {
@@ -161,8 +142,8 @@ func TestAMissingRootFailsTheReader(t *testing.T) {
 	}
 }
 
-// TestTheReaderServesACompleteSection is the control for the case above: a
-// section naming a root decodes and carries the directory through.
+// TestTheReaderServesACompleteSection is the control for the case above: a section naming a root
+// decodes and carries the directory through.
 func TestTheReaderServesACompleteSection(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "root")
 	reader, err := loadFrom(t, bodyFor(root))
@@ -178,9 +159,8 @@ func TestTheReaderServesACompleteSection(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeliversTheStoreThroughTheRegistry drives a real registry through
-// this module's descriptor to Init, resolves the byte seam from the one product
-// and names it.
+// TestTheModuleDeliversTheStoreThroughTheRegistry drives a real registry through this module's
+// descriptor to Init, resolves the byte seam from the one product and names it.
 func TestTheModuleDeliversTheStoreThroughTheRegistry(t *testing.T) {
 	reg := registryWithReader(t, bodyFor(filepath.Join(t.TempDir(), "root")))
 	reg.Register(Module())

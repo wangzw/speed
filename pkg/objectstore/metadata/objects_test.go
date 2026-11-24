@@ -13,8 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// TestCreateRefusesADeclarationItCannotRead holds that a declaration whose shape
-// is illegal is refused and lands no row.
+// TestCreateRefusesADeclarationItCannotRead holds that a declaration whose shape is illegal is
+// refused and lands no row.
 func TestCreateRefusesADeclarationItCannotRead(t *testing.T) {
 	cases := map[string]objectstore.Declaration{
 		"zero size":      {Size: 0, ContentType: "text/plain"},
@@ -46,8 +46,8 @@ func TestCreateRefusesADeclarationItCannotRead(t *testing.T) {
 	})
 }
 
-// TestCreateRequiresATenant holds that a declaration under a context with no
-// tenant is refused, because the internal key needs the tenant.
+// TestCreateRequiresATenant holds that a declaration under a context with no tenant is refused,
+// because the internal key needs the tenant.
 func TestCreateRequiresATenant(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -61,8 +61,8 @@ func TestCreateRequiresATenant(t *testing.T) {
 	})
 }
 
-// TestLifecycleWritesThreeStepsAndServesReads walks an object through
-// declaration, upload and completion, then reads its bytes back.
+// TestLifecycleWritesThreeStepsAndServesReads walks an object through declaration, upload and
+// completion, then reads its bytes back.
 func TestLifecycleWritesThreeStepsAndServesReads(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -83,7 +83,6 @@ func TestLifecycleWritesThreeStepsAndServesReads(t *testing.T) {
 				t.Fatalf("uploading: %v", upErr)
 			}
 
-			// OpenContent is closed to an uploaded object.
 			if _, openErr := objects.OpenContent(tctx, declared.ID); !errors.Is(openErr, objectstore.ErrStateConflict) {
 				t.Errorf("opening an uploaded object gave %v, want ErrStateConflict", openErr)
 			}
@@ -125,8 +124,8 @@ func TestLifecycleWritesThreeStepsAndServesReads(t *testing.T) {
 	})
 }
 
-// TestUploadRefusesAByteCountThatDisagreesWithTheDeclaration holds that a mismatched
-// upload writes no byte and advances no state.
+// TestUploadRefusesAByteCountThatDisagreesWithTheDeclaration holds that a mismatched upload writes
+// no byte and advances no state.
 func TestUploadRefusesAByteCountThatDisagreesWithTheDeclaration(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -157,8 +156,7 @@ func TestUploadRefusesAByteCountThatDisagreesWithTheDeclaration(t *testing.T) {
 	})
 }
 
-// TestUploadWindowClosedIsAStateConflict holds that an upload past the window is
-// refused.
+// TestUploadWindowClosedIsAStateConflict holds that an upload past the window is refused.
 func TestUploadWindowClosedIsAStateConflict(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -169,7 +167,6 @@ func TestUploadWindowClosedIsAStateConflict(t *testing.T) {
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
 			}
-			// Close the window by moving its close instant into the past.
 			past := time.Now().Add(-time.Hour).UnixMilli()
 			if setErr := dbHandle(t, reg).Exec(
 				"UPDATE objects SET upload_expires_at = ? WHERE tenant_id = ? AND id = ?",
@@ -185,10 +182,8 @@ func TestUploadWindowClosedIsAStateConflict(t *testing.T) {
 	})
 }
 
-// TestCompleteIsIdempotentAndRefusesStatesItCannotComplete holds both idempotent
-// and refusing paths of Complete: a re-completion of a completed row returns it
-// unchanged, and a pending row the backend holds no bytes for is ErrContentMissing
-// — completion now really looks at the bytes.
+// TestCompleteIsIdempotentAndRefusesStatesItCannotComplete checks that completing an object with no
+// bytes fails as ErrContentMissing, while a second Complete keeps the row and its timestamp.
 func TestCompleteIsIdempotentAndRefusesStatesItCannotComplete(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -196,7 +191,6 @@ func TestCompleteIsIdempotentAndRefusesStatesItCannotComplete(t *testing.T) {
 			objects := objectsOf(t, reg)
 			tctx := tenantCtx(t, reg, "acme")
 
-			// A pending row whose bytes never arrived is ErrContentMissing.
 			pending, err := objects.Create(tctx, objectstore.Declaration{Size: 1, ContentType: "text/plain"})
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
@@ -205,7 +199,6 @@ func TestCompleteIsIdempotentAndRefusesStatesItCannotComplete(t *testing.T) {
 				t.Fatalf("completing a pending object with no bytes gave %v, want ErrContentMissing", cErr)
 			}
 
-			// Complete the same object twice: the second call returns it unchanged.
 			if upErr := objects.Upload(tctx, pending.ID, bytes.NewReader([]byte("x")), 1); upErr != nil {
 				t.Fatalf("uploading: %v", upErr)
 			}
@@ -228,8 +221,8 @@ func TestCompleteIsIdempotentAndRefusesStatesItCannotComplete(t *testing.T) {
 	})
 }
 
-// TestCompleteLeavesACompletedRowUnchanged holds that Complete's conditional
-// statement does not rewrite a row that is already completed.
+// TestCompleteLeavesACompletedRowUnchanged holds that Complete's conditional statement does not
+// rewrite a row that is already completed.
 func TestCompleteLeavesACompletedRowUnchanged(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -238,8 +231,6 @@ func TestCompleteLeavesACompletedRowUnchanged(t *testing.T) {
 			tctx := tenantCtx(t, reg, "acme")
 			id := declare(t, tctx, objects, "done", "body")
 
-			// Plant an expiry this module would never write on its own, then
-			// complete again: the planted value must survive.
 			planted := time.Now().Add(72 * time.Hour).UnixMilli()
 			if err := dbHandle(t, reg).Exec(
 				"UPDATE objects SET expires_at = ? WHERE tenant_id = ? AND id = ?",
@@ -259,11 +250,8 @@ func TestCompleteLeavesACompletedRowUnchanged(t *testing.T) {
 	})
 }
 
-// TestADeletedObjectIsNotFoundForEveryOperationItCannotServe holds that a
-// deleted row is a tombstone rather than a state conflict: completing or
-// uploading it answers ErrObjectNotFound, the same shape an unknown identifier
-// gets, because the object is gone and not in a state this call could move it
-// out of.
+// TestADeletedObjectIsNotFoundForEveryOperationItCannotServe checks that Complete and Upload of a
+// deleted object fail as ErrObjectNotFound.
 func TestADeletedObjectIsNotFoundForEveryOperationItCannotServe(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -287,9 +275,8 @@ func TestADeletedObjectIsNotFoundForEveryOperationItCannotServe(t *testing.T) {
 	})
 }
 
-// TestDeleteIsIdempotentAndTombstones holds that Delete removes the bytes and
-// tombstones the row, that a second delete removes no byte, and that a deleted
-// object reads as not found.
+// TestDeleteIsIdempotentAndTombstones holds that Delete removes the bytes and tombstones the row,
+// that a second delete removes no byte, and that a deleted object reads as not found.
 func TestDeleteIsIdempotentAndTombstones(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -311,7 +298,6 @@ func TestDeleteIsIdempotentAndTombstones(t *testing.T) {
 			if _, err := objects.OpenContent(tctx, id); !errors.Is(err, objectstore.ErrObjectNotFound) {
 				t.Errorf("opening a deleted object gave %v, want ErrObjectNotFound", err)
 			}
-			// A second delete is an idempotent success and removes no byte.
 			if err := objects.Delete(tctx, id); err != nil {
 				t.Fatalf("re-deleting: %v", err)
 			}
@@ -323,8 +309,8 @@ func TestDeleteIsIdempotentAndTombstones(t *testing.T) {
 	})
 }
 
-// TestObjectsAreScopedToTheirTenant holds that one tenant cannot see another's
-// object, and that a listing returns only the tenant's own.
+// TestObjectsAreScopedToTheirTenant holds that one tenant cannot see another's object, and that a
+// listing returns only the tenant's own.
 func TestObjectsAreScopedToTheirTenant(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -356,8 +342,8 @@ func TestObjectsAreScopedToTheirTenant(t *testing.T) {
 	})
 }
 
-// TestListPagesByKeysetCursor holds that the cursor continues from the last row of
-// the previous page and that a deleted object leaves the listing.
+// TestListPagesByKeysetCursor holds that the cursor continues from the last row of the previous
+// page and that a deleted object leaves the listing.
 func TestListPagesByKeysetCursor(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -368,7 +354,6 @@ func TestListPagesByKeysetCursor(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				ids = append(ids, declare(t, tctx, objects, "obj", "body"))
 			}
-			// Remove the middle object: it must leave the listing.
 			middle := ids[2]
 			if err := objects.Delete(tctx, middle); err != nil {
 				t.Fatalf("deleting the middle object: %v", err)
@@ -408,8 +393,8 @@ func TestListPagesByKeysetCursor(t *testing.T) {
 	})
 }
 
-// TestListRefusesALimitAboveTheMaximum holds that a limit above the maximum is
-// refused rather than silently truncated.
+// TestListRefusesALimitAboveTheMaximum holds that a limit above the maximum is refused rather than
+// silently truncated.
 func TestListRefusesALimitAboveTheMaximum(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})

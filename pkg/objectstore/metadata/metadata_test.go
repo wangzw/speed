@@ -15,8 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// TestTheModuleIsNamedAsDesigned pins the module name and its configuration
-// namespace, which are the same string.
+// TestTheModuleIsNamedAsDesigned pins the module name and its configuration namespace, which are
+// the same string.
 func TestTheModuleIsNamedAsDesigned(t *testing.T) {
 	if Module().Name != "objectstore.metadata" {
 		t.Errorf("the module is named %q, want objectstore.metadata", Module().Name)
@@ -26,8 +26,8 @@ func TestTheModuleIsNamedAsDesigned(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorDeliversObjectsExclusively holds that the metadata seam is
-// delivered exclusively, so one process has exactly one metadata surface.
+// TestTheDescriptorDeliversObjectsExclusively holds that the metadata seam is delivered
+// exclusively, so one process has exactly one metadata surface.
 func TestTheDescriptorDeliversObjectsExclusively(t *testing.T) {
 	found := false
 	for _, p := range Module().Provides {
@@ -40,8 +40,8 @@ func TestTheDescriptorDeliversObjectsExclusively(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorRequiresItsDependencies holds which capabilities are required
-// and which are optional.
+// TestTheDescriptorRequiresItsDependencies holds which capabilities are required and which are
+// optional.
 func TestTheDescriptorRequiresItsDependencies(t *testing.T) {
 	required := map[core.Token]bool{}
 	optional := map[core.Token]bool{}
@@ -68,9 +68,8 @@ func TestTheDescriptorRequiresItsDependencies(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorPointsNoDependencyAtTheEventOrAuditCapability holds that the
-// module publishes no event and writes no audit row: it declares the audit action
-// type names nowhere and depends on neither capability.
+// TestTheDescriptorPointsNoDependencyAtTheEventOrAuditCapability checks that the module requires
+// neither the event bus nor the audit capability.
 func TestTheDescriptorPointsNoDependencyAtTheEventOrAuditCapability(t *testing.T) {
 	for _, r := range Module().Requires {
 		switch r.Token {
@@ -82,8 +81,8 @@ func TestTheDescriptorPointsNoDependencyAtTheEventOrAuditCapability(t *testing.T
 	}
 }
 
-// TestTheAuditActionNamesAreDeclaredByTheRootPackage holds that the three audit
-// action type names are declared where the host reads them.
+// TestTheAuditActionNamesAreDeclaredByTheRootPackage holds that the three audit action type names
+// are declared where the host reads them.
 func TestTheAuditActionNamesAreDeclaredByTheRootPackage(t *testing.T) {
 	want := map[string]string{
 		objectstore.EventObjectCreated:   "objectstore.object.created",
@@ -97,10 +96,8 @@ func TestTheAuditActionNamesAreDeclaredByTheRootPackage(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeclaresOnlyItsOwnResources holds that the descriptor carries the
-// configuration schema, the settings schema and the migrations and nothing else:
-// the permission, feature, translation, message-catalog and OpenAPI resources an
-// earlier design registered are gone with the API surface that needed them.
+// TestTheModuleDeclaresOnlyItsOwnResources checks that the descriptor declares exactly one
+// configuration schema, one settings schema and one migration set.
 func TestTheModuleDeclaresOnlyItsOwnResources(t *testing.T) {
 	var (
 		schemaCount    int
@@ -130,9 +127,8 @@ func TestTheModuleDeclaresOnlyItsOwnResources(t *testing.T) {
 	}
 }
 
-// TestTheGrantsTableIsCreatedOnEveryEngine drives the migrations and reads the
-// table the content route depends on, so a dialect the SQL was not written for
-// fails here rather than at the first minted URL.
+// TestTheGrantsTableIsCreatedOnEveryEngine checks that the grants table exists and is empty on
+// every engine.
 func TestTheGrantsTableIsCreatedOnEveryEngine(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})

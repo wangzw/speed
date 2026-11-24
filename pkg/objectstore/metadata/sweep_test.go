@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// rowState reads one row's state directly, past the filter.
 func rowState(t *testing.T, reg *core.Registry, tenantID, id string) string {
 	t.Helper()
 	var rows []struct {
@@ -26,7 +25,6 @@ func rowState(t *testing.T, reg *core.Registry, tenantID, id string) string {
 	return rows[0].State
 }
 
-// setColumn runs one raw update against a row, for a case steering a row's clock.
 func setColumn(t *testing.T, reg *core.Registry, column string, value int64, tenantID, id string) {
 	t.Helper()
 	stmt := "UPDATE objects SET " + column + " = ? WHERE tenant_id = ? AND id = ?"
@@ -35,9 +33,8 @@ func setColumn(t *testing.T, reg *core.Registry, column string, value int64, ten
 	}
 }
 
-// TestSweepTombstonesAClosedUploadWindow holds that a pending object whose upload
-// window has closed is tombstoned and its key deleted through the seam — a
-// pending row cannot be assumed to have no bytes.
+// TestSweepTombstonesAClosedUploadWindow checks that the sweep deletes an object whose upload
+// window has closed and removes its bytes once.
 func TestSweepTombstonesAClosedUploadWindow(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -64,8 +61,8 @@ func TestSweepTombstonesAClosedUploadWindow(t *testing.T) {
 	})
 }
 
-// TestSweepTombstonesAnExpiredCompletedObject holds that a completed object past
-// its expiry is tombstoned and its bytes deleted.
+// TestSweepTombstonesAnExpiredCompletedObject holds that a completed object past its expiry is
+// tombstoned and its bytes deleted.
 func TestSweepTombstonesAnExpiredCompletedObject(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -74,8 +71,6 @@ func TestSweepTombstonesAnExpiredCompletedObject(t *testing.T) {
 			objects := objectsOf(t, reg)
 			tctx := tenantCtx(t, reg, "acme")
 			id := declare(t, tctx, objects, "temp", "body")
-			// Plant an expiry in the past; the module would not write one without
-			// a TTL, so the sweep's expiry arm is exercised directly.
 			setColumn(t, reg, "expires_at", time.Now().Add(-time.Minute).UnixMilli(), "acme", id)
 
 			productOfAssembly(t, reg).sweepOnce(t.Context())
@@ -91,8 +86,8 @@ func TestSweepTombstonesAnExpiredCompletedObject(t *testing.T) {
 	})
 }
 
-// TestSweepLeavesRowsWhoseTimeIsNotUp holds that a row with an open window and no
-// expiry is left alone.
+// TestSweepLeavesRowsWhoseTimeIsNotUp holds that a row with an open window and no expiry is left
+// alone.
 func TestSweepLeavesRowsWhoseTimeIsNotUp(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -118,8 +113,8 @@ func TestSweepLeavesRowsWhoseTimeIsNotUp(t *testing.T) {
 	})
 }
 
-// TestSweepLeavesARowWhoseBytesCouldNotBeDeleted holds that a failed byte
-// deletion leaves the row as it is, for the next pass to retry.
+// TestSweepLeavesARowWhoseBytesCouldNotBeDeleted holds that a failed byte deletion leaves the row
+// as it is, for the next pass to retry.
 func TestSweepLeavesARowWhoseBytesCouldNotBeDeleted(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -139,7 +134,6 @@ func TestSweepLeavesARowWhoseBytesCouldNotBeDeleted(t *testing.T) {
 				t.Error("a row whose bytes could not be deleted was tombstoned anyway")
 			}
 
-			// With the backend reachable again the next pass closes it.
 			store.mu.Lock()
 			store.delErr = nil
 			store.mu.Unlock()
@@ -153,8 +147,7 @@ func TestSweepLeavesARowWhoseBytesCouldNotBeDeleted(t *testing.T) {
 	})
 }
 
-// TestSweepIsIdempotent holds that a second pass over a swept table tombstones
-// nothing more.
+// TestSweepIsIdempotent holds that a second pass over a swept table tombstones nothing more.
 func TestSweepIsIdempotent(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -177,7 +170,6 @@ func TestSweepIsIdempotent(t *testing.T) {
 	})
 }
 
-// grantCount answers how many grant rows carry a token hash.
 func grantCount(t *testing.T, reg *core.Registry, hash string) int64 {
 	t.Helper()
 	var n int64
@@ -188,8 +180,8 @@ func grantCount(t *testing.T, reg *core.Registry, hash string) int64 {
 	return n
 }
 
-// TestSweepRemovesExpiredGrants holds the sweep's second job: grants past their
-// expiry are removed, and a live one is left alone.
+// TestSweepRemovesExpiredGrants holds the sweep's second job: grants past their expiry are
+// removed, and a live one is left alone.
 func TestSweepRemovesExpiredGrants(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{router: newRecordingRouter("public")})
@@ -218,9 +210,8 @@ func TestSweepRemovesExpiredGrants(t *testing.T) {
 	})
 }
 
-// TestSweepDoesNotAssumeAPendingRowHasNoBytes holds that the sweep calls the byte
-// seam for a pending row too: a Put that succeeded with a state advance that did
-// not leaves bytes behind.
+// TestSweepDoesNotAssumeAPendingRowHasNoBytes holds that the sweep calls the byte seam for a
+// pending row too: a Put that succeeded with a state advance that did not leaves bytes behind.
 func TestSweepDoesNotAssumeAPendingRowHasNoBytes(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -232,7 +223,6 @@ func TestSweepDoesNotAssumeAPendingRowHasNoBytes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
 			}
-			// Stand in for bytes left behind by an upload whose row advance failed.
 			store.mu.Lock()
 			store.blobs[declared.Key] = []byte("left behind")
 			store.mu.Unlock()

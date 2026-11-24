@@ -19,9 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// linesMatching returns the log lines that carry every one of the substrings.
-// A case reads the call line back from here rather than asking whether the
-// output merely contains a field, so a second line for one call is visible.
 func linesMatching(out *bytes.Buffer, substrings ...string) []string {
 	var matched []string
 	for _, line := range strings.Split(out.String(), "\n") {
@@ -36,36 +33,23 @@ func linesMatching(out *bytes.Buffer, substrings ...string) []string {
 	return matched
 }
 
-// loggerInto is the module logger a case hands the store: a text handler writing
-// into out, which is where the call lines land.
 func loggerInto(out *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(out, nil))
 }
 
-// hashedTestKey is the key_hash field a line about testKey carries, computed
-// here from the digest rather than from the package's own helper: the first
-// twelve hex digits.
 func hashedTestKey() string {
 	sum := sha256.Sum256([]byte(testKey))
 	return "key_hash=" + hex.EncodeToString(sum[:])[:12]
 }
 
-// opaqueReader hides a reader's Seeker, which is the SDK's cue to retry a
-// failed put with backoff: wrapping the body holds a case to one attempt.
 type opaqueReader struct{ io.Reader }
 
-// calls drives the three byte operations, each under its own logger.
 type call struct {
-	// operation is the value the line carries in its operation field.
 	operation string
-	// sized says the operation reports the object's size.
-	sized bool
-	// drive runs the operation against s under ctx.
-	drive func(ctx context.Context, s *store) error
+	sized     bool
+	drive     func(ctx context.Context, s *store) error
 }
 
-// byteCalls is the operations the seam promises, each driven with the case's
-// context.
 func byteCalls() []call {
 	return []call{
 		{
@@ -103,9 +87,6 @@ func byteCalls() []call {
 	}
 }
 
-// workingServer answers each of the three operations with the success the SDK
-// reads: a GET answers the object's bytes and its size, a DELETE answers 204,
-// and a PUT answers an ETag.
 func workingServer(payload string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -126,11 +107,8 @@ func workingServer(payload string) *httptest.Server {
 	}))
 }
 
-// TestEachCallLogsExactlyOneSuccessLine holds the external-call rule on the
-// success side: every call writes exactly one line carrying the operation, the
-// bucket, the key's hash, the duration and the outcome, the size where the
-// operation reports one, and the key itself nowhere. The line count is the
-// assertion, not a substring: a call that wrote two lines fails the case.
+// TestEachCallLogsExactlyOneSuccessLine checks that every byte call writes one success line with the
+// bucket, hashed key and duration, carrying a size only where it has one and never the raw key.
 func TestEachCallLogsExactlyOneSuccessLine(t *testing.T) {
 	server := workingServer("bytes")
 	defer server.Close()
@@ -163,8 +141,6 @@ func TestEachCallLogsExactlyOneSuccessLine(t *testing.T) {
 			if strings.Contains(line, testKey) {
 				t.Errorf("the success line carries the internal key: %s", line)
 			}
-			// A body that ended at EOF is the transfer completing, not a failure:
-			// it adds no second line.
 			if got := linesMatching(&out, "outcome=failed"); len(got) != 0 {
 				t.Errorf("a successful %s wrote a failure line: %v", c.operation, got)
 			}
@@ -172,10 +148,8 @@ func TestEachCallLogsExactlyOneSuccessLine(t *testing.T) {
 	}
 }
 
-// TestEachFailedCallLogsExactlyOneOutcomeLine holds the failure side: a call the
-// service refuses writes exactly one line with outcome=failed, the service's code
-// as the cause, its HTTP status and the duration — and no key, even when the
-// service echoes the key in the error message.
+// TestEachFailedCallLogsExactlyOneOutcomeLine checks that every refused byte call writes one failed
+// line naming the service's cause and status, and never the raw key.
 func TestEachFailedCallLogsExactlyOneOutcomeLine(t *testing.T) {
 	const denied = `<?xml version="1.0" encoding="UTF-8"?><Error>` +
 		`<Code>AccessDenied</Code><Message>Access to key ` + testKey + ` denied.</Message></Error>`
@@ -217,10 +191,8 @@ func TestEachFailedCallLogsExactlyOneOutcomeLine(t *testing.T) {
 	}
 }
 
-// TestATransportFailureLogsACauseWithoutTheKey holds the failure that reaches no
-// service answer: a refused connection still writes its line, exactly one of
-// them, and the key is scrubbed out of the transport error's text, which renders
-// the whole request URL.
+// TestATransportFailureLogsACauseWithoutTheKey checks that a transport failure writes one failed
+// line with a cause and a redaction marker, and not the key.
 func TestATransportFailureLogsACauseWithoutTheKey(t *testing.T) {
 	server := workingServer("bytes")
 	endpoint := endpointOf(server)
@@ -251,17 +223,13 @@ func TestATransportFailureLogsACauseWithoutTheKey(t *testing.T) {
 	if strings.Contains(line, testKey) {
 		t.Errorf("the failure line carries the internal key: %s", line)
 	}
-	// The transport error carries the request URL, so the key was in the text
-	// this line was rendered from: the marker is what took its place.
 	if !strings.Contains(line, "[redacted]") {
 		t.Errorf("the failure line carries no redaction marker: %s", line)
 	}
 }
 
-// TestPresigningLogsOneLineWithoutTheAddress holds the rule for the signing
-// calls: exactly one line each, carrying the common fields and the key's hash,
-// and neither the returned address — which carries the object key and the
-// access-key identifier — nor the internal key itself.
+// TestPresigningLogsOneLineWithoutTheAddress checks that each presign call writes one success line
+// without the signed address or the access-key identifier.
 func TestPresigningLogsOneLineWithoutTheAddress(t *testing.T) {
 	cases := []struct {
 		operation string
@@ -285,7 +253,6 @@ func TestPresigningLogsOneLineWithoutTheAddress(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.operation, func(t *testing.T) {
 			var out bytes.Buffer
-			// Signing reaches no service, so the endpoint is never dialed.
 			s := storeOverWithLogger(t, "http://127.0.0.1:1", loggerInto(&out))
 			issued, err := c.drive(context.Background(), s)
 			if err != nil {
@@ -320,8 +287,8 @@ func TestPresigningLogsOneLineWithoutTheAddress(t *testing.T) {
 	}
 }
 
-// TestARefusedLifetimeLogsNoLine holds that a lifetime the bounds refuse signs
-// nothing and therefore writes no call line: no address was produced.
+// TestARefusedLifetimeLogsNoLine holds that a lifetime the bounds refuse signs nothing and
+// therefore writes no call line: no address was produced.
 func TestARefusedLifetimeLogsNoLine(t *testing.T) {
 	var out bytes.Buffer
 	s := storeOverWithLogger(t, "http://127.0.0.1:1", loggerInto(&out))
@@ -334,14 +301,12 @@ func TestARefusedLifetimeLogsNoLine(t *testing.T) {
 	}
 }
 
-// TestACallTheContextEndedBeforeItWasMadeLogsNoLine holds what the rule covers:
-// a context already ended makes no request, so no external call is recorded and
-// the operation answers the context's own error.
+// TestACallTheContextEndedBeforeItWasMadeLogsNoLine checks that a call whose context was already
+// cancelled returns the context error and writes no line.
 func TestACallTheContextEndedBeforeItWasMadeLogsNoLine(t *testing.T) {
 	var out bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	// The endpoint is never dialed: the context is checked before the call.
 	s := storeOverWithLogger(t, "http://127.0.0.1:1", loggerInto(&out))
 	err := s.Put(ctx, testKey, strings.NewReader("x"), 1)
 	if !errors.Is(err, context.Canceled) {
@@ -352,10 +317,8 @@ func TestACallTheContextEndedBeforeItWasMadeLogsNoLine(t *testing.T) {
 	}
 }
 
-// TestABackgroundContextStillReachesTheModuleLogger holds the destination the
-// factory's sweep relies on: Delete runs on a context the caller created, which
-// carries no logger. The line still lands on the logger the module took up in
-// New, named after the module, so a configured file or JSON destination sees it.
+// TestABackgroundContextStillReachesTheModuleLogger holds the destination the factory's sweep
+// relies on: Delete runs on a context the caller created, which carries no logger.
 func TestABackgroundContextStillReachesTheModuleLogger(t *testing.T) {
 	var out bytes.Buffer
 	server := workingServer("bytes")
@@ -378,9 +341,6 @@ func TestABackgroundContextStillReachesTheModuleLogger(t *testing.T) {
 	}
 }
 
-// truncatingServer answers the HEAD Stat with the declared size and the GET with
-// fewer bytes than declared, then ends the response: the client's body read sees
-// an unexpected end of stream, the failure Open cannot report itself.
 func truncatingServer(declared int, body string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", strconv.Itoa(declared))
@@ -393,11 +353,8 @@ func truncatingServer(declared int, body string) *httptest.Server {
 	}))
 }
 
-// TestAnInterruptedBodyReadWritesOneFailureLine holds the gap between Open's
-// success line and the body: Open reports the header it read, and a transfer
-// that breaks after Open returned leaves its own failure line, with the same
-// key_hash and no key. Exactly one such line is written, however often the
-// broken reader answers the error.
+// TestAnInterruptedBodyReadWritesOneFailureLine checks that Open writes its success line and a body
+// cut short writes exactly one failed read line with a cause, never the key.
 func TestAnInterruptedBodyReadWritesOneFailureLine(t *testing.T) {
 	var out bytes.Buffer
 	server := truncatingServer(64, "short")
@@ -436,17 +393,10 @@ func TestAnInterruptedBodyReadWritesOneFailureLine(t *testing.T) {
 	}
 }
 
-// idleBeforeFirstRead is how long a case waits between Open returning and the
-// first Read, so a read line that counted the wait cannot be mistaken for one
-// that did not.
 const idleBeforeFirstRead = 100 * time.Millisecond
 
-// TestTheReadFailureDurationStartsAtTheFirstRead holds that the read line's
-// duration is the body read's own call, not Open's: the wait between Open
-// returning and the first Read is not part of it, and neither is the Open call,
-// which wrote its own line before that. The stream is left idle for
-// idleBeforeFirstRead and the recorded duration must stay below it; the body is
-// five bytes over loopback, so the read itself answers in well under that.
+// TestTheReadFailureDurationStartsAtTheFirstRead checks that an idle period before the first read is
+// not counted in a failed read's duration.
 func TestTheReadFailureDurationStartsAtTheFirstRead(t *testing.T) {
 	var out bytes.Buffer
 	server := truncatingServer(64, "short")
@@ -476,7 +426,6 @@ func TestTheReadFailureDurationStartsAtTheFirstRead(t *testing.T) {
 	}
 }
 
-// durationMillis reads the duration_ms field out of one line.
 func durationMillis(t *testing.T, line string) int64 {
 	t.Helper()
 	const field = "duration_ms="
@@ -495,11 +444,8 @@ func durationMillis(t *testing.T, line string) int64 {
 	return ms
 }
 
-// TestScrubKeyReplacesEveryEscapedForm holds the scrub itself: a text that names
-// a key with a space, a plus and a percent carries it in the three forms a URL
-// can produce — as written, path-escaped and query-escaped — and every one is
-// replaced, so a transport error that renders the whole request URL can be
-// logged.
+// TestScrubKeyReplacesEveryEscapedForm checks that scrubKey replaces the key in plain,
+// path-escaped and query-escaped form.
 func TestScrubKeyReplacesEveryEscapedForm(t *testing.T) {
 	const key = "tenant 1/a+b%c.bin"
 	forms := []string{key, url.PathEscape(key), url.QueryEscape(key)}

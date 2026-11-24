@@ -9,9 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// TestCompleteWithoutBytesIsContentMissing holds the first of the four outcomes:
-// a pending row the backend holds no bytes for reports the bytes never arrived,
-// and the row stays pending for a retry.
+// TestCompleteWithoutBytesIsContentMissing checks that completing an object with no bytes fails as
+// ErrContentMissing and leaves it pending.
 func TestCompleteWithoutBytesIsContentMissing(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{store: newFakeStore()})
@@ -33,10 +32,8 @@ func TestCompleteWithoutBytesIsContentMissing(t *testing.T) {
 	})
 }
 
-// TestCompleteWithAMismatchedSizeRemovesTheBytes holds the second outcome: the
-// backend holds a byte count that differs from the declaration, so its bytes are
-// removed and the call is a request the module cannot act on, with the row left
-// where it was.
+// TestCompleteWithAMismatchedSizeRemovesTheBytes checks that completing an object whose stored size
+// differs fails as ErrInvalidRequest, leaves it pending and removes the bytes.
 func TestCompleteWithAMismatchedSizeRemovesTheBytes(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -48,7 +45,6 @@ func TestCompleteWithAMismatchedSizeRemovesTheBytes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
 			}
-			// Stand in for a direct upload that carried the wrong number of bytes.
 			store.mu.Lock()
 			store.blobs[pending.Key] = []byte("too long")
 			store.mu.Unlock()
@@ -67,9 +63,8 @@ func TestCompleteWithAMismatchedSizeRemovesTheBytes(t *testing.T) {
 	})
 }
 
-// TestCompleteRecordsTheObservedBytes holds the third outcome: a pending row
-// whose bytes did arrive, by a direct upload the process never saw, becomes
-// completed with the observed size and the declared media type.
+// TestCompleteRecordsTheObservedBytes checks that Complete records the stored size and the declared
+// media type and moves the object to completed.
 func TestCompleteRecordsTheObservedBytes(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -103,8 +98,8 @@ func TestCompleteRecordsTheObservedBytes(t *testing.T) {
 	})
 }
 
-// TestCompleteIsIdempotentWithoutObservingTheBackend holds the fourth outcome: a
-// completed row is returned unchanged and the backend is not asked again.
+// TestCompleteIsIdempotentWithoutObservingTheBackend holds the fourth outcome: a completed row is
+// returned unchanged and the backend is not asked again.
 func TestCompleteIsIdempotentWithoutObservingTheBackend(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()
@@ -133,8 +128,8 @@ func TestCompleteIsIdempotentWithoutObservingTheBackend(t *testing.T) {
 	})
 }
 
-// TestCompleteWithAnUnreachableBackendIsStoreUnavailable holds the failure an
-// observation that is neither a missing blob nor a size mismatch reports.
+// TestCompleteWithAnUnreachableBackendIsStoreUnavailable holds the failure an observation that is
+// neither a missing blob nor a size mismatch reports.
 func TestCompleteWithAnUnreachableBackendIsStoreUnavailable(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		store := newFakeStore()

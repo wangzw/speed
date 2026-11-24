@@ -18,7 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// The states an object's row carries, as the strings the columns hold.
 var (
 	statePending   = string(objectstore.StatePending)
 	stateUploaded  = string(objectstore.StateUploaded)
@@ -26,20 +25,6 @@ var (
 	stateDeleted   = string(objectstore.StateDeleted)
 )
 
-// Create declares an object; see objectstore.Objects.
-//
-// It validates the declaration, normalizes the declared name, mints the object
-// identifier and the internal key, and lands a pending row with the declared
-// values and an upload window opened from now. The name is normalized here, the
-// one place it is read for storage: every reader afterwards gets the stored
-// value, and a name that is malformed, empty or reduced to nothing stores as
-// the empty string rather than failing the declaration. A declaration that
-// fails validation is refused and lands no row. The tenant column is filled
-// from the context by the model's own filter, so a context carrying no tenant
-// is refused by the insert.
-//
-// The upload window is read from the settings store here, at each declaration,
-// so a value written while the process runs is what the next object records.
 func (p *product) Create(ctx context.Context, d objectstore.Declaration) (objectstore.Object, error) {
 	if err := validateDeclaration(d); err != nil {
 		return objectstore.Object{}, err
@@ -68,15 +53,6 @@ func (p *product) Create(ctx context.Context, d objectstore.Declaration) (object
 	return row.view(), nil
 }
 
-// Upload stores an object's bytes; see objectstore.Objects.
-//
-// The row must be pending or uploaded, its upload window must still be open, and
-// the byte count the caller states must equal the declared size. Every
-// precondition is checked before any byte is written: a request that fails one
-// leaves no half-written byte and advances no state. The bytes are streamed to
-// the byte seam through a reader that counts them and hashes them, and the row
-// is then advanced to uploaded with the observed size, checksum and content type
-// in one conditional statement.
 func (p *product) Upload(ctx context.Context, id string, r io.Reader, size int64) error {
 	row, err := p.load(ctx, id)
 	if err != nil {
@@ -99,17 +75,6 @@ func (p *product) Upload(ctx context.Context, id string, r io.Reader, size int64
 	return p.storeUpload(ctx, row, r, size)
 }
 
-// storeUpload streams bytes into the seam and advances the row to uploaded. It
-// is the one write path the in-process Upload and the content route's PUT share,
-// so the two record the same observed size, SHA-256 and MIME under the same
-// rules.
-//
-// It computes the SHA-256 while it writes and compares it with a declared one
-// when there is one: a body that hashes elsewhere is not the declared object, so
-// its bytes are removed — best effort, the sweep would catch them otherwise —
-// and the call is a request the module cannot act on. A byte-seam failure is
-// ErrStoreUnavailable. The conditional advance covers a row that changed state
-// while the bytes were being written.
 func (p *product) storeUpload(ctx context.Context, row *object, source io.Reader, size int64) error {
 	observed := newHashingReader(source)
 	if err := p.bytes.Put(ctx, row.Key, observed, size); err != nil {
@@ -142,23 +107,6 @@ func (p *product) storeUpload(ctx context.Context, row *object, source io.Reader
 	return nil
 }
 
-// Complete moves an object to completed; see objectstore.Objects.
-//
-// A deleted row is answered as not found, the same as an unknown identifier: it
-// is gone rather than in a state this call could move it out of. A completed row
-// is returned unchanged, its expiry left as it was, and no byte is looked at:
-// completion is idempotent. A pending or uploaded row is completed only when the
-// backend really holds the declared number of bytes, which is what lets a
-// direct-to-backend upload finish through this call.
-//
-// The bytes are observed with Stat, never read. A backend that holds none is
-// ErrContentMissing, the bytes never having arrived. A byte count that differs
-// from the declaration has its bytes removed — best effort, the sweep would catch
-// them otherwise — and is a request the module cannot act on, with the row left
-// in its state for a retry. An unreachable backend is ErrStoreUnavailable.
-//
-// The lifetime is read from the settings store here, at each completion, so a
-// value written while the process runs is what the next completion records.
 func (p *product) Complete(ctx context.Context, id string) (objectstore.Object, error) {
 	row, err := p.load(ctx, id)
 	if err != nil {
@@ -217,9 +165,6 @@ func (p *product) Complete(ctx context.Context, id string) (objectstore.Object, 
 	return fresh.view(), nil
 }
 
-// Get returns an object's view; see objectstore.Objects. A deleted object is
-// answered as not found, the same as an unknown identifier and another tenant's
-// object, so the answer leaks nothing about existence.
 func (p *product) Get(ctx context.Context, id string) (objectstore.Object, error) {
 	row, err := p.load(ctx, id)
 	if err != nil {
@@ -231,10 +176,6 @@ func (p *product) Get(ctx context.Context, id string) (objectstore.Object, error
 	return row.view(), nil
 }
 
-// OpenContent returns a read-only stream over a completed object's bytes; see
-// objectstore.Objects. A pending or uploaded object is a state conflict, a
-// deleted one is not found, and a completed row whose bytes are not behind the
-// seam is ErrContentMissing. The caller closes the stream.
 func (p *product) OpenContent(ctx context.Context, id string) (io.ReadCloser, error) {
 	row, err := p.load(ctx, id)
 	if err != nil {
@@ -254,27 +195,8 @@ func (p *product) OpenContent(ctx context.Context, id string) (io.ReadCloser, er
 	return content, nil
 }
 
-// maxURLTTL is the longest lifetime either backend honours: 604800 seconds,
-// the upper bound of an S3 SigV4 pre-signed address. The local-directory backend
-// keeps the same bound so the two backends answer the same expiry semantics.
 const maxURLTTL = 7 * 24 * time.Hour
 
-// URL mints one direct-access address for an object's bytes; see
-// objectstore.Objects.
-//
-// The address is either a pre-signed one minted by the backend that delivers
-// DirectURL, or a token-carrying content address this process serves. The two
-// differ in who holds the bytes: a pre-signed address carries the backend key, a
-// content address carries an opaque token this module records in a grant row.
-//
-// Every path checks the same things. A read needs a completed object that has
-// not passed its expiry; a write needs a pending or uploaded object whose upload
-// window is still open. A remaining life or window under one second answers as
-// though it had already passed. The lifetime is the configured url-ttl, may only
-// be shortened by the caller, and is clamped again to the remaining life, the
-// remaining window and the backend maximum. The caller's decision about which
-// end user may hold the address is made before this call; nothing about the end
-// user is checked here.
 func (p *product) URL(ctx context.Context, id string, req objectstore.URLRequest) (objectstore.IssuedURL, error) {
 	switch req.Access {
 	case objectstore.URLAccessRead, objectstore.URLAccessWrite:
@@ -363,9 +285,6 @@ func (p *product) URL(ctx context.Context, id string, req objectstore.URLRequest
 	return objectstore.IssuedURL{URL: p.contentURL(token), Method: method, Expires: expires}, nil
 }
 
-// List returns a page of this tenant's undeleted objects; see objectstore.Objects.
-// The page is ordered by (created_at, id) and the cursor continues from the last
-// row of the previous page; an empty cursor is the first page.
 func (p *product) List(ctx context.Context, q objectstore.ListQuery) ([]objectstore.Object, error) {
 	limit, err := effectiveLimit(q.Limit)
 	if err != nil {
@@ -390,12 +309,6 @@ func (p *product) List(ctx context.Context, q objectstore.ListQuery) ([]objectst
 	return out, nil
 }
 
-// Delete removes an object's bytes and tombstones its row; see objectstore.Objects.
-//
-// Any undeleted state has its bytes removed through the seam first, then its row
-// conditionally tombstoned. A row already deleted matches no conditional update
-// and is an idempotent success: a second delete removes no byte. A byte-seam
-// failure is ErrStoreUnavailable and leaves the row as it was.
 func (p *product) Delete(ctx context.Context, id string) error {
 	row, err := p.load(ctx, id)
 	if err != nil {
@@ -419,10 +332,6 @@ func (p *product) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// load reads one row of the context's tenant, past the roster's filter. A row
-// the tenant cannot see — an unknown identifier or another tenant's — is
-// ErrObjectNotFound. A deleted row is returned: whether it reads as not found is
-// each method's to decide.
 func (p *product) load(ctx context.Context, id string) (*object, error) {
 	var row object
 	err := p.handle.WithContext(ctx).First(&row, "id = ?", id).Error
@@ -435,9 +344,6 @@ func (p *product) load(ctx context.Context, id string) (*object, error) {
 	return &row, nil
 }
 
-// effectiveLimit settles the page size a list runs with: the default when none
-// is named, the named value within bounds, and a refusal for one above the
-// maximum so a caller is told rather than served a short page.
 func effectiveLimit(n int) (int, error) {
 	switch {
 	case n == 0:
@@ -451,9 +357,6 @@ func effectiveLimit(n int) (int, error) {
 	return n, nil
 }
 
-// validateDeclaration refuses a declaration whose shape cannot be read: a size
-// that is not positive, a content type that is empty, or a checksum that is
-// neither empty nor the 64 hex digits of a SHA-256.
 func validateDeclaration(d objectstore.Declaration) error {
 	switch {
 	case d.Size <= 0:
@@ -468,7 +371,6 @@ func validateDeclaration(d objectstore.Declaration) error {
 	return nil
 }
 
-// isSHA256Hex reports whether s is exactly 64 hexadecimal digits.
 func isSHA256Hex(s string) bool {
 	if len(s) != sha256.Size*2 {
 		return false
@@ -484,21 +386,16 @@ func isSHA256Hex(s string) bool {
 	return true
 }
 
-// hashingReader counts the bytes read through it and hashes them with SHA-256,
-// so that one pass over the caller's stream gives both the observed size and the
-// observed checksum. It reads the source once and holds nothing past the call.
 type hashingReader struct {
 	source io.Reader
 	digest hash.Hash
 	count  int64
 }
 
-// newHashingReader wraps a source reader.
 func newHashingReader(source io.Reader) *hashingReader {
 	return &hashingReader{source: source, digest: sha256.New()}
 }
 
-// Read reads from the source, feeding what it read into the hash and the count.
 func (h *hashingReader) Read(b []byte) (int, error) {
 	n, err := h.source.Read(b)
 	if n > 0 {
@@ -508,5 +405,4 @@ func (h *hashingReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// sum reports the hex SHA-256 of the bytes read so far.
 func (h *hashingReader) sum() string { return hex.EncodeToString(h.digest.Sum(nil)) }

@@ -30,7 +30,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// engine is one database capability this module is exercised on.
 type engine struct {
 	name     string
 	database core.Module
@@ -38,9 +37,6 @@ type engine struct {
 	locate   func(t *testing.T) string
 }
 
-// engines lists the capabilities this build runs the cases on. PostgreSQL is
-// appended by the tagged file, which is also where its locator lives: without
-// the tag it is not in the list, and no untagged case names it.
 var engines = []engine{
 	{
 		name:     "sqlite",
@@ -50,7 +46,6 @@ var engines = []engine{
 	},
 }
 
-// forEachEngine runs a case on every engine.
 func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 	t.Helper()
 	for _, e := range engines {
@@ -58,34 +53,19 @@ func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 	}
 }
 
-// harness is one assembled run of this module: the engine it sits on, the
-// module's own configuration section, the byte seam and the optional surfaces
-// the case supplies, and the stage the run reaches.
 type harness struct {
-	database core.Module
-	section  string
-	dsn      string
-	metadata map[string]any
-	store    *fakeStore
-	// router stands in for the entry point, so a case can see where the content
-	// route was mounted.
-	router speedhttp.Router
-	// direct stands in for a backend that mints its own addresses; when it is
-	// set the content route must not be mounted.
-	direct objectstore.DirectURL
-	// fsRoot, when set, assembles the real local-directory backend over that
-	// directory instead of the in-memory stand-in, so a case can drive bytes
-	// through the backend the content route serves.
-	fsRoot string
-	// withSettings assembles the settings module and its event bus, so a case
-	// can write a runtime tunable and watch the next call read it.
+	database     core.Module
+	section      string
+	dsn          string
+	metadata     map[string]any
+	store        *fakeStore
+	router       speedhttp.Router
+	direct       objectstore.DirectURL
+	fsRoot       string
 	withSettings bool
 	depth        core.Stage
 }
 
-// metadataBody is the module's default configuration: one content endpoint named
-// "public" and the sweep turned off. The upload window, the object lifetime and
-// the URL lifetime are settings and are not configuration items.
 func metadataBody(overrides map[string]any) map[string]any {
 	body := map[string]any{
 		"content-endpoints": []string{"public"},
@@ -97,7 +77,6 @@ func metadataBody(overrides map[string]any) map[string]any {
 	return body
 }
 
-// on builds a harness on an engine over a fresh database of that engine's own.
 func (e engine) on(t *testing.T, h harness) harness {
 	h.database = e.database
 	h.section = e.section
@@ -105,8 +84,6 @@ func (e engine) on(t *testing.T, h harness) harness {
 	return h
 }
 
-// assemble loads the configuration the way a host loads it and returns the
-// registry to drive together with the names of the modules taking part.
 func (h harness) assemble(t *testing.T) (*core.Registry, []string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -186,8 +163,6 @@ func (h harness) assemble(t *testing.T) (*core.Registry, []string) {
 	return reg, names
 }
 
-// driveTo drives the assembly to depth and returns the drive's error, so a case
-// can tell which stage a refusal landed at.
 func (h harness) driveTo(t *testing.T, depth core.Stage, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	reg, names := h.assemble(t)
@@ -198,8 +173,6 @@ func (h harness) driveTo(t *testing.T, depth core.Stage, action func(ctx context
 	})
 }
 
-// drive drives a fresh assembly to the run's depth and runs action there,
-// ending the case if the drive fails.
 func (h harness) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	depth := h.depth
@@ -211,7 +184,6 @@ func (h harness) drive(t *testing.T, action func(ctx context.Context, reg *core.
 	}
 }
 
-// objectsOf resolves the metadata seam.
 func objectsOf(t *testing.T, reg *core.Registry) objectstore.Objects {
 	t.Helper()
 	objects, err := core.Resolve[objectstore.Objects](reg)
@@ -221,7 +193,6 @@ func objectsOf(t *testing.T, reg *core.Registry) objectstore.Objects {
 	return objects
 }
 
-// productOfAssembly narrows the resolved seam to this module's product.
 func productOfAssembly(t *testing.T, reg *core.Registry) *product {
 	t.Helper()
 	objects := objectsOf(t, reg)
@@ -232,8 +203,6 @@ func productOfAssembly(t *testing.T, reg *core.Registry) *product {
 	return p
 }
 
-// tenantCtx registers a tenant in the roster and returns a context that belongs
-// to it.
 func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	t.Helper()
 	roster, err := core.Resolve[tenant.Catalog](reg)
@@ -252,7 +221,6 @@ func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	return ctx
 }
 
-// dbHandle resolves the database handle.
 func dbHandle(t *testing.T, reg *core.Registry) *gorm.DB {
 	t.Helper()
 	database, err := core.Resolve[db.Database](reg)
@@ -262,17 +230,13 @@ func dbHandle(t *testing.T, reg *core.Registry) *gorm.DB {
 	return database.DB()
 }
 
-// fakeStore is a stand-in byte seam: an in-memory map plus the failures and the
-// deletion log a case steers.
 type fakeStore struct {
-	mu      sync.Mutex
-	blobs   map[string][]byte
-	putErr  error
-	openErr error
-	statErr error
-	delErr  error
-	// notSeekable makes Open answer a stream ServeContent cannot seek, which
-	// exercises the full-copy branch.
+	mu          sync.Mutex
+	blobs       map[string][]byte
+	putErr      error
+	openErr     error
+	statErr     error
+	delErr      error
 	notSeekable bool
 	deleted     []string
 }
@@ -299,9 +263,6 @@ func (s *fakeStore) Put(_ context.Context, key string, r io.Reader, _ int64) err
 	return nil
 }
 
-// readSeekCloser is what the local-directory backend answers Open with: an
-// *os.File is an io.ReadSeeker, and the content route uses that to let
-// ServeContent answer ranges and HEAD.
 type readSeekCloser struct{ *bytes.Reader }
 
 func (readSeekCloser) Close() error { return nil }
@@ -314,7 +275,6 @@ func (s *fakeStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	}
 	data, ok := s.blobs[key]
 	if !ok {
-		// The file system's own not-exist error, as the fs backend reports it.
 		return nil, fmt.Errorf("%w: no bytes under that key", fs.ErrNotExist)
 	}
 	reader := bytes.NewReader(data)
@@ -361,7 +321,6 @@ func (s *fakeStore) deletions() []string {
 	return append([]string(nil), s.deleted...)
 }
 
-// standIn is a module that delivers instance for the tokens named.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -374,8 +333,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// declare puts an object through declaration, upload and completion and returns
-// its identifier.
 func declare(t *testing.T, ctx context.Context, objects objectstore.Objects, name, body string) string {
 	t.Helper()
 	obj, err := objects.Create(ctx, objectstore.Declaration{

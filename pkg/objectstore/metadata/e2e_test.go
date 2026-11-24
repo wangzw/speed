@@ -18,10 +18,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// ginEndpoint stands in for one listening endpoint: it binds the handlers it is
-// given onto a real gin engine, which the case then serves over HTTP. The
-// middleware surface is inert, because this case exercises the content route
-// itself rather than the layers a host chooses for it.
 type ginEndpoint struct{ engine *gin.Engine }
 
 func (e *ginEndpoint) Route(method, path string, handlers ...gin.HandlerFunc) {
@@ -32,7 +28,6 @@ func (e *ginEndpoint) Use(speedhttp.Middleware) {}
 
 func (e *ginEndpoint) Accepting() bool { return true }
 
-// ginRouter is the entry point the module mounts the content route on.
 type ginRouter struct {
 	engine   *gin.Engine
 	endpoint *ginEndpoint
@@ -53,14 +48,8 @@ func (r *ginRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
 
 func (r *ginRouter) Endpoints() []string { return []string{"content"} }
 
-// TestTheLocalBackendServesAMintedAddressOverHTTP drives one object through the
-// whole direct path on the real local-directory backend: a business backend
-// declares it, asks for a write address, a client PUTs the bytes to that
-// address, the backend completes it, and a read address serves them back
-// byte-for-byte with the declared media type and file name. The case also
-// holds the lifecycle edges the addresses inherit: the bytes must arrive before
-// completion, another tenant cannot mint an address for the object, and a
-// deleted object's address stops serving.
+// TestTheLocalBackendServesAMintedAddressOverHTTP checks the write and read addresses end to end,
+// from upload to bytes, media type, disposition, isolation and a deleted object's 404.
 func TestTheLocalBackendServesAMintedAddressOverHTTP(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		router := newGinRouter()

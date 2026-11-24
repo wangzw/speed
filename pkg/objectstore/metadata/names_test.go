@@ -17,10 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// nameCases is the normalization contract expressed as input -> stored value.
-// The reviewer's case leads: a path-traversal shape with a real newline and a
-// backslash, which must store as a readable label rather than fail or land a
-// separator.
 var nameCases = []struct {
 	label string
 	input string
@@ -43,8 +39,8 @@ var nameCases = []struct {
 	{"invalid UTF-8", "a\xffb", "ab"},
 }
 
-// TestNormalizeNameFollowsTheDesignRules pins the normalization rules directly:
-// separators, dropped categories, trimming, the all-dots rule and the byte cap.
+// TestNormalizeNameFollowsTheDesignRules pins the normalization rules directly: separators,
+// dropped categories, trimming, the all-dots rule and the byte cap.
 func TestNormalizeNameFollowsTheDesignRules(t *testing.T) {
 	for _, c := range nameCases {
 		if got := normalizeName(c.input); got != c.want {
@@ -52,16 +48,13 @@ func TestNormalizeNameFollowsTheDesignRules(t *testing.T) {
 		}
 	}
 
-	// Only dots after the cut: a 300-dot name is truncated to the cap and
-	// then stores as nothing.
 	if got := normalizeName(strings.Repeat(".", 300)); got != "" {
 		t.Errorf("normalizeName of 300 dots = %q, want the empty string", got)
 	}
 }
 
-// TestNormalizeNameCutsAtACharacterBoundaryAndNeverExceedsTheCap holds the byte
-// rule: a multi-byte character at the limit is never split, the stored value is
-// valid UTF-8, and no value exceeds the cap.
+// TestNormalizeNameCutsAtACharacterBoundaryAndNeverExceedsTheCap checks that a long name is cut at a
+// rune boundary within the cap, an exact fit is untouched and whitespace is trimmed.
 func TestNormalizeNameCutsAtACharacterBoundaryAndNeverExceedsTheCap(t *testing.T) {
 	long := strings.Repeat("é", 200)
 	got := normalizeName(long)
@@ -75,7 +68,6 @@ func TestNormalizeNameCutsAtACharacterBoundaryAndNeverExceedsTheCap(t *testing.T
 		t.Errorf("normalizeName(200 two-byte characters) cut to %d bytes; want the first 127 characters", len(got))
 	}
 
-	// A name that fits exactly at the cap is kept whole.
 	exact := strings.Repeat("é", 127) + "x"
 	if len(exact) != nameMaxBytes {
 		t.Fatalf("the exact-fit fixture is %d bytes, want %d", len(exact), nameMaxBytes)
@@ -84,7 +76,6 @@ func TestNormalizeNameCutsAtACharacterBoundaryAndNeverExceedsTheCap(t *testing.T
 		t.Errorf("normalizeName of a name exactly at the cap changed it")
 	}
 
-	// Whitespace that survives the cut is trimmed again afterwards.
 	trailing := strings.Repeat("a", 200) + strings.Repeat(" ", 100)
 	if got, want := normalizeName(trailing), strings.Repeat("a", 200); got != want {
 		t.Errorf("normalizeName trimmed to %d bytes, want the 200 characters before the whitespace", len(got))
@@ -97,9 +88,8 @@ func TestNormalizeNameCutsAtACharacterBoundaryAndNeverExceedsTheCap(t *testing.T
 	}
 }
 
-// TestCreateStoresTheNormalizedNameAndNeverRefusesIt holds the end-to-end rule:
-// every name, including the reviewer's path-shaped one, is accepted by Create,
-// stored normalized, and read back normalized by Get and List.
+// TestCreateStoresTheNormalizedNameAndNeverRefusesIt checks that Create stores the normalized name
+// for every case, including path separators and control characters, and never refuses one.
 func TestCreateStoresTheNormalizedNameAndNeverRefusesIt(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -112,7 +102,6 @@ func TestCreateStoresTheNormalizedNameAndNeverRefusesIt(t *testing.T) {
 					Name: c.input, Size: 1, ContentType: "text/plain",
 				})
 				if err != nil {
-					// The name is a label, never a validation failure.
 					t.Fatalf("%s: Create refused the name %q: %v", c.label, c.input, err)
 				}
 				if declared.Name != c.want {
@@ -139,9 +128,6 @@ func TestCreateStoresTheNormalizedNameAndNeverRefusesIt(t *testing.T) {
 				}
 			}
 
-			// The reviewer's case, in the terms the acceptance states it: the
-			// stored and viewed name carries no path separator or control
-			// character and is readable text.
 			declared, err := objects.Create(tctx, objectstore.Declaration{
 				Name: "../evil\n\\name.txt", Size: 1, ContentType: "text/plain",
 			})
@@ -175,9 +161,8 @@ func TestCreateStoresTheNormalizedNameAndNeverRefusesIt(t *testing.T) {
 	})
 }
 
-// TestARowThatPredatesTheNameMigrationReadsAsUnnamed holds the migration's
-// additive promise: a row written before the name column existed keeps the
-// empty string, which the view carries and clients render as "unnamed".
+// TestARowThatPredatesTheNameMigrationReadsAsUnnamed checks that a row written before the name
+// column reads as an empty name through Get and List.
 func TestARowThatPredatesTheNameMigrationReadsAsUnnamed(t *testing.T) {
 	schema, err := fs.ReadFile(migrationRoot, "migrations/sqlite/0001_objects.sql")
 	if err != nil {

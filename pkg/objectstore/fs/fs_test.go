@@ -16,15 +16,12 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// storeOver builds a backend over a fresh directory under the case's temporary
-// area and answers the store and the directory.
 func storeOver(t *testing.T) (*store, string) {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "root")
 	return &store{root: root}, root
 }
 
-// putBytes stores body under key, failing the case on any error.
 func putBytes(t *testing.T, s *store, key string, body string) {
 	t.Helper()
 	if err := s.Put(t.Context(), key, strings.NewReader(body), int64(len(body))); err != nil {
@@ -32,7 +29,6 @@ func putBytes(t *testing.T, s *store, key string, body string) {
 	}
 }
 
-// readAll reads back what is stored under key, failing the case on any error.
 func readAll(t *testing.T, s *store, key string) string {
 	t.Helper()
 	r, err := s.Open(t.Context(), key)
@@ -51,9 +47,8 @@ func readAll(t *testing.T, s *store, key string) string {
 	return string(body)
 }
 
-// TestPutAndOpenRoundTrip holds that what is stored under a key is what is read
-// back, across a multi-segment key, which is the shape the metadata module
-// generates.
+// TestPutAndOpenRoundTrip holds that what is stored under a key is what is read back, across a
+// multi-segment key, which is the shape the metadata module generates.
 func TestPutAndOpenRoundTrip(t *testing.T) {
 	s, root := storeOver(t)
 	const key = "tenant-1/object-id/uuid.bin"
@@ -67,9 +62,8 @@ func TestPutAndOpenRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPutCreatesMissingParentDirectories holds that a key whose segments name
-// directories that do not exist yet still stores, which is what lets an assembly
-// start before the root is laid out.
+// TestPutCreatesMissingParentDirectories holds that a key whose segments name directories that do
+// not exist yet still stores, which is what lets an assembly start before the root is laid out.
 func TestPutCreatesMissingParentDirectories(t *testing.T) {
 	s, _ := storeOver(t)
 	putBytes(t, s, "a/b/c/leaf", "nested")
@@ -79,9 +73,8 @@ func TestPutCreatesMissingParentDirectories(t *testing.T) {
 	}
 }
 
-// TestPutOverwritesAnExistingKey holds the upload step's retry: a second Put to
-// one key replaces the bytes the first left, and the atomic replacement leaves
-// no temporary file behind.
+// TestPutOverwritesAnExistingKey holds the upload step's retry: a second Put to one key replaces
+// the bytes the first left, and the atomic replacement leaves no temporary file behind.
 func TestPutOverwritesAnExistingKey(t *testing.T) {
 	s, root := storeOver(t)
 	putBytes(t, s, "k", "the first byte set")
@@ -95,8 +88,6 @@ func TestPutOverwritesAnExistingKey(t *testing.T) {
 	}
 }
 
-// partFiles lists the temporary files a Put writes before renaming one into
-// place, under every directory of the root.
 func partFiles(t *testing.T, root string) []string {
 	t.Helper()
 	var found []string
@@ -118,10 +109,8 @@ func partFiles(t *testing.T, root string) []string {
 	return found
 }
 
-// TestPutRefusesAShortStream holds the exact-size promise: a stream that ends
-// before the declared byte count is refused with the capability's invalid-request
-// sentinel, the target file is not created and the temporary file is removed, so
-// a caller never observes a partly written object.
+// TestPutRefusesAShortStream checks that Put of a stream shorter than the declared size fails as
+// ErrInvalidRequest and leaves neither the target nor a temporary file.
 func TestPutRefusesAShortStream(t *testing.T) {
 	s, root := storeOver(t)
 	const key = "short/stream"
@@ -137,9 +126,8 @@ func TestPutRefusesAShortStream(t *testing.T) {
 	}
 }
 
-// TestPutRefusesAnOverlongStream holds the other side of the exact-size promise:
-// a stream carrying more than the declared byte count is refused the same way,
-// and again neither the target nor a temporary file remains.
+// TestPutRefusesAnOverlongStream checks that Put of a stream longer than the declared size fails as
+// ErrInvalidRequest and leaves neither the target nor a temporary file.
 func TestPutRefusesAnOverlongStream(t *testing.T) {
 	s, root := storeOver(t)
 	const key = "long/stream"
@@ -155,8 +143,8 @@ func TestPutRefusesAnOverlongStream(t *testing.T) {
 	}
 }
 
-// TestStatReportsTheStoredSize holds that Stat answers the number of bytes the
-// backend holds under a key without reading them.
+// TestStatReportsTheStoredSize holds that Stat answers the number of bytes the backend holds under
+// a key without reading them.
 func TestStatReportsTheStoredSize(t *testing.T) {
 	s, _ := storeOver(t)
 	putBytes(t, s, "a/b/leaf", "twelve bytes")
@@ -170,10 +158,8 @@ func TestStatReportsTheStoredSize(t *testing.T) {
 	}
 }
 
-// TestStatOnAKeyWithNoBytesWrapsContentMissing holds the shape the completion
-// step reads: a key the backend holds no bytes under reports an error wrapping
-// objectstore.ErrContentMissing — both for a key under an existing root and for
-// one under a root that was never created.
+// TestStatOnAKeyWithNoBytesWrapsContentMissing checks that Stat of an absent key, and under a root
+// that does not exist, wraps ErrContentMissing.
 func TestStatOnAKeyWithNoBytesWrapsContentMissing(t *testing.T) {
 	t.Run("missing key", func(t *testing.T) {
 		s, _ := storeOver(t)
@@ -195,8 +181,8 @@ func TestStatOnAKeyWithNoBytesWrapsContentMissing(t *testing.T) {
 	})
 }
 
-// TestDeleteIsIdempotent holds that deleting a key removes its bytes and that a
-// second delete of the same key is not an error.
+// TestDeleteIsIdempotent holds that deleting a key removes its bytes and that a second delete of
+// the same key is not an error.
 func TestDeleteIsIdempotent(t *testing.T) {
 	s, root := storeOver(t)
 	putBytes(t, s, "gone/soon", "bytes")
@@ -212,9 +198,7 @@ func TestDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestDeleteOfAKeyWithNoBytesSucceeds holds the idempotence from the other side:
-// a key never written is deleted without an error, which is what the expiry
-// sweep relies on when a Put landed bytes and the row never moved.
+// TestDeleteOfAKeyWithNoBytesSucceeds checks that deleting a key that was never written succeeds.
 func TestDeleteOfAKeyWithNoBytesSucceeds(t *testing.T) {
 	s, _ := storeOver(t)
 	if err := s.Delete(t.Context(), "never/written"); err != nil {
@@ -222,9 +206,8 @@ func TestDeleteOfAKeyWithNoBytesSucceeds(t *testing.T) {
 	}
 }
 
-// TestOpenOfAKeyWithNoBytesReportsNotExist holds that a read with no bytes
-// behind it reports the file system's own not-exist error, which is the shape
-// the metadata module tells apart from an unavailable backend.
+// TestOpenOfAKeyWithNoBytesReportsNotExist checks that Open of a key with no bytes returns a
+// not-exist error.
 func TestOpenOfAKeyWithNoBytesReportsNotExist(t *testing.T) {
 	s, _ := storeOver(t)
 	_, err := s.Open(t.Context(), "no/such/bytes")
@@ -236,8 +219,6 @@ func TestOpenOfAKeyWithNoBytesReportsNotExist(t *testing.T) {
 	}
 }
 
-// illegalKeys are the keys this backend must refuse: each names a key that
-// cannot become a sequence of plain file names under the root.
 var illegalKeys = map[string]string{
 	"empty":            "",
 	"empty segment":    "a//b",
@@ -254,9 +235,8 @@ var illegalKeys = map[string]string{
 	"overlong segment": "a/" + strings.Repeat("x", maxSegmentLength+1),
 }
 
-// TestAnIllegalKeyIsRefused holds the key grammar to be a boundary: every method
-// refuses a key that is not a legal sequence of path elements, through the one
-// sentinel, and nothing is created for it.
+// TestAnIllegalKeyIsRefused checks that every illegal key is refused by Put, Open, Stat and Delete
+// without creating the root.
 func TestAnIllegalKeyIsRefused(t *testing.T) {
 	s, root := storeOver(t)
 	for name, key := range illegalKeys {
@@ -280,10 +260,8 @@ func TestAnIllegalKeyIsRefused(t *testing.T) {
 	}
 }
 
-// TestAKeyThatWouldEscapeTheRootLeavesNothingOutside holds the security boundary
-// as a property rather than a single key: for a set of keys that try to climb
-// out of the root, the store refuses every one and writes nothing outside the
-// root.
+// TestAKeyThatWouldEscapeTheRootLeavesNothingOutside checks that traversal keys are refused and
+// land no file outside the root.
 func TestAKeyThatWouldEscapeTheRootLeavesNothingOutside(t *testing.T) {
 	s, root := storeOver(t)
 	parent := filepath.Dir(root)
@@ -306,8 +284,8 @@ func TestAKeyThatWouldEscapeTheRootLeavesNothingOutside(t *testing.T) {
 	}
 }
 
-// TestACancelledContextIsRefused holds that every method honours the call's
-// context rather than ignoring it.
+// TestACancelledContextIsRefused holds that every method honours the call's context rather than
+// ignoring it.
 func TestACancelledContextIsRefused(t *testing.T) {
 	s, _ := storeOver(t)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -327,9 +305,8 @@ func TestACancelledContextIsRefused(t *testing.T) {
 	}
 }
 
-// TestTheStoreIsSafeForConcurrentUse holds that one store answers several
-// callers at once: the store holds no per-call state, so distinct keys put,
-// read and deleted from many goroutines never interfere.
+// TestTheStoreIsSafeForConcurrentUse checks that sixteen workers putting, reading and deleting
+// their own keys all read back what they wrote.
 func TestTheStoreIsSafeForConcurrentUse(t *testing.T) {
 	s, _ := storeOver(t)
 	const workers = 16
@@ -375,8 +352,7 @@ func TestTheStoreIsSafeForConcurrentUse(t *testing.T) {
 	wg.Wait()
 }
 
-// TestNameReportsTheBackend holds that the diagnostic name is this backend's
-// constant.
+// TestNameReportsTheBackend holds that the diagnostic name is this backend's constant.
 func TestNameReportsTheBackend(t *testing.T) {
 	s, _ := storeOver(t)
 	if got := s.Name(); got != "fs" {

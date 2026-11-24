@@ -14,8 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
-// mintURL asks for one direct-access address and stops the case when the call
-// fails.
 func mintURL(t *testing.T, objects objectstore.Objects, ctx context.Context, id string, access objectstore.URLAccess, expiry time.Duration) objectstore.IssuedURL {
 	t.Helper()
 	issued, err := objects.URL(ctx, id, objectstore.URLRequest{Access: access, Expiry: expiry})
@@ -25,7 +23,6 @@ func mintURL(t *testing.T, objects objectstore.Objects, ctx context.Context, id 
 	return issued
 }
 
-// tokenOf reads the token out of a minted content address.
 func tokenOf(t *testing.T, address string) string {
 	t.Helper()
 	parsed, err := url.Parse(address)
@@ -68,7 +65,6 @@ func TestURLStateMatrix(t *testing.T) {
 			read := objectstore.URLAccessRead
 			write := objectstore.URLAccessWrite
 
-			// Read: only a completed object.
 			for _, id := range []string{pending.ID, uploaded.ID} {
 				if _, uErr := objects.URL(tctx, id, objectstore.URLRequest{Access: read}); !errors.Is(uErr, objectstore.ErrStateConflict) {
 					t.Errorf("a read URL for an uncompleted object gave %v, want ErrStateConflict", uErr)
@@ -84,7 +80,6 @@ func TestURLStateMatrix(t *testing.T) {
 				t.Errorf("a read URL for a deleted object gave %v, want ErrObjectNotFound", uErr)
 			}
 
-			// Write: only a pending or uploaded object.
 			for _, id := range []string{pending.ID, uploaded.ID} {
 				if got := mintURL(t, objects, tctx, id, write, 0); got.Method != "PUT" {
 					t.Errorf("a write URL's method is %q, want PUT", got.Method)
@@ -97,7 +92,6 @@ func TestURLStateMatrix(t *testing.T) {
 				t.Errorf("a write URL for a deleted object gave %v, want ErrObjectNotFound", uErr)
 			}
 
-			// An object another tenant cannot see reads as not found.
 			other := tenantCtx(t, reg, "globex")
 			if _, uErr := objects.URL(other, completedID, objectstore.URLRequest{Access: read}); !errors.Is(uErr, objectstore.ErrObjectNotFound) {
 				t.Errorf("another tenant's read URL gave %v, want ErrObjectNotFound", uErr)
@@ -107,8 +101,8 @@ func TestURLStateMatrix(t *testing.T) {
 	})
 }
 
-// TestURLRefusesAnUnreadableRequest holds the two request shapes the method
-// refuses before it reads a row.
+// TestURLRefusesAnUnreadableRequest holds the two request shapes the method refuses before it
+// reads a row.
 func TestURLRefusesAnUnreadableRequest(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{router: newRecordingRouter("public")})
@@ -127,9 +121,8 @@ func TestURLRefusesAnUnreadableRequest(t *testing.T) {
 	})
 }
 
-// TestURLClampsTheLifetime holds the three clamps: the configured value is the
-// ceiling a caller may only shorten, the object's remaining life bounds a read,
-// and its upload window bounds a write.
+// TestURLClampsTheLifetime checks that a read URL's lifetime is clamped to the ceiling, to the
+// object's remaining life and to the upload window, refusing an expired grant or window.
 func TestURLClampsTheLifetime(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{router: newRecordingRouter("public"), withSettings: true})
@@ -138,7 +131,6 @@ func TestURLClampsTheLifetime(t *testing.T) {
 			tctx := tenantCtx(t, reg, "acme")
 			store := settingsStoreOf(t, reg)
 
-			// The configured lifetime is the ceiling: asking for longer keeps it.
 			writeSetting(t, store, urlTTLSetting, 5*time.Minute)
 			id := declare(t, tctx, objects, "done", "body")
 			before := time.Now()
@@ -151,14 +143,11 @@ func TestURLClampsTheLifetime(t *testing.T) {
 				t.Errorf("the granted expiry %v is not about now + 5m", ceil.Expires)
 			}
 
-			// A shorter request is honoured.
 			short := mintURL(t, objects, tctx, id, objectstore.URLAccessRead, 10*time.Second)
 			if life := short.Expires.Sub(before); life > 10*time.Second+time.Second {
 				t.Errorf("a ten-second request was granted %s", life)
 			}
 
-			// A read is clamped to the object's remaining life, and one under a
-			// second is not minted at all.
 			setColumn(t, reg, "expires_at", time.Now().Add(2*time.Second).UnixMilli(), "acme", id)
 			clamped := mintURL(t, objects, tctx, id, objectstore.URLAccessRead, 0)
 			if life := time.Until(clamped.Expires); life > 3*time.Second {
@@ -169,8 +158,6 @@ func TestURLClampsTheLifetime(t *testing.T) {
 				t.Errorf("a read URL for an object with under a second left gave %v, want ErrObjectNotFound", uErr)
 			}
 
-			// A write is clamped to the upload window, and a closed window is a
-			// state conflict.
 			fresh, err := objects.Create(tctx, objectstore.Declaration{Size: 5, ContentType: "text/plain"})
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
@@ -189,9 +176,8 @@ func TestURLClampsTheLifetime(t *testing.T) {
 	})
 }
 
-// TestThePublicURLPrefixesTheMintedAddress holds the two shapes of the external
-// origin: an empty public-url answers a root-relative address, and a configured
-// one is prefixed with its trailing slash removed.
+// TestThePublicURLPrefixesTheMintedAddress checks that the public URL prefixes the minted address
+// without a double slash.
 func TestThePublicURLPrefixesTheMintedAddress(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{
@@ -215,9 +201,8 @@ func TestThePublicURLPrefixesTheMintedAddress(t *testing.T) {
 	})
 }
 
-// TestURLNeverOutlivesTheSevenDayBackendMaximum holds the upper bound both
-// backends share: even at the setting's own maximum, an address lives no longer
-// than seven days.
+// TestURLNeverOutlivesTheSevenDayBackendMaximum holds the upper bound both backends share: even at
+// the setting's own maximum, an address lives no longer than seven days.
 func TestURLNeverOutlivesTheSevenDayBackendMaximum(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{router: newRecordingRouter("public"), withSettings: true})
@@ -238,9 +223,8 @@ func TestURLNeverOutlivesTheSevenDayBackendMaximum(t *testing.T) {
 	})
 }
 
-// TestAContentGrantStoresOnlyTheTokenHash holds that the table keeps the SHA-256
-// of the token and never the token itself, and that the token has the minted
-// shape.
+// TestAContentGrantStoresOnlyTheTokenHash holds that the table keeps the SHA-256 of the token and
+// never the token itself, and that the token has the minted shape.
 func TestAContentGrantStoresOnlyTheTokenHash(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{router: newRecordingRouter("public")})
@@ -289,8 +273,6 @@ func TestAContentGrantStoresOnlyTheTokenHash(t *testing.T) {
 	})
 }
 
-// fakeDirect is a stand-in for a backend that mints its own addresses. It
-// records what it was asked for and answers a canned address.
 type fakeDirect struct {
 	readCalls  int
 	writeCalls int
@@ -316,17 +298,13 @@ func (d *fakeDirect) PresignWrite(_ context.Context, _ string, p objectstore.Pre
 	return objectstore.IssuedURL{URL: "https://bucket.example/presigned-write", Method: "PUT", Expires: time.Now().Add(p.TTL)}, nil
 }
 
-// TestADirectBackendMintsAddressesAndMountsNoContentRoute holds the assembly
-// with a backend that delivers DirectURL: URL answers the backend's address with
-// the media type and name a read is bound to, the content route is not mounted,
-// and the endpoint list is not read at all.
+// TestADirectBackendMintsAddressesAndMountsNoContentRoute checks that a direct backend's signed
+// addresses carry the right method and parameters, with no content route mounted.
 func TestADirectBackendMintsAddressesAndMountsNoContentRoute(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		direct := &fakeDirect{}
 		router := newRecordingRouter("public")
 		h := e.on(t, harness{router: router, direct: direct, metadata: map[string]any{
-			// The list would be refused beside a mount; a direct backend never
-			// reads it.
 			"content-endpoints": []string{"*"},
 		}})
 		h.drive(t, func(ctx context.Context, reg *core.Registry) error {
@@ -341,7 +319,6 @@ func TestADirectBackendMintsAddressesAndMountsNoContentRoute(t *testing.T) {
 			if direct.lastParams.ContentType != "text/plain" || direct.lastParams.Filename != "done" {
 				t.Errorf("the signing parameters read %+v, want the object's media type and name", direct.lastParams)
 			}
-			// The read object is completed, so a write address needs a fresh one.
 			pending, err := objects.Create(tctx, objectstore.Declaration{Size: 4, ContentType: "text/plain"})
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
@@ -359,8 +336,8 @@ func TestADirectBackendMintsAddressesAndMountsNoContentRoute(t *testing.T) {
 	})
 }
 
-// TestADirectBackendSigningFailureIsURLUnavailable holds that a backend that
-// cannot mint an address is ErrURLUnavailable, not its own error escaping.
+// TestADirectBackendSigningFailureIsURLUnavailable holds that a backend that cannot mint an
+// address is ErrURLUnavailable, not its own error escaping.
 func TestADirectBackendSigningFailureIsURLUnavailable(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		direct := &fakeDirect{err: errors.New("the signer refused")}
@@ -377,9 +354,8 @@ func TestADirectBackendSigningFailureIsURLUnavailable(t *testing.T) {
 	})
 }
 
-// TestURLWithoutAContentRouteIsUnavailable holds the assembly that can mint
-// nothing: no direct backend and no entry point. URL refuses rather than handing
-// out an address nobody serves.
+// TestURLWithoutAContentRouteIsUnavailable holds the assembly that can mint nothing: no direct
+// backend and no entry point.
 func TestURLWithoutAContentRouteIsUnavailable(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -420,9 +396,8 @@ func TestTheContentRouteMountsOnePathThreeWays(t *testing.T) {
 	})
 }
 
-// TestTheContentEndpointListIsRequiredOnlyWhereTheRouteMounts holds the two
-// refusals beside a missing entry point: with one, the list has to name concrete
-// endpoints; without one, it is unread.
+// TestTheContentEndpointListIsRequiredOnlyWhereTheRouteMounts checks that an empty, unknown or
+// repeated endpoint list fails as ErrInvalidConfig, while no entry point accepts every endpoint.
 func TestTheContentEndpointListIsRequiredOnlyWhereTheRouteMounts(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		for name, endpoints := range map[string][]string{
@@ -444,8 +419,6 @@ func TestTheContentEndpointListIsRequiredOnlyWhereTheRouteMounts(t *testing.T) {
 			})
 		}
 
-		// No entry point: the list is not read, even a value that would be
-		// refused beside one.
 		h := e.on(t, harness{metadata: map[string]any{"content-endpoints": []string{allEndpoints}}})
 		h.drive(t, func(_ context.Context, reg *core.Registry) error {
 			if _, err := core.Resolve[objectstore.Objects](reg); err != nil {
