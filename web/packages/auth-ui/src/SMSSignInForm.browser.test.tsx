@@ -325,7 +325,7 @@ describe('SMSSignInForm captcha gate in Chromium', () => {
     )
     expect(
       screen.getByRole('button', { name: CAPTCHA_COPY.useAudio }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
     expect(
       screen.getByAltText(CAPTCHA_COPY.instruction.typeTheDigits),
     ).toBeInTheDocument()
