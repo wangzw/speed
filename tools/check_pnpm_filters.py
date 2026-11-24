@@ -1,35 +1,5 @@
 #!/usr/bin/env python3
-"""pnpm-filter gate: a filter that matches nothing must fail the command.
-
-When every `--filter` selector of a pnpm command misses, pnpm exits 0 with
-"No projects matched the filters" and runs nothing. A renamed package then
-turns a build, a typecheck or a test run into a silent no-op, and the leg
-that ran it stays green. `--fail-if-no-match` makes the same command exit 1,
-but only when it stands before the command word (`pnpm --filter x
---fail-if-no-match build`): after the script name pnpm hands it to the
-script, where it filters nothing.
-
-The gate reads every place a pnpm command is written and holds each call that
-carries `--filter` (or `-F`, `--filter-prod`) to two rules:
-
-- `--fail-if-no-match` appears among the options before the command word;
-- every selector names a workspace member: an exact package name, a glob that
-  matches at least one member, or a path selector. The `...` and `^` graph
-  markers and a leading `!` are removed before the name is compared. A
-  selector naming a package the workspace does not list is the miss the flag
-  exists to catch, and the flag does not excuse it: a call with the flag
-  still fails at run time, so the gate reports it at review time.
-
-Members are the package names of the directories web/pnpm-workspace.yaml
-lists. The sources are Makefile recipes, Dockerfile `RUN` instructions (line
-continuations joined, `&&` and `;` split), the `scripts` of every
-package.json, and the `run:` blocks of workflows and composite actions.
-
-Exit codes: 0 = every filtered call is guarded; 1 = at least one is not, each
-reported as file:line with the call; 2 = infrastructure error -- the root is
-not a directory, or the workspace file lists no member. Paths in the report
-are relative to --root.
-"""
+"""pnpm-filter gate: a filter that matches nothing must fail the command."""
 
 from __future__ import annotations
 

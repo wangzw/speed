@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""Cases for .github/workflows/deploy.yml and the setup action it uses.
-
-The workflow is dispatched by hand, ships the tip of main and nothing else, and
-only once that commit's check succeeded. A dispatch on another ref must fail
-loudly rather than end with every job skipped, and the job that deploys installs
-go alone. The cases read the workflow text, run the refusal and check-gate
-scripts the way the runner does, and hold the conditions that keep the other
-jobs on main.
-
-Stdlib-only (unittest, subprocess). Run directly:
-
-    python3 tools/test_deploy_workflow.py
-"""
+"""Cases for .github/workflows/deploy.yml and the setup action it uses."""
 
 from __future__ import annotations
 
@@ -101,18 +89,21 @@ class TestADispatchOutsideMainFails(unittest.TestCase):
         self.refuse = job_block(self.text, "refuse")
 
     def test_the_refuse_job_runs_only_for_a_dispatch_off_main(self) -> None:
+        """Test that the refuse job runs only for a dispatch off main."""
         self.assertEqual(
             "github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'",
             condition_of(self.refuse),
         )
 
     def test_the_refuse_job_is_small_and_on_the_pinned_runner(self) -> None:
+        """Test that the refuse job is small and on the pinned runner."""
         self.assertIn("runs-on: ubuntu-26.04", self.refuse)
         self.assertIn("timeout-minutes: 5", self.refuse)
         self.assertNotIn("uses:", self.refuse, "the refusal needs no action and no checkout")
         self.assertNotIn("secrets.", self.refuse)
 
     def test_the_refusal_script_exits_non_zero_and_names_the_ref(self) -> None:
+        """Test that the refusal script exits non zero and names the ref."""
         script = run_script_of(self.refuse)
         env = {"PATH": os.environ["PATH"], "REF": "refs/heads/x"}
         result = subprocess.run(
@@ -126,19 +117,19 @@ class TestADispatchOutsideMainFails(unittest.TestCase):
         )
 
     def test_the_ref_reaches_the_script_through_env(self) -> None:
-        # An expression written into the script text would be code to the
-        # shell; a branch name is the dispatcher's to choose.
+        """Test that the ref reaches the script through env."""
         self.assertIn("REF: ${{ github.ref }}", self.refuse)
         self.assertNotIn("${{", run_script_of(self.refuse))
 
     def test_decide_still_requires_main_for_a_dispatch(self) -> None:
+        """Test that decide still requires main for a dispatch."""
         self.assertEqual(
             "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'",
             condition_of(job_block(self.text, "decide")),
         )
 
     def test_nothing_runs_the_workflow_but_a_dispatch(self) -> None:
-        # A push must not deploy; only a hand dispatch on main may.
+        """Test that nothing runs the workflow but a dispatch."""
         self.assertNotIn("\n  workflow_run:", self.text)
         on_block = re.search(r"(?ms)^on:\n(.*?)(?=^\S)", self.text)
         self.assertIsNotNone(on_block, "no on: block")
@@ -158,11 +149,6 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
             stub = pathlib.Path(scratch)
             curl = '#!/bin/sh\necho "curl: (22) HTTP 500" >&2\nexit 22\n'
             if not curl_fails:
-                # The Actions API filters the runs by the query string it is
-                # given, so the stub filters by `event=` too: a fixture run is
-                # returned only when its event matches the request. Without
-                # that, the gate's request would be invisible to the fixture
-                # and a gate that asked for the wrong event would still pass.
                 curl = (
                     '#!/bin/sh\n'
                     'for arg in "$@"; do url="$arg"; done\n'
@@ -202,8 +188,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
             )
 
     def test_only_the_decide_job_may_read_the_check_runs(self) -> None:
-        # The token's actions scope belongs to the job that reads the runs; the
-        # workflow-level default stays contents-only.
+        """Test that only the decide job may read the check runs."""
         permissions = re.search(r"(?ms)^permissions:\n(.*?)(?=^\S)", self.text)
         self.assertIsNotNone(permissions, "no permissions block")
         self.assertNotIn("actions: read", permissions.group(1))
@@ -212,6 +197,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
             self.assertNotIn("actions: read", job_block(self.text, job))
 
     def test_the_gate_reads_push_and_dispatched_runs_on_main(self) -> None:
+        """Test that the gate reads push and dispatched runs on main."""
         script = run_script_of_step(
             step_block(self.decide, "Refuse a commit whose check did not succeed")
         )
@@ -227,6 +213,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertIn("GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}", self.decide)
 
     def test_a_successful_check_lets_the_run_through(self) -> None:
+        """Test that a successful check lets the run through."""
         result = self.run_gate(
             '{"workflow_runs":['
             '{"event":"push","head_branch":"main","conclusion":"failure"},'
@@ -235,9 +222,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_a_run_dispatched_on_main_lets_the_run_through(self) -> None:
-        # A commit with no push run, or one whose push run failed, gets its
-        # verdict from a check dispatched on main: that run tests the commit
-        # itself, exactly as a push run does.
+        """Test that a run dispatched on main lets the run through."""
         result = self.run_gate(
             '{"workflow_runs":[{"event":"workflow_dispatch",'
             '"head_branch":"main","conclusion":"success"}]}'
@@ -245,8 +230,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_a_pull_request_run_does_not_count(self) -> None:
-        # A pull-request run tests the merge commit, not this one, so its
-        # success is not a verdict on the commit being deployed.
+        """Test that a pull request run does not count."""
         result = self.run_gate(
             '{"workflow_runs":[{"event":"pull_request",'
             '"head_branch":"main","conclusion":"success"}]}'
@@ -258,12 +242,10 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
             "success (pull_request on main);",
             result.stdout,
         )
-        # A successful run is exactly the puzzling case: the error has to name
-        # the event that made it ineligible, or the reader sees "success" and
-        # no reason to refuse it.
         self.assertIn("pull_request", result.stdout)
 
     def test_a_run_on_another_branch_does_not_count(self) -> None:
+        """Test that a run on another branch does not count."""
         result = self.run_gate(
             '{"workflow_runs":[{"event":"workflow_dispatch",'
             '"head_branch":"feature","conclusion":"success"}]}'
@@ -277,6 +259,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         )
 
     def test_a_failed_check_refuses_the_run(self) -> None:
+        """Test that a failed check refuses the run."""
         result = self.run_gate(
             '{"workflow_runs":['
             '{"event":"push","head_branch":"main","conclusion":"failure"},'
@@ -292,6 +275,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         )
 
     def test_a_commit_with_no_check_run_refuses_the_run(self) -> None:
+        """Test that a commit with no check run refuses the run."""
         result = self.run_gate('{"workflow_runs":[]}')
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
@@ -302,6 +286,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         )
 
     def test_only_cancelled_runs_refuse_the_run(self) -> None:
+        """Test that only cancelled runs refuse the run."""
         result = self.run_gate(
             '{"workflow_runs":[{"event":"push","head_branch":"main","conclusion":"cancelled"}]}'
         )
@@ -314,6 +299,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         )
 
     def test_only_queued_or_in_progress_runs_refuse_the_run(self) -> None:
+        """Test that only queued or in progress runs refuse the run."""
         result = self.run_gate(
             '{"workflow_runs":['
             '{"event":"push","head_branch":"main","conclusion":null,"status":"queued"},'
@@ -329,6 +315,7 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         )
 
     def test_a_failed_actions_query_refuses_the_run(self) -> None:
+        """Test that a failed actions query refuses the run."""
         result = self.run_gate('{"workflow_runs":[]}', curl_fails=True)
         self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertIn(
@@ -338,15 +325,13 @@ class TestTheDeployRefusesAnUncheckedCommit(unittest.TestCase):
         )
 
     def test_the_gate_step_runs_exactly_when_the_deploy_could(self) -> None:
-        # A tolerated or skipped step would let a commit through without its
-        # check. The step's only guard is the tip check, the same one the
-        # deploy job carries.
+        """Test that the gate step runs exactly when the deploy could."""
         step = step_block(self.decide, "Refuse a commit whose check did not succeed")
         self.assertEqual("steps.tip.outputs.is_tip == 'true'", condition_of(step))
         self.assertNotIn("continue-on-error:", step)
 
     def test_no_job_but_refuse_runs_for_a_dispatch_off_main(self) -> None:
-        # deploy follows decide, which a dispatch off main does not satisfy.
+        """Test that no job but refuse runs for a dispatch off main."""
         deploy = job_block(self.text, "deploy")
         self.assertIn("needs: decide", deploy)
         self.assertIn("needs.decide.outputs.is_tip == 'true'", condition_of(deploy))
@@ -358,6 +343,7 @@ class TestTheDeployJobInstallsGoAlone(unittest.TestCase):
         self.action = SETUP_ACTION.read_text(encoding="utf-8")
 
     def test_the_deploy_job_asks_the_setup_action_for_go_only(self) -> None:
+        """Test that the deploy job asks the setup action for go only."""
         step = re.search(
             r"uses: \./\.github/actions/setup\n\s+with:\n((?:\s+\S.*\n)+?)(?=\n|\s+- |\s+# )",
             self.deploy + "\n",
@@ -366,13 +352,12 @@ class TestTheDeployJobInstallsGoAlone(unittest.TestCase):
         self.assertEqual("tools: go", step.group(1).strip())
 
     def test_the_setup_action_passes_the_named_tools_to_mise(self) -> None:
+        """Test that the setup action passes the named tools to mise."""
         self.assertRegex(self.action, r"(?m)^  tools:\n")
         self.assertIn("install_args: ${{ inputs.tools }}", self.action)
 
     def test_the_setup_action_installs_everything_when_no_tool_is_named(self) -> None:
-        # The default stays the whole of .mise.toml, which every other job
-        # relies on: the one install step runs unconditionally, and an empty
-        # install_args is mise-action's own default.
+        """Test that the setup action installs everything when no tool is named."""
         step = re.search(
             r"(?s)- name: Install the toolchain from \.mise\.toml\n(.*?)(?=\n    #|\n    - name:|\Z)",
             self.action,
@@ -382,9 +367,7 @@ class TestTheDeployJobInstallsGoAlone(unittest.TestCase):
         self.assertIn("uses: jdx/mise-action@", step.group(1))
 
     def test_a_named_subset_does_not_leave_the_rest_reported_as_missing(self) -> None:
-        # The step that limits mise runs before the install and only when
-        # tools are named; the comma list is built by the shell because the
-        # expression language has no replace function.
+        """Test that a named subset does not leave the rest reported as missing."""
         step = re.search(
             r"- name: Limit mise to the named tools\n\s+if: inputs\.tools != ''\n(.*?)(?=\n    - name:)",
             self.action,
@@ -399,6 +382,7 @@ class TestTheDeployJobInstallsGoAlone(unittest.TestCase):
         )
 
     def test_the_limiting_script_turns_a_space_list_into_a_comma_list(self) -> None:
+        """Test that the limiting script turns a space list into a comma list."""
         match = re.search(r'run: (echo "MISE_ENABLE_TOOLS=.*)', self.action)
         self.assertIsNotNone(match)
         with tempfile.TemporaryDirectory() as scratch:

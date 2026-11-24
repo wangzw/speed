@@ -1,27 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_platform_errors.py's derivation and exit codes.
-
-Stdlib-only (unittest + tempfile), matching this directory's own "plain
-executables with no third-party dependencies" convention. Run directly:
-
-    python3 tools/test_check_platform_errors.py
-
-The cases pin the four things the gate claims: the derivation reads every
-construction that writes a problem type (a whole URN literal, a prefix plus
-a literal, prefix plus a same-package or imported constant, a helper's
-call-site arguments, and a mount-style `Code…` table); a backend code the
-catalog lacks is a finding; a catalog entry no backend writes is a finding
-unless it is in KEPT, and a kept entry nothing refers to is stale; and the
-two languages must carry the same leaves with no unexplained duplicate.
-The exit-code contract is the other half: a finding exits 1, while a root
-that is not a directory, a missing catalog, and a derivation with no
-subject are infrastructure errors and exit 2.
-
-The fixtures are scratch trees holding the least a check needs: one Go
-package writing the codes under test, and the two locale files. A case
-about a kept entry adds one frontend file mentioning it, because the
-reason's reference is what keeps the exemption honest.
-"""
+"""Unit tests for check_platform_errors.py's derivation and exit codes."""
 
 from __future__ import annotations
 
@@ -44,12 +22,6 @@ import check_platform_errors as m  # noqa: E402
 CATALOG = os.path.join(m.LOCALE_DIR, "en-US.json")
 CATALOG_ZH = os.path.join(m.LOCALE_DIR, "zh-CN.json")
 
-# One package that writes a problem type in every shape the derivation
-# reads: a whole URN literal, a prefix plus a literal, a prefix plus a
-# same-package constant, a prefix plus an imported constant, and a helper
-# that takes its code from its call sites (both a literal and an imported
-# constant). The `Code…` constant is deliberately not a problem code: this
-# package carries no mount-style table, so it must not be collected.
 ALPHA = """package alpha
 
 import "github.com/vislake/speed/pkg/mount"
@@ -76,8 +48,6 @@ func handlers() {
 }
 """
 
-# A mount-style closed table: a package that declares its prefix and its
-# code constants answers every one of them through its checked writers.
 BETA = """package beta
 
 const (
@@ -131,6 +101,7 @@ class DerivationTest(unittest.TestCase):
         shutil.rmtree(self.root)
 
     def test_reads_every_construction(self) -> None:
+        """Test that reads every construction."""
         derived, unresolved, _ = m.derive(str(self.root))
         self.assertEqual(
             derived,
@@ -145,15 +116,10 @@ class DerivationTest(unittest.TestCase):
                 "beta.beta_code",
             },
         )
-        # The helper's `prefix + code` is resolved through its call sites, so
-        # the site is reported as a note and not as a gap.
         self.assertEqual(len(unresolved), 1)
 
     def test_reads_a_literal_prefix_plus_constant(self) -> None:
-        # `unavailableType` in the tree has this shape: the prefix is a
-        # literal and the code is a constant, so neither the whole-URN rule
-        # nor the prefix-constant rule sees it. The constant deliberately
-        # does not start with `Code`, so only this rule can find it.
+        """Test that reads a literal prefix plus constant."""
         root = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-"))
         try:
             write(
@@ -170,6 +136,7 @@ class DerivationTest(unittest.TestCase):
             shutil.rmtree(root)
 
     def test_a_tree_with_no_go_file_is_infrastructure(self) -> None:
+        """Test that a tree with no go file is infrastructure."""
         empty = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-empty-"))
         try:
             (empty / "pkg").mkdir()
@@ -181,9 +148,7 @@ class DerivationTest(unittest.TestCase):
             shutil.rmtree(empty)
 
     def test_a_missing_backend_root_is_infrastructure(self) -> None:
-        # A workspace root the gate scans but that is not present is an
-        # infrastructure error: skipping it would silently shrink the derived
-        # set, and an empty set must never read as clean.
+        """Test that a missing backend root is infrastructure."""
         root = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-missing-"))
         try:
             write(root / "pkg" / "alpha" / "alpha.go", ALPHA)
@@ -194,13 +159,11 @@ class DerivationTest(unittest.TestCase):
             shutil.rmtree(root)
 
     def test_an_unreadable_go_file_is_infrastructure(self) -> None:
+        """Test that an unreadable go file is infrastructure."""
         root = pathlib.Path(tempfile.mkdtemp(prefix="platform-errors-unreadable-"))
         try:
             write(root / "pkg" / "alpha" / "alpha.go", ALPHA)
             (root / "starters").mkdir()
-            # A broken symlink named like a Go source is listed by the walk and
-            # fails to open, which is the unreadable-file path without needing
-            # a permission bit that a privileged test runner would ignore.
             (root / "pkg" / "alpha" / "broken.go").symlink_to(
                 root / "pkg" / "alpha" / "absent.go"
             )
@@ -228,6 +191,7 @@ class CatalogTest(unittest.TestCase):
         shutil.rmtree(self.root)
 
     def test_matching_catalogs_pass(self) -> None:
+        """Test that matching catalogs pass."""
         keys = [
             "alpha.literal_code",
             "alpha.inline_code",
@@ -243,6 +207,7 @@ class CatalogTest(unittest.TestCase):
         self.assertIn("6 backend code(s)", out)
 
     def test_a_backend_code_without_copy_is_a_finding(self) -> None:
+        """Test that a backend code without copy is a finding."""
         keys = [
             "alpha.literal_code",
             "alpha.inline_code",
@@ -257,6 +222,7 @@ class CatalogTest(unittest.TestCase):
         self.assertIn("alpha.arg_code: the backend writes this code", out)
 
     def test_an_unwritten_catalog_entry_is_a_finding(self) -> None:
+        """Test that an unwritten catalog entry is a finding."""
         keys = [
             "alpha.literal_code",
             "alpha.inline_code",
@@ -273,6 +239,7 @@ class CatalogTest(unittest.TestCase):
         self.assertIn("dead.code: the catalog carries this code", out)
 
     def test_a_kept_entry_is_exempt_and_a_stale_reason_is_a_finding(self) -> None:
+        """Test that a kept entry is exempt and a stale reason is a finding."""
         keys = [
             "alpha.literal_code",
             "alpha.inline_code",
@@ -286,8 +253,6 @@ class CatalogTest(unittest.TestCase):
         write_bundle(self.root, "zh-CN", keys)
         m.KEPT = {"legacy.kept": "referenced by a frontend test"}
 
-        # No frontend file mentions the code, so the reason is stale and the
-        # case is a finding until the reference exists.
         code, out, _ = run(self.root)
         self.assertEqual(code, 1)
         self.assertIn("legacy.kept: KEPT says", out)
@@ -300,6 +265,7 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(code, 0, out + err)
 
     def test_a_language_gap_is_a_finding(self) -> None:
+        """Test that a language gap is a finding."""
         keys = [
             "alpha.literal_code",
             "alpha.inline_code",
@@ -316,6 +282,7 @@ class CatalogTest(unittest.TestCase):
         self.assertIn("missing", out)
 
     def test_a_duplicate_key_is_a_finding_unless_declared(self) -> None:
+        """Test that a duplicate key is a finding unless declared."""
         keys = [
             "alpha.literal_code",
             "alpha.inline_code",
@@ -349,6 +316,7 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
 
     def test_a_missing_catalog_is_infrastructure(self) -> None:
+        """Test that a missing catalog is infrastructure."""
         code, _, err = run(self.root)
         self.assertEqual(code, 2)
         self.assertIn("is missing", err)

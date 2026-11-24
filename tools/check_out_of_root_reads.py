@@ -1,34 +1,5 @@
 #!/usr/bin/env python3
-"""Out-of-root read gate for the demo server's tests.
-
-Go keys a cached test result on the files a test opened under its module root;
-a file read outside the root is not part of that key, so a package that reads
-one can be replayed against input that changed. The gate reports every relative
-path literal under starters/demo/server that resolves outside the module root.
-A package whose directory the Makefile's UNCACHED_PACKAGES line lists is
-exempt, because those packages run with -count=1 and never use the cache; the
-line's entries are the only source of that list.
-
-A literal is resolved the way `go test` runs the package: from the package's
-own directory, not the module root, and the resolved path is normalized before
-it is tested, so a `./../` prefix, a Join starting with ".", or a Join that
-climbs out through a sibling directory is a finding like a bare "../". A
-filepath.Join whose arguments are all string literals is resolved once as a
-whole, so a Join that detours down and back up, such as Join("a", "..", "b"),
-is not a finding; the resolved path decides, and one whose normalized result
-still leads with ".." is. Comments, rune literals and absolute paths are not
-reads.
-
-The gate reads relative path literals only: a path computed at run time, from
-variables or through fmt.Sprintf, is invisible to it, and its package has to
-be listed in UNCACHED_PACKAGES by hand.
-
-Exit codes: 0 = clean; 1 = at least one finding (an out-of-root read, or a
-UNCACHED_PACKAGES entry that is not a directory carrying Go files), each
-reported with file and line; 2 = infrastructure error (the root or the scope
-directory is missing, no Go file was read, or the Makefile carries no
-UNCACHED_PACKAGES assignment).
-"""
+"""Out-of-root read gate for the demo server's tests."""
 
 from __future__ import annotations
 

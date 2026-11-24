@@ -1,35 +1,5 @@
 #!/usr/bin/env python3
-"""Bring this checkout's integration backends up, down, or print their addresses.
-
-The four services -- PostgreSQL, Redis, NATS and Memcached -- are declared by
-the repository-root compose.yaml. Each publishes to 127.0.0.1 on the port the
-compose file reads from its SPEED_TEST_*_PORT variable, so a stack's ports are
-whatever this script hands compose rather than fixed addresses.
-
-`up` gives a checkout a stack of its own. The compose project name is derived
-from the checkout root, so two checkouts on one machine never share containers.
-When no state file exists, or the project's containers are not all healthy, it
-binds 127.0.0.1:0 four times to obtain free ports, records the project name and
-the ports in the state file, and runs `docker compose -p <project> up -d
---wait`. An existing healthy stack is reused instead of started again. A failed
-start is retried with a fresh allocation, at most three times; the final failure
-takes the project down, deletes the state file and prints compose's last output.
-A teardown that fails keeps the state file, so `down` can still find the
-project's leftover containers.
-
-`down` takes down the project named by the state file and deletes the file. It
-never falls back to a project name of its own, so it cannot touch another
-checkout's containers.
-
-`env` prints the four addresses the fixtures read, one shell assignment per
-line, for `make test-integration` to eval with `set -a`.
-
-The state file holds only the project name and four ports. It lives at
-.cache/test-backends.env in the checkout and is not committed.
-
-SPEED_TEST_DOCKER names the docker executable (default: docker); the test suite
-uses it to drive a fake compose command.
-"""
+"""Bring this checkout's integration backends up, down, or print their addresses."""
 
 from __future__ import annotations
 
@@ -46,12 +16,8 @@ from dataclasses import dataclass
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_STATE = ROOT / ".cache" / "test-backends.env"
 
-# The project name prefix followed by a hash of the checkout root. The prefix
-# makes the containers recognisable in `docker ps`; the hash keeps one
-# checkout's project separate from another's.
 PROJECT_PREFIX = "speed-test"
 
-# How many allocations `up` tries before it gives up.
 ATTEMPTS = 3
 
 # Each service, the variable compose reads for its host port, the variable the
@@ -268,11 +234,6 @@ def up(
         ).strip()
         print(f"backends: attempt {attempt} failed:\n{last_output}", file=sys.stderr)
 
-    # A failed start may have created some of the containers; take the project
-    # down before reporting, so a retry starts from nothing. If that teardown
-    # itself fails, the leftover containers keep this checkout's project name,
-    # so the state file is kept: `down` reads the project from it and can still
-    # finish the job. Deleting it would leave the containers with no pointer.
     cleanup_failed = False
     cleanup_output = ""
     try:

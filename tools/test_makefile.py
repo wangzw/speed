@@ -1,34 +1,6 @@
 #!/usr/bin/env python3
-"""Cases for the root Makefile's legs that loop over a list, and for the
-actionlint leg that `repo-check` runs beside them, and for the order of the
-segments `check` runs.
-
-Each leg that loops over the modules go.work lists, or over the gates in
-tools/, runs every item even after an earlier one failed, and fails at the
-end naming the items that failed, so one module's red result does not hide
-another's. The cases drive the real Makefile with MODULES and GATES pointed
-at scratch directories, with stand-ins for go and golangci-lint first on
-PATH, and with tools/backends.py replaced by a stand-in that writes the state
-file the integration legs export. A stand-in records the directory it ran in
-and its subcommand, and fails in a directory named red. The actionlint leg
-runs against scratch repository roots through stand-ins for actionlint and
-shellcheck, so no real linter is involved.
-
-The cases for `check` read the Makefile rather than run it: the segment set,
-its order, the product dependencies between segments and the three phase
-targets `web-check` splits into are held to written-out expectations, so a
-segment dropped from the gate or a command dropped from a phase fails here
-instead of running less somewhere else.
-
-Every tool the gate calls that takes a width setting is also held to
-GATE_JOBS: the cases drive the legs under stand-ins and check that go build,
-go test and go vet, golangci-lint, vitest, Playwright and pnpm -r receive the
-width, defaulting to 4 and following an override, so none of them falls back
-to the host's core count.
-
-Stdlib-only (unittest, subprocess, tempfile). Run directly:
-
-    python3 tools/test_makefile.py
+"""Cases for the root Makefile's legs that loop over a list, and for the actionlint leg
+that `repo-check` runs beside them, and for the order of the segments `check` runs.
 """
 
 from __future__ import annotations
@@ -50,13 +22,6 @@ from check_test_tiers import MAKE_CALL_RE, prerequisites_of, targets_of  # noqa:
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Stands in for go and golangci-lint. `go -C <dir>` and `env -C <dir>`
-# both name the directory a module command runs in; the stand-in records
-# that directory's name, the arguments after it and whether the command
-# ran outside the workspace. It answers `go list` with the packages the module
-# directory holds, fails every command in a directory named red except that
-# listing, fails the listing itself in a directory named nolist, and fails go
-# test when a package named broken is among its arguments.
 STAND_IN = """\
 #!{python}
 import json, os, sys
@@ -94,16 +59,12 @@ if sub == "list":
 sys.exit(1 if failed else 0)
 """
 
-# Stands in for a tool that always fails, whichever directory it runs in, so a
-# case can read a wrapper target's exit status without a module deciding it.
 ALWAYS_FAILS = """\
 #!{python}
 import sys
 sys.exit(1)
 """
 
-# Stands in for a gate: it records the directory it lives in and fails
-# where that directory is named red.
 GATE = """\
 import json, os, sys
 where = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
@@ -119,9 +80,6 @@ with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
 sys.exit(1 if where == "red" else 0)
 """
 
-# Stands in for tools/backends.py. `up` writes the state file the integration
-# legs read their addresses from; `env` prints those addresses. The ports are
-# fixed here, so a case can tell the Makefile exported exactly this state.
 BACKENDS = """\
 #!{python}
 import os, sys
@@ -145,7 +103,6 @@ elif command == "env":
 sys.exit(0)
 """
 
-# The addresses the integration legs must export from BACKENDS's state.
 EXPECTED_BACKEND_ENV = {
     "SPEED_TEST_PG_ADDR": "127.0.0.1:15432",
     "SPEED_TEST_REDIS_ADDR": "127.0.0.1:16379",
@@ -153,12 +110,6 @@ EXPECTED_BACKEND_ENV = {
     "SPEED_TEST_MEMCACHED_ADDR": "127.0.0.1:11222",
 }
 
-# Each leg that loops over the modules, and the passes it makes over each
-# one: a pass is the tool, its subcommand, every flag the pass must carry, and
-# the GOWORK value it runs under. The flags are a tuple rather than one value
-# because two legs differ by exactly one flag — test-integration and
-# test-integration-race — and a pass that asserted only what the two share
-# would keep passing after a leg lost the flag that tells them apart.
 MODULE_LEGS: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {
     "build": [("go", "build", (), ""), ("go", "build", (), "off")],
     "test": [("go", "test", (), "")],
@@ -172,8 +123,6 @@ MODULE_LEGS: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {
     "tidy-check": [("go", "mod", ("-diff",), "off")],
 }
 
-# A composite action for the scratch repositories: the actionlint leg also lints
-# these scripts, and a tree with none is an error of its own.
 COMPOSITE_ACTION = """name: stand-in
 description: a composite action
 runs:
@@ -183,7 +132,6 @@ runs:
       run: echo hi
 """
 
-# A shellcheck that reports one finding for every script it is given.
 FINDING_SHELLCHECK = """\
 #!{python}
 import json, sys
@@ -192,17 +140,6 @@ print(json.dumps([{{"line": 2, "column": 1, "level": "info", "code": 2086, "mess
 sys.exit(1)
 """
 
-# Variables a parent make exports to its children. A case run by `make
-# tools-test` would otherwise hand them to the make it starts. GATE_JOBS is
-# one of them: GNU make exports a variable set on its own command line, so
-# `make check GATE_JOBS=8` puts the width in this process's environment and
-# every case that expects the default 4 would read 8 instead. GOMAXPROCS and
-# GOFLAGS travel the same way, and a case that checks the default width must
-# not read them from the run that started this suite: with the outer value
-# already equal to the width, a recipe that dropped its own prefix would
-# still record the right number and the case would pass. GATE_TIME_SCALE is
-# exported by the Makefile, so a scale set for one gate run reaches the make
-# a case starts the same way.
 MAKE_ENVIRONMENT = (
     "MAKEFLAGS",
     "MFLAGS",
@@ -217,13 +154,6 @@ MAKE_ENVIRONMENT = (
     "UNCACHED_PACKAGES",
 )
 
-# The segments `check` runs, in the order a plain `make check` runs them: the
-# fast, commonly failing checks first, then the Go build and compile-only vet
-# legs, then the tests and the race detector, with the
-# frontend build last. The tuple is written out rather than derived, so a
-# segment deleted from `check` fails this case instead of shrinking the gate
-# silently. `web-check` itself is not here: it splits into the three phase
-# targets, and the whole frontend gate is their three commands.
 CHECK_SEGMENTS = (
     "lint",
     "tidy-check",
@@ -239,11 +169,6 @@ CHECK_SEGMENTS = (
     "web-check-build",
 )
 
-# The Go legs that compile the demo program, and so read the bundle the
-# frontend build writes into starters/demo/server/dist through go:embed. The
-# frontend build runs after all of them and declares them as prerequisites,
-# so the two never overlap, including under -j; ordering it first would only
-# hand them a fresher bundle, which none of them reads the contents of.
 EMBEDS_FRONTEND_BUILD = (
     "build",
     "vet-integration",
@@ -251,18 +176,6 @@ EMBEDS_FRONTEND_BUILD = (
     "test-race",
 )
 
-# The three phases `web-check` splits into, in order, and the commands each
-# carries. Together they are the whole frontend gate -- install, lint,
-# typecheck and the rule tests; the unit tests and the route-level sweep; the
-# build -- with the width every command takes from GATE_JOBS. The unit-test
-# leg starts one vitest process over every workspace member, so its
-# --maxWorkers is the whole width and no package layer multiplies it. The
-# lint leg is the one that nests two widths: pnpm -r runs GATE_JOBS packages
-# at once and each ESLint process is told to lint on one thread. The install
-# loads the workspace under one lockfile, so its --workspace-concurrency=1
-# takes no effect and only writes the width out; --child-concurrency caps its
-# lifecycle scripts. The build's `build:self` scripts compile only their own
-# package into its own dist/, so its workspace width is GATE_JOBS too.
 WEB_CHECK_PHASES = {
     "web-check-static": (
         "pnpm -C web install --frozen-lockfile --workspace-concurrency=1 "
@@ -307,19 +220,10 @@ class LoopingLegTests(unittest.TestCase):
         self.scratch = pathlib.Path(tmp.name)
         self.bin = self.scratch / "bin"
         self.bin.mkdir()
-        # The test legs bring the external backends up before they run, and the
-        # stand-in for the script that does it writes a state file the legs
-        # export, so no daemon is driven and no container starts. pnpm is here
-        # for the starter Makefile's build leg, whose frontend step runs before
-        # the Go one. actionlint and shellcheck stand in for the linters the
-        # workflow leg runs; the leg only needs them to exist and be called.
         for tool in ("go", "golangci-lint", "pnpm", "actionlint", "shellcheck"):
             path = self.bin / tool
             path.write_text(STAND_IN.format(python=sys.executable), encoding="utf-8")
             path.chmod(0o755)
-        # A second roster of the same tools, each of which always fails: no
-        # module directory decides it, so a wrapper target's own exit status
-        # is what a case reads.
         self.failing_bin = self.scratch / "failing-bin"
         self.failing_bin.mkdir()
         for tool in ("go", "golangci-lint", "pnpm"):
@@ -334,14 +238,9 @@ class LoopingLegTests(unittest.TestCase):
         for name in ("red", "green"):
             (self.scratch / name).mkdir()
             (self.scratch / name / f"check_{name}.py").write_text(GATE, encoding="utf-8")
-            # Every module holds one Go package, so go list has a module's
-            # packages to split between the cached and uncached passes.
             (self.scratch / name / f"{name}.go").write_text(
                 f"package {name}\n", encoding="utf-8"
             )
-        # Repository roots for the actionlint leg. Each carries workflow files
-        # of both extensions, a file GitHub does not run as a workflow, and a
-        # nested workflow file GitHub does not read either.
         self.repos = self.scratch / "repos"
         for name in ("red", "green"):
             workflows = self.repos / name / ".github" / "workflows"
@@ -382,9 +281,6 @@ class LoopingLegTests(unittest.TestCase):
         )
         if gate_jobs is not None:
             extra.append(f"GATE_JOBS={gate_jobs}")
-        # A leg that reads a default relative path is started in a scratch
-        # directory through -f, so its base is that directory rather than the
-        # tree this file lives in.
         argv = ["make"]
         if start_dir is None:
             argv += ["-C", str(ROOT)]
@@ -445,8 +341,6 @@ class LoopingLegTests(unittest.TestCase):
 
     @staticmethod
     def package_args(call: dict) -> list[str]:
-        # The stand-in reports each package's directory as its import path, so
-        # a package argument is the argument that names a directory.
         return [arg for arg in call["args"][1:] if arg.startswith("/")]
 
     def test_the_unit_legs_bypass_the_test_cache_only_for_the_packages_that_read_outside_their_root(
@@ -689,6 +583,7 @@ class LoopingLegTests(unittest.TestCase):
         )
 
     def test_the_makefile_names_the_uncached_packages(self) -> None:
+        """Test that the makefile names the uncached packages."""
         result = subprocess.run(
             ["make", "-C", str(ROOT), "--no-print-directory", "-pn", "modules"],
             capture_output=True,
@@ -702,6 +597,7 @@ class LoopingLegTests(unittest.TestCase):
         )
 
     def test_a_red_module_hides_no_other_modules_result(self) -> None:
+        """Test that a red module hides no other modules result."""
         for leg, passes in MODULE_LEGS.items():
             with self.subTest(leg=leg):
                 self.log.unlink(missing_ok=True)
@@ -721,6 +617,7 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertNotIn(str(self.scratch / "green"), result.stderr)
 
     def test_the_integration_legs_export_the_state_addresses(self) -> None:
+        """Test that the integration legs export the state addresses."""
         for leg in ("test-integration", "test-integration-race"):
             with self.subTest(leg=leg):
                 self.log.unlink(missing_ok=True)
@@ -738,6 +635,7 @@ class LoopingLegTests(unittest.TestCase):
                     self.assertEqual(call["backend_env"], EXPECTED_BACKEND_ENV)
 
     def test_the_integration_leg_fails_when_the_state_file_is_absent(self) -> None:
+        """Test that the integration leg fails when the state file is absent."""
         noop = self.scratch / "noop-backends"
         noop.write_text(f"#!{sys.executable}\nimport sys\nsys.exit(0)\n", encoding="utf-8")
         noop.chmod(0o755)
@@ -759,8 +657,6 @@ class LoopingLegTests(unittest.TestCase):
                 )
 
     def starter_make(self, leg: str) -> subprocess.CompletedProcess[str]:
-        # The starter's Makefile is the entry point a copy of the skeleton
-        # runs; the root Makefile does not call it.
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
         env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
         env["STAND_IN_LOG"] = str(self.log)
@@ -779,10 +675,7 @@ class LoopingLegTests(unittest.TestCase):
         )
 
     def test_the_starter_build_names_its_output(self) -> None:
-        # The Go build embeds the frontend bundle, so the leg runs both steps.
-        # A build of a pattern covering several packages discards its results,
-        # which would leave a copy of the skeleton without a program: the leg
-        # has to name the binary.
+        """Test that the starter build names its output."""
         result = self.starter_make("build")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.calls()
@@ -818,6 +711,7 @@ class LoopingLegTests(unittest.TestCase):
             )
 
     def test_a_red_gate_hides_no_other_gates_result(self) -> None:
+        """Test that a red gate hides no other gates result."""
         result = self.make("repo-check", "red", "green")
         self.assertNotEqual(result.returncode, 0, "repo-check passed with a red gate")
         ran = [c["dir"] for c in self.calls() if c["tool"] == "gate"]
@@ -829,6 +723,7 @@ class LoopingLegTests(unittest.TestCase):
         return [call for call in self.calls() if call["tool"] == "actionlint"]
 
     def test_the_workflow_lint_runs_after_a_red_gate_and_is_reported_with_it(self) -> None:
+        """Test that the workflow lint runs after a red gate and is reported with it."""
         result = self.make("repo-check", "red", "green", repo="red")
         self.assertNotEqual(result.returncode, 0, "repo-check passed with a red gate and red workflows")
         self.assertTrue(
@@ -839,15 +734,14 @@ class LoopingLegTests(unittest.TestCase):
         self.assertIn("gate actionlint", result.stderr)
 
     def test_repo_check_fails_on_a_workflow_finding_alone(self) -> None:
+        """Test that repo check fails on a workflow finding alone."""
         result = self.make("repo-check", "green", repo="red")
         self.assertNotEqual(result.returncode, 0, "repo-check passed with a workflow finding")
         self.assertIn("gate actionlint", result.stderr)
         self.assertNotIn("check_green.py", result.stderr)
 
     def test_every_gate_forwards_the_width_to_the_scripts_it_runs(self) -> None:
-        # The gates in tools/ take their width from the environment, not from
-        # a scan of the host. repo-check hands each one GOMAXPROCS and appends
-        # -p to whatever GOFLAGS the caller already set, keeping -count=1.
+        """Test that every gate forwards the width to the scripts it runs."""
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(gate_jobs=gate_jobs):
                 self.log.unlink(missing_ok=True)
@@ -871,8 +765,7 @@ class LoopingLegTests(unittest.TestCase):
                     )
 
     def test_tools_test_forwards_the_same_width_and_flags(self) -> None:
-        # Read the dry run rather than starting the suite: running tools-test
-        # here would run this case again.
+        """Test that tools test forwards the same width and flags."""
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(gate_jobs=gate_jobs):
                 env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
@@ -897,6 +790,7 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertIn("-m unittest discover", result.stdout)
 
     def test_the_actionlint_leg_lints_every_workflow_file_in_one_run(self) -> None:
+        """Test that the actionlint leg lints every workflow file in one run."""
         result = self.make("actionlint")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.workflow_calls()
@@ -911,6 +805,7 @@ class LoopingLegTests(unittest.TestCase):
         self.assertEqual(calls[0]["dir"], "green", "the leg must run from the repository root")
 
     def test_the_actionlint_leg_uses_the_shellcheck_it_checked_for(self) -> None:
+        """Test that the actionlint leg uses the shellcheck it checked for."""
         result = self.make("actionlint")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         (call,) = self.workflow_calls()
@@ -920,10 +815,8 @@ class LoopingLegTests(unittest.TestCase):
         return [call for call in self.calls() if call["tool"] == "shellcheck"]
 
     def test_the_actionlint_leg_lints_the_composite_actions_with_the_same_shellcheck(self) -> None:
-        # actionlint does not read composite actions, so the leg runs
-        # tools/lint_composite_actions.py over them with the shellcheck it
-        # checked for. The stand-in sees the call the script makes: the
-        # stdin flag, the json format and the repository root as its directory.
+        """Test that the actionlint leg lints the composite actions with the same
+        shellcheck."""
         result = self.make("actionlint")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         (call,) = self.shellcheck_calls()
@@ -933,6 +826,7 @@ class LoopingLegTests(unittest.TestCase):
         self.assertIn("bash", call["args"])
 
     def test_a_composite_action_finding_fails_the_actionlint_leg_alone(self) -> None:
+        """Test that a composite action finding fails the actionlint leg alone."""
         finding = self.scratch / "finding-shellcheck"
         finding.write_text(FINDING_SHELLCHECK.format(python=sys.executable), encoding="utf-8")
         finding.chmod(0o755)
@@ -944,6 +838,7 @@ class LoopingLegTests(unittest.TestCase):
         self.assertNotIn("workflows", result.stderr)
 
     def test_a_workflow_finding_does_not_hide_the_composite_lint(self) -> None:
+        """Test that a workflow finding does not hide the composite lint."""
         result = self.make("actionlint", repo="red")
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue(self.workflow_calls(), "actionlint never ran")
@@ -954,11 +849,13 @@ class LoopingLegTests(unittest.TestCase):
         self.assertIn("workflows", result.stderr)
 
     def test_the_actionlint_leg_fails_on_a_finding(self) -> None:
+        """Test that the actionlint leg fails on a finding."""
         result = self.make("actionlint", repo="red")
         self.assertNotEqual(result.returncode, 0, "the leg passed although actionlint failed")
         self.assertTrue(self.workflow_calls(), "actionlint never ran")
 
     def test_the_actionlint_leg_fails_when_there_is_no_workflow(self) -> None:
+        """Test that the actionlint leg fails when there is no workflow."""
         empty = self.scratch / "empty"
         (empty / ".github" / "workflows").mkdir(parents=True)
         (empty / ".github" / "workflows" / "notes.md").write_text("not a workflow\n", encoding="utf-8")
@@ -968,14 +865,14 @@ class LoopingLegTests(unittest.TestCase):
         self.assertFalse(self.workflow_calls(), "actionlint ran with no file to lint")
 
     def test_the_actionlint_leg_fails_when_shellcheck_is_missing(self) -> None:
-        # Without shellcheck, actionlint skips every run: script and still
-        # exits 0, so the leg has to refuse instead of reporting a partial pass.
+        """Test that the actionlint leg fails when shellcheck is missing."""
         result = self.make("actionlint", shellcheck=self.scratch / "no-such-shellcheck")
         self.assertNotEqual(result.returncode, 0, "the leg passed without shellcheck")
         self.assertIn("is not on PATH", result.stderr)
         self.assertFalse(self.workflow_calls(), "actionlint ran without shellcheck")
 
     def test_the_actionlint_leg_does_not_depend_on_the_current_directory(self) -> None:
+        """Test that the actionlint leg does not depend on the current directory."""
         elsewhere = self.scratch / "elsewhere"
         elsewhere.mkdir()
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
@@ -1010,6 +907,7 @@ class LoopingLegTests(unittest.TestCase):
         self.assertEqual([arg for arg in call["args"] if not arg.startswith("-")], expected)
 
     def test_help_lists_the_actionlint_leg(self) -> None:
+        """Test that help lists the actionlint leg."""
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
         result = subprocess.run(
             ["make", "-C", str(ROOT), "--no-print-directory", "help"],
@@ -1022,10 +920,7 @@ class LoopingLegTests(unittest.TestCase):
         self.assertRegex(result.stdout, r"(?m)^  actionlint\s+\S")
 
     def test_help_lists_the_commit_gate(self) -> None:
-        # `check` is the entry point every other one serves. help reads a
-        # target's doc from a line that starts with its name, and check's
-        # prerequisite list is wrapped, so a doc left at the end of the list
-        # falls on a line that starts with a segment name and is not read.
+        """Test that help lists the commit gate."""
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
         result = subprocess.run(
             ["make", "-C", str(ROOT), "--no-print-directory", "help"],
@@ -1038,6 +933,7 @@ class LoopingLegTests(unittest.TestCase):
         self.assertRegex(result.stdout, r"(?m)^  check\s+\S")
 
     def test_every_leg_passes_when_every_item_passes(self) -> None:
+        """Test that every leg passes when every item passes."""
         for leg in [*MODULE_LEGS, "repo-check"]:
             with self.subTest(leg=leg):
                 result = self.make(leg, "green")
@@ -1056,12 +952,7 @@ class LoopingLegTests(unittest.TestCase):
         raise AssertionError(f"no pnpm invocation carries {token!r}: {calls}")
 
     def test_every_go_leg_takes_its_width_from_gate_jobs(self) -> None:
-        # go test: -p bounds package binaries, -parallel bounds cases inside
-        # one, GOMAXPROCS bounds its threads. All three are GATE_JOBS; none is
-        # left to the host's core count. (The three multiply in principle;
-        # each is a cap, and this tree's parallel suite is in one package of
-        # a small module while its many-package module has few parallel
-        # cases.)
+        """Test that every go leg takes its width from gate jobs."""
         for leg in ("test", "test-race", "test-integration", "test-integration-race"):
             for gate_jobs, width in ((None, "4"), ("7", "7")):
                 with self.subTest(leg=leg, gate_jobs=gate_jobs):
@@ -1080,9 +971,7 @@ class LoopingLegTests(unittest.TestCase):
                         self.assertEqual(call["gomaxprocs"], width, f"{leg}: GOMAXPROCS")
 
     def test_the_go_build_leg_takes_its_width_from_gate_jobs(self) -> None:
-        # A build run compiles -p packages at once and each compile is itself
-        # multi-threaded up to GOMAXPROCS, so both follow GATE_JOBS; the
-        # standalone pass is the same build with GOWORK off.
+        """Test that the go build leg takes its width from gate jobs."""
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(gate_jobs=gate_jobs):
                 calls = self.leg_calls("build", gate_jobs)
@@ -1102,8 +991,7 @@ class LoopingLegTests(unittest.TestCase):
                     self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
 
     def test_every_go_vet_leg_takes_its_width_from_gate_jobs(self) -> None:
-        # go vet runs no cases, so it takes -p and GOMAXPROCS but not
-        # -parallel, which it rejects.
+        """Test that every go vet leg takes its width from gate jobs."""
         for leg in ("vet-integration", "vet-web-bundle"):
             for gate_jobs, width in ((None, "4"), ("7", "7")):
                 with self.subTest(leg=leg, gate_jobs=gate_jobs):
@@ -1120,8 +1008,7 @@ class LoopingLegTests(unittest.TestCase):
                         self.assertEqual(call["gomaxprocs"], width, f"{leg}: GOMAXPROCS")
 
     def test_the_linter_takes_its_width_from_gate_jobs(self) -> None:
-        # --concurrency bounds golangci-lint's own analysis; the go list it
-        # runs inside the process follows GOMAXPROCS, so that is set too.
+        """Test that the linter takes its width from gate jobs."""
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(gate_jobs=gate_jobs):
                 calls = self.leg_calls("lint", gate_jobs)
@@ -1137,10 +1024,7 @@ class LoopingLegTests(unittest.TestCase):
                     self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
 
     def test_the_formatter_takes_its_width_from_gate_jobs(self) -> None:
-        # `golangci-lint fmt` has no width flag of its own, and takes no
-        # process-wide lock either; it is still a Go program, so its threads
-        # follow GOMAXPROCS. The same command runs in `fmt` and as lint's
-        # read-only pass, so both take the budget the same way.
+        """Test that the formatter takes its width from gate jobs."""
         for leg in ("fmt", "lint"):
             for gate_jobs, width in ((None, "4"), ("7", "7")):
                 with self.subTest(leg=leg, gate_jobs=gate_jobs):
@@ -1158,9 +1042,7 @@ class LoopingLegTests(unittest.TestCase):
                         )
 
     def test_the_tidying_legs_take_their_width_from_gate_jobs(self) -> None:
-        # `go mod tidy` accepts no -p flag -- its usage lists only -e -v -x
-        # -diff -go and -compat -- but its module loading follows GOMAXPROCS,
-        # so that is the width it takes.
+        """Test that the tidying legs take their width from gate jobs."""
         for leg in ("tidy", "tidy-check"):
             for gate_jobs, width in ((None, "4"), ("7", "7")):
                 with self.subTest(leg=leg, gate_jobs=gate_jobs):
@@ -1184,12 +1066,7 @@ class LoopingLegTests(unittest.TestCase):
                         )
 
     def test_the_workflow_lint_takes_its_width_from_gate_jobs(self) -> None:
-        # actionlint has no width flag. It sizes its goroutines by
-        # runtime.NumCPU(), not by GOMAXPROCS: GOMAXPROCS bounds only the
-        # threads those goroutines run on, which is the part the gate can set.
-        # How many shellcheck processes it runs at once is decided by
-        # actionlint itself through runtime.NumCPU(), not by shellcheck sizing
-        # its own concurrency, and that is out of GOMAXPROCS's reach.
+        """Test that the workflow lint takes its width from gate jobs."""
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(gate_jobs=gate_jobs):
                 calls = self.leg_calls("actionlint", gate_jobs)
@@ -1201,14 +1078,10 @@ class LoopingLegTests(unittest.TestCase):
                     self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
 
     def test_every_frontend_leg_takes_its_width_from_gate_jobs(self) -> None:
+        """Test that every frontend leg takes its width from gate jobs."""
         for gate_jobs, width in ((None, "4"), ("7", "7")):
             with self.subTest(leg="web-check-static", gate_jobs=gate_jobs):
                 calls = self.leg_calls("web-check-static", gate_jobs)
-                # The install runs one project at a time, each lifecycle
-                # script taking the whole GATE_JOBS. The lint leg runs
-                # GATE_JOBS packages at once and tells each ESLint process to
-                # lint on one thread, so neither width is left to the tool's
-                # default.
                 install = self.pnpm_call(calls, "install")
                 self.assertIn("--workspace-concurrency=1", install["args"])
                 self.assertIn(f"--child-concurrency={width}", install["args"])
@@ -1219,10 +1092,6 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertIn(f"--workspace-concurrency={width}", typecheck["args"])
                 self.assertIn(f"--maxWorkers={width}", self.pnpm_call(calls, "vitest")["args"])
             with self.subTest(leg="web-check-test", gate_jobs=gate_jobs):
-                # The unit tests run in one vitest process whose projects
-                # cover every workspace member, so --maxWorkers is the whole
-                # budget: no package layer multiplies it. Each package keeps
-                # its own `test` script for a single-package run.
                 calls = self.leg_calls("web-check-test", gate_jobs)
                 vitest_calls = [
                     call
@@ -1242,8 +1111,6 @@ class LoopingLegTests(unittest.TestCase):
                     ),
                     unit_call["args"],
                 )
-                # The route-level sweep stays a separate process with its own
-                # config, which is the only worker width it takes.
                 a11y_calls = [
                     call
                     for call in calls
@@ -1252,8 +1119,6 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertEqual(len(a11y_calls), 1, a11y_calls)
                 self.assertIn(f"--maxWorkers={width}", a11y_calls[0]["args"])
             with self.subTest(leg="web-check-build", gate_jobs=gate_jobs):
-                # `build:self` compiles only its own package, so the workspace
-                # runs at GATE_JOBS; the demo host is built separately by vite.
                 calls = self.leg_calls("web-check-build", gate_jobs)
                 package_build = self.pnpm_call(calls, "build:self")
                 self.assertIn(f"--workspace-concurrency={width}", package_build["args"])
@@ -1270,18 +1135,10 @@ class LoopingLegTests(unittest.TestCase):
                 calls = self.leg_calls("e2e", gate_jobs)
                 playwright = self.pnpm_call(calls, "playwright")
                 self.assertIn(f"--workers={width}", playwright["args"])
-                # The global setup's Go builds take -p and GOMAXPROCS from the
-                # same value, so the recipe has to put it in the Playwright
-                # process's environment. GNU make exports a value given on its
-                # command line but not the default this file defines, so the
-                # un-overridden case is the one that proves the recipe does it.
                 self.assertEqual(playwright["gate_jobs"], width)
 
     def test_a_wrapper_target_fails_when_its_segment_does(self) -> None:
-        # A wrapper pipes its segment through awk to prefix the lines, and a
-        # pipeline's status is awk's unless `set -o pipefail` is in force. A
-        # wrapper that lost it (or grew an `|| true`) would report a failed
-        # segment as a pass while the leg's own cases stayed green.
+        """Test that a wrapper target fails when its segment does."""
         for wrapper, segment in (
             ("check-lint", "lint"),
             ("check-tidy-check", "tidy-check"),
@@ -1301,6 +1158,7 @@ class LoopingLegTests(unittest.TestCase):
                 )
 
     def test_check_announces_the_gate_width_before_any_segment(self) -> None:
+        """Test that check announces the gate width before any segment."""
         for gate_jobs, width in ((None, "4"), ("9", "9")):
             with self.subTest(gate_jobs=gate_jobs):
                 env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
@@ -1324,11 +1182,7 @@ class LoopingLegTests(unittest.TestCase):
                 self.assertIn(f"GATE_JOBS={width}", result.stdout)
 
     def test_the_callers_gate_width_does_not_reach_the_case(self) -> None:
-        # GNU make exports a variable given on its command line, so running
-        # `make check GATE_JOBS=8` puts 8 in this process's environment and in
-        # the environment of every make a case starts. The harness drops it
-        # with the make variables above, which is what keeps the default-4
-        # expectation above an assertion about the Makefile's default.
+        """Test that the callers gate width does not reach the case."""
         with mock.patch.dict(os.environ, {"GATE_JOBS": "8"}):
             for gate_jobs, width in ((None, "4"), ("9", "9")):
                 with self.subTest(gate_jobs=gate_jobs):
@@ -1376,6 +1230,7 @@ class CheckSegmentTests(unittest.TestCase):
         ]
 
     def test_check_runs_every_segment_once_in_the_fail_fast_order(self) -> None:
+        """Test that check runs every segment once in the fail fast order."""
         self.assertEqual(
             self.segments(),
             list(CHECK_SEGMENTS),
@@ -1389,8 +1244,7 @@ class CheckSegmentTests(unittest.TestCase):
         )
 
     def test_check_runs_lint_before_the_tests(self) -> None:
-        # Lint rejects more changes than any test leg and costs a fraction of
-        # a run; running it after them spends the tests before it reports.
+        """Test that check runs lint before the tests."""
         segments = self.segments()
         self.assertIn("lint", segments, "check no longer runs lint")
         for leg in ("test", "test-race"):
@@ -1402,11 +1256,7 @@ class CheckSegmentTests(unittest.TestCase):
             )
 
     def test_the_frontend_build_runs_after_every_go_leg_that_embeds_it(self) -> None:
-        # The build writes starters/demo/server/dist, which the demo program's
-        # go:embed reads at compile time, so the two must not overlap under
-        # -j. The Go legs do not read the bundle's contents, so the build runs
-        # after them and declares them as prerequisites; a position in a
-        # serial list alone would let -j start it beside them.
+        """Test that the frontend build runs after every go leg that embeds it."""
         segments = self.segments()
         self.assertIn("web-check-build", segments)
         self.assertEqual(
@@ -1428,8 +1278,7 @@ class CheckSegmentTests(unittest.TestCase):
                 )
 
     def test_the_frontend_test_and_build_phases_install_first(self) -> None:
-        # Both phases run pnpm, and pnpm needs the dependencies the static
-        # phase installs. Expressed as a prerequisite so -j cannot reorder it.
+        """Test that the frontend test and build phases install first."""
         for leg in ("web-check-test", "web-check-build"):
             with self.subTest(leg=leg):
                 self.assertIn(
@@ -1439,9 +1288,7 @@ class CheckSegmentTests(unittest.TestCase):
                 )
 
     def test_a_parallel_run_reaches_the_same_segments(self) -> None:
-        # -j changes only when a segment starts. The roster is the prerequisite
-        # list above, and each wrapper calls its own target and nothing else,
-        # so no segment can be skipped, doubled or redirected when they overlap.
+        """Test that a parallel run reaches the same segments."""
         for segment in CHECK_SEGMENTS:
             with self.subTest(segment=segment):
                 self.assertEqual(
@@ -1451,10 +1298,7 @@ class CheckSegmentTests(unittest.TestCase):
                 )
 
     def test_web_check_runs_its_three_phases_and_their_commands(self) -> None:
-        # A standalone `make web-check` is the whole frontend gate: the three
-        # phases, in order. Their commands are the frontend gate's own, each
-        # carrying the GATE_JOBS width, so the phase targets cover the frontend
-        # gate completely and add nothing to it.
+        """Test that web check runs its three phases and their commands."""
         self.assertEqual(
             MAKE_CALL_RE.findall(self.targets["web-check"]),
             list(WEB_CHECK_PHASE_ORDER),
@@ -1469,8 +1313,7 @@ class CheckSegmentTests(unittest.TestCase):
                 )
 
     def test_every_check_segment_announces_its_start_time(self) -> None:
-        # A log of a run has to show where the time went; the timestamp is
-        # read when the segment starts, not when the Makefile is parsed.
+        """Test that every check segment announces its start time."""
         for segment in CHECK_SEGMENTS:
             with self.subTest(segment=segment):
                 recipe = self.targets[f"check-{segment}"]
@@ -1478,8 +1321,7 @@ class CheckSegmentTests(unittest.TestCase):
                 self.assertNotIn("$(shell date", recipe)
 
     def test_every_segment_depends_on_the_announcement(self) -> None:
-        # GATE_JOBS is printed once, before any segment starts, whether or not
-        # the segments run at once.
+        """Test that every segment depends on the announcement."""
         for segment in CHECK_SEGMENTS:
             with self.subTest(segment=segment):
                 self.assertIn("check-announce", self.prerequisites[f"check-{segment}"])
@@ -1506,6 +1348,7 @@ class EntryPointTests(unittest.TestCase):
         )
 
     def test_dev_runs_vite_and_air_under_mise(self) -> None:
+        """Test that dev runs vite and air under mise."""
         result = self.make("dev")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(
@@ -1520,15 +1363,7 @@ class EntryPointTests(unittest.TestCase):
         )
 
     def test_pnpm_runs_where_it_finds_the_web_workspace(self) -> None:
-        """Every pnpm invocation in a recipe runs inside the web workspace.
-
-        pnpm locates its workspace by walking up from the directory it runs
-        in. The demo host (starters/demo/web) is an external member of the
-        workspace under web/, and no directory above it holds
-        pnpm-workspace.yaml, so pnpm run from there installs as a standalone
-        project and asks the registry for the unpublished @speed packages.
-        A recipe reaches the host through `-C web --filter demo-web`.
-        """
+        """Every pnpm invocation in a recipe runs inside the web workspace."""
         offenders = []
         for number, line in enumerate(
             (ROOT / "Makefile").read_text(encoding="utf-8").splitlines(), start=1
@@ -1558,15 +1393,7 @@ class EntryPointTests(unittest.TestCase):
         )
 
     def test_every_pnpm_filter_selects_a_workspace_member_or_fails(self) -> None:
-        """Every `--filter` in a recipe names a member, and no match fails.
-
-        A filter that matches no package makes pnpm print "No projects
-        matched" and exit 0, so a recipe whose filter misses would run nothing
-        and pass. Each filter therefore names the package.json name of a
-        member web/pnpm-workspace.yaml lists, with a leading `!` read as the
-        negation it is, and its invocation carries `--fail-if-no-match`, which
-        turns a miss into a failure if the member is later renamed or dropped.
-        """
+        """Every `--filter` in a recipe names a member, and no match fails."""
         names = workspace_package_names(ROOT / "web")
         self.assertIn("demo-web", names, "the workspace member scan finds no demo host")
         filtered = []
@@ -1590,6 +1417,7 @@ class EntryPointTests(unittest.TestCase):
         self.assertEqual(offenders, [])
 
     def test_fly_is_the_deployment_entry_point(self) -> None:
+        """Test that fly is the deployment entry point."""
         result = self.make("fly")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(
@@ -1599,6 +1427,7 @@ class EntryPointTests(unittest.TestCase):
         )
 
     def test_deploy_is_gone_rather_than_aliased(self) -> None:
+        """Test that deploy is gone rather than aliased."""
         result = self.make("deploy")
         self.assertNotEqual(result.returncode, 0, "make deploy still resolves")
         self.assertIn("No rule to make target", result.stderr)
@@ -1632,13 +1461,16 @@ class GateTimeScaleTests(unittest.TestCase):
         return match.group(1)
 
     def test_gate_time_scale_defaults_to_one(self) -> None:
+        """Test that gate time scale defaults to one."""
         self.assertEqual(self.scale(), "1")
 
     def test_an_outer_gate_time_scale_does_not_reach_the_default(self) -> None:
+        """Test that an outer gate time scale does not reach the default."""
         with mock.patch.dict(os.environ, {"GATE_TIME_SCALE": "2.5"}):
             self.assertEqual(self.scale(), "1")
 
     def test_a_caller_value_reaches_the_makefile(self) -> None:
+        """Test that a caller value reaches the makefile."""
         self.assertEqual(self.scale("2.5"), "2.5")
 
 

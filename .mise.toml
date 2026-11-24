@@ -1,56 +1,23 @@
 # Toolchain versions for local development, pinned by mise (https://mise.jdx.dev).
 # `mise install` from the repository root sets up everything `make check` needs.
 #
-# Some versions MIRROR an authoritative source elsewhere in the repository --
-# the file a tool of its own already reads -- and tools/check_toolchain.py
-# fails when a mirror drifts from its source:
-#
-#   go     go.work's `go` directive
-#   node   web/.nvmrc
-#   pnpm   web/package.json's `packageManager`
-#
-# starters/demo/Dockerfile's toolchain images mirror the same sources, and the
-# same gate checks them:
-#
-#   golang image tag     go.work's `go` directive
-#   node image major     web/.nvmrc
-#
-# Bump the mirror and its source together; they are separate files and drift
-# unless something checks them, which is what tools/check_toolchain.py does.
-#
-# The remaining tools are pinned here and nowhere else, so they have no mirror
-# to drift from and the gate does not check them.
+# go (go.work's `go` directive), node (web/.nvmrc) and pnpm (web/package.json's
+# `packageManager`) MIRROR an authoritative source; starters/demo/Dockerfile's
+# golang and node image tags mirror the same sources. tools/check_toolchain.py
+# fails when a mirror drifts, so bump a mirror and its source together. The
+# remaining tools are pinned here and nowhere else, have no mirror, and are not
+# checked.
 
 [env]
-# Local development variables. The file is untracked (see .gitignore) and
-# .env.example documents the names it may carry; `mise exec` loads it for every
-# command, so `make dev` runs on the same overrides the toolchain does. A path
-# that matches no file is skipped, so a fresh checkout runs on the compiled-in
-# defaults.
 _.file = ".env"
 
 [tools]
-# Mirror of go.work's `go` directive.
 go = "1.27.4"
-# Mirror of web/.nvmrc; the frontend leg of `make check` runs on this Node.
 node = "26"
-# Mirror of web/package.json's packageManager; `make web-check` runs on this pnpm.
 pnpm = "12.21.0"
-# Pinned here only; .golangci.yml carries the configuration, not the version.
 golangci-lint = "2.15.0"
-# Pinned here only; `make tools-test` needs 3.11 or newer, for tomllib.
 python = "3.14.7"
-# Pinned here only; `make actionlint` lints .github/workflows with the
-# actionlint it finds on PATH, as the lint targets run the golangci-lint they
-# find there, so a run reports this version's findings when make runs under mise
-# (an activated shell, or `mise exec`). The backend is named in full because
-# installing through mise's registry shorthand `actionlint` prints
-# "actionlint is deprecated: jactionlint is an actively maintained fork ..."
-# (reproduce with `actionlint = "1.7.12"` in a scratch mise.toml and a fresh
-# MISE_DATA_DIR), while this identifier installs the same upstream release
-# without a warning.
 "aqua:rhysd/actionlint" = "1.7.12"
-# Pinned here only; `make actionlint` names the shellcheck on PATH to actionlint
-# with -shellcheck, and actionlint runs it over every `run:` script of the
-# workflows, so this version decides which shell findings that target reports.
+# Pinned here only; `make actionlint` points actionlint at this shellcheck with
+# -shellcheck, and actionlint runs it over every `run:` script of the workflows.
 shellcheck = "0.11.0"

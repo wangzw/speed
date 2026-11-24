@@ -1,38 +1,5 @@
 #!/usr/bin/env python3
-"""Toolchain drift gate for the root .mise.toml and the demo image.
-
-The developer toolchain is pinned with mise; the root .mise.toml carries
-the versions. Some of those versions are MIRRORS of an authoritative
-source elsewhere in the repository -- the file a tool of its own already
-reads -- and this gate fails when a mirror drifts from its source:
-
-  go            go.work's `go` directive
-  node          web/.nvmrc
-  pnpm          web/package.json's `packageManager`
-
-The other tools .mise.toml pins are pinned there and nowhere else, so
-they have no source to drift from and this gate does not check them.
-
-starters/demo/Dockerfile builds the demo image on base images that carry
-the same toolchain, so two of its tags are mirrors as well:
-
-  golang image  its tag's version (the part before the first `-`)
-                equals go.work's `go` directive
-  node image    its tag's major equals web/.nvmrc's major
-
-Every `FROM` line naming that image is checked. The Dockerfile's other
-images (the runtime base) are not toolchain versions and are not checked.
-
-Bump the authoritative source and the mirror together; this gate exists
-because they are separate files and will drift without it.
-
-Exit codes: 0 = every mirror equals its source; 1 = drift (a mirror
-differs from its source, or a report printed below that starts with
-MISMATCH); 2 = infrastructure error (a source file or the Dockerfile
-missing or unparsable, an expected tool absent from .mise.toml, or an
-expected image absent from the Dockerfile). Paths in the report are
-relative to --root.
-"""
+"""Toolchain drift gate for the root .mise.toml and the demo image."""
 
 from __future__ import annotations
 

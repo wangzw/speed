@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_web_build_scripts.py's criteria and exit codes.
-
-Stdlib-only (unittest + tempfile). Run directly:
-
-    python3 tools/test_check_web_build_scripts.py
-
-The subject is one ruling: every workspace member the build gate runs
-`build:self` on carries that script with the prescribed content, and its
-`build` selects the package's own dependency graph and calls `build:self`
-through the prescribed pnpm form. Both scripts are compared as exact strings,
-so added whitespace is a finding. A missing `build:self` is the silent skip
-the gate exists to catch: `pnpm -r run build:self` passes over the package
-without a word. Cases cover the missing script, the wrong `build:self`, the
-wrong `build` form, a filter naming another package, extra whitespace, a
-manifest with no scripts (two findings), a manifest with no name (an
-infrastructure error), and the exemption, which is by package name so a
-non-conforming member under an exception's glob is still checked.
-
-Cases run over a scratch tree holding two ordinary members and the two
-exceptions.
-"""
+"""Unit tests for check_web_build_scripts.py's criteria and exit codes."""
 
 from __future__ import annotations
 
@@ -76,7 +56,6 @@ class GateCase(unittest.TestCase):
         self.write("web/pnpm-workspace.yaml", WORKSPACE)
         self.conforming("web/packages/alpha/package.json", "@speed/alpha")
         self.conforming("web/packages/beta/package.json", "@speed/beta")
-        # The two exceptions carry scripts no rule covers.
         self.write(
             "web/test-utils/package.json",
             manifest("@speed/test-utils", build="tsc -p tsconfig.json"),
@@ -126,9 +105,11 @@ class GateCase(unittest.TestCase):
 
 class TestTheBuildScripts(GateCase):
     def test_a_conforming_tree_passes(self) -> None:
+        """Test that a conforming tree passes."""
         self.assert_clean()
 
     def test_a_package_without_build_self_is_a_finding(self) -> None:
+        """Test that a package without build self is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest("@speed/beta", build=expected_build("@speed/beta")),
@@ -139,6 +120,7 @@ class TestTheBuildScripts(GateCase):
         self.assertNotIn("web/packages/alpha", out)
 
     def test_a_build_self_with_another_script_is_a_finding(self) -> None:
+        """Test that a build self with another script is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest(
@@ -152,6 +134,7 @@ class TestTheBuildScripts(GateCase):
         )
 
     def test_a_build_that_does_not_use_the_prescribed_form_is_a_finding(self) -> None:
+        """Test that a build that does not use the prescribed form is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest(
@@ -166,6 +149,7 @@ class TestTheBuildScripts(GateCase):
         self.assertNotIn("build:self is", out)
 
     def test_a_build_filtering_another_package_is_a_finding(self) -> None:
+        """Test that a build filtering another package is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest(
@@ -178,6 +162,7 @@ class TestTheBuildScripts(GateCase):
         self.assertIn("@speed/beta...", out)
 
     def test_a_package_without_build_is_a_finding(self) -> None:
+        """Test that a package without build is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest("@speed/beta", build_self="tsc -p tsconfig.build.json"),
@@ -185,6 +170,7 @@ class TestTheBuildScripts(GateCase):
         self.assert_finding("web/packages/beta/package.json", "missing build")
 
     def test_the_exception_packages_are_not_checked(self) -> None:
+        """Test that the exception packages are not checked."""
         self.write(
             "web/test-utils/package.json",
             manifest("@speed/test-utils", scripts={"build": "something else"}),
@@ -196,6 +182,7 @@ class TestTheBuildScripts(GateCase):
         self.assert_clean()
 
     def test_exemption_is_by_name_not_by_path(self) -> None:
+        """Test that exemption is by name not by path."""
         self.write(
             "web/test-utils/package.json",
             manifest("@speed/other-test-support", build="tsc -p tsconfig.json"),
@@ -211,6 +198,7 @@ class TestTheBuildScripts(GateCase):
         self.assertIn("missing build:self", out)
 
     def test_a_manifest_without_scripts_reports_both_scripts_missing(self) -> None:
+        """Test that a manifest without scripts reports both scripts missing."""
         self.write(
             "web/packages/beta/package.json",
             json.dumps({"name": "@speed/beta"}, indent=2) + "\n",
@@ -222,6 +210,7 @@ class TestTheBuildScripts(GateCase):
         self.assertIn("2 build-script problem(s)", err)
 
     def test_extra_whitespace_in_build_self_is_a_finding(self) -> None:
+        """Test that extra whitespace in build self is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest(
@@ -235,6 +224,7 @@ class TestTheBuildScripts(GateCase):
         )
 
     def test_extra_whitespace_in_build_is_a_finding(self) -> None:
+        """Test that extra whitespace in build is a finding."""
         self.write(
             "web/packages/beta/package.json",
             manifest(
@@ -248,29 +238,34 @@ class TestTheBuildScripts(GateCase):
 
 class TestExitCodes(GateCase):
     def test_a_root_that_is_not_a_directory_exits_2(self) -> None:
+        """Test that a root that is not a directory exits 2."""
         code, _, err = self.run_gate(os.path.join(self.root, "nope"))
         self.assertEqual(2, code)
         self.assertIn("not a directory", err)
 
     def test_a_tree_without_the_workspace_file_exits_2(self) -> None:
+        """Test that a tree without the workspace file exits 2."""
         os.remove(os.path.join(self.root, "web", "pnpm-workspace.yaml"))
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("pnpm-workspace.yaml", err)
 
     def test_a_workspace_that_lists_no_member_exits_2(self) -> None:
+        """Test that a workspace that lists no member exits 2."""
         self.write("web/pnpm-workspace.yaml", "packages:\n  - nothing/*\n")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("no member", err)
 
     def test_an_unparsable_manifest_exits_2(self) -> None:
+        """Test that an unparsable manifest exits 2."""
         self.write("web/packages/beta/package.json", "{not json")
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("cannot read", err)
 
     def test_a_manifest_without_a_name_exits_2(self) -> None:
+        """Test that a manifest without a name exits 2."""
         self.write(
             "web/packages/beta/package.json",
             json.dumps({"scripts": {"build:self": "tsc -p tsconfig.build.json"}}, indent=2)

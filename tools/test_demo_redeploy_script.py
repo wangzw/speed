@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
-"""Cases for starters/demo/deploy/redeploy.sh.
-
-The script judges health three ways: it keeps a deploy's data when the machine
-checks pass (healthy), rebuilds the volume when a started machine's check stays
-failing (unhealthy), and destroys nothing when it cannot tell (indeterminate).
-A stopped machine is woken and read again, and before it destroys anything the
-script re-reads the machine and volume lists, once before the confirmation and
-once after it. These cases run the real script against stand-ins for `flyctl`,
-`make`, `curl` and `python3` placed first on PATH. Every stand-in logs its
-arguments and answers from a control file, so a case chooses each machine's
-state, each check's status, the deploy command's exit code and the probe's
-answer without a network, a cloud account or a real deployment. The stand-ins
-for `flyctl`, `make` and `curl` are the only programs that could reach outside
-this process, and none of them is the real one.
-
-Stdlib-only (unittest, subprocess). Run directly:
-
-    python3 tools/test_demo_redeploy_script.py
-"""
+"""Cases for starters/demo/deploy/redeploy.sh."""
 
 from __future__ import annotations
 
@@ -395,6 +377,7 @@ class RedeployScriptTest(unittest.TestCase):
         ]
 
     def test_deploy_with_passing_checks_keeps_the_data(self):
+        """Test that deploy with passing checks keeps the data."""
         self.harness.configure(make_exit_codes=[0], machines="healthy")
         result = self.harness.run()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -408,6 +391,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertTrue(any("--json" in argv for argv in lists), lists)
 
     def test_failed_deploy_command_with_passing_checks_keeps_the_data(self):
+        """Test that failed deploy command with passing checks keeps the data."""
         self.harness.configure(make_exit_codes=[1], machines="healthy")
         result = self.harness.run()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -417,6 +401,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("nothing was cleared", result.stdout)
 
     def test_unhealthy_without_confirmation_does_nothing_destructive(self):
+        """Test that unhealthy without confirmation does nothing destructive."""
         self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
         result = self.harness.run(stdin="no\n")
         self.assertNotEqual(result.returncode, 0)
@@ -426,6 +411,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("stopped: nothing was destroyed", result.stdout)
 
     def test_yes_rebuilds_in_order_then_deploys_and_collects_evidence(self):
+        """Test that yes rebuilds in order then deploys and collects evidence."""
         self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
         result = self.harness.run("--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -491,6 +477,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("machine checks", result.stdout)
 
     def test_dry_run_runs_nothing(self):
+        """Test that dry run runs nothing."""
         result = self.harness.run("--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.harness.calls(), [])
@@ -500,6 +487,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("servicecheck-*", result.stdout)
 
     def test_help_and_unknown_argument_run_nothing(self):
+        """Test that help and unknown argument run nothing."""
         help_result = self.harness.run("--help")
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
         self.assertIn("Usage: starters/demo/deploy/redeploy.sh", help_result.stdout)
@@ -511,6 +499,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(self.harness.calls(), [])
 
     def test_unreadable_checks_fall_back_to_the_public_probe(self):
+        """Test that unreadable checks fall back to the public probe."""
         for mode in ("unreadable-fail", "unreadable-nochecks"):
             with self.subTest(mode=mode):
                 self.harness = Harness()
@@ -531,6 +520,7 @@ class RedeployScriptTest(unittest.TestCase):
                 self.assertTrue(any("/healthz" in " ".join(argv) for argv in probes))
 
     def test_a_public_probe_that_is_not_200_is_indeterminate(self):
+        """Test that a public probe that is not 200 is indeterminate."""
         self.harness.configure(machines="unreadable-nochecks", curl_codes=[503])
         result = self.harness.run()
         self.assertNotEqual(result.returncode, 0)
@@ -547,8 +537,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(len(self.harness.by_program("make")), 1)
 
     def test_an_unrecognised_health_verdict_is_indeterminate(self):
-        # A verdict the script does not recognise must count as indeterminate,
-        # not as unhealthy, so the run stops instead of destroying the volume.
+        """Test that an unrecognised health verdict is indeterminate."""
         self.harness.configure(
             machines="healthy",
             machine_health_verdict="confusing",
@@ -561,6 +550,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("unrecognised verdict", result.stdout)
 
     def test_a_machine_that_never_starts_is_indeterminate(self):
+        """Test that a machine that never starts is indeterminate."""
         self.harness.configure(
             machines="healthy", machine_state="starting", curl_codes=["000"]
         )
@@ -573,10 +563,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(len(self.harness.by_program("make")), 1)
 
     def test_a_required_check_with_no_readable_status_is_indeterminate(self):
-        # A required check whose status is not exactly passing, warning or
-        # critical says nothing about health. Treating it as unhealthy would
-        # let a malformed reading reach the destructive rebuild, so every such
-        # reading must stop the run as indeterminate and name the check.
+        """Test that a required check with no readable status is indeterminate."""
         cases = (
             ({"ready_status_missing": True}, "ready"),
             ({"ready_status": "unknown"}, "ready"),
@@ -606,8 +593,7 @@ class RedeployScriptTest(unittest.TestCase):
                 self.assertIn("check %s" % check_name, result.stdout)
 
     def test_a_warning_check_still_reaches_the_rebuild(self):
-        # warning is unhealthy, not indeterminate: the status validation must
-        # accept it and let the run continue to the destructive rebuild.
+        """Test that a warning check still reaches the rebuild."""
         self.harness.configure(make_exit_codes=[0], machines="warn_then_healthy")
         result = self.harness.run("--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -639,6 +625,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("volume rebuilt", result.stdout)
 
     def test_each_declared_check_gates_health_on_its_own(self):
+        """Test that each declared check gates health on its own."""
         cases = (
             ({"ready_status": "critical"}, "check ready is critical"),
             ({"service_status": "critical"}, "the service check is critical"),
@@ -664,6 +651,7 @@ class RedeployScriptTest(unittest.TestCase):
                 self.assertEqual(len(self.harness.by_program("make")), 1)
 
     def test_a_stopped_machine_is_woken_then_judged_healthy(self):
+        """Test that a stopped machine is woken then judged healthy."""
         self.harness.configure(machines="healthy", machine_state="stopped")
         result = self.harness.run(extra_env={"HEALTH_TIMEOUT": "5"})
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -680,6 +668,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("healthy via machine checks", result.stdout)
 
     def test_a_machine_that_cannot_be_woken_is_indeterminate(self):
+        """Test that a machine that cannot be woken is indeterminate."""
         self.harness.configure(
             machines="healthy",
             machine_state="stopped",
@@ -692,6 +681,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(self.harness.rebuild_calls(), [])
 
     def test_a_network_failure_is_indeterminate_and_destroys_nothing(self):
+        """Test that a network failure is indeterminate and destroys nothing."""
         self.harness.configure(machines="unreadable-fail", curl_codes=["000"])
         result = self.harness.run()
         self.assertNotEqual(result.returncode, 0)
@@ -710,6 +700,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("answered 000", result.stdout)
 
     def test_a_started_machine_with_failing_checks_reaches_the_rebuild(self):
+        """Test that a started machine with failing checks reaches the rebuild."""
         self.harness.configure(make_exit_codes=[0, 0], machines="crit_then_healthy")
         result = self.harness.run("--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -741,14 +732,8 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("volume rebuilt", result.stdout)
 
     def test_a_failed_cloud_state_read_before_the_confirmation_stops_before_destroying(self):
-        # The first of the run's two volumes list --json reads fails, so the
-        # guard before the confirmation must end the run. The exact sentence
-        # alone does not prove that: if the first read_cloud_state call were
-        # deleted, the same failure would land on the second read and print the
-        # same sentence. What catches the deletion is the confirmation being
-        # skipped: the run is given "rebuild" on standard input, so a prompt or
-        # the post-confirmation phase in the output means the run reached them
-        # and the two absence assertions below fail.
+        """Test that a failed cloud state read before the confirmation stops before
+        destroying."""
         self.harness.configure(
             machines="healthy",
             ready_status="critical",
@@ -768,8 +753,8 @@ class RedeployScriptTest(unittest.TestCase):
         )
 
     def test_a_failed_cloud_state_read_after_the_confirmation_stops_before_destroying(self):
-        # The second read fails, after --yes skipped the confirmation, so the
-        # run must still stop before destroying anything.
+        """Test that a failed cloud state read after the confirmation stops before
+        destroying."""
         self.harness.configure(
             machines="healthy",
             ready_status="critical",
@@ -785,9 +770,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(len(self.volumes_list_json_calls()), 2)
 
     def test_a_machines_list_that_is_not_json_is_indeterminate(self):
-        # flyctl exits 0 with a line that is not JSON, so the checks cannot be
-        # read and the run falls back to the public probe. With the probe
-        # answering 000, health is indeterminate and nothing is destroyed.
+        """Test that a machines list that is not json is indeterminate."""
         self.harness.configure(
             machines_list_non_json=True,
             curl_codes=["000"],
@@ -801,11 +784,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("answered 000", result.stdout)
 
     def test_a_list_entry_without_id_stops_before_destroying(self):
-        # A machines or volumes list that parses but has an entry with no id
-        # cannot name what to destroy. The id fetch before each destroy must
-        # fail and stop the run: a machine entry without an id leaves every
-        # machine undestroyed, and a volume entry without an id leaves the
-        # volume undestroyed and unrecreated.
+        """Test that a list entry without id stops before destroying."""
         cases = (
             (
                 "machines_omit_id",
@@ -844,6 +823,7 @@ class RedeployScriptTest(unittest.TestCase):
                     self.assertEqual(writes, [])
 
     def test_the_redeploy_waits_for_health_after_the_second_deploy(self):
+        """Test that the redeploy waits for health after the second deploy."""
         self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
         result = self.harness.run("--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -866,6 +846,7 @@ class RedeployScriptTest(unittest.TestCase):
         )
 
     def test_a_failed_second_deploy_stops_the_run(self):
+        """Test that a failed second deploy stops the run."""
         self.harness.configure(make_exit_codes=[1], machines="by_make")
         result = self.harness.run("--yes")
         self.assertNotEqual(result.returncode, 0)
@@ -886,6 +867,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(evidence, [])
 
     def test_typing_rebuild_runs_the_destruction(self):
+        """Test that typing rebuild runs the destruction."""
         self.harness.configure(make_exit_codes=[1, 0], machines="by_make")
         result = self.harness.run(stdin="rebuild\n")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -907,6 +889,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("volume rebuilt", result.stdout)
 
     def test_a_failed_destroy_midway_reports_what_was_done(self):
+        """Test that a failed destroy midway reports what was done."""
         self.harness.configure(
             make_exit_codes=[1, 0],
             machines="by_make",
@@ -933,6 +916,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertEqual(volumes_destroyed, [])
 
     def test_fly_toml_values_win_over_the_built_in_defaults(self):
+        """Test that fly toml values win over the built in defaults."""
         script = self.harness.script_with_fly_toml(
             'app = "from-toml-app"\n'
             'primary_region = "ams"\n'
@@ -948,6 +932,7 @@ class RedeployScriptTest(unittest.TestCase):
         self.assertIn("volumes create from_toml_volume --region ams", result.stdout)
 
     def test_environment_overrides_the_fly_toml_and_the_defaults(self):
+        """Test that environment overrides the fly toml and the defaults."""
         result = self.harness.run(
             "--dry-run",
             extra_env={

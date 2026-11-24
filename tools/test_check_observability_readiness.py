@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_observability_readiness.py.
-
-Stdlib-only (unittest + tempfile), matching this directory's own "plain
-executables with no third-party dependencies" convention. Run directly:
-
-    python3 tools/test_check_observability_readiness.py
-
-Each check is driven over a constructed tree: a violation is written and the
-check must report it, a compliant sibling must not, and the positive control
-must fire on a tree that holds none of the call sites it is about. The trees
-are built on disk rather than in memory because the gate walks a directory,
-and every case seeds the anchor packages the positive controls name, so a
-case that adds one violation to an otherwise clean tree sees exactly it.
-"""
+"""Unit tests for check_observability_readiness.py."""
 
 from __future__ import annotations
 
@@ -99,8 +86,6 @@ class GateCase(unittest.TestCase):
             f"{g.EGRESS_EXEMPT}/client.go",
             "package a\n\nfunc build() {\n\t_ = egress.New(egress.Options{})\n}\n",
         )
-        # The positive control for check 4 is that the tree reaches upstream
-        # otel at all, so the absence of the global entry means something.
         self.write(
             "pkg/observability/otel/module.go",
             'package a\n\nimport "go.opentelemetry.io/otel/trace"\n\nvar _ = trace.SpanContext{}\n',
@@ -109,6 +94,7 @@ class GateCase(unittest.TestCase):
 
 class TestCompliantTree(GateCase):
     def test_the_seeded_tree_passes(self) -> None:
+        """Test that the seeded tree passes."""
         self.seed_anchors()
         code, out, _ = self.run_gate()
         self.assertEqual(code, 0, out)
@@ -117,6 +103,7 @@ class TestCompliantTree(GateCase):
 
 class TestLoggingDependency(GateCase):
     def test_a_package_that_resolves_without_declaring_is_reported(self) -> None:
+        """Test that a package that resolves without declaring is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/module.go",
@@ -129,6 +116,7 @@ class TestLoggingDependency(GateCase):
         self.assertIn("(*log.Logger)(nil)", out)
 
     def test_a_package_that_declares_is_not_reported(self) -> None:
+        """Test that a package that declares is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/module.go",
@@ -141,8 +129,7 @@ class TestLoggingDependency(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_the_optional_helper_form_is_also_a_resolution(self) -> None:
-        # `optional[log.Logger](reg, ...)` is the package-local take-or-absent
-        # helper; it is a resolution exactly as core.Resolve is.
+        """Test that the optional helper form is also a resolution."""
         self.seed_anchors()
         self.write(
             "pkg/acme/module.go",
@@ -155,12 +142,9 @@ class TestLoggingDependency(GateCase):
 
 
 class TestWhitespaceBetweenCalleeAndParen(GateCase):
-    # The masking replaces a comment with spaces, so a comment between the
-    # callee and its `(` leaves a gap. Each presence pattern tolerates that gap
-    # (`\\s*`), so the call is still recognized; a pattern that required the
-    # callee and `(` to be adjacent missed every one of these.
 
     def test_a_comment_in_a_logger_resolution_is_still_a_resolution(self) -> None:
+        """Test that a comment in a logger resolution is still a resolution."""
         self.seed_anchors()
         self.write(
             "pkg/acme/module.go",
@@ -172,6 +156,7 @@ class TestWhitespaceBetweenCalleeAndParen(GateCase):
         self.assertIn("pkg/acme:", out)
 
     def test_a_comment_in_an_egress_open_is_still_a_call(self) -> None:
+        """Test that a comment in an egress open is still a call."""
         self.seed_anchors()
         self.write(
             "pkg/acme/client.go",
@@ -182,6 +167,7 @@ class TestWhitespaceBetweenCalleeAndParen(GateCase):
         self.assertIn("observability.Transport", out)
 
     def test_a_comment_in_a_global_entry_is_still_a_call(self) -> None:
+        """Test that a comment in a global entry is still a call."""
         self.seed_anchors()
         self.write(
             "pkg/acme/meter.go",
@@ -194,6 +180,7 @@ class TestWhitespaceBetweenCalleeAndParen(GateCase):
 
 class TestSensitiveRedaction(GateCase):
     def test_a_secret_item_without_a_rule_is_reported(self) -> None:
+        """Test that a secret item without a rule is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -206,6 +193,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'secret-key'", out)
 
     def test_a_registered_item_is_not_reported(self) -> None:
+        """Test that a registered item is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -222,8 +210,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_secrets_handoff_is_not_reported(self) -> None:
-        # A carrier that names its secret in a Secrets hook has handed the
-        # value to the factory, which calls literal.Register.
+        """Test that a secrets handoff is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -239,8 +226,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_secrets_identifier_handoff_is_not_reported(self) -> None:
-        # `Secrets: secrets` hands an identifier over; it is a handoff when the
-        # package declares that name as a `[]string`-returning function.
+        """Test that a secrets identifier handoff is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -256,9 +242,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_decoy_secrets_field_is_not_a_handoff(self) -> None:
-        # A field merely *named* Secrets -- `decoy{Secrets: true}` -- hands no
-        # value to the factory. It must not be read as the `[]string` hook that
-        # covers every Sensitive item: the item with no rule is still reported.
+        """Test that a decoy secrets field is not a handoff."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -274,14 +258,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'secret-key'", out)
 
     def test_a_response_struct_flag_is_not_a_config_item(self) -> None:
-        # A package that declares no schema of its own can still write
-        # `Sensitive: true`: a response view that masks a field does exactly
-        # that. The flag marks a field of a view, not an item of a schema, so
-        # the package declares no Sensitive item and owes the redaction
-        # registry nothing. This is the shape pkg/settings/admin's viewOf
-        # writes -- `settingView{... Sensitive: true ...}` with the value
-        # replaced by a mask -- and reporting it is the false positive the
-        # narrowing removes.
+        """Test that a response struct flag is not a config item."""
         self.seed_anchors()
         self.write(
             "pkg/acme/views.go",
@@ -301,11 +278,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_an_item_written_as_a_typed_literal_is_a_config_item(self) -> None:
-        # An item is not only a keyed entry inside the schema map: the tree
-        # also adds one as `items[key] = config.Item{...}` (pkg/db/config.go
-        # adds its migration-lock item that way). Its key sits in the index
-        # assignment and not before the brace, so the type is what marks the
-        # literal as an item; the item still has no rule and is reported.
+        """Test that an item written as a typed literal is a config item."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -321,8 +294,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("pkg/acme", out)
 
     def test_a_named_path_item_is_exempt(self) -> None:
-        # The value is a filesystem path, not the secret. The exemption names
-        # the package and the key, so the item in its own package is exempt.
+        """Test that a named path item is exempt."""
         self.seed_anchors()
         self.write(
             "pkg/authn/token/schema.go",
@@ -333,9 +305,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_file_suffixed_key_outside_the_named_package_is_reported(self) -> None:
-        # A key that merely ends in `-file` is not exempt on its own: only the
-        # two named (package, key) pairs are, because a later key of that
-        # shape could still hold the secret.
+        """Test that a file suffixed key outside the named package is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -347,9 +317,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'signing-key-file'", out)
 
     def test_two_items_with_one_registered_value_are_reported(self) -> None:
-        # Two Sensitive items, one fixed-value registration: the count falls a
-        # value short, so the item past it is reported. This is the per-item
-        # gap a package-level reading reports as nothing.
+        """Test that two items with one registered value are reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -367,13 +335,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'second'", out)
 
     def test_an_unrelated_registration_does_not_cover_an_item(self) -> None:
-        # Two Sensitive items, one real (module-prefixed) registration, plus an
-        # unrelated multi-value literal.Register whose label is some other
-        # expression. The count is attributed to the items the package is being
-        # judged on, so the unrelated call is not summed in and cannot mask the
-        # item that has no rule: 'second' is still reported. (An earlier count
-        # summed every literal.Register in the package, which this input would
-        # have carried to 3 values and passed.)
+        """Test that an unrelated registration does not cover an item."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -396,6 +358,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'second'", out)
 
     def test_two_items_with_two_registered_values_are_not_reported(self) -> None:
+        """Test that two items with two registered values are not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -413,8 +376,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_registration_named_only_in_a_comment_is_reported(self) -> None:
-        # A call named in a line comment is prose, not a registration: the
-        # value it "hands over" is not a value this package registers.
+        """Test that a registration named only in a comment is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -432,6 +394,8 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'secret-key'", out)
 
     def test_a_registration_named_only_in_a_block_comment_or_raw_string_is_reported(self) -> None:
+        """Test that a registration named only in a block comment or raw string is
+        reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -449,7 +413,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'secret-key'", out)
 
     def test_a_registration_named_only_in_a_string_is_reported(self) -> None:
-        # A call quoted inside a string literal is data, not a call site.
+        """Test that a registration named only in a string is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -466,8 +430,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'secret-key'", out)
 
     def test_a_key_on_the_same_line_as_the_flag_is_named(self) -> None:
-        # The map opener, the item entry and the flag share one line. The key
-        # is still read, so the report names the item and not an empty string.
+        """Test that a key on the same line as the flag is named."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -480,8 +443,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertNotIn("''", out)
 
     def test_two_items_on_one_line_are_each_named(self) -> None:
-        # Two entries share a line; each flag is attributed to its own key, not
-        # to the first entry on the line.
+        """Test that two items on one line are each named."""
         self.seed_anchors()
         self.write(
             "pkg/acme/schema.go",
@@ -494,8 +456,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertIn("'second'", out)
 
     def test_a_shared_unit_mounted_by_a_registrar_is_not_reported(self) -> None:
-        # A shared config unit has no module of its own; the module that
-        # mounts its Items() registers the values.
+        """Test that a shared unit mounted by a registrar is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/internal/pool/pool.go",
@@ -513,6 +474,7 @@ class TestSensitiveRedaction(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_shared_unit_with_no_registrar_is_reported(self) -> None:
+        """Test that a shared unit with no registrar is reported."""
         self.seed_anchors()
         self.write(
             "pkg/internal/pool/pool.go",
@@ -527,6 +489,7 @@ class TestSensitiveRedaction(GateCase):
 
 class TestEgressTransport(GateCase):
     def test_a_client_without_the_wrapper_is_reported(self) -> None:
+        """Test that a client without the wrapper is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/client.go",
@@ -538,6 +501,7 @@ class TestEgressTransport(GateCase):
         self.assertIn("observability.Transport", out)
 
     def test_a_wrapped_client_is_not_reported(self) -> None:
+        """Test that a wrapped client is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/client.go",
@@ -549,8 +513,7 @@ class TestEgressTransport(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_the_wechat_exception_is_not_reported(self) -> None:
-        # The allow-listed package is part of the seed and is left unwrapped;
-        # it must not be a finding.
+        """Test that the wechat exception is not reported."""
         self.seed_anchors()
         code, out, _ = self.run_gate()
         self.assertEqual(code, 0, out)
@@ -559,6 +522,7 @@ class TestEgressTransport(GateCase):
 
 class TestNoGlobalProvider(GateCase):
     def test_a_global_entry_is_reported(self) -> None:
+        """Test that a global entry is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/meter.go",
@@ -570,8 +534,7 @@ class TestNoGlobalProvider(GateCase):
         self.assertIn("otel.Meter", out)
 
     def test_a_provider_meter_is_not_reported(self) -> None:
-        # Taking a meter off a provider that came from the registry is the
-        # allowed path; only the package-level entry is forbidden.
+        """Test that a provider meter is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/meter.go",
@@ -582,8 +545,7 @@ class TestNoGlobalProvider(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_installing_the_global_provider_is_reported(self) -> None:
-        # The ADR forbids installing the global provider, and the installing
-        # entry is SetTracerProvider, not Tracer.
+        """Test that installing the global provider is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/provider.go",
@@ -594,6 +556,7 @@ class TestNoGlobalProvider(GateCase):
         self.assertIn("otel.SetTracerProvider", out)
 
     def test_a_handle_on_the_global_provider_is_reported(self) -> None:
+        """Test that a handle on the global provider is reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/handle.go",
@@ -604,8 +567,7 @@ class TestNoGlobalProvider(GateCase):
         self.assertIn("otel.Handle", out)
 
     def test_a_global_entry_in_a_test_file_is_not_reported(self) -> None:
-        # Test files are out of scope, the same as the other checks: an
-        # assertion may name a call that production code must not make.
+        """Test that a global entry in a test file is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/provider_test.go",
@@ -615,6 +577,7 @@ class TestNoGlobalProvider(GateCase):
         self.assertEqual(code, 0, out)
 
     def test_a_global_entry_named_only_in_a_comment_is_not_reported(self) -> None:
+        """Test that a global entry named only in a comment is not reported."""
         self.seed_anchors()
         self.write(
             "pkg/acme/provider.go",
@@ -626,6 +589,7 @@ class TestNoGlobalProvider(GateCase):
 
 class TestPositiveControls(GateCase):
     def test_a_root_that_is_not_a_directory_is_an_infrastructure_error(self) -> None:
+        """Test that a root that is not a directory is an infrastructure error."""
         missing = str(pathlib.Path(self.root, "absent"))
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -634,23 +598,21 @@ class TestPositiveControls(GateCase):
         self.assertIn("not a directory", err.getvalue())
 
     def test_a_tree_with_no_go_file_is_an_infrastructure_error(self) -> None:
+        """Test that a tree with no go file is an infrastructure error."""
         self.write("pkg/README.md", "no go here\n")
         code, _, err = self.run_gate()
         self.assertEqual(code, 2)
         self.assertIn("no Go file", err)
 
     def test_a_scan_that_drew_an_empty_set_is_an_infrastructure_error(self) -> None:
-        # Nothing resolves a logger or marks an item sensitive, so no check
-        # has anything to assert: an empty subject is not a pass.
+        """Test that a scan that drew an empty set is an infrastructure error."""
         self.write("pkg/acme/empty.go", "package acme\n")
         code, _, err = self.run_gate()
         self.assertEqual(code, 2)
         self.assertIn("empty set", err)
 
     def test_a_scan_that_lost_its_anchor_is_an_infrastructure_error(self) -> None:
-        # Call sites that resolve a logger exist, but none of them is in a
-        # package the control names, which is what a pattern that stopped
-        # matching the tree looks like.
+        """Test that a scan that lost its anchor is an infrastructure error."""
         self.write(
             "pkg/acme/module.go",
             "package acme\n\nfunc take(reg *core.Registry) {\n"
@@ -661,8 +623,7 @@ class TestPositiveControls(GateCase):
         self.assertIn("anchors", err)
 
     def test_a_stale_egress_exemption_is_an_infrastructure_error(self) -> None:
-        # The allow-listed package did not open a client: the exemption no
-        # longer names anything and could be hiding a violation.
+        """Test that a stale egress exemption is an infrastructure error."""
         self.seed_anchors()
         pathlib.Path(self.root, g.EGRESS_EXEMPT, "client.go").unlink()
         code, _, err = self.run_gate()
@@ -672,9 +633,7 @@ class TestPositiveControls(GateCase):
 
 class TestTheRepositoryItself(GateCase):
     def test_the_repository_reports_no_finding(self) -> None:
-        # The gate runs over the tree it lives in and reports nothing: the
-        # module the logging requirement was missing from is fixed, and a
-        # package that stays off the hand-written lists still has to pass.
+        """Test that the repository reports no finding."""
         code, out, err = self.run_gate(str(REPO))
         self.assertEqual(code, 0, f"{out}{err}")
         self.assertEqual(out, "")

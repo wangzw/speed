@@ -1,40 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for check_markdown_examples.py.
-
-Stdlib-only (unittest + tempfile), matching this directory's own "plain
-executables with no third-party dependencies" convention (tools/README.md's
-"Running in CI and locally" section) -- no pytest, no fixtures directory,
-no network. Run directly:
-
-    python3 tools/test_check_markdown_examples.py
-
-This suite needs `go` and `gofmt` on PATH (the same toolchain the script
-itself requires) but never touches the network and never depends on this
-repository's own modules existing on disk: every complete-block test
-below is a self-contained snippet with no github.com/vislake/speed/...
-imports, so `go mod tidy`/`go build` resolve against nothing but the
-standard library. Where a test needs a module roster it writes its own
-go.work into a temporary directory.
-
-Regression coverage: a bare `...` used as an "elided code" placeholder
-in a position where Go's grammar requires a real token must be a
-violation under every wrapping strategy -- the shape reproduced by
-test_ellipsis_placeholder_in_statement_position_is_a_violation and
-test_ellipsis_placeholder_in_call_position_is_a_violation, so a
-regression of the same shape fails the suite.
-
-Corpus coverage: NestedCheckoutTests pins that the discovery walk does
-not descend into .claude/worktrees/ (nested git checkouts whose own
-AGENTS.md/README trees are another checkout's corpus). InScopeTests pins
-that the corpus follows the workspace roster in both directions -- prose
-outside every workspace module is not checked, and prose inside a module
-is, whichever module the roster happens to list.
-
-Roster coverage: ReadWorkspaceTests pins that both legal spellings of a
-use directive yield the same roster, and that a roster listing no module
-is an error rather than an empty corpus that would report success
-without checking anything.
-"""
+"""Unit tests for check_markdown_examples.py."""
 
 from __future__ import annotations
 
@@ -51,8 +16,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import check_markdown_examples as m  # noqa: E402
 
 
-# A roster of the shape go.work carries: module directories relative to
-# the repository root.
 ROSTER = frozenset({"pkg/core", "pkg/config", "starters/demo"})
 
 
@@ -67,43 +30,41 @@ def write_workspace(root: pathlib.Path, dirs, inline: bool = False) -> None:
 
 class InScopeTests(unittest.TestCase):
     def test_root_prose_is_in_scope(self):
+        """Test that root prose is in scope."""
         self.assertTrue(m._in_scope("AGENTS.md", ROSTER))
         self.assertTrue(m._in_scope("README.md", ROSTER))
 
     def test_module_prose_is_in_scope(self):
+        """Test that module prose is in scope."""
         self.assertTrue(m._in_scope("pkg/core/AGENTS.md", ROSTER))
         self.assertTrue(m._in_scope("pkg/core/README.md", ROSTER))
         self.assertTrue(m._in_scope("starters/demo/AGENTS.md", ROSTER))
 
     def test_prose_below_a_module_is_in_scope(self):
-        # A subpackage's own prose belongs to the module that holds it.
+        """Test that prose below a module is in scope."""
         self.assertTrue(m._in_scope("pkg/config/source/file/AGENTS.md", ROSTER))
 
     def test_prose_outside_every_workspace_module_is_out_of_scope(self):
-        # The corpus is the workspace. Prose in a tree no use directive
-        # names is not checked, and the root guide's statement that no
-        # command builds or checks those trees stays true.
+        """Test that prose outside every workspace module is out of scope."""
         self.assertFalse(m._in_scope("legacy/dbkit/AGENTS.md", ROSTER))
         self.assertFalse(m._in_scope("legacy/dbkit/README.md", ROSTER))
         self.assertFalse(m._in_scope("web/packages/ui-kit/README.md", ROSTER))
         self.assertFalse(m._in_scope("starters/other-app/README.md", ROSTER))
 
     def test_scope_follows_the_roster_rather_than_a_denylist(self):
-        # The same path is in scope once the workspace lists the module it
-        # lives in: adding a module registers its prose, and no list of
-        # trees is maintained in the script.
+        """Test that scope follows the roster rather than a denylist."""
         self.assertTrue(
             m._in_scope("legacy/dbkit/AGENTS.md", ROSTER | {"legacy/dbkit"})
         )
 
     def test_documentation_tree_is_out_of_scope(self):
-        # Design and decision documents sketch shapes under design; a
-        # sketch that does not parse is normal there.
+        """Test that documentation tree is out of scope."""
         self.assertFalse(m._in_scope("docs/adr/0001-something.md", ROSTER))
         self.assertFalse(m._in_scope("docs/design/modules/design-core.md", ROSTER))
         self.assertFalse(m._in_scope("docs/site/AGENTS.md", ROSTER))
 
     def test_other_markdown_in_a_module_is_out_of_scope(self):
+        """Test that other markdown in a module is out of scope."""
         self.assertFalse(m._in_scope("pkg/core/CHANGELOG.md", ROSTER))
 
 
@@ -115,9 +76,7 @@ class ReadWorkspaceTests(unittest.TestCase):
             self.skipTest("go not on PATH")
 
     def test_block_and_inline_use_directives_yield_the_same_roster(self):
-        # Both spellings are legal go.work. A roster read from only one of
-        # them would come up empty on the other -- silently, since every
-        # check this gate runs is per-module.
+        """Test that block and inline use directives yield the same roster."""
         for inline in (False, True):
             with self.subTest(inline=inline), tempfile.TemporaryDirectory() as td:
                 root = pathlib.Path(td)
@@ -127,6 +86,7 @@ class ReadWorkspaceTests(unittest.TestCase):
                 self.assertEqual(workspace.go_directive, "1.25")
 
     def test_workspace_listing_no_module_is_an_error(self):
+        """Test that workspace listing no module is an error."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             (root / "go.work").write_text("go 1.25\n", encoding="utf-8")
@@ -134,6 +94,7 @@ class ReadWorkspaceTests(unittest.TestCase):
                 m.read_workspace(root)
 
     def test_absent_workspace_is_an_error(self):
+        """Test that absent workspace is an error."""
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaises(m.WorkspaceError):
                 m.read_workspace(pathlib.Path(td))
@@ -141,10 +102,7 @@ class ReadWorkspaceTests(unittest.TestCase):
 
 class NestedCheckoutTests(unittest.TestCase):
     def test_nested_worktree_corpus_is_not_discovered(self):
-        # .claude/worktrees/ holds this repository's git worktrees --
-        # complete checkouts whose own AGENTS.md/README/ADR files are never
-        # part of this checkout's corpus. Discovery must see only the
-        # in-tree file.
+        """Test that nested worktree corpus is not discovered."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             (root / "AGENTS.md").write_text("# root\n", encoding="utf-8")
@@ -161,6 +119,7 @@ class NestedCheckoutTests(unittest.TestCase):
 
 class ExtractGoBlocksTests(unittest.TestCase):
     def test_single_block_extracted_with_line_numbers(self):
+        """Test that single block extracted with line numbers."""
         text = "intro\n\n```go\npackage p\n```\n\nmore text\n"
         blocks = m.extract_go_blocks(text)
         self.assertEqual(len(blocks), 1)
@@ -169,6 +128,7 @@ class ExtractGoBlocksTests(unittest.TestCase):
         self.assertEqual(blocks[0].end_line, 5)
 
     def test_multiple_blocks_extracted_independently(self):
+        """Test that multiple blocks extracted independently."""
         text = "```go\npackage a\n```\ntext\n```go\npackage b\n```\n"
         blocks = m.extract_go_blocks(text)
         self.assertEqual(len(blocks), 2)
@@ -176,35 +136,36 @@ class ExtractGoBlocksTests(unittest.TestCase):
         self.assertEqual(blocks[1].body, "package b")
 
     def test_non_go_fence_is_ignored(self):
+        """Test that non go fence is ignored."""
         text = "```python\nprint(1)\n```\n"
         self.assertEqual(m.extract_go_blocks(text), [])
 
     def test_gotemplate_fence_is_not_mistaken_for_go(self):
-        # A "```go" prefix match without a strict end-of-line anchor would
-        # wrongly swallow a ```gotemplate or ```go-like fence tag.
+        """Test that gotemplate fence is not mistaken for go."""
         text = "```gotemplate\n{{ .Foo }}\n```\n"
         self.assertEqual(m.extract_go_blocks(text), [])
 
     def test_skip_marker_immediately_above_fence(self):
+        """Test that skip marker immediately above fence."""
         text = "<!-- markdown-example: no-parse-check -->\n```go\nnonsense !!!\n```\n"
         blocks = m.extract_go_blocks(text)
         self.assertEqual(len(blocks), 1)
         self.assertTrue(blocks[0].skip)
 
     def test_skip_marker_tolerates_one_blank_line(self):
+        """Test that skip marker tolerates one blank line."""
         text = "<!-- markdown-example: no-parse-check -->\n\n```go\nnonsense !!!\n```\n"
         blocks = m.extract_go_blocks(text)
         self.assertTrue(blocks[0].skip)
 
     def test_no_skip_marker_means_not_skipped(self):
+        """Test that no skip marker means not skipped."""
         text = "some prose\n```go\npackage p\n```\n"
         blocks = m.extract_go_blocks(text)
         self.assertFalse(blocks[0].skip)
 
     def test_skip_marker_paragraphs_above_does_not_count(self):
-        # The escape hatch must be the *nearest* line, not merely present
-        # somewhere earlier in the file -- otherwise one marker could
-        # silently blanket every later block.
+        """Test that skip marker paragraphs above does not count."""
         text = (
             "<!-- markdown-example: no-parse-check -->\n"
             "\nSome unrelated paragraph in between.\n\n"
@@ -216,26 +177,29 @@ class ExtractGoBlocksTests(unittest.TestCase):
 
 class ClassifyTests(unittest.TestCase):
     def test_package_clause_is_complete(self):
+        """Test that package clause is complete."""
         self.assertEqual(m.classify("package foo\n\nfunc F() {}"), "complete")
 
     def test_leading_comment_then_package_is_still_complete(self):
+        """Test that leading comment then package is still complete."""
         self.assertEqual(
             m.classify("// Package foo does things.\npackage foo\n"), "complete"
         )
 
     def test_bare_statement_is_fragment(self):
+        """Test that bare statement is fragment."""
         self.assertEqual(m.classify("x := 1\nreturn x"), "fragment")
 
     def test_bare_signature_is_fragment(self):
+        """Test that bare signature is fragment."""
         self.assertEqual(m.classify("Migrations() dbkit.MigrationSet"), "fragment")
 
     def test_empty_block_is_fragment(self):
+        """Test that empty block is fragment."""
         self.assertEqual(m.classify(""), "fragment")
 
     def test_leading_comment_mentioning_package_word_is_not_complete(self):
-        # "// package pkgcore" as a comment (docs/adr/0002's own shape) must
-        # not be mistaken for a real package clause -- only an actual
-        # `package` keyword line counts.
+        """Test that leading comment mentioning package word is not complete."""
         self.assertEqual(
             m.classify("// package pkgcore\ntype TenantID string\n"), "fragment"
         )
@@ -243,16 +207,19 @@ class ClassifyTests(unittest.TestCase):
 
 class ModuleDirsForBlockTests(unittest.TestCase):
     def test_direct_module_import(self):
+        """Test that direct module import."""
         body = 'import "github.com/vislake/speed/pkg/core"\n'
         self.assertEqual(m._module_dirs_for_block(body, ROSTER), ({"pkg/core"}, set()))
 
     def test_subpackage_import_maps_to_owning_module(self):
+        """Test that subpackage import maps to owning module."""
         body = 'import "github.com/vislake/speed/pkg/config/source/file"\n'
         self.assertEqual(
             m._module_dirs_for_block(body, ROSTER), ({"pkg/config"}, set())
         )
 
     def test_multiple_distinct_modules(self):
+        """Test that multiple distinct modules."""
         body = (
             'import (\n'
             '\t"github.com/vislake/speed/pkg/core"\n'
@@ -265,14 +232,14 @@ class ModuleDirsForBlockTests(unittest.TestCase):
         )
 
     def test_example_host_import(self):
+        """Test that example host import."""
         body = 'import "github.com/vislake/speed/starters/demo"\n'
         self.assertEqual(
             m._module_dirs_for_block(body, ROSTER), ({"starters/demo"}, set())
         )
 
     def test_import_outside_the_workspace_is_unresolved(self):
-        # Nothing in the workspace provides it, and the script does not
-        # guess a directory from the import path -- the caller reports it.
+        """Test that import outside the workspace is unresolved."""
         body = 'import "github.com/vislake/speed/legacy/pkgcore/i18n"\n'
         self.assertEqual(
             m._module_dirs_for_block(body, ROSTER),
@@ -280,6 +247,7 @@ class ModuleDirsForBlockTests(unittest.TestCase):
         )
 
     def test_longest_matching_module_wins(self):
+        """Test that longest matching module wins."""
         roster = ROSTER | {"pkg/config/plugin"}
         body = 'import "github.com/vislake/speed/pkg/config/plugin/extra"\n'
         self.assertEqual(
@@ -287,6 +255,7 @@ class ModuleDirsForBlockTests(unittest.TestCase):
         )
 
     def test_no_speed_imports_yields_nothing(self):
+        """Test that no speed imports yields nothing."""
         body = 'import "context"\n'
         self.assertEqual(m._module_dirs_for_block(body, ROSTER), (set(), set()))
 
@@ -312,6 +281,7 @@ class LocalReplacementsTests(unittest.TestCase):
         )
 
     def test_replacement_is_followed_transitively(self):
+        """Test that replacement is followed transitively."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             self._tree(root)
@@ -319,6 +289,7 @@ class LocalReplacementsTests(unittest.TestCase):
         self.assertEqual(set(found), {"pkg/leaf", "pkg/core"})
 
     def test_module_without_go_mod_is_skipped(self):
+        """Test that module without go mod is skipped."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             self._tree(root)
@@ -335,19 +306,19 @@ class CheckFragmentTests(unittest.TestCase):
             self.skipTest("gofmt not on PATH")
 
     def test_bare_method_signature_parses_under_toplevel(self):
-        # A body-less function/method signature is legal top-level Go
-        # syntax (the shape used for assembly-implemented functions), so
-        # this needs no interface wrapping at all.
+        """Test that bare method signature parses under toplevel."""
         ok, strategy, _ = m.check_fragment(self.gofmt, "func Migrations() dbkit.MigrationSet")
         self.assertTrue(ok)
         self.assertEqual(strategy, "top-level")
 
     def test_interface_method_only_signature_needs_interface_wrap(self):
+        """Test that interface method only signature needs interface wrap."""
         ok, strategy, _ = m.check_fragment(self.gofmt, "Migrations() dbkit.MigrationSet")
         self.assertTrue(ok)
         self.assertEqual(strategy, "interface-body")
 
     def test_statement_sequence_parses_under_func_body(self):
+        """Test that statement sequence parses under func body."""
         body = textwrap.dedent(
             """\
             x, err := f()
@@ -362,6 +333,7 @@ class CheckFragmentTests(unittest.TestCase):
         self.assertEqual(strategy, "func-body")
 
     def test_bare_import_parses_under_toplevel(self):
+        """Test that bare import parses under toplevel."""
         ok, strategy, _ = m.check_fragment(
             self.gofmt, 'import _ "github.com/vislake/speed/go/dbkit/dialect/sqlite"'
         )
@@ -369,9 +341,7 @@ class CheckFragmentTests(unittest.TestCase):
         self.assertEqual(strategy, "top-level")
 
     def test_ellipsis_placeholder_in_statement_position_is_a_violation(self):
-        # A bare `...` standing in for "handle it" inside a block is not
-        # valid Go anywhere a statement is expected, and must fail every
-        # wrapping.
+        """Test that ellipsis placeholder in statement position is a violation."""
         body = (
             "if err := db.Where(cond).First(&got).Error; err != nil { ... }"
         )
@@ -381,25 +351,21 @@ class CheckFragmentTests(unittest.TestCase):
         self.assertTrue(err)
 
     def test_ellipsis_placeholder_in_call_position_is_a_violation(self):
-        # A bare `...` standing in for "more arguments here" after a comma
-        # inside a call is not valid Go (variadic `...` must follow an
-        # actual expression, e.g. `slice...`, never a bare comma).
+        """Test that ellipsis placeholder in call position is a violation."""
         body = "tenancy.Middleware(authn.NewPrincipalResolver(), ...)(mux)"
         ok, strategy, err = m.check_fragment(self.gofmt, body)
         self.assertFalse(ok)
         self.assertEqual(strategy, "")
 
     def test_struct_field_list_needs_struct_wrap(self):
+        """Test that struct field list needs struct wrap."""
         body = 'Email      string `gorm:"serializer:email_enc"`'
         ok, strategy, _ = m.check_fragment(self.gofmt, body)
         self.assertTrue(ok)
-        # A single tagged field also happens to parse as a bare top-level
-        # var-ish construct in some wrappings; assert only that some
-        # wrapping among the struct/const/var family accepts it, since the
-        # exact winning strategy is not the property under test here.
         self.assertIn(strategy, {"top-level", "struct-body", "const-block", "var-block"})
 
     def test_genuinely_unparseable_fragment_fails_everywhere(self):
+        """Test that genuinely unparseable fragment fails everywhere."""
         ok, strategy, err = m.check_fragment(self.gofmt, "{{{ not go at all ]]]")
         self.assertFalse(ok)
         self.assertEqual(strategy, "")
@@ -416,6 +382,7 @@ class CheckCompleteBlockTests(unittest.TestCase):
     workspace = m.Workspace("1.25", ROSTER)
 
     def test_self_contained_valid_program_builds_clean(self):
+        """Test that self contained valid program builds clean."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             block = m.GoBlock(1, 3, "package p\n\nfunc F() int { return 1 }\n", False)
@@ -425,6 +392,7 @@ class CheckCompleteBlockTests(unittest.TestCase):
         self.assertEqual(violations, [])
 
     def test_broken_program_is_reported_as_a_violation(self):
+        """Test that broken program is reported as a violation."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             block = m.GoBlock(
@@ -438,6 +406,7 @@ class CheckCompleteBlockTests(unittest.TestCase):
         self.assertIn("undefinedThing", violations[0])
 
     def test_import_outside_the_workspace_is_reported_without_a_build(self):
+        """Test that import outside the workspace is reported without a build."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             body = (
@@ -454,6 +423,7 @@ class CheckCompleteBlockTests(unittest.TestCase):
         self.assertIn("go.work", violations[0])
 
     def test_roster_entry_without_a_module_is_reported(self):
+        """Test that roster entry without a module is reported."""
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             body = (
@@ -493,6 +463,7 @@ class CheckCompleteBlockWidthTests(unittest.TestCase):
         return run.call_args_list
 
     def test_the_go_commands_forward_the_width_and_keep_the_callers_flags(self):
+        """Test that the go commands forward the width and keep the callers flags."""
         with mock.patch.dict(
             os.environ, {"GOMAXPROCS": "3", "GOFLAGS": "-p=3 -tags=probe"}
         ):
@@ -527,6 +498,7 @@ class CheckCompleteBlockWidthTests(unittest.TestCase):
             )
 
     def test_the_script_does_not_invent_a_width_when_the_caller_set_none(self):
+        """Test that the script does not invent a width when the caller set none."""
         with mock.patch.dict(os.environ, {}):
             os.environ.pop("GOMAXPROCS", None)
             os.environ.pop("GOFLAGS", None)
@@ -553,23 +525,25 @@ class MainExitCodeTests(unittest.TestCase):
         target.write_text(prose, encoding="utf-8")
 
     def test_missing_root_is_infrastructure_error(self):
+        """Test that missing root is infrastructure error."""
         rc = m.main(["--root", "/this/path/does/not/exist/at/all"])
         self.assertEqual(rc, 2)
 
     def test_unreadable_roster_is_infrastructure_error(self):
-        # No go.work: the corpus is undefined, and reporting success over
-        # an undefined corpus is the failure mode this guards.
+        """Test that unreadable roster is infrastructure error."""
         with tempfile.TemporaryDirectory() as td:
             rc = m.main(["--root", td])
         self.assertEqual(rc, 2)
 
     def test_survey_mode_exits_zero(self):
+        """Test that survey mode exits zero."""
         with tempfile.TemporaryDirectory() as td:
             self._tree(pathlib.Path(td), "# Fake\n")
             rc = m.main(["--root", td, "--survey"])
         self.assertEqual(rc, 0)
 
     def test_clean_tree_exits_zero(self):
+        """Test that clean tree exits zero."""
         with tempfile.TemporaryDirectory() as td:
             self._tree(
                 pathlib.Path(td),
@@ -579,14 +553,14 @@ class MainExitCodeTests(unittest.TestCase):
         self.assertEqual(rc, 0)
 
     def test_tree_with_a_broken_fragment_exits_one(self):
+        """Test that tree with a broken fragment exits one."""
         with tempfile.TemporaryDirectory() as td:
             self._tree(pathlib.Path(td), "# Fake\n\n```go\nnot go at all {{{ ]]]\n```\n")
             rc = m.main(["--root", td])
         self.assertEqual(rc, 1)
 
     def test_broken_block_outside_the_workspace_is_not_checked(self):
-        # The same broken block, in prose no workspace module holds. The
-        # gate reports success because that tree is not its corpus.
+        """Test that broken block outside the workspace is not checked."""
         with tempfile.TemporaryDirectory() as td:
             self._tree(
                 pathlib.Path(td),
@@ -597,6 +571,7 @@ class MainExitCodeTests(unittest.TestCase):
         self.assertEqual(rc, 0)
 
     def test_broken_block_inside_the_workspace_is_checked(self):
+        """Test that broken block inside the workspace is checked."""
         with tempfile.TemporaryDirectory() as td:
             self._tree(
                 pathlib.Path(td),
@@ -607,6 +582,7 @@ class MainExitCodeTests(unittest.TestCase):
         self.assertEqual(rc, 1)
 
     def test_skip_marker_lets_a_broken_fragment_pass(self):
+        """Test that skip marker lets a broken fragment pass."""
         with tempfile.TemporaryDirectory() as td:
             self._tree(
                 pathlib.Path(td),

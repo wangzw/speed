@@ -1,36 +1,3 @@
-# The four external backends the pkg module's tests run against: PostgreSQL,
-# Redis, NATS and memcached. They are what the shared test fixtures under
-# pkg/internal/ connect to, and this is the only thing that starts them: a
-# fixture hands a case a database, a logical database index, a key space or a
-# bucket on a server that is already up, and never manages a container itself.
-#
-#   make deps-up        # tools/backends.py up: allocate ports, docker compose up -d --wait
-#   make deps-down      # tools/backends.py down: this checkout's project only
-#
-# Every service carries a healthcheck, and that is not decoration: `up --wait`
-# waits for a service to be *healthy* only when it declares one, and merely for
-# it to be running otherwise. A case that starts the moment the container is
-# running, with the server still initialising behind it, is the cold-start
-# flake the healthchecks exist to remove.
-#
-# Each service publishes to 127.0.0.1 on the port named by its own variable --
-# SPEED_TEST_PG_PORT, SPEED_TEST_REDIS_PORT, SPEED_TEST_NATS_PORT and
-# SPEED_TEST_MEMCACHED_PORT -- falling back to 5432, 6379, 4222 and 11211 when
-# the variable is unset, so a bare `docker compose up` behaves as it always
-# did. `make deps-up` sets all four: tools/backends.py binds 127.0.0.1:0 to find
-# free ports and runs the stack under the compose project named for this
-# checkout, so two checkouts on one machine, or a machine already serving one of
-# the default ports, each get a stack of their own. A bare `docker compose up`
-# still takes the defaults and therefore conflicts with whatever already holds
-# them.
-#
-# The images are held to a major version rather than to a digest: the cases lean
-# on a PostgreSQL major's DDL behaviour inside a transaction, on Redis stream
-# consumer groups and SET's KEEPTTL, on JetStream's compare-and-swap and pull
-# consumers, and on memcached's compare-and-swap and add. Each of those is a
-# property of a version, so `docker compose pull` can move a server under the
-# cases by a minor release; a round that has to be reproducible to the byte
-# pins a digest here instead.
 services:
   postgres:
     image: postgres:17-alpine
@@ -40,11 +7,6 @@ services:
       POSTGRES_DB: speed
     ports:
       - "127.0.0.1:${SPEED_TEST_PG_PORT:-5432}:5432"
-    # The server carries every test binary on the machine at once -- go test
-    # runs packages in parallel and several checkouts can run at once -- so it
-    # takes 500 clients rather than PostgreSQL's default of 100, which is sized
-    # for one application. A case refused a connection for want of one fails
-    # for a reason that is not its own.
     command: ["-c", "max_connections=500"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U speed -d speed"]
@@ -52,9 +14,6 @@ services:
       timeout: 5s
       retries: 30
 
-  # No logical databases are configured here: a default Redis offers 16, and
-  # the fixture hands all but the last one (its own lease database) out to
-  # cases.
   redis:
     image: redis:7-alpine
     ports:
@@ -65,8 +24,6 @@ services:
       timeout: 5s
       retries: 30
 
-  # JetStream is on: both the NATS key-value store and the NATS event bus are
-  # built on it, and a server started without -js answers neither.
   nats:
     image: nats:2-alpine
     command: ["-js"]

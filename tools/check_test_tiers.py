@@ -1,53 +1,5 @@
 #!/usr/bin/env python3
-"""Test-tier gate: the build tags agree with the legs, and no library skips a case.
-
-The cases are split into a unit layer and an integration layer by the
-`integration` build tag, the commit gate runs the unit layer alone, and
-the integration layer is compiled by a leg of its own. Both of those are
-properties of the Makefile's legs and of the tags written into the tree,
-and each fails silently when the two drift apart:
-
-  * A tag no leg passes takes its file out of every leg at once. A file
-    tagged `intergration` is excluded from `go vet ./...` and from
-    `go vet -tags=integration ./...` alike, both exit 0, and `go test
-    -tags=integration` reports no test files -- the cases are gone with
-    nothing red anywhere. The same shape arrives the other way round: a
-    leg that passes `-tags=intergration` leaves every correctly tagged
-    file uncompiled. This gate holds the two to each other, reading the
-    tags from the Makefile rather than restating them, so a new leg and a
-    new tag arrive together or the gate says so.
-
-    A GOOS or GOARCH term -- a `//go:build linux`, or the `_linux` of a
-    file name -- is not a tag a leg passes: the platform a run executes
-    on satisfies it. The platforms the gate runs on are read from the
-    `runs-on` of every job under .github/workflows, each runner label
-    mapped to its platform by RUNNER_PLATFORMS, and a file whose
-    constraints none of them satisfies -- a Windows-only file, say -- is
-    compiled by no run and is the same finding. The read is the union of
-    the workflows' runners, not which job runs which leg, so a file passes
-    when some runner's platform and some choice of the legs' tags satisfy
-    it; while every workflow runs on one platform, that runner is the one
-    every leg runs on.
-
-  * A case that skips is not a case that ran, and `go test` exits 0 on a
-    binary whose cases all skipped. The tier decision is that a backend
-    which cannot be reached fails the case rather than skipping it; the
-    place that ruling can be undone without anyone noticing is the
-    library code a case calls into -- a fixture that returns a skip
-    instead of a failure makes the layer green forever. This gate fails a
-    non-test Go file that calls one of the skip methods, which is where a
-    fixture's skip has to live. A test file is left alone: a case may
-    skip for a reason of its own, as one does when a sibling case has
-    already reported the failure it would report again.
-
-Exit codes: 0 = the tags and the legs agree and no library skips a case;
-1 = at least one finding, each reported with file, line and what it is;
-2 = infrastructure error -- the root is not a directory, the Makefile is
-missing or passes no tag, a workflow names a runner whose platform this gate
-does not know, a constraint does not parse, or a check found no subject at
-all (no tagged file, or no library). A gate that checked nothing has not
-passed. Paths in the report are relative to --root.
-"""
+"""Test-tier gate: the build tags agree with the legs, and no library skips a case."""
 
 from __future__ import annotations
 
