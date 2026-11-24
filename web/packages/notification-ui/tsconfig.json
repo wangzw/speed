@@ -41,6 +41,7 @@
       "@speed/test-utils/emitted-css": ["../../test-utils/src/emitted-css.ts"],
       "@speed/test-utils/real-client": ["../../test-utils/src/real-client.ts"],
       "@speed/test-utils/render": ["../../test-utils/src/render.tsx"],
+      "@speed/test-utils/timers": ["../../test-utils/src/timers.ts"],
       "@speed/test-utils/setup": ["../../test-utils/src/setup.ts"]
     }
   }
