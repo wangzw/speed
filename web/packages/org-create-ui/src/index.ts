@@ -1,13 +1,6 @@
 /**
- * @speed/org-create-ui -- the shared organization-creation surface.
- *
- * The public interface is this entry: the shared form and its controlled
- * values, the client-side validation the server remains authoritative
- * over, the self-service creation page, the error-text resolver and the
- * package's bilingual namespace resources. The platform console composes
- * the form inside its own registration page and the demo host composes
- * the page over its org.create operation; neither copies the fields or
- * the rules.
+ * Public entry of @speed/org-create-ui: the shared organization-creation
+ * surface.
  */
 
 export {

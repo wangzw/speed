@@ -1,10 +1,3 @@
-/**
- * The self-service page: validation gates the write, a landed creation
- * runs the host's hand-over before navigating, a refused creation keeps
- * the draft and shows the mapped refusal, and a failed hand-over offers a
- * retry that never repeats the write.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -131,8 +124,6 @@ describe('OrganizationCreatePage', () => {
 
     expect(await screen.findByText(enUS.switching.title)).toBeInTheDocument()
     const submitControl = screen.getByRole('button', { name: enUS.submit })
-    // The form stays focusable but not operable while the hand-over runs:
-    // unavailable for context, with no busy state and no reason of its own.
     expect(submitControl).toHaveAttribute('aria-disabled', 'true')
     expect(submitControl).not.toHaveAttribute('aria-busy')
     expect(submitControl).toHaveAccessibleDescription('')

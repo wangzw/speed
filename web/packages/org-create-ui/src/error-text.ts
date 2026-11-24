@@ -1,17 +1,3 @@
-/**
- * The org-create-ui error-text resolver.
- *
- * A creation refusal arrives as the api-client's ApiError, whose `code`
- * is either a module answer (`org.organization_limit`) or one of the
- * reserved `client.*` families. The resolver follows @speed/i18n's
- * convention: a listed code resolves to its own `errors.<code>` leaf, a
- * bare `client.http.<status>` answer resolves through the parameterized
- * leaf (with actionable replacements for the statuses a creation most
- * often meets), a throttled answer names the wait it stated, and anything
- * else falls back to `errors.unknown`. Text always comes from this
- * package's namespace, never from an API's English fallback.
- */
-
 import { useMemo } from 'react'
 import {
   CLIENT_TRANSPORT_ERROR_CODES,
@@ -22,12 +8,8 @@ import {
 import { errorCodeOf, retryAfterSecondsOf } from '@speed/ui-kit'
 import { ORG_CREATE_UI_NAMESPACE } from './resources.js'
 
-/**
- * The codes a creation attempt can be answered with and that carry their
- * own copy: the shared session and transport families, the email-proof
- * and forbidden refusals, the two shape refusals, and the four org-create
- * codes.
- */
+/** The codes a creation attempt can be answered with that carry their own
+ * copy. */
 export const ORGANIZATION_CREATE_ERROR_CODES = [
   ...SESSION_LIFECYCLE_ERROR_CODES,
   ...CLIENT_TRANSPORT_ERROR_CODES,
@@ -45,14 +27,11 @@ const KNOWN_CODES: ReadonlySet<string> = new Set(
   ORGANIZATION_CREATE_ERROR_CODES,
 )
 
-/** The leaves that name a throttled creation's wait. */
 const WAIT_KEY = 'errors.org.rate_limited_wait'
 const WAIT_LONG_KEY = 'errors.org.rate_limited_wait_long'
 
-/** The code set that states a wait. */
 const WAIT_CODES = ['org.rate_limited'] as const
 
-/** The statuses a bare HTTP refusal maps to an actionable sentence. */
 const HTTP_BY_STATUS: Readonly<Record<string, string>> = {
   '400': 'errors.badRequest',
   '401': 'errors.sessionEnded',
@@ -87,7 +66,9 @@ export function useOrganizationCreateErrorText(): (
 
 /** One failed creation attempt's code and stated wait, ready to resolve. */
 export interface OrganizationCreateFailure {
+  /** The failure's error code. */
   readonly code: string
+  /** The server's stated wait, in seconds, when it gave one. */
   readonly retryAfterSeconds?: number
 }
 

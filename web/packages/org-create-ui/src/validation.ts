@@ -1,20 +1,3 @@
-/**
- * The shared creation form's values and client-side validation.
- *
- * The server is the authority on every rule here: this module repeats the
- * name shape, the built-in reserved-name set and the profile bounds -- the
- * display-name and website limits included -- so the operator meets a typo
- * in place instead of a refusal after a round trip. A deployment may append
- * reserved names through `authn.account.reserved-usernames`; the client
- * cannot know those, so a name the server alone refuses still reaches the
- * error region.
- *
- * The values are one flat shape for both surfaces. The platform form adds
- * the contact address and website to the name, display name and
- * description; the self-service form renders only the latter three, and its
- * validator ignores the platform-only fields even when a host seeds them.
- */
-
 /** Which surface is rendering the form. */
 export type OrganizationCreateMode = 'platform' | 'self-service'
 
@@ -60,19 +43,11 @@ export type OrganizationCreateViolations = Partial<
   Record<OrganizationCreateField, OrganizationCreateViolation>
 >
 
-/**
- * The name shape the server enforces: a DNS-label-shaped slug of three to
- * sixty-three lower-case letters, digits and dashes, beginning with a
- * letter or a digit. It is the username shape too, because a personal
- * tenant's name is its owner's username.
- */
+/** Mirrors the server's slug rule; a divergence admits names the server rejects. */
 const NAME_SHAPE = /^[a-z0-9][a-z0-9-]{2,62}$/
 
-/**
- * The names the server keeps for itself: the API paths, the console and
- * its routes, the static asset prefix, and the health and readiness
- * probes. A deployment may append names; those are server-only.
- */
+/** The names the server reserves for itself. A deployment may append
+ * server-only names. */
 export const RESERVED_NAMES: readonly string[] = [
   'api',
   'console',
@@ -150,17 +125,14 @@ export function normalizeOrganizationCreateValues(
   }
 }
 
-/** The number of runes in a string, the unit the profile bounds use. */
 function runeLength(value: string): number {
   return Array.from(value).length
 }
 
-/** The number of UTF-8 bytes in a string, the unit the website bound uses. */
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).length
 }
 
-/** Whether a contact address is a single bare email address. */
 function isBareEmail(value: string): boolean {
   if (value.length > 254 || /\s/.test(value)) {
     return false
@@ -168,8 +140,6 @@ function isBareEmail(value: string): boolean {
   return /^[^@]+@[^@]+$/.test(value)
 }
 
-/** Whether a website is an absolute http/https URL with a host and no
- * userinfo, the shape the server's `net/url` check admits. */
 function isAbsoluteWebAddress(value: string): boolean {
   let parsed: URL
   try {
@@ -231,14 +201,20 @@ export function validateOrganizationCreateValues(
 
 /** What the self-service page hands its create operation. */
 export interface OrganizationCreateSubmission {
+  /** The public slug. */
   readonly name: string
+  /** The display name. */
   readonly displayName: string
+  /** The description. */
   readonly description: string
 }
 
 /** The organization a creation operation answers with. */
 export interface CreatedOrganization {
+  /** The public slug. */
   readonly name: string
+  /** The display name. */
   readonly displayName: string
+  /** The description. */
   readonly description: string
 }
