@@ -14,6 +14,7 @@ import { createRef, useState } from 'react'
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { restoreRealTimers } from '@speed/test-utils/timers'
 import { buttonClasses } from '@mui/material/Button'
 import { switchLanguage } from '@speed/i18n'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -225,7 +226,7 @@ describe('ConfirmDialog', () => {
       fireEvent.click(again())
       expect(onConfirm).toHaveBeenCalledTimes(1)
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
@@ -279,7 +280,7 @@ describe('ConfirmDialog', () => {
       fireEvent.click(reopened)
       expect(onConfirm).not.toHaveBeenCalled()
     } finally {
-      vi.useRealTimers()
+      await restoreRealTimers()
     }
   })
 
