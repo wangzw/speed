@@ -11,9 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// bindContext builds a gin context the way a handler test does, outside this
-// module's chain: no layer ever ran, so the request context carries no
-// responder and a refusal is written in the default shape.
 func bindContext(method, target string, body io.Reader) (*gin.Context, *httptest.ResponseRecorder) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -21,8 +18,6 @@ func bindContext(method, target string, body io.Reader) (*gin.Context, *httptest
 	return c, recorder
 }
 
-// nameRequired is a body shape with its own Validate, which refuses an empty
-// name. It is the third kind of failure BindJSON tells apart.
 type nameRequired struct {
 	Name string `json:"name"`
 }
@@ -34,14 +29,8 @@ func (n *nameRequired) Validate() error {
 	return nil
 }
 
-// TestBindJSONRefusesAnOversizedBodyAsTooLarge pins the first of the three
-// failures: a body whose read crosses the endpoint's limit comes back from gin
-// as an *http.MaxBytesError, and BindJSON answers it as a 413 through Fail
-// rather than as one of the two shape failures.
-//
-// The limit here is imposed by a MaxBytesReader, which is what the body limit
-// layer wraps an unknown-length body in; a request that declares an over-limit
-// length is refused by that layer before a handler runs.
+// TestBindJSONRefusesAnOversizedBodyAsTooLarge pins the first of the three failures: a body whose
+// read crosses the endpoint's limit comes back from gin as an *http.MaxBytesError.
 func TestBindJSONRefusesAnOversizedBodyAsTooLarge(t *testing.T) {
 	const limit = 16
 	recorder := httptest.NewRecorder()
@@ -62,8 +51,8 @@ func TestBindJSONRefusesAnOversizedBodyAsTooLarge(t *testing.T) {
 	}
 }
 
-// TestBindJSONRefusesAMalformedBodyAsABadRequest pins the second failure: a body
-// that is not a JSON value dst can hold — here a truncated object — is a 400.
+// TestBindJSONRefusesAMalformedBodyAsABadRequest pins the second failure: a body that is not a JSON
+// value dst can hold — here a truncated object — is a 400.
 func TestBindJSONRefusesAMalformedBodyAsABadRequest(t *testing.T) {
 	c, recorder := bindContext(nethttp.MethodPost, "/things",
 		strings.NewReader(`{"name":`))
@@ -77,9 +66,8 @@ func TestBindJSONRefusesAMalformedBodyAsABadRequest(t *testing.T) {
 	assertRefusal(t, recorder, c, nethttp.StatusBadRequest)
 }
 
-// TestBindJSONRefusesAValidatedBodyAsUnprocessable pins the third failure: a
-// body that binds but whose own Validate refuses it is a 422, and the detail is
-// the text Validate gave.
+// TestBindJSONRefusesAValidatedBodyAsUnprocessable pins the third failure: a body that binds but
+// whose own Validate refuses it is a 422, and the detail is the text Validate gave.
 func TestBindJSONRefusesAValidatedBodyAsUnprocessable(t *testing.T) {
 	c, recorder := bindContext(nethttp.MethodPost, "/things",
 		strings.NewReader(`{"name":""}`))
@@ -94,9 +82,8 @@ func TestBindJSONRefusesAValidatedBodyAsUnprocessable(t *testing.T) {
 	}
 }
 
-// TestBindJSONBindsAValidBody pins the success path: a body that reads and whose
-// dst has no Validate is reported true and leaves the response untouched, so the
-// handler goes on to answer it.
+// TestBindJSONBindsAValidBody pins the success path: a body that reads and whose dst has no
+// Validate is reported true and leaves the response untouched, so the handler goes on to answer it.
 func TestBindJSONBindsAValidBody(t *testing.T) {
 	c, recorder := bindContext(nethttp.MethodPost, "/things",
 		strings.NewReader(`{"name":"within"}`))
@@ -114,9 +101,8 @@ func TestBindJSONBindsAValidBody(t *testing.T) {
 	assertNoResponseWritten(t, recorder, c)
 }
 
-// TestBindJSONAcceptsABodyThatValidates pins the success half of the validation
-// step: a dst that has a Validate which accepts the body is reported true, so a
-// shape that can be refused is not refused when it is fine.
+// TestBindJSONAcceptsABodyThatValidates pins the success half of the validation step: a dst that
+// has a Validate which accepts the body is reported true.
 func TestBindJSONAcceptsABodyThatValidates(t *testing.T) {
 	c, recorder := bindContext(nethttp.MethodPost, "/things",
 		strings.NewReader(`{"name":"within"}`))
@@ -132,9 +118,6 @@ func TestBindJSONAcceptsABodyThatValidates(t *testing.T) {
 	assertNoResponseWritten(t, recorder, c)
 }
 
-// assertRefusal checks the shape of a refusal BindJSON wrote: the status, the
-// default problem details media type, the status carried in the body, and that
-// the chain was ended.
 func assertRefusal(t *testing.T, recorder *httptest.ResponseRecorder, c *gin.Context, status int) {
 	t.Helper()
 	if recorder.Code != status {
@@ -151,8 +134,6 @@ func assertRefusal(t *testing.T, recorder *httptest.ResponseRecorder, c *gin.Con
 	}
 }
 
-// assertNoResponseWritten checks that a successful binding wrote nothing: the
-// handler is the one that answers a request that bound.
 func assertNoResponseWritten(t *testing.T, recorder *httptest.ResponseRecorder, c *gin.Context) {
 	t.Helper()
 	if c.Writer.Written() {

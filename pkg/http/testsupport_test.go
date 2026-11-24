@@ -26,14 +26,10 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// requestBody is one declared request body with the given media type.
 func requestBody(mediaType string) *RequestBody {
 	return &RequestBody{MediaType: mediaType}
 }
 
-// parseProductionFiles parses this package's production files. The test files
-// are excluded: what several tests here pin is the package's own shape, and a
-// declaration made by a test is not part of it.
 func parseProductionFiles(t *testing.T) (*token.FileSet, []*ast.File) {
 	t.Helper()
 	entries, err := os.ReadDir(".")
@@ -95,16 +91,9 @@ func (s *spyWriter) Write(p []byte) (int, error) {
 
 var _ nethttp.ResponseWriter = (*spyWriter)(nil)
 
-// stubReader is a config.Reader handing back a moduleConfig the test wrote.
-// The real reader is the one config loads from documents and arguments, and
-// readThrough takes a test down that path; the tests that drive the callbacks
-// state the configuration as a value instead, so none of them writes a document
-// or depends on the arguments a test binary is started with.
 type stubReader struct {
-	cfg moduleConfig
-	err error
-	// path records what the caller asked for, so a test can pin that this
-	// module decodes its own section rather than somebody else's.
+	cfg  moduleConfig
+	err  error
 	path string
 }
 
@@ -168,8 +157,6 @@ func (h *recordingHandler) at(level slog.Level) []string {
 	return out
 }
 
-// first returns the attributes of the first record written with msg, each
-// value rendered as text.
 func (h *recordingHandler) first(msg string) (map[string]string, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -187,9 +174,6 @@ func (h *recordingHandler) first(msg string) (map[string]string, bool) {
 	return nil, false
 }
 
-// gateHandler is a handler a test holds inside: it reports that a request
-// arrived and stays there until the test lets go. The drain is only observable
-// with a request in flight across the shutdown.
 type gateHandler struct {
 	entered  chan struct{}
 	release  chan struct{}
@@ -216,11 +200,8 @@ func (g *gateHandler) ServeHTTP(w nethttp.ResponseWriter, _ *nethttp.Request) {
 	g.finished <- struct{}{}
 }
 
-// gin is the same handler as a route's: it holds the request on the gin
-// context's writer, which is the one a registered handler is given.
 func (g *gateHandler) gin(c *gin.Context) { g.ServeHTTP(c.Writer, c.Request) }
 
-// letGo releases every request being held, once, however often it is called.
 func (g *gateHandler) letGo() {
 	select {
 	case <-g.release:
@@ -242,8 +223,6 @@ func waitFor(t *testing.T, ch <-chan struct{}, what string) {
 	}
 }
 
-// waitUntil polls a condition to the same deadline, for the states that are
-// reached without a channel to wait on.
 func waitUntil(t *testing.T, what string, ok func() bool) {
 	t.Helper()
 	limit := waitDeadline()
@@ -257,15 +236,10 @@ func waitUntil(t *testing.T, what string, ok func() bool) {
 	t.Fatalf("timed out after %s waiting for %s", limit, what)
 }
 
-// waitDeadline bounds every wait in this package's tests.
 func waitDeadline() time.Duration {
 	return coretest.Scale(30 * time.Second)
 }
 
-// testSettings is one endpoint's settings: the claims that select it, the body
-// limit and the proxy settings that belong to an endpoint's chain rather than
-// to its listener. An endpoint on a listener of its own claims "/", which is
-// what omitting the key in configuration gives.
 func testSettings(name string) endpointSettings {
 	return endpointSettings{
 		name:         name,
@@ -287,42 +261,16 @@ func testListener(name string) listenerSettings {
 	}
 }
 
-// The fixtures below drive a whole assembly: core.New() with a hand-built set
-// of modules, and Run advancing every stage the way a host's would. They live
-// here rather than in the file of whichever test needed one first, so that the
-// stubs are one shape shared instead of several that drift.
-//
-// A probe's position in the assembly comes from what it declares and from
-// nothing else. core promises dependency order; how it linearises what
-// dependency order leaves open is its own implementation choice, so no fixture
-// here and no test built on one may read an order out of module names.
-
-// supplyConfig gives the registry the reader the assembly reads its endpoints
-// through, the way a host does: the reader is the instance of the config module,
-// supplied to it before the drive, so it exists from this call on and answers
-// every lookup for the capability, Prepare's included.
-//
-// A registry made with core.New does not hold the config module the process
-// registry has from the config package's init, and an instance can only be
-// supplied to a module that is registered, so the module is registered here.
-// The call names it, so the reader belongs to it whatever else a test registers.
-// What the reader hands back is the configuration the test wrote.
 func supplyConfig(reg *core.Registry, cfg moduleConfig) {
 	reg.Register(config.Module())
 	reg.Supply(&stubReader{cfg: cfg}, config.ModuleName)
 }
 
-// stubLogger delivers the Logger capability over a logger the test holds. A
-// module carrying it is constructed before this one and stopped after it: the
-// dependency on Logger is optional, and an optional requirement whose provider
-// is present still draws the ordering edge.
 type stubLogger struct{ logger *slog.Logger }
 
 func (s stubLogger) Named(string) *slog.Logger { return s.logger }
 func (s stubLogger) Redaction() log.Redaction  { return noRedaction{} }
 
-// namingLogger is stubLogger that keeps the name each Named call asked for, so a
-// test can read what a module called itself when it took the logger up.
 type namingLogger struct {
 	stubLogger
 	mu    sync.Mutex
@@ -336,7 +284,6 @@ func (n *namingLogger) Named(name string) *slog.Logger {
 	return n.logger
 }
 
-// asked is the names Named was called with, in order.
 func (n *namingLogger) asked() []string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -345,8 +292,6 @@ func (n *namingLogger) asked() []string {
 
 var _ log.Logger = (*namingLogger)(nil)
 
-// noRedaction takes registrations and masks nothing. What an assembly test
-// observes of the Logger capability is the ordering it causes, not the masking.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)              {}
@@ -376,13 +321,6 @@ var (
 	_ capB = deliveredB{}
 )
 
-// stageProbe is a module a test puts in an assembly to watch a stage from the
-// inside, and to make the registrations a real registrant would make.
-//
-// A nil callback is left off the descriptor. A callback reports a failed
-// observation by returning an error, which fails that stage: the goroutine
-// running Run is not the test's, so t.Fatal cannot be called from one, and an
-// error carries the text out to where the test reads it.
 type stageProbe struct {
 	name     string
 	requires []core.Requirement
@@ -401,7 +339,6 @@ type stageProbe struct {
 	onClose   func(*core.Registry) error
 }
 
-// module renders the probe as the descriptor a registry takes.
 func (p *stageProbe) module() core.Module {
 	stage := func(f func(*core.Registry) error) func(context.Context, *core.Registry, any) error {
 		if f == nil {
@@ -430,16 +367,10 @@ func (p *stageProbe) module() core.Module {
 	}
 }
 
-// requiresRouter is the declaration that puts a probe after this module: it is
-// constructed, initialised, started and served once this module has been, and
-// stopped and closed before it. It is the only thing a test may rely on for
-// that position.
 func requiresRouter() []core.Requirement {
 	return []core.Requirement{{Token: (*Router)(nil)}}
 }
 
-// inOrder runs several stage callbacks one after another, for a probe with
-// more than one thing to do in a stage.
 func inOrder(steps ...func(*core.Registry) error) func(*core.Registry) error {
 	return func(reg *core.Registry) error {
 		for _, step := range steps {
@@ -451,8 +382,6 @@ func inOrder(steps ...func(*core.Registry) error) func(*core.Registry) error {
 	}
 }
 
-// routeOn is the stage callback that registers one route through the public
-// surface, the path a real registrant takes.
 func routeOn(endpoint, method, path string, handlers ...gin.HandlerFunc) func(*core.Registry) error {
 	return func(reg *core.Registry) error {
 		e, err := endpointFrom(reg, endpoint)
@@ -464,8 +393,6 @@ func routeOn(endpoint, method, path string, handlers ...gin.HandlerFunc) func(*c
 	}
 }
 
-// useLayer is the stage callback that registers one middleware layer through
-// the public surface.
 func useLayer(endpoint string, mw Middleware) func(*core.Registry) error {
 	return func(reg *core.Registry) error {
 		e, err := endpointFrom(reg, endpoint)
@@ -490,14 +417,6 @@ type assembly struct {
 	err      error
 }
 
-// startAssembly registers the config module with the reader over cfg supplied to
-// it, registers the modules, starts Run and hands back the handle. The reader
-// goes in first, which is the order a host works in: it is there before anything
-// else is registered and long before the drive begins.
-//
-// A test that has to supply an instance to one of the modules puts the registry
-// together itself and hands it to runAssembly: the supply comes after that
-// module is registered and before the drive.
 func startAssembly(t *testing.T, cfg moduleConfig, modules ...core.Module) *assembly {
 	t.Helper()
 	reg := core.New()
@@ -508,11 +427,6 @@ func startAssembly(t *testing.T, cfg moduleConfig, modules ...core.Module) *asse
 	return runAssembly(t, reg)
 }
 
-// runAssembly starts Run on a registry the caller has put together and hands
-// back the handle.
-//
-// The run is ended and waited for whatever the test does, so a failing
-// assertion leaves no registry serving for the rest of the binary.
 func runAssembly(t *testing.T, reg *core.Registry) *assembly {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -525,8 +439,6 @@ func runAssembly(t *testing.T, reg *core.Registry) *assembly {
 	return a
 }
 
-// wait takes the result of Run, to this package's deadline. The result is
-// kept, so the cleanup may ask for it again after the test already has.
 func (a *assembly) wait(t *testing.T) error {
 	t.Helper()
 	a.mu.Lock()
@@ -564,7 +476,6 @@ func (a *assembly) waitForOrEnd(t *testing.T, ch <-chan struct{}, what string) {
 	}
 }
 
-// stop ends the run and reports what Run came back with.
 func (a *assembly) stop(t *testing.T) error {
 	t.Helper()
 	a.cancel()
@@ -586,7 +497,6 @@ func routerFrom(reg *core.Registry) (*router, error) {
 	return r, nil
 }
 
-// endpointFrom looks one endpoint up through the public surface.
 func endpointFrom(reg *core.Registry, name string) (Endpoint, error) {
 	r, err := routerFrom(reg)
 	if err != nil {
@@ -599,9 +509,6 @@ func endpointFrom(reg *core.Registry, name string) (Endpoint, error) {
 	return e, nil
 }
 
-// boundAddr is the address an endpoint's listener really bound, which is where a
-// request in these tests goes: the configuration asks for port 0 and the
-// operating system picks.
 func boundAddr(r *router, name string) (string, error) {
 	e, ok := r.endpoints[name]
 	if !ok {
@@ -617,9 +524,6 @@ func boundAddr(r *router, name string) (string, error) {
 	return addr.String(), nil
 }
 
-// getStatus issues one GET against a bound endpoint and reports the status it
-// answered with. Unlike get, which only needs a request to be in flight, this
-// one is for the assertions that turn on what the chain actually answered.
 func getStatus(ctx context.Context, addr, path string) (int, error) {
 	resp, err := getResponse(ctx, addr, path)
 	if err != nil {
@@ -662,9 +566,6 @@ func getResponse(ctx context.Context, addr, path string) (answer, error) {
 	return answer{status: resp.StatusCode, header: resp.Header, body: string(body), bodyErr: bodyErr}, nil
 }
 
-// getTracingInterim is getResponse that also reports the informational statuses
-// the client saw before the final response: a 103 Early Hints is the one a
-// handler sends.
 func getTracingInterim(t *testing.T, addr, path string) ([]int, answer) {
 	t.Helper()
 	var interim []int
@@ -690,21 +591,14 @@ func getTracingInterim(t *testing.T, addr, path string) ([]int, answer) {
 	return interim, answer{status: resp.StatusCode, header: resp.Header, body: string(body), bodyErr: bodyErr}
 }
 
-// serveOnce sends one request through an assembled handler and returns what it
-// wrote, for the tests whose subject is the chain and not the socket.
 func serveOnce(h nethttp.Handler, method, target string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	h.ServeHTTP(recorder, httptest.NewRequest(method, target, nil))
 	return recorder
 }
 
-// filler is a route's handler for the tests that need a route to exist and do
-// not care what it answers.
 func filler(c *gin.Context) { c.Status(nethttp.StatusNoContent) }
 
-// endpointsAt is a configuration with one endpoint per name, each on a listener
-// of its own named the same, on a loopback port the operating system picks,
-// sharing one drain timeout.
 func endpointsAt(drain time.Duration, names ...string) moduleConfig {
 	cfg := moduleConfig{
 		Listeners: make(map[string]listenerConfig, len(names)),
@@ -717,15 +611,6 @@ func endpointsAt(drain time.Duration, names ...string) moduleConfig {
 	return cfg
 }
 
-// serveRoutes runs a real assembly with one endpoint, "public", and the routes
-// the test registers on it, and returns the address it bound together with the
-// records the assembly wrote. What it exercises is the socket: the connection
-// handling of net/http, which no recorder reproduces.
-//
-// A module delivering the Logger capability over a recording logger takes part,
-// so that the records this module writes for a request — and the ones net/http
-// writes for itself, which this module hands to the same logger — are readable.
-// responder, when non-nil, is delivered as the ErrorResponder capability.
 func serveRoutes(t *testing.T, responder ErrorResponder, register func(Endpoint)) (string, *recordingHandler) {
 	t.Helper()
 	logger, records := newRecordingLogger()

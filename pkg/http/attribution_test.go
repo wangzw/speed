@@ -11,14 +11,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// TestAClashIsAttributedToTheMountedRouteItClashesWith pins the pair a conflict
-// names. The routes mounted before the refused one include several that have
-// nothing to do with it, and one that does; the failure has to name that one.
-//
-// The refused route is "GET /things/:name", and "GET /things/:id" is the one it
-// clashes with. "POST /things/:id" is on the same path under another method and
-// "GET /a" and "GET /b" are elsewhere, so a pair picked by the first or the last
-// route mounted, or by the path alone, comes out different from the right one.
+// TestAClashIsAttributedToTheMountedRouteItClashesWith pins the pair a conflict names.
 func TestAClashIsAttributedToTheMountedRouteItClashesWith(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -42,10 +35,8 @@ func TestAClashIsAttributedToTheMountedRouteItClashesWith(t *testing.T) {
 	}
 }
 
-// TestAClashUnderOneMethodIsNotAttributedToAnotherMethod is the same statement
-// the other way round: the refused route is under POST, and the route with the
-// same path under GET was mounted first. The two do not clash, because gin keeps
-// a tree per method, and the partner is the POST route.
+// TestAClashUnderOneMethodIsNotAttributedToAnotherMethod is the same statement the other way round:
+// the refused route is under POST, and the route with the same path under GET was mounted first.
 func TestAClashUnderOneMethodIsNotAttributedToAnotherMethod(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	_, err := assembleEndpoint(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -60,7 +51,6 @@ func TestAClashUnderOneMethodIsNotAttributedToAnotherMethod(t *testing.T) {
 		"the pair under the one method both of them are registered for")
 }
 
-// handlersOf is n route handlers.
 func handlersOf(n int) []gin.HandlerFunc {
 	handlers := make([]gin.HandlerFunc, n)
 	for i := range handlers {
@@ -69,13 +59,8 @@ func handlersOf(n int) []gin.HandlerFunc {
 	return handlers
 }
 
-// ginHandlerLimit is the most handlers gin takes on one route registered on an
-// engine of its own, found by trying rather than written down: the limit is
-// gin's, and the test only needs a route that sits at it.
 func ginHandlerLimit(t *testing.T) int {
 	t.Helper()
-	// The routes are tried on engines the test builds, and gin's debug output
-	// for each of them goes to standard output unless the mode is settled.
 	gin.SetMode(gin.ReleaseMode)
 	for n := 1; n < 1000; n++ {
 		if routeRefusal("GET", "/probe", handlersOf(n)) != nil {
@@ -86,21 +71,8 @@ func ginHandlerLimit(t *testing.T) int {
 	return 0
 }
 
-// TestARefusalNoPairReproducesSaysSo pins the failure for a refusal that cannot
-// be pinned on a pair of routes, which has to say so rather than name the one
-// route this module is sure about as though that were the verdict.
-//
-// gin refuses a route whose handlers, with the endpoint's layers in front of
-// them, exceed its limit. The route is accepted on an engine of its own, as it
-// is when it is registered, and it is refused only in the company of the layer,
-// so offering it with each mounted route in turn on an engine with no layers
-// reproduces nothing. The route is the third mounted and the two before it are
-// ordinary, which makes the count in the message meaningful.
-//
-// The discriminating assertions are the sentence that says the refusal was not
-// attributed and the absence of the pair sentence: an implementation that falls
-// back to pairing the refused route with the first or the last mounted one
-// writes the pair instead.
+// TestARefusalNoPairReproducesSaysSo pins the failure for a refusal that cannot be pinned on a pair
+// of routes.
 func TestARefusalNoPairReproducesSaysSo(t *testing.T) {
 	atTheLimit := handlersOf(ginHandlerLimit(t))
 
@@ -133,11 +105,8 @@ func TestARefusalNoPairReproducesSaysSo(t *testing.T) {
 	}
 }
 
-// TestTheRefusalNoPairReproducesIsAMatterOfTheHandlerCount is the control for the
-// test above: the same route with fewer handlers assembles under the same layer.
-// What made the refusal is the number of handlers in the chain, the route's own
-// and the endpoint's in front of them, and not the route's path or its method,
-// which is what puts the refusal outside every pair of routes.
+// TestTheRefusalNoPairReproducesIsAMatterOfTheHandlerCount is the control for the test above: the
+// same route with fewer handlers assembles under the same layer.
 func TestTheRefusalNoPairReproducesIsAMatterOfTheHandlerCount(t *testing.T) {
 	limit := ginHandlerLimit(t)
 
@@ -183,10 +152,6 @@ func assembleWithCounts(t *testing.T, layers, handlers int) error {
 	return err
 }
 
-// layerLimit is the most layers an endpoint takes with a route of one handler,
-// found by trying: what gin holds in a chain is gin's, and what the endpoint's own
-// engine puts in it is this module's, so the number is read off the assembly
-// rather than written down.
 func layerLimit(t *testing.T) int {
 	t.Helper()
 	for n := 1; n < 500; n++ {
@@ -201,14 +166,7 @@ func layerLimit(t *testing.T) int {
 	return 0
 }
 
-// TestTooManyLayersFailTheAssembly pins what an endpoint does with more layers
-// than a chain holds. gin refuses them by panicking as they are handed to its
-// Use, which happens in Serve; the refusal comes back as a startup failure
-// carrying ErrRouteConflict, naming the endpoint and the number of layers, and
-// the fix: fewer layers on the endpoint, or some of them on another one.
-//
-// It is read in a whole assembly as well, where a panic in Serve would take the
-// process down with every endpoint already bound still listening.
+// TestTooManyLayersFailTheAssembly pins what an endpoint does with more layers than a chain holds.
 func TestTooManyLayersFailTheAssembly(t *testing.T) {
 	limit := layerLimit(t)
 
@@ -233,16 +191,8 @@ func TestTooManyLayersFailTheAssembly(t *testing.T) {
 	}
 }
 
-// TestLayersAndARouteTogetherOverTheLimitFailTheAssembly pins the other way a
-// chain outgrows what gin holds: every layer fits and the route fits alone, and
-// the two together do not. The route is the one that is refused, in the company
-// of the layers, which no pair of routes reproduces, so the failure says the
-// refusal could not be attributed to a pair, and it is again an error and not a
-// panic.
-//
-// The route's size is found by trying, with one layer fewer than the limit:
-// the largest route that assembles there is the control, and the route one
-// handler longer is the case.
+// TestLayersAndARouteTogetherOverTheLimitFailTheAssembly pins the other way a chain outgrows what
+// gin holds: every layer fits and the route fits alone, and the two together do not.
 func TestLayersAndARouteTogetherOverTheLimitFailTheAssembly(t *testing.T) {
 	layers := layerLimit(t) - 1
 

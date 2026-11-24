@@ -14,14 +14,10 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// policy assembles a one-endpoint configuration around one policy.
 func policy(p Policy) Config {
 	return Config{Endpoints: map[string]Policy{"public": p}}
 }
 
-// loadConfig loads a JSON primary source through the real loader and hands back
-// this module's section decoded from it. CORSTEST is a prefix no machine carries
-// variables under, so nothing outside a case steers the values.
 func loadConfig(t *testing.T, document string) Config {
 	t.Helper()
 
@@ -50,11 +46,8 @@ func loadConfig(t *testing.T, document string) Config {
 	return cfg
 }
 
-// TestTheEndpointsItemTakesThePrimarySourceAlone pins the origin declaration:
-// the endpoint table carries allow-origins, which decides who may make
-// cross-origin calls, so only the primary config source and the host defaults
-// document beneath it may give it. A container item declares the environment
-// explicitly when it wants it, so dropping OriginEnv is what closes the door.
+// TestTheEndpointsItemTakesThePrimarySourceAlone pins the origin declaration: the endpoint table
+// carries allow-origins, which decides who may make cross-origin calls.
 func TestTheEndpointsItemTakesThePrimarySourceAlone(t *testing.T) {
 	item, ok := schema().Items[endpointsKey]
 	if !ok {
@@ -66,11 +59,8 @@ func TestTheEndpointsItemTakesThePrimarySourceAlone(t *testing.T) {
 	}
 }
 
-// TestAnEnvironmentVariableCannotAddAGuardedEndpoint is the other half: a
-// variable naming http.cors.endpoints does not add an endpoint, so a run whose
-// primary source guards none still fails with the required-item error rather
-// than accepting a policy written in the process environment. The loader reports
-// the variable as unclaimed on stderr; it does not read it.
+// TestAnEnvironmentVariableCannotAddAGuardedEndpoint is the other half: a variable naming
+// http.cors.endpoints does not add an endpoint.
 func TestAnEnvironmentVariableCannotAddAGuardedEndpoint(t *testing.T) {
 	t.Setenv("CORSTEST_HTTP__CORS__ENDPOINTS", `{"from-env":{"allow-origins":["https://env.example"]}}`)
 
@@ -83,6 +73,7 @@ func TestAnEnvironmentVariableCannotAddAGuardedEndpoint(t *testing.T) {
 	}
 }
 
+// TestAnEmptyEndpointSetIsRefused checks that a configuration guarding no endpoint is refused.
 func TestAnEmptyEndpointSetIsRefused(t *testing.T) {
 	err := Config{}.validate()
 	if !errors.Is(err, config.ErrMissingRequired) {
@@ -93,6 +84,8 @@ func TestAnEmptyEndpointSetIsRefused(t *testing.T) {
 	}
 }
 
+// TestAPolicyNeedsExactlyOneOriginSource checks that a policy naming no origin source or several is
+// refused.
 func TestAPolicyNeedsExactlyOneOriginSource(t *testing.T) {
 	cases := []struct {
 		name string
@@ -113,12 +106,14 @@ func TestAPolicyNeedsExactlyOneOriginSource(t *testing.T) {
 	}
 }
 
+// TestTheStarOriginIsAccepted checks that the single-entry "*" origin is accepted.
 func TestTheStarOriginIsAccepted(t *testing.T) {
 	if err := policy(Policy{AllowOrigins: []string{"*"}}).validate(); err != nil {
 		t.Fatalf("validating allow-origins [\"*\"] gave %v, want no error", err)
 	}
 }
 
+// TestAnOriginWithoutASchemeIsRefused checks that an origin without a scheme is refused.
 func TestAnOriginWithoutASchemeIsRefused(t *testing.T) {
 	err := policy(Policy{AllowOrigins: []string{"app.example"}}).validate()
 	if !errors.Is(err, ErrInvalidPolicy) {
@@ -126,6 +121,7 @@ func TestAnOriginWithoutASchemeIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnUnknownPolicyKeyIsRefused checks that an unknown key in a policy is refused.
 func TestAnUnknownPolicyKeyIsRefused(t *testing.T) {
 	err := policy(Policy{
 		AllowOrigins: []string{"https://app.example"},
@@ -139,6 +135,7 @@ func TestAnUnknownPolicyKeyIsRefused(t *testing.T) {
 	}
 }
 
+// TestANegativeMaxAgeIsRefused checks that a negative max-age is refused.
 func TestANegativeMaxAgeIsRefused(t *testing.T) {
 	negative := -time.Second
 	err := policy(Policy{AllowAllOrigins: true, MaxAge: &negative}).validate()
@@ -147,6 +144,8 @@ func TestANegativeMaxAgeIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnOutOfRangeStatusCodeIsRefused checks that an options status code outside 200-599 is
+// refused.
 func TestAnOutOfRangeStatusCodeIsRefused(t *testing.T) {
 	err := policy(Policy{AllowAllOrigins: true, OptionsResponseStatusCode: 700}).validate()
 	if !errors.Is(err, ErrInvalidPolicy) {
@@ -154,6 +153,7 @@ func TestAnOutOfRangeStatusCodeIsRefused(t *testing.T) {
 	}
 }
 
+// TestAMultiWildcardOriginIsRefused checks that a wildcard matching more than one label is refused.
 func TestAMultiWildcardOriginIsRefused(t *testing.T) {
 	// The library's wildcard parsing panics on this, so the policy has to be
 	// refused before the layer is ever built.
@@ -166,6 +166,8 @@ func TestAMultiWildcardOriginIsRefused(t *testing.T) {
 	}
 }
 
+// TestTheLibraryDefaultsSurviveAnEmptyPolicy checks that an empty policy keeps the library's own
+// defaults.
 func TestTheLibraryDefaultsSurviveAnEmptyPolicy(t *testing.T) {
 	got := Policy{AllowAllOrigins: true}.libraryConfig()
 	if len(got.AllowMethods) == 0 {
@@ -179,6 +181,8 @@ func TestTheLibraryDefaultsSurviveAnEmptyPolicy(t *testing.T) {
 	}
 }
 
+// TestThePolicyOverridesTheLibraryDefaults checks that a configured policy overrides the library
+// defaults.
 func TestThePolicyOverridesTheLibraryDefaults(t *testing.T) {
 	zero := time.Duration(0)
 	got := Policy{

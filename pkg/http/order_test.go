@@ -12,9 +12,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The capabilities the fixtures below order themselves against. What they
-// stand for does not matter to the ordering: this module builds the graph out
-// of the tokens and never learns what any layer does.
+// The capabilities the fixtures below order themselves against.
 type (
 	capRecovery interface{ recovery() }
 	capAuth     interface{ auth() }
@@ -26,14 +24,6 @@ type (
 // calls it; a registration carries one, so the fixtures do too.
 func passThrough(c *gin.Context) { c.Next() }
 
-// registered builds one layer the way Use records one: the declaration and the
-// capabilities it stands for, which are the registration's own Provides. The
-// stage and the Order are passed as the two steps the ordering reads them in.
-//
-// Calling orderLayers on such a slice is the ordering seen on its own, with no
-// gate, no engine and no chain around it. The same declarations made through
-// the public surface are exercised in assemble_test.go; what is pinned here is
-// the solver.
 func registered(name string, stage Stage, order int, provides, after, before []core.Token) layer {
 	return registeredLayer(Middleware{
 		Name:     name,
@@ -46,11 +36,8 @@ func registered(name string, stage Stage, order int, provides, after, before []c
 	})
 }
 
-// tokens is shorthand for a constraint or delivery list.
 func tokens(list ...core.Token) []core.Token { return list }
 
-// layerNames renders a solved chain outermost first, which is the order
-// orderLayers returns.
 func layerNames(layers []layer) []string {
 	out := make([]string, 0, len(layers))
 	for _, l := range layers {
@@ -59,8 +46,6 @@ func layerNames(layers []layer) []string {
 	return out
 }
 
-// solve orders the fixtures whose every constraint a provider on the endpoint
-// satisfies, so a chain comes out and the diagnostics are empty.
 func solve(t *testing.T, layers []layer) []layer {
 	t.Helper()
 	out, report, err := orderLayers("public", layers)
@@ -74,8 +59,6 @@ func solve(t *testing.T, layers []layer) []layer {
 	return out
 }
 
-// hasCause reports whether the report carries a diagnostic for the given layer
-// under the given cause.
 func hasCause(report []orderingRemark, layer string, cause remarkCause) bool {
 	for _, d := range report {
 		if d.layer == layer && d.cause == cause {
@@ -85,21 +68,13 @@ func hasCause(report []orderingRemark, layer string, cause remarkCause) bool {
 	return false
 }
 
-// TestStageOrdering pins the two steps that decide a layer's position, as a
-// table: the stage boundary first, then the Order and the constraints
-// within a stage.
-//
-// The row that fails against the ordering this replaced is the cross-stage
-// comparison. The old ordering knew only one axis, so a constraint across what
-// are now stages drew an edge like any other and the chain came out, silently
-// placing a layer on the wrong side of the boundary. Here that same input has
-// to come back as ErrStageConflict.
+// TestStageOrdering pins the two steps that decide a layer's position, as a table: the stage
+// boundary first, then the Order and the constraints within a stage.
 func TestStageOrdering(t *testing.T) {
 	tests := []struct {
 		name   string
 		layers []layer
-		// want is the chain when the ordering succeeds.
-		want []string
+		want   []string
 		// conflict, when set, is the pair of layer names the ErrStageConflict
 		// text must carry, and the chain is not checked.
 		conflict []string
@@ -209,16 +184,8 @@ func TestStageOrdering(t *testing.T) {
 	}
 }
 
-// TestStageConflictNamesWhereTheStagesPlacedTheLayer pins the direction in the
-// failure text: the constraint asked to sit inside the layer it named, and the
-// stage order put the declaring layer outside it. A text that repeated the word
-// from the declaration — "inside" — would tell the reader the constraint and
-// the boundary agree, which is the opposite of the failure, so the word has to
-// name where the stage order put the layer and not what it asked for.
-//
-// Under the ordering this replaced the same input drew an edge like any other
-// and came out as a chain, with the layers on the opposite sides of the
-// boundary from where the stages put them, and no failure at all.
+// TestStageConflictNamesWhereTheStagesPlacedTheLayer pins the direction in the failure text: the
+// constraint asked to sit inside the layer it named.
 func TestStageConflictNamesWhereTheStagesPlacedTheLayer(t *testing.T) {
 	layers := []layer{
 		registered("outer", StageObserve, 0, nil, tokens((*capAuth)(nil)), nil),
@@ -236,16 +203,7 @@ func TestStageConflictNamesWhereTheStagesPlacedTheLayer(t *testing.T) {
 			"the After asked for")
 }
 
-// TestOrderDecidesWithinReadySet pins where Order applies: inside the
-// ready set, and nowhere else.
-//
-// P is registered first and carries a large Order, R the middle one and zero,
-// and Q asks for the outside with a small Order but sits behind a constraint on
-// P. Picking by Order over the whole stage and then running a stable
-// topological pass — the shape that reads as if it honoured both — yields Q, R,
-// P: Q's constraint is satisfied by the time the pass reaches it, so nothing
-// pulls it back. Choosing within the ready set yields R, P, Q, because Q is not
-// in the ready set at all until P has been taken out.
+// TestOrderDecidesWithinReadySet pins where Order applies: inside the ready set, and nowhere else.
 func TestOrderDecidesWithinReadySet(t *testing.T) {
 	layers := []layer{
 		registered("p", StageAuthorize, 100, tokens((*capRecovery)(nil)), nil, nil),
@@ -261,9 +219,7 @@ func TestOrderDecidesWithinReadySet(t *testing.T) {
 	}
 }
 
-// TestConstraintBeatsOrder pins that a constraint outranks Order. The
-// layer asks for the outside of its stage with a small Order and is registered
-// first, and still lands inside the layer it declared itself to be after.
+// TestConstraintBeatsOrder pins that a constraint outranks Order.
 func TestConstraintBeatsOrder(t *testing.T) {
 	layers := []layer{
 		registered("guarded", StageGuard, -100, nil, tokens((*capAuth)(nil)), nil),
@@ -278,10 +234,8 @@ func TestConstraintBeatsOrder(t *testing.T) {
 	}
 }
 
-// TestBeforeEdgeReversesDirection pins that Before draws the same edge as
-// After with its ends swapped. Both halves hold the layers, their Order
-// values and their registration order fixed, so the pair coming out reversed
-// can only be the field that changed.
+// TestBeforeEdgeReversesDirection pins that Before draws the same edge as After with its ends
+// swapped.
 func TestBeforeEdgeReversesDirection(t *testing.T) {
 	after := []layer{
 		registered("auth", StageIdentify, 0, tokens((*capAuth)(nil)), nil, nil),
@@ -303,18 +257,8 @@ func TestBeforeEdgeReversesDirection(t *testing.T) {
 	}
 }
 
-// TestEqualOrderKeepsRegistrationOrder pins the final tie-break: layers with
-// equal Order and no constraint between them stay in the order they were
-// registered in.
-//
-// What is pinned here is this endpoint's own record — the order in which it
-// received three Use calls, which is the order it appends them in. The
-// fixture is three registrations a single module makes in a row, because that
-// is the sequence this module answers for. How two different modules' Init
-// callbacks are ordered against each other is not asserted anywhere here.
-//
-// The names are registered out of alphabetical order, so an implementation
-// that reached for the name as a tie-break instead would come out different.
+// TestEqualOrderKeepsRegistrationOrder pins the final tie-break: layers with equal Order and no
+// constraint between them stay in the order they were registered in.
 func TestEqualOrderKeepsRegistrationOrder(t *testing.T) {
 	layers := []layer{
 		registered("gamma", StageRecord, 0, nil, nil, nil),
@@ -330,10 +274,8 @@ func TestEqualOrderKeepsRegistrationOrder(t *testing.T) {
 	}
 }
 
-// TestEqualOrderIsNotReported pins that two layers of one stage with the same
-// Order are not a failure and produce no remark at all: the value is a setting
-// with no order between equal ones, and the ordering treats it as ordinary
-// rather than as a claim to report.
+// TestEqualOrderIsNotReported pins that two layers of one stage with the same Order are not a
+// failure and produce no remark at all: the value is a setting with no order between equal ones.
 func TestEqualOrderIsNotReported(t *testing.T) {
 	layers := []layer{
 		registered("outer-claim", StageGuard, -100, nil, nil, nil),
@@ -354,16 +296,8 @@ func TestEqualOrderIsNotReported(t *testing.T) {
 	}
 }
 
-// TestMissingProviderDropsConstraint pins the cost the design accepts: a
-// constraint naming a capability no layer on this endpoint stands for
-// disappears, and the assembly carries on without failing. The layer that
-// declared itself inside recovery is ordered by its Order alone, which here
-// puts it where its constraint would never have allowed it to be if a recovery
-// layer had been present.
-//
-// Carrying on is not the same as saying nothing: the dropped constraint comes
-// back in the report, because the layer that declared it believes it has a
-// position it does not have, and this list is the only place that shows.
+// TestMissingProviderDropsConstraint pins that a constraint naming a capability no
+// layer on this endpoint stands for disappears.
 func TestMissingProviderDropsConstraint(t *testing.T) {
 	layers := []layer{
 		registered("trace", StageObserve, 100, nil, tokens((*capRecovery)(nil)), nil),
@@ -401,13 +335,7 @@ func TestMissingProviderDropsConstraint(t *testing.T) {
 	}
 }
 
-// TestLandedConstraintIsNotReported is the other half. A constraint that found
-// a provider placed the layer, so listing it would bury the ones that did not
-// among the ones that did, and the list stops being a signal.
-//
-// "warden" is the case the design keeps out of the self-only report: it stands
-// for the capability it names and another layer does too, so the edge to itself
-// is dropped and the edge to that other layer still places it.
+// TestLandedConstraintIsNotReported is the other half.
 func TestLandedConstraintIsNotReported(t *testing.T) {
 	layers := []layer{
 		registered("auth", StageIdentify, 0, tokens((*capAuth)(nil)), nil, nil),
@@ -425,15 +353,8 @@ func TestLandedConstraintIsNotReported(t *testing.T) {
 	}
 }
 
-// TestSelfProvidedConstraintIsReportedUnderItsOwnCause pins the case the design
-// gives a cause of its own: a layer that stands for the capability it names and
-// is the only layer that does. The self edge is dropped, so the constraint
-// places nothing — and nobody is absent, the declaration is what is wrong.
-//
-// Reporting it at all is the first half; a chain that drops it silently leaves
-// the layer believing it has a position it does not have. Reading it as an
-// absent module is the second: the reader would go looking for a module that is
-// not the problem, which is why the cause travels with the line.
+// TestSelfProvidedConstraintIsReportedUnderItsOwnCause pins a layer that stands for
+// the capability it names and is the only layer that does.
 func TestSelfProvidedConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 	layers := []layer{
 		registered("recover", StageGuard, 0,
@@ -465,12 +386,8 @@ func TestSelfProvidedConstraintIsReportedUnderItsOwnCause(t *testing.T) {
 	}
 }
 
-// TestSelfConstraintIsNotACycle pins that a layer naming a capability it
-// delivers itself is not ordered against itself. A module that both provides
-// recovery and declares itself inside recovery — the shape a module registering
-// two layers falls into — names itself among the providers, and the self loop
-// that edge would make is unsatisfiable by construction rather than a
-// contradiction between two declarations.
+// TestSelfConstraintIsNotACycle pins that a layer naming a capability it delivers itself is not
+// ordered against itself.
 func TestSelfConstraintIsNotACycle(t *testing.T) {
 	layers := []layer{
 		registered("recover", StageGuard, 0,
@@ -490,8 +407,6 @@ func TestSelfConstraintIsNotACycle(t *testing.T) {
 		t.Errorf("chain is %v, want %v", got, want)
 	}
 
-	// Both of the layer's constraints are the self-only case and are reported
-	// as such; they are not a cycle is the point of the fixture.
 	if len(report) != 2 {
 		t.Errorf("the layer's two self-referring constraints were reported as %+v, want both "+
 			"of them under the self-only cause", report)
@@ -504,11 +419,7 @@ func TestSelfConstraintIsNotACycle(t *testing.T) {
 	}
 }
 
-// TestDuplicateEdgeIsCountedOnce pins that one relation declared from both
-// ends is one edge. The After on one layer and the Before on the other say the
-// same thing, and counting the relation twice in the indegree leaves the inner
-// layer one decrement short of ready: the solve stalls with every constraint
-// satisfiable and reports a cycle that does not exist.
+// TestDuplicateEdgeIsCountedOnce pins that one relation declared from both ends is one edge.
 func TestDuplicateEdgeIsCountedOnce(t *testing.T) {
 	layers := []layer{
 		registered("inner", StageIdentify, 0, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
@@ -526,14 +437,7 @@ func TestDuplicateEdgeIsCountedOnce(t *testing.T) {
 	}
 }
 
-// TestCycleNamesEveryMemberAndTheirDeclarations pins what the failure has to
-// carry. Asserting that the solve failed would pass just as well against an
-// implementation whose message is empty, and an empty message leaves the
-// reader with three modules that never name each other and no way to see which
-// declarations tied them together.
-//
-// The layer off the cycle is in the fixture for the other half of the claim:
-// the text names the members of the cycle, not every layer on the endpoint.
+// TestCycleNamesEveryMemberAndTheirDeclarations pins what the failure has to carry.
 func TestCycleNamesEveryMemberAndTheirDeclarations(t *testing.T) {
 	layers := []layer{
 		registered("auth", StageAuthorize, 0, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
@@ -574,10 +478,7 @@ func TestCycleNamesEveryMemberAndTheirDeclarations(t *testing.T) {
 	}
 }
 
-// TestCycleReportIsDeterministic pins that one graph yields one text. The walk
-// that picks the cycle out of the unresolved remainder runs over maps, and
-// taking their keys as they come would hand the reader a different set of
-// members, or the same set in a different rotation, from one run to the next.
+// TestCycleReportIsDeterministic pins that one graph yields one text.
 func TestCycleReportIsDeterministic(t *testing.T) {
 	layers := []layer{
 		registered("auth", StageAuthorize, 0, tokens((*capAuth)(nil)), tokens((*capTenant)(nil)), nil),
@@ -602,16 +503,7 @@ func TestCycleReportIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestEqualOrdersSolveTheSameWayEveryRun pins the reproducibility the tie-break
-// buys. Layers that share an Order are separated by the index they were
-// registered at, which is what makes the solve a pure function of its input and
-// this the only test guarding that comparison: without it the placement of equal
-// elements would be whatever the sort implementation happens to do, which is not
-// promised across Go versions.
-//
-// The names are registered out of alphabetical order, so an implementation that
-// fell back to the name instead would come out in the same wrong order every run
-// and pass this test; equal-order-keeps-registration-order pins that half.
+// TestEqualOrdersSolveTheSameWayEveryRun pins the reproducibility the tie-break buys.
 func TestEqualOrdersSolveTheSameWayEveryRun(t *testing.T) {
 	build := func() []layer {
 		return []layer{
@@ -636,11 +528,8 @@ func TestEqualOrdersSolveTheSameWayEveryRun(t *testing.T) {
 	}
 }
 
-// TestIllegalConstraintTokenPanicsNamingTheDeclaration pins that an illegal
-// capability token panics where it was written. The rules themselves are
-// pinned with capabilityKey; what is pinned here is that the text locates the
-// declaration — which endpoint, which layer, which field and which position in
-// it — because the panic carries no other trace back to the call site.
+// TestIllegalConstraintTokenPanicsNamingTheDeclaration pins that an illegal capability token panics
+// where it was written.
 func TestIllegalConstraintTokenPanicsNamingTheDeclaration(t *testing.T) {
 	defer func() {
 		raised := recover()
@@ -665,11 +554,8 @@ func TestIllegalConstraintTokenPanicsNamingTheDeclaration(t *testing.T) {
 	})
 }
 
-// TestZeroStagePanicsAtRegistration pins that a layer which left Stage out is
-// refused where it registered, naming the layer and the values to write. There
-// is deliberately no default: filed under one, the layer would run in a
-// category nobody chose, and the panic is what stops a category being picked
-// for it by a guess.
+// TestZeroStagePanicsAtRegistration pins that a layer which left Stage out is refused where it
+// registered, naming the layer and the values to write.
 func TestZeroStagePanicsAtRegistration(t *testing.T) {
 	defer func() {
 		raised := recover()
@@ -695,11 +581,7 @@ func TestZeroStagePanicsAtRegistration(t *testing.T) {
 	})
 }
 
-// TestZeroOrderIsLegal is the counterpart of TestZeroStagePanicsAtRegistration
-// for the other field. Leaving Order at its zero value is a legal registration
-// and does not panic: zero is a setting with no preference, not a missing value.
-// Only Stage is required, because a layer filed in the wrong category is unsafe
-// in a way an unstated Order is not.
+// TestZeroOrderIsLegal is the counterpart of TestZeroStagePanicsAtRegistration for the other field.
 func TestZeroOrderIsLegal(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	_ = mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -707,8 +589,8 @@ func TestZeroOrderIsLegal(t *testing.T) {
 	})
 }
 
-// TestNoLayersIsNotAFailure pins the endpoint that nobody registered a
-// middleware on: it assembles, with the routing engine as the whole chain.
+// TestNoLayersIsNotAFailure pins the endpoint that nobody registered a middleware on: it assembles,
+// with the routing engine as the whole chain.
 func TestNoLayersIsNotAFailure(t *testing.T) {
 	out, _, err := orderLayers("public", nil)
 	if err != nil {

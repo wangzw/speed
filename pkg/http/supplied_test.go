@@ -16,8 +16,6 @@ import (
 // callbacks recognise only the router this module builds, so what these tests
 // observe is what an instance of any other type is left to.
 
-// foreignRouter is the smallest Router a host can supply: it delivers the
-// capability and is not the router this module builds.
 type foreignRouter struct{ label string }
 
 func (f *foreignRouter) Endpoint(name string) (Endpoint, error) {
@@ -30,24 +28,12 @@ func (f *foreignRouter) Endpoints() []string { return nil }
 
 var _ Router = (*foreignRouter)(nil)
 
-// wrappedRouter is a Router a host wrote around the router this module builds:
-// it delivers the capability and is not the type the callbacks act on. The
-// product is embedded, so its unexported methods are promoted along with
-// Endpoint, and a callback that acted on whatever carries them would act on the
-// router inside.
 type wrappedRouter struct{ *router }
 
 var _ Router = wrappedRouter{}
 
-// TestASuppliedInstanceTakesThePlaceOfPrepareAndNew pins what a host gets by
-// supplying an instance for this module, observed through a whole assembly.
-//
-// The configuration declares no listener, the one premise Prepare turns a
-// startup down over. The first assembly supplies nothing and fails on it,
-// naming the key to write, which shows the premise is enforced there. The second
-// supplies an instance and starts: Prepare does not run for it. The instance is
-// what the other modules take up as the Router, which is how New not having run
-// shows: a router built from this configuration would be the answer otherwise.
+// TestASuppliedInstanceTakesThePlaceOfPrepareAndNew pins what a host gets by supplying an instance
+// for this module, observed through a whole assembly.
 func TestASuppliedInstanceTakesThePlaceOfPrepareAndNew(t *testing.T) {
 	control := startAssembly(t, moduleConfig{}, Module())
 	controlErr := control.stop(t)
@@ -100,23 +86,13 @@ func TestASuppliedInstanceTakesThePlaceOfPrepareAndNew(t *testing.T) {
 	}
 }
 
-// TestCallbacksLeaveAWrappedProductAlone pins, for each callback that could
-// act on it, that the router inside a wrapper is not touched when the wrapper is
-// what the host supplied: the registration gate neither opens nor seals, and
-// Serve binds nothing.
-//
-// The wrapper carries the unexported methods of the router inside it, so a
-// callback that took any value with those methods for its product would pass
-// the tolerance test over a foreign instance and still act here. Each
-// observation is made on a router nobody else has touched, so a change in it can
-// only have come from the callback just called.
+// TestCallbacksLeaveAWrappedProductAlone pins, for each callback that could act on it, that the
+// router inside a wrapper is not touched when the wrapper is what the host supplied.
 func TestCallbacksLeaveAWrappedProductAlone(t *testing.T) {
 	m := Module()
 	ctx := context.Background()
 	inner := testProduct(t, oneEndpoint("public"))
 	wrapped := wrappedRouter{inner}
-	// A callback that did bind the endpoint is released, so a failing run leaves
-	// no listener behind.
 	t.Cleanup(func() {
 		_ = m.Stop(ctx, nil, inner)
 		_ = m.Close(ctx, nil, inner)
@@ -143,18 +119,8 @@ func TestCallbacksLeaveAWrappedProductAlone(t *testing.T) {
 	}
 }
 
-// TestASuppliedInstanceThatIsNotTheProductIsLeftToItsOwner pins the other half:
-// Stop and Close drain nothing and release nothing of an instance that is not the
-// router this module builds, and the requests it took in are outside the drain
-// the module waits for.
-//
-// The host is the owner here. It builds a router with this module's own code,
-// runs that router through the callbacks itself and supplies a wrapper around it.
-// A request is held in flight on the owner's endpoint while the assembly ends. A
-// module whose Stop reached through the wrapper would close the endpoint and wait
-// for that request, and with the short drain given here it would end the run in
-// a drain timeout; one that left it alone ends the run clean, with the endpoint
-// still accepting and the held request still answerable once it is let go.
+// TestASuppliedInstanceThatIsNotTheProductIsLeftToItsOwner pins the other half: Stop and Close
+// drain nothing and release nothing of an instance that is not the router this module builds.
 func TestASuppliedInstanceThatIsNotTheProductIsLeftToItsOwner(t *testing.T) {
 	gate := newGateHandler(t)
 	ctx := context.Background()

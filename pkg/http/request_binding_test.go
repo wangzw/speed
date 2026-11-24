@@ -11,7 +11,6 @@ import (
 	"testing"
 )
 
-// formInput carries parameters beside a urlencoded body.
 type formInput struct {
 	ID   string   `path:"id"`
 	Name string   `form:"name"`
@@ -19,9 +18,8 @@ type formInput struct {
 	Tags []string `form:"tag"`
 }
 
-// TestAFormBodyFillsTheFormTaggedFields holds form binding: a urlencoded body
-// is read into the form-tagged fields, a repeated key fills a slice, and the
-// parameter tags still work.
+// TestAFormBodyFillsTheFormTaggedFields holds form binding: a urlencoded body is read into the
+// form-tagged fields, a repeated key fills a slice, and the parameter tags still work.
 func TestAFormBodyFillsTheFormTaggedFields(t *testing.T) {
 	operation := NewOperation[formInput, struct{}](
 		"the.module.form", http.MethodPost, "/items/:id", "", "",
@@ -85,14 +83,12 @@ func TestANonFormBodyIsUnsupportedMediaType(t *testing.T) {
 	}
 }
 
-// multipartInput carries a form field and a file field beside a parameter.
 type multipartInput struct {
 	ID   string `query:"id"`
 	Name string `form:"name"`
 	Data []byte `file:"upload"`
 }
 
-// multipartBody builds one multipart request body.
 func multipartBody(t *testing.T, build func(*multipart.Writer)) (*bytes.Buffer, string) {
 	t.Helper()
 	var body bytes.Buffer
@@ -138,8 +134,8 @@ func TestAMultipartBodyFillsTheFormAndFileFields(t *testing.T) {
 	}
 }
 
-// TestAnUnknownMultipartPartIsRefused holds the multipart refusal for both a
-// value part and a file part.
+// TestAnUnknownMultipartPartIsRefused holds the multipart refusal for both a value part and a file
+// part.
 func TestAnUnknownMultipartPartIsRefused(t *testing.T) {
 	for _, part := range []string{"value", "file"} {
 		t.Run(part, func(t *testing.T) {
@@ -174,8 +170,7 @@ func TestAnUnknownMultipartPartIsRefused(t *testing.T) {
 	}
 }
 
-// TestANonMultipartBodyIsUnsupportedMediaType holds the multipart media-type
-// refusal.
+// TestANonMultipartBodyIsUnsupportedMediaType holds the multipart media-type refusal.
 func TestANonMultipartBodyIsUnsupportedMediaType(t *testing.T) {
 	operation := NewOperation[multipartInput, struct{}](
 		"the.module.multipart", http.MethodPost, "/items", "", "",
@@ -195,7 +190,6 @@ func TestANonMultipartBodyIsUnsupportedMediaType(t *testing.T) {
 	}
 }
 
-// rawInput carries one raw body field beside a parameter.
 type rawInput struct {
 	ID   string `path:"id"`
 	Body []byte `raw:"true"`
@@ -223,8 +217,7 @@ func TestARawBodyFillsTheRawTaggedField(t *testing.T) {
 	}
 }
 
-// TestANonOctetStreamBodyIsUnsupportedMediaType holds the raw body's media-type
-// refusal.
+// TestANonOctetStreamBodyIsUnsupportedMediaType holds the raw body's media-type refusal.
 func TestANonOctetStreamBodyIsUnsupportedMediaType(t *testing.T) {
 	operation := NewOperation[rawInput, struct{}](
 		"the.module.raw", http.MethodPut, "/blobs/:id", "", "",
@@ -244,8 +237,8 @@ func TestANonOctetStreamBodyIsUnsupportedMediaType(t *testing.T) {
 	}
 }
 
-// TestARawBodyOverTheLimitIsRefused holds the body-limit classification for a
-// body whose length was unknown: the bounded read ends with a 413.
+// TestARawBodyOverTheLimitIsRefused holds the body-limit classification for a body whose length was
+// unknown: the bounded read ends with a 413.
 func TestARawBodyOverTheLimitIsRefused(t *testing.T) {
 	operation := NewOperation[rawInput, struct{}](
 		"the.module.raw", http.MethodPut, "/blobs/:id", "", "",
@@ -266,8 +259,8 @@ func TestARawBodyOverTheLimitIsRefused(t *testing.T) {
 	}
 }
 
-// TestAMultipartBodyOverTheLimitIsRefused holds the body-limit classification
-// for the form parser's read.
+// TestAMultipartBodyOverTheLimitIsRefused holds the body-limit classification for the form parser's
+// read.
 func TestAMultipartBodyOverTheLimitIsRefused(t *testing.T) {
 	operation := NewOperation[multipartInput, struct{}](
 		"the.module.multipart", http.MethodPost, "/items", "", "",
@@ -291,62 +284,51 @@ func TestAMultipartBodyOverTheLimitIsRefused(t *testing.T) {
 	}
 }
 
-// noRawInput declares no raw field.
 type noRawInput struct {
 	Name string `json:"name"`
 }
 
-// rawWithJSONInput declares a raw field under a JSON media type.
 type rawWithJSONInput struct {
 	Name string `json:"name"`
 	Body []byte `raw:"true"`
 }
 
-// twoRawInput declares two raw fields.
 type twoRawInput struct {
 	First  []byte `raw:"true"`
 	Second []byte `raw:"true"`
 }
 
-// textFileInput declares a file field that is not []byte.
 type textFileInput struct {
 	Upload string `file:"upload"`
 }
 
-// jsonBytesFileInput declares a file field beside a JSON body member, so the
-// only declaration defect is the file tag itself.
 type jsonBytesFileInput struct {
 	Name   string `json:"name"`
 	Upload []byte `file:"upload"`
 }
 
-// formBytesFileInput declares a file field beside a form member, so the only
-// declaration defect is the file tag itself.
 type formBytesFileInput struct {
 	Name   string `form:"name"`
 	Upload []byte `file:"upload"`
 }
 
-// jsonWithFormInput declares a form field beside a JSON member.
 type jsonWithFormInput struct {
 	Name string `json:"name"`
 	Mode string `form:"mode"`
 }
 
-// formWithJSONInput declares a JSON field beside a form member.
 type formWithJSONInput struct {
 	Name string `form:"name"`
 	Mode string `json:"mode"`
 }
 
-// rawWithFormInput declares a form field beside the raw field.
 type rawWithFormInput struct {
 	Body []byte `raw:"true"`
 	Mode string `form:"mode"`
 }
 
-// TestAnUnbindableRequestDeclarationPanics holds the build-time checks: a
-// declaration no request could satisfy panics when the handler is built.
+// TestAnUnbindableRequestDeclarationPanics holds the build-time checks: a declaration no request
+// could satisfy panics when the handler is built.
 func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -478,7 +460,6 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 	}
 }
 
-// errString renders a recovered value.
 func errString(value any) string {
 	if err, ok := value.(error); ok {
 		return err.Error()
@@ -489,7 +470,6 @@ func errString(value any) string {
 	return ""
 }
 
-// validatedInput refuses an empty name through its own Validate.
 type validatedInput struct {
 	Name string `json:"name"`
 }
@@ -501,8 +481,8 @@ func (v *validatedInput) Validate() error {
 	return nil
 }
 
-// TestAFailedValidateIsAnsweredUnprocessable holds the input's own check: a
-// value it refuses is a 422, and the validator's text is the problem's detail.
+// TestAFailedValidateIsAnsweredUnprocessable holds the input's own check: a value it refuses is a
+// 422, and the validator's text is the problem's detail.
 func TestAFailedValidateIsAnsweredUnprocessable(t *testing.T) {
 	operation := NewOperation[validatedInput, struct{}](
 		"the.module.validated", http.MethodPost, "/items", "", "",
@@ -552,15 +532,13 @@ func TestAnAcceptedValueReachesTheHandler(t *testing.T) {
 	}
 }
 
-// queryValuesInput carries an integer and a string slice from the query.
 type queryValuesInput struct {
 	Limit int      `query:"limit"`
 	Tags  []string `query:"tag"`
 }
 
-// TestAnEmptyQueryValueLeavesANonStringParameterUnset holds the empty value:
-// "?limit=" is how a client leaves an integer unset, so the handler sees zero,
-// while "?tag=" is a real empty string value in the slice.
+// TestAnEmptyQueryValueLeavesANonStringParameterUnset holds the empty value: "?limit=" is how a
+// client leaves an integer unset, so the handler sees zero.
 func TestAnEmptyQueryValueLeavesANonStringParameterUnset(t *testing.T) {
 	operation := NewOperation[queryValuesInput, struct{}](
 		"the.module.read", http.MethodGet, "/items", "", "", nil,
@@ -583,9 +561,8 @@ func TestAnEmptyQueryValueLeavesANonStringParameterUnset(t *testing.T) {
 	}
 }
 
-// TestARepeatedQueryValueForAScalarFieldTakesTheFirst holds the parameter
-// check: a scalar field holds one value, and the first one is it — the reading
-// a client that sent the name twice gets, rather than a refused request.
+// TestARepeatedQueryValueForAScalarFieldTakesTheFirst holds the parameter check: a scalar field
+// holds one value, and the first one is it — the reading a client that sent the name twice gets.
 func TestARepeatedQueryValueForAScalarFieldTakesTheFirst(t *testing.T) {
 	operation := NewOperation[parameterOnlyInput, struct{}](
 		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
@@ -605,8 +582,7 @@ func TestARepeatedQueryValueForAScalarFieldTakesTheFirst(t *testing.T) {
 	}
 }
 
-// TestARepeatedFormValueForAScalarFieldIsRefused holds the form half of the
-// same check.
+// TestARepeatedFormValueForAScalarFieldIsRefused holds the form half of the same check.
 func TestARepeatedFormValueForAScalarFieldIsRefused(t *testing.T) {
 	operation := NewOperation[formInput, struct{}](
 		"the.module.form", http.MethodPost, "/items/:id", "", "",
@@ -627,9 +603,8 @@ func TestARepeatedFormValueForAScalarFieldIsRefused(t *testing.T) {
 	}
 }
 
-// TestARepeatedMultipartFilePartIsRefused holds the file half: a file-tagged
-// field holds one file, so a repeated part name is refused rather than read
-// for its first part.
+// TestARepeatedMultipartFilePartIsRefused holds the file half: a file-tagged field holds one file,
+// so a repeated part name is refused rather than read for its first part.
 func TestARepeatedMultipartFilePartIsRefused(t *testing.T) {
 	operation := NewOperation[multipartInput, struct{}](
 		"the.module.multipart", http.MethodPost, "/items", "", "",
@@ -660,9 +635,8 @@ func TestARepeatedMultipartFilePartIsRefused(t *testing.T) {
 	}
 }
 
-// TestANullJSONBodyBindsTheEmptyObject holds how a literal null is read: it
-// decodes into a nil map without an error and leaves the input at its zero
-// value, which is how the declaration reads an absent body.
+// TestANullJSONBodyBindsTheEmptyObject holds how a literal null is read: it decodes into a nil map
+// without an error and leaves the input at its zero value.
 func TestANullJSONBodyBindsTheEmptyObject(t *testing.T) {
 	operation := NewOperation[readInput, struct{}](
 		"the.module.write", http.MethodPost, "/items/:id", "", "",
@@ -684,10 +658,8 @@ func TestANullJSONBodyBindsTheEmptyObject(t *testing.T) {
 	}
 }
 
-// TestAJSONBodyIsReadOnlyAsUTF8 holds the one parameter a JSON body's media
-// type is read for: the declared type with no parameter or with charset=utf-8
-// is accepted, and a charset naming another encoding is refused rather than
-// decoded under an assumption the body does not carry.
+// TestAJSONBodyIsReadOnlyAsUTF8 holds the one parameter a JSON body's media type is read for: the
+// declared type with no parameter or with charset=utf-8 is accepted.
 func TestAJSONBodyIsReadOnlyAsUTF8(t *testing.T) {
 	for _, testCase := range []struct {
 		contentType string
@@ -719,9 +691,8 @@ func TestAJSONBodyIsReadOnlyAsUTF8(t *testing.T) {
 	}
 }
 
-// TestARequiredBodyMustBePresent holds requestBody.required: an empty body is
-// the zero input when the declaration does not require one and a 400 when it
-// does, before the handler runs.
+// TestARequiredBodyMustBePresent holds requestBody.required: an empty body is the zero input when
+// the declaration does not require one and a 400 when it does, before the handler runs.
 func TestARequiredBodyMustBePresent(t *testing.T) {
 	for _, testCase := range []struct {
 		name     string
@@ -757,14 +728,12 @@ func TestARequiredBodyMustBePresent(t *testing.T) {
 	}
 }
 
-// caseInput is one JSON body member, for the member-name rule.
 type caseInput struct {
 	Name string `json:"name"`
 }
 
-// TestAJSONMemberNameMatchesCaseInsensitively holds encoding/json's rule: a
-// member whose name differs only in case still binds, which is how the
-// pre-declaration handlers read a body.
+// TestAJSONMemberNameMatchesCaseInsensitively holds encoding/json's rule: a member whose name
+// differs only in case still binds, which is how the pre-declaration handlers read a body.
 func TestAJSONMemberNameMatchesCaseInsensitively(t *testing.T) {
 	operation := NewOperation[caseInput, struct{}](
 		"the.module.write", http.MethodPost, "/items", "", "",

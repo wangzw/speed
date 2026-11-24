@@ -7,12 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// probe is a capability an After or Before declaration may point at. The
-// legality of a token has nothing to do with the methods, so one is enough.
 type probe interface{ Probe() }
 
-// concreteProbe is a struct, and therefore the shape a capability token may
-// not point at.
 type concreteProbe struct{}
 
 // wantPanic runs fn and returns the panic text, failing when fn returns
@@ -49,6 +45,7 @@ func assertNames(t *testing.T, text string, fragments ...string) {
 	}
 }
 
+// TestTokenRejectsUntypedNil checks that an untyped nil token is refused.
 func TestTokenRejectsUntypedNil(t *testing.T) {
 	text := wantPanic(t, "an untyped nil token", func() {
 		capabilityKey(nil, `Use on endpoint "public"`)
@@ -56,6 +53,7 @@ func TestTokenRejectsUntypedNil(t *testing.T) {
 	assertNames(t, text, `Use on endpoint "public"`, "untyped nil", "(*auth.Authenticator)(nil)")
 }
 
+// TestTokenRejectsNonPointer checks that a token that is not a pointer is refused.
 func TestTokenRejectsNonPointer(t *testing.T) {
 	text := wantPanic(t, "a non-pointer token", func() {
 		capabilityKey(concreteProbe{}, `Use on endpoint "public"`)
@@ -63,6 +61,7 @@ func TestTokenRejectsNonPointer(t *testing.T) {
 	assertNames(t, text, `Use on endpoint "public"`, "must be a typed nil pointer", "http.concreteProbe")
 }
 
+// TestTokenRejectsNonNilPointer checks that a non-nil pointer token is refused.
 func TestTokenRejectsNonNilPointer(t *testing.T) {
 	text := wantPanic(t, "a non-nil pointer token", func() {
 		capabilityKey(&concreteProbe{}, `Use on endpoint "public"`)
@@ -70,6 +69,7 @@ func TestTokenRejectsNonNilPointer(t *testing.T) {
 	assertNames(t, text, `Use on endpoint "public"`, "must be a nil pointer", "not an instance")
 }
 
+// TestTokenRejectsConcreteElement checks that a token designating a concrete type is refused.
 func TestTokenRejectsConcreteElement(t *testing.T) {
 	text := wantPanic(t, "a token pointing at a concrete type", func() {
 		capabilityKey((*concreteProbe)(nil), `Use on endpoint "public"`)
@@ -77,8 +77,8 @@ func TestTokenRejectsConcreteElement(t *testing.T) {
 	assertNames(t, text, `Use on endpoint "public"`, "must point to an interface", "concreteProbe")
 }
 
-// TestTokenAcceptsInterfacePointer is the positive half: the four refusals
-// above would all still hold in an implementation that refuses everything.
+// TestTokenAcceptsInterfacePointer is the positive half: the four refusals above would all still
+// hold in an implementation that refuses everything.
 func TestTokenAcceptsInterfacePointer(t *testing.T) {
 	got := capabilityKey((*probe)(nil), `Use on endpoint "public"`)
 	if got == nil {
@@ -106,29 +106,7 @@ func panics(fn func()) (did bool) {
 	return false
 }
 
-// TestCapabilityRuleAgreesWithCore holds this module's copy of the token rule
-// against core's. core does not export its judgement and, by the design, will
-// not, so the baseline is core's public behaviour: Register panics on an
-// illegal token in Requires. Each row observes both verdicts and asserts they
-// agree, which is what turns a drift between the two copies into a red test
-// rather than two modules quietly disagreeing about what a token is.
-//
-// The legal row is what makes the agreement mean something: without it a
-// capabilityKey that refuses everything would agree with core on every
-// remaining row.
-//
-// Two of the rows are shapes nobody would write by hand. They are here because
-// the obvious illegal tokens do not isolate the rule that refuses them: drop
-// the pointer rule and a struct token is still refused, by IsNil; drop the
-// non-nil rule and &concreteProbe{} is still refused, by the interface rule.
-// A nil channel of an interface element type and a non-nil pointer to an
-// interface are the shapes each of those two rules alone stands between, so
-// they are what turns the rule's removal into a red row.
-//
-// The untyped-nil rule has no such row and cannot have one: the untyped nil is
-// a single value, and removing that rule leaves it refused by the pointer rule
-// all the same. What the rule carries is the message, and that is pinned by
-// TestTokenRejectsUntypedNil rather than here.
+// TestCapabilityRuleAgreesWithCore holds this module's copy of the token rule against core's.
 func TestCapabilityRuleAgreesWithCore(t *testing.T) {
 	var interfaceValue probe
 	cases := []struct {

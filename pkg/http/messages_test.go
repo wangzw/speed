@@ -21,18 +21,14 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The two locales the tests below carry messages in. They are written out here
-// rather than through a language-matching library: the localizer is a stub, and
-// the layer that settles the locale reads the Accept-Language header verbatim.
+// The two locales the tests below carry messages in. They are written out here rather
+// than through a language-matching library: the localizer is a stub, and the layer that
+// settles the locale reads the Accept-Language header verbatim.
 const (
 	localeEN = i18n.Locale("en-US")
 	localeZH = i18n.Locale("zh-CN")
 )
 
-// stubLocalizer renders a message from an in-memory index, the way the engine
-// does: it reads the locale from the context, falls back to a default when the
-// context carries none or the locale misses the key, and hands the key itself
-// back for a key no locale carries.
 type stubLocalizer struct {
 	index         map[i18n.Locale]map[i18n.Key]string
 	defaultLocale i18n.Locale
@@ -61,10 +57,6 @@ func (s stubLocalizer) Translate(locale i18n.Locale, key i18n.Key, _ i18n.Args) 
 
 var _ i18n.Localizer = stubLocalizer{}
 
-// acceptLanguageLayer settles the request's locale from its Accept-Language
-// header, the way the i18n capability's observable layer does. It stands outside
-// the recovery and the body limit — it is an observing layer — so all four
-// refusals this module writes see the locale it set.
 func acceptLanguageLayer() Middleware {
 	return Middleware{
 		Name:  "test:accept-language",
@@ -79,9 +71,6 @@ func acceptLanguageLayer() Middleware {
 	}
 }
 
-// assembleLocalized assembles one endpoint the way Serve does, with localizer as
-// the Localizer capability and the accept-language layer in front of the chain,
-// so a test can drive a refusal in a chosen language.
 func assembleLocalized(t *testing.T, settings endpointSettings, localizer i18n.Localizer, register func(Endpoint)) nethttp.Handler {
 	t.Helper()
 	logger, _ := newRecordingLogger()
@@ -95,8 +84,6 @@ func assembleLocalized(t *testing.T, settings endpointSettings, localizer i18n.L
 	return handler
 }
 
-// serveLocalizedOnce sends one request through an assembled handler, with the
-// Accept-Language header the test chose, and returns what it wrote.
 func serveLocalizedOnce(handler nethttp.Handler, method, path, lang string, body io.Reader) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, body)
 	if lang != "" {
@@ -107,7 +94,6 @@ func serveLocalizedOnce(handler nethttp.Handler, method, path, lang string, body
 	return recorder
 }
 
-// titleOf decodes a problem details body and returns its title member.
 func titleOf(t *testing.T, body string) string {
 	t.Helper()
 	var members map[string]any
@@ -118,8 +104,6 @@ func titleOf(t *testing.T, body string) string {
 	return title
 }
 
-// refusalCase is one of the four refusals this module writes itself, with the
-// route set and the request that triggers it.
 type refusalCase struct {
 	name     string
 	status   int
@@ -158,8 +142,6 @@ func refusalCases() []refusalCase {
 	}
 }
 
-// settingsFor is the endpoint settings one refusal case needs: the shared
-// test settings, with the body limit overridden where the case drives a 413.
 func settingsFor(c refusalCase) endpointSettings {
 	s := testSettings("public")
 	if c.maxBody > 0 {
@@ -168,8 +150,6 @@ func settingsFor(c refusalCase) endpointSettings {
 	return s
 }
 
-// refusalCatalog is the http.<status> catalog the tests below carry, in two
-// locales, mirroring this module's own embedded catalog.
 func refusalCatalog() stubLocalizer {
 	return stubLocalizer{
 		defaultLocale: localeEN,
@@ -190,12 +170,8 @@ func refusalCatalog() stubLocalizer {
 	}
 }
 
-// TestARefusalIsRenderedInTheAssembledLocalizersLanguage pins that each of the
-// four refusals this module writes itself carries a title in the request's
-// language, rendered from the module's own catalog through the assembled
-// localizer. The request asks for zh-CN, and every refusal answers with the
-// text this module's catalog carries for that locale rather than the standard
-// library's English.
+// TestARefusalIsRenderedInTheAssembledLocalizersLanguage pins that each of the four refusals this
+// module writes itself carries a title in the request's language.
 func TestARefusalIsRenderedInTheAssembledLocalizersLanguage(t *testing.T) {
 	localizer := refusalCatalog()
 	for _, c := range refusalCases() {
@@ -219,12 +195,8 @@ func TestARefusalIsRenderedInTheAssembledLocalizersLanguage(t *testing.T) {
 	}
 }
 
-// TestTheModuleTakesUpTheLocalizerCapability is the same rendering over a whole
-// assembly: a probe delivers i18n.Localizer, this module's New resolves it, and
-// a refusal answered on a real connection carries the text of that localizer.
-// The request names no language, so the localizer falls back to its default —
-// which the test sets to zh-CN — which is how the answer is told from the
-// standard library's English.
+// TestTheModuleTakesUpTheLocalizerCapability is the same rendering over a whole assembly: a probe
+// delivers i18n.Localizer, this module's New resolves it.
 func TestTheModuleTakesUpTheLocalizerCapability(t *testing.T) {
 	localizer := stubLocalizer{
 		defaultLocale: localeZH,
@@ -249,11 +221,8 @@ func TestTheModuleTakesUpTheLocalizerCapability(t *testing.T) {
 	}
 }
 
-// TestARefusalFallsBackToTheStandardStatusTextWithoutALocalizer pins the other
-// side: with no localizer assembled, each refusal answers with net/http's
-// standard text for its status, the text an assembly without the i18n
-// capability has always written. The accept-language layer still settles a
-// locale, which is exactly the point — the locale alone renders nothing.
+// TestARefusalFallsBackToTheStandardStatusTextWithoutALocalizer pins the other side: with no
+// localizer assembled, each refusal answers with net/http's standard text for its status.
 func TestARefusalFallsBackToTheStandardStatusTextWithoutALocalizer(t *testing.T) {
 	for _, c := range refusalCases() {
 		t.Run(c.name, func(t *testing.T) {
@@ -276,9 +245,8 @@ func TestARefusalFallsBackToTheStandardStatusTextWithoutALocalizer(t *testing.T)
 	}
 }
 
-// TestAnAssemblyWithNoLocalizerStillStarts pins that the optional Localizer is
-// no precondition: a run that delivers none starts and serves, and its
-// no-route refusal answers over a real connection with the standard text.
+// TestAnAssemblyWithNoLocalizerStillStarts pins that the optional Localizer is no precondition: a
+// run that delivers none starts and serves.
 func TestAnAssemblyWithNoLocalizerStillStarts(t *testing.T) {
 	addr, _ := serveRoutes(t, nil, func(e Endpoint) {
 		e.Route("GET", "/things", filler)
@@ -296,12 +264,8 @@ func TestAnAssemblyWithNoLocalizerStillStarts(t *testing.T) {
 	}
 }
 
-// TestARefusalFallsBackWhenTheCatalogDoesNotCarryItsKey pins the boundary of the
-// fallback: a key the assembled catalog carries is rendered, and a key it does
-// not carry falls back to the standard text rather than to the key itself or an
-// empty title. The same localizer serves both — it carries http.500 and nothing
-// else — so the 500 proves the localizer is engaged while the 404 proves the
-// miss is handled.
+// TestARefusalFallsBackWhenTheCatalogDoesNotCarryItsKey pins the boundary of the fallback: a key
+// the assembled catalog carries is rendered.
 func TestARefusalFallsBackWhenTheCatalogDoesNotCarryItsKey(t *testing.T) {
 	localizer := stubLocalizer{
 		defaultLocale: localeEN,
@@ -329,10 +293,8 @@ func TestARefusalFallsBackWhenTheCatalogDoesNotCarryItsKey(t *testing.T) {
 	}
 }
 
-// TestProblemCarriesNoLocalizationInputs pins that the wire contract no longer
-// carries a message key and its arguments. They were inputs to a responder that
-// rendered the language at the edge; the module that produces a problem now
-// renders its own title, so the fields are gone and Title carries finished text.
+// TestProblemCarriesNoLocalizationInputs pins that the wire contract no longer carries a message
+// key and its arguments.
 func TestProblemCarriesNoLocalizationInputs(t *testing.T) {
 	present := map[string]bool{}
 	for field := range reflect.TypeFor[Problem]().Fields() {
@@ -346,11 +308,6 @@ func TestProblemCarriesNoLocalizationInputs(t *testing.T) {
 	}
 }
 
-// serveLocalizer runs a real assembly with one endpoint, "public", the routes
-// the test registers and localizer delivered as the Localizer capability, and
-// returns the address it bound. It is serveRoutes with the localizer under the
-// test's control, so a refusal can be observed on a real connection after the
-// module resolved the capability through the registry.
 func serveLocalizer(t *testing.T, localizer i18n.Localizer, cfg moduleConfig, register func(Endpoint)) string {
 	t.Helper()
 	logger, _ := newRecordingLogger()
@@ -399,9 +356,6 @@ func serveLocalizer(t *testing.T, localizer i18n.Localizer, cfg moduleConfig, re
 	return addr
 }
 
-// stubResolver is an i18n.Resolver whose answers a test drives: LocaleOf
-// reports the locale the context carries, and the default when the context
-// carries none, which is the resolution the engine performs.
 type stubResolver struct{ defaultLocale i18n.Locale }
 
 func (s stubResolver) Default() i18n.Locale { return s.defaultLocale }
@@ -423,13 +377,8 @@ func (s stubResolver) TimeZoneFor(context.Context, string) (string, bool, error)
 
 var _ i18n.Resolver = stubResolver{}
 
-// TestTheDefaultProblemNamesTheResponsesLanguage pins that the default problem
-// shape names the language it wrote in a Content-Language header: with a
-// resolver assembled the header carries the locale the resolver resolves for
-// the request, which is the locale the title was rendered in. A client that
-// asked for one language and was answered in another — a fallback — is thus
-// told which it got. With no resolver assembled the header is absent, and the
-// refusal is still written.
+// TestTheDefaultProblemNamesTheResponsesLanguage pins that the default problem shape names the
+// language it wrote in a Content-Language header.
 func TestTheDefaultProblemNamesTheResponsesLanguage(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	localizer := refusalCatalog()
@@ -463,16 +412,8 @@ func TestTheDefaultProblemNamesTheResponsesLanguage(t *testing.T) {
 	}
 }
 
-// TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale holds that every locale
-// file this module ships carries the same keys, and that they are exactly the
-// refusals it renders.
-//
-// Rendering alone cannot catch a key that drifted in one file: the en-US texts
-// are net/http's standard phrases, which is also what a refusal falls back to
-// on a miss, so a renamed en-US key answers the same text and the rendering
-// test would pass. The key sets are therefore compared as sets, every file
-// against the four refusals, which also refuses a key this module never
-// renders.
+// TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale holds that every locale file this module
+// ships carries the same keys, and that they are exactly the refusals it renders.
 func TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale(t *testing.T) {
 	want := map[string]bool{}
 	for _, status := range []int{
@@ -512,19 +453,8 @@ func TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale(t *testing.T) {
 	}
 }
 
-// TestTheEmbeddedCatalogRendersThroughTheRealEngine drives this module's own
-// embedded catalog through the real i18n engine, assembled the way a host puts
-// it together: http.Module() and the engine's catalog module take part in one
-// registry, the engine merges the catalog the module declares as an
-// i18n.Catalog resource, and a refusal answered on a real connection carries
-// the text the module's own locales/*.json carries for the locale the request
-// asked for. The stub localizers the other tests use exercise this module's
-// rendering point, not the catalog file: a malformed locales/*.json or a key
-// the code builds and this file does not carry would pass every one of them and
-// fail here for the locale it drives. What it cannot see is a key that drifted
-// in another locale's file alone — the en-US texts are net/http's own, which is
-// also what a miss falls back to — so the key sets are compared across files in
-// TestTheEmbeddedCatalogCarriesOneKeySetForEveryLocale.
+// TestTheEmbeddedCatalogRendersThroughTheRealEngine drives this module's own embedded catalog
+// through the real i18n engine, assembled the way a host puts it together.
 func TestTheEmbeddedCatalogRendersThroughTheRealEngine(t *testing.T) {
 	addr := serveWithRealEngine(t, func(e Endpoint) {
 		e.Route("GET", "/things", filler)
@@ -543,15 +473,8 @@ func TestTheEmbeddedCatalogRendersThroughTheRealEngine(t *testing.T) {
 	}
 }
 
-// serveWithRealEngine assembles this module together with the real i18n engine
-// and its catalog module — the way the catalog package's own module-level tests
-// assemble it and the way a host does — and serves one endpoint, so a refusal
-// can be observed on a real connection with the module's own embedded catalog
-// behind it. It returns the address the endpoint bound.
 func serveWithRealEngine(t *testing.T, register func(Endpoint)) string {
 	t.Helper()
-	// Both schemas are declared to the real loader, because both modules read
-	// their own section of one configuration document.
 	reader := authntest.ConfigReaderAll(t,
 		`{"http":{"listeners":{"backend":{"address":"127.0.0.1:0"}},`+
 			`"endpoints":{"public":{"listener":"backend"}}}}`,
@@ -593,9 +516,6 @@ func serveWithRealEngine(t *testing.T, register func(Endpoint)) string {
 	return addr
 }
 
-// requestWithLanguage issues one GET with an Accept-Language header against a
-// bound endpoint, so a test can drive a refusal in a language the real engine
-// negotiates. It is getResponse with the one header set.
 func requestWithLanguage(ctx context.Context, addr, path, lang string) (answer, error) {
 	req, err := nethttp.NewRequestWithContext(ctx, nethttp.MethodGet, "http://"+addr+path, nil)
 	if err != nil {

@@ -8,13 +8,9 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// validFragment is the smallest document that passes the shape check: an
-// object carrying the openapi field.
 const validFragment = `{"openapi":"3.1.0","paths":{"/things":{}}}`
 
-// badFragments are the five shapes the design rules out, one per class. Each
-// is a startup failure, and the caller tells them from every other startup
-// failure by ErrInvalidSpec.
+// TestSpecRejectsEmptyDocument checks that an empty document fails the startup.
 func TestSpecRejectsEmptyDocument(t *testing.T) {
 	for _, document := range []string{"", "   \n\t"} {
 		err := validateSpec("billing", Spec{Endpoint: "public", Document: []byte(document)})
@@ -24,21 +20,21 @@ func TestSpecRejectsEmptyDocument(t *testing.T) {
 	assertInvalidSpec(t, err, "billing", "empty")
 }
 
+// TestSpecRejectsNonUTF8 checks that a document that is not UTF-8 fails the startup.
 func TestSpecRejectsNonUTF8(t *testing.T) {
-	// The illegal bytes sit inside a JSON string, which is where
-	// encoding/json replaces them with U+FFFD instead of failing. A check
-	// that leans on the decode alone lets this through and the corruption
-	// surfaces in whoever merges the fragments.
 	document := []byte(`{"openapi":"3.1.0","info":{"title":"` + "\xff\xfe" + `"}}`)
 	err := validateSpec("billing", Spec{Endpoint: "public", Document: document})
 	assertInvalidSpec(t, err, "billing", "UTF-8")
 }
 
+// TestSpecRejectsMalformedJSON checks that a document that is not valid JSON fails the startup.
 func TestSpecRejectsMalformedJSON(t *testing.T) {
 	err := validateSpec("billing", Spec{Endpoint: "public", Document: []byte(`{"openapi":`)})
 	assertInvalidSpec(t, err, "billing", "JSON")
 }
 
+// TestSpecRejectsNonObjectTopLevel checks that a document whose top level is not an object fails
+// the startup.
 func TestSpecRejectsNonObjectTopLevel(t *testing.T) {
 	for _, document := range []string{`["openapi"]`, `"3.1.0"`, `42`, `null`} {
 		err := validateSpec("billing", Spec{Endpoint: "public", Document: []byte(document)})
@@ -46,22 +42,22 @@ func TestSpecRejectsNonObjectTopLevel(t *testing.T) {
 	}
 }
 
+// TestSpecRejectsMissingOpenAPIField checks that a document without an openapi field fails the
+// startup.
 func TestSpecRejectsMissingOpenAPIField(t *testing.T) {
 	err := validateSpec("billing", Spec{Endpoint: "public", Document: []byte(`{"paths":{"/things":{}}}`)})
 	assertInvalidSpec(t, err, "billing", "openapi")
 }
 
-// TestSpecAcceptsAWellShapedFragment is the positive half: the five refusals
-// above would all hold in an implementation that refuses everything.
+// TestSpecAcceptsAWellShapedFragment is the positive half: the five refusals above would all hold
+// in an implementation that refuses everything.
 func TestSpecAcceptsAWellShapedFragment(t *testing.T) {
 	if err := validateSpec("billing", Spec{Endpoint: "public", Document: []byte(validFragment)}); err != nil {
 		t.Fatalf("a well-shaped fragment was refused: %v", err)
 	}
 }
 
-// TestSpecErrorNamesDeclaringModule pins the fixing action. A module declares
-// its fragment with //go:embed, so the document alone says nothing about where
-// to go and fix it.
+// TestSpecErrorNamesDeclaringModule checks that a Spec failure names the module that declared it.
 func TestSpecErrorNamesDeclaringModule(t *testing.T) {
 	err := validateSpecs([]core.Resource[Spec]{
 		{Module: "billing", Value: Spec{Endpoint: "public", Document: []byte(`{"paths":{}}`)}},
@@ -84,9 +80,8 @@ func TestSpecErrorNamesDeclaringModule(t *testing.T) {
 	}
 }
 
-// TestAPIRootJoinsBareSegments pins the composition the merge and the route
-// contract both rely on: Prefix and Version are bare segments, and the reader
-// supplies the slashes.
+// TestAPIRootJoinsBareSegments pins the composition the merge and the route contract both rely on:
+// Prefix and Version are bare segments, and the reader supplies the slashes.
 func TestAPIRootJoinsBareSegments(t *testing.T) {
 	for _, c := range []struct {
 		spec Spec
@@ -111,8 +106,7 @@ func TestAPIRootJoinsBareSegments(t *testing.T) {
 	}
 }
 
-// TestSpecRejectsAPrefixWrittenWithSlashes holds the form Prefix takes: bare
-// segments. A leading slash would be carried into the composed path twice.
+// TestSpecRejectsAPrefixWrittenWithSlashes holds the form Prefix takes: bare segments.
 func TestSpecRejectsAPrefixWrittenWithSlashes(t *testing.T) {
 	err := validateSpec("billing", Spec{
 		Endpoint: "public", Prefix: "/api",
@@ -121,8 +115,8 @@ func TestSpecRejectsAPrefixWrittenWithSlashes(t *testing.T) {
 	assertInvalidSpec(t, err, "billing", "bare segments")
 }
 
-// TestSpecRejectsNonLiteralPrefixOrVersion covers the values that would stop
-// composing a path a client can address.
+// TestSpecRejectsNonLiteralPrefixOrVersion covers the values that would stop composing a path a
+// client can address.
 func TestSpecRejectsNonLiteralPrefixOrVersion(t *testing.T) {
 	for _, c := range []struct {
 		reason string
@@ -141,9 +135,8 @@ func TestSpecRejectsNonLiteralPrefixOrVersion(t *testing.T) {
 	}
 }
 
-// TestSpecRejectsPathsThatAlreadyCarryTheRoot holds a fragment to the relative
-// form: a path written with the Prefix and Version it already declares would
-// reach the client under the root twice.
+// TestSpecRejectsPathsThatAlreadyCarryTheRoot holds a fragment to the relative form: a path written
+// with the Prefix and Version it already declares would reach the client under the root twice.
 func TestSpecRejectsPathsThatAlreadyCarryTheRoot(t *testing.T) {
 	document := []byte(`{"openapi":"3.1.0","paths":{"/api/v1/auth":{}}}`)
 	err := validateSpec("billing", Spec{
@@ -153,8 +146,7 @@ func TestSpecRejectsPathsThatAlreadyCarryTheRoot(t *testing.T) {
 	assertInvalidSpec(t, err, "billing", "already carries the API root")
 }
 
-// TestSpecAcceptsRelativePathsUnderARoot is the positive half of the two
-// refusals above.
+// TestSpecAcceptsRelativePathsUnderARoot is the positive half of the two refusals above.
 func TestSpecAcceptsRelativePathsUnderARoot(t *testing.T) {
 	if err := validateSpec("billing", Spec{
 		Endpoint: "public", Prefix: "api", Version: "v1",
@@ -164,10 +156,8 @@ func TestSpecAcceptsRelativePathsUnderARoot(t *testing.T) {
 	}
 }
 
-// TestSpecUnknownEndpointIsNotAFailure pins one of the design's accepted
-// costs. Spec and the actual registrations are separately maintained facts and
-// are allowed to drift; a check here would turn "this API is not enabled in
-// this assembly" into a startup failure.
+// TestSpecUnknownEndpointIsNotAFailure pins one of the accepted costs: a Spec naming
+// an undeclared endpoint is not a failure.
 func TestSpecUnknownEndpointIsNotAFailure(t *testing.T) {
 	err := validateSpecs([]core.Resource[Spec]{
 		{Module: "billing", Value: Spec{Endpoint: "an-endpoint-nobody-declared", Document: []byte(validFragment)}},
@@ -178,17 +168,16 @@ func TestSpecUnknownEndpointIsNotAFailure(t *testing.T) {
 	}
 }
 
-// TestSpecsWithNothingDeclaredIsNotAFailure covers the ordinary host that
-// declares no fragment at all.
+// TestSpecsWithNothingDeclaredIsNotAFailure covers the ordinary host that declares no fragment at
+// all.
 func TestSpecsWithNothingDeclaredIsNotAFailure(t *testing.T) {
 	if err := validateSpecs(nil); err != nil {
 		t.Fatalf("an assembly declaring no fragment failed: %v", err)
 	}
 }
 
-// TestAnOrdinarySpecCarriesNoScope holds the ordinary surface's shape: a
-// fragment under the API root with no scope is published directly below the
-// root, and its paths carry no level segment.
+// TestAnOrdinarySpecCarriesNoScope holds the ordinary surface's shape: a fragment under the API
+// root with no scope is published directly below the root, and its paths carry no level segment.
 func TestAnOrdinarySpecCarriesNoScope(t *testing.T) {
 	spec := Spec{Endpoint: "public", Prefix: "api", Version: "v1", Document: []byte(validFragment)}
 	if err := validateSpec("billing", spec); err != nil {
@@ -199,8 +188,8 @@ func TestAnOrdinarySpecCarriesNoScope(t *testing.T) {
 	}
 }
 
-// TestSpecRefusesAnUnknownScope holds the closed set: a level nobody decided on
-// is a declaration defect, not a value to carry through the merge.
+// TestSpecRefusesAnUnknownScope holds the closed set: a level nobody decided on is a declaration
+// defect, not a value to carry through the merge.
 func TestSpecRefusesAnUnknownScope(t *testing.T) {
 	err := validateSpec("billing", Spec{
 		Endpoint: "public", Prefix: "api", Version: "v1", Scope: Scope("admin"),
@@ -209,9 +198,8 @@ func TestSpecRefusesAnUnknownScope(t *testing.T) {
 	assertInvalidSpec(t, err, "billing", "not one of")
 }
 
-// TestATenantsScopePathNamesTheTenantFirst holds the shape the tenant level
-// prescribes: the tenant is part of the address, so a path that does not name it
-// first cannot be published under that level.
+// TestATenantsScopePathNamesTheTenantFirst holds the shape the tenant level prescribes: the tenant
+// is part of the address.
 func TestATenantsScopePathNamesTheTenantFirst(t *testing.T) {
 	err := validateSpec("billing", Spec{
 		Endpoint: "public", Prefix: "api", Version: "v1", Scope: ScopeTenants,
@@ -225,9 +213,6 @@ func TestATenantsScopePathNamesTheTenantFirst(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("a tenant-scoped fragment was refused: %v", err)
 	}
-	// The tenant resource itself is addressed by the bare tenant segment: a
-	// resource-level operation such as the organization deletion names the
-	// tenant and no further path.
 	if err := validateSpec("billing", Spec{
 		Endpoint: "public", Prefix: "api", Version: "v1", Scope: ScopeTenants,
 		Document: []byte(`{"openapi":"3.1.0","paths":{"/{tenant}":{}}}`),

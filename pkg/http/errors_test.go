@@ -10,9 +10,6 @@ import (
 	"testing"
 )
 
-// sentinels is the design's error table, by name. A caller tells the classes
-// apart with errors.Is, so two sentinels that matched each other would leave a
-// failure unclassifiable.
 var sentinels = map[string]error{
 	"ErrUnknownEndpoint": ErrUnknownEndpoint,
 	"ErrUnknownListener": ErrUnknownListener,
@@ -27,8 +24,8 @@ var sentinels = map[string]error{
 	"ErrDrainTimeout":    ErrDrainTimeout,
 }
 
-// TestSentinelsAreDistinct checks that no two of them are interchangeable,
-// wrapped or bare, and that each carries a message.
+// TestSentinelsAreDistinct checks that no two of them are interchangeable, wrapped or bare, and
+// that each carries a message.
 func TestSentinelsAreDistinct(t *testing.T) {
 	for name, err := range sentinels {
 		if err == nil {
@@ -51,13 +48,8 @@ func TestSentinelsAreDistinct(t *testing.T) {
 	}
 }
 
-// TestSentinelTableHasNoStrayMember reads the sentinels back out of the source
-// and checks the table above accounts for every one of them, in both
-// directions. The count is never written down here: it is a snapshot of what
-// errors.go happens to declare today, and pinning it would make this test
-// disagree with the source the moment a class is added. A sentinel added to
-// errors.go and to nothing else would otherwise never be checked for
-// distinctness, and two overlapping sentinels are only found by checking.
+// TestSentinelTableHasNoStrayMember reads the sentinels back out of the source and checks the table
+// above accounts for every one of them, in both directions.
 func TestSentinelTableHasNoStrayMember(t *testing.T) {
 	_, files := parseProductionFiles(t)
 	var declared []string

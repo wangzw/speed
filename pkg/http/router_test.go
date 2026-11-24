@@ -16,9 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// testRouter builds a router over the named endpoints, each on a listener of
-// its own named the same, with the gate still shut, which is the state New
-// leaves it in.
 func testRouter(names ...string) *router {
 	listeners := make([]listenerSettings, 0, len(names))
 	endpoints := make([]endpointSettings, 0, len(names))
@@ -31,7 +28,6 @@ func testRouter(names ...string) *router {
 	return newRouter(listeners, endpoints)
 }
 
-// endpointOf takes an endpoint out, failing the test if it is not there.
 func endpointOf(t *testing.T, r *router, name string) Endpoint {
 	t.Helper()
 	e, err := r.Endpoint(name)
@@ -50,9 +46,7 @@ func mustContain(t *testing.T, text, fragment, why string) {
 	}
 }
 
-// TestRouteBeforeGateOpensPanics pins the closed half of the gate. A
-// registration made before the gate opens is a wiring mistake, and the surface
-// returns nothing, so the panic is the only way it can be reported at all.
+// TestRouteBeforeGateOpensPanics pins the closed half of the gate.
 func TestRouteBeforeGateOpensPanics(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -83,8 +77,8 @@ func TestUseBeforeGateOpensPanics(t *testing.T) {
 	mustContain(t, text, "before the registration gate opened", "which side of the window the call fell on")
 }
 
-// TestRegistrationInsideInitSucceeds is the open half: the window the gate
-// leaves open really does accept both kinds of registration.
+// TestRegistrationInsideInitSucceeds is the open half: the window the gate leaves open really does
+// accept both kinds of registration.
 func TestRegistrationInsideInitSucceeds(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -102,10 +96,7 @@ func TestRegistrationInsideInitSucceeds(t *testing.T) {
 	}
 }
 
-// TestRegistrationAfterSealPanics pins the other end of the window. A
-// registration arriving once the chains are due to be assembled reaches no
-// chain, and being told so is the whole difference between a route that is
-// missing and a route that is missing silently.
+// TestRegistrationAfterSealPanics pins the other end of the window.
 func TestRegistrationAfterSealPanics(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -124,10 +115,7 @@ func TestRegistrationAfterSealPanics(t *testing.T) {
 	mustContain(t, useText, "after the registration gate closed", "which side of the window the call fell on")
 }
 
-// TestUnknownEndpointNamesAvailableEndpoints pins the failure a misspelled
-// endpoint name produces. It is an error rather than a panic because the
-// endpoint set is configuration, and the text lists the names that do exist,
-// which is the fixing action.
+// TestUnknownEndpointNamesAvailableEndpoints pins the failure a misspelled endpoint name produces.
 func TestUnknownEndpointNamesAvailableEndpoints(t *testing.T) {
 	r := testRouter("public", "admin")
 
@@ -143,9 +131,8 @@ func TestUnknownEndpointNamesAvailableEndpoints(t *testing.T) {
 	mustContain(t, err.Error(), `"admin"`, "the other name that does exist")
 }
 
-// TestUnknownEndpointWithNoEndpointsSaysSo pins the empty case: "the endpoints
-// are" followed by nothing reads as a truncated message rather than as the
-// state it describes.
+// TestUnknownEndpointWithNoEndpointsSaysSo pins the empty case: "the endpoints are" followed by
+// nothing reads as a truncated message rather than as the state it describes.
 func TestUnknownEndpointWithNoEndpointsSaysSo(t *testing.T) {
 	_, err := testRouter().Endpoint("public")
 	if !errors.Is(err, ErrUnknownEndpoint) {
@@ -154,11 +141,7 @@ func TestUnknownEndpointWithNoEndpointsSaysSo(t *testing.T) {
 	mustContain(t, err.Error(), "declares no endpoint at all", "the state the message describes")
 }
 
-// TestEndpointsListsEveryDeclaredNameInAscendingOrder pins the set and its
-// order. The router is built from names declared out of order, so an answer in
-// declaration order is told apart from one a reader can rely on; and every name
-// listed resolves through Endpoint, which ties the list to the set a registrant
-// can actually take an endpoint from.
+// TestEndpointsListsEveryDeclaredNameInAscendingOrder pins the set and its order.
 func TestEndpointsListsEveryDeclaredNameInAscendingOrder(t *testing.T) {
 	r := testRouter("public", "admin", "metrics")
 
@@ -174,10 +157,8 @@ func TestEndpointsListsEveryDeclaredNameInAscendingOrder(t *testing.T) {
 	}
 }
 
-// TestEndpointsReturnsASliceOfItsOwn pins that a caller changing the list it was
-// handed changes nothing in the router. The list is read to decide which
-// endpoints to register on, and one caller overwriting an element must not turn
-// the next caller's answer into something else.
+// TestEndpointsReturnsASliceOfItsOwn pins that a caller changing the list it was handed changes
+// nothing in the router.
 func TestEndpointsReturnsASliceOfItsOwn(t *testing.T) {
 	r := testRouter("public", "admin", "metrics")
 
@@ -195,20 +176,16 @@ func TestEndpointsReturnsASliceOfItsOwn(t *testing.T) {
 	}
 }
 
-// TestEndpointsOfARouterWithNoEndpointsListsNone pins the empty set as a plain
-// answer rather than a failure: a router built from a configuration that
-// declares nothing lists no name.
+// TestEndpointsOfARouterWithNoEndpointsListsNone pins the empty set as a plain answer rather than a
+// failure: a router built from a configuration that declares nothing lists no name.
 func TestEndpointsOfARouterWithNoEndpointsListsNone(t *testing.T) {
 	if got := testRouter().Endpoints(); len(got) != 0 {
 		t.Errorf("a router with no endpoint lists %v", got)
 	}
 }
 
-// TestEndpointsIsReadableInEveryStage pins that the list, like Endpoint and
-// unlike Route and Use, is not behind the registration gate. A registrant may
-// ask which endpoints exist before the gate opens, inside the window and after
-// it has closed, and gets the same set each time; a read that panicked outside
-// the window would turn a harmless question into a startup failure.
+// TestEndpointsIsReadableInEveryStage pins that the list, like Endpoint and unlike Route and Use,
+// is not behind the registration gate.
 func TestEndpointsIsReadableInEveryStage(t *testing.T) {
 	m := Module()
 	product := testProduct(t, endpointsAt(5*time.Second, "public", "admin"))
@@ -242,9 +219,8 @@ func TestEndpointsIsReadableInEveryStage(t *testing.T) {
 	check("after Stop")
 }
 
-// TestEndpointsReachesARegistrantThroughTheCapability pins the list on the path
-// a registrant takes: the Router taken up through the registry, inside Init,
-// answers with the names configuration declared.
+// TestEndpointsReachesARegistrantThroughTheCapability pins the list on the path a registrant takes:
+// the Router taken up through the registry, inside Init.
 func TestEndpointsReachesARegistrantThroughTheCapability(t *testing.T) {
 	listed := make(chan []string, 1)
 	served := make(chan struct{}, 1)
@@ -280,10 +256,7 @@ func TestEndpointsReachesARegistrantThroughTheCapability(t *testing.T) {
 	}
 }
 
-// TestNilHandlerFieldPanics pins the layer that would do nothing. Handing back
-// an error instead would let a registrant drop it and carry on believing the
-// layer is in the chain, and gin itself accepts a nil handler and crashes when a
-// request reaches it.
+// TestNilHandlerFieldPanics checks that a nil Handler field panics at registration.
 func TestNilHandlerFieldPanics(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -301,9 +274,7 @@ func TestNilHandlerFieldPanics(t *testing.T) {
 	}
 }
 
-// TestRouteWithoutAHandlerPanics pins a route that binds nothing. The call is
-// legal as far as the signature goes, and a route that was registered without a
-// handler would answer nothing for ever without a word.
+// TestRouteWithoutAHandlerPanics pins a route that binds nothing.
 func TestRouteWithoutAHandlerPanics(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -319,9 +290,8 @@ func TestRouteWithoutAHandlerPanics(t *testing.T) {
 	}
 }
 
-// TestRouteWithANilHandlerPanics pins the nil handler gin accepts and crashes on
-// at request time, wherever in the list it stands: a check on the first position
-// alone passes the second row.
+// TestRouteWithANilHandlerPanics pins the nil handler gin accepts and crashes on at request time,
+// wherever in the list it stands: a check on the first position alone passes the second row.
 func TestRouteWithANilHandlerPanics(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -351,14 +321,7 @@ func TestRouteWithANilHandlerPanics(t *testing.T) {
 	}
 }
 
-// TestRouteWithAPathNotInGinsFormPanics pins the path forms gin rewrites. The
-// engine joins a registered path onto its root and cleans it, so Context.FullPath
-// reports the cleaned form; a layer comparing (method, FullPath) with the
-// registered (method, path) would never match a route registered in any other
-// writing, and nothing would say so.
-//
-// Each row is a path with a different thing wrong with it, and the message has
-// to carry the form to write instead.
+// TestRouteWithAPathNotInGinsFormPanics pins the path forms gin rewrites.
 func TestRouteWithAPathNotInGinsFormPanics(t *testing.T) {
 	for _, c := range []struct {
 		path string
@@ -390,15 +353,8 @@ func TestRouteWithAPathNotInGinsFormPanics(t *testing.T) {
 	}
 }
 
-// TestRouteWithAMethodOrPathGinRefusesPanics pins that what gin rejects on its
-// own is the call-site mistake it is, named where it was written.
-//
-// It is knowable from this one registration, with nothing else mounted, which
-// is what separates it from a conflict: a conflict is a property of the set and
-// only exists once the chain is assembled. Left to be discovered in Serve, a
-// malformed registration comes back as a clash between two registrations, so a
-// caller reading ErrRouteConflict goes looking for a second registration that is
-// not there.
+// TestRouteWithAMethodOrPathGinRefusesPanics pins that what gin rejects on its own is the call-site
+// mistake it is, named where it was written.
 func TestRouteWithAMethodOrPathGinRefusesPanics(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -430,11 +386,8 @@ func TestRouteWithAMethodOrPathGinRefusesPanics(t *testing.T) {
 	}
 }
 
-// TestRouteAcceptsGinsWritings pins the other side of those checks: the forms a
-// route is legitimately written in are accepted and recorded exactly as written.
-// A trailing slash is kept, because "/x/" and "/x" are two different routes on
-// an engine that does not redirect, and a parameter and a catch-all are gin's
-// own spelling of a path segment.
+// TestRouteAcceptsGinsWritings pins the other side of those checks: the forms a route is
+// legitimately written in are accepted and recorded exactly as written.
 func TestRouteAcceptsGinsWritings(t *testing.T) {
 	for _, path := range []string{
 		"/",
@@ -461,10 +414,8 @@ func TestRouteAcceptsGinsWritings(t *testing.T) {
 	}
 }
 
-// TestIllegalConstraintTokenPanicsAtTheRegistration pins where an illegal
-// capability token is reported. Checked when the chain is ordered instead, the
-// panic would name the endpoint but not the call that wrote the declaration,
-// and Serve runs long after the registration returned.
+// TestIllegalConstraintTokenPanicsAtTheRegistration pins where an illegal capability token is
+// reported.
 func TestIllegalConstraintTokenPanicsAtTheRegistration(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -482,12 +433,8 @@ func TestIllegalConstraintTokenPanicsAtTheRegistration(t *testing.T) {
 	}
 }
 
-// TestIllegalBeforeTokenPanicsAtTheRegistration is the same statement for
-// Before: it is read at the registration like After and Provides, naming the
-// declaration, and the layer that wrote it is not recorded. A layer registered
-// with a Before that designates nothing would otherwise be placed against a
-// capability nobody can name, with the panic coming from Serve long after the
-// call that wrote it.
+// TestIllegalBeforeTokenPanicsAtTheRegistration is the same statement for Before: it is read at the
+// registration like After and Provides, naming the declaration.
 func TestIllegalBeforeTokenPanicsAtTheRegistration(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -505,15 +452,8 @@ func TestIllegalBeforeTokenPanicsAtTheRegistration(t *testing.T) {
 	}
 }
 
-// TestIllegalProvidesTokenPanicsNamingTheDeclaration pins that Provides is
-// checked at the call, alongside After and Before, and with the same locating
-// text: which endpoint, which layer, which position in which field.
-//
-// It is the field that decides what every other layer's constraints resolve
-// against, so a token in it that designates nothing does not merely fail to
-// place this layer — it silently removes the target of everybody else's After.
-// An implementation that checks After and Before and leaves Provides alone
-// panics on none of the four rows below.
+// TestIllegalProvidesTokenPanicsNamingTheDeclaration pins that Provides is checked at the call,
+// alongside After and Before, and with the same locating text: which endpoint, which layer.
 func TestIllegalProvidesTokenPanicsNamingTheDeclaration(t *testing.T) {
 	var interfaceValue probe
 	for _, c := range []struct {
@@ -551,10 +491,7 @@ func TestIllegalProvidesTokenPanicsNamingTheDeclaration(t *testing.T) {
 	}
 }
 
-// TestProvidesIsRecordedOnTheLayer pins the field reaching the graph node the
-// ordering reads. Dropped between Use and the record, every constraint on the
-// endpoint would find no provider, and the chain would come out ordered by
-// registration order alone with nothing saying so.
+// TestProvidesIsRecordedOnTheLayer pins the field reaching the graph node the ordering reads.
 func TestProvidesIsRecordedOnTheLayer(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -575,11 +512,8 @@ func TestProvidesIsRecordedOnTheLayer(t *testing.T) {
 	}
 }
 
-// TestRouteKeepsItsHandlersWhenTheCallersSliceChanges pins that a registration
-// records the handlers it was given and not the caller's slice. A registrant may
-// build the list once and change it afterwards, or pass the same backing array
-// to a second registration; the route is what was registered, whatever happens
-// to the slice after the call returns.
+// TestRouteKeepsItsHandlersWhenTheCallersSliceChanges pins that a registration records the handlers
+// it was given and not the caller's slice.
 func TestRouteKeepsItsHandlersWhenTheCallersSliceChanges(t *testing.T) {
 	logger, _ := newRecordingLogger()
 	handler := mustAssemble(t, testSettings("public"), nil, logger, func(e Endpoint) {
@@ -595,13 +529,7 @@ func TestRouteKeepsItsHandlersWhenTheCallersSliceChanges(t *testing.T) {
 	}
 }
 
-// TestConcurrentRegistrationIsSafe pins the mutex. The design does not assume
-// registrations come from one goroutine: the stages are driven one module at a
-// time, but a registrant may start goroutines of its own inside its callback.
-//
-// Run under -race, an unsynchronised append shows up here; the count assertion
-// catches the lost update that an unsynchronised append also produces without
-// the race detector.
+// TestConcurrentRegistrationIsSafe pins the mutex.
 func TestConcurrentRegistrationIsSafe(t *testing.T) {
 	r := testRouter("public")
 	e := endpointOf(t, r, "public")
@@ -638,9 +566,7 @@ func TestConcurrentRegistrationIsSafe(t *testing.T) {
 	}
 }
 
-// TestAcceptingIsFalseBeforeBinding pins the read side of the surface: it is
-// not behind the gate, and an endpoint that has not bound its address yet
-// reports that it is not accepting rather than panicking or claiming it is.
+// TestAcceptingIsFalseBeforeBinding pins the read side of the surface: it is not behind the gate.
 func TestAcceptingIsFalseBeforeBinding(t *testing.T) {
 	r := testRouter("public")
 	if endpointOf(t, r, "public").Accepting() {

@@ -17,26 +17,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The tests in this file drive the module through core.New() and Run, so that
-// what they observe is the assembly a host gets rather than a callback called
-// by hand. The pieces they are built out of are in testsupport_test.go.
-//
-// Two rules hold throughout. Wherever a probe has to be on a definite side of
-// this module, the side is given by an explicit dependency declaration: core
-// promises dependency order and nothing more, and how it linearises what that
-// leaves open is an implementation choice of its own, not a contract to pin.
-// And every wait carries its own deadline, because go test's global timeout
-// turns one blocked assertion into a whole-binary panic minutes later with
-// nothing saying which.
-
-// TestServeDoesNotBlockRun pins the half of the Serve contract that only an
-// assembly can show: the callback returns, so the driver reaches the modules
-// behind it and then the running state.
-//
-// The probe declares a requirement on the Router, which is what places it
-// after this module; it is not "the probe whose name sorts later". A Serve
-// that ran its accept loop in the calling goroutine would never let the probe
-// run at all, and the wait below would end at its deadline.
+// TestServeDoesNotBlockRun pins the half of the Serve contract that only an assembly can show: the
+// callback returns, so the driver reaches the modules behind it and then the running state.
 func TestServeDoesNotBlockRun(t *testing.T) {
 	served := make(chan struct{}, 1)
 	var (
@@ -92,21 +74,8 @@ func TestServeDoesNotBlockRun(t *testing.T) {
 	}
 }
 
-// TestNoModuleIsReleasedUnderAnInFlightRequest pins what the drain is for: a
-// request that was in flight when the shutdown began finishes against a whole
-// assembly. The drain has to be over before any module stopped after this one
-// receives its Stop, and before any module at all receives its Close — an
-// in-flight request can reach any module in the process, and one that was
-// stopped refuses its work while one that was closed has released what the
-// request is using.
-//
-// Two probes watch from the two sides. The one delivering the Logger
-// capability this module optionally requires is constructed before it and
-// therefore stopped after it; the one requiring the Router is constructed after
-// it and closed with every other module once the Stop stage is over. Each
-// records whether the held request had finished by the time its own callback
-// ran. The request is let go a moment after the endpoint stops accepting, so a
-// module released while the drain is still running sees it unfinished.
+// TestNoModuleIsReleasedUnderAnInFlightRequest pins what the drain is for: a request that was in
+// flight when the shutdown began finishes against a whole assembly.
 func TestNoModuleIsReleasedUnderAnInFlightRequest(t *testing.T) {
 	gate := newGateHandler(t)
 	serving := make(chan *router, 1)
@@ -210,26 +179,14 @@ func TestNoModuleIsReleasedUnderAnInFlightRequest(t *testing.T) {
 	}
 }
 
-// TestRegistrationOutsideInitPanicsInAssembly pins the gate from inside a real
-// assembly, on both of its sides at once.
-//
-// The probe requires the Router, so its New runs after this module's New and
-// before any Migrate, and its Start runs after this module's Start. Those are
-// exactly the two moments the gate is shut, and each panic has to say which
-// side it is and what to do about it: a registration that only panicked with
-// "not allowed" would leave the registrant to guess the stage.
+// TestRegistrationOutsideInitPanicsInAssembly pins the gate from inside a real assembly, on both of
+// its sides at once.
 func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 	var (
 		mu        sync.Mutex
 		fromNew   string
 		fromStart string
 	)
-	// registerLate makes one registration and hands back the panic text
-	// instead of letting it take the assembly down.
-	//
-	// The two calls use paths of their own, so that an implementation
-	// letting both through is caught by the two assertions below rather
-	// than by the route conflict one repeated path would raise.
 	registerLate := func(reg *core.Registry, path string) (text string, err error) {
 		e, err := endpointFrom(reg, "public")
 		if err != nil {
@@ -278,12 +235,6 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 	mu.Lock()
 	early, late := fromNew, fromStart
 	mu.Unlock()
-	// Each refusal is read in two parts: the call site and the side of the
-	// gate, then the wording that belongs to this module's gate. That second
-	// part pairs the sentence naming what the surface's open window frames
-	// with the action the registrant is handed; the action phrase reads the
-	// same on both sides, so the window sentence is what ties it to the side
-	// asserted here.
 	if early == "" {
 		t.Error("registering from New, before the gate opened, did not panic: the " +
 			"surface returns nothing, so a registration it drops is a route nobody can reach")
@@ -300,10 +251,8 @@ func TestRegistrationOutsideInitPanicsInAssembly(t *testing.T) {
 	}
 }
 
-// TestBindFailureRollsBackBoundEndpoints pins that a bind failure ends the
-// startup and that the rollback really gives the ports back. All the endpoints
-// share one module lifecycle, so one of them failing has to release the ones
-// already listening, or a restart fails on an address the dead process holds.
+// TestBindFailureRollsBackBoundEndpoints pins that a bind failure ends the startup and that the
+// rollback really gives the ports back.
 func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -330,8 +279,6 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 		},
 	}
 
-	// The listeners are bound in name order, so "a" comes up and "b" is the
-	// one that collides.
 	cfg := moduleConfig{
 		Listeners: map[string]listenerConfig{
 			"a": {Address: "127.0.0.1:0"},
@@ -344,10 +291,6 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 	}
 	a := startAssembly(t, cfg, Module(), watch.module())
 
-	// stop rather than wait: a startup that fails comes back on its own, so
-	// the cancellation changes nothing here, while an implementation that
-	// let this configuration come up reports what it returned instead of
-	// sitting out the deadline with nothing to say.
 	runErr := a.stop(t)
 	if !errors.Is(runErr, ErrListen) {
 		t.Fatalf("a startup whose second endpoint cannot bind came back with %v, which is "+
@@ -376,11 +319,8 @@ func TestBindFailureRollsBackBoundEndpoints(t *testing.T) {
 	reopened.Close()
 }
 
-// TestShutdownAggregatesPerListenerDrainFailures pins that the shutdown waits
-// for every listener and reports all of them, once each. One listener timing
-// out neither shortens another's wait nor hides it: a shutdown report naming
-// one of two stuck listeners sends its reader after the wrong configuration
-// key, and one naming the same listener twice reads like two failures.
+// TestShutdownAggregatesPerListenerDrainFailures pins that the shutdown waits for every listener
+// and reports all of them, once each.
 func TestShutdownAggregatesPerListenerDrainFailures(t *testing.T) {
 	gateA, gateB := newGateHandler(t), newGateHandler(t)
 	serving := make(chan struct{}, 1)
@@ -448,15 +388,8 @@ func TestShutdownAggregatesPerListenerDrainFailures(t *testing.T) {
 	}
 }
 
-// TestMiddlewareCycleFailsARealAssembly pins that a cycle between two layers
-// registered by two modules ends the startup.
-//
-// It is the whole path rather than the solver: each probe really delivers the
-// capability its layer stands for, each registers through the public Use, and
-// each points at the other's capability. With Provides absent from the
-// registration surface, neither constraint reaches a provider, both are
-// dropped, the graph has no edge at all and this assembly starts up clean —
-// which is the state this test exists to keep from coming back.
+// TestMiddlewareCycleFailsARealAssembly pins that a cycle between two layers registered by two
+// modules ends the startup.
 func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 	first := &stageProbe{
 		name:     "probe.delivers-a",
@@ -488,8 +421,6 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 	a := startAssembly(t, oneEndpoint("public"),
 		Module(), first.module(), second.module())
 
-	// stop rather than wait, for the reason given in the bind failure test:
-	// an assembly that wrongly comes up then reports the nil it returned.
 	runErr := a.stop(t)
 	if !errors.Is(runErr, ErrMiddlewareCycle) {
 		t.Fatalf("two layers each declared inside the other started up with %v; the "+
@@ -501,17 +432,8 @@ func TestMiddlewareCycleFailsARealAssembly(t *testing.T) {
 	mustContain(t, runErr.Error(), "\"public\"", "the endpoint the cycle is on")
 }
 
-// TestConstraintLandsOnItsProviderInARealAssembly pins the opposite direction:
-// a constraint that does land decides the order, and a preference does not get
-// to overrule it.
-//
-// The two layers are given Order values pointing the other way — each asks
-// for the edge of its stage the other one wants — so a chain built from the
-// Orders alone comes out reversed. That is what an assembly whose registration
-// surface cannot say what a layer stands for falls back to, and it is the
-// failure this pins against. Which of the two probes registers first does not
-// enter into it: the constraint fixes the order either way, which is why no
-// dependency is declared between them.
+// TestConstraintLandsOnItsProviderInARealAssembly pins the opposite direction: a constraint that
+// does land decides the order, and a preference does not get to overrule it.
 func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 	tr := &trace{}
 	serving := make(chan struct{}, 1)
@@ -531,10 +453,8 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 				Name:     "outer-by-constraint",
 				Stage:    StageAuthorize,
 				Provides: []core.Token{(*capA)(nil)},
-				// A large Order asks for the innermost place, which the
-				// constraint denies it.
-				Order:   100,
-				Handler: noteLayer(tr, "outer-by-constraint"),
+				Order:    100,
+				Handler:  noteLayer(tr, "outer-by-constraint"),
 			}),
 		),
 	}
@@ -548,9 +468,8 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 			Stage:    StageAuthorize,
 			Provides: []core.Token{(*capB)(nil)},
 			After:    []core.Token{(*capA)(nil)},
-			// A small Order asks for the outermost place.
-			Order:   -100,
-			Handler: noteLayer(tr, "inner-by-constraint"),
+			Order:    -100,
+			Handler:  noteLayer(tr, "inner-by-constraint"),
 		}),
 		onServe: func(reg *core.Registry) error {
 			r, err := routerFrom(reg)
@@ -596,16 +515,8 @@ func TestConstraintLandsOnItsProviderInARealAssembly(t *testing.T) {
 	}
 }
 
-// TestAGinHandlerLearnsTheDrainHasBegun pins that the drain signal reaches a
-// handler through the gin context. The handler passes its *gin.Context to
-// Draining as the context it is, and the signal is there because the gin
-// context falls back to the request's context for values; a stream that waits
-// on it ends when the shutdown begins, and the shutdown does not run out its
-// drain-timeout waiting for a stream that never heard.
-//
-// The endpoint's drain-timeout is the wait deadline, so a handler that is never
-// told leaves the run reporting a drain that ran out of time, or not returning
-// before the deadline, and either is what this fails on.
+// TestAGinHandlerLearnsTheDrainHasBegun pins that the drain signal reaches a handler through the
+// gin context.
 func TestAGinHandlerLearnsTheDrainHasBegun(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	told := make(chan bool, 1)
@@ -657,12 +568,8 @@ func TestAGinHandlerLearnsTheDrainHasBegun(t *testing.T) {
 	}
 }
 
-// TestRouteConflictFailsARealAssembly pins that a clash between two routes
-// registered by two modules ends the startup. Each probe registers its own
-// route through the public surface; neither registration fails, since a clash
-// is not knowable from one of them, and the assembly's Serve is where gin
-// refuses the second and the refusal becomes a startup failure that names both
-// routes.
+// TestRouteConflictFailsARealAssembly pins that a clash between two routes registered by two
+// modules ends the startup.
 func TestRouteConflictFailsARealAssembly(t *testing.T) {
 	first := &stageProbe{
 		name:     "probe.registers-by-id",
@@ -677,8 +584,6 @@ func TestRouteConflictFailsARealAssembly(t *testing.T) {
 
 	a := startAssembly(t, oneEndpoint("public"), Module(), first.module(), second.module())
 
-	// stop rather than wait: an assembly that wrongly comes up reports the nil it
-	// returned instead of sitting out the deadline with nothing to say.
 	runErr := a.stop(t)
 	if !errors.Is(runErr, ErrRouteConflict) {
 		t.Fatalf("two routes gin cannot mount together started up with %v; the startup has to end", runErr)

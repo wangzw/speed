@@ -25,14 +25,9 @@ const (
 	requestMediaTypeOctetStream = "application/octet-stream"
 )
 
-// multipartMemory is how much of a multipart body the form parser keeps in
-// memory before spilling parts to temporary files. The endpoint's body limit is
-// what bounds the request; this only decides where the bytes are held.
 const multipartMemory = 32 << 20
 
-// Failure is an error that names the status a handler wants answered. A
-// handler returns one to answer a refusal it can produce; the entry point
-// writes that status as a problem document.
+// Failure is an error that names the status a handler wants answered.
 type Failure interface {
 	error
 	// StatusCode is the response status the failure belongs to.
@@ -102,13 +97,10 @@ func bind[In, Out any](
 	}
 }
 
-// requestBinding is one operation's request declaration, read once when the
-// handler is built: which media type the body carries, whether a body is
-// required, and which fields of the input each source fills.
 type requestBinding struct {
 	input reflect.Type
-	// mediaType is the request body's media type, normalised; empty when the
-	// operation takes no body.
+	// mediaType is the request body's media type, normalised; empty when the operation
+	// takes no body.
 	mediaType string
 	// required is whether a request must carry a body.
 	required bool
@@ -222,14 +214,10 @@ func newRequestBinding(input reflect.Type, request *RequestBody) requestBinding 
 	return binding
 }
 
-// isBytes reports whether t is []byte.
 func isBytes(t reflect.Type) bool {
 	return t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8
 }
 
-// bindInput binds one request into the operation's input type: the parameter-
-// tagged fields first, then the body by its media type, then the input's own
-// Validate.
 func bindInput[In any](c *gin.Context, binding requestBinding) (In, error) {
 	var in In
 	if binding.input != nil {
@@ -262,12 +250,6 @@ func validateInput[In any](in In) error {
 	return nil
 }
 
-// refuseBinding answers a binding refusal. The problem's type is the one the
-// operation declares for that status, so a request refused before the handler
-// runs is answered in the same vocabulary as one the handler refuses. The 422 a
-// failed Validate produces carries the validator's own text as the problem's
-// detail, since it says what value was refused; the other refusals say only
-// what could not be read.
 func refuseBinding(c *gin.Context, responses []Response, err error) {
 	status := statusOf(err)
 	problem := Problem{Status: status}
@@ -280,8 +262,6 @@ func refuseBinding(c *gin.Context, responses []Response, err error) {
 	Fail(c, problem)
 }
 
-// normaliseMediaType lowercases a media type and drops its parameters, so that
-// a declaration and a Content-Type header compare by the type alone.
 func normaliseMediaType(value string) string {
 	mediaType, _, err := mime.ParseMediaType(value)
 	if err != nil {
@@ -290,10 +270,6 @@ func normaliseMediaType(value string) string {
 	return strings.ToLower(mediaType)
 }
 
-// contentTypeMatches reports whether a request's Content-Type header declares
-// the media type the operation binds by. Parameters are ignored, except for
-// JSON: a JSON body is decoded as UTF-8, so a charset naming another encoding
-// is refused rather than read under the wrong assumption.
 func contentTypeMatches(header, declared string) bool {
 	mediaType, params, err := mime.ParseMediaType(header)
 	if err != nil {
@@ -319,7 +295,6 @@ func requiredBodyError() error {
 	return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is required"}
 }
 
-// responseOf returns the declared response with the given status.
 func responseOf(responses []Response, status int) (Response, bool) {
 	for _, response := range responses {
 		if response.Status == status {
@@ -343,13 +318,10 @@ func checkResponseBodies(responses []Response) {
 	}
 }
 
-// noBodyStatus reports whether a status's answer carries no message body.
 func noBodyStatus(status int) bool {
 	return status == http.StatusNoContent || status == http.StatusNotModified
 }
 
-// statusOf is the status a binding failure is answered with; a binding failure
-// carries its status through bindingError, and anything else is a bad request.
 func statusOf(err error) int {
 	var failure Failure
 	if errors.As(err, &failure) {
@@ -358,8 +330,6 @@ func statusOf(err error) int {
 	return http.StatusBadRequest
 }
 
-// bindingError is one input-binding refusal: the status it is answered with and
-// what the caller should fix.
 type bindingError struct {
 	status int
 	reason string
@@ -368,9 +338,6 @@ type bindingError struct {
 func (e *bindingError) Error() string   { return e.reason }
 func (e *bindingError) StatusCode() int { return e.status }
 
-// bindParameters fills the parameter-tagged fields of the input from the
-// request. A field without one of the parameter tags is not read here: it is
-// either part of the body or not request input at all.
 func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) error {
 	for i := 0; i < input.NumField(); i++ {
 		field := input.Field(i)
@@ -411,9 +378,9 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 		if !present {
 			continue
 		}
-		// An empty query value means the parameter is absent unless the field
-		// holds text: "?limit=" is how a client leaves an integer or a boolean
-		// unset, while "?q=" is a real empty string.
+		// An empty query value means the parameter is absent unless the field holds text:
+		// "?limit=" is how a client leaves an integer or a boolean unset, while "?q=" is a
+		// real empty string.
 		if source == "query" && raw == "" && !textual(target.Type()) {
 			continue
 		}
@@ -426,8 +393,8 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 			}
 			continue
 		}
-		// A scalar field holds one value, so a repeated parameter fills it from
-		// the first one; a slice field above reads every value.
+		// A scalar field holds one value, so a repeated parameter fills it from the first
+		// one; a slice field above reads every value.
 		if err := setScalar(target, raw); err != nil {
 			return &bindingError{
 				status: http.StatusBadRequest,
@@ -438,7 +405,6 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 	return nil
 }
 
-// parameterOf returns the parameter name and source a field declares, or "".
 func parameterOf(field reflect.StructField) (string, string) {
 	for _, source := range []string{"path", "query", "header", "cookie"} {
 		if name := field.Tag.Get(source); name != "" {
@@ -448,8 +414,6 @@ func parameterOf(field reflect.StructField) (string, string) {
 	return "", ""
 }
 
-// textual reports whether a parameter field holds text: a string, or a slice of
-// strings, keeps an empty request value; every other kind reads it as absent.
 func textual(t reflect.Type) bool {
 	if t.Kind() == reflect.Slice {
 		return t.Elem().Kind() == reflect.String
@@ -457,7 +421,6 @@ func textual(t reflect.Type) bool {
 	return t.Kind() == reflect.String
 }
 
-// setScalar stores one request value in a field of a supported kind.
 func setScalar(target reflect.Value, raw string) error {
 	switch target.Kind() {
 	case reflect.String:
@@ -480,8 +443,6 @@ func setScalar(target reflect.Value, raw string) error {
 	return nil
 }
 
-// setValues stores every value of one name in a field: a string slice takes
-// them as they are, and a slice of another scalar parses each one.
 func setValues(target reflect.Value, values []string) error {
 	if target.Kind() != reflect.Slice {
 		if len(values) == 0 {
@@ -509,7 +470,6 @@ func setValues(target reflect.Value, values []string) error {
 	return nil
 }
 
-// taggedFields maps each field name a tag declares to its field index.
 func taggedFields(input reflect.Type, tag string) map[string]int {
 	fields := map[string]int{}
 	if input == nil {
@@ -529,7 +489,6 @@ func taggedFields(input reflect.Type, tag string) map[string]int {
 	return fields
 }
 
-// jsonFields maps each json-tagged field name to its field index.
 func jsonFields(input reflect.Type) map[string]int {
 	return taggedFields(input, "json")
 }
@@ -577,8 +536,8 @@ func (b requestBinding) bindJSON(c *gin.Context, value reflect.Value) error {
 	if err := json.Unmarshal(raw, &members); err != nil {
 		return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is not a JSON object"}
 	}
-	// A literal null decodes into a nil map without an error and binds as the
-	// empty object, which is how the declaration reads an absent body.
+	// A literal null decodes into a nil map without an error and binds as the empty
+	// object, which is how the declaration reads an absent body.
 	for name, member := range members {
 		index, ok := b.jsonField(name)
 		if !ok {
@@ -597,10 +556,6 @@ func (b requestBinding) bindJSON(c *gin.Context, value reflect.Value) error {
 	return nil
 }
 
-// jsonField returns the field a JSON member names. An exact name wins; a
-// member whose name differs only in case still binds, which is how
-// encoding/json reads a struct and how the pre-declaration handlers read a
-// request body.
 func (b requestBinding) jsonField(name string) (int, bool) {
 	if index, ok := b.json[name]; ok {
 		return index, true
@@ -614,7 +569,6 @@ func (b requestBinding) jsonField(name string) (int, bool) {
 	return 0, false
 }
 
-// bindForm reads a urlencoded body into the input's form-tagged fields.
 func (b requestBinding) bindForm(c *gin.Context, value reflect.Value) error {
 	raw, err := readRequestBody(c)
 	if err != nil {
@@ -659,8 +613,7 @@ func (b requestBinding) bindMultipart(c *gin.Context, value reflect.Value) error
 				reason: fmt.Sprintf("http: the request body carries the unknown part %q", name),
 			}
 		}
-		// A file-tagged field holds one file. Reading only the first part of a
-		// repeated name would silently drop the rest of the upload.
+		// A file-tagged field holds one file.
 		if len(headers) > 1 {
 			return &bindingError{
 				status: http.StatusBadRequest,
@@ -689,8 +642,7 @@ func setFormValues(values url.Values, value reflect.Value, fields map[string]int
 			}
 		}
 		field := value.Field(index)
-		// A scalar field holds one value. Storing the first of a repeated key
-		// would silently drop the rest of what the caller sent.
+		// A scalar field holds one value.
 		if field.Kind() != reflect.Slice && len(items) > 1 {
 			return &bindingError{
 				status: http.StatusBadRequest,
@@ -707,7 +659,6 @@ func setFormValues(values url.Values, value reflect.Value, fields map[string]int
 	return nil
 }
 
-// readFilePart reads the first file of one multipart part.
 func readFilePart(headers []*multipart.FileHeader) ([]byte, error) {
 	if len(headers) == 0 {
 		return nil, nil
@@ -728,8 +679,6 @@ func readFilePart(headers []*multipart.FileHeader) ([]byte, error) {
 	return content, nil
 }
 
-// multipartError classifies the form parser's failure: a bounded read that hit
-// the endpoint's limit is a 413, and anything else is a malformed body.
 func multipartError(err error) error {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
@@ -738,7 +687,6 @@ func multipartError(err error) error {
 	return &bindingError{status: http.StatusBadRequest, reason: "http: the request body is not valid multipart data"}
 }
 
-// bindRaw reads the whole body into the input's raw-tagged field.
 func (b requestBinding) bindRaw(c *gin.Context, value reflect.Value) error {
 	raw, err := readRequestBody(c)
 	if err != nil {
@@ -751,7 +699,6 @@ func (b requestBinding) bindRaw(c *gin.Context, value reflect.Value) error {
 	return nil
 }
 
-// readRequestBody reads the bounded request body.
 func readRequestBody(c *gin.Context) ([]byte, error) {
 	if c.Request.Body == nil {
 		return nil, nil
@@ -767,13 +714,6 @@ func readRequestBody(c *gin.Context) ([]byte, error) {
 	return raw, nil
 }
 
-// writeFailure answers a handler's error: the problem the failure names, or a
-// bare 500, and never a status the operation did not declare.
-//
-// A fault's declared headers are written on the answer when the matched
-// declared response declares each of them. A header the declaration does not
-// carry is a handler defect: the answer is a 500 rather than one written with
-// a header the contract does not describe.
 func writeFailure(c *gin.Context, operationID string, responses []Response, err error) {
 	status := http.StatusInternalServerError
 	problem := Problem{Status: status}
@@ -805,14 +745,8 @@ func writeFailure(c *gin.Context, operationID string, responses []Response, err 
 	Fail(c, problem)
 }
 
-// declaredFailuresContextKey is where the entry point leaves the answers an
-// operation declared, so the recovery layer can tell a refusal a handler meant
-// from a defect and can write the fault's headers against the declared response.
 const declaredFailuresContextKey = "speed.http.declared-failures"
 
-// declaredResponses is the set of answers an operation declares, by status. A
-// status declared more than once keeps the first, which is the one responseOf
-// resolves a handler's answer to.
 func declaredResponses(responses []Response) map[int]Response {
 	declared := make(map[int]Response, len(responses))
 	for _, response := range responses {

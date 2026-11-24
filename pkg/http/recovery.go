@@ -16,30 +16,6 @@ import (
 // chain's description.
 const recoveryName = "http:recovery"
 
-// recovery is the built-in layer that catches what no other layer caught: a
-// panic raised anywhere further in the chain, in a registered middleware or in a
-// handler.
-//
-// It is a gin handler on the engine, not a net/http layer around it, and its
-// place is inside the observe stage and outside every layer that can refuse a
-// request. Inside the observe stage, so an observer — the tracing layer among
-// them — sees a recovered request as a normal return whose response is a 500,
-// with the status and the error list the metrics and the span are built from. A
-// recovery outside the observers would let the panic pass through them first,
-// and a tracing layer whose c.Next never returns ends its span with no status
-// and skips everything it measures after the call.
-//
-// It lets http.ErrAbortHandler past instead of answering it. That sentinel is a
-// handler asking for its connection to be abandoned, which net/http matches by
-// identity and answers by closing the connection; answered here it would become
-// a 500 written to a socket the handler gave up on, and a record for a client
-// that simply went away. gin's own recovery middleware is not used for the same
-// reason: it turns the sentinel into an empty 200. A wrapped sentinel reaches
-// net/http as an ordinary panic, so a wrapper is let past as well and the
-// connection is still closed, by the other path.
-//
-// One goroutine's panic is all it covers. A module that panics in a goroutine of
-// its own takes that process down whatever is wrapped around the request path.
 func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		returned := false
@@ -49,16 +25,7 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 				if returned {
 					return
 				}
-				// Nothing was recovered and the handler never returned. It
-				// called runtime.Goexit, which unwinds the stack with no value,
-				// or it panicked with nil under GODEBUG=panicnil=1, which the
-				// runtime otherwise rewrites to a *runtime.PanicNilError. The
-				// two cannot be told apart here. Either is a defect that gets
-				// its record, and neither is a request that finished; the record
-				// says which kind of defect it is rather than calling it a
-				// panic. The response is written as for a panic: after a Goexit
-				// it never reaches the connection, and after a nil panic it is
-				// the answer.
+				// Nothing was recovered and the handler never returned.
 				log.FromContext(c.Request.Context()).Error("a request's handler stopped without returning "+
 					"and without a panic value, by runtime.Goexit or by panic(nil) under "+
 					"GODEBUG=panicnil=1, and the endpoint's recovery layer answered it",
@@ -68,10 +35,8 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 				answerDefect(c, errUnwound, localizer)
 				return
 			}
-			// ErrAbortHandler is let past untouched, so the connection is closed
-			// the way the handler asked and the stack is not written for a
-			// client that went away. A wrapped one is let past too; see the
-			// layer's own comment.
+			// ErrAbortHandler is let past untouched, so the connection is closed the way the
+			// handler asked and the stack is not written for a client that went away.
 			if err, isErr := thrown.(error); isErr && errors.Is(err, nethttp.ErrAbortHandler) {
 				panic(thrown)
 			}
@@ -101,8 +66,8 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 					}
 				}
 			}
-			// The stack is taken here, at the recover point, so it is the stack
-			// of this request rather than of a rethrow further out.
+			// The stack is taken here, at the recover point, so it is the stack of this request
+			// rather than of a rethrow further out.
 			log.FromContext(c.Request.Context()).Error("a request panicked and the endpoint's recovery layer caught it",
 				"endpoint", endpoint,
 				"panic", thrown,
@@ -115,8 +80,6 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 	}
 }
 
-// faultHeadersOf returns the headers a panicked fault declares, or nil when the
-// recovered value is not a fault.
 func faultHeadersOf(thrown any) []HeaderValue {
 	switch fault := thrown.(type) {
 	case Fault:
@@ -146,39 +109,12 @@ func (p panicError) Unwrap() error {
 	return err
 }
 
-// handlerDefect is the error the recovery layer records in the gin context's
-// error list for a request it answered.
-//
-// Its type is what otelgin reads as the span's error.type, so it is a closed
-// type that carries no panic value. otelgin copies the error list's text into
-// the span's status description, and a panic value is whatever the failing code
-// had to hand — an error from a driver with a connection string in it, a string
-// with a token — so putting it there would spread it across the traces. It
-// carries more of the cause than the type name alone for the same reason the
-// Cause of the problem does, and that is where the panic value is kept.
 type handlerDefect struct{}
 
 func (handlerDefect) Error() string { return "the request handler did not return normally" }
 
-// answerDefect ends the chain and writes the one error response the recovery
-// layer writes on its own: a 500 whose Cause is what went wrong, in the shape
-// the delivered ErrorResponder decides, or in the default shape when none is
-// delivered. The default does not write the Cause into the body, so a panic
-// value never reaches a client.
-//
-// The answer is written only when the response has not started to go out, which
-// gin's writer reports through Context.Writer.Written: a status written with
-// c.Status alone does not count, so a handler that set a status and then
-// panicked is still answered, while a response whose header has been forced out
-// or whose body has begun is left as it is — its status cannot change, and a
-// body written now would follow the one already on the wire. The record is
-// written either way, since with the response unchangeable it is the only signal
-// that the request did not finish.
 func answerDefect(c *gin.Context, cause error, localizer i18n.Localizer) {
 	c.Abort()
-	// A fixed-type error goes into the error list so that the observability
-	// layer marks the span failed and names an error.type; see handlerDefect.
-	// Its return is the entry gin appended and nothing here reads it back.
 	_ = c.Error(handlerDefect{})
 	if c.Writer.Written() {
 		return
@@ -207,8 +143,6 @@ var representationHeaders = []string{
 	"Cache-Control", "Expires",
 }
 
-// discardRepresentationHeaders removes the headers describing a response that
-// is not going to be sent. Every other header the handler set stays.
 func discardRepresentationHeaders(h nethttp.Header) {
 	for _, name := range representationHeaders {
 		h.Del(name)

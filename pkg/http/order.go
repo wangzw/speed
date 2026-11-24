@@ -10,24 +10,11 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// layer is one middleware as an endpoint recorded it: the registration itself,
-// and the capabilities it stands for on the chain.
-//
-// provides is what an After or a Before constraint resolves against. A
-// constraint names a capability, and the layers standing for that capability
-// are the ones this layer is placed against; a layer that stands for nothing
-// is still ordered, it is just never the target of anyone's constraint. The
-// ordering reads the field and nothing about where it came from.
 type layer struct {
 	mw       Middleware
 	provides []core.Token
 }
 
-// declaredStages lists the stages in the order the chain runs them, outermost
-// first — the order they are declared in on Stage, written out so the ordering
-// walks them by name rather than by their numeric values. Registration refuses
-// a layer whose stage is not one of these, so they are the only buckets the
-// ordering can meet.
 var declaredStages = [...]Stage{
 	StageObserve,
 	StageGuard,
@@ -37,30 +24,18 @@ var declaredStages = [...]Stage{
 	StageAuthorize,
 }
 
-// orderingRemark is one thing the ordering noticed about an endpoint's
-// declarations that it reports rather than acts on: a constraint that drew no
-// edge, or a constraint the stage order already satisfies. Neither is a failure
-// — the assembly carries on — but neither is observable anywhere else either,
-// so they come back for the caller to write out.
-//
-// The ways of arriving here share one shape in the graph — nothing moved, and
-// without the report nothing is written at all — which is why one type carries
-// them. The cause tells them apart, because the fixing actions differ; see
-// remarkCause, and remarkCause.level and remarkCause.message for how each is
-// written.
 type orderingRemark struct {
-	// endpoint says which endpoint the declaration was made on; with layer it
-	// locates the declaration.
+	// endpoint says which endpoint the declaration was made on; with layer it locates the
+	// declaration.
 	endpoint string
 	// layer is what the line is about: the layer that declared the constraint.
 	layer string
-	// field is "After" or "Before" and at is the position in it, which is
-	// what locates the one declaration among several on the same layer.
+	// field is "After" or "Before" and at is the position in it, which is what locates the
+	// one declaration among several on the same layer.
 	field string
 	at    int
-	// capability is the type the token designates, rendered with its
-	// package path, so the reader can go and look at who was meant to
-	// stand for it.
+	// capability is the type the token designates, rendered with its package path, so the
+	// reader can go and look at who was meant to stand for it.
 	capability string
 	// cause is why the line is there.
 	cause remarkCause
@@ -86,48 +61,11 @@ const (
 	// A capability another layer stands for as well is not this case: that
 	// part of the claim holds, so the constraint did what it said.
 	causeSelfOnly remarkCause = "the declaring layer is the only layer standing for the capability"
-	// causeStageSatisfied is a constraint whose provider is in another stage,
-	// in the direction the stage order already gives. It drew no edge: a
-	// position across stages is the framework's to decide, and an edge cannot
-	// move a layer past a stage boundary. The declaration repeats what the
-	// boundary already says, so it is redundant rather than wrong, and it is
-	// reported at Debug — it is not a position the layer failed to get, and
-	// nothing about the assembly needs changing.
+	// causeStageSatisfied is a constraint whose provider is in another stage, in the
+	// direction the stage order already gives.
 	causeStageSatisfied remarkCause = "the constraint is already given by the stage order"
 )
 
-// orderLayers returns an endpoint's middleware from outermost to innermost,
-// together with the things it noticed and did not act on. The layers arrive in
-// registration order.
-//
-// Stage decides the order between categories and nothing else does: the
-// layers are bucketed by stage, each bucket is solved on its own, and the
-// buckets are concatenated in declared-stage order, so every layer of an outer
-// stage comes out before any layer of an inner one. That is what makes a
-// category constraint hold for layers this module has never heard of, and what
-// makes a cross-stage After or Before redundant — the boundary, not the edge,
-// places the layer. A cross-stage constraint that agrees with the boundary is
-// recorded for Debug; one that points against it is refused with
-// ErrStageConflict, because it asks for the opposite of where the stages put
-// the two layers.
-//
-// Within a bucket, After and Before give the graph its edges: After C places
-// this layer inside the middleware standing for C, so an edge runs from each
-// provider of C to this layer, the provider coming out first and landing
-// further out. Before C is the same edge reversed. A constraint a provider
-// stands beside places the layer; one that does not places nothing, and comes
-// back in the report for the caller to write out with the reason.
-//
-// Order decides only within the ready set — among the layers whose constraints
-// are already satisfied at that point — so it can never select a place a
-// constraint forbids, and a setting and a constraint cannot contradict each
-// other. A smaller Order comes out before a larger one, and equal Order falls
-// back to registration order, which makes (Order, registration) a total order
-// within a stage and the result unique.
-//
-// The graph is built per endpoint, per assembly, and thrown away with the
-// call. It costs O(V+E) in the number of layers and the constraints that hold
-// between them, once per endpoint at startup.
 func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, error) {
 	providers := providersByCapability(endpoint, layers)
 
@@ -157,14 +95,8 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 	for i := range layers {
 		edges[i] = make(map[int]bool)
 	}
-	// A layer that declares a constraint on a capability it delivers itself
-	// names itself among the providers. Drawing that edge would be a self
-	// loop, which no order can satisfy, and the cycle it forms is an
-	// artefact of the edge rather than a contradiction between two
-	// declarations; the same edge can also be drawn twice, by one layer's
-	// After and the other's Before, and counting it twice in the indegree
-	// leaves a layer that never becomes ready and reports a cycle that is
-	// not there.
+	// A layer that declares a constraint on a capability it delivers itself names itself
+	// among the providers.
 	addEdge := func(from, to int) {
 		if from == to || edges[from][to] {
 			return
@@ -231,13 +163,7 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 		}
 	}
 
-	// Bucket by stage, solve each bucket, then concatenate. Every edge the
-	// constraints drew is within one stage — a cross-stage constraint drew
-	// none — so a bucket's indegree counts only its own members, and the loop
-	// below is the same Kahn run the ordering has always done, over one stage
-	// at a time. The ready set is re-sorted each round rather than kept as a
-	// heap: it is sorted by (Order, registration) on every round anyway, and
-	// the round count is the number of layers in one stage.
+	// Bucket by stage, solve each bucket, then concatenate.
 	buckets := make(map[Stage][]int, len(declaredStages))
 	for i := range layers {
 		buckets[layers[i].mw.Stage] = append(buckets[layers[i].mw.Stage], i)
@@ -274,9 +200,8 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 		}
 	}
 	if len(order) != len(layers) {
-		// No chain comes out of a cyclic graph, and the report describes an
-		// assembly that is about to be abandoned; the failure is the only
-		// thing worth reading here.
+		// No chain comes out of a cyclic graph, and the report describes an assembly that is
+		// about to be abandoned; the failure is the only thing worth reading here.
 		return nil, nil, cycleError(endpoint, layers, order, edges)
 	}
 
@@ -287,13 +212,6 @@ func orderLayers(endpoint string, layers []layer) ([]layer, []orderingRemark, er
 	return out, reported, nil
 }
 
-// stageConflict builds the failure for a constraint whose provider is in
-// another stage, pointing against the stage order. It is not a position the
-// caller can be given quietly: the constraint asks for the opposite of where
-// the stages put the two layers, and the fix is an edit to one of them. The
-// text names both layers, both stages and the declaration, which is everything
-// the reader needs to choose between moving a layer and dropping the
-// constraint.
 func stageConflict(endpoint string, declarer layer, field string, at int, provider layer, key reflect.Type) error {
 	// After asks to sit inside the named layer, Before outside it. The
 	// contradiction is that the stage order puts the declarer on the other
@@ -315,13 +233,6 @@ func stageConflict(endpoint string, declarer layer, field string, at int, provid
 		declarer.mw.Name, placed, provider.mw.Name)
 }
 
-// unplacedCause reports whether a constraint placed nothing, and why. The
-// declaring layer is skipped when its own edge is dropped, so what decides it
-// is whether any other layer stands for the capability: if one does, the
-// constraint binds to that one and placed the layer; if none does, the
-// constraint placed nothing, and the capability having no representative at
-// all is a different fixing action from the declaring layer being its only
-// representative.
 func unplacedCause(providers []int, self int) (remarkCause, bool) {
 	selfOnly := false
 	for _, p := range providers {
@@ -351,13 +262,6 @@ func providersByCapability(endpoint string, layers []layer) map[reflect.Type][]i
 	return providers
 }
 
-// cycleError names the layers on a cycle along with their own declarations.
-// Naming the members alone would leave the reader to hunt for the constraints
-// that tied them together, and dropping one of those constraints is the whole
-// of the fixing action.
-//
-// The walk starts from the lowest registration index still unresolved and
-// follows successors in the same order, so one graph yields one text.
 func cycleError(endpoint string, layers []layer, ordered []int, edges []map[int]bool) error {
 	left := make(map[int]bool, len(layers))
 	for i := range layers {
@@ -403,10 +307,8 @@ func cycleError(endpoint string, layers []layer, ordered []int, edges []map[int]
 		}
 	}
 	if len(cycle) == 0 {
-		// Unreachable through the walk above: a Kahn run that stalls
-		// leaves at least one cycle in what it did not resolve. Reporting
-		// the whole remainder keeps the message from going empty if that
-		// ever stops holding.
+		// Unreachable through the walk above: a Kahn run that stalls leaves at least one
+		// cycle in what it did not resolve.
 		cycle = sortedTargets(left)
 	}
 
@@ -422,8 +324,6 @@ func cycleError(endpoint string, layers []layer, ordered []int, edges []map[int]
 		ErrMiddlewareCycle, endpoint, strings.Join(described, " -> "))
 }
 
-// describeLayer renders one layer of a cycle: its name, and the constraints it
-// declared for itself.
 func describeLayer(endpoint string, l layer) string {
 	var parts []string
 	if names := capabilityNames(endpoint, l, "After", l.mw.After); len(names) > 0 {
@@ -438,9 +338,6 @@ func describeLayer(endpoint string, l layer) string {
 	return fmt.Sprintf("%q (%s)", l.mw.Name, strings.Join(parts, "; "))
 }
 
-// capabilityNames renders the capabilities a field designates, keeping the
-// package path, so the reader can find the declaration the text asks them to
-// drop.
 func capabilityNames(endpoint string, l layer, field string, tokens []core.Token) []string {
 	names := make([]string, 0, len(tokens))
 	for j, token := range tokens {
@@ -455,8 +352,6 @@ func declarationSite(endpoint, name, field string, at int) string {
 	return fmt.Sprintf("endpoint %q middleware %q %s[%d]", endpoint, name, field, at)
 }
 
-// sortedTargets renders the keys of an edge set in ascending order, which is
-// what keeps a walk over the graph independent of Go's map iteration order.
 func sortedTargets[V any](m map[int]V) []int {
 	out := make([]int, 0, len(m))
 	for k := range m {

@@ -24,13 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The cases that drive the layer through a request stand on a real assembly: the
-// entry point module itself, listening on a port the operating system picks, with
-// this module registered into it. What the layer answers is read off a socket, so
-// the routing, the shape of an error response and the headers that survive it are
-// the entry point's and not a stand-in's, and the position the layer claims is
-// exercised through the entry point's own ordering.
-
 // waitLimit bounds every wait in these cases, so that a startup which never
 // reaches Serve fails the case with a message instead of the whole binary at the
 // global timeout.
@@ -38,15 +31,10 @@ func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// guardedEndpoint is the one endpoint every assembly declares and the layer
-// guards.
 const guardedEndpoint = "public"
 
-// host is one assembly that is serving.
 type host struct {
-	addr string
-	// chain is the entry point's listing of the layers on the guarded endpoint,
-	// in the order they are assembled.
+	addr  string
 	chain string
 }
 
@@ -65,10 +53,6 @@ func refusingGuardLayer() speedhttp.Middleware {
 	}
 }
 
-// startHost builds an assembly on the given endpoint policy and runs it until the
-// entry point is serving. register, when set, runs in the registrant's Init with
-// the guarded endpoint, for the layers a case puts beside this module's. The run
-// is ended when the case is, and a run that ends with an error fails the case.
 func startHost(t *testing.T, corsPolicy string, register func(speedhttp.Endpoint)) *host {
 	t.Helper()
 	h := &host{}
@@ -146,10 +130,6 @@ func startHost(t *testing.T, corsPolicy string, register func(speedhttp.Endpoint
 	return h
 }
 
-// loadReader loads the configuration this assembly runs on through the real
-// loader: the entry point declares one endpoint on a listener on a port of the
-// system's choosing, and the CORS module carries the given policy for that
-// endpoint.
 func loadReader(t *testing.T, corsPolicy string) config.Reader {
 	t.Helper()
 	document := fmt.Sprintf(
@@ -168,8 +148,6 @@ func loadReader(t *testing.T, corsPolicy string) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "CORSTEST", DefaultLocator: "file:" + path}},
 	})
-	// The declarations reach the load as the resources of registered modules,
-	// which is the only way one ever reaches it.
 	reg.Register(core.Module{Name: speedhttp.ModuleName, Resources: speedhttp.Module().Resources})
 	reg.Register(core.Module{Name: ModuleName, Resources: Module().Resources})
 
@@ -180,15 +158,12 @@ func loadReader(t *testing.T, corsPolicy string) config.Reader {
 	return reader
 }
 
-// response is what a client got back.
 type response struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// send issues one request over a connection of its own and reads the response to
-// its end.
 func (h *host) send(t *testing.T, method, path string, header map[string]string) response {
 	t.Helper()
 	req, err := nethttp.NewRequestWithContext(t.Context(), method, "http://"+h.addr+path, nil)
@@ -214,17 +189,13 @@ func (h *host) send(t *testing.T, method, path string, header map[string]string)
 	return response{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// get is send for a GET without extra headers.
 func (h *host) get(t *testing.T, path string) response {
 	t.Helper()
 	return h.send(t, nethttp.MethodGet, path, nil)
 }
 
-// TestAPreflightIsAnsweredBeforeARefusingLayer drives the property the layer's
-// stage and position exist for: a preflight is answered by this layer before it
-// reaches a layer that would refuse it. The path carries a GET route only, so the
-// OPTIONS request is one the entry point would answer 405 — the preflight the
-// entry point never routed is exactly the one a browser sends.
+// TestAPreflightIsAnsweredBeforeARefusingLayer drives the property the layer's stage and position
+// exist for: a preflight is answered by this layer before it reaches a layer that would refuse it.
 func TestAPreflightIsAnsweredBeforeARefusingLayer(t *testing.T) {
 	h := startHost(t, `{"allow-origins": ["https://app.example"]}`, func(ep speedhttp.Endpoint) {
 		ep.Use(refusingGuardLayer())
@@ -246,9 +217,8 @@ func TestAPreflightIsAnsweredBeforeARefusingLayer(t *testing.T) {
 	}
 }
 
-// TestARefusalCarriesTheCORSHeaders drives the other half of the same property: a
-// refusal from a layer inside CORS reaches the browser with the CORS headers, so
-// the browser reports the status rather than a network error.
+// TestARefusalCarriesTheCORSHeaders drives the other half of the same property: a refusal from a
+// layer inside CORS reaches the browser with the CORS headers.
 func TestARefusalCarriesTheCORSHeaders(t *testing.T) {
 	h := startHost(t, `{"allow-origins": ["https://app.example"]}`, func(ep speedhttp.Endpoint) {
 		ep.Use(refusingGuardLayer())
@@ -264,6 +234,8 @@ func TestARefusalCarriesTheCORSHeaders(t *testing.T) {
 	}
 }
 
+// TestAnOriginOutsideThePolicyIsRefused checks that a request from an origin outside the policy is
+// refused.
 func TestAnOriginOutsideThePolicyIsRefused(t *testing.T) {
 	h := startHost(t, `{"allow-origins": ["https://app.example"]}`, nil)
 	got := h.send(t, nethttp.MethodGet, "/things", map[string]string{"Origin": "https://evil.example"})
@@ -277,6 +249,8 @@ func TestAnOriginOutsideThePolicyIsRefused(t *testing.T) {
 	}
 }
 
+// TestAnOrdinaryRequestReachesTheRoute checks that a request without an Origin header reaches the
+// route.
 func TestAnOrdinaryRequestReachesTheRoute(t *testing.T) {
 	h := startHost(t, `{"allow-origins": ["https://app.example"]}`, nil)
 	got := h.get(t, "/things")
@@ -289,6 +263,8 @@ func TestAnOrdinaryRequestReachesTheRoute(t *testing.T) {
 	}
 }
 
+// TestAnAllowedOriginReachesTheRoute checks that a request from an allowed origin reaches the
+// route.
 func TestAnAllowedOriginReachesTheRoute(t *testing.T) {
 	h := startHost(t, `{"allow-origins": ["https://app.example"]}`, nil)
 	got := h.send(t, nethttp.MethodGet, "/things", map[string]string{"Origin": "https://app.example"})
@@ -301,6 +277,7 @@ func TestAnAllowedOriginReachesTheRoute(t *testing.T) {
 	}
 }
 
+// TestTheStarOriginAllowsEveryOrigin checks that a "*" policy admits every origin.
 func TestTheStarOriginAllowsEveryOrigin(t *testing.T) {
 	h := startHost(t, `{"allow-origins": ["*"]}`, nil)
 	got := h.send(t, nethttp.MethodGet, "/things", map[string]string{"Origin": "https://anywhere.example"})
@@ -313,6 +290,8 @@ func TestTheStarOriginAllowsEveryOrigin(t *testing.T) {
 	}
 }
 
+// TestTheLayerIsListedInTheGuardStageOutsideAnotherGuardLayer checks that the CORS layer registers
+// in the guard stage outside another guard layer.
 func TestTheLayerIsListedInTheGuardStageOutsideAnotherGuardLayer(t *testing.T) {
 	h := startHost(t, `{"allow-origins": ["https://app.example"]}`, func(ep speedhttp.Endpoint) {
 		ep.Use(refusingGuardLayer())
@@ -330,10 +309,6 @@ func TestTheLayerIsListedInTheGuardStageOutsideAnotherGuardLayer(t *testing.T) {
 	}
 }
 
-// entryRecorder is a slog handler that keeps two things of what the entry point
-// writes: the address of its bound socket, which is the only way a client outside
-// the process learns the port the system picked, and the listing of the layers on
-// its chain.
 type entryRecorder struct {
 	mu    sync.Mutex
 	addr  string
@@ -377,7 +352,6 @@ func (r *entryRecorder) listed() (addr, chain string) {
 	return r.addr, r.chain
 }
 
-// standInLogger delivers the Logger capability over an entryRecorder.
 type standInLogger struct{ logs *entryRecorder }
 
 func (l standInLogger) Named(string) *slog.Logger { return slog.New(l.logs) }

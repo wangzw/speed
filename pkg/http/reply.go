@@ -15,28 +15,24 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// Meta is what an operation's handler knows about the request it is answering,
-// apart from its typed input: the caller's address, the route template the
-// request matched and the request body's declared length. It is a snapshot
-// taken when the handler is called.
+// Meta is what an operation's handler knows about the request it is answering, apart
+// from its typed input: the caller's address, the route template the request matched
+// and the request body's declared length.
 type Meta struct {
 	// ClientIP is the client's address as the endpoint resolved it.
 	ClientIP string
 	// Route is the route template the request matched, in gin's form.
 	Route string
-	// ContentLength is the request's Content-Length, or -1 when the length is
-	// unknown, which is the value net/http records for a chunked request.
+	// ContentLength is the request's Content-Length, or -1 when the length is unknown,
+	// which is the value net/http records for a chunked request.
 	ContentLength int64
 }
 
-// Reply is one answer a handler builds instead of returning a typed body. Its
-// set of implementations is closed: only the constructors in this package
-// return one, because the marker method is unexported.
+// Reply is one answer a handler builds instead of returning a typed body.
 type Reply interface {
 	isReply()
 }
 
-// replyKind is which answer a Reply builds.
 type replyKind int
 
 const (
@@ -80,9 +76,7 @@ func BytesReply(status int, mediaType string, body []byte) Reply {
 	return &replyValue{kind: replyKindBytes, status: status, mediaType: mediaType, data: body}
 }
 
-// StreamReply answers status by calling write with the response writer. The
-// status and headers are committed before write runs, so an error from write
-// cannot be turned into a different answer.
+// StreamReply answers status by calling write with the response writer.
 func StreamReply(status int, mediaType string, write func(context.Context, io.Writer) error) Reply {
 	return &replyValue{kind: replyKindStream, status: status, mediaType: mediaType, stream: write}
 }
@@ -92,8 +86,7 @@ func SSEReply(status int, events func(*SSEWriter) error) Reply {
 	return &replyValue{kind: replyKindSSE, status: status, mediaType: "text/event-stream", events: events}
 }
 
-// RedirectReply answers status with the Location header set to location and no
-// body.
+// RedirectReply answers status with the Location header set to location and no body.
 func RedirectReply(status int, location string) Reply {
 	return &replyValue{kind: replyKindRedirect, status: status, location: location}
 }
@@ -106,8 +99,8 @@ type HeaderValue struct {
 	Value string
 }
 
-// WithHeaders adds dynamic headers to a reply. Every name must be declared on
-// the response the reply's status selects; an undeclared one is a 500.
+// WithHeaders adds dynamic headers to a reply. Every name must be declared on the
+// response the reply's status selects; an undeclared one is a 500.
 func WithHeaders(reply Reply, headers ...HeaderValue) Reply {
 	value := replyValueOf(reply)
 	if value == nil {
@@ -118,8 +111,8 @@ func WithHeaders(reply Reply, headers ...HeaderValue) Reply {
 	return &copied
 }
 
-// WithCookies adds Set-Cookie headers to a reply. Cookies are not part of the
-// declared header set and are always written.
+// WithCookies adds Set-Cookie headers to a reply. Cookies are not part of the declared
+// header set and are always written.
 func WithCookies(reply Reply, cookies ...*nethttp.Cookie) Reply {
 	value := replyValueOf(reply)
 	if value == nil {
@@ -130,27 +123,21 @@ func WithCookies(reply Reply, cookies ...*nethttp.Cookie) Reply {
 	return &copied
 }
 
-// replyValueOf reads the concrete reply behind the interface, or nil when the
-// value is not one this package built.
 func replyValueOf(reply Reply) *replyValue {
 	value, _ := reply.(*replyValue)
 	return value
 }
 
-// mediaTypeAny in a declared response body means the handler chooses the media
-// type at run time within that status. Only bytes and stream replies can carry
-// a dynamic media type, and the contract describes the body as binary.
 const mediaTypeAny = "*/*"
 
-// SSEWriter writes one server-sent event at a time and flushes it, so each
-// event reaches the client before the next one is built.
+// SSEWriter writes one server-sent event at a time and flushes it, so each event
+// reaches the client before the next one is built.
 type SSEWriter struct {
 	writer io.Writer
 	flush  func()
 }
 
-// NewSSEWriter returns a writer that sends events to w and flushes each one to
-// flusher. A nil flusher writes the events without flushing.
+// NewSSEWriter returns a writer that sends events to w and flushes each one to flusher.
 func NewSSEWriter(writer io.Writer, flusher nethttp.Flusher) *SSEWriter {
 	writerOfEvents := &SSEWriter{writer: writer}
 	if flusher != nil {
@@ -159,8 +146,8 @@ func NewSSEWriter(writer io.Writer, flusher nethttp.Flusher) *SSEWriter {
 	return writerOfEvents
 }
 
-// Send writes one event and flushes it. An empty event name writes only the
-// data field; each line of data gets its own data field.
+// Send writes one event and flushes it. An empty event name writes only the data field;
+// each line of data gets its own data field.
 func (w *SSEWriter) Send(event string, data []byte) error {
 	var payload strings.Builder
 	if event != "" {
@@ -193,9 +180,6 @@ func splitEventData(data []byte) []string {
 	return strings.Split(text, "\n")
 }
 
-// replyBind builds the entry point's handler for one reply operation: it binds
-// the declared input, calls the handler with the request's Meta, then writes
-// the reply the declaration permits.
 func replyBind[In any](
 	handle func(context.Context, In, *Meta) (Reply, error),
 	operationID string,
@@ -257,8 +241,6 @@ func writeReply(c *gin.Context, operationID string, responses []Response, reply 
 func checkReplyDeclaration(value *replyValue, response Response) string {
 	switch value.kind {
 	case replyKindJSON:
-		// A 204 or 304 response carries no body, so the encoded body would be
-		// dropped by the transport; answering it is a defect, not a write.
 		if noBodyStatus(value.status) {
 			return fmt.Sprintf("a JSON reply is declared against the status %d, which carries no body", value.status)
 		}
@@ -309,15 +291,13 @@ func checkReplyDeclaration(value *replyValue, response Response) string {
 	return ""
 }
 
-// checkBodyMediaType compares a bytes or stream reply's media type with the one
-// the declared response carries.
 func checkBodyMediaType(value *replyValue, response Response) string {
 	if response.Body == nil {
 		return "a body reply is declared against a response with no body"
 	}
 	declared := normaliseMediaType(response.Body.MediaType)
-	// A dynamic media type accepts whatever bytes or stream reply the handler
-	// builds: the declaration leaves the choice to the handler.
+	// A dynamic media type accepts whatever bytes or stream reply the handler builds: the
+	// declaration leaves the choice to the handler.
 	if declared == mediaTypeAny {
 		return ""
 	}
@@ -349,14 +329,11 @@ func checkReplyResponses(responses []Response) {
 	}
 }
 
-// isJSONMediaType reports whether a media type carries a JSON document.
 func isJSONMediaType(mediaType string) bool {
 	normalised := normaliseMediaType(mediaType)
 	return normalised == "application/json" || strings.HasSuffix(normalised, "+json")
 }
 
-// checkDynamicHeaders requires every dynamic header's name to be declared on
-// the response being written.
 func checkDynamicHeaders(headers []HeaderValue, response Response) string {
 	for _, header := range headers {
 		if !responseDeclaresHeader(response, header.Name) {
@@ -366,7 +343,6 @@ func checkDynamicHeaders(headers []HeaderValue, response Response) string {
 	return ""
 }
 
-// responseDeclaresHeader reports whether the response declares a header name.
 func responseDeclaresHeader(response Response, name string) bool {
 	for _, header := range response.Headers {
 		if strings.EqualFold(header.Name, name) {
@@ -376,7 +352,6 @@ func responseDeclaresHeader(response Response, name string) bool {
 	return false
 }
 
-// replyDefect records and answers a reply that did not match its declaration.
 func replyDefect(c *gin.Context, operationID, reason string) {
 	log.FromContext(c.Request.Context()).Error(
 		"a handler's reply did not match its operation declaration",
@@ -386,8 +361,6 @@ func replyDefect(c *gin.Context, operationID, reason string) {
 	Fail(c, Problem{Status: nethttp.StatusInternalServerError, Cause: errors.New(reason)})
 }
 
-// writeReplyValue writes one checked reply: the declared static headers, then
-// the dynamic ones, then the body.
 func writeReplyValue(c *gin.Context, operationID string, response Response, value *replyValue) {
 	// A JSON body is encoded before anything is written, so a body that cannot
 	// be encoded is answered as the internal error it is rather than after the
@@ -404,9 +377,8 @@ func writeReplyValue(c *gin.Context, operationID string, response Response, valu
 	for _, header := range response.Headers {
 		c.Header(header.Name, header.Value)
 	}
-	// An event stream is not cached: the stream's own headers are flushed as
-	// they are produced, and a cache holding the first one would go on serving
-	// it. A declared Cache-Control stands; this only supplies the default.
+	// An event stream is not cached: the stream's own headers are flushed as they are
+	// produced, and a cache holding the first one would go on serving it.
 	if value.kind == replyKindSSE && c.Writer.Header().Get("Cache-Control") == "" {
 		c.Header("Cache-Control", "no-store")
 	}
@@ -449,8 +421,6 @@ func writeReplyValue(c *gin.Context, operationID string, response Response, valu
 	}
 }
 
-// declaredMediaType is the media type the matched response declares, or the
-// fallback when the declaration leaves it out.
 func declaredMediaType(response Response, fallback string) string {
 	if response.Body != nil && response.Body.MediaType != "" {
 		return response.Body.MediaType

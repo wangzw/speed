@@ -18,8 +18,6 @@ import (
 	"time"
 )
 
-// writeSelfSignedCertificate writes a certificate for the loopback address and
-// its key into dir, and returns the two paths and the pool that trusts it.
 func writeSelfSignedCertificate(t *testing.T, dir string) (certFile, keyFile string, roots *x509.CertPool) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -60,8 +58,6 @@ func writeSelfSignedCertificate(t *testing.T, dir string) (certFile, keyFile str
 	return certFile, keyFile, roots
 }
 
-// getOverTLS sends one GET for the root of the endpoint at addr through client,
-// whose Timeout is the request's deadline.
 func getOverTLS(client *nethttp.Client, addr string) (*nethttp.Response, error) {
 	req, err := nethttp.NewRequestWithContext(context.Background(), nethttp.MethodGet, "https://"+addr+"/", nil)
 	if err != nil {
@@ -70,10 +66,8 @@ func getOverTLS(client *nethttp.Client, addr string) (*nethttp.Response, error) 
 	return client.Do(req)
 }
 
-// TestATLSEndpointOffersHTTP2 pins that serving TLS through a listener this
-// module builds itself — which it does so that a certificate that cannot be
-// loaded fails the startup — keeps what the standard library's own TLS path
-// offers: HTTP/2, negotiated through ALPN, with HTTP/1.1 beside it.
+// TestATLSEndpointOffersHTTP2 pins that serving TLS through a listener this module builds itself —
+// which it does so that a certificate that cannot be loaded fails the startup — keeps what the.
 func TestATLSEndpointOffersHTTP2(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
 	s := testListener("public")
@@ -108,11 +102,8 @@ func TestATLSEndpointOffersHTTP2(t *testing.T) {
 	}
 }
 
-// TestAnHTTP2RequestIsDrained pins that a request in flight over HTTP/2 is held
-// by the drain like one over HTTP/1.1, and learns that the drain has begun.
-// An HTTP/2 connection carries its requests as streams, and its shutdown is
-// the protocol's own; a drain that saw only HTTP/1.1 connections would end
-// with those streams still running.
+// TestAnHTTP2RequestIsDrained pins that a request in flight over HTTP/2 is held by the drain like
+// one over HTTP/1.1, and learns that the drain has begun.
 func TestAnHTTP2RequestIsDrained(t *testing.T) {
 	certFile, keyFile, roots := writeSelfSignedCertificate(t, t.TempDir())
 	s := testListener("public")

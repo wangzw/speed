@@ -33,8 +33,6 @@ func backendConfig(names ...string) moduleConfig {
 	return cfg
 }
 
-// claimedConfig is one listener named backend with each endpoint's claimed
-// prefixes given explicitly, on a loopback port the operating system picks.
 func claimedConfig(claims map[string][]string) moduleConfig {
 	cfg := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: "127.0.0.1:0"}},
@@ -46,11 +44,8 @@ func claimedConfig(claims map[string][]string) moduleConfig {
 	return cfg
 }
 
-// TestOneListenerServesTwoEndpointsOverOneSocket pins the capability the
-// listener layer adds: two endpoints hanging on one listener share one socket,
-// and a request routed to either is answered over that one socket. It is the
-// case the older shape could not express at all, where an endpoint was a
-// socket.
+// TestOneListenerServesTwoEndpointsOverOneSocket pins the capability the listener layer adds: two
+// endpoints hanging on one listener share one socket.
 func TestOneListenerServesTwoEndpointsOverOneSocket(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	var (
@@ -101,9 +96,6 @@ func TestOneListenerServesTwoEndpointsOverOneSocket(t *testing.T) {
 			"one listener is one socket", apiAddr, webAddr)
 	}
 
-	// Both endpoints are reached over the same socket: the api route hits the
-	// api endpoint's chain, and a path no endpoint claims falls to the web
-	// endpoint, whose catch-all covers it.
 	api, err := getResponse(context.Background(), apiAddr, "/api/things")
 	if err != nil {
 		t.Fatalf("the request for the api route failed: %v", err)
@@ -121,11 +113,8 @@ func TestOneListenerServesTwoEndpointsOverOneSocket(t *testing.T) {
 	}
 }
 
-// TestTwoEndpointsOmittingPrefixesIsAClaimConflict pins the configuration
-// failure two endpoints on one listener share: omitting prefixes claims "/",
-// and "/" at most one endpoint may claim. The failure comes from reading
-// configuration, before any chain is assembled, and its text tells the host to
-// give each endpoint its own prefixes.
+// TestTwoEndpointsOmittingPrefixesIsAClaimConflict pins the configuration failure two endpoints on
+// one listener share: omitting prefixes claims "/", and "/" at most one endpoint may claim.
 func TestTwoEndpointsOmittingPrefixesIsAClaimConflict(t *testing.T) {
 	a := startAssembly(t, backendConfig("a", "b"), Module())
 
@@ -139,11 +128,8 @@ func TestTwoEndpointsOmittingPrefixesIsAClaimConflict(t *testing.T) {
 	mustContain(t, runErr.Error(), "prefixes", "the key the failure tells the host to write")
 }
 
-// TestTwoEndpointsWithTheSameStaticPrefixIsAClaimConflict pins that one prefix
-// belongs to one endpoint: the listener selects an endpoint by the longest
-// prefix a request falls under, so two endpoints claiming the same prefix leave
-// the request's endpoint undecided. It is a configuration failure, naming the
-// listener, both endpoints and the prefix.
+// TestTwoEndpointsWithTheSameStaticPrefixIsAClaimConflict pins that one prefix belongs to one
+// endpoint: the listener selects an endpoint by the longest prefix a request falls under.
 func TestTwoEndpointsWithTheSameStaticPrefixIsAClaimConflict(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-two-endpoints-on-one-prefix",
@@ -167,11 +153,8 @@ func TestTwoEndpointsWithTheSameStaticPrefixIsAClaimConflict(t *testing.T) {
 	mustContain(t, runErr.Error(), "/api/v1", "the prefix both claimed")
 }
 
-// TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure pins that selection is
-// by configuration: a route registered on an endpoint whose claim does not
-// select it is mounted but unreachable, so the startup ends with
-// ErrUnclaimedRoute naming the listener, the route and the endpoint that would
-// answer it instead.
+// TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure pins that selection is by configuration: a
+// route registered on an endpoint whose claim does not select it is mounted but unreachable.
 func TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-one-route-twice",
@@ -195,11 +178,8 @@ func TestTwoEndpointsOnARouteOnOneListenerIsStartupFailure(t *testing.T) {
 	mustContain(t, runErr.Error(), "/things", "the route both claimed")
 }
 
-// TestARouteShadowedByTheFallbackIsStillAStartupFailure pins that the claim
-// check reaches the fallback endpoint too. A literal route the fallback
-// registers under another endpoint's claim is answered by that other endpoint,
-// so it is unreachable; the failure names the listener, the registering
-// endpoint and the endpoint and prefix that would answer it.
+// TestARouteShadowedByTheFallbackIsStillAStartupFailure pins that the claim check reaches the
+// fallback endpoint too.
 func TestARouteShadowedByTheFallbackIsStillAStartupFailure(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-a-route-the-fallback-shadows",
@@ -224,13 +204,8 @@ func TestARouteShadowedByTheFallbackIsStillAStartupFailure(t *testing.T) {
 	mustContain(t, runErr.Error(), "/api/x", "the route both registered")
 }
 
-// TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain pins that a request
-// whose path an endpoint registered but whose method it does not allow is handed
-// to that endpoint rather than answered by the dispatch. On one listener the
-// endpoint's own chain has to run: a guard layer's CORS preflight is the request
-// that depends on it, and a dispatch that answers 405 itself would leave the
-// browser without the CORS headers on the preflight. A request that is not the
-// preflight is still answered 405 with the Allow header, through the same chain.
+// TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain pins that a request whose path an
+// endpoint registered but whose method it does not allow is handed to that endpoint rather than.
 func TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain(t *testing.T) {
 	var guardCalls int32
 	guard := func(c *gin.Context) {
@@ -270,7 +245,6 @@ func TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain(t *testing.T) {
 		t.Fatalf("finding the address the listener bound: %v", err)
 	}
 
-	// The registered route runs the guard once and answers from the route.
 	got, err := getResponse(context.Background(), addr, "/api/x")
 	if err != nil {
 		t.Fatalf("the request for the api route failed: %v", err)
@@ -303,9 +277,6 @@ func TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain(t *testing.T) {
 		t.Errorf("the guard ran %d times after the registered route and the preflight, want 2", calls)
 	}
 
-	// A disallowed method that is not a preflight is still answered 405 with the
-	// Allow header, and it too reaches the guard: the endpoint's own engine
-	// answers it after the chain has run.
 	got, err = exchange(context.Background(), nethttp.MethodPost, addr, "/api/x", nil)
 	if err != nil {
 		t.Fatalf("the POST request failed: %v", err)
@@ -321,13 +292,8 @@ func TestAMethodNotAllowedRequestRunsTheOwningEndpointsChain(t *testing.T) {
 	}
 }
 
-// TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint pins the selector a
-// shared listener routes by: a request path that falls under an endpoint's
-// claimed prefix is answered by that endpoint — its engine runs its chain and
-// writes its own 404 — even when no route registered the path, and only a path
-// under no endpoint's claim reaches the fallback. Without it the web bundle's
-// catch-all, the fallback, answers a mistyped API path with 200 text/html, and a
-// client or a monitor reads a misspelling as a success.
+// TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint pins the selector a shared listener
+// routes by.
 func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	probe := &stageProbe{
@@ -357,7 +323,6 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 		t.Fatalf("finding the address the listener bound: %v", err)
 	}
 
-	// A registered route still reaches its handler through the api endpoint.
 	got, err := getResponse(context.Background(), addr, "/api/v1/things")
 	if err != nil {
 		t.Fatalf("the request for the registered route failed: %v", err)
@@ -366,8 +331,6 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 		t.Errorf("the registered route answered %d %q, want 200 %q", got.status, got.body, "api")
 	}
 
-	// A path under the api claim that no route registered is answered by api in
-	// api's own shape — a problem+json 404 — not swallowed by the web fallback.
 	nope, err := getResponse(context.Background(), addr, "/api/v1/nope")
 	if err != nil {
 		t.Fatalf("the request for the unregistered api path failed: %v", err)
@@ -383,7 +346,6 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 		t.Errorf("the unregistered api path was served the web bundle: %q", nope.body)
 	}
 
-	// A path under no endpoint's claim goes to the fallback, the web bundle.
 	for _, path := range []string{"/admin/tenants", "/"} {
 		web, err := getResponse(context.Background(), addr, path)
 		if err != nil {
@@ -395,12 +357,8 @@ func TestAPathUnderAnEndpointsPrefixIsAnsweredByThatEndpoint(t *testing.T) {
 	}
 }
 
-// TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404 pins the dispatch's
-// own answer when a listener carries no endpoint claiming "/": a path under no
-// endpoint's claim is answered by the dispatch itself, as a problem+json 404,
-// rather than by any endpoint. Each endpoint's chain sets a marker header, and
-// the answer carries neither, which is what shows the dispatch wrote it and no
-// endpoint's chain ran.
+// TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404 pins the dispatch's own answer when a
+// listener carries no endpoint claiming "/".
 func TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	mark := func(name string) gin.HandlerFunc {
@@ -451,10 +409,8 @@ func TestAPathNoEndpointOwnsWithNoFallbackIsTheDispatchsOwn404(t *testing.T) {
 	}
 }
 
-// TestNestedClaimsPickTheLongestMatch pins that nested claims are not a
-// collision: the endpoint claiming the longer prefix answers a path under it,
-// and the endpoint claiming the shorter one answers the rest of its subtree,
-// including a path no route registered, since the longer claim does not cover it.
+// TestNestedClaimsPickTheLongestMatch pins that nested claims are not a collision: the endpoint
+// claiming the longer prefix answers a path under it.
 func TestNestedClaimsPickTheLongestMatch(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	probe := &stageProbe{
@@ -482,7 +438,6 @@ func TestNestedClaimsPickTheLongestMatch(t *testing.T) {
 		t.Fatalf("finding the address the listener bound: %v", err)
 	}
 
-	// The longer claim wins for a path under it.
 	inner, err := getResponse(context.Background(), addr, "/api/v1/internal/things")
 	if err != nil {
 		t.Fatalf("the request for the inner route failed: %v", err)
@@ -514,11 +469,8 @@ func TestNestedClaimsPickTheLongestMatch(t *testing.T) {
 	}
 }
 
-// TestACatchAllBesideARootClaimIsUnclaimed pins that a catch-all is selected by
-// its literal leading path, which is empty: only the endpoint claiming "/" can
-// register one. An endpoint claiming /web and registering /*path would never be
-// selected, so the startup ends with ErrUnclaimedRoute naming both the
-// registering endpoint and the fallback that answers it.
+// TestACatchAllBesideARootClaimIsUnclaimed pins that a catch-all is selected by its literal leading
+// path, which is empty: only the endpoint claiming "/" can register one.
 func TestACatchAllBesideARootClaimIsUnclaimed(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-a-root-and-a-catch-all",
@@ -542,11 +494,8 @@ func TestACatchAllBesideARootClaimIsUnclaimed(t *testing.T) {
 	mustContain(t, runErr.Error(), "/web", "the claim of the endpoint registering the catch-all")
 }
 
-// TestAnEndpointClaimingTheRootIsTheListenersFallback pins how a listener
-// treats an endpoint that claims "/": it is the fallback, the endpoint that
-// answers the paths no other endpoint claims. Beside an endpoint claiming a
-// deeper prefix the two coexist: the deeper claim wins for a path under it, and
-// the root endpoint answers the rest, including "/" itself.
+// TestAnEndpointClaimingTheRootIsTheListenersFallback pins how a listener treats an endpoint that
+// claims "/": it is the fallback, the endpoint that answers the paths no other endpoint claims.
 func TestAnEndpointClaimingTheRootIsTheListenersFallback(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	probe := &stageProbe{
@@ -591,11 +540,8 @@ func TestAnEndpointClaimingTheRootIsTheListenersFallback(t *testing.T) {
 	}
 }
 
-// TestAZeroRouteEndpointOwnsItsClaim pins the property that made claims
-// configuration: an endpoint with no routes starts up and answers the paths its
-// claim selects, running its own chain and writing its own 404. Without it an
-// endpoint whose modules are not running would have to leave the listener, and
-// the paths under its claim would drift to the fallback with the assembly.
+// TestAZeroRouteEndpointOwnsItsClaim pins the property that made claims configuration: an endpoint
+// with no routes starts up and answers the paths its claim selects.
 func TestAZeroRouteEndpointOwnsItsClaim(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	mark := func(c *gin.Context) {
@@ -646,11 +592,8 @@ func TestAZeroRouteEndpointOwnsItsClaim(t *testing.T) {
 	}
 }
 
-// TestAPathUnderAClaimIsAnsweredByThatEndpointEvenWithoutARoute pins that
-// selection reads the claim and not the routes: an endpoint claiming /api
-// answers /api/v1/objects with its own 404 even though the only route it
-// registered is /api/v1/notifications/m. The record module that registers the
-// other routes may be absent, and the answer stays the same.
+// TestAPathUnderAClaimIsAnsweredByThatEndpointEvenWithoutARoute pins that selection reads the claim
+// and not the routes.
 func TestAPathUnderAClaimIsAnsweredByThatEndpointEvenWithoutARoute(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	mark := func(c *gin.Context) {
@@ -696,10 +639,8 @@ func TestAPathUnderAClaimIsAnsweredByThatEndpointEvenWithoutARoute(t *testing.T)
 	}
 }
 
-// TestADeepCatchAllUnderItsOwnClaimStarts pins that a wildcard is selected by
-// its literal leading path: /files/*p leads with /files, so an endpoint
-// claiming /files may register it beside an endpoint claiming "/". It is not a
-// second fallback.
+// TestADeepCatchAllUnderItsOwnClaimStarts pins that a wildcard is selected by its literal leading
+// path: /files/*p leads with /files.
 func TestADeepCatchAllUnderItsOwnClaimStarts(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	probe := &stageProbe{
@@ -745,11 +686,8 @@ func TestADeepCatchAllUnderItsOwnClaimStarts(t *testing.T) {
 	}
 }
 
-// TestAWildcardOnAPrefixedEndpointIsUnclaimed pins the failing side of the
-// literal leading path: a catch-all leads with nothing, so only the endpoint
-// claiming "/" can register one. An endpoint claiming /api and registering
-// /*path is refused at startup with ErrUnclaimedRoute, naming the route, the
-// registering endpoint and the fallback that would answer it.
+// TestAWildcardOnAPrefixedEndpointIsUnclaimed pins the failing side of the literal leading path: a
+// catch-all leads with nothing, so only the endpoint claiming "/" can register one.
 func TestAWildcardOnAPrefixedEndpointIsUnclaimed(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-a-wildcard-on-a-prefixed-endpoint",
@@ -773,12 +711,8 @@ func TestAWildcardOnAPrefixedEndpointIsUnclaimed(t *testing.T) {
 	mustContain(t, runErr.Error(), `"f"`, "the fallback that would answer it")
 }
 
-// TestARouteTakenByALongerClaimIsUnclaimed pins the rule the claim check exists
-// for: a route is selected by the longest claim under it, not by whether its own
-// endpoint claims something above it. An endpoint claiming /api registers
-// /api/internal/x while another claims /api/internal; the request would go to
-// the longer claim, so the route is unreachable and the startup names the
-// endpoint and prefix that take it.
+// TestARouteTakenByALongerClaimIsUnclaimed checks that a route is selected by the longest claim,
+// not by its own endpoint's claim.
 func TestARouteTakenByALongerClaimIsUnclaimed(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-a-route-taken-by-a-longer-claim",
@@ -801,11 +735,7 @@ func TestARouteTakenByALongerClaimIsUnclaimed(t *testing.T) {
 	mustContain(t, runErr.Error(), "/api/internal/x", "the route")
 }
 
-// TestTheUnclaimedRouteSuggestionCoversTheRoutes pins the suggested claim a
-// startup failure offers. The suggestion has to be one the failing endpoint can
-// adopt, so it takes the depth of the routes themselves: the top-level segment
-// /api already belongs to another endpoint, and proposing it would send the
-// reader to a configuration the claim check refuses.
+// TestTheUnclaimedRouteSuggestionCoversTheRoutes pins the suggested claim a startup failure offers.
 func TestTheUnclaimedRouteSuggestionCoversTheRoutes(t *testing.T) {
 	probe := &stageProbe{
 		name:     "probe.registers-unclaimed-routes-under-the-api-namespace",
@@ -829,11 +759,8 @@ func TestTheUnclaimedRouteSuggestionCoversTheRoutes(t *testing.T) {
 	}
 }
 
-// TestPartialShadowingStarts pins that nested claims may partition a subtree: an
-// endpoint claiming /api registers /api/:id and another claims /api/internal.
-// /api/:id's literal leading path is /api, which selects the first endpoint, and
-// /api/internal is the meaning of the nested claim. The startup succeeds and the
-// request for /api/internal reaches the second endpoint.
+// TestPartialShadowingStarts pins that nested claims may partition a subtree: an endpoint claiming
+// /api registers /api/:id and another claims /api/internal.
 func TestPartialShadowingStarts(t *testing.T) {
 	serving := make(chan struct{}, 1)
 	probe := &stageProbe{
@@ -881,10 +808,8 @@ func TestPartialShadowingStarts(t *testing.T) {
 	}
 }
 
-// TestTheChainLineNamesTheClaims pins that the startup line carries the claims
-// beside the route count. A zero-route endpoint is the case that shows why: the
-// route count alone cannot say which paths it answers, and an operator checking
-// that a module's namespace still points at its endpoint needs the claim there.
+// TestTheChainLineNamesTheClaims pins that the startup line carries the claims beside the route
+// count.
 func TestTheChainLineNamesTheClaims(t *testing.T) {
 	logger, records := newRecordingLogger()
 	serving := make(chan struct{}, 1)
