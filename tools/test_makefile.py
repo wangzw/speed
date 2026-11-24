@@ -53,7 +53,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Stands in for go and golangci-lint. `go -C <dir>` and `env -C <dir>`
 # both name the directory a module command runs in; the stand-in records
 # that directory's name, the arguments after it and whether the command
-# ran outside the workspace, then fails where the directory is named red.
+# ran outside the workspace. It answers `go list` with the packages the module
+# directory holds, fails every command in a directory named red except that
+# listing, fails the listing itself in a directory named nolist, and fails go
+# test when a package named broken is among its arguments.
 STAND_IN = """\
 #!{python}
 import json, os, sys
@@ -61,6 +64,7 @@ args = sys.argv[1:]
 where = os.getcwd()
 if args[:1] == ["-C"]:
     where, args = args[1], args[2:]
+sub = args[0] if args else ""
 with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps({{
         "tool": os.path.basename(sys.argv[0]),
@@ -76,7 +80,18 @@ with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
             and (name.endswith("_ADDR") or name.endswith("_URL"))
         }},
     }}) + "\\n")
-sys.exit(1 if os.path.basename(where) == "red" else 0)
+failed = os.path.basename(where) == "red" and sub != "list"
+if sub == "list" and os.path.basename(where) == "nolist":
+    failed = True
+if sub == "test" and any(
+    arg.rstrip("/").split("/")[-1] == "broken" for arg in args[1:]
+):
+    failed = True
+if sub == "list":
+    for dirpath, _dirnames, filenames in os.walk(where):
+        if any(name.endswith(".go") for name in filenames):
+            print(dirpath + " " + dirpath)
+sys.exit(1 if failed else 0)
 """
 
 # Stands in for a tool that always fails, whichever directory it runs in, so a
@@ -199,6 +214,7 @@ MAKE_ENVIRONMENT = (
     "GOMAXPROCS",
     "GOFLAGS",
     "GATE_TIME_SCALE",
+    "UNCACHED_PACKAGES",
 )
 
 # The segments `check` runs, in the order a plain `make check` runs them: the
@@ -318,6 +334,11 @@ class LoopingLegTests(unittest.TestCase):
         for name in ("red", "green"):
             (self.scratch / name).mkdir()
             (self.scratch / name / f"check_{name}.py").write_text(GATE, encoding="utf-8")
+            # Every module holds one Go package, so go list has a module's
+            # packages to split between the cached and uncached passes.
+            (self.scratch / name / f"{name}.go").write_text(
+                f"package {name}\n", encoding="utf-8"
+            )
         # Repository roots for the actionlint leg. Each carries workflow files
         # of both extensions, a file GitHub does not run as a workflow, and a
         # nested workflow file GitHub does not read either.
@@ -340,10 +361,11 @@ class LoopingLegTests(unittest.TestCase):
         state: str | pathlib.Path | None = None,
         repo: str | pathlib.Path = "green",
         shellcheck: str | pathlib.Path | None = None,
-        uncached: str | None = None,
+        uncached_packages: list[str] | None = None,
         gate_jobs: str | None = None,
         goflags: str | None = None,
         failing_tools: bool = False,
+        start_dir: str | pathlib.Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
         if goflags is not None:
@@ -353,26 +375,37 @@ class LoopingLegTests(unittest.TestCase):
         env["STAND_IN_LOG"] = str(self.log)
         dirs = [str(self.scratch / name) for name in names]
         gates = [str(self.scratch / name / f"check_{name}.py") for name in names]
-        extra = [f"UNCACHED_MODULES={self.scratch / uncached}"] if uncached is not None else []
+        extra = (
+            [f"UNCACHED_PACKAGES={' '.join(uncached_packages)}"]
+            if uncached_packages is not None
+            else []
+        )
         if gate_jobs is not None:
             extra.append(f"GATE_JOBS={gate_jobs}")
+        # A leg that reads a default relative path is started in a scratch
+        # directory through -f, so its base is that directory rather than the
+        # tree this file lives in.
+        argv = ["make"]
+        if start_dir is None:
+            argv += ["-C", str(ROOT)]
+        else:
+            argv += ["-f", str(ROOT / "Makefile")]
+        argv += [
+            "--no-print-directory",
+            leg,
+            f"MODULES={' '.join(dirs)}",
+            f"GATES={' '.join(gates)}",
+            f"PYTHON={sys.executable}",
+            f"BACKENDS={backends if backends is not None else self.backends}",
+            f"TEST_BACKENDS_STATE={state if state is not None else self.state}",
+            f"REPO_ROOT={self.repos / repo}",
+            f"ACTIONLINT={self.bin / 'actionlint'}",
+            f"SHELLCHECK={shellcheck if shellcheck is not None else self.bin / 'shellcheck'}",
+            *extra,
+        ]
         return subprocess.run(
-            [
-                "make",
-                "-C",
-                str(ROOT),
-                "--no-print-directory",
-                leg,
-                f"MODULES={' '.join(dirs)}",
-                f"GATES={' '.join(gates)}",
-                f"PYTHON={sys.executable}",
-                f"BACKENDS={backends if backends is not None else self.backends}",
-                f"TEST_BACKENDS_STATE={state if state is not None else self.state}",
-                f"REPO_ROOT={self.repos / repo}",
-                f"ACTIONLINT={self.bin / 'actionlint'}",
-                f"SHELLCHECK={shellcheck if shellcheck is not None else self.bin / 'shellcheck'}",
-                *extra,
-            ],
+            argv,
+            cwd=str(start_dir) if start_dir is not None else None,
             env=env,
             capture_output=True,
             text=True,
@@ -395,41 +428,278 @@ class LoopingLegTests(unittest.TestCase):
             for c in self.calls()
         )
 
-    def test_the_unit_legs_bypass_the_test_cache_only_for_a_module_that_reads_outside_its_root(
+    def add_package(self, module: str, name: str) -> pathlib.Path:
+        path = self.scratch / module / name
+        path.mkdir(parents=True, exist_ok=True)
+        (path / f"{name}.go").write_text(f"package {name}\n", encoding="utf-8")
+        return path
+
+    def go_test_calls(self, module: str) -> list[dict]:
+        return [
+            call
+            for call in self.calls()
+            if call["dir"] == module
+            and call["tool"] == "go"
+            and call["args"][:1] == ["test"]
+        ]
+
+    @staticmethod
+    def package_args(call: dict) -> list[str]:
+        # The stand-in reports each package's directory as its import path, so
+        # a package argument is the argument that names a directory.
+        return [arg for arg in call["args"][1:] if arg.startswith("/")]
+
+    def test_the_unit_legs_bypass_the_test_cache_only_for_the_packages_that_read_outside_their_root(
         self,
     ) -> None:
-        """The demo program's tests read ../../../contracts, which Go's test
-        cache does not track, so a cached pass would outlive an edit to a
-        contract. The module that does it runs uncached; the others keep the
-        cache."""
-        (self.scratch / "outside").mkdir(exist_ok=True)
-        for leg, flags in (("test", ()), ("test-race", ("-race",))):
+        """A package under UNCACHED_PACKAGES runs with -count=1 on every pass,
+        while the other packages of the same module keep the cache."""
+        cached = self.add_package("outside", "cachedpkg")
+        uncached = self.add_package("outside", "uncachedpkg")
+        for leg, race in (("test", False), ("test-race", True)):
+            for gate_jobs, width in ((None, "4"), ("7", "7")):
+                with self.subTest(leg=leg, gate_jobs=gate_jobs):
+                    self.log.unlink(missing_ok=True)
+                    result = self.make(
+                        leg,
+                        "outside",
+                        "green",
+                        uncached_packages=[str(uncached)],
+                        gate_jobs=gate_jobs,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    passes = self.go_test_calls("outside")
+                    self.assertEqual(
+                        len(passes),
+                        2,
+                        f"{leg} in outside: expected a cached pass and an uncached "
+                        f"pass, got {passes}",
+                    )
+                    cached_pass, uncached_pass = passes
+                    self.assertNotIn("-count=1", cached_pass["args"], cached_pass["args"])
+                    self.assertEqual(
+                        self.package_args(cached_pass), [str(cached)], cached_pass["args"]
+                    )
+                    self.assertIn("-count=1", uncached_pass["args"], uncached_pass["args"])
+                    self.assertEqual(
+                        self.package_args(uncached_pass),
+                        [str(uncached)],
+                        uncached_pass["args"],
+                    )
+                    others = self.go_test_calls("green")
+                    self.assertEqual(
+                        len(others),
+                        1,
+                        f"{leg} in green: expected one cached pass, got {others}",
+                    )
+                    self.assertNotIn("-count=1", others[0]["args"], others[0]["args"])
+                    self.assertEqual(
+                        self.package_args(others[0]),
+                        [str(self.scratch / "green")],
+                        others[0]["args"],
+                    )
+                    for call in (cached_pass, uncached_pass, others[0]):
+                        self.assertIn(f"-p={width}", call["args"], call["args"])
+                        self.assertIn(f"-parallel={width}", call["args"], call["args"])
+                        self.assertEqual(call["gomaxprocs"], width, call["args"])
+                        self.assertEqual("-race" in call["args"], race, call["args"])
+                    listings = [
+                        call
+                        for call in self.calls()
+                        if call["tool"] == "go" and call["args"][:1] == ["list"]
+                    ]
+                    self.assertTrue(
+                        listings, "the leg never listed the module's packages"
+                    )
+                    for call in listings:
+                        self.assertIn(f"-p={width}", call["args"], call["args"])
+                        self.assertEqual(call["gomaxprocs"], width, call["args"])
+
+    def test_a_caller_count_flag_runs_one_pass_over_the_whole_module(self) -> None:
+        """When GOFLAGS already names -count=1, each module gets one go test
+        over ./... and no package split."""
+        self.add_package("outside", "cachedpkg")
+        for leg in ("test", "test-race"):
             with self.subTest(leg=leg):
                 self.log.unlink(missing_ok=True)
-                result = self.make(leg, "green", "outside", uncached="outside")
+                result = self.make(leg, "green", "outside", goflags="-count=1")
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                for name, cached in (("outside", False), ("green", True)):
-                    calls = [
-                        c
-                        for c in self.calls()
-                        if c["dir"] == name and c["tool"] == "go" and c["args"][:1] == ["test"]
-                    ]
-                    self.assertEqual(len(calls), 1, f"{leg} ran {name} {len(calls)} times")
-                    self.assertTrue(all(flag in calls[0]["args"] for flag in flags))
+                for module in ("green", "outside"):
+                    passes = self.go_test_calls(module)
+                    self.assertEqual(len(passes), 1, f"{leg} {module}: {passes}")
+                    self.assertEqual(passes[0]["args"][-1], "./...", passes[0]["args"])
+                    self.assertNotIn("-count=1", passes[0]["args"], passes[0]["args"])
                     self.assertEqual(
-                        "-count=1" in calls[0]["args"],
-                        not cached,
-                        f"{leg} in {name}: {calls[0]['args']}",
+                        "-race" in passes[0]["args"],
+                        leg == "test-race",
+                        passes[0]["args"],
                     )
+                self.assertFalse(
+                    [call for call in self.calls() if call["args"][:1] == ["list"]],
+                    f"{leg} listed packages although the cache is off for the whole run",
+                )
 
-    def test_the_makefile_names_the_demo_program_as_the_uncached_module(self) -> None:
+    def test_a_failing_cached_pass_still_runs_the_uncached_pass(self) -> None:
+        """A failure in the cached pass does not skip the uncached pass, and
+        the module still counts as failed."""
+        self.add_package("split", "cachedok")
+        self.add_package("split", "broken")
+        uncached = self.add_package("split", "uncachedpkg")
+        for leg in ("test", "test-race"):
+            with self.subTest(leg=leg):
+                self.log.unlink(missing_ok=True)
+                result = self.make(leg, "split", uncached_packages=[str(uncached)])
+                passes = self.go_test_calls("split")
+                self.assertEqual(
+                    len(passes),
+                    2,
+                    f"{leg}: expected both passes despite the failure, got {passes}",
+                )
+                cached_pass, uncached_pass = passes
+                self.assertNotIn("-count=1", cached_pass["args"], cached_pass["args"])
+                self.assertIn(
+                    str(self.scratch / "split" / "broken"),
+                    self.package_args(cached_pass),
+                    cached_pass["args"],
+                )
+                self.assertIn("-count=1", uncached_pass["args"], uncached_pass["args"])
+                self.assertEqual(
+                    self.package_args(uncached_pass),
+                    [str(uncached)],
+                    uncached_pass["args"],
+                )
+                self.assertNotEqual(
+                    result.returncode,
+                    0,
+                    f"{leg}: the module passed although its cached pass failed:\n"
+                    + result.stdout
+                    + result.stderr,
+                )
+
+    def test_a_failing_uncached_pass_fails_the_module(self) -> None:
+        """A failing uncached pass fails the module and is named in the log,
+        while the cached pass still runs."""
+        self.add_package("split", "cachedok")
+        broken = self.add_package("split", "broken")
+        for leg in ("test", "test-race"):
+            with self.subTest(leg=leg):
+                self.log.unlink(missing_ok=True)
+                result = self.make(leg, "split", uncached_packages=[str(broken)])
+                passes = self.go_test_calls("split")
+                self.assertEqual(
+                    len(passes), 2, f"{leg}: expected both passes, got {passes}"
+                )
+                cached_pass, uncached_pass = passes
+                self.assertNotIn("-count=1", cached_pass["args"], cached_pass["args"])
+                self.assertIn("-count=1", uncached_pass["args"], uncached_pass["args"])
+                self.assertEqual(
+                    self.package_args(uncached_pass),
+                    [str(broken)],
+                    uncached_pass["args"],
+                )
+                self.assertNotEqual(
+                    result.returncode,
+                    0,
+                    f"{leg}: the module passed although its uncached pass failed:\n"
+                    + result.stdout
+                    + result.stderr,
+                )
+                self.assertIn("(uncached pass)", result.stderr)
+
+    def test_a_failing_go_list_fails_the_module_without_running_go_test(self) -> None:
+        """A go list failure fails the module under (go list) and no go test runs."""
+        listing = self.scratch / "nolist"
+        listing.mkdir()
+        (listing / "pkg.go").write_text("package nolist\n", encoding="utf-8")
+        for leg in ("test", "test-race"):
+            with self.subTest(leg=leg):
+                self.log.unlink(missing_ok=True)
+                result = self.make(leg, "nolist")
+                self.assertNotEqual(
+                    result.returncode,
+                    0,
+                    f"{leg}: the module passed although go list failed:\n"
+                    + result.stdout
+                    + result.stderr,
+                )
+                self.assertIn("(go list)", result.stderr)
+                self.assertEqual(
+                    self.go_test_calls("nolist"),
+                    [],
+                    f"{leg}: go test ran although go list failed",
+                )
+
+    def test_an_absolute_package_with_a_trailing_slash_is_matched(self) -> None:
+        """An absolute UNCACHED_PACKAGES entry is normalized before it is
+        matched, so a trailing slash still selects its package."""
+        uncached = self.add_package("outside", "uncachedpkg")
+        self.add_package("outside", "cachedpkg")
+        self.log.unlink(missing_ok=True)
+        result = self.make("test", "outside", uncached_packages=[str(uncached) + "/"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        passes = self.go_test_calls("outside")
+        self.assertEqual(
+            len(passes),
+            2,
+            f"the trailing-slash entry did not split the packages: {passes}",
+        )
+        cached_pass, uncached_pass = passes
+        self.assertNotIn("-count=1", cached_pass["args"], cached_pass["args"])
+        self.assertEqual(
+            self.package_args(cached_pass),
+            [str(self.scratch / "outside" / "cachedpkg")],
+            cached_pass["args"],
+        )
+        self.assertIn("-count=1", uncached_pass["args"], uncached_pass["args"])
+        self.assertEqual(
+            self.package_args(uncached_pass), [str(uncached)], uncached_pass["args"]
+        )
+
+    def test_the_default_relative_packages_resolve_from_the_start_directory(self) -> None:
+        """The UNCACHED_PACKAGES default is spelled relative to the repository
+        root, the base the module roster is read and spelled from, so a run
+        started in that root splits those packages with no override."""
+        root = self.scratch / "start-root"
+        module = root / "starters" / "demo" / "server"
+        for name in ("cachedpkg", "treecheck", "e2e/factorseed"):
+            path = module / name
+            path.mkdir(parents=True)
+            (path / "p.go").write_text(f"package {path.name}\n", encoding="utf-8")
+        self.log.unlink(missing_ok=True)
+        result = self.make("test", module, start_dir=root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        passes = self.go_test_calls("server")
+        self.assertEqual(
+            len(passes),
+            2,
+            f"the default relative entries did not split the packages: {passes}",
+        )
+        cached_pass, uncached_pass = passes
+        self.assertNotIn("-count=1", cached_pass["args"], cached_pass["args"])
+        self.assertEqual(
+            self.package_args(cached_pass),
+            [str(module / "cachedpkg")],
+            cached_pass["args"],
+        )
+        self.assertIn("-count=1", uncached_pass["args"], uncached_pass["args"])
+        self.assertEqual(
+            sorted(self.package_args(uncached_pass)),
+            sorted([str(module / "treecheck"), str(module / "e2e" / "factorseed")]),
+            uncached_pass["args"],
+        )
+
+    def test_the_makefile_names_the_uncached_packages(self) -> None:
         result = subprocess.run(
             ["make", "-C", str(ROOT), "--no-print-directory", "-pn", "modules"],
             capture_output=True,
             text=True,
             check=False,
         )
-        self.assertIn("UNCACHED_MODULES = ./starters/demo/server", result.stdout)
+        self.assertIn(
+            "UNCACHED_PACKAGES = ./starters/demo/server/treecheck "
+            "./starters/demo/server/e2e/factorseed",
+            result.stdout,
+        )
 
     def test_a_red_module_hides_no_other_modules_result(self) -> None:
         for leg, passes in MODULE_LEGS.items():
