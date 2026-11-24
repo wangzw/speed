@@ -5,16 +5,8 @@ import (
 	"strings"
 )
 
-// keyPrefix starts every counting key. The key-value primitives partition
-// nothing, so a consumer that did not name its own keys would collide with
-// another one silently.
 const keyPrefix = "ratelimit:"
 
-// countKey builds the key one accountability key's count for one window lives
-// under, inside one tenant.
-//
-// The key is not a contract: nothing outside this package reads it, and
-// changing it only restarts the counting.
 func countKey(tenantSegment, subject string, window int64) string {
 	var b strings.Builder
 	b.WriteString(keyPrefix)
@@ -26,18 +18,8 @@ func countKey(tenantSegment, subject string, window int64) string {
 	return b.String()
 }
 
-// escape percent-encodes the two characters that would otherwise be read as
-// separators, so no two distinct pairs of segments can build one key.
-//
-// The tenant identifier's domain excludes only whitespace and control
-// characters, so a colon is legal in it, and the accountability key's
-// character set is the authentication module's to decide, so no colon in it is
-// not a premise here. Left unescaped, tenant "a:b" with key "c" and tenant "a"
-// with key "b:c" would build the same counting key and share one count across
-// two tenants.
-//
-// The percent sign is replaced first, so the escape of a colon is not escaped
-// again.
+// escape percent-encodes ":" and "%" so no two distinct segment pairs build one
+// key; "%" is replaced first so the escape of a colon is not escaped again.
 func escape(segment string) string {
 	if !strings.ContainsAny(segment, ":%") {
 		return segment

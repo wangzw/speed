@@ -28,80 +28,30 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The cases that drive the limiting layer through a request stand on a real
-// assembly: the entry point module itself, listening on a port the operating
-// system picks. What the layer answers is read off a socket, so the routing, the
-// shape of an error response and the headers that survive it are the entry
-// point's and not a stand-in's. The settings store and the counters are the
-// case's own, the same stand-ins the decision's cases use.
-//
-// Reading the identity is a step a case drives through authntest: a layer
-// standing outside the limiting one puts the identity of the caller a request
-// names on its context, as the gateway would, and none on a request that carries
-// the header named by anonymousHeader. A case reaches the limiting layer in one of
-// two ways. Through the module's own descriptor, with the product supplied to it,
-// the layer registered is the real one, handler included, and what it did is read
-// off the counters and the response. Otherwise the case registers the layer with
-// the metadata this module declares for it, in front of a handler that reads the
-// identity as the real one does and runs the same decision, so that the decision
-// itself can be read as well.
-
-// waitLimit bounds every wait in these cases, so that a startup which never
-// reaches Serve fails the case with a message instead of the whole binary at the
-// global timeout.
 func waitLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// guardedEndpoint is the one endpoint every assembly declares and the layer
-// guards.
 const guardedEndpoint = "public"
 
-// anonymousHeader marks a request the stamping layer puts no identity on.
 const anonymousHeader = "X-Anonymous"
 
-// hostOptions is what one assembly is built from.
 type hostOptions struct {
-	// limiter is the product whose layer the assembly registers. Its settings
-	// store, counters, signal and clock are the case's.
-	limiter *limiter
-	// viaModule registers the layer through this module's descriptor, with the
-	// product supplied to it, instead of registering it in front of a handler
-	// that records the decisions.
-	viaModule bool
-	// respond, when set, is delivered as the ErrorResponder capability, so
-	// that it decides the shape of every error response.
-	responder speedhttp.ErrorResponder
-	// routeStatus is the status the guarded route answers with. The zero value
-	// is 204, the success the ordinary cases read; a case sets it to a refusal
-	// like 401 so that an inner layer produces the outcome the address shield
-	// charges for.
-	routeStatus int
-	// trustedProxies, when set, are written into the endpoint's configuration
-	// as the networks in front of it, so the entry point takes the client
-	// address from the forwarded-address headers instead of the peer's. A case
-	// that needs the shield to see two addresses over one loopback connection
-	// sets this and sends X-Forwarded-For.
+	limiter        *limiter
+	viaModule      bool
+	responder      speedhttp.ErrorResponder
+	routeStatus    int
 	trustedProxies []string
-	// register, when set, runs in the registrant's Init with the guarded
-	// endpoint, for the layers a case puts beside this module's.
-	register func(ep speedhttp.Endpoint)
+	register       func(ep speedhttp.Endpoint)
 }
 
-// host is one assembly that is serving.
 type host struct {
-	addr string
-	// decisions are what the layer's decisions came to, in order. They are
-	// kept only when the case registered the layer itself.
+	addr      string
 	decisions *decisions
-	// reached counts the requests the route's handler served.
-	reached *counter
-	// chain is the entry point's listing of the layers on the guarded
-	// endpoint, in the order they are assembled.
-	chain string
+	reached   *counter
+	chain     string
 }
 
-// decisions is the list of decisions the fixed-identity handler made.
 type decisions struct {
 	mu   sync.Mutex
 	list []decision
@@ -119,7 +69,6 @@ func (d *decisions) all() []decision {
 	return append([]decision(nil), d.list...)
 }
 
-// counter counts events from the goroutines that serve requests.
 type counter struct {
 	mu sync.Mutex
 	n  int
@@ -137,9 +86,6 @@ func (c *counter) count() int {
 	return c.n
 }
 
-// startHost builds an assembly from opts and runs it until the entry point is
-// serving. The run is ended when the case is, and a run that ends with an error
-// fails the case.
 func startHost(t *testing.T, opts hostOptions) *host {
 	t.Helper()
 	checkCallers(t)
@@ -248,10 +194,6 @@ func startHost(t *testing.T, opts hostOptions) *host {
 	return h
 }
 
-// recordingLayer is the layer this module registers, with the metadata it
-// declares for it, in front of a handler that reads the identity, runs the
-// decision and accounts for it the way the real handler does, and keeps the
-// decision.
 func recordingLayer(l *limiter, made *decisions) speedhttp.Middleware {
 	mw := l.middleware()
 	mw.Handler = func(c *gin.Context) {
@@ -263,9 +205,6 @@ func recordingLayer(l *limiter, made *decisions) speedhttp.Middleware {
 	return mw
 }
 
-// loadReader loads the configuration this assembly runs on through the real
-// loader: the entry point declares one endpoint on a port of the system's
-// choosing, with the trusted-proxy networks the case names when it names any.
 func loadReader(t *testing.T, opts hostOptions) config.Reader {
 	t.Helper()
 	endpoint := map[string]any{"listener": guardedEndpoint}
@@ -284,11 +223,6 @@ func loadReader(t *testing.T, opts hostOptions) config.Reader {
 	return loadDocument(t, document)
 }
 
-// loadDocument loads one configuration document through the real loader, with
-// the entry point's and this module's declarations registered as a host's run
-// would register them. It is how a case holds a document to what the modules
-// declare: an item the schema does not declare, or a field whose tag names
-// another key, comes out here.
 func loadDocument(t *testing.T, document []byte) config.Reader {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -302,8 +236,6 @@ func loadDocument(t *testing.T, document []byte) config.Reader {
 		Name:      "host",
 		Resources: []any{config.HostIdentity{Prefix: "RATELIMITTEST", DefaultLocator: "file:" + path}},
 	})
-	// The declarations reach the load as the resources of registered modules,
-	// which is the only way one ever reaches it.
 	reg.Register(core.Module{Name: speedhttp.ModuleName, Resources: speedhttp.Module().Resources})
 	reg.Register(core.Module{Name: ModuleName, Resources: Module().Resources})
 
@@ -314,15 +246,12 @@ func loadDocument(t *testing.T, document []byte) config.Reader {
 	return reader
 }
 
-// response is what a client got back.
 type response struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// send issues one request over a connection of its own and reads the response
-// to its end.
 func (h *host) send(t *testing.T, method, path string, header map[string]string) response {
 	t.Helper()
 	req, err := nethttp.NewRequestWithContext(t.Context(), method, "http://"+h.addr+path, nil)
@@ -348,15 +277,11 @@ func (h *host) send(t *testing.T, method, path string, header map[string]string)
 	return response{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// get is send for a GET without extra headers.
 func (h *host) get(t *testing.T, path string) response {
 	t.Helper()
 	return h.send(t, nethttp.MethodGet, path, nil)
 }
 
-// requireProblem asserts the default error shape: this status, the problem
-// details media type, and a body holding exactly the members a default response
-// writes for a Problem that carries a status and nothing else.
 func requireProblem(t *testing.T, got response, status int) {
 	t.Helper()
 	if got.status != status {
@@ -384,8 +309,6 @@ func requireProblem(t *testing.T, got response, status int) {
 	}
 }
 
-// requireRetryAfter asserts the response carries Retry-After as a whole number
-// of seconds, and returns it.
 func requireRetryAfter(t *testing.T, got response) int {
 	t.Helper()
 	raw := got.header.Get("Retry-After")
@@ -396,10 +319,6 @@ func requireRetryAfter(t *testing.T, got response) int {
 	return seconds
 }
 
-// requireThrottledProblem asserts the refusal a 429 from either of this
-// module's layers carries: the default problem details media type, the
-// throttled problem type, the standard title, and the status. The Retry-After
-// header is the caller's to assert.
 func requireThrottledProblem(t *testing.T, got response) {
 	t.Helper()
 	if got.status != nethttp.StatusTooManyRequests {
@@ -427,9 +346,6 @@ func requireThrottledProblem(t *testing.T, got response) {
 	}
 }
 
-// capturingResponder is an ErrorResponder that keeps the Problems it is asked to
-// write, and writes a shape of its own: a media type and a body the default
-// shape never produces.
 type capturingResponder struct {
 	mu       sync.Mutex
 	problems []speedhttp.Problem
@@ -452,10 +368,6 @@ func (r *capturingResponder) handed() []speedhttp.Problem {
 	return append([]speedhttp.Problem(nil), r.problems...)
 }
 
-// entryRecorder is a slog handler that keeps two things of what the entry point
-// writes: the address of its bound socket, which is the only way a client
-// outside the process learns the port the system picked, and the listing of the
-// layers on its chain.
 type entryRecorder struct {
 	mu    sync.Mutex
 	addr  string
@@ -499,7 +411,6 @@ func (r *entryRecorder) listed() (addr, chain string) {
 	return r.addr, r.chain
 }
 
-// standInLogger delivers the Logger capability over an entryRecorder.
 type standInLogger struct{ logs *entryRecorder }
 
 func (l standInLogger) Named(string) *slog.Logger { return slog.New(l.logs) }
@@ -507,15 +418,11 @@ func (standInLogger) Redaction() log.Redaction    { return noRedaction{} }
 
 var _ log.Logger = standInLogger{}
 
-// noRedaction takes registrations and masks nothing: what these cases observe of
-// the Logger capability is what the entry point reports of itself.
 type noRedaction struct{}
 
 func (noRedaction) AddKeys(...string)              {}
 func (noRedaction) AddPattern(string, log.Matcher) {}
 
-// lockedBuffer is a buffer the signal's lines can be written to from the
-// goroutines that serve requests while a case reads it.
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
