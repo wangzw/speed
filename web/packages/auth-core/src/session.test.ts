@@ -1,19 +1,3 @@
-/**
- * session.test.ts -- the memory-only session state machine over the
- * generated authn flow surface, tested through the same seams a host
- * uses: a fake request function bound via bindRequestFn (the
- * @speed/api-sdk runtime seam) for the state-machine scenarios, and one
- * composition test running the real @speed/api-client against a
- * scripted fetch to prove the store bridge: a refused request retries
- * with the freshly refreshed token.
- *
- * Behaviour is asserted through the observable surface only: the
- * store's token, getSnapshot, subscriber notifications, the request
- * script's bodies and the raw ApiErrors a failed operation rejects. The
- * scripted harness itself lives in @speed/test-utils/session-harness,
- * shared with the other auth-core suites.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   createClient,
@@ -227,9 +211,6 @@ describe('list methods', () => {
   })
 
   it('reads a methods 2xx that drops the human gate as off (an older server)', async () => {
-    // A client newer than its server must not refuse every method: the
-    // absent gate means the deployment predates it, which is the off
-    // mechanism.
     const harness = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [],
@@ -318,9 +299,6 @@ describe('list methods', () => {
   })
 
   it('reads an older flat human gate as the same gate on both surfaces', async () => {
-    // Before the gate was reported per surface, the document carried one
-    // flat object. A client newer than its server must keep working
-    // against that answer: the one gate applies to both surfaces.
     const harness = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [],
@@ -336,11 +314,6 @@ describe('list methods', () => {
   })
 
   it('refuses a per-surface human gate that carries only the phone surface', async () => {
-    // The per-surface shape is `{phone, other}`: a deployment reports the
-    // mechanism each of the two surfaces runs. A document that carries
-    // only one member is not the older flat shape (which carries neither)
-    // and is not a complete per-surface gate, so it is a protocol error
-    // rather than the missing surface being read as off.
     const harness = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [],
@@ -567,7 +540,6 @@ describe('register', () => {
     expect(result).toEqual(registration)
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.path).toBe('/api/v1/auth/register')
-    // Registration is not a login: no snapshot transition, no token.
     expect(log).toEqual([])
     expect(harness.session.getSnapshot()).toEqual({
       state: 'anonymous',
@@ -598,8 +570,6 @@ describe('register', () => {
       password: 's3cret-pass',
     })
 
-    // Same snapshot object, same token, no notification: nothing about the
-    // session moved.
     expect(harness.session.getSnapshot()).toBe(before)
     expect(harness.store.get()).toBe(tokenBefore)
     expect(log).toEqual([])
@@ -693,8 +663,6 @@ describe('start flow', () => {
   })
 
   it('carries the read-only provider address a social signup step shows', async () => {
-    // The address is display-only: the session keeps it on the step's
-    // challenge so a surface can show it, and never puts it in an answer.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -714,9 +682,6 @@ describe('start flow', () => {
   })
 
   it('carries the provider identity a social signup step shows read-only', async () => {
-    // The sign-in method's name and the name the provider gave for the
-    // person reach the surface on the challenge step, beside the shared
-    // address; none of the three travels in an answer.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -743,9 +708,6 @@ describe('start flow', () => {
   })
 
   it('carries a method name that differs from the provider identifier', async () => {
-    // The wire member is the method name (the discovery vocabulary), not the
-    // provider identifier: the two WeChat modes share one provider but stay
-    // distinct here.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -765,8 +727,6 @@ describe('start flow', () => {
   })
 
   it('leaves a provider identity member out when the wire omits it', async () => {
-    // Each identity member is independently optional: a provider that gave
-    // no name for the person leaves that member absent rather than empty.
     const harness = makeHarness({
       [LOGIN_START]: () =>
         openFlow({
@@ -862,8 +822,6 @@ describe('answer flow', () => {
   it('commits a login completion: writes the token, reads /me with it, and authenticates', async () => {
     const harness: Harness = makeHarness({
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
-      // The /me read must ride the freshly minted access token, so the
-      // store holds it at the moment the profile is fetched.
       [PROFILE_GET]: () => {
         expect(harness.store.get()).toBe('access-1')
         return principal({ account_id: 'acct-9', display_name: 'Ada L.' })
@@ -921,14 +879,12 @@ describe('answer flow', () => {
     const before = harness.session.getSnapshot()
     expect(before.principal?.account_id).toBe('acct-9')
     const callsBefore = harness.calls.length
-    // A step-up flow: start on the authenticated identity, then complete.
     const elevated = await harness.session.answerFlow({
       seq: 3,
       step: 'complete',
     })
     expect(elevated.state).toBe('elevated')
     expect(harness.store.get()).toBe('access-elevated')
-    // The principal stands and no /me read followed the elevation.
     expect(harness.session.getSnapshot().principal).toBe(before.principal)
     expect(harness.calls).toHaveLength(callsBefore + 1)
     expect(harness.calls.at(-1)?.path).toBe('/api/v1/auth/flows/answer')
@@ -969,7 +925,6 @@ describe('answer flow', () => {
       harness.session.answerFlow({ seq: 2, step: 'complete' }),
       harness,
     )
-    // Nothing was written: no /me read either.
     expect(harness.calls.map((call) => call.path)).toEqual([
       '/api/v1/auth/flows/answer',
     ])
@@ -994,9 +949,6 @@ describe('read flow', () => {
   })
 
   it('returns the pending-signup step a first login parks at before it opens an account', async () => {
-    // The flow's username step is an open state of its own: a client that
-    // did not know it would reject the reply as a protocol violation and
-    // render the login broken instead of the username challenge.
     const harness = makeHarness({
       [LOGIN_CURRENT]: () =>
         openFlow({
@@ -1097,8 +1049,6 @@ describe('logout', () => {
     await signIn(harness)
     const error = await captureRejection(harness.session.logout())
     expect(error).toBe(refused)
-    // A session the server could not revoke is no longer trustworthy
-    // here either: it is cleared regardless.
     expect(harness.store.get()).toBeNull()
     expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
   })
@@ -1123,8 +1073,6 @@ describe('operation supersession', () => {
       [PROFILE_GET]: () => principal({ account_id: 'acct-1' }),
     })
     const seen = snapshotLog(harness.session)
-    // Two concurrent completions, both capturing the same generation
-    // synchronously before either answer resolves.
     const first = harness.session.answerFlow({ seq: 2, step: 'complete' })
     const second = harness.session.answerFlow({ seq: 2, step: 'complete' })
 
@@ -1139,7 +1087,6 @@ describe('operation supersession', () => {
     if (isOperationSuperseded(error)) {
       expect(error.snapshot.principal?.account_id).toBe('acct-1')
     }
-    // The loser's tokens were never applied, and it notified no one.
     expect(harness.store.get()).toBe('access-first')
     expect(seen).toHaveLength(1)
   })
@@ -1343,7 +1290,6 @@ describe('refresh', () => {
     expect(harness.store.get()).toBe('access-new-login')
     releaseRefresh()
     await expect(refreshing).resolves.toBe(false)
-    // The stale refresh lost the race: the newer login owns the store.
     expect(harness.store.get()).toBe('access-new-login')
     expect(harness.session.getSnapshot().principal?.account_id).toBe('acct-new')
   })
@@ -1377,16 +1323,10 @@ describe('refresh', () => {
     })
     await harness.session.answerFlow({ seq: 2, step: 'complete' })
     const refreshing = harness.session.refresh()
-    // A step-up commits while the refresh is in flight: it keeps the
-    // held token (it mints no new refresh token) and the principal.
     await harness.session.answerFlow({ seq: 3, step: 'complete' })
     expect(harness.store.get()).toBe('access-elevated')
     releaseRefresh()
-    // True: the winner kept the principal this refresh spoke for, so a
-    // silent-401 retry stays safe.
     await expect(refreshing).resolves.toBe(true)
-    // The elevation stands; only the rotated refresh token was adopted,
-    // so the session still refreshes.
     expect(harness.store.get()).toBe('access-elevated')
     await expect(harness.session.refresh()).resolves.toBe(true)
     expect(harness.store.get()).toBe('access-rotated')
@@ -1416,7 +1356,6 @@ describe('refresh', () => {
       harness.session.answerFlow({ seq: 2, step: 'complete' }),
     ).rejects.toBeInstanceOf(Error)
     releaseRefresh()
-    // The failed completion changed nothing, so the refresh still lands.
     await expect(refreshing).resolves.toBe(true)
     expect(harness.store.get()).toBe('access-2')
   })
@@ -1550,12 +1489,10 @@ describe('local display-name update', () => {
       state: 'authenticated',
       principal: { account_id: 'user-1', display_name: 'Ada Lovelace' },
     })
-    // The rest of the principal stands: only the display name moved.
     expect(snapshot.principal?.identifiers).toEqual([])
     expect(snapshot.principal?.locale).toBe('en-US')
     expect(seen).toHaveLength(1)
     expect(seen[0]?.principal?.display_name).toBe('Ada Lovelace')
-    // Local: the call issues no request.
     expect(harness.calls).toHaveLength(callsBefore)
   })
 
@@ -1592,9 +1529,6 @@ describe('local display-name update', () => {
     harness.session.setPermissionSet('system', ['users:manage'])
     const permissionSets = harness.session.getSnapshot().permissionSets
 
-    // A restore already in flight captured the generation at entry: if the
-    // local update bumped it, the read's answer would be dropped and the
-    // restore would resolve false.
     gated = true
     const restoring = harness.session.restore()
     harness.session.setDisplayName('Ada Lovelace')
@@ -1743,10 +1677,6 @@ describe('response guards reject a contract-violating 2xx', () => {
   })
 
   it('accepts the reprove state a tenant-required registration leaves the login at', async () => {
-    // Completing a factor enrollment under a tenant's require-mfa does not
-    // complete the login: the engine holds it at `reprove` so the password is
-    // proved again before the newly registered factor strengthens the
-    // session. That is an ordinary open step, not a protocol violation.
     const harness = makeHarness({
       [LOGIN_ANSWER]: () =>
         openFlow({
@@ -1785,7 +1715,6 @@ describe('response guards reject a contract-violating 2xx', () => {
         mfa_required: true,
         password_set: false,
         created_at: '2026-01-01T00:00:00Z',
-        // A non-string attribute is dropped, not carried.
         attributes: { team: 'core', size: 3 },
         locale: 'zh-CN',
         time_zone: 'Asia/Shanghai',
@@ -1835,8 +1764,6 @@ describe('response guards reject a contract-violating 2xx', () => {
           contact: true,
           default_contact: false,
         },
-        // The server cannot produce this document: a row carrying only an
-        // id, so every field decodes to its empty value.
         {
           id: 'i-2',
           kind: '',
@@ -1889,8 +1816,6 @@ describe('logout pre-emption', () => {
     expect(harness.store.get()).toBe('access-2')
     releaseLogout()
     await logoutRequest
-    // The logout revocation concerned the superseded session only: the
-    // newer login owns the store and the snapshot.
     expect(harness.store.get()).toBe('access-2')
     expect(harness.session.getSnapshot().state).toBe('authenticated')
   })
@@ -1913,16 +1838,11 @@ describe('logout pre-emption', () => {
     })
     await harness.session.answerFlow({ seq: 2, step: 'complete' })
     const seen = snapshotLog(harness.session)
-    // The logout revokes the session whose held token is refresh-1; the
-    // step-up that lands first keeps that very token, so it continues
-    // the session the revocation is ending.
     const logoutRequest = harness.session.logout()
     await harness.session.answerFlow({ seq: 2, step: 'complete' })
     expect(harness.store.get()).toBe('access-elevated')
     releaseLogout()
     await logoutRequest
-    // The user who clicked sign-out is signed out: the state the
-    // pre-empting step-up committed spoke for the revoked session.
     expect(harness.store.get()).toBeNull()
     expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
     expect(seen.at(-1)?.state).toBe('anonymous')
@@ -1953,7 +1873,6 @@ describe('cookie session (store-less)', () => {
       permissionSets: { tenant: null, system: null },
       features: { state: 'ready', names: new Set() },
     })
-    // The cookie carries the credential: no access token was stored.
     expect(harness.store.get()).toBeNull()
     expect(seen.map((snapshot) => snapshot.state)).toEqual(['authenticated'])
     expect(harness.calls.map((call) => call.path)).toEqual([
@@ -1965,10 +1884,6 @@ describe('cookie session (store-less)', () => {
   })
 
   it('surfaces a post-completion profile read failure as that read’s error, leaving the committed session to restore()', async () => {
-    // The 2xx completion committed the session (the cookie is set and the
-    // flow is terminal); reading the principal failed. The failure is the
-    // read's own -- no login verdict, no local rollback -- and a read retry
-    // settles the committed session.
     const refused = apiError(503, 'authn.unavailable')
     let profileReads = 0
     const harness = makeCookieHarness({
@@ -1996,7 +1911,6 @@ describe('cookie session (store-less)', () => {
       state: 'authenticated',
       principal: principal({ account_id: 'acct-restored' }),
     })
-    // Recovering the session is a read: the completed answer is not re-sent.
     expect(
       harness.calls.filter((call) => call.path === '/api/v1/auth/flows/answer'),
     ).toHaveLength(1)
@@ -2016,10 +1930,6 @@ describe('cookie session (store-less)', () => {
   })
 
   it('keeps a reload logged in: a fresh session restores from the cookie', async () => {
-    // The bug this session model fixes: a page reload once signed the
-    // user out, because the browser path held its credential in memory.
-    // A fresh session (a reload) reads GET /api/v1/auth/session and, with the
-    // cookie still valid, re-establishes the authenticated snapshot.
     const harness = makeCookieHarness({
       [SESSION_GET]: () => sessionView({ authenticated: true }),
       [PROFILE_GET]: () =>
@@ -2052,8 +1962,6 @@ describe('cookie session (store-less)', () => {
     })
     await expect(harness.session.restore()).resolves.toBe(true)
     expect(harness.session.getSnapshot().impersonating).toBe(true)
-    // The snapshot carries no initiator identity: the principal is the
-    // impersonated account, as GET /api/v1/auth/me answered it.
     expect(harness.session.getSnapshot().principal).toEqual(principal())
   })
 
@@ -2083,12 +1991,10 @@ describe('cookie session (store-less)', () => {
     await expect(harness.session.restore()).resolves.toBe(true)
     expect(harness.session.getSnapshot().impersonating).toBe(false)
 
-    // The host starts an impersonation server-side and re-reads.
     impersonating = true
     await expect(harness.session.restore()).resolves.toBe(true)
     expect(harness.session.getSnapshot().impersonating).toBe(true)
 
-    // The host ends it and re-reads: the flag follows the server.
     impersonating = false
     await expect(harness.session.restore()).resolves.toBe(true)
     expect(harness.session.getSnapshot().impersonating).toBe(false)
@@ -2106,7 +2012,6 @@ describe('cookie session (store-less)', () => {
     expect(harness.session.getSnapshot().impersonating).toBe(true)
     await harness.session.startAuthenticatedFlow({ purpose: 'step-up' })
     await harness.session.answerFlow({ seq: 3, step: 'complete' })
-    // A step-up continues the same session; only restore writes the flag.
     expect(harness.session.getSnapshot().impersonating).toBe(true)
   })
 
@@ -2117,7 +2022,6 @@ describe('cookie session (store-less)', () => {
     const seen = snapshotLog(harness.session)
     await expect(harness.session.restore()).resolves.toBe(false)
     expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
-    // No /me read follows an anonymous session, and no transition fired.
     expect(harness.calls.map((call) => call.path)).toEqual(['/api/v1/auth/session'])
     expect(seen).toHaveLength(0)
   })
@@ -2172,7 +2076,6 @@ describe('cookie session (store-less)', () => {
     await harness.session.startAuthenticatedFlow({ purpose: 'step-up' })
     const state = await harness.session.answerFlow({ seq: 3, step: 'complete' })
     expect(state.state).toBe('authenticated')
-    // The principal stands and no /me read followed the step-up.
     expect(harness.session.getSnapshot().principal).toBe(before.principal)
     expect(harness.session.getSnapshot().permissionSets).toEqual({
       tenant: ['notes:read'],
@@ -2192,7 +2095,6 @@ describe('cookie session (store-less)', () => {
     await harness.session.answerFlow({ seq: 2, step: 'complete' })
     await harness.session.logout()
     expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
-    // A cookie session holds no refresh token: refresh() is a no-op.
     await expect(harness.session.refresh()).resolves.toBe(false)
   })
 
@@ -2217,9 +2119,6 @@ describe('cookie session (store-less)', () => {
 })
 
 describe('impersonating write rules', () => {
-  // Every rule below starts from an authenticated snapshot the server
-  // answered with `impersonating: true`: an anonymous pre-state cannot
-  // tell a write of false from leaving the old value alone.
   const impersonatingRestore = {
     [SESSION_GET]: () =>
       sessionView({ authenticated: true, impersonating: true }),
@@ -2290,7 +2189,6 @@ describe('impersonating write rules', () => {
         throw apiError(400, 'authn.invalid_grant')
       },
     })
-    // The token login is what puts a refresh token in the session's hand.
     await harness.session.answerFlow({ seq: 2, step: 'complete' })
     await restoredWhileImpersonating(harness)
     await expect(harness.session.refresh()).resolves.toBe(false)
@@ -2360,10 +2258,6 @@ describe('impersonating write rules', () => {
 })
 
 describe('identity transitions', () => {
-  // The window an impersonation start opens: the server rotates the
-  // session cookie, and a read issued under the outgoing cookie answers
-  // anonymous while the transition runs. The guard keeps that answer from
-  // ending the local session.
   const cookieLogin = {
     [LOGIN_START]: () => completeFlow(),
     [LOGIN_ANSWER]: () => sessionCompletion(),
@@ -2391,8 +2285,6 @@ describe('identity transitions', () => {
     const seen = snapshotLog(harness.session)
     const release = harness.session.beginIdentityTransition()
     rotating = true
-    // Without the guard this answer clears the snapshot: the silent-401
-    // leg would report a spurious sign-out mid-transition.
     await expect(harness.session.restore()).resolves.toBe(false)
     expect(harness.session.getSnapshot()).toBe(before)
     expect(seen).toHaveLength(0)
@@ -2410,12 +2302,9 @@ describe('identity transitions', () => {
     })
     await expect(harness.session.restore()).resolves.toBe(true)
     const release = harness.session.beginIdentityTransition()
-    // The session genuinely ended during the window: the read is
-    // discarded while the transition runs...
     signedIn = false
     await expect(harness.session.restore()).resolves.toBe(false)
     expect(harness.session.getSnapshot().state).toBe('authenticated')
-    // ...and the next read after the release settles it.
     release()
     await expect(harness.session.restore()).resolves.toBe(false)
     expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
@@ -2466,9 +2355,6 @@ describe('identity transitions', () => {
     const seen = snapshotLog(harness.session)
     const release = harness.session.beginIdentityTransition()
     reading = true
-    // Issued while the window is open, so it carries the outgoing
-    // credential. It outlives the release: the answer still speaks for the
-    // credential the window replaced and must not end the session.
     const inFlight = harness.session.restore()
     release()
     releaseRead()
@@ -2538,10 +2424,6 @@ describe('with the real api-client', () => {
       }
       if (url.pathname === '/api/v1/auth/me') {
         meAttempts += 1
-        // The first /api/v1/auth/me is the login completion's own principal
-        // read; the second is the request under test, which carries the
-        // stale token and is refused; the third is its retry with the
-        // fresh one.
         if (meAttempts === 2) {
           return jsonResponse(401, {
             code: 'authn.session_expired',
@@ -2570,9 +2452,6 @@ describe('with the real api-client', () => {
     await session.answerFlow({ seq: 2, step: 'complete' })
     expect(store.get()).toBe('access-1')
 
-    // A real generated operation through the real client: the first
-    // attempt presents the stale token and is refused; the silent-401
-    // path runs one session refresh and retries with the fresh token.
     await authnProfileGet()
     expect(store.get()).toBe('access-2')
     expect(session.getSnapshot().state).toBe('authenticated')
@@ -2582,26 +2461,12 @@ describe('with the real api-client', () => {
     expect(meCalls[0]?.authorization).toBe('Bearer access-1')
     expect(meCalls[1]?.authorization).toBe('Bearer access-1')
     expect(meCalls[2]?.authorization).toBe('Bearer access-2')
-    // The session's own refresh request went out exactly once. It OUGHT
-    // to travel credential-less (the generated operation is declared to
-    // carry omitAccessToken) so a refused refresh can never re-enter the
-    // client's bearer-only refresh path -- but the checked-in generated
-    // surface still routes the token operation through the bearer
-    // mutator: web/orval.config.ts's per-operation override key named
-    // the pre-flow operation id and no longer matched, so the override
-    // (now corrected to 'authn.token.issue') did not apply when the
-    // artifact was last regenerated. This suite therefore pins the call
-    // and the retry, not the omission, until the artifact is regenerated
-    // from the corrected config; see the notes in AGENTS.md.
     expect(fetchCalls.filter((call) => call.path === '/api/v1/auth/token')).toHaveLength(
       1,
     )
   })
 
   it("keeps the refused request's 401 and the snapshot when a transition is open", async () => {
-    // A cookie session (no store): the silent-401 leg is restore(), and
-    // the window is the one an impersonation start opens by rotating the
-    // cookie.
     const session = createAuthSession()
     let phase: 'operator' | 'rotating' | 'target' = 'operator'
     let sessionReads = 0
@@ -2648,8 +2513,6 @@ describe('with the real api-client', () => {
       fetch: fetcher,
       credentials: 'same-origin',
       refreshAccessToken: (issue) => session.restore(issue),
-      // The silent leg fails on purpose here; capture the transport's
-      // diagnostic instead of writing it to the test console.
       reporter: {
         error: () => undefined,
         warn: (message) => {
@@ -2665,22 +2528,14 @@ describe('with the real api-client', () => {
     const release = session.beginIdentityTransition()
     phase = 'rotating'
     const readsBefore = sessionReads
-    // The refused request runs the session's silent leg, whose read
-    // answers anonymous under the outgoing cookie. The guard discards it,
-    // so the caller keeps its 401 instead of being answered from an
-    // anonymous session the host would render as a sign-out.
     const error = await captureRejection(authnProfileGet())
     expect(isApiError(error)).toBe(true)
     expect(isApiError(error) ? error.status : null).toBe(401)
     expect(sessionReads).toBeGreaterThan(readsBefore)
-    // The transport reports the silent leg's failure -- the discard is a
-    // session-level answer, not a transport failure.
     expect(warnings).toContain('access token refresh failed')
     expect(session.getSnapshot().state).toBe('authenticated')
     expect(session.getSnapshot().principal?.account_id).toBe('acct-operator')
 
-    // After the release the next read settles the identity the new
-    // credential names.
     release()
     phase = 'target'
     await expect(session.restore()).resolves.toBe(true)
@@ -2689,7 +2544,6 @@ describe('with the real api-client', () => {
   })
 })
 
-/** Builds a Response with a JSON body for the fetch stand-in. */
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,

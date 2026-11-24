@@ -1,22 +1,7 @@
 /**
- * webauthn: the passkey ceremony of a flow step.
- *
- * A `webauthn` step hands a factor its own JSON: TOTP's otpauth_uri, or a
- * passkey's public-key options. This module drives the passkey half --
- * `navigator.credentials.create()` for a registration, `.get()` for an
- * assertion -- and serializes the credential into the JSON the login
- * engine's answer field carries.
- *
- * The options arrive as the server marshalled them: the inner
- * PublicKeyCredentialCreationOptions / PublicKeyCredentialRequestOptions,
- * whose `challenge`, `user.id` and credential ids are base64url strings.
- * The browser's API takes a BufferSource for those, so they are decoded on
- * the way in; the credential it returns is not JSON-serializable -- its
- * `rawId` and its response's fields are ArrayBuffers -- so they are
- * re-encoded on the way out into the shape go-webauthn's decoder reads
- * (`id`, `rawId`, `type`, `response.{...}`, every binary field base64url).
- *
- * No WebAuthn library is bundled: the browser's own API is the whole of it.
+ * webauthn: the passkey ceremony of a flow step. Drives
+ * navigator.credentials.create/get and serializes the credential into the answer
+ * JSON, decoding option fields in and re-encoding the credential out.
  */
 
 /** What a `webauthn` step's options ask the client to do. */
@@ -40,9 +25,7 @@ export class WebauthnError extends Error {
   }
 }
 
-/** Read a step's options: TOTP's otpauth_uri, a registration's creation
- * options, or an assertion's request options. Only a registration carries
- * a `user`, so its presence tells a registration from an assertion. */
+/** Read a step's options: TOTP's otpauth_uri, a registration's creation options, or an assertion's request options. */
 export function webauthnStepOf(options: unknown): WebauthnStep {
   if (typeof options !== 'object' || options === null) {
     return 'assert'
@@ -54,16 +37,11 @@ export function webauthnStepOf(options: unknown): WebauthnStep {
   return 'user' in record ? 'register' : 'assert'
 }
 
-/** Drive the passkey ceremony a step's options describe and return the
- * credential as the JSON the answer field carries. Throws a
- * WebauthnError for a step that is not a passkey step, a browser without
- * WebAuthn, a user who dismissed the prompt, an authenticator that already
- * holds an excluded credential, or a ceremony that failed.
- * `signal` lets the caller give up on the ceremony (a cancel control); a
- * browser that honours it dismisses its own prompt and rejects with
- * AbortError. It is best effort: the credential API does not require the
- * honour, and a caller that abandons the call must still ignore its late
- * result. */
+/**
+ * Drives the ceremony a step's options describe and returns the credential JSON.
+ * Throws WebauthnError for a TOTP step, an unavailable API, cancellation, an
+ * already-registered authenticator or a failed ceremony; `signal` is best effort.
+ */
 export async function runWebauthn(
   options: unknown,
   signal?: AbortSignal,
@@ -102,8 +80,6 @@ export async function runWebauthn(
   }
 }
 
-/** The options as the server sent them, with the binary fields a
- * BufferSource. */
 type EncodedCreation = {
   challenge?: unknown
   user?: { id?: unknown } & Record<string, unknown>
@@ -117,7 +93,6 @@ type EncodedRequest = {
   [key: string]: unknown
 }
 
-/** Decode a creation step's options for navigator.credentials.create. */
 function decodeCreation(options: unknown): PublicKeyCredentialCreationOptions {
   const { challenge, user, excludeCredentials, ...rest } = (options ?? {}) as EncodedCreation
   const decoded = {
@@ -132,7 +107,6 @@ function decodeCreation(options: unknown): PublicKeyCredentialCreationOptions {
   return decoded as unknown as PublicKeyCredentialCreationOptions
 }
 
-/** Decode an assertion step's options for navigator.credentials.get. */
 function decodeRequest(options: unknown): PublicKeyCredentialRequestOptions {
   const { challenge, allowCredentials, ...rest } = (options ?? {}) as EncodedRequest
   const decoded = {
@@ -146,7 +120,6 @@ function decodeRequest(options: unknown): PublicKeyCredentialRequestOptions {
   return decoded as unknown as PublicKeyCredentialRequestOptions
 }
 
-/** Serialize a registration credential into the JSON the server parses. */
 function serializeAttestation(credential: PublicKeyCredential): string {
   const response = credential.response as AuthenticatorAttestationResponse
   return JSON.stringify({
@@ -163,7 +136,6 @@ function serializeAttestation(credential: PublicKeyCredential): string {
   })
 }
 
-/** Serialize an assertion credential into the JSON the server parses. */
 function serializeAssertion(credential: PublicKeyCredential): string {
   const response = credential.response as AuthenticatorAssertionResponse
   return JSON.stringify({
@@ -182,7 +154,6 @@ function serializeAssertion(credential: PublicKeyCredential): string {
   })
 }
 
-/** A base64url string as the bytes it encodes. */
 function toBuffer(value: unknown, field: string): ArrayBuffer {
   if (typeof value !== 'string') {
     throw new WebauthnError('failed', `the ${field} is not a base64url string`)
@@ -190,7 +161,6 @@ function toBuffer(value: unknown, field: string): ArrayBuffer {
   return base64urlToBuffer(value)
 }
 
-/** The bytes a base64url string encodes. */
 function base64urlToBuffer(value: string): ArrayBuffer {
   const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
   const pad = (4 - (base64.length % 4)) % 4
@@ -202,7 +172,6 @@ function base64urlToBuffer(value: string): ArrayBuffer {
   return bytes.buffer
 }
 
-/** A buffer as base64url without padding, the encoding the server decodes. */
 function bufferToBase64url(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
   let binary = ''
@@ -212,10 +181,10 @@ function bufferToBase64url(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-/** Classify a thrown value as the ceremony's answer to the caller. The
- * name is read off any object, not only an Error: the browser rejects a
- * dismissed prompt with a DOMException, whose name is what tells it
- * apart. */
+/**
+ * Classifies a thrown value as the ceremony's answer. The name is read off any
+ * object, since a dismissed prompt is a DOMException.
+ */
 function toWebauthnError(error: unknown): WebauthnError {
   if (error instanceof WebauthnError) {
     return error
@@ -231,9 +200,7 @@ function toWebauthnError(error: unknown): WebauthnError {
   if (name === 'NotSupportedError' || name === 'SecurityError') {
     return new WebauthnError('unsupported', message)
   }
-  // A creation whose excludeCredentials matches a credential the authenticator
-  // already holds is rejected this way. Retrying on the same device fails
-  // again, so the caller can name the remedy instead of the generic failure.
+  // A creation whose excludeCredentials matches an existing credential is rejected this way.
   if (name === 'InvalidStateError') {
     return new WebauthnError('already-registered', message)
   }

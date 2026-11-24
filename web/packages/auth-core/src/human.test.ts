@@ -1,16 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The human-verification client: the per-surface gate, the
- * challenge-to-proof path and the proof state a surface holds.
- *
- * The proof is checked with the provider's own rule -- SHA-256 over the
- * decoded challenge and the big-endian nonce against the difficulty -- so
- * a passing case proves the backend would accept the string. The hook
- * cases drive the real session over the shared harness: the discovery
- * read, the off fallback, the per-surface selection, the Turnstile token,
- * the self-hosted captcha challenge, and the fresh proof a consumed one is
- * replaced with.
- */
 
 import { createHash } from 'node:crypto'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
@@ -40,8 +28,6 @@ afterEach(async () => {
   await restoreRealTimers()
 })
 
-/** The leading zero bits of a proof's hash, recomputed as the provider
- * does it. */
 function proofZeroBits(challenge: string, proof: string): number {
   const dot = proof.lastIndexOf('.')
   const nonceBytes = Buffer.alloc(8)
@@ -96,7 +82,6 @@ describe('powProofFromChallenge', () => {
   })
 })
 
-/** A whole gate, both surfaces off except the members a case names. */
 function gateOf(
   phone: { required: boolean; provider: string; site_key?: string },
   other: { required: boolean; provider: string; site_key?: string } = {
@@ -170,8 +155,6 @@ describe('parseCaptchaChallenge', () => {
         image_url: undefined,
       }),
     ).toThrow()
-    // A slider needs both its background and the piece that travels over
-    // it; either one missing leaves the block nothing to draw.
     expect(() =>
       parseCaptchaChallenge({
         ...captchaChallenge({ form: 'slider' }),
@@ -226,8 +209,6 @@ describe('useHumanVerification', () => {
       (call) => call.path === '/api/v1/auth/human/challenge',
     )
     expect(challenges).toHaveLength(1)
-    // The challenge names the surface it is issued for, so the proof the
-    // server hands back is bound to the phone surface.
     expect(challenges[0]?.options?.query).toEqual({ scope: 'phone' })
   })
 
@@ -288,8 +269,6 @@ describe('useHumanVerification', () => {
       useHumanVerification(harness.session, { scope: 'phone' }),
     )
     await waitFor(() => expect(result.current.captcha).not.toBeNull())
-    // The default request carries no form: the server picks between the
-    // image and slider forms, and the client renders whichever it answered.
     expect(result.current.captcha?.form).toBe('slider')
     expect(result.current.status).toBe('ready')
     expect(result.current.proof).toBeNull()
@@ -297,7 +276,6 @@ describe('useHumanVerification', () => {
       (call) => call.path === '/api/v1/auth/human/captcha/challenge',
     )
     expect(requests).toHaveLength(1)
-    // No form is named, but the surface always is.
     expect(requests[0]?.options?.query).toEqual({ scope: 'phone' })
   })
 
@@ -327,14 +305,10 @@ describe('useHumanVerification', () => {
     await waitFor(() => expect(result.current.captcha?.form).toBe('audio'))
     expect(forms).toEqual([undefined, 'audio'])
 
-    // The refresh control names no form of its own: it re-requests the
-    // selection in force, which is the audio alternative once chosen.
     act(() => {
       result.current.refreshCaptcha()
     })
     await waitFor(() => expect(forms).toEqual([undefined, 'audio', 'audio']))
-    // The refresh put the challenge back in flight; the request only lands
-    // with the form, so wait for the challenge itself before reading its id.
     await waitFor(() => expect(result.current.captcha).not.toBeNull())
 
     act(() => {
@@ -357,8 +331,6 @@ describe('useHumanVerification', () => {
         }),
       [CAPTCHA_CHALLENGE]: ({ options }) => {
         if (options?.query?.form === 'audio') {
-          // The accessibility entry is limited more strictly than the
-          // rotation, and the refusal names the wait.
           throw apiError(429, 'authn.throttled', 42_000)
         }
         return captchaChallenge({ form: 'image' })
@@ -374,8 +346,6 @@ describe('useHumanVerification', () => {
       result.current.requestAudio()
     })
     await waitFor(() => expect(result.current.audioRetryAfterSeconds).toBe(42))
-    // The refusal did not spend the challenge on screen: the viewer can
-    // still answer the visual one, and the wait belongs to the entry.
     expect(result.current.captcha?.form).toBe('image')
     expect(result.current.status).toBe('ready')
     expect(result.current.proof).toBeNull()
@@ -413,8 +383,6 @@ describe('useHumanVerification', () => {
     expect(result.current.audioRetryAfterSeconds).toBeUndefined()
   })
 
-  /** A harness whose accessibility entry is always refused with the given
-   * wait, while the rotation keeps issuing the visual form. */
   function refusedAudioHarness(retryAfterMs: number) {
     return makeHarness({
       [LOGIN_METHODS]: () =>
@@ -432,8 +400,6 @@ describe('useHumanVerification', () => {
   }
 
   it('counts the stated wait down after the audio entry is refused', async () => {
-    // The wait is a live countdown: the message shows the time left, not
-    // the number the refusal named, so consumers re-render each second.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const harness = refusedAudioHarness(42_000)
     const { result } = renderHook(() =>
@@ -456,8 +422,6 @@ describe('useHumanVerification', () => {
   })
 
   it('clears the stated wait at its deadline so the audio entry re-enables', async () => {
-    // Storing the wait without expiring it left the only screen-reader
-    // entry disabled forever; at the deadline it must be undefined again.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const harness = refusedAudioHarness(42_000)
     const { result } = renderHook(() =>
@@ -473,7 +437,6 @@ describe('useHumanVerification', () => {
       await vi.advanceTimersByTimeAsync(42_000)
     })
     expect(result.current.audioRetryAfterSeconds).toBeUndefined()
-    // The refusal kept the visual challenge on screen; it stays answerable.
     expect(result.current.captcha?.form).toBe('image')
     expect(result.current.status).toBe('ready')
   })

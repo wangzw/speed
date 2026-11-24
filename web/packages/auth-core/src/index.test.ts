@@ -1,15 +1,3 @@
-/**
- * The entry surface and the manifest's subpath contract, pinned by the suite.
- *
- * The package publishes three entries: the main one is the headless session
- * state machine and its hooks and must stay free of browser-credential code;
- * `./otpauth` carries the pure `otpauth://` parser and secret formatter;
- * `./webauthn` carries the passkey ceremony driver, which is the one place
- * that touches `navigator.credentials`. A host that cannot reach either
- * subpath through the documented mapping has to reimplement it, so the
- * mapping is asserted here rather than left to the build.
- */
-
 import { describe, expect, it } from 'vitest'
 
 import manifest from '../package.json'

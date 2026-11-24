@@ -1,12 +1,4 @@
 // @vitest-environment jsdom
-/**
- * useStepUp + session.isStepUpShortfall: the session operation behind a
- * step-up-gated surface. A real session is driven over the shared
- * scripting harness (a fake request function bound through the api-sdk
- * runtime seam), and the assertions are the observable state only: the
- * discriminator's answer, the hook's phase/step, and the one elevation
- * callback.
- */
 
 import { StrictMode } from 'react'
 import type { ReactNode } from 'react'
@@ -33,9 +25,6 @@ import {
 import type { AuthSession } from './session.js'
 import { useStepUp } from './step-up.js'
 
-/** A session established by a restore of a valid cookie. `script` adds
- * handlers on top of the restore reads, so a test scripts the operation
- * its surface drives against a real authenticated session. */
 async function authenticatedSession(
   script: Parameters<typeof makeCookieHarness>[0] = {},
 ): Promise<AuthSession> {
@@ -68,7 +57,6 @@ describe('session.isStepUpShortfall', () => {
   })
 })
 
-/** The abandon requests (`DELETE /api/v1/auth/flows/current`) a harness recorded. */
 function abandons(
   calls: readonly { readonly method: string; readonly path: string }[],
 ) {
@@ -79,19 +67,12 @@ function abandons(
 
 describe('useStepUp', () => {
   it('issues no abandon request when it mounts closed', () => {
-    // A surface may render the challenge closed and never open it (the
-    // account sections do). The mount started no flow, so there is no
-    // binding to release: closing must not invent one.
     const { session, calls } = makeCookieHarness({})
     renderHook(() => useStepUp(session, false, () => undefined))
     expect(calls).toEqual([])
   })
 
   it('abandons exactly once when the surface unmounts with its flow still open', async () => {
-    // A surface may unmount instead of turning `active` false: the
-    // console's StepUpChallenge renders nothing while closed, and a
-    // restart remounts its driver. The flow this mount opened and left
-    // open is released on the way out.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
         openFlow({
@@ -114,8 +95,6 @@ describe('useStepUp', () => {
   })
 
   it('sends the surface’s path as the flow’s return_to', async () => {
-    // A redirect method's round trip must land back on the page that
-    // started the challenge, so that page is the one that reads a refusal.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
         openFlow({
@@ -159,8 +138,6 @@ describe('useStepUp', () => {
   })
 
   it('sends no abandon when a settled flow unmounts', async () => {
-    // The server consumed the settled flow; unmounting afterwards has no
-    // binding to release.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
         openFlow({
@@ -190,9 +167,6 @@ describe('useStepUp', () => {
   })
 
   it('sends no abandon when StrictMode remounts the effect', async () => {
-    // The development double effect invocation cleans up and remounts in
-    // the same task. The deferred release is cancelled by the remount's
-    // setup, so opening a challenge never sends a DELETE of its own.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
         openFlow({
@@ -245,8 +219,6 @@ describe('useStepUp', () => {
   })
 
   it('sends no abandon when a settled flow closes', async () => {
-    // A completed flow is consumed by the server; closing the challenge
-    // afterwards has no binding to release.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
         openFlow({
@@ -275,8 +247,6 @@ describe('useStepUp', () => {
   })
 
   it('sends no abandon when a refused start closes', async () => {
-    // The start was refused, so the server created no flow: closing the
-    // dialog has no binding to release.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () => {
         throw apiError(400, 'authn.bad_request')
@@ -298,10 +268,6 @@ describe('useStepUp', () => {
   })
 
   it('sends no abandon when an unavailable start closes', async () => {
-    // The unraisable-session refusal (401 while the session stays
-    // established) is also a refused start -- no flow was created -- and
-    // the dialog it leaves on screen offers a re-login, which cancels it.
-    // Closing must not release a binding that never existed.
     const { session, calls } = makeCookieHarness({
       [SESSION_GET]: () => sessionView({ authenticated: true }),
       [PROFILE_GET]: () => principal(),
@@ -355,18 +321,11 @@ describe('useStepUp', () => {
     })
     expect(onElevated).toHaveBeenCalledTimes(1)
 
-    // The start named the step-up purpose alone (no method): the flow
-    // enters at the factor step for an account that has one.
     const start = calls.find((c) => c.path === '/api/v1/auth/flows/authenticated')
     expect(start?.options?.body).toEqual({ purpose: 'step-up' })
   })
 
   it('names the first-factor method on the start when one is given', async () => {
-    // An account with no factor cannot be raised through a second factor;
-    // its route asks for a fresh first factor, and the server accepts a
-    // step-up that re-proves the method the session was established with.
-    // The hook forwards that method on the start and parks on the method's
-    // own first step.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
         openFlow({
@@ -402,10 +361,6 @@ describe('useStepUp', () => {
   })
 
   it('holds a sending answer until its proof arrives, then forwards it once', async () => {
-    // Choosing an SMS second factor sends a verification message, so the
-    // answer waits for the deployment's human-verification proof: the hook
-    // parks it as pending, and forwards the one request by itself once the
-    // widget yields its token.
     const { session, calls } = makeCookieHarness({
       [LOGIN_METHODS]: () =>
         methodList([], {
@@ -434,8 +389,6 @@ describe('useStepUp', () => {
       result.current.answer({ step: 'factor', input: { factor: 'f1' } })
     })
 
-    // The answer sends, so it is held for its proof: no flow request leaves
-    // while the block waits for the widget's token.
     await waitFor(() => {
       expect(result.current.pending).toBe(true)
     })
@@ -451,8 +404,6 @@ describe('useStepUp', () => {
       expect(result.current.phase).toBe('elevated')
     })
     expect(onElevated).toHaveBeenCalledTimes(1)
-    // One request, forwarded by the hook itself: the viewer's one ask is not
-    // turned into a second click, and the proof it held is the one presented.
     const answers = calls.filter(
       (call) => call.path === '/api/v1/auth/flows/answer',
     )
@@ -464,13 +415,10 @@ describe('useStepUp', () => {
         human_proof: 'token-1',
       },
     ])
-    // A presented proof is consumed: the challenge holds none afterwards.
     expect(result.current.human.proof).toBeNull()
   })
 
   it('forwards a gate-free send with no proof', async () => {
-    // The deployment requires no proof on the phone surface, so the answer
-    // that sends leaves directly and presents no proof.
     const { session, calls } = makeCookieHarness({
       [LOGIN_METHODS]: () => methodList([]),
       [LOGIN_START_AUTHENTICATED]: () =>
@@ -507,10 +455,6 @@ describe('useStepUp', () => {
   })
 
   it('arms the wait a throttled answer stated and clears it at its deadline', async () => {
-    // A 429 carrying Retry-After is a refusal that names how long the caller
-    // must hold off. The hook exposes that wait in whole seconds, counts it
-    // down, and once it elapses clears both the wait and the refusal that
-    // stated it, leaving the parked step answerable.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const { session } = makeCookieHarness({
@@ -557,8 +501,6 @@ describe('useStepUp', () => {
       await waitFor(() => {
         expect(result.current.retryAfterSeconds).toBeNull()
       })
-      // The wait is spent, so the retry control is free again; the failure
-      // code stays and names what the attempt hit.
       expect(result.current.errorCode).toBe('ratelimit.throttled')
       expect(result.current.step?.kind).toBe('factor')
       expect(onElevated).not.toHaveBeenCalled()
@@ -568,10 +510,6 @@ describe('useStepUp', () => {
   })
 
   it('never publishes a zero-second wait at its deadline', async () => {
-    // The wait clears the moment the deadline is crossed. A zero published
-    // for one render would keep a caller's retry control disabled and show
-    // "0 seconds" for that frame, so every value the hook hands to a render
-    // must be null or positive.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       const { session } = makeCookieHarness({
@@ -616,7 +554,6 @@ describe('useStepUp', () => {
       await waitFor(() => {
         expect(result.current.retryAfterSeconds).toBeNull()
       })
-      // The step is answerable again and no render ever saw a zero wait.
       expect(result.current.step?.kind).toBe('factor')
       expect(rendered).not.toContain(0)
       expect(
@@ -647,12 +584,6 @@ describe('useStepUp', () => {
   })
 
   it('keeps a 400 start on failed while a real session stays authenticated', async () => {
-    // A real session, restored from a valid cookie, that meets a 400 when
-    // it starts the step-up. The 400 says the start named something the
-    // server cannot take; it does not say the account has no factor (that
-    // is read from the account's factor list), so the refusal is an
-    // ordinary failure rendered as its code, and the session it did not
-    // end staying authenticated changes nothing about that.
     const session = await authenticatedSession({
       [LOGIN_START_AUTHENTICATED]: () => {
         throw apiError(400, 'authn.bad_request')
@@ -673,10 +604,6 @@ describe('useStepUp', () => {
   })
 
   it('parks on unavailable for a 401 start while the session stays authenticated', async () => {
-    // The account has factors, but none whose methods may strengthen this
-    // session: the start answers 401 insufficient_user_authentication and
-    // the session stays authenticated -- the one refusal no step can
-    // satisfy, which the caller answers by re-establishing the session.
     const session = await authenticatedSession({
       [LOGIN_START_AUTHENTICATED]: () => {
         throw apiError(401, 'authn.insufficient_user_authentication')
@@ -696,9 +623,6 @@ describe('useStepUp', () => {
   })
 
   it('answers a ready complete step on its own and elevates once', async () => {
-    // The factor proof parks the flow on its ready state, whose next step is
-    // a bare confirmation: it collects nothing, so the hook answers it
-    // without a second caller action and the elevation fires once.
     const { session, calls } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>
         openFlow({
@@ -728,8 +652,6 @@ describe('useStepUp', () => {
     })
     expect(onElevated).toHaveBeenCalledTimes(1)
 
-    // The automatic answer carries the ready step's own sequence number and
-    // the complete step, and it is the only completion sent.
     const answers = calls.filter(
       (call) => call.path === '/api/v1/auth/flows/answer',
     )
@@ -740,9 +662,6 @@ describe('useStepUp', () => {
   })
 
   it('leaves a refused automatic completion on the step for a manual retry', async () => {
-    // A refused automatic answer must not strand the flow on its pending
-    // state: it parks on 'failed' with the code and keeps the step, so the
-    // caller renders that step's own confirmation button, which retries it.
     let completions = 0
     const { session } = makeCookieHarness({
       [LOGIN_START_AUTHENTICATED]: () =>

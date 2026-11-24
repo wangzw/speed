@@ -1,21 +1,4 @@
 // @vitest-environment jsdom
-/**
- * query-key.test.tsx -- the tenant-scoped query-key convention
- * (query-key.ts): the factory's key shape, the switch-time eviction over
- * a real QueryClient, and the hook's key-and-enablement over a
- * host-supplied TenantProvider.
- *
- * The eviction test is the discriminating one: a client holds two
- * tenants' subtrees plus an identity row cached under a bare key, and
- * after evictTenantQueries for the departing tenant exactly that
- * tenant's subtree is gone -- the other tenant's rows and the
- * tenant-less row survive. An eviction that removed everything, removed
- * nothing, or matched the wrong segment fails it.
- *
- * The @vitest-environment pragma is per-file (the hook needs a DOM);
- * vitest runs without globals, which disables @testing-library/react's
- * auto-cleanup, so cleanup runs explicitly after each test.
- */
 
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -63,8 +46,6 @@ describe('evictTenantQueries', () => {
       rows: 2,
     })
     queryClient.setQueryData(tenantQueryKey('tenant-2', 'notes'), { rows: 3 })
-    // An identity-domain row cached under a bare key: no tenant segment,
-    // out of the eviction's reach.
     queryClient.setQueryData(['me'], { user: 'ada' })
 
     evictTenantQueries(queryClient, 'tenant-1')
@@ -103,8 +84,6 @@ describe('useTenantQueryKey over a host-supplied tenant', () => {
     const { result } = renderHook(() => useTenantQueryKey(['notes']), {
       wrapper: TenantRoot,
     })
-    // No tenant in the route: a key with a null tenant, and the null
-    // operand the read gates `enabled` on.
     expect(result.current).toEqual({
       tenantId: null,
       queryKey: [null, 'notes'],
@@ -136,8 +115,6 @@ describe('useTenantQueryKey over a host-supplied tenant', () => {
     })
     const first = result.current.queryKey
     rerender()
-    // The memo keys on the tenant id and the bare key, so a re-render
-    // with a stable bare key does not churn the key identity.
     expect(result.current.queryKey).toBe(first)
   })
 })

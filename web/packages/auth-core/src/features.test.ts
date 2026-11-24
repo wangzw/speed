@@ -1,16 +1,4 @@
 // @vitest-environment jsdom
-/**
- * features.test.ts -- the feature state's observable behaviour and the
- * compile-time name check.
- *
- * The session reads GET /api/v1/features on a login commit and on an
- * anonymous-start restore, keeps it on the same-session paths, and resets
- * it on logout. The hooks read it fail-closed: only a `ready` set that
- * contains the name answers true. The `@ts-expect-error` assertion pins
- * useFeature's parameter to the generated FeatureName, so a misspelled
- * name fails this package's typecheck (and, were the type to widen to
- * string, the directive would become unused and fail it too).
- */
 
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -37,7 +25,6 @@ import {
   useFeatureState,
 } from './hooks'
 
-/** The name type at useFeature's parameter position. */
 type FeatureArgument = Parameters<typeof useFeature>[0]
 
 const declaredName: FeatureArgument = 'authn.mfa'
@@ -85,7 +72,6 @@ describe('the feature state over a session', () => {
     const { result: absent } = renderHook(() => useFeature('tenant.admin'))
     expect(present.current).toBe(true)
     expect(absent.current).toBe(false)
-    // The feature read went out alongside the profile read.
     const featureReads = harness.calls.filter(
       (call) => call.path === '/api/v1/features',
     )
@@ -201,10 +187,6 @@ describe('the feature state over a session', () => {
     attachSession(harness.session)
     await signIn(harness)
 
-    // A subscriber that reacts to the `pending` transition by retrying
-    // again: it re-enters while the outer call is publishing the state.
-    // The in-flight read is already registered, so the re-entrant call
-    // shares it instead of issuing a second GET /features.
     let reentered = false
     harness.session.subscribe((snapshot) => {
       if (!reentered && snapshot.features.state === 'pending') {
@@ -225,10 +207,6 @@ describe('the feature state over a session', () => {
   })
 
   it('discards a retry read that resolves after the server ended the session', async () => {
-    // A server-ended clear (an authenticated restore answered anonymous)
-    // does not bump the generation, so the commit check's "still
-    // authenticated" clause is the only thing that keeps the late read
-    // from overwriting the cleared state.
     let release!: () => void
     let reads = 0
     const harness = makeHarness({
@@ -294,9 +272,6 @@ describe('the feature state over a session', () => {
       names: new Set(['notification.inbox']),
     })
 
-    // The first session's read is still in flight. The new session's retry
-    // must run its own read rather than await a flight that is bound to be
-    // discarded.
     const retry = harness.session.retryFeatures()
     expect(reads).toBe(4)
     expect(harness.session.getSnapshot().features.state).toBe('pending')
@@ -337,14 +312,11 @@ describe('the feature state over a session', () => {
 
     const retry = harness.session.retryFeatures()
     expect(harness.session.getSnapshot().features.state).toBe('pending')
-    // A step-up continues the same session and keeps the pending marker.
     await harness.session.answerFlow({ seq: 3, step: 'complete' })
     expect(harness.session.getSnapshot().features.state).toBe('pending')
 
     release()
     await retry
-    // The superseded retry restores the state the marker replaced rather
-    // than leaving the session stuck on pending.
     expect(harness.session.getSnapshot().features).toEqual(previous)
   })
 
@@ -359,8 +331,6 @@ describe('the feature state over a session', () => {
     })
     await expect(harness.session.restore()).resolves.toBe(true)
     expect(harness.session.getSnapshot().state).toBe('authenticated')
-    // A failed read is neither every feature absent nor every feature
-    // present: it must not settle as a ready empty set.
     expect(harness.session.getSnapshot().features).toEqual({
       state: 'failed',
       error: refusal,
@@ -393,7 +363,6 @@ describe('the feature state over a session', () => {
     })
     const callsAfterFirst = harness.calls.length
     await expect(harness.session.restore()).resolves.toBe(true)
-    // The same session continues: no second feature read.
     expect(harness.calls.slice(callsAfterFirst).map((call) => call.path)).toEqual([
       '/api/v1/auth/session',
       '/api/v1/auth/me',

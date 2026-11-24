@@ -1,16 +1,3 @@
-/**
- * parseOtpauth and formatSecretForDisplay: the enrolment URI's parts.
- *
- * These cases pin what the enrolment panel may show. The parse cases
- * cover the Key Uri Format's variations -- a label whose issuer prefix is
- * percent-encoded, a label that is the account alone, the query
- * parameters and their defaults -- and every refusal the panel needs to
- * name: a missing secret, a non-TOTP type, a malformed digit count or
- * period, an unknown algorithm. The formatting cases pin that the hand
- * entry form is the secret alone: the URI is never echoed back, and the
- * groups are what a person types.
- */
-
 import { describe, expect, it } from 'vitest'
 import { formatSecretForDisplay, parseOtpauth } from './otpauth.js'
 
