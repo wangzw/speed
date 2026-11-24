@@ -1,23 +1,3 @@
-/**
- * Rule tests for no-native-disabled-control. Run from the web workspace
- * root:
- *
- *   pnpm exec vitest run eslint-rules/no-native-disabled-control.test.mjs
- *
- * The RuleTester cases pin the rule's judgement: which imports count as
- * covered elements, which attribute values are reported, and which
- * component name a report carries. The fixture snippets are code for the
- * rule under test, not code from any package. The shape cases hold the
- * two exported constants to their stated form. The final suite scans every
- * runtime TSX file under web/packages/<name>/src and the demo host's src --
- * the scopes the two lint configs give the rule -- and holds
- * NATIVE_DISABLED_EXEMPTIONS exactly equal to the components whose covered
- * controls a non-literal expression disables, rejects any covered control
- * still using the `loading` prop, and rejects every inline `eslint-disable`
- * comment that names this rule. The scan runs with `noInlineConfig`, so no
- * inline directive takes effect.
- */
-
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,10 +27,6 @@ const TS_LANGUAGE_OPTIONS = {
   },
 }
 
-/**
- * RuleTester.run throws an aggregate error listing every failing case;
- * surface that error as the test failure instead of swallowing it.
- */
 function runRule(valid, invalid) {
   try {
     ruleTester.run('no-native-disabled-control', noNativeDisabledControlRule, {
@@ -847,10 +823,6 @@ describe('no-native-disabled-control exports', () => {
   })
 })
 
-/** Every TSX file under one source root; the two lint configs apply the
- * rule to each package's src and to the demo host's src, excluding test
- * files, browser cases and `test-utils/`, so the scan skips the same
- * entries. */
 function runtimeTsxFiles(directory, found = []) {
   for (const entry of readdirSync(directory)) {
     if (
@@ -887,12 +859,8 @@ function parseProgram(file) {
   return ast
 }
 
-/** The workspace scan asks the rule about every runtime TSX file in the two
- * lint configs' scopes. Each file is linted under a filename no exemption
- * names, because an exemption suppresses the report and the scan needs the
- * full hit set to compare against the list in both directions: a hit
- * without a registration and a registration whose control no longer hits.
- * The path a report would display is rebuilt from the file's scope instead. */
+// Each file is linted under a filename no exemption names, so the scan sees
+// every hit; the displayed path is rebuilt from the file's scope instead.
 describe('no-native-disabled-control workspace scan', () => {
   const webRoot = fileURLToPath(new URL('..', import.meta.url))
   const repoRoot = join(webRoot, '..')
@@ -920,16 +888,12 @@ describe('no-native-disabled-control workspace scan', () => {
     },
   ]
 
-  /** The `src` directory of every workspace package. */
   function packageSrcDirs() {
     return readdirSync(packagesRoot).map((name) =>
       join(packagesRoot, name, 'src'),
     )
   }
 
-  /** Every runtime source root the two lint configs give the rule, grouped
-   * by config scope. Each root carries the prefix its exemption entries use:
-   * a package keys from `web/`, the demo host from the repository root. */
   function sourceScopes() {
     return [
       packageSrcDirs().map((dir) => ({
@@ -940,8 +904,6 @@ describe('no-native-disabled-control workspace scan', () => {
     ]
   }
 
-  /** The runtime TSX files under one source root. A root the configs give
-   * the rule but that is absent fails the scan rather than shrinking it. */
   function filesUnder(scope) {
     if (!existsSync(scope.root) || !statSync(scope.root).isDirectory()) {
       expect.fail(`source root ${scope.root} does not exist`)
@@ -953,8 +915,6 @@ describe('no-native-disabled-control workspace scan', () => {
     return `${scope.prefix}${relative(scope.root, file).split('\\').join('/')}`
   }
 
-  /** The declaring component a report names, read from the message the
-   * rule formats out of its `component` data. */
   function componentNamedBy(message, tail) {
     const marker = ' in component '
     const start = message.indexOf(marker) + marker.length
