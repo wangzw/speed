@@ -15,9 +15,6 @@ const (
 	boardPath        = moduleImportPath + "/feature/board"
 )
 
-// allowedImports are the root packages this module may reach. The authentication
-// and authorization capabilities are reached through their root packages alone:
-// their subpackages bind an implementation, and this module is above both.
 var allowedImports = map[string]bool{
 	"github.com/gin-gonic/gin":    true,
 	moduleImportPath + "/authn":   true,
@@ -29,18 +26,11 @@ var allowedImports = map[string]bool{
 	moduleImportPath + "/log":     true,
 }
 
-// listed is what these checks read about one package: its import path and the
-// imports of its non-test files. go list reports test imports separately, and
-// the rules are about production code, so those are not asked for.
 type listed struct {
 	ImportPath string
 	Imports    []string
 }
 
-// goList lists every package of the module with go list. The pattern names the
-// module, so the listing does not depend on the directory the tests run from.
-// -e keeps a package that does not compile in the listing, with its imports as
-// the parser read them.
 func goList(t *testing.T) []listed {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-e", "-json=ImportPath,Imports", moduleImportPath+"/...")
@@ -64,10 +54,8 @@ func goList(t *testing.T) []listed {
 	}
 }
 
-// TestTheBoardImportsTheRootPackagesAndNothingElse holds the module's dependency
-// position: it sits above pkg/http and above the authentication and
-// authorization root packages, so it may reach those roots and the shared
-// infrastructure, and no implementation subpackage of either capability.
+// TestTheBoardImportsTheRootPackagesAndNothingElse checks that the board reaches
+// the root packages and no implementation subpackage of another capability.
 func TestTheBoardImportsTheRootPackagesAndNothingElse(t *testing.T) {
 	var found bool
 	for _, pkg := range goList(t) {
@@ -92,10 +80,7 @@ func TestTheBoardImportsTheRootPackagesAndNothingElse(t *testing.T) {
 	}
 }
 
-// TestNoOtherModuleImportsTheBoard holds the other direction: the board is taken
-// into a command by the host naming it, and no module reaches it. A module that
-// imported it would make the publisher part of every binary that imports that
-// module.
+// TestNoOtherModuleImportsTheBoard checks that no module reaches the board.
 func TestNoOtherModuleImportsTheBoard(t *testing.T) {
 	others := 0
 	for _, pkg := range goList(t) {
@@ -113,8 +98,6 @@ func TestNoOtherModuleImportsTheBoard(t *testing.T) {
 	}
 }
 
-// standardLibrary reports whether path names a standard-library package. Its
-// first segment carries no dot, which every module path does.
 func standardLibrary(path string) bool {
 	first := path
 	if i := strings.IndexByte(first, '/'); i >= 0 {

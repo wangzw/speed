@@ -1,29 +1,6 @@
-// Package board is the module that publishes the feature document: the set of
-// feature names this process serves, answered on GET /api/v1/features to authenticated
-// callers alone.
-//
-// It declares no feature of its own. Modules that serve a user-facing surface
-// declare one with a feature.Spec in their own resources; this module checks
-// every declaration in the available set, collects the conditional ones the
-// running modules post during Init, and freezes the answer in Start. The answer
-// is process-wide: it follows the assembly, not the caller, and no permission or
-// tenant narrows it. Whether the surface is authorized stays each serving
-// module's decision.
-//
-// The module holds the declaration surface as feature.Board, delivered
-// exclusively, so a dependency closure never pulls the board into a command: a
-// host names it on the command tree of every command that serves a frontend.
-//
-// # Lifecycle
-//
-// Prepare reads this module's configuration and checks every feature
-// declaration in the available set — including the ones made by modules this
-// command never took in. Migrate opens the posting window. Init mounts the read
-// route on the configured endpoint, registers it as letting an impersonating
-// identity through, and declares it open on the authorization middleware when
-// one is present. Start seals the window, judges every post, computes the set
-// from the enabled set and the host's AllResources adjustment, and freezes the
-// answer bytes. A request reads the frozen bytes and nothing else.
+// Package board is the module that publishes the feature document — the feature
+// names this process serves — on GET /api/v1/features to authenticated callers
+// alone. It declares no feature of its own.
 package board
 
 import (
@@ -46,42 +23,24 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// ModuleName is this module's name in the registry. A host writes it into the
-// command of every process that serves a frontend.
+// ModuleName is this module's name in the registry.
 const ModuleName = "feature.board"
 
-// ConfigNamespace is where this module's input items are mounted. It is this
-// module's own name, as a registering module's namespace always is.
+// ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
 
-// The configuration item this module accepts, relative to its namespace, and
-// the full path a failure names.
 const (
 	endpointItem = "endpoint"
 	endpointKey  = ConfigNamespace + "." + endpointItem
 )
 
-// pathFeatures is the route the document is answered on, relative to the API
-// root the fragment declares. The mounting resolves it against that root, so
-// the path is written once.
 const pathFeatures = "/features"
 
-// fragmentEndpoint is the endpoint name this module's OpenAPI fragment is
-// declared against. The resource is a static declaration fixed before
-// configuration is read, so the fragment carries the conventional name of the
-// account surface rather than the configured one; the mounting uses the name
-// configuration gives. A declared endpoint name no endpoint carries is not an
-// error, the same way a declared path and a registered route are separately
-// maintained facts (pkg/http's Spec).
 const fragmentEndpoint = "account"
 
-// openAPIFragment is this module's OpenAPI fragment, read at build time. It is
-// generated from operations, not written by hand.
-//
 //go:embed openapi/board.json
 var openAPIFragment []byte
 
-// boardSpec is the API root this module's fragment and routes hang off.
 var boardSpec = speedhttp.Spec{
 	Endpoint: fragmentEndpoint,
 	Prefix:   "api",
@@ -89,30 +48,13 @@ var boardSpec = speedhttp.Spec{
 	Document: openAPIFragment,
 }
 
-// routePath is the absolute path the read route is mounted on: the declared
-// path resolved against the API root.
 var routePath = boardSpec.ResolvePath(pathFeatures)
 
-// init registers this module with the process registry. Registration travels
-// with the import, which is what makes "does this command publish the feature
-// document" a question the host answers by importing this package and writing
-// ModuleName into the command.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is the descriptor a host registers.
-//
-// The entry point is required: the module mounts a route through it, so the
-// presence of the board implies the process has one. The logger is optional and
-// taken up only to write the frozen-set summary in Start. The authentication and
-// authorization gateways are not requirements — both claim what they deliver
-// exclusively, so a dependency closure would not pull either in anyway — and are
-// taken up in Init, where the authentication one is mandatory: without it the
-// document would be published to anyone, so the startup fails rather than
-// exposing it.
-//
-// The board delivers feature.Board exclusively. That keeps a dependency closure
-// from adding the module to a command on another module's behalf: the host names
-// it wherever the document is served.
+// Module is the descriptor a host registers. The entry point is required and
+// the logger optional; the authentication gateway is taken up in Init and is
+// mandatory there, and the authorization gate is optional.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -127,11 +69,6 @@ func Module() core.Module {
 			operations,
 		},
 
-		// Prepare reads the configuration and checks every declaration in the
-		// available set. It does not filter: a module this command never took
-		// in still has its declaration checked, because a malformed name is a
-		// defect of the binary and would otherwise pass in one command and fail
-		// in another for a declaration that never changed.
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			if _, err := readConfig(reg); err != nil {
 				return core.Enablement{}, err
@@ -146,9 +83,6 @@ func Module() core.Module {
 			return newBoard(reg)
 		},
 
-		// Migrate opens the posting window. Every module's Migrate has run
-		// before any module's Init begins, so opening here contains the whole
-		// Init stage and none of it precedes the board's own setup.
 		Migrate: func(_ context.Context, _ *core.Registry, instance any) error {
 			if b, ok := productOf(instance); ok {
 				b.open()
@@ -164,8 +98,6 @@ func Module() core.Module {
 			return b.wire(reg)
 		},
 
-		// Start seals the window, judges the posts, computes the set from the
-		// enabled set, and freezes the answer bytes.
 		Start: func(_ context.Context, reg *core.Registry, instance any) error {
 			b, ok := productOf(instance)
 			if !ok {
@@ -176,14 +108,6 @@ func Module() core.Module {
 	}
 }
 
-// schema declares this module's input items. The namespace is this module's own
-// name: two modules declaring one path is a startup failure even when only one
-// of them runs.
-//
-// The endpoint takes the primary source alone. It decides where the document is
-// published, so an environment variable or a command-line argument that could
-// rewrite it would be a way to move the read surface onto an endpoint from
-// outside the configuration file.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -199,23 +123,12 @@ func schema() config.Schema {
 	}
 }
 
-// configDefaults is what this module is worth without a configuration file.
-// There is no default for the endpoint: a document mounted nowhere would be a
-// read surface the frontend never finds, and guessing an endpoint is a guess
-// about what is exposed. A module that cannot answer fails the startup, naming
-// the key.
 var configDefaults = moduleConfig{}
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// Endpoint names the listening endpoint the read route is mounted on.
 	Endpoint string `config:"endpoint"`
 }
 
-// readConfig decodes this module's section and returns the configured endpoint.
-// Prepare and New both go through it, so the two see one configuration. A
-// missing required item fails here with config.ErrMissingRequired, naming the
-// full path.
 func readConfig(reg *core.Registry) (string, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -228,18 +141,13 @@ func readConfig(reg *core.Registry) (string, error) {
 	return cfg.Endpoint, nil
 }
 
-// productOf narrows an instance to this module's product. The callbacks are
-// also handed an instance a host supplied for the module, which can be any
-// value that delivers feature.Board; this module leaves such an instance alone,
-// so its own lifecycle does nothing for it.
+// productOf narrows an instance to this module's product, leaving an instance a
+// host supplied for the module alone.
 func productOf(instance any) (*board, bool) {
 	b, ok := instance.(*board)
 	return b, ok && b != nil
 }
 
-// phase is the state of the posting window. The zero value is shut, so a Post
-// from New — before Migrate has run — panics for the same reason one after
-// Start does.
 type phase uint8
 
 const (
@@ -248,33 +156,26 @@ const (
 	phaseSealed
 )
 
-// post is one reporting module and the name it reported. Two calls with the
-// same pair are one entry.
 type post struct {
 	module string
 	name   string
 }
 
-// board is the module's product. It implements feature.Board.
 type board struct {
 	endpoint string
-	// logger is nil when the assembly has no logging capability, in which case
-	// Start writes no summary.
+	// logger is nil when the assembly has no logging capability.
 	logger *slog.Logger
 
-	// mu guards the window and the posts. Post is called from other modules'
-	// callbacks, which may run on a goroutine of their own, so the writes are
-	// not ordered by the drive.
+	// mu guards the window and the posts, which other modules' callbacks write.
 	mu     sync.Mutex
 	phase  phase
 	posted map[post]struct{}
 
-	// document is the frozen answer. Start writes it before Serve begins, and
-	// request handling reads it afterwards without a lock.
+	// document is the frozen answer, written in Start and read without a lock
+	// afterwards.
 	document FeatureBoardDocument
 }
 
-// newBoard takes up the configuration and the optional logging capability.
 func newBoard(reg *core.Registry) (*board, error) {
 	endpoint, err := readConfig(reg)
 	if err != nil {
@@ -291,9 +192,8 @@ func newBoard(reg *core.Registry) (*board, error) {
 	return b, nil
 }
 
-// optional takes up a capability whose absence is a legal assembly: the second
-// result says it is absent, and any other failure to take it up ends the start,
-// because a capability that is there and cannot be taken up is not an absence.
+// optional takes up a capability whose absence is legal; any other failure ends
+// the start.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)
@@ -307,9 +207,8 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	}
 }
 
-// Post records that module serves name in this run. Outside the window opened
-// by Migrate and closed by Start it panics: such a call is a defect in the
-// declaring module's code, not a configuration this module could report.
+// Post records that module serves name in this run; outside the posting window
+// it panics.
 func (b *board) Post(module, name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -320,15 +219,12 @@ func (b *board) Post(module, name string) {
 	b.posted[post{module: module, name: name}] = struct{}{}
 }
 
-// open opens the posting window. It runs in Migrate.
 func (b *board) open() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.phase = phaseOpen
 }
 
-// wire mounts the read route and registers it with the gateways. It runs in
-// Init.
 func (b *board) wire(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if err != nil {
@@ -339,9 +235,6 @@ func (b *board) wire(reg *core.Registry) error {
 		return fmt.Errorf("%s: %w: %q: %w", ModuleName, speedhttp.ErrUnknownEndpoint, b.endpoint, err)
 	}
 
-	// The document's confidentiality is the gateway's alone, so a process
-	// without one fails here rather than publishing the assembly's shape to
-	// every caller.
 	gate, err := core.Resolve[authn.Gate](reg)
 	if err != nil {
 		if errors.Is(err, core.ErrMissingProvider) {
@@ -354,13 +247,6 @@ func (b *board) wire(reg *core.Registry) error {
 	endpoint.Route(http.MethodGet, routePath, readOperation.Handle(b.read))
 	gate.Impersonable(b.endpoint, http.MethodGet, routePath)
 
-	// An impersonating identity reads the document like any other: the set is
-	// process-wide, so impersonation changes neither it nor who may read it.
-	//
-	// The declaration surface is optional. When it is present, the route is
-	// declared open: on an endpoint the authorization middleware guards with
-	// undeclared closed, this declaration is what keeps it from answering 403,
-	// and on an endpoint it does not guard the declaration changes nothing.
 	if declarer, found, err := optional[authz.Gate](reg, "the route-declaration surface"); err != nil {
 		return err
 	} else if found {
@@ -369,8 +255,6 @@ func (b *board) wire(reg *core.Registry) error {
 	return nil
 }
 
-// seal closes the window, judges every post, computes the set and freezes the
-// answer bytes. It runs in Start.
 func (b *board) seal(reg *core.Registry) error {
 	b.mu.Lock()
 	b.phase = phaseSealed
@@ -417,18 +301,6 @@ func (b *board) seal(reg *core.Registry) error {
 	return nil
 }
 
-// collect computes the names this process serves, in ascending order.
-//
-// A module is in force when the host put all of its declarations in force, or
-// when resolution did not disable it. A static feature counts then; a
-// conditional one also has to have been posted, which a module that does not
-// run cannot do — which is why the host's AllResources adjustment reaches static
-// features alone.
-//
-// The enabled set is used rather than the participating set: a module that lost
-// an exclusive resolution is a participant, but it has no instance and no
-// routes, so it is disabled. The reason's text is not compared: membership of
-// the verdict is what decides.
 func (b *board) collect(reg *core.Registry, posted []post) ([]string, error) {
 	reported := make(map[post]struct{}, len(posted))
 	for _, p := range posted {
@@ -479,9 +351,6 @@ func (b *board) collect(reg *core.Registry, posted []post) ([]string, error) {
 	return names, nil
 }
 
-// validate checks every Spec in the available set: the name's shape, its
-// namespace against the declaring module's name, and that no name is declared
-// twice. Any failure names the declaring module and the name.
 func validate(reg *core.Registry) error {
 	declared := make(map[string]string)
 	for _, res := range core.Resources[feature.Spec](reg) {
@@ -505,7 +374,6 @@ func validate(reg *core.Registry) error {
 	return nil
 }
 
-// firstSegment returns what precedes the first dot of a module or feature name.
 func firstSegment(name string) string {
 	if i := strings.IndexByte(name, '.'); i >= 0 {
 		return name[:i]
