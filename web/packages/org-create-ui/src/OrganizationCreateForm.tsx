@@ -1,19 +1,6 @@
 /**
- * The shared organization-creation form.
- *
- * Both surfaces render this component: the platform console's registration
- * page (with the contact address and website in addition to the shared
- * fields) and the self-service page (name, display name and description
- * only). Neither surface asks for an internal identifier. It is
- * fully controlled -- the page owns the draft and the violations -- so a
- * refused write can keep every value, and it renders one column below
- * `sm` and two from `sm` up, with the long fields spanning the row.
- *
- * Each violation is tied to its field through MUI's own helper-text
- * wiring, so a field's error text is its accessible description and the
- * control carries `aria-invalid`. When a field has no violation its
- * helper says what the field expects; a field with neither renders no
- * helper.
+ * The shared organization-creation form, controlled by its host. Each
+ * violation is tied to its field as the field's accessible description.
  */
 
 import type { FormEvent } from 'react'
@@ -33,6 +20,8 @@ import type {
   OrganizationCreateViolations,
 } from './validation.js'
 
+/** The controlled form's props: the surface mode, the host-owned draft and
+ * violations, and the submit handler. */
 export interface OrganizationCreateFormProps {
   /** Which surface renders the form; decides the visible field set. */
   readonly mode: OrganizationCreateMode
@@ -56,6 +45,8 @@ export interface OrganizationCreateFormProps {
   readonly onSubmit: () => void
 }
 
+/** Renders the controlled creation form for the platform or the
+ * self-service surface. */
 export function OrganizationCreateForm({
   mode,
   values,
@@ -68,10 +59,6 @@ export function OrganizationCreateForm({
 }: OrganizationCreateFormProps) {
   const { t } = useTranslation(ORG_CREATE_UI_NAMESPACE)
 
-  // The submit control and the form judge activation by the same state:
-  // the form's own submit is in flight, or the form is not operable for a
-  // reason of its own context. Both layers refuse a repeated submit, and
-  // the browser's implicit submission from a field reaches the same guard.
   const guardedSubmit = useActivationGuard(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -80,7 +67,6 @@ export function OrganizationCreateForm({
     { busy: pending, unavailable: disabled && !pending },
   )
 
-  /** A field's helper: its violation, else its standing hint, else none. */
   const helperOf = (field: OrganizationCreateField, hint?: string) => {
     const violation = violations[field]
     return violation === undefined
@@ -112,9 +98,8 @@ export function OrganizationCreateForm({
           name,
           options.hintKey === undefined ? undefined : t(options.hintKey),
         )}
-        // Read-only, not disabled: while the form is not operable the
-        // field stays focusable and readable, and a focused field is not
-        // dropped to the document body.
+        // readOnly, not disabled: a disabled field is unfocusable and would
+        // drop focus to the body.
         slotProps={{ input: { readOnly: disabled } }}
         autoComplete="off"
       />

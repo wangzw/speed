@@ -1,11 +1,3 @@
-/**
- * The creation-refusal resolver: every mapped code reaches its own
- * sentence, a stated wait names the wait in seconds or whole minutes, a
- * bare HTTP status gets the actionable sentence for that status, and a
- * code outside the vocabulary falls back to the unknown text instead of
- * rendering a raw key.
- */
-
 import { describe, expect, it } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { I18nextProvider } from '@speed/i18n'
@@ -45,7 +37,6 @@ describe('useOrganizationCreateErrorText', () => {
     expect(resolve('org.rate_limited', 300)).toBe(
       'Too many organization creations. Try again in about 5 minutes.',
     )
-    // Without a stated wait the static sentence is the answer.
     expect(resolve('org.rate_limited')).toMatch(/too quickly/)
   })
 

@@ -1,20 +1,6 @@
 /**
- * The self-service organization-creation page.
- *
- * The page owns the draft, the creation attempt and the hand-over that
- * follows it. It never talks to the transport itself: the host supplies
- * `createOrganization` (the org.create operation mapped to this package's
- * submission shape) and `onCreated` (the host's switch to the new
- * organization -- recording its name, settling it as current and
- * re-reading the caller's tenants). After `onCreated` resolves the page
- * navigates to `successHref`; a failure there is a retry of the hand-over
- * alone, never a second creation, so a network fault after a landed write
- * cannot leave a duplicate organization behind.
- *
- * A creation refusal renders through the package's resolver in one error
- * region under the form. The form's values survive a refusal; a landed
- * creation disables the form and shows the entering status until the
- * hand-over settles or its retry clears it.
+ * The self-service organization-creation page: owns the draft, the create
+ * attempt and the host's hand-over to the new organization.
  */
 
 import { useState } from 'react'
@@ -46,6 +32,8 @@ import type {
   OrganizationCreateViolations,
 } from './validation.js'
 
+/** The page's props: the create operation, the host's hand-over after
+ * creation, and where the page goes on success. */
 export interface OrganizationCreatePageProps {
   /** The org.create operation, mapped to this package's submission shape. */
   readonly createOrganization: (
@@ -63,14 +51,8 @@ export interface OrganizationCreatePageProps {
   readonly onNavigate?: (href: string) => void
 }
 
-/** The page's position in the create-and-enter sequence. */
 type Phase = 'idle' | 'creating' | 'switching' | 'switch-failed'
 
-/**
- * The violations to show before the first submit: only the name, and
- * only once the operator has typed something, so an untouched form is not
- * painted with a required-field error.
- */
 function visibleViolations(
   values: OrganizationCreateValues,
   submitted: boolean,
@@ -86,6 +68,8 @@ function visibleViolations(
   return name === undefined ? {} : { name }
 }
 
+/** Renders the self-service creation form and the create-then-enter
+ * sequence. */
 export function OrganizationCreatePage({
   createOrganization,
   onCreated,

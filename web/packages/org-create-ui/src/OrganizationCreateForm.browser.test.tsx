@@ -1,9 +1,3 @@
-/**
- * The shared form's reading geometry in Chromium: one column at every
- * width, inside the shared form width. Only a browser measures the real
- * stack and track width; jsdom performs no layout.
- */
-
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
@@ -36,11 +30,6 @@ function PlatformForm() {
   )
 }
 
-/**
- * A form that enters the write-in-flight state when it submits, the way a
- * page does once its write starts. The counter records the submits that
- * reached the page.
- */
 function SubmittingForm({ submits }: { readonly submits: { count: number } }) {
   const [values, setValues] = useState<OrganizationCreateValues>(
     EMPTY_ORGANIZATION_CREATE_VALUES,
@@ -64,7 +53,6 @@ function SubmittingForm({ submits }: { readonly submits: { count: number } }) {
   )
 }
 
-/** A form made not operable by a write or identity switch elsewhere. */
 function UnavailableForm({
   submits,
 }: {
@@ -99,8 +87,6 @@ describe('OrganizationCreateForm reading layout', () => {
     renderWithProviders(<PlatformForm />, { language: 'en-US' })
 
     const { contactEmail, website } = boxes()
-    // The website is the next grid row: below the contact address, on the
-    // same left edge.
     expect(website.top).toBeGreaterThan(contactEmail.top + 1)
     expect(Math.abs(website.left - contactEmail.left)).toBeLessThan(1)
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
@@ -113,8 +99,6 @@ describe('OrganizationCreateForm reading layout', () => {
     renderWithProviders(<PlatformForm />, { language: 'en-US' })
 
     const { contactEmail, website } = boxes()
-    // One column: the website is the next row, on the same left edge, and
-    // the column stays inside the shared form width.
     expect(website.top).toBeGreaterThan(contactEmail.top + 1)
     expect(Math.abs(website.left - contactEmail.left)).toBeLessThan(1)
     expect(contactEmail.width).toBeLessThanOrEqual(FORM_MAX_WIDTH + 1)
@@ -163,8 +147,6 @@ describe('OrganizationCreateForm focus in Chromium', () => {
     expect(submit).toHaveAttribute('aria-busy', 'true')
     expect(submit).toHaveFocus()
 
-    // Playwright refuses to click an aria-disabled control; the browser
-    // dispatches the click event all the same, which the guard must swallow.
     submit.click()
     expect(submits.count).toBe(1)
     expect(submit).toHaveFocus()
@@ -188,12 +170,9 @@ describe('OrganizationCreateForm focus in Chromium', () => {
 
     submit.focus()
     expect(submit).toHaveFocus()
-    // Playwright refuses to click an aria-disabled control; the browser
-    // dispatches the click event all the same, which the guard must swallow.
     submit.click()
     expect(submits.count).toBe(0)
     expect(submit).toHaveFocus()
-    // Keyboard activation is refused the same way.
     await userEvent.keyboard('{Enter}')
     expect(submits.count).toBe(0)
     expect(submit).toHaveFocus()

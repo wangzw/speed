@@ -1,8 +1,3 @@
-/**
- * The shared form: its field set per surface, its controlled change
- * reporting, the field-tied violation text, and the submit action.
- */
-
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
@@ -43,10 +38,6 @@ function ControlledForm({
   )
 }
 
-/**
- * A form that enters the write-in-flight state when it submits, the way a
- * page does once its write starts.
- */
 function SubmittingForm({
   onSubmit,
 }: {
@@ -74,7 +65,6 @@ function SubmittingForm({
   )
 }
 
-/** A form made not operable by a write or identity switch elsewhere. */
 function UnavailableForm({ onSubmit }: { readonly onSubmit: () => void }) {
   return (
     <OrganizationCreateForm
@@ -115,7 +105,6 @@ describe('OrganizationCreateForm', () => {
     ]) {
       expect(screen.getByLabelText(label), label).toBeInTheDocument()
     }
-    // The server mints the internal identifier; no surface asks for it.
     expect(screen.queryByLabelText('Identifier')).not.toBeInTheDocument()
   })
 
@@ -147,7 +136,6 @@ describe('OrganizationCreateForm', () => {
     const name = screen.getByLabelText(enUS.fields.name)
     expect(name).toHaveAttribute('aria-invalid', 'true')
     expect(name).toHaveAccessibleDescription(enUS.validation.nameShape)
-    // The standing hint gives way to the violation, never both.
     expect(
       screen.queryByText(enUS.helpers.name, { exact: true }),
     ).not.toBeInTheDocument()
@@ -176,9 +164,6 @@ describe('OrganizationCreateForm', () => {
   })
 
   it('refuses a programmatic submit while the write is in flight', () => {
-    // A submit the button does not carry (a programmatic one, or one from a
-    // form without its button) reaches only the form's own guard. The
-    // handler is the page's request; neither it nor the request runs.
     const request = vi.fn()
     const onSubmit = vi.fn(() => {
       request()
@@ -202,8 +187,6 @@ describe('OrganizationCreateForm', () => {
   })
 
   it('refuses a programmatic submit while the form is not operable', () => {
-    // Not operable from a write or identity switch elsewhere: the form is
-    // disabled but not itself pending, so its guard judges by unavailable.
     const request = vi.fn()
     const onSubmit = vi.fn(() => {
       request()
@@ -241,14 +224,12 @@ describe('OrganizationCreateForm', () => {
     await user.keyboard('{Enter}')
 
     expect(onSubmit).toHaveBeenCalledTimes(1)
-    // The field stays focusable and readable; only its value is held still.
     expect(name).toBeEnabled()
     expect(name).toHaveAttribute('readonly')
     expect(name).toHaveFocus()
     const submit = screen.getByRole('button', { name: 'Create organization' })
     expect(submit).toHaveAttribute('aria-busy', 'true')
 
-    // A second activation is swallowed; the write is already in flight.
     await user.keyboard('{Enter}')
     expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(name).toHaveFocus()
@@ -286,8 +267,6 @@ describe('OrganizationCreateForm', () => {
     expect(name).toHaveAttribute('readonly')
 
     const submit = screen.getByRole('button', { name: 'Create organization' })
-    // A write or identity switch elsewhere is the context for this
-    // unavailability; the button carries no reason of its own.
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     expect(submit).not.toHaveAttribute('aria-busy')
     expect(submit).toHaveAccessibleDescription('')
@@ -297,7 +276,6 @@ describe('OrganizationCreateForm', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     expect(submit).toHaveFocus()
 
-    // The implicit submission from a field is refused the same way.
     await user.click(name)
     await user.keyboard('{Enter}')
     expect(onSubmit).not.toHaveBeenCalled()

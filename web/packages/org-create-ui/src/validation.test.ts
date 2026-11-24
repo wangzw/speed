@@ -1,11 +1,3 @@
-/**
- * The client-side validation the server remains authoritative over: the
- * name slug and reserved names, the required and bounded display name,
- * the description bound, the website byte bound, and the platform-only
- * fields. Neither surface asks for an internal identifier; the self-service
- * form ignores the contact address and website even when a host seeds them.
- */
-
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_ORGANIZATION_CREATE_VALUES,
@@ -121,8 +113,6 @@ describe('validateOrganizationCreateValues', () => {
       contactEmail: 'emailShape',
       website: 'websiteShape',
     })
-    // Self-service renders none of those fields, so their values are not
-    // the operator's edit and must not block creation.
     expect(validateOrganizationCreateValues(values, 'self-service')).toEqual({})
   })
 
@@ -145,8 +135,6 @@ describe('validateOrganizationCreateValues', () => {
       withValues({
         name: 'acme',
         displayName: 'Acme',
-        // 20 ASCII bytes plus 676 three-byte runes: exactly 2048 bytes, and
-        // 1352 UTF-16 units.
         website: `${prefix}${'中'.repeat(676)}`,
       }),
       'platform',
