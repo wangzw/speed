@@ -38,11 +38,13 @@ without checking anything.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -465,6 +467,82 @@ class CheckCompleteBlockTests(unittest.TestCase):
             )
         self.assertEqual(len(violations), 1)
         self.assertIn("pkg/core/go.mod", violations[0])
+
+
+class CheckCompleteBlockWidthTests(unittest.TestCase):
+    """The go commands check_complete_block starts must take their width from
+    the caller.
+
+    A complete example is compiled for real, so its tidy, build and vet are
+    where this gate spends CPU. The script inherits GOMAXPROCS and GOFLAGS
+    from whoever runs it and adds only -mod=mod to the latter: never a -p of
+    its own, and never a GOMAXPROCS when the caller set none."""
+
+    workspace = m.Workspace("1.25", ROSTER)
+
+    def _run(self) -> list:
+        block = m.GoBlock(1, 3, "package p\n\nfunc F() int { return 1 }\n", False)
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(m.subprocess, "run") as run:
+                run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
+                violations = m.check_complete_block(
+                    pathlib.Path(td), "fake.md", block, self.workspace, keep_temp=False
+                )
+        self.assertEqual(violations, [])
+        self.assertEqual(len(run.call_args_list), 3, "tidy, build and vet")
+        return run.call_args_list
+
+    def test_the_go_commands_forward_the_width_and_keep_the_callers_flags(self):
+        with mock.patch.dict(
+            os.environ, {"GOMAXPROCS": "3", "GOFLAGS": "-p=3 -tags=probe"}
+        ):
+            calls = self._run()
+        for call in calls:
+            argv = call.args[0]
+            env = call.kwargs["env"]
+            self.assertEqual(
+                env["GOMAXPROCS"], "3", f"{argv}: GOMAXPROCS is not forwarded"
+            )
+            flags = env["GOFLAGS"].split()
+            p_items = [flag for flag in flags if flag.startswith("-p=")]
+            self.assertEqual(
+                p_items, ["-p=3"], f"{argv}: the caller's -p was rewritten"
+            )
+            self.assertIn("-p=3", flags, f"{argv}: the caller's -p is lost")
+            self.assertIn("-tags=probe", flags, f"{argv}: the caller's -tags is lost")
+            self.assertIn("-mod=mod", flags, f"{argv}: -mod=mod is missing")
+            self.assertGreater(
+                flags.index("-mod=mod"),
+                flags.index("-p=3"),
+                f"{argv}: -mod=mod must come after the caller's -p",
+            )
+            self.assertGreater(
+                flags.index("-mod=mod"),
+                flags.index("-tags=probe"),
+                f"{argv}: -mod=mod must come after the caller's -tags",
+            )
+            self.assertFalse(
+                [arg for arg in argv if arg == "-p" or arg.startswith("-p=")],
+                f"{argv}: the script must not supply its own -p",
+            )
+
+    def test_the_script_does_not_invent_a_width_when_the_caller_set_none(self):
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop("GOMAXPROCS", None)
+            os.environ.pop("GOFLAGS", None)
+            calls = self._run()
+        for call in calls:
+            env = call.kwargs["env"]
+            self.assertNotIn(
+                "GOMAXPROCS",
+                env,
+                f"{call.args[0]}: the script set a width nobody gave it",
+            )
+            self.assertEqual(
+                env["GOFLAGS"],
+                "-mod=mod",
+                f"{call.args[0]}: the script's GOFLAGS is not exactly -mod=mod",
+            )
 
 
 class MainExitCodeTests(unittest.TestCase):

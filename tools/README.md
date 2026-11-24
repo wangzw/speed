@@ -157,7 +157,9 @@ code and is built and vetted for real, in a throwaway module wired by
 fragment, and is syntax-checked under several wrappings instead of being
 forced into a padded full program. The script's own docstring carries the
 scope rules and the escape hatch for a fragment that genuinely cannot
-parse.
+parse. The script carries no CPU width of its own: it forwards the
+`GOMAXPROCS` and `GOFLAGS` its caller set to the go commands it starts,
+adding only `-mod=mod` to the latter.
 
 `check_conflict_markers.py` — fails when a line of git's conflict
 markers survives into a file. A resolution done by hand and committed
