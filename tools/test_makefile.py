@@ -174,9 +174,13 @@ sys.exit(1)
 # tools-test` would otherwise hand them to the make it starts. GATE_JOBS is
 # one of them: GNU make exports a variable set on its own command line, so
 # `make check GATE_JOBS=8` puts the width in this process's environment and
-# every case that expects the default 4 would read 8 instead. GATE_TIME_SCALE
-# is exported by the Makefile, so a scale set for one gate run reaches the
-# make a case starts the same way.
+# every case that expects the default 4 would read 8 instead. GOMAXPROCS and
+# GOFLAGS travel the same way, and a case that checks the default width must
+# not read them from the run that started this suite: with the outer value
+# already equal to the width, a recipe that dropped its own prefix would
+# still record the right number and the case would pass. GATE_TIME_SCALE is
+# exported by the Makefile, so a scale set for one gate run reaches the make
+# a case starts the same way.
 MAKE_ENVIRONMENT = (
     "MAKEFLAGS",
     "MFLAGS",
@@ -185,6 +189,8 @@ MAKE_ENVIRONMENT = (
     "GNUMAKEFLAGS",
     "GOWORK",
     "GATE_JOBS",
+    "GOMAXPROCS",
+    "GOFLAGS",
     "GATE_TIME_SCALE",
 )
 
@@ -791,6 +797,70 @@ class LoopingLegTests(unittest.TestCase):
                 for call in runs:
                     self.assertIn(f"--concurrency={width}", call["args"], f"{call['args']}")
                     self.assertIn("--allow-parallel-runners", call["args"])
+                    self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
+
+    def test_the_formatter_takes_its_width_from_gate_jobs(self) -> None:
+        # `golangci-lint fmt` has no width flag of its own, and takes no
+        # process-wide lock either; it is still a Go program, so its threads
+        # follow GOMAXPROCS. The same command runs in `fmt` and as lint's
+        # read-only pass, so both take the budget the same way.
+        for leg in ("fmt", "lint"):
+            for gate_jobs, width in ((None, "4"), ("7", "7")):
+                with self.subTest(leg=leg, gate_jobs=gate_jobs):
+                    calls = self.leg_calls(leg, gate_jobs)
+                    formats = [
+                        call
+                        for call in calls
+                        if call["tool"] == "golangci-lint"
+                        and call["args"][:1] == ["fmt"]
+                    ]
+                    self.assertTrue(formats, f"{leg} ran no golangci-lint fmt:\n{calls}")
+                    for call in formats:
+                        self.assertEqual(
+                            call["gomaxprocs"], width, f"{leg}: {call['args']}: GOMAXPROCS"
+                        )
+
+    def test_the_tidying_legs_take_their_width_from_gate_jobs(self) -> None:
+        # `go mod tidy` accepts no -p flag -- its usage lists only -e -v -x
+        # -diff -go and -compat -- but its module loading follows GOMAXPROCS,
+        # so that is the width it takes.
+        for leg in ("tidy", "tidy-check"):
+            for gate_jobs, width in ((None, "4"), ("7", "7")):
+                with self.subTest(leg=leg, gate_jobs=gate_jobs):
+                    calls = self.leg_calls(leg, gate_jobs)
+                    mods = [
+                        call
+                        for call in calls
+                        if call["tool"] == "go" and call["args"][:1] == ["mod"]
+                    ]
+                    self.assertTrue(mods, f"{leg} ran no go mod:\n{calls}")
+                    for call in mods:
+                        self.assertEqual(
+                            call["gomaxprocs"], width, f"{leg}: {call['args']}: GOMAXPROCS"
+                        )
+                        self.assertFalse(
+                            any(
+                                arg == "-p" or arg.startswith("-p=")
+                                for arg in call["args"]
+                            ),
+                            f"{leg}: go mod tidy rejects -p: {call['args']}",
+                        )
+
+    def test_the_workflow_lint_takes_its_width_from_gate_jobs(self) -> None:
+        # actionlint has no width flag. It sizes its goroutines by
+        # runtime.NumCPU(), not by GOMAXPROCS: GOMAXPROCS bounds only the
+        # threads those goroutines run on, which is the part the gate can set.
+        # How many shellcheck processes it runs at once is decided by
+        # actionlint itself through runtime.NumCPU(), not by shellcheck sizing
+        # its own concurrency, and that is out of GOMAXPROCS's reach.
+        for gate_jobs, width in ((None, "4"), ("7", "7")):
+            with self.subTest(gate_jobs=gate_jobs):
+                calls = self.leg_calls("actionlint", gate_jobs)
+                workflows = [
+                    call for call in calls if call["tool"] == "actionlint"
+                ]
+                self.assertTrue(workflows, f"actionlint never ran:\n{calls}")
+                for call in workflows:
                     self.assertEqual(call["gomaxprocs"], width, f"{call['args']}: GOMAXPROCS")
 
     def test_every_frontend_leg_takes_its_width_from_gate_jobs(self) -> None:

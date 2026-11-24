@@ -271,16 +271,18 @@ vet-web-bundle: ## Compile the e2e-tagged build that embeds dist-e2e, running no
 # is running" — indistinguishable from a code failure. `--allow-parallel-runners`
 # removes that lock; the cost is contention, not a wrong answer. The width of
 # the analysis itself is `--concurrency`, which the gate sets from GATE_JOBS;
-# `fmt` has no such flag and takes no lock, so it runs one file set at a time.
+# `fmt` and the internal go list both lack such a flag, and `fmt` takes no
+# lock either, so it runs one file set at a time with its threads following
+# GOMAXPROCS.
 fmt: modules-present ## Format every module in place
-	@failed=; $(call each,$(MODULES),fmt,env -C $$it golangci-lint fmt ./...); $(each-end)
+	@failed=; $(call each,$(MODULES),fmt,GOMAXPROCS=$(GATE_JOBS) env -C $$it golangci-lint fmt ./...); $(each-end)
 
 lint: modules-present ## Report formatting drift and static-analysis findings
-	@failed=; $(call each,$(MODULES),lint fmt --diff,env -C $$it golangci-lint fmt --diff ./...); \
+	@failed=; $(call each,$(MODULES),lint fmt --diff,GOMAXPROCS=$(GATE_JOBS) env -C $$it golangci-lint fmt --diff ./...); \
 	  $(call each,$(MODULES),lint run,GOMAXPROCS=$(GATE_JOBS) env -C $$it golangci-lint run --allow-parallel-runners --concurrency=$(GATE_JOBS) ./...); $(each-end)
 
 tidy: modules-present ## Tidy every module's go.mod and go.sum in place
-	@failed=; $(call each,$(MODULES),tidy,GOWORK=off go -C $$it mod tidy); $(each-end)
+	@failed=; $(call each,$(MODULES),tidy,GOWORK=off GOMAXPROCS=$(GATE_JOBS) go -C $$it mod tidy); $(each-end)
 
 # `go mod tidy -diff` reports what tidying would change without writing
 # anything, so the judgement is the dependency files themselves. Judging
@@ -288,7 +290,7 @@ tidy: modules-present ## Tidy every module's go.mod and go.sum in place
 # untidy file (tidying restores the committed bytes, leaving the tree
 # clean) and fails on any unrelated edit to a go.mod.
 tidy-check: modules-present ## Verify the dependency files are tidy, leaving the tree unchanged
-	@failed=; $(call each,$(MODULES),tidy-check,GOWORK=off go -C $$it mod tidy -diff); $(each-end)
+	@failed=; $(call each,$(MODULES),tidy-check,GOWORK=off GOMAXPROCS=$(GATE_JOBS) go -C $$it mod tidy -diff); $(each-end)
 
 # actionlint reads the workflow files themselves, which no other leg does: a
 # misspelled key, an expression that cannot evaluate or a `run:` script that
@@ -314,7 +316,7 @@ actionlint: ## Lint every workflow and composite action script with actionlint a
 	  echo "actionlint: '$(SHELLCHECK)' is not on PATH; without it actionlint skips every run: script. Install the version .mise.toml pins ('mise install')." >&2; \
 	  exit 1; \
 	fi
-	@failed=; $(call each,workflows,actionlint,env -C '$(REPO_ROOT)' '$(ACTIONLINT)' -shellcheck='$(SHELLCHECK)' $(WORKFLOWS)); \
+	@failed=; $(call each,workflows,actionlint,GOMAXPROCS=$(GATE_JOBS) env -C '$(REPO_ROOT)' '$(ACTIONLINT)' -shellcheck='$(SHELLCHECK)' $(WORKFLOWS)); \
 	  $(call each,composite-actions,actionlint,$(PYTHON) '$(LINT_COMPOSITE_ACTIONS)' --root '$(REPO_ROOT)' --shellcheck '$(SHELLCHECK)'); $(each-end)
 
 # The gates are the scripts in tools/ plus the workflow lint above, which is a
