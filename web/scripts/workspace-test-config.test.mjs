@@ -1077,7 +1077,7 @@ describe('workspace test configuration', () => {
     ).toEqual([])
   })
 
-  it('scans the test-support directories and exempts only the wait helper', () => {
+  it('scans the test-support directories and exempts only the two helpers', () => {
     // The scan list is the guard's own blind spot: a helper source the
     // suites run on is where a bare wait hides. Every package's test-utils,
     // the shared tree and the demo host's copy are in scope; the one file
@@ -1269,11 +1269,61 @@ describe('workspace test configuration', () => {
     expect(
       bareRealTimerUses("import { vi as x } from 'vitest'\nx.useRealTimers()"),
     ).toHaveLength(1)
+    // A destructuring from the aliased import binds the same name.
+    expect(
+      bareRealTimerUses(
+        "import { vi as x } from 'vitest'\nconst { useRealTimers } = x",
+      ),
+    ).toHaveLength(1)
     expect(
       bareRealTimerUses(
         "import { useRealTimers } from 'vitest'\nuseRealTimers()",
       ),
     ).toHaveLength(1)
+    // Parentheses, non-null assertions and type assertions do not change
+    // the object, so the member access is the same one.
+    expect(bareRealTimerUses('(vi).useRealTimers()')).toHaveLength(1)
+    expect(bareRealTimerUses('vi!.useRealTimers()')).toHaveLength(1)
+    expect(
+      bareRealTimerUses('(vi as unknown as typeof vi).useRealTimers()'),
+    ).toHaveLength(1)
+    expect(
+      bareRealTimerUses('(<typeof vi>vi).useRealTimers()', 'constructed.ts'),
+    ).toHaveLength(1)
+    // An alias of an alias names the same object.
+    expect(
+      bareRealTimerUses('const v = vi\nconst w = v\nw.useRealTimers()'),
+    ).toHaveLength(1)
+    // A type assertion around the initializer keeps the same object.
+    expect(
+      bareRealTimerUses('const v = vi as unknown as typeof vi\nv.useRealTimers()'),
+    ).toHaveLength(1)
+    // A renamed direct import reaches the same name.
+    expect(
+      bareRealTimerUses("import { useRealTimers as r } from 'vitest'\nr()"),
+    ).toHaveLength(1)
+    // A computed key whose expression is a literal names the same property,
+    // as a binding and as a bracket access.
+    expect(
+      bareRealTimerUses('const { [`useRealTimers`]: r } = vi'),
+    ).toHaveLength(1)
+    expect(bareRealTimerUses('vi[`useRealTimers`]()')).toHaveLength(1)
+    // A renamed destructuring assignment binds the same name.
+    expect(bareRealTimerUses('({ useRealTimers: r } = vi)')).toHaveLength(1)
+    // The literal computed key holds in an assignment pattern and in a
+    // parameter default too.
+    expect(
+      bareRealTimerUses("({ ['useRealTimers']: r } = vi)"),
+    ).toHaveLength(1)
+    expect(
+      bareRealTimerUses("function f({ ['useRealTimers']: r } = vi) {}"),
+    ).toHaveLength(1)
+    // A computed key that is not a literal names no property, and an alias
+    // of something else is not Vitest's vi.
+    expect(bareRealTimerUses('const { [name]: r } = vi')).toHaveLength(0)
+    expect(
+      bareRealTimerUses('const v = other\nv.useRealTimers()'),
+    ).toHaveLength(0)
     // Prose and the helper are not uses.
     expect(
       bareRealTimerUses("it('calls vi.useRealTimers', () => {})"),
