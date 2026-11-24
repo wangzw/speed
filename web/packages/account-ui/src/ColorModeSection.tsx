@@ -9,7 +9,11 @@ import {
   getAuthnProfileGetQueryKey,
   useAuthnProfilePatch,
 } from '@speed/api-sdk'
-import { SectionCard, useWriteFeedback } from '@speed/ui-kit'
+import {
+  SectionCard,
+  useInertSelectMenu,
+  useWriteFeedback,
+} from '@speed/ui-kit'
 import type { AppThemeModePreference } from '@speed/ui-kit'
 import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
@@ -48,6 +52,7 @@ export function ColorModeSection({
   const { data } = useProfileQuery()
   const patchProfile = useAuthnProfilePatch()
   const feedback = useWriteFeedback()
+  const menu = useInertSelectMenu()
 
   const storedMode = data?.color_mode ?? ''
   const value = storedMode !== '' ? storedMode : effective
@@ -81,6 +86,7 @@ export function ColorModeSection({
         slotProps={{
           input: { readOnly: saving },
           select: {
+            ...menu,
             displayEmpty: true,
             slotProps: {
               input: { 'aria-label': t('appearance.colorMode.label') },

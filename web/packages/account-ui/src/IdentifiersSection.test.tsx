@@ -1045,6 +1045,101 @@ describe('IdentifiersSection', () => {
     expect(combo).not.toHaveTextContent(zhCN.identifiers.add.kind.email)
   })
 
+  it('marks the page behind the open email sign-in menu inert', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                sign_in: true,
+                contact: false,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { container } = mount(respond)
+
+    const signInRegion = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.signIn,
+    })
+    const combo = within(signInRegion).getByRole('combobox', {
+      name: zhCN.identifiers.kind.email,
+    })
+    expect(container).not.toHaveAttribute('inert')
+
+    fireEvent.mouseDown(combo)
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0)
+    expect(container).toHaveAttribute('inert')
+  })
+
+  it('marks the page behind the open add-kind menu inert', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { container } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    const combo = await screen.findByRole('combobox', {
+      name: zhCN.identifiers.add.kind.label,
+    })
+    expect(container).not.toHaveAttribute('inert')
+
+    fireEvent.mouseDown(combo)
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0)
+    expect(container).toHaveAttribute('inert')
+  })
+
+  it('lifts the background inert when the add-kind menu unmounts with its select', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const { container, rerender } = renderWithProviders(
+      <IdentifiersSection session={rig.session} />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    const combo = await screen.findByRole('combobox', {
+      name: zhCN.identifiers.add.kind.label,
+    })
+    fireEvent.mouseDown(combo)
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0)
+    expect(container).toHaveAttribute('inert')
+
+    // No kind remains, so the add form and its open select unmount. The menu
+    // never calls onClose on this path; the page must not stay inert.
+    rerender(
+      <IdentifiersSection
+        session={rig.session}
+        emailAvailable={false}
+        offerUsername={false}
+      />,
+    )
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+    await waitFor(() => expect(container).not.toHaveAttribute('inert'))
+  })
+
   it('removes an identifier behind the confirm and refetches', async () => {
     let removed = false
     const respond: RealResponder = (call: RealCall) => {

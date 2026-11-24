@@ -122,4 +122,52 @@ describe('ColorModeSection write focus in Chromium', () => {
     )
     expect(select).not.toHaveAttribute('aria-readonly', 'true')
   })
+
+  it('returns focus to the select after a color mode is chosen', async () => {
+    await page.viewport(1200, 900)
+    const stored = { color_mode: 'light' }
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ color_mode: stored.color_mode }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        const body = call.body as { color_mode?: string }
+        if (body.color_mode !== undefined) {
+          stored.color_mode = body.color_mode
+        }
+        return jsonResponse(200, {})
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRigWithoutSession(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <ColorModeSection effective="system" onApplied={vi.fn()} />,
+    )
+
+    const select = await screen.findByRole('combobox', {
+      name: zhCN.appearance.colorMode.label,
+    })
+    await waitFor(() =>
+      expect(select).toHaveTextContent(
+        zhCN.appearance.colorMode.options.light,
+      ),
+    )
+
+    select.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    await screen.findByRole('listbox')
+    await userEvent.click(
+      screen.getByRole('option', {
+        name: zhCN.appearance.colorMode.options.dark,
+      }),
+    )
+
+    await waitFor(() =>
+      expect(
+        document.activeElement,
+        `focus after choosing a color mode; document.activeElement is ${describeActiveElement()}`,
+      ).toBe(select),
+    )
+  })
 })

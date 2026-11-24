@@ -53,6 +53,7 @@ import {
   parseEmailAddress,
   SectionCard,
   useActivationGuard,
+  useInertSelectMenu,
   useWriteFeedback,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -293,6 +294,51 @@ function DefaultContactChoice({
         </Box>
       )}
     </>
+  )
+}
+
+interface EmailSignInSelectProps {
+  readonly value: string
+  readonly readOnly: boolean
+  readonly label: string
+  readonly options: readonly AuthnProfileIdentifier[]
+  readonly onSelect: (value: string) => void
+}
+
+/** The email group's sign-in select; its own hook instance keeps the page
+ * inert while its menu is open. */
+function EmailSignInSelect({
+  value,
+  readOnly,
+  label,
+  options,
+  onSelect,
+}: EmailSignInSelectProps): ReactElement {
+  const menu = useInertSelectMenu()
+  return (
+    <Select
+      {...menu}
+      size="small"
+      value={value}
+      // Read-only rather than disabled: MUI reports aria-readonly on
+      // the combobox and ignores activation while keeping focus.
+      readOnly={readOnly}
+      slotProps={{
+        input: {
+          'aria-label': label,
+        },
+      }}
+      onChange={(event) => {
+        onSelect(event.target.value)
+      }}
+      sx={{ mt: 1, minWidth: '18rem' }}
+    >
+      {options.map((row) => (
+        <MenuItem key={row.id ?? row.value} value={row.value ?? ''}>
+          {row.value ?? ''}
+        </MenuItem>
+      ))}
+    </Select>
   )
 }
 
@@ -555,6 +601,7 @@ export function IdentifiersSection({
   const defaultButtons = useRef(new Map<string, HTMLButtonElement>())
   const verifyButtons = useRef(new Map<string, HTMLButtonElement>())
   const addEntry = useRef<HTMLButtonElement | null>(null)
+  const addKindMenu = useInertSelectMenu()
   const addRegion = useRef<HTMLDivElement | null>(null)
 
   const removalLanding = useRef<LandingRecord | null>(null)
@@ -1683,19 +1730,12 @@ export function IdentifiersSection({
         </Box>
         {kind === 'email' ? (
           emailSignInRow !== null ? (
-            <Select
-              size="small"
+            <EmailSignInSelect
               value={emailSignInRow.value ?? ''}
-              // Read-only rather than disabled: MUI reports aria-readonly on
-              // the combobox and ignores activation while keeping focus.
               readOnly={scopeBlocked}
-              slotProps={{
-                input: {
-                  'aria-label': t('identifiers.kind.email'),
-                },
-              }}
-              onChange={(event) => {
-                const chosen = event.target.value
+              label={t('identifiers.kind.email')}
+              options={emailOptions}
+              onSelect={(chosen) => {
                 // The whole selection is one action, so a step-up replay lands
                 // the same end state.
                 const changes = kindRows
@@ -1715,14 +1755,7 @@ export function IdentifiersSection({
                   void selectSignInEmail(changes)
                 }
               }}
-              sx={{ mt: 1, minWidth: '18rem' }}
-            >
-              {emailOptions.map((row) => (
-                <MenuItem key={row.id ?? row.value} value={row.value ?? ''}>
-                  {row.value ?? ''}
-                </MenuItem>
-              ))}
-            </Select>
+            />
           ) : (
             <Typography
               id={`${headingId}-off`}
@@ -2317,6 +2350,7 @@ export function IdentifiersSection({
                       value={formKind}
                       // It never starts this write, so it stays natively disabled.
                       disabled={addBusy}
+                      slotProps={{ select: addKindMenu }}
                       onChange={(event) => {
                         setPendingSend(null)
                         setAddKind(event.target.value as AddKind)

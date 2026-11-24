@@ -509,6 +509,22 @@ function scriptedPhoneSession(
 }
 
 describe('StepUpChallenge', () => {
+  it('marks the page behind the open dialog inert', async () => {
+    const rig = makeRealClientRig(makeStepUpResponder())
+    rig.store.set('access-1')
+    const { container } = renderWithProviders(
+      <StepUpChallenge
+        open
+        session={rig.session}
+        onSuccess={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+
+    await screen.findByRole('dialog')
+    expect(container).toHaveAttribute('inert')
+  })
+
   it('stacks the dialog body with one theme spacing gap', async () => {
     mount(makeStepUpResponder())
     const dialog = await screen.findByRole('dialog')

@@ -234,6 +234,34 @@ describe('ColorModeSection', () => {
     expect(onApplied).not.toHaveBeenCalled()
   })
 
+  it('marks the page behind an open color-mode menu inert and lifts it on close', async () => {
+    const { respond } = makeProfileResponder({ color_mode: 'light' })
+    const { container, rig } = mountSection(respond, 'system')
+    const select = modeSelect()
+    await waitFor(() =>
+      expect(select).toHaveTextContent(
+        zhCN.appearance.colorMode.options.light,
+      ),
+    )
+    expect(container).not.toHaveAttribute('inert')
+
+    fireEvent.mouseDown(select)
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+    expect(container).toHaveAttribute('inert')
+
+    fireEvent.click(
+      screen.getByRole('option', {
+        name: zhCN.appearance.colorMode.options.dark,
+      }),
+    )
+    expect(container).not.toHaveAttribute('inert')
+    await waitFor(() =>
+      expect(
+        rig.calls.filter((call) => call.method === 'PATCH'),
+      ).toHaveLength(1),
+    )
+  })
+
   it('passes an axe scan with the menu closed', async () => {
     const { respond } = makeProfileResponder({ color_mode: 'light' })
     mountSection(respond, 'system')

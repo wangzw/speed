@@ -95,8 +95,7 @@ function rowScope(value: string): HTMLElement {
 function mount(respond: RealResponder) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
-  renderWithProviders(<IdentifiersSection session={rig.session} />)
-  return rig
+  return renderWithProviders(<IdentifiersSection session={rig.session} />)
 }
 
 describe('IdentifiersSection write focus in Chromium', () => {
@@ -202,6 +201,74 @@ describe('IdentifiersSection write focus in Chromium', () => {
     expect(toggle).toHaveAttribute('aria-disabled', 'true')
 
     put.resolve(new Response(null, { status: 204 }))
+  })
+
+  it('returns focus to the email sign-in select after an address is chosen', async () => {
+    await page.viewport(1200, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, twoEmailProfile())
+      }
+      if (call.method === 'PUT') {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    const signInRegion = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.signIn,
+    })
+    const combo = within(signInRegion).getByRole('combobox', {
+      name: zhCN.identifiers.kind.email,
+    })
+    combo.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    await screen.findByRole('listbox')
+    await userEvent.click(screen.getByRole('option', { name: 'b@x.test' }))
+
+    await waitFor(() =>
+      expect(
+        document.activeElement,
+        `focus after choosing an address; document.activeElement is ${describeActiveElement()}`,
+      ).toBe(combo),
+    )
+  })
+
+  it('marks the page inert while the email sign-in menu is open and lifts it on Tab', async () => {
+    await page.viewport(1200, 900)
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, twoEmailProfile())
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { container } = mount(respond)
+
+    const signInRegion = await screen.findByRole('region', {
+      name: zhCN.identifiers.groups.signIn,
+    })
+    const combo = within(signInRegion).getByRole('combobox', {
+      name: zhCN.identifiers.kind.email,
+    })
+    combo.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    const listbox = await screen.findByRole('listbox')
+    const menuRoot = listbox.closest('.MuiModal-root')
+    expect(menuRoot).not.toBeNull()
+
+    await waitFor(() => expect(container).toHaveAttribute('inert'))
+    expect(menuRoot).not.toHaveAttribute('inert')
+
+    // A Select menu closes on Tab and hands focus back to the control.
+    await userEvent.keyboard('{Tab}')
+    await waitFor(() =>
+      expect(
+        document.activeElement,
+        `focus after Tab; document.activeElement is ${describeActiveElement()}`,
+      ).toBe(combo),
+    )
+    await waitFor(() => expect(container).not.toHaveAttribute('inert'))
   })
 
   it('keeps an empty add-form send in the tab order and says what is missing', async () => {
