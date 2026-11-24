@@ -613,7 +613,13 @@ request body.
 ## Testing
 
 Unit tests are vitest + jsdom, one file per source under `src/`, shared
-helpers only in `test-utils/`. `renderWithProviders` mounts the unit
+helpers only in `test-utils/`. The `AccountsPage` suite is the one
+exception: its cases are split by feature block across
+`AccountsPage.panels.test.tsx`, `AccountsPage.list.test.tsx`,
+`AccountsPage.detail.test.tsx`, `AccountsPage.writes.test.tsx`,
+`AccountsPage.create.test.tsx` and `AccountsPage.bundle.test.tsx`, with
+their shared fixtures and helpers in `test-utils/accounts-page.ts`.
+`renderWithProviders` mounts the unit
 under the tree a real host builds — `I18nextProvider` around `ui-kit`'s
 `AppThemeProvider` around `QueryClientProvider` around
 `AdminOperationsProvider` — with a fresh i18n instance (the admin-ui,
