@@ -39,18 +39,23 @@ PYTHON ?= python3
 # The CPU budget one gate run may use, in cores, as a number the caller gives
 # it. Every tool the gate runs that offers a width setting is told this width
 # instead of working one out from the host: go build, go vet and go test take
-# -p and GOMAXPROCS (tests also -parallel), golangci-lint run takes
-# --concurrency and its internal go list follows GOMAXPROCS, vitest takes
-# --maxWorkers, Playwright takes --workers and pnpm -r takes
-# --workspace-concurrency. Three tools carry no width this file can set:
-# `golangci-lint fmt` has no flag for it, tsc is single-threaded, and the
-# rolldown thread pool `vite build` runs on offers no documented setting (its
-# only knob is the runtime's RAYON_NUM_THREADS, which no rolldown API
-# promises), so those take whatever the runtime decides. A scan of the
-# machine is wrong where it matters most: inside a container or a pod a
-# process sees the node's cores, not the share it was given. There is no
-# probing and no host-derived default; pass the share by variable or by
-# environment variable of the same name.
+# -p and GOMAXPROCS (tests also -parallel), go mod tidy, `golangci-lint fmt`
+# and actionlint take GOMAXPROCS, golangci-lint run takes --concurrency and
+# its internal go list follows GOMAXPROCS, vitest takes --maxWorkers,
+# Playwright takes --workers, pnpm -r takes --workspace-concurrency, pnpm
+# install takes --workspace-concurrency and --child-concurrency, and ESLint
+# takes --concurrency. The gate scripts under tools/ run under the same
+# GOMAXPROCS and GOFLAGS with -p appended, and hand both to the go commands
+# they start. Four tools carry no width this file can set: tsc is
+# single-threaded, the rolldown thread pool `vite build` runs on offers no
+# documented setting (its only knob is the runtime's RAYON_NUM_THREADS, which
+# no rolldown API promises), actionlint sizes its shellcheck processes by the
+# CPUs it sees rather than GOMAXPROCS, and pnpm install's package-linking
+# threads have no documented setting, so those take whatever the runtime
+# decides. A scan of the machine is wrong where it matters most: inside a
+# container or a pod a process sees the node's cores, not the share it was
+# given. There is no probing and no host-derived default; pass the share by
+# variable or by environment variable of the same name.
 #
 # Where a leg nests two of those widths, the product is what must stay within
 # the budget, not either factor alone. pnpm -r starting several package scripts
