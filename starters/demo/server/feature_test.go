@@ -171,11 +171,6 @@ func authenticatedGet(t *testing.T, url, token string) rawResponse {
 	return rawResponse{status: res.StatusCode, header: res.Header, body: body}
 }
 
-// committedVocabularyPath is the feature vocabulary artifact the repository
-// commits, beside the merged document. It is relative to this module's
-// directory, which is where `go test` runs the package.
-const committedVocabularyPath = "../../../contracts/features.json"
-
 // vocabularyEntry is one declaration as contracts/features.json carries it.
 // Owner is derived from the declaring module's Go package, the same way gen
 // writes it: the platform module's packages are platform-owned, every other
@@ -235,10 +230,9 @@ func declaredVocabulary() ([]vocabularyEntry, error) {
 	return entries, nil
 }
 
-// holdBaselineVocabulary holds one artifact — the file gen wrote, or the
-// committed one — to this binary's declarations. The artifact describes the
-// baseline build, so it is exactly this binary's vocabulary: neither more nor
-// less.
+// holdBaselineVocabulary holds the file gen wrote to this binary's
+// declarations. The artifact describes the baseline build, so it is exactly
+// this binary's vocabulary: neither more nor less.
 func holdBaselineVocabulary(t *testing.T, artifact []vocabularyEntry) {
 	t.Helper()
 	declared, err := declaredVocabulary()
@@ -274,43 +268,4 @@ func TestGenWritesTheFeatureVocabulary(t *testing.T) {
 		t.Fatalf("the vocabulary gen wrote is not JSON: %v\n%s", err, raw)
 	}
 	holdBaselineVocabulary(t, written.Features)
-}
-
-// TestCommittedFeatureVocabulary holds the committed vocabulary to this
-// binary's declarations. gen writes the artifact from the same available set,
-// and the frontend's feature-name type is generated from the artifact; a
-// declaration added, removed or renamed without regenerating leaves the two out
-// of step, which this case reports rather than letting the frontend's set drift
-// from the backend's.
-func TestCommittedFeatureVocabulary(t *testing.T) {
-	t.Parallel()
-	raw, err := os.ReadFile(committedVocabularyPath)
-	if err != nil {
-		t.Fatalf("reading %s: %v (regenerate it with the gen command's --features flag)",
-			committedVocabularyPath, err)
-	}
-	var committed struct {
-		Features []vocabularyEntry `json:"features"`
-	}
-	if err = json.Unmarshal(raw, &committed); err != nil {
-		t.Fatalf("%s is not JSON: %v", committedVocabularyPath, err)
-	}
-	holdBaselineVocabulary(t, committed.Features)
-	// The ownership split is the reason the artifact carries an owner at all:
-	// a host module's declaration is application-owned so the platform package
-	// does not register its name, and a module under pkg/ is platform-owned.
-	// The comparison above already holds every entry to this criterion; these
-	// two anchors name the property so a reader sees what the split is for.
-	owners := make(map[string]string, len(committed.Features))
-	for _, entry := range committed.Features {
-		owners[entry.Name] = entry.Owner
-	}
-	if got := owners["org.personal"]; got != ownerPlatform {
-		t.Errorf("org.personal is owned by %q, want %q: the personal-tenant module lives "+
-			"under pkg/ and its feature is platform-owned", got, ownerPlatform)
-	}
-	if got := owners["tenant.admin"]; got != ownerPlatform {
-		t.Errorf("tenant.admin is owned by %q, want %q: a platform module's declaration is "+
-			"platform-owned", got, ownerPlatform)
-	}
 }

@@ -29,6 +29,7 @@ import (
 	i18nhttp "github.com/vislake/speed/pkg/i18n/http"
 	"github.com/vislake/speed/pkg/observability/otel"
 	"github.com/vislake/speed/pkg/ratelimit"
+	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
 // This file holds the differential case: the anonymous answers a run gives
@@ -80,38 +81,13 @@ func serveRoster() []string {
 	return slices.Concat(baselineServe, capabilityModules)
 }
 
-// expectedOwners is the prefix-to-endpoint table the case judges against. It is
-// written here rather than read from the configuration under test: reading the
-// configuration would make the case agree with whatever the run does, including
-// a run whose selection is derived from the assembly. After the change the same
-// table is what testdata/ and the case's configuration claim, and the D2 case
-// holds the two together.
-var expectedOwners = map[string]string{
-	"/api":                       "api",
-	"/api/v1/auth":               "account",
-	"/api/v1/features":           "account",
-	"/api/v1/orgs":               "account",
-	"/api/v1/system/auth":        "admin",
-	"/api/v1/system/audit":       "admin",
-	"/api/v1/system/permissions": "admin",
-	"/api/v1/system/settings":    "admin",
-	"/api/v1/system/sms":         "admin",
-	"/api/v1/system/tenants":     "admin",
-	"/content":                   "content",
-	// The operations surface shares the backend listener, so its probes are
-	// non-root claims of that listener like the API namespaces.
-	"/health":       "ops",
-	"/ready":        "ops",
-	"/openapi.json": "ops",
-}
-
-// expectedEndpoint answers which endpoint the table says answers a path on the
-// backend listener. A path under no non-root prefix goes to web in the merged
-// topology; on the split one the backend listener has no fallback and the
-// dispatch answers, which is no endpoint at all.
+// expectedEndpoint answers which endpoint the ownership table says answers a
+// path on the backend listener. A path under no non-root prefix goes to web in
+// the merged topology; on the split one the backend listener has no fallback
+// and the dispatch answers, which is no endpoint at all.
 func expectedEndpoint(path string, split bool) string {
 	owner, prefix := "", ""
-	for claimed, endpoint := range expectedOwners {
+	for claimed, endpoint := range demotest.ExpectedOwners() {
 		if fallsUnderClaim(path, claimed) && len(claimed) > len(prefix) {
 			owner, prefix = endpoint, claimed
 		}
@@ -199,7 +175,7 @@ func buildProbes(t *testing.T, document []byte, claims map[string]endpointClaim,
 		}
 	}
 
-	for prefix := range expectedOwners {
+	for prefix := range demotest.ExpectedOwners() {
 		for _, path := range []string{prefix, prefix + "/", prefix + "/zz-absent", prefix + "/zz/zz"} {
 			add(probe{
 				listener: "backend", method: http.MethodGet, path: path,
@@ -1382,7 +1358,7 @@ func runDifferential(t *testing.T, topo topology) {
 	// answers 401 in that endpoint's realm, so the probes below really are
 	// judged against the endpoint they are expected to reach.
 	client := &http.Client{Timeout: probeTimeout()}
-	for prefix, endpoint := range expectedOwners {
+	for prefix, endpoint := range demotest.ExpectedOwners() {
 		if !guarded[endpoint] {
 			continue
 		}

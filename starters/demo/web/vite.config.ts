@@ -30,7 +30,7 @@
  * keeping the default. The claimed namespaces come from
  * backend-prefixes.json (src/backend-prefixes.ts) -- a hand-kept mirror of the
  * claims in the server configuration, held to them by the server's
- * TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims.
+ * TestThePrefixManifestMatchesTheOwnershipTable.
  */
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
