@@ -12,10 +12,10 @@ import (
 	"github.com/vislake/speed/pkg/jobs"
 )
 
-// epochAligned is a whole number of minutes since the Unix epoch, so it is its
-// own minute-window start.
 var epochAligned = time.Unix(1_700_000_040, 0).UTC()
 
+// TestWindowStartRoundsDownToTheIntervalFromTheEpoch checks that a window start
+// is the interval's largest multiple from the epoch not after now.
 func TestWindowStartRoundsDownToTheIntervalFromTheEpoch(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -37,6 +37,8 @@ func TestWindowStartRoundsDownToTheIntervalFromTheEpoch(t *testing.T) {
 	}
 }
 
+// TestTheWindowKeyVariesWithTheWindowAndTheKey checks that the key is stable per
+// declaration and window and differs across either.
 func TestTheWindowKeyVariesWithTheWindowAndTheKey(t *testing.T) {
 	at := windowKey("orders.reconcile", epochAligned)
 	if got := windowKey("orders.reconcile", epochAligned); got != at {
@@ -53,6 +55,8 @@ func TestTheWindowKeyVariesWithTheWindowAndTheKey(t *testing.T) {
 	}
 }
 
+// TestRepeatedTicksOfOneWindowConvergeToOneJob checks that repeated ticks over one
+// window leave one job.
 func TestRepeatedTicksOfOneWindowConvergeToOneJob(t *testing.T) {
 	q := newQueue()
 	s := newTestScheduler(q, handlersFor("orders.reconcile"), newCatalog(active("acme")),
@@ -70,6 +74,8 @@ func TestRepeatedTicksOfOneWindowConvergeToOneJob(t *testing.T) {
 	}
 }
 
+// TestEachTenantGetsItsOwnJobForOneWindow checks that one window gives each tenant
+// its own job under one key.
 func TestEachTenantGetsItsOwnJobForOneWindow(t *testing.T) {
 	q := newQueue()
 	s := newTestScheduler(q, handlersFor("orders.reconcile"), newCatalog(active("acme"), active("globex")),
@@ -93,6 +99,8 @@ func TestEachTenantGetsItsOwnJobForOneWindow(t *testing.T) {
 	}
 }
 
+// TestADisabledTenantIsSkipped checks that a disabled tenant is not entered and
+// gets no job.
 func TestADisabledTenantIsSkipped(t *testing.T) {
 	q := newQueue()
 	s := newTestScheduler(q, handlersFor("orders.reconcile"), newCatalog(active("acme"), disabled("globex")),
@@ -110,6 +118,7 @@ func TestADisabledTenantIsSkipped(t *testing.T) {
 	}
 }
 
+// TestTheWindowsATickCovers checks which windows the startup tick covers.
 func TestTheWindowsATickCovers(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -119,10 +128,6 @@ func TestTheWindowsATickCovers(t *testing.T) {
 		want     []time.Time
 	}{
 		{
-			// A process that starts partway through a window whose interval is
-			// longer than the tick. The backscan alone does not reach that
-			// window's start, so without covering it at startup the window goes
-			// by with no job until the next one begins.
 			name:     "the window the process starts in",
 			tick:     5 * time.Second,
 			interval: time.Minute,
@@ -130,8 +135,6 @@ func TestTheWindowsATickCovers(t *testing.T) {
 			want:     []time.Time{epochAligned},
 		},
 		{
-			// The bound is exclusive, and here the window's start sits exactly
-			// on the backscan's floor.
 			name:     "a window start on the backscan floor",
 			tick:     30 * time.Second,
 			interval: time.Minute,
@@ -139,8 +142,6 @@ func TestTheWindowsATickCovers(t *testing.T) {
 			want:     []time.Time{epochAligned},
 		},
 		{
-			// Covering the startup window adds to the backscan rather than
-			// replacing it.
 			name:     "a tick longer than the interval",
 			tick:     3 * time.Minute,
 			interval: time.Minute,
@@ -174,6 +175,8 @@ func TestTheWindowsATickCovers(t *testing.T) {
 	}
 }
 
+// TestTheStartupCoverageRepeatsNoEnqueuedWindow checks that covering the startup
+// window converges on a job already enqueued.
 func TestTheStartupCoverageRepeatsNoEnqueuedWindow(t *testing.T) {
 	q := newQueue()
 	cat := newCatalog(active("acme"))
@@ -181,9 +184,6 @@ func TestTheStartupCoverageRepeatsNoEnqueuedWindow(t *testing.T) {
 		5*time.Second, epochAligned.Add(30*time.Second),
 		jobs.Schedule{Key: "orders.reconcile", Type: "orders.reconcile", Interval: time.Minute})
 
-	// The window the process starts in was already enqueued: another replica
-	// ticked it during a rolling release, or this one ticked it before a
-	// restart.
 	tctx, err := cat.Enter(context.Background(), "acme")
 	if err != nil {
 		t.Fatalf("entering the tenant: %v", err)
@@ -206,6 +206,8 @@ func TestTheStartupCoverageRepeatsNoEnqueuedWindow(t *testing.T) {
 	}
 }
 
+// TestATickAfterTheFirstCoversOnlyTheBackscan checks that a later tick covers only
+// the backscan and enqueues nothing already past.
 func TestATickAfterTheFirstCoversOnlyTheBackscan(t *testing.T) {
 	q := newQueue()
 	s := newTestScheduler(q, handlersFor("orders.reconcile"), newCatalog(active("acme")),
@@ -221,6 +223,8 @@ func TestATickAfterTheFirstCoversOnlyTheBackscan(t *testing.T) {
 	}
 }
 
+// TestStartRunsTheCoveringTick checks that Start runs the tick covering the
+// process's first window.
 func TestStartRunsTheCoveringTick(t *testing.T) {
 	q := newQueue()
 	s := newTestScheduler(q, handlersFor("orders.reconcile"), newCatalog(active("acme")),
@@ -236,6 +240,8 @@ func TestStartRunsTheCoveringTick(t *testing.T) {
 	}
 }
 
+// TestATickCrossingSeveralWindowsEnqueuesEach checks that a tick longer than the
+// interval enqueues one job per crossed window.
 func TestATickCrossingSeveralWindowsEnqueuesEach(t *testing.T) {
 	q := newQueue()
 	s := newTestScheduler(q, handlersFor("orders.reconcile"), newCatalog(active("acme")),
@@ -256,6 +262,8 @@ func TestATickCrossingSeveralWindowsEnqueuesEach(t *testing.T) {
 	}
 }
 
+// TestARosterReadFailureExpandsNothing checks that a failed roster read expands no
+// window.
 func TestARosterReadFailureExpandsNothing(t *testing.T) {
 	q := newQueue()
 	cat := newCatalog(active("acme"))
@@ -270,6 +278,8 @@ func TestARosterReadFailureExpandsNothing(t *testing.T) {
 	}
 }
 
+// TestAnEnqueueFailureDoesNotStopTheRound checks that a failing enqueue is
+// skipped and the round carries on.
 func TestAnEnqueueFailureDoesNotStopTheRound(t *testing.T) {
 	q := newQueue()
 	q.fail = errors.New("the queue is not running")
@@ -287,6 +297,8 @@ func TestAnEnqueueFailureDoesNotStopTheRound(t *testing.T) {
 	}
 }
 
+// TestATickAtOrBelowZeroStartsNoTicker checks that a non-positive tick leaves the
+// ticker off.
 func TestATickAtOrBelowZeroStartsNoTicker(t *testing.T) {
 	for _, tick := range []time.Duration{0, -time.Second} {
 		s := newTestScheduler(newQueue(), handlersFor("orders.reconcile"), newCatalog(active("acme")),
@@ -299,6 +311,8 @@ func TestATickAtOrBelowZeroStartsNoTicker(t *testing.T) {
 	}
 }
 
+// TestStartRunsTheTickerAndStopWaitsForIt checks that Start runs the ticker and
+// Stop leaves it stopped.
 func TestStartRunsTheTickerAndStopWaitsForIt(t *testing.T) {
 	s := newTestScheduler(newQueue(), handlersFor("orders.reconcile"), newCatalog(active("acme")),
 		time.Hour, epochAligned,
@@ -313,6 +327,7 @@ func TestStartRunsTheTickerAndStopWaitsForIt(t *testing.T) {
 	}
 }
 
+// TestReadSettingsTakesTheTick checks that the configured tick is read.
 func TestReadSettingsTakesTheTick(t *testing.T) {
 	settings, err := readSettings(configWith{tick: 30 * time.Second})
 	if err != nil {
@@ -323,6 +338,8 @@ func TestReadSettingsTakesTheTick(t *testing.T) {
 	}
 }
 
+// TestCheckHandlersReportsAMissingType checks that a declared type with no
+// registered handler is reported.
 func TestCheckHandlersReportsAMissingType(t *testing.T) {
 	present := &scheduler{
 		handlers:  handlersFor("orders.reconcile"),
@@ -340,6 +357,8 @@ func TestCheckHandlersReportsAMissingType(t *testing.T) {
 	}
 }
 
+// TestStartRefusesADeclarationWhoseTypeHasNoHandler checks that Start fails when a
+// declaration's type has no handler.
 func TestStartRefusesADeclarationWhoseTypeHasNoHandler(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -361,6 +380,8 @@ func TestStartRefusesADeclarationWhoseTypeHasNoHandler(t *testing.T) {
 	}
 }
 
+// TestStartFailsWhenTheRosterIsAbsent checks that an assembly without a tenant
+// roster fails startup.
 func TestStartFailsWhenTheRosterIsAbsent(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -381,6 +402,8 @@ func TestStartFailsWhenTheRosterIsAbsent(t *testing.T) {
 	}
 }
 
+// TestCollectSchedulesRefusesAMalformedDeclaration checks that an empty key, an
+// empty type and a non-positive interval are refused.
 func TestCollectSchedulesRefusesAMalformedDeclaration(t *testing.T) {
 	cases := []struct {
 		name string
@@ -409,6 +432,8 @@ func TestCollectSchedulesRefusesAMalformedDeclaration(t *testing.T) {
 	}
 }
 
+// TestCollectSchedulesRefusesADuplicateKey checks that two declarations sharing a
+// key are refused.
 func TestCollectSchedulesRefusesADuplicateKey(t *testing.T) {
 	reg := core.New()
 	reg.Register(declaringSchedules("test.a", jobs.Schedule{Key: "dup", Type: "t", Interval: time.Minute}))
@@ -426,6 +451,8 @@ func TestCollectSchedulesRefusesADuplicateKey(t *testing.T) {
 	}
 }
 
+// TestCollectSchedulesTakesTheParticipatingSet checks that only declarations in
+// force are collected.
 func TestCollectSchedulesTakesTheParticipatingSet(t *testing.T) {
 	reg := core.New()
 	reg.Register(providingQueueExplicitly(newQueue()))
@@ -445,8 +472,6 @@ func TestCollectSchedulesTakesTheParticipatingSet(t *testing.T) {
 		Depth:        core.StageNew,
 		Participants: []string{"test.queue", "test.standdown", "test.shop"},
 		DeclaringOnly: []core.Declaration{
-			// A module reached for its declarations alone is not running, so
-			// its declaration drops out unless the host overrides that.
 			{Name: "test.extra"},
 			{Name: "test.forced", AllResources: true},
 		},
@@ -464,10 +489,6 @@ func TestCollectSchedulesTakesTheParticipatingSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("driving: %v", err)
 	}
-	// test.shop is a participant; test.forced is a declaring-only module the
-	// host put every declaration in force for; test.other was never named;
-	// test.extra is declaring-only without the override; test.standdown is a
-	// participant resolution stood down over the exclusive queue.
 	if want := []string{"forced.s", "shop.s"}; !slices.Equal(got, want) {
 		t.Errorf("collectSchedules kept %v, want %v", got, want)
 	}

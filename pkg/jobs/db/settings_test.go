@@ -25,9 +25,6 @@ import (
 	speedsettings "github.com/vislake/speed/pkg/settings"
 )
 
-// The runtime tunables this module is expected to declare, written out here
-// rather than read from a constant so that the cases name the keys the design
-// lists.
 const (
 	pollIntervalSetting = "jobs.db.poll-interval"
 	claimBatchSetting   = "jobs.db.claim-batch"
@@ -36,9 +33,6 @@ const (
 	retryMaxSetting     = "jobs.db.retry-max"
 )
 
-// stayingJobs is the configuration that stays: the worker count sizes the pool
-// at construction and the shutdown grace bounds the stop stage, so neither can
-// take effect without a restart.
 func stayingJobs() map[string]any {
 	return map[string]any{
 		workersItem:       1,
@@ -46,15 +40,12 @@ func stayingJobs() map[string]any {
 	}
 }
 
-// queueSettingsModules assembles the settings module over an in-process event
-// bus, so a case can write a queue tunable while the queue runs.
 func queueSettingsModules() []core.Module {
 	return []core.Module{memory.Module(), speedsettings.Module()}
 }
 
-// TestTheClaimBatchInTheStoreSetsHowManyOneClaimTakes holds that the batch size
-// is read at each claim: a value written after construction is what the next
-// claim takes.
+// TestTheClaimBatchInTheStoreSetsHowManyOneClaimTakes checks that the batch size
+// is read at each claim.
 func TestTheClaimBatchInTheStoreSetsHowManyOneClaimTakes(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: stayingJobs(), extra: queueSettingsModules()}).
@@ -75,8 +66,8 @@ func TestTheClaimBatchInTheStoreSetsHowManyOneClaimTakes(t *testing.T) {
 		})
 }
 
-// TestTheLeaseInTheStoreSetsHowLongOneClaimHolds holds that the lease is read
-// at each claim: the rows the next claim takes are held for the stored time.
+// TestTheLeaseInTheStoreSetsHowLongOneClaimHolds checks that the lease is read at
+// each claim.
 func TestTheLeaseInTheStoreSetsHowLongOneClaimHolds(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: stayingJobs(), extra: queueSettingsModules()}).
@@ -95,9 +86,8 @@ func TestTheLeaseInTheStoreSetsHowLongOneClaimHolds(t *testing.T) {
 		})
 }
 
-// TestThePollIntervalInTheStoreSetsTheIdleWait holds that the poll interval is
-// read when a pass finds nothing due: the wait the pass asks for is the stored
-// value, not the one the queue started with.
+// TestThePollIntervalInTheStoreSetsTheIdleWait checks that the poll interval is
+// read when a pass finds nothing due.
 func TestThePollIntervalInTheStoreSetsTheIdleWait(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: stayingJobs(), extra: queueSettingsModules()}).
@@ -115,9 +105,8 @@ func TestThePollIntervalInTheStoreSetsTheIdleWait(t *testing.T) {
 		})
 }
 
-// TestTheRetryDelaysInTheStoreDriveTheNextSettlement holds that the retry base
-// and cap are read at the next failure settle: the row is due again after the
-// stored backoff.
+// TestTheRetryDelaysInTheStoreDriveTheNextSettlement checks that the retry base
+// and cap are read at the next failure settle.
 func TestTheRetryDelaysInTheStoreDriveTheNextSettlement(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: stayingJobs(), extra: queueSettingsModules()}).
@@ -138,9 +127,8 @@ func TestTheRetryDelaysInTheStoreDriveTheNextSettlement(t *testing.T) {
 		})
 }
 
-// TestARetryCapBelowTheBaseIsClampedAtUse holds that a cap below the base is not
-// a startup invariant: both values are accepted, the queue runs, and the retry is
-// delayed by the cap at the failure settle.
+// TestARetryCapBelowTheBaseIsClampedAtUse checks that a cap below the base is
+// accepted and clamps the retry delay at the failure settle.
 func TestARetryCapBelowTheBaseIsClampedAtUse(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: stayingJobs(), extra: queueSettingsModules()}).
@@ -161,10 +149,8 @@ func TestARetryCapBelowTheBaseIsClampedAtUse(t *testing.T) {
 		})
 }
 
-// TestTheQueueDeclaresExactlyItsRuntimeTunables holds the line the design draws:
-// the poll interval, the claim batch, the lease and the two retry bounds are
-// settings, while the worker count and the shutdown grace size the construction
-// and stay configuration items that a change requires a restart to pick up.
+// TestTheQueueDeclaresExactlyItsRuntimeTunables checks that exactly the five
+// runtime tunables are settings and the construction values are not.
 func TestTheQueueDeclaresExactlyItsRuntimeTunables(t *testing.T) {
 	declared := declaredQueueSettings(t)
 	for _, key := range []string{pollIntervalSetting, claimBatchSetting, leaseSetting, retryBaseSetting, retryMaxSetting} {
@@ -188,11 +174,8 @@ func TestTheQueueDeclaresExactlyItsRuntimeTunables(t *testing.T) {
 	}
 }
 
-// TestAConfigurationCarryingARemovedQueueTunableFailsStartup holds the move out
-// of configuration: a configuration file that still carries one of the five
-// tunables is an unknown key and refuses the startup, naming the key. The worker
-// count and the shutdown grace are the control: they stay configuration items
-// and load.
+// TestAConfigurationCarryingARemovedQueueTunableFailsStartup checks that a
+// configuration file still carrying a tunable fails as an unknown key.
 func TestAConfigurationCarryingARemovedQueueTunableFailsStartup(t *testing.T) {
 	for _, c := range []struct {
 		item  string
@@ -224,9 +207,8 @@ func TestAConfigurationCarryingARemovedQueueTunableFailsStartup(t *testing.T) {
 	})
 }
 
-// TestTheQueueTunablesUseTheirDeclaredDefaults pins the values a run with no
-// stored row acts on. The settings store answers the declared default for a key
-// with no row, so the literals here are the ones the design fixes.
+// TestTheQueueTunablesUseTheirDeclaredDefaults checks the values a run with no
+// stored row acts on.
 func TestTheQueueTunablesUseTheirDeclaredDefaults(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: stayingJobs(), extra: queueSettingsModules()}).
@@ -252,10 +234,8 @@ func TestTheQueueTunablesUseTheirDeclaredDefaults(t *testing.T) {
 		})
 }
 
-// TestAQueueTunableReadFaultFallsBackToItsDeclaredDefault holds the other
-// direction of a read: a setting that cannot be read, and one whose stored value
-// is outside its domain, each answers the declared default and writes one Error
-// naming the setting.
+// TestAQueueTunableReadFaultFallsBackToItsDeclaredDefault checks that an
+// unreadable or out-of-domain setting answers its default and is reported.
 func TestAQueueTunableReadFaultFallsBackToItsDeclaredDefault(t *testing.T) {
 	var report bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&report, nil))
@@ -280,9 +260,8 @@ func TestAQueueTunableReadFaultFallsBackToItsDeclaredDefault(t *testing.T) {
 	}
 }
 
-// TestASubMillisecondQueueTunableIsRefused holds the boundary the domains draw:
-// the lease and the two retry bounds are stored and read in whole milliseconds,
-// so a shorter value, which would truncate to zero, is refused at the write.
+// TestASubMillisecondQueueTunableIsRefused checks that the lease and retry bounds
+// refuse a sub-millisecond value at the write.
 func TestASubMillisecondQueueTunableIsRefused(t *testing.T) {
 	for _, key := range []string{leasePath, retryBasePath, retryMaxPath} {
 		t.Run(key, func(t *testing.T) {
@@ -302,8 +281,6 @@ func TestASubMillisecondQueueTunableIsRefused(t *testing.T) {
 	}
 }
 
-// faultyQueueStore is the queue store with one key made to fail its read, so a
-// case can watch the read-failure fallback without a broken assembly.
 type faultyQueueStore struct {
 	*queueStore
 	key string
@@ -317,8 +294,6 @@ func (s faultyQueueStore) Get(layer speedsettings.Layer, key string, target any)
 	return s.queueStore.Get(layer, key, target)
 }
 
-// declaredQueueSettings returns the items of this module's settings declaration,
-// or stops the case when it makes none.
 func declaredQueueSettings(t *testing.T) map[string]speedsettings.Item {
 	t.Helper()
 	for _, resource := range Module().Resources {
@@ -330,7 +305,6 @@ func declaredQueueSettings(t *testing.T) map[string]speedsettings.Item {
 	return nil
 }
 
-// queueSettingsStoreOf resolves the settings store of the assembled run.
 func queueSettingsStoreOf(t *testing.T, reg *core.Registry) speedsettings.Store {
 	t.Helper()
 	store, err := core.Resolve[speedsettings.Store](reg)
@@ -340,8 +314,6 @@ func queueSettingsStoreOf(t *testing.T, reg *core.Registry) speedsettings.Store 
 	return store
 }
 
-// writeQueueSetting writes one value into the running settings store. A refusal
-// is fatal: the case exists to hold that the key is declared as a setting.
 func writeQueueSetting(t *testing.T, store speedsettings.Store, key string, value any) {
 	t.Helper()
 	write := speedsettings.Write{Layer: speedsettings.Global(), Key: key, Value: value, Actor: "test"}
@@ -350,7 +322,6 @@ func writeQueueSetting(t *testing.T, store speedsettings.Store, key string, valu
 	}
 }
 
-// claimExpiryOf reads one job row's claim deadline.
 func claimExpiryOf(t *testing.T, reg *core.Registry, id string) int64 {
 	t.Helper()
 	database, err := core.Resolve[db.Database](reg)
@@ -367,8 +338,6 @@ func claimExpiryOf(t *testing.T, reg *core.Registry, id string) int64 {
 	return at.Int64
 }
 
-// assertClaimDeadline holds that a written instant is about now plus want, judged
-// between the two instants the call was made in.
 func assertClaimDeadline(t *testing.T, what string, got int64, before, after time.Time, want time.Duration) {
 	t.Helper()
 	slack := 2 * time.Second
@@ -380,9 +349,6 @@ func assertClaimDeadline(t *testing.T, what string, got int64, before, after tim
 	}
 }
 
-// loadJobsConfiguration runs the real loader over a JSON primary source holding
-// a jobs.db section, returning what loading it answered. Unlike the harness it
-// does not stop the case on a refusal: the refusal is what the case asserts.
 func loadJobsConfiguration(t *testing.T, section map[string]any) error {
 	t.Helper()
 	document := map[string]any{"jobs": map[string]any{"db": section}}

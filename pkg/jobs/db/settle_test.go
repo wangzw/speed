@@ -9,13 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/jobs"
 )
 
-// insertJob writes one row directly, for a case that steers a row the executors
-// are not running against. The run reaches the init stage, so the table exists
-// and no executor is claiming.
 func insertJob(t *testing.T, reg *core.Registry, id, status, claimedBy string, attempts int) {
 	t.Helper()
-	// The instant is the database's own, so a row written as "due now" is due
-	// against the same clock the claim judges by.
 	now := dbNowMilli(t, reg)
 	var claimed any
 	if claimedBy != "" {
@@ -27,9 +22,8 @@ func insertJob(t *testing.T, reg *core.Registry, id, status, claimedBy string, a
 		id, "acme", jobType, status, 5, attempts, 3, 300000, 0, "", now, now, claimed, now, false, now, now)
 }
 
-// A settling statement is conditional on the executor still holding the row: one
-// that no longer holds it writes nothing, and the row is left as the executor
-// holding it finds it.
+// TestASettleByAnExecutorThatLostTheClaimWritesNothing checks that a settling
+// statement by an executor that no longer holds the row writes nothing.
 func TestASettleByAnExecutorThatLostTheClaimWritesNothing(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: quickJobs()}).
@@ -48,9 +42,8 @@ func TestASettleByAnExecutorThatLostTheClaimWritesNothing(t *testing.T) {
 		})
 }
 
-// Giving rows back returns each to the state it is claimed from again: a job
-// that never ran goes back to pending, and one that has already failed goes
-// back to retrying, both due at once and held by nobody.
+// TestReleaseReturnsEachRowToTheStateItIsClaimedFromAgain checks that releasing
+// puts a never-run job back to pending and a failed one to retrying, both due.
 func TestReleaseReturnsEachRowToTheStateItIsClaimedFromAgain(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageInit, jobs: quickJobs()}).
@@ -60,8 +53,6 @@ func TestReleaseReturnsEachRowToTheStateItIsClaimedFromAgain(t *testing.T) {
 			insertJob(t, reg, "failed", string(jobs.StatusRunning), "this-executor", 2)
 
 			p.release("this-executor")
-			// Due-ness is judged against the database's clock, the one the
-			// release wrote, not the host's.
 			now := dbNowMilli(t, reg)
 
 			for id, want := range map[string]jobs.Status{"fresh": jobs.StatusPending, "failed": jobs.StatusRetrying} {

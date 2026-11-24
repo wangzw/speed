@@ -12,18 +12,14 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// jobType is the type the cases register a handler under.
 const jobType = "demo.work"
 
-// quickHost is a host running one handler of jobType that returns at once.
 func quickHost(e engine, t *testing.T, rec *recorder) host {
 	return e.on(t, host{jobs: quickJobs(), extra: []core.Module{consumer(rec)}})
 }
 
-// Enqueue writes one job, and a second submission carrying its idempotency key
-// converges on the row already there: the same job comes back, and no second
-// row is written. A key held by one tenant does not block another tenant's
-// submission under it.
+// TestEnqueueIsIdempotentOnTheKey checks that a repeated key converges on the
+// existing row and that another tenant's key is separate.
 func TestEnqueueIsIdempotentOnTheKey(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	quickHost(engines[0], t, rec).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -61,8 +57,8 @@ func TestEnqueueIsIdempotentOnTheKey(t *testing.T) {
 	})
 }
 
-// Enqueue refuses an invalid task, a type with no handler and a context with no
-// tenant, writing nothing in each case.
+// TestEnqueueRefusalsWriteNothing checks that an invalid task, an unregistered
+// type and a context with no tenant each write nothing.
 func TestEnqueueRefusalsWriteNothing(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	quickHost(engines[0], t, rec).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -84,8 +80,8 @@ func TestEnqueueRefusalsWriteNothing(t *testing.T) {
 	})
 }
 
-// Get is scoped to the tenant of its context: another tenant's job, and an
-// identifier no row carries, are both answered as ErrJobNotFound.
+// TestGetIsScopedToTheTenant checks that another tenant's job and an unknown
+// identifier both read as ErrJobNotFound.
 func TestGetIsScopedToTheTenant(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	quickHost(engines[0], t, rec).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -115,15 +111,13 @@ func TestGetIsScopedToTheTenant(t *testing.T) {
 	})
 }
 
-// Cancel moves an unclaimed job straight to cancelled: the job never runs and
-// its handler is never called.
+// TestCancelOfAnUnclaimedJobSettlesIt checks that cancelling an unclaimed job
+// settles it without running the handler.
 func TestCancelOfAnUnclaimedJobSettlesIt(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	quickHost(engines[0], t, rec).drive(t, func(_ context.Context, reg *core.Registry) error {
 		q := queueOf(t, reg)
 		acme := tenantCtx(t, reg, "acme")
-		// Scheduled far out, so the executor never claims it and the
-		// cancellation meets it unclaimed.
 		id, err := q.Enqueue(acme, jobs.Task{Type: jobType}, jobs.WithScheduledAt(time.Now().Add(time.Hour)))
 		if err != nil {
 			t.Errorf("enqueuing the job: %v", err)
@@ -145,21 +139,16 @@ func TestCancelOfAnUnclaimedJobSettlesIt(t *testing.T) {
 	})
 }
 
-// Cancel of a job that is claimed but not yet executed only has a cancellation
-// requested: the claimant observes it before it executes and settles the job as
-// cancelled without calling the handler.
+// TestCancelOfAClaimedJobIsObservedBeforeExecution checks that a claimed job only
+// has a cancellation requested and is settled cancelled without its handler.
 func TestCancelOfAClaimedJobIsObservedBeforeExecution(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
-	// The high-priority job is claimed first and blocks; the second job of the
-	// same batch is claimed but not yet executed when it is cancelled.
 	rec := &recorder{
 		typ:  jobType,
 		hold: func(call int) <-chan struct{} { return block },
 	}
 	e := engines[0]
-	// One worker and a batch of two: both jobs are claimed together, and the
-	// second is claimed but not yet executed while the first blocks.
 	e.on(t, host{
 		jobs:  withJobs(map[string]any{workersItem: 1, claimBatchItem: 2}),
 		extra: []core.Module{consumer(rec)},
@@ -207,7 +196,8 @@ func TestCancelOfAClaimedJobIsObservedBeforeExecution(t *testing.T) {
 	})
 }
 
-// Cancel of a job already in a terminal status is an idempotent no-op.
+// TestCancelOfATerminalJobChangesNothing checks that cancelling a terminal job is
+// an idempotent no-op.
 func TestCancelOfATerminalJobChangesNothing(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	quickHost(engines[0], t, rec).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -234,7 +224,8 @@ func TestCancelOfATerminalJobChangesNothing(t *testing.T) {
 	})
 }
 
-// Cancel names a job the tenant cannot see as ErrJobNotFound.
+// TestCancelOfAnInvisibleJobIsNotFound checks that a job another tenant cannot
+// see and an unknown identifier both read as ErrJobNotFound.
 func TestCancelOfAnInvisibleJobIsNotFound(t *testing.T) {
 	rec := &recorder{typ: jobType}
 	quickHost(engines[0], t, rec).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -256,8 +247,8 @@ func TestCancelOfAnInvisibleJobIsNotFound(t *testing.T) {
 	})
 }
 
-// The queue refuses every call before it has started, and registering a handler
-// once it has started is refused too.
+// TestTheQueueServesOnlyBetweenStartAndStop checks that every call before the
+// start stage and a registration after it are refused.
 func TestTheQueueServesOnlyBetweenStartAndStop(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageNew, jobs: quickJobs()}).
@@ -290,8 +281,8 @@ func TestTheQueueServesOnlyBetweenStartAndStop(t *testing.T) {
 		})
 }
 
-// The handlers face refuses a duplicate type, an empty type and a nil handler,
-// leaving the handler set as it was.
+// TestRegisterRefusalsLeaveTheSetUnchanged checks that a nil handler, an empty
+// type and a duplicate type are refused and leave the set unchanged.
 func TestRegisterRefusalsLeaveTheSetUnchanged(t *testing.T) {
 	e := engines[0]
 	e.on(t, host{depth: core.StageNew, jobs: quickJobs()}).
