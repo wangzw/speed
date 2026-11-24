@@ -239,6 +239,8 @@ function AppFrame({
     useState(false)
   const organizationRetryReturn = useRef(false)
   const organizationRetryControlMounted = useRef(false)
+  // The retry swaps the failure page for the waiting view and back; focus is
+  // handed over only when the swap removed the element that held it.
   const retryOrganizationAccess = useCallback((): void => {
     if (organizationRetryInFlight) {
       return
