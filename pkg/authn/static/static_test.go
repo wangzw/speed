@@ -450,7 +450,6 @@ func TestTheCacheLifetimeIsASettingAndZeroSwitchesItOff(t *testing.T) {
 		}
 	}
 
-	// A store that cannot be read is the declared default too.
 	store.set(cacheTTLPath, time.Duration(0))
 	store.err = errors.New("the store is not loaded")
 	before := derived.Load()
@@ -671,7 +670,7 @@ func TestTheDeclaredSettingsAreTheDesignsAndTheirDomainsHold(t *testing.T) {
 // TestALegacyEntryStillAuthenticates holds that the old entry form is read at startup and verifies its password.
 func TestALegacyEntryStillAuthenticates(t *testing.T) {
 	phc := cheapEntry(t, "secret")
-	fields := strings.Split(phc, "$") // "", "pbkdf2-sha256", "i=2,l=32", salt, hash
+	fields := strings.Split(phc, "$")
 	legacy := "pbkdf2-sha256$2$" + fields[3] + "$" + fields[4]
 
 	b := backendOf(t, moduleConfig{

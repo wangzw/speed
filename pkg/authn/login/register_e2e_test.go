@@ -189,8 +189,6 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 				t.Fatalf("a second registration from one source in the same wall-clock minute answered %d: "+
 					"the per-source budget of one admitted it", second.status)
 			}
-			// The boundary gave bob a fresh budget that his own request then
-			// spent, so a retry in the same new minute must be refused.
 			refusedName = "carol"
 			second = h.registerOne(refusedName, "carol@example.com", "carol-password")
 		}

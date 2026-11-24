@@ -14,9 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// The stand-ins for the modules this descriptor names: the config module, whose
-// reader carries the credentials, and the logging capability, with which the
-// client secret is registered as a redaction rule.
 const (
 	configModule = "stand-in.config"
 	logModule    = "stand-in.log"

@@ -37,20 +37,18 @@ const (
 	authorizeFragment = "wechat_redirect"
 )
 
-// maxResponseBytes caps a token response. WeChat's answer is a small JSON
-// object; the cap is the same one the restricted client applies, repeated here
-// so the guarantee holds under a client a test injects.
+// maxResponseBytes caps a token response; it repeats the restricted client's cap so the
+// guarantee holds under a client a test injects.
 const maxResponseBytes = egress.MaxBodyBytes
 
-// The non-zero errcode values the token endpoint answers with that name a
-// definite kind of refusal. Every other value is a refusal too, but one whose
-// cause this side does not name further.
+// The non-zero errcode values that name a definite kind of refusal; every other value is a
+// refusal with no further cause named.
 const (
-	errCodeInvalidSecret    = 40001 // invalid credential, in practice a wrong secret
-	errCodeInvalidAppID     = 40013 // invalid appid
-	errCodeInvalidCode      = 40029 // the code is not valid
-	errCodeCodeUsed         = 40163 // the code was already used
-	errCodeInvalidAppSecret = 40125 // invalid appsecret
+	errCodeInvalidSecret    = 40001
+	errCodeInvalidAppID     = 40013
+	errCodeInvalidCode      = 40029
+	errCodeCodeUsed         = 40163
+	errCodeInvalidAppSecret = 40125
 	errCodeMissingAppID     = 41002
 	errCodeMissingAppSecret = 41004
 )
@@ -74,10 +72,9 @@ var (
 	ErrProviderFailed = errors.New("wechat: the provider did not answer a usable token response")
 )
 
-// RefusalError is a failure the provider stated: a non-zero errcode. Its Class
-// is one of the sentinels above, so a caller tells a rejected code from rejected
-// credentials with errors.Is, and the errcode reaches the log. The text carries
-// no part of the request.
+// RefusalError is a failure the provider stated: a non-zero errcode. Its Class is one of the
+// sentinels above, so errors.Is tells a rejected code from rejected credentials; the errcode
+// reaches the log and the text carries no part of the request.
 type RefusalError struct {
 	// Code is the provider's non-zero errcode.
 	Code  int
@@ -133,12 +130,8 @@ func New(o Options) *Client {
 	client := o.HTTP
 	if client == nil {
 		client = egress.New(egress.Options{AllowLoopback: o.AllowLoopback, RootCAs: o.RootCAs})
-		// The restricted client is wrapped from outside, so the exchange carries
-		// the span of the call's context across the hop, and inside it is the
-		// logging transport, so the exchange leaves one record. The record names
-		// the method, host, path, status, outcome and time and never the query,
-		// where the secret and the code travel; a failure is recorded through the
-		// cause under net/http's *url.Error, which drops the URL with it.
+		// The restricted client is wrapped outside for the span and inside for the outbound record,
+		// which names method, host, path, status, outcome and time and never the query or body.
 		client.Transport = observability.Transport(log.Transport(client.Transport))
 	}
 	return &Client{
@@ -153,10 +146,9 @@ func New(o Options) *Client {
 // under when there is no union id.
 func (c *Client) AppID() string { return c.appID }
 
-// AuthorizeURL builds the address the user agent is sent to for authorization
-// at endpoint under scope, coming back to redirectURI with state. The address
-// ends with the #wechat_redirect fragment WeChat's browser authorization
-// requires.
+// AuthorizeURL builds the address the user agent is sent to for authorization at endpoint
+// under scope, coming back to redirectURI with state, ending with the #wechat_redirect
+// fragment WeChat's browser authorization requires.
 func (c *Client) AuthorizeURL(endpoint, scope, redirectURI, state string) string {
 	q := url.Values{}
 	q.Set("appid", c.appID)
@@ -167,14 +159,9 @@ func (c *Client) AuthorizeURL(endpoint, scope, redirectURI, state string) string
 	return endpoint + "?" + q.Encode() + "#" + authorizeFragment
 }
 
-// Exchange trades an authorization code for the identity it names.
-//
-// The request is the provider's GET with the code, the application identifier
-// and the secret in the query string. A body that is not a token response, a
-// status other than 200 and a failure to reach the provider are ErrProviderFailed
-// (an outage); a non-zero errcode is a *RefusalError (a stated refusal), whose
-// class tells a rejected code from rejected credentials. No error carries the
-// request URL, and so none carries the secret.
+// Exchange trades an authorization code for the identity it names, with the code, application
+// identifier and secret in the query. A non-200 status, an unreadable body or an unreachable
+// provider is an outage; a non-zero errcode is a *RefusalError. No error carries the URL.
 func (c *Client) Exchange(ctx context.Context, code string) (Identity, error) {
 	endpoint, err := url.Parse(c.endpoint)
 	if err != nil {
@@ -193,8 +180,6 @@ func (c *Client) Exchange(ctx context.Context, code string) (Identity, error) {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		// net/http returns a *url.Error whose text is the whole request URL,
-		// secret included; it is never handed back.
 		return Identity{}, fmt.Errorf("%w: %w", ErrProviderFailed, sanitize(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -247,10 +232,8 @@ func classify(code int) error {
 	}
 }
 
-// sanitize returns an error safe to hand back and log: any *url.Error in the
-// chain is unwrapped to its cause, so the URL it carries — and the secret in it
-// — never leaves. The cause is a connection or context failure, which names the
-// host and the reason and no part of the query.
+// sanitize returns an error safe to hand back and log: any *url.Error in the chain is
+// unwrapped to its cause, so the URL and the secret in it never leave.
 func sanitize(err error) error {
 	for {
 		var uerr *url.Error

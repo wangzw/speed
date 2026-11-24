@@ -68,10 +68,8 @@ func Module() core.Module {
 	}
 }
 
-// Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
-// Describe reports the password method: a form asking for an identifier and a password. It opens no account.
 func (m *method) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
 		Name:   methodName,
@@ -80,7 +78,6 @@ func (m *method) Describe() authn.MethodDescriptor {
 	}
 }
 
-// Begin starts a flow; a start request carrying both credential fields uses them, otherwise the method asks for them.
 func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if !servesPurpose(s.Purpose) {
 		return refusePurpose(s.Purpose), nil
@@ -88,7 +85,6 @@ func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	return m.credentials(ctx, s.Fields), nil
 }
 
-// Answer handles the credential the method asked for, or the new password a must_change credential must be followed by.
 func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputSubmit {
 		return authn.StepRefused(errNotSubmitted), nil

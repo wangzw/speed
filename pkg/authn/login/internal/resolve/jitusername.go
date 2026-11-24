@@ -9,14 +9,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// claimEnterprise opens the account a claim-strategy just-in-time login
-// describes. The username is taken from the provider's configured claim,
-// normalized to the shared slug form and checked against the accounts that
-// exist before anything is written. A missing claim, a value that is not a
-// username, a name another account holds and a provider that names no usable
-// strategy each refuse the login with a distinguishable sentinel, and none of
-// them writes an account or its personal tenant: the write happens only after
-// every check has passed.
+// claimEnterprise opens the account a claim-strategy just-in-time login describes. The
+// username comes from the configured claim, normalized and checked before anything is written;
+// a missing, invalid or taken name and an unusable strategy each refuse without writing.
 func (r *Resolver) claimEnterprise(ctx context.Context, prov authn.SSOProvider, ext *authn.External,
 	aliases []authn.ExternalLink,
 ) (Result, error) {
@@ -28,17 +23,13 @@ func (r *Resolver) claimEnterprise(ctx context.Context, prov authn.SSOProvider, 
 	if !ok {
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameInvalid)
 	}
-	// The unique constraint of the creation transaction arbitrates a race for the
-	// name; this read is what tells a name another account holds apart from one
-	// that does not normalize.
+	// The lookup normalizes too, so a value the slug rule accepts but the account module
+	// keeps for itself, such as an account-identifier shape, is not a usable username.
 	_, err = r.accounts.Lookup(ctx, authn.IdentifierUsername, username)
 	switch {
 	case err == nil:
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameTaken)
 	case authn.IsUsernameShape(err), errors.Is(err, authn.ErrInvalidIdentifier):
-		// The lookup normalizes too. A value the shared slug rule accepts but the
-		// account module keeps for itself, such as one shaped like an account
-		// identifier, is still not a username the login may use.
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameInvalid)
 	case !errors.Is(err, authn.ErrAccountNotFound):
 		return Result{}, err
@@ -47,7 +38,6 @@ func (r *Resolver) claimEnterprise(ctx context.Context, prov authn.SSOProvider, 
 		authn.Verification{Via: authn.VerifiedViaIDPPrefix + prov.ID})
 	switch {
 	case errors.Is(err, authn.ErrAccountExists):
-		// A concurrent login took the name between the read and the write.
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrJITUsernameTaken)
 	case errors.Is(err, authn.ErrUsernameReserved), authn.IsUsernameShape(err),
 		errors.Is(err, authn.ErrInvalidIdentifier):
@@ -56,10 +46,8 @@ func (r *Resolver) claimEnterprise(ctx context.Context, prov authn.SSOProvider, 
 	return res, err
 }
 
-// claimValue reads the claim a claim strategy names. A claim the assertion does
-// not carry is missing; a strategy value this build does not know is a
-// configuration failure. The email claim's value is the address's local part,
-// which is the only part a username can be made from.
+// claimValue reads the claim a claim strategy names; a missing claim is missing, an unknown
+// strategy is a configuration failure, and the email claim's value is its local part.
 func claimValue(claim string, ext *authn.External) (string, error) {
 	if ext == nil {
 		return "", fmt.Errorf("resolve: %w", authn.ErrJITUsernameMissing)

@@ -27,18 +27,12 @@ import (
 )
 
 type fakeKV struct {
-	mu      sync.Mutex
-	m       map[string][]byte
-	exp     map[string]time.Time
-	failing bool
-	// failIncrPrefix arms a failure of IncrByFloatWithTTL for the keys under one
-	// prefix only, so a case can make one budget's counter fail while the other
-	// succeeds.
+	mu             sync.Mutex
+	m              map[string][]byte
+	exp            map[string]time.Time
+	failing        bool
 	failIncrPrefix string
-	// failGetPrefix arms a failure of Get for the keys under one prefix only,
-	// so a case can make one layer's counter unreadable while the flow store
-	// stays usable.
-	failGetPrefix string
+	failGetPrefix  string
 }
 
 func newKV() *fakeKV {
@@ -186,7 +180,6 @@ type fakeMethod struct {
 
 func (m *fakeMethod) Name() string { return m.name }
 
-// Describe reports the descriptor a case set, or a form named after the method.
 func (m *fakeMethod) Describe() authn.MethodDescriptor {
 	if m.desc.Name == "" {
 		return authn.MethodDescriptor{Name: m.name, Kind: authn.MethodKindForm}
@@ -211,7 +204,7 @@ func (m *fakeMethod) Answer(_ context.Context, f authn.FlowState, in authn.StepI
 }
 
 type fakeMFA struct {
-	authn.MFA       // the methods a case does not script panic if reached
+	authn.MFA
 	outcome         authn.MFAOutcome
 	offered         []authn.FactorRecord
 	assurance       authn.MFAResult
@@ -306,8 +299,6 @@ func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account
 	return authn.Account{}, authn.ErrAccountNotFound
 }
 
-// ByExternal answers for the external bindings a case registers; with none, an
-// identity is bound to no account.
 func (a *fakeAccounts) ByExternal(_ context.Context, provider, subject string) (authn.AccountID, error) {
 	if id, ok := a.byExt[provider+"\x00"+subject]; ok {
 		return id, nil
@@ -315,12 +306,10 @@ func (a *fakeAccounts) ByExternal(_ context.Context, provider, subject string) (
 	return "", authn.ErrAccountNotFound
 }
 
-// Identifiers answers for the identifiers a case registers.
 func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
 	return a.ident[id], nil
 }
 
-// Lookup answers for the identifiers a case registers by kind and value.
 func (a *fakeAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, value string) (authn.AccountID, error) {
 	key := string(kind) + "\x00" + value
 	if err, armed := a.lookupErr[key]; armed {
@@ -466,8 +455,8 @@ func (a *fakeAdmin) Touch(context.Context, authn.AccountID, time.Time) error {
 type auditing struct {
 	audit.Audit
 	mu      sync.Mutex
-	ids     []authn.Identity // the identity of each row; the zero value when there was none
-	found   []bool           // whether the context carried an identity
+	ids     []authn.Identity
+	found   []bool
 	entries []audit.Entry
 	err     error
 }
@@ -664,10 +653,6 @@ func newRigAt(t *testing.T, publicURL string, methods ...authn.LoginMethod) *rig
 	return rig
 }
 
-// watchRequestContext records whether a handler left an identity on the request's
-// own context. The gateway stamps an identity or an access level and never both,
-// so on a route a case armed with no identity an identity there was written back
-// by a handler. It is a no-op until a case arms it.
 func (r *rig) watchRequestContext(c *gin.Context) {
 	c.Next()
 	if !r.watchCtx.Load() {
@@ -784,7 +769,6 @@ type fakeVerification struct {
 	reads int
 }
 
-// SignupStateOf answers the scripted state, or the scripted failure.
 func (v *fakeVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -792,7 +776,6 @@ func (v *fakeVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (
 	return v.state, v.err
 }
 
-// PendingAccountByContact is not part of a login route.
 func (v *fakeVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
 	return "", false, errors.New("login: the pending-contact read is not part of this surface")
 }

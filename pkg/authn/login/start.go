@@ -241,7 +241,7 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 		r.applyFirstBegin(c, token, echo, rec, raw, in.Input, in.HumanProof)
 	case stateEnroll:
 		r.applyEnroll(c, token, echo, rec, raw, in.Input["kind"], in.Input)
-	default: // second
+	default:
 		r.replyStep(c, rec, stepView{Kind: nextFactor, Factors: offered}, echo)
 	}
 	return c.result()

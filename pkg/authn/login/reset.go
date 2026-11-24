@@ -438,7 +438,8 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 	codeTTL, resend := r.resetDurations(channel)
 	ticketTTL := r.settings.passwordResetTicketTTL()
 
-	// A live record on the presented cookie decides resend versus fresh flow; a record being completed is refused, so a start cannot race a password write on the same binding.
+	// A live record on the presented cookie decides resend versus fresh flow; a record being
+	// completed is refused, so a start cannot race a password write on the same binding.
 	token := ""
 	oldToken := ""
 	var oldRaw []byte
@@ -469,7 +470,8 @@ func (r *routes) passwordResetStart(ctx context.Context, in passwordResetStartIn
 				c.throttled(resend - elapsed)
 				return c.result()
 			}
-			// A code whose ticket cannot fit before the record's fixed deadline is not sent; the flow restarts with a fresh binding.
+			// A code whose ticket cannot fit before the record's fixed deadline is not sent; the flow
+			// restarts with a fresh binding.
 			if !now.Add(codeTTL + ticketTTL).After(old.ExpiresAt) {
 				resendFlow = true
 			}
@@ -948,7 +950,6 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 	}
 
 	r.resetAudit(c, account, rec.Channel, outcomeSuccess, actionID)
-	// A failed revocation is logged and the answer stays 204: the password is already written.
 	if _, revErr := r.sessions.RevokeAccount(c.ctx, account, "", authn.ReasonPasswordChange); revErr != nil {
 		log.FromContext(c.ctx).Error(ModuleName+": the sessions of a reset account could not be revoked",
 			"cause", revErr.Error())

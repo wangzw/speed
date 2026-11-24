@@ -104,7 +104,6 @@ func Module() core.Module {
 				return nil, err
 			}
 			client := egress.New(egress.Options{AllowLoopback: cfg.allowLoopback, RootCAs: cfg.rootCAs})
-			// The restricted client is wrapped outside, so every exchange and read continues the call's trace.
 			client.Transport = observability.Transport(log.Transport(client.Transport))
 			return newMethod(cfg, client), nil
 		},
@@ -172,11 +171,8 @@ func newMethod(cfg resolved, client *http.Client) *method {
 	}
 }
 
-// Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
-// Describe reports the GitHub method: a redirect button that speaks OAuth 2.0
-// and opens an account for a GitHub identity no account holds yet.
 func (m *method) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
 		Name:             methodName,
@@ -198,7 +194,6 @@ func (m *method) oauthConfig() *oauth2.Config {
 	}
 }
 
-// Begin starts a flow: it keeps the state digest and PKCE verifier in the method state and answers the provider's authorization URL.
 func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if !servesPurpose(s.Purpose) {
 		return refusePurpose(s.Purpose), nil
@@ -214,7 +209,6 @@ func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	return authn.StepRedirect(stepRedirect, st.private(), to), nil
 }
 
-// Answer handles the redirect back: an error parameter ends the flow, the state is compared to the recorded digest, and the code is exchanged for the identity.
 func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputCallback {
 		return authn.StepRefused(errNotCallback), nil

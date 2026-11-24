@@ -65,10 +65,8 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*event.Bus)(nil), Optional: true},
 			{Token: (*audit.Audit)(nil), Optional: true},
-			// Optional, because this backend must work in an assembly that never
-			// took logging in; declared, because an assembly that did has to have
-			// it constructed first, so that New can register the subject table as
-			// a literal redaction rule before Init names a logger.
+			// Optional because this backend must work without logging; declared so an assembly that took
+			// logging constructs it first, before New registers the subject table.
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides:  []core.Provision{{Token: (*authn.Verifier)(nil)}},
@@ -107,10 +105,8 @@ func Module() core.Module {
 	}
 }
 
-// registerSecrets registers the subject table's entries as literal redaction
-// rules. It runs in New, before Init names a logger, so that the rules cover
-// every line the module logs: Named binds the module attribute, and a rule
-// governs only what is bound after it.
+// registerSecrets registers the subject table's entries as literal redaction rules. It runs in
+// New, before Init names a logger, because a rule governs only what is bound after it.
 func registerSecrets(reg *core.Registry, values []string) error {
 	if len(values) == 0 {
 		return nil

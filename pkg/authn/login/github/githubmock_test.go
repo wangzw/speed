@@ -27,13 +27,13 @@ type githubMock struct {
 	pool   *x509.CertPool
 
 	mu           sync.Mutex
-	tokenStatus  int    // 0 means 200
-	tokenError   string // the OAuth error a refused exchange is answered with
-	userStatus   int    // 0 means 200
-	emailsStatus int    // 0 means 200
+	tokenStatus  int
+	tokenError   string
+	userStatus   int
+	emailsStatus int
 	user         githubUser
-	userEmail    string // the address /user carries, which must never be used
-	userRaw      string // when non-empty, the raw body /user answers with
+	userEmail    string
+	userRaw      string
 	emails       []githubEmail
 
 	verifier    string
@@ -98,8 +98,6 @@ func (m *githubMock) token(w http.ResponseWriter, r *http.Request) {
 		`"scope":"read:user user:email"}`)
 }
 
-// readUser answers GET /user. The address the account carries is always present
-// in the body and is never read by the method.
 func (m *githubMock) readUser(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.userCalls++

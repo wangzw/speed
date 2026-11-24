@@ -8,10 +8,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The provider names of the WeChat family, which is the only one whose identity
-// has more than one key: the union identifier, when the provider sends it, and
-// the open identifier of one application, which an earlier login may have been
-// bound under.
+// The WeChat provider names, the only family whose identity has more than one key: the union
+// id and the open id of one application.
 const (
 	providerWeChat        = "wechat"
 	providerWeChatOpenPre = "wechat-openid:"
@@ -61,11 +59,9 @@ func (r *Resolver) fromExternal(ctx context.Context, req Request) (Result, error
 	return r.socialUnbound(ctx, ext, req.Proof.Aliases)
 }
 
-// checkNamespace holds the provider of an external identity to the source of the
-// proof, so that no method can key an identity in a namespace that is not its
-// own. An enterprise proof is keyed in oidc:<id> or saml:<id> of its own
-// provider; a social one is in neither enterprise namespace, whose accounts are
-// created only after the domain check of the tenant.
+// checkNamespace holds the provider of an external identity to the source of the proof, so no
+// method keys an identity in a namespace that is not its own. An enterprise proof is keyed in
+// oidc:<id> or saml:<id>; a social one in neither.
 func checkNamespace(provider, enterprise string) error {
 	if enterprise == "" {
 		if strings.HasPrefix(provider, namespaceOIDC) || strings.HasPrefix(provider, namespaceSAML) {
@@ -79,10 +75,8 @@ func checkNamespace(provider, enterprise string) error {
 	return nil
 }
 
-// aliasOwner is the account the earlier keys of an external identity are bound
-// to, or empty when none is. Two aliases bound to two accounts are
-// authn.ErrBindingConflict. Only a WeChat identity has earlier keys, and only
-// under the application-scoped namespace.
+// aliasOwner is the account the earlier keys of an external identity are bound to, or empty.
+// Two aliases on two accounts are authn.ErrBindingConflict; only a WeChat identity has earlier keys.
 func (r *Resolver) aliasOwner(ctx context.Context, p authn.Proof) (authn.AccountID, error) {
 	if len(p.Aliases) == 0 {
 		return "", nil
@@ -109,9 +103,8 @@ func (r *Resolver) aliasOwner(ctx context.Context, p authn.Proof) (authn.Account
 	return owner, nil
 }
 
-// boundExternal is A2: the identity is bound, the login is that account's, and
-// only the display fields of the binding change. Memberships are neither read
-// nor written.
+// boundExternal returns the bound account's login: only the display fields of the
+// binding change, and memberships are neither read nor written.
 func (r *Resolver) boundExternal(ctx context.Context, id authn.AccountID, l authn.ExternalLink) (Result, error) {
 	if err := r.externalAccount(ctx, id); err != nil {
 		return Result{}, err
@@ -138,10 +131,8 @@ func (r *Resolver) refreshDisplay(ctx context.Context, id authn.AccountID, l aut
 	return r.admin.LinkExternal(ctx, id, l)
 }
 
-// upgradeBinding is A8: an earlier key of the identity is bound and the new key
-// is not, so the new key is bound to the same account. A key that has been taken
-// by another account in the meantime is authn.ErrBindingConflict and nothing is
-// merged.
+// upgradeBinding binds the new key to the account the identity's earlier key is bound to. A
+// key taken by another account is authn.ErrBindingConflict and nothing is merged.
 func (r *Resolver) upgradeBinding(ctx context.Context, id authn.AccountID, l authn.ExternalLink) (Result, error) {
 	if err := r.externalAccount(ctx, id); err != nil {
 		return Result{}, err
@@ -152,11 +143,9 @@ func (r *Resolver) upgradeBinding(ctx context.Context, id authn.AccountID, l aut
 	return Result{Account: id, Outcome: OutcomeUpgraded}, nil
 }
 
-// externalWithoutWrite resolves an external identity for a purpose other than
-// login. A link asks whether the key is free for the flow's account: bound to
-// another account is authn.ErrBindingConflict, and bound to this one or to none
-// is an answer the caller links on. A step-up and an enrollment need the
-// identity to be the flow's account's.
+// externalWithoutWrite resolves an external identity for a purpose other than login. A link
+// accepts a key free for or bound to the flow's account; another account's key is
+// authn.ErrBindingConflict, and a step-up or enrollment needs the flow's account.
 func (r *Resolver) externalWithoutWrite(ctx context.Context, req Request, l authn.ExternalLink) (Result, error) {
 	a, found, err := r.getAccount(ctx, req.Account)
 	switch {

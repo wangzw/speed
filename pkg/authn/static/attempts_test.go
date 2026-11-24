@@ -130,7 +130,7 @@ func (s *parkingStore) Get(l settings.Layer, key string, target any) error {
 
 // TestACachedPasswordIsNotAGuessAndHoldsNoAttempt holds that concurrent checks of a remembered password are all authenticated.
 func TestACachedPasswordIsNotAGuessAndHoldsNoAttempt(t *testing.T) {
-	const inflight = 12 // more than the free attempts and the one beyond them
+	const inflight = 12
 	fs := newFakeSettings()
 	fs.set(cacheTTLPath, time.Minute)
 	store := &parkingStore{fakeSettings: fs, arrived: make(chan struct{}, inflight), release: make(chan struct{})}

@@ -141,12 +141,12 @@ func TestProvisionerIsNotAskedWhenNothingIsCreated(t *testing.T) {
 	e := newEnv(t, withProvisioner(hook), withProvider(authn.ProvisioningPreprovisioned, false))
 	e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@acme.com", emailVia: authn.VerifiedViaAdmin, bindings: [][2]string{{"google", "g1"}}, phone: "+8613800000001"})
 	for _, p := range []authn.Proof{
-		social("google", "g1", "", false),   // existing binding
-		social("github", "gh1", "", false),  // sign-up closed
-		phone("+8613800000001"),             // existing phone
-		enterprise("u1", "ann@acme.com"),    // preprovisioned
-		enterprise("u2", "bob@acme.com"),    // not provisioned
-		enterprise("u3", "x@elsewhere.com"), // wrong domain
+		social("google", "g1", "", false),
+		social("github", "gh1", "", false),
+		phone("+8613800000001"),
+		enterprise("u1", "ann@acme.com"),
+		enterprise("u2", "bob@acme.com"),
+		enterprise("u3", "x@elsewhere.com"),
 	} {
 		_, _ = e.resolve(p)
 	}

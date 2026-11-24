@@ -335,8 +335,6 @@ func TestTheEmailVerifiedFlagIsReadAsABoolean(t *testing.T) {
 func TestTheProviderErrorParameterIsRefusedBeforeAnythingElse(t *testing.T) {
 	r := newRig(t, resolved{})
 	private, query := r.start(authn.PurposeLogin)
-	// The callback the provider actually sent would prove; adding its error must
-	// refuse it, and the token endpoint must never be reached.
 	query.Set("error", "access_denied")
 	refused(t, r.answer(private, query, authn.PurposeLogin))
 	if n := r.idp.tokens(); n != 0 {

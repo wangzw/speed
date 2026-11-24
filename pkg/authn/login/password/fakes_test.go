@@ -19,7 +19,6 @@ const (
 
 const testAccount = authn.AccountID("acct_0001")
 
-// call is one call a fake received, in the order it arrived.
 type call struct {
 	op         string
 	scope      authn.ThrottleScope
@@ -28,7 +27,6 @@ type call struct {
 	password   string
 }
 
-// ledger is the order of every call the two fakes received.
 type ledger struct {
 	mu    sync.Mutex
 	calls []call
@@ -56,7 +54,6 @@ func (l *ledger) count(op string) int {
 	return n
 }
 
-// ops is the sequence of operations, for a case about order.
 func (l *ledger) ops() []string {
 	var out []string
 	for _, c := range l.all() {

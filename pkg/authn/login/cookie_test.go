@@ -28,10 +28,6 @@ func cookieNamed(t *testing.T, rec *httptest.ResponseRecorder, name string) *htt
 	return found[0]
 }
 
-// holdsHostCookie checks the attributes the __Host- prefix requires and the ones
-// the binding cookies carry besides: Secure, a path of "/", no Domain, HttpOnly,
-// and the SameSite the cookie is written with: the cookie an https deployment,
-// the rig's, gets. What an http deployment gets is held in cookie_names_test.go.
 func holdsHostCookie(t *testing.T, c *http.Cookie, sameSite http.SameSite) {
 	t.Helper()
 	if !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" || c.SameSite != sameSite {

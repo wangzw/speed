@@ -118,7 +118,6 @@ func TestASocialFirstLoginStopsAtTheUsernameStepBeforeOpeningAnAccount(t *testin
 			t.Errorf("accounts = %v, %v before the username arrived, want none", accounts, err)
 		}
 
-		// A name that cannot be used is 400, and the flow is still at the step.
 		bad := h.answerSignup(seq, "not a name!", socialPassword)
 		if bad.status != http.StatusBadRequest || bad.json(t)["type"] != "urn:speed:authn:username-invalid" {
 			t.Fatalf("an unusable username answered %d %s, want 400 username-invalid", bad.status, bad.body)
@@ -490,9 +489,6 @@ func (h *harness) answerSignup(seq int, username, password string) reply {
 	})
 }
 
-// checkSignupFields checks the fields of a pending-signup challenge in order:
-// the username is a required text input, the display name is an optional text
-// one, and the password, when asked for, is a required secret one.
 func checkSignupFields(t *testing.T, next map[string]any, names ...string) {
 	t.Helper()
 	raw, _ := next["fields"].([]any)
@@ -619,8 +615,6 @@ func TestAnAddressTakenBeforeTheAccountWriteIsLinkRequiredAndLeavesNoAccount(t *
 			t.Errorf("accounts = %v, %v after the refused signup, want only the holder", accounts, err)
 		}
 
-		// The flow is spent: the username step cannot be retried once the
-		// address is another account's.
 		if current := h.get("/api/v1/auth/flows/current"); current.status != http.StatusUnauthorized {
 			t.Errorf("GET flows/current after the refusal answered %d %s, want the failed tombstone", current.status, current.body)
 		}

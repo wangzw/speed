@@ -21,10 +21,10 @@ type freshnessCase struct {
 	name     string
 	factors  []authn.FactorRecord
 	identity []authntest.Option
-	window   time.Duration // the authn.mfa.recent-window setting, zero: not set
-	setErr   error         // the read of the setting fails with this
+	window   time.Duration
+	setErr   error
 	refused  bool
-	acr      string // what the challenge asks for
+	acr      string
 	maxAge   string
 }
 

@@ -19,8 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// callLog is the one list every fake writes its calls to, so that a test reads
-// the order of calls made on different dependencies.
 type callLog struct {
 	mu    sync.Mutex
 	calls []string
@@ -63,9 +61,6 @@ func (l *callLog) reset() {
 	l.calls = nil
 }
 
-// A fake embeds its interface, so a method it does not override is a nil call
-// that panics and surfaces as the entry point's 500; a test that reaches one has
-// found a route the fake does not cover.
 type fakeAccounts struct {
 	authn.Accounts
 	log         *callLog
@@ -74,9 +69,6 @@ type fakeAccounts struct {
 	externals   []authn.ExternalBinding
 	err         error
 
-	// lookup is the identifier table the email branch reads before it sends: a
-	// value here is held by the account it names, and anything else is held by
-	// nobody. lookupErr stands for a table that cannot be read.
 	lookup    map[string]authn.AccountID
 	lookupErr error
 	looked    []string
@@ -97,9 +89,6 @@ func (f *fakeAccounts) Externals(_ context.Context, id authn.AccountID) ([]authn
 	return f.externals, f.err
 }
 
-// Lookup answers from the identifier table a case scripts. With no entry for the
-// value it reports ErrAccountNotFound, which is the ordinary case: the branch
-// sends to an address no identifier carries.
 func (f *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value string) (authn.AccountID, error) {
 	f.log.add("accounts.Lookup")
 	f.looked = append(f.looked, value)
@@ -301,7 +290,7 @@ type fakeSMS struct {
 	verifyErr   error
 	next        int
 	outstanding map[string]bool
-	onSend      func() // runs inside Send, for a test that lets time pass there
+	onSend      func()
 }
 
 func (f *fakeSMS) Send(_ context.Context, in authn.SendCode) (string, error) {
@@ -353,14 +342,8 @@ func (f *fakeEmail) SendCode(_ context.Context, to, code string, ttl time.Durati
 	return f.err
 }
 
-// CertifiesNotSent is the classification a channel may publish: whether the
-// failure certifies that nothing was handed to a carrier. A fake that does not
-// stand behind its error answers false, which is the uncertain side.
 func (f *fakeEmail) CertifiesNotSent(error) bool { return f.certain }
 
-// fakeKV is an in-memory kv.KV that keeps the expiry each key was stored with,
-// honours that expiry against the harness clock, and fails on demand. The
-// operations the routes do not use are refused.
 type fakeKV struct {
 	log     *callLog
 	mu      sync.Mutex
@@ -493,9 +476,6 @@ func (f *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 	return current, nil
 }
 
-// CompareAndSwap replaces the value only when it still equals old, and never
-// changes the expiry. A missing key matches an empty old and is created without
-// one, which is the interface's rule.
 func (f *fakeKV) CompareAndSwap(_ context.Context, key string, old, newVal []byte) (bool, error) {
 	f.log.add("kv.CompareAndSwap")
 	f.mu.Lock()

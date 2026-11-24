@@ -27,15 +27,12 @@ type routeCall struct {
 }
 
 type accessCall struct {
-	kind     string // Exempt, Optional or Impersonable
+	kind     string
 	endpoint string
 	method   string
 	path     string
 }
 
-// ledger is what the stand-ins recorded, in the order of the calls. The entry
-// point and the gateway write to one ledger so that a case reads the two halves
-// of a registration side by side.
 type ledger struct {
 	mu     sync.Mutex
 	routes []routeCall
@@ -155,11 +152,8 @@ func registrant(register func(mount.Mounter)) core.Module {
 }
 
 type stack struct {
-	body   string
-	router *standInRouter
-	// realGateModule registers the real gateway module, so that the keys this
-	// module reads are declared the way they are in a real assembly. With gate
-	// set the instance is supplied to it, and its own callbacks do nothing.
+	body           string
+	router         *standInRouter
 	realGateModule bool
 	gate           authn.Gate
 	routeGuard     speedhttp.RouteGuard

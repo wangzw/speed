@@ -1,7 +1,6 @@
-// Package resolve is the account resolution step of the login engine: it turns
-// an authn.Proof into the account it belongs to, and for a first login decides
-// whether to create an account, bind an existing one, or refuse. An external
-// identity's key is always the provider and subject, never an email address.
+// Package resolve is the account resolution step of the login engine: it turns an authn.Proof
+// into the account it belongs to and, for a first login, decides whether to create, bind or
+// refuse. An external identity's key is the provider and subject, never an email address.
 package resolve
 
 import (
@@ -46,10 +45,9 @@ type Config struct {
 	// Signup is the relaxation switch, read when Switches is not set; its zero
 	// value is the closed one.
 	Signup Signup
-	// Switches, when it is set, is read at each resolution and is what Signup
-	// then means. It is how a caller whose switch changes while the process runs
-	// reads the value current at the moment of the decision. A value it returns
-	// outside the switch's set reads as the closed one.
+	// Switches, when set, is read at each resolution and is what Signup then means: it reads the
+	// value current at the moment of the decision. A value it returns outside the switch's set
+	// reads as the closed one.
 	Switches func() Signup
 }
 
@@ -122,19 +120,9 @@ type Request struct {
 	Account authn.AccountID
 }
 
-// Resolve resolves the proof of a request.
-//
-// A login resolves any of the three sources of a proof: an account the method
-// already determined, a phone the method proved, or an external identity. A
-// first login of a phone or an external identity that would open an account
-// writes nothing and answers a Result whose Pending describes the account;
-// Create opens it once a username is chosen. The other purposes never write: the
-// proof must belong to the account the flow was started on, and a link of an
-// external identity answers whether the key is free for that account.
-//
-// A failure is one of the sentinels of the root package, wrapped, or an error of
-// a dependency passed on as it came; a caller maps what it does not know to an
-// unavailable dependency.
+// Resolve resolves the proof of a request. A login resolves an account the method determined,
+// a phone it proved, or an external identity; a first login that would open an account writes
+// nothing and answers a Result whose Pending describes it. A failure is a root sentinel or a dependency error.
 func (r *Resolver) Resolve(ctx context.Context, req Request) (Result, error) {
 	switch req.Purpose {
 	case authn.PurposeLogin:
@@ -191,10 +179,8 @@ func (r *Resolver) getAccount(ctx context.Context, id authn.AccountID) (a authn.
 	return authn.Account{}, false, err
 }
 
-// externalAccount reads the account an external login lands on and refuses one
-// that cannot log in, with authn.ErrAccountUnavailable: the caller was
-// authenticated at the provider already. An account that is not there is
-// authn.ErrAccountNotFound.
+// externalAccount reads the account an external login lands on and refuses one that cannot
+// log in with authn.ErrAccountUnavailable; an absent account is authn.ErrAccountNotFound.
 func (r *Resolver) externalAccount(ctx context.Context, id authn.AccountID) error {
 	a, found, err := r.getAccount(ctx, id)
 	switch {
@@ -222,10 +208,8 @@ func (r *Resolver) fromAccount(ctx context.Context, req Request) (Result, error)
 	return r.confirmed(req, a.ID)
 }
 
-// confirmed ends a resolution that found an account and wrote nothing. For a
-// login the account is the one found. For every other purpose it must be the
-// account the flow was started on, and anything else is a proof of somebody
-// else's.
+// confirmed ends a resolution that found an account and wrote nothing: for a login that
+// account, for every other purpose the flow's own account; anything else is somebody else's proof.
 func (r *Resolver) confirmed(req Request, id authn.AccountID) (Result, error) {
 	if req.Purpose == authn.PurposeLogin {
 		return Result{Account: id, Outcome: OutcomeBound}, nil
@@ -236,10 +220,8 @@ func (r *Resolver) confirmed(req Request, id authn.AccountID) (Result, error) {
 	return Result{Account: id, Outcome: OutcomeVerified}, nil
 }
 
-// seamFault is the failure of a seam the resolver does not own. It reads as an
-// unavailable dependency and nothing else: the cause is for the log and is not
-// in the chain errors.Is walks, so that what a host's hook returned cannot pass
-// for one of the sentinels the engine maps to another answer.
+// seamFault is the failure of a seam the resolver does not own; it reads as an unavailable
+// dependency, and its cause is for the log only, outside the chain errors.Is walks.
 type seamFault struct {
 	seam  string
 	cause error
@@ -254,14 +236,10 @@ func (e *seamFault) Error() string {
 
 func (e *seamFault) Is(target error) bool { return target == authn.ErrUnavailable }
 
-// Cause is what the seam returned.
 func (e *seamFault) Cause() error { return e.cause }
 
-// emailDomain is the domain of an email address in lower case, or empty for an
-// address that has no domain a verification could name: not exactly one @, an
-// empty side, or a character outside ASCII. The address is already normalized
-// by whoever hands it over; this reads a domain from it and decides nothing
-// else.
+// emailDomain is the domain of an email address in lower case, or empty for an address with
+// no domain a verification could name; it decides nothing else.
 func emailDomain(email string) string {
 	email = strings.ToLower(strings.TrimSpace(email))
 	local, domain, ok := strings.Cut(email, "@")

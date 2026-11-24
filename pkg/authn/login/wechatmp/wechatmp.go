@@ -87,11 +87,8 @@ func newMethod(client *wechat.Client, redirectURI string) *method {
 	return &method{client: client, redirectURI: redirectURI}
 }
 
-// Name is the method's stable name.
 func (m *method) Name() string { return methodName }
 
-// Describe reports the WeChat mini-program method: a redirect button that speaks
-// OAuth 2.0 and opens an account for a WeChat identity no account holds yet.
 func (m *method) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
 		Name:             methodName,
@@ -103,7 +100,6 @@ func (m *method) Describe() authn.MethodDescriptor {
 	}
 }
 
-// Begin starts a flow: it draws a fresh state, keeps its digest as the private state, and sends the user agent to the authorization address.
 func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if err := ctx.Err(); err != nil {
 		return authn.StepUnavailable(err), nil
@@ -119,7 +115,6 @@ func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	return authn.StepRedirect(stepAuthorize, st.Private(), to), nil
 }
 
-// Answer checks the callback's state against the flow's and trades the code for the identity it names.
 func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInput) (authn.Step, error) {
 	if in.Action != authn.InputCallback {
 		return authn.StepRefused(errNotCallback), nil

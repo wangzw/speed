@@ -11,10 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// capturedLogs drives action with a buffer-backed logger in the context and
-// returns what was written. The exchange's query carries the application secret
-// and the authorization code, so every case asserts on both what the record has
-// and what it must not carry.
 func capturedLogs(t *testing.T, action func(ctx context.Context)) string {
 	t.Helper()
 	var buf bytes.Buffer
@@ -107,9 +103,6 @@ func TestTheDefaultClientRecordsEachExchange(t *testing.T) {
 	})
 }
 
-// assertNoExchangeSecret holds the invariant the package states for its errors
-// on the record as well: the secret, the code and the query carrying them never
-// reach a log line.
 func assertNoExchangeSecret(t *testing.T, out string) {
 	t.Helper()
 	for _, unwanted := range []string{testAppSecret, "CODE-SECRET", "secret=", "code=", "appid=", "?"} {

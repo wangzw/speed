@@ -8,11 +8,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// originVector is one Origin header value and whether the trust set of the
-// configuration in originConfig holds it. The values are what a browser sends, or
-// a spelling it never sends: the standard library compares the header to the set
-// byte for byte, so the set is written in the browser's form and nothing else is
-// in it.
 type originVector struct {
 	name    string
 	origin  string

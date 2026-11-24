@@ -40,7 +40,6 @@ func (m *redirectMethod) Name() string {
 	return m.name
 }
 
-// Describe reports a redirect method named after the method.
 func (m *redirectMethod) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{Name: m.Name(), Kind: authn.MethodKindRedirect, Protocol: authn.MethodProtocolOAuth2}
 }
@@ -109,7 +108,7 @@ func TestAConcurrentSecondCallbackIsRefused(t *testing.T) {
 
 	first := make(chan *httptest.ResponseRecorder, 1)
 	go func() { first <- r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie) }()
-	<-started // the first callback is inside the method's answer
+	<-started
 	second := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
 	close(release)
 	got := <-first
@@ -684,8 +683,6 @@ func TestBeginProcessingLosingTheRecordIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading the flow: %v", err)
 	}
-	// A competing writer replaces the record, so the bytes just read no longer
-	// match and the swap must lose.
 	editFlowRecord(t, r, cookie, func(rec *record) { rec.Seq = 99 })
 
 	rt := &routes{product: r.p}

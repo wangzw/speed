@@ -66,7 +66,6 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 	if !ok || len(methods) != 2 {
 		t.Fatalf("methods = %v, want two descriptors", body["methods"])
 	}
-	// Name order: google sorts before password.
 	if got := methods[0].(map[string]any)["name"]; got != "google" {
 		t.Errorf("methods[0].name = %v, want google", got)
 	}
@@ -275,7 +274,6 @@ func TestTheMethodsListingReportsBothRegistrationSwitches(t *testing.T) {
 			}
 
 			methods := body["methods"].([]any)
-			// Name order: google sorts before password.
 			googleView := methods[0].(map[string]any)
 			opens, present := googleView["opens_account"]
 			if want := c.signup == signupOpen; present != want || (present && opens != true) {

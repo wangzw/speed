@@ -158,7 +158,7 @@ func TestEarlierKeysAreForWeChatOpenIdentifiersOnly(t *testing.T) {
 			e := newEnv(t, withSignup(SignupOpen), withProvider(authn.ProvisioningJIT, true))
 			e.s.seed(t, seed{id: "victim", status: authn.StatusActive, bindings: [][2]string{{"google", "g1"}, {"wechat-openid:app1", "o1"}}})
 			e.s.mu.Lock()
-			delete(e.s.binding, bkey("google", "g1")) // the primary is unbound, so the alias would be consulted
+			delete(e.s.binding, bkey("google", "g1"))
 			e.s.mu.Unlock()
 			_, err := e.resolve(tc.p)
 			if !errors.Is(err, authn.ErrInvalidArgument) {

@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// panicText runs f and returns the text of the panic it raised, and whether it
-// raised one.
 func panicText(f func()) (text string, panicked bool) {
 	defer func() {
 		if r := recover(); r != nil {

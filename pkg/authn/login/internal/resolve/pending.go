@@ -21,17 +21,9 @@ const (
 	SourceEnterprise Source = "enterprise"
 )
 
-// Pending is the account a first login opens once its person has chosen a
-// username. It is what a resolution decided before any row was written: which
-// path decided it, the external identity or the proved phone, the tenant an
-// enterprise account enters, the display name and attributes the provider gave,
-// the identity's earlier keys, the address a social provider declared verified
-// and the creation the step will perform. It carries no username; the
-// pending-signup step collects one and hands it to Create.
-//
-// It is the flow record's pending member and nothing else. While a flow stands
-// at signup, no account, binding, identifier or membership row exists for it,
-// and the account module writes all of them when the username finally arrives.
+// Pending is the account a first login opens once its person has chosen a username: what a
+// resolution decided before any row was written. It is the flow record's pending member and
+// nothing else; the username arrives before Create writes any row.
 type Pending struct {
 	// Source is the path that decided to open the account.
 	Source Source `json:"source"`
@@ -49,10 +41,9 @@ type Pending struct {
 	// Phone is the number an SMS first login proved, empty for an external
 	// login. It is written under sms-code and is a sign-in way from the start.
 	Phone string `json:"phone,omitempty"`
-	// Email is the address a social provider declared verified and no account
-	// holds, written to the new account as a contact and never as a sign-in
-	// way. It is empty for a provider that declared no verified address, an SMS
-	// login and an enterprise one.
+	// Email is the address a social provider declared verified and no account holds, written to
+	// the new account as a contact and never as a sign-in way. It is empty for an SMS or enterprise
+	// login, or a provider that declared no verified address.
 	Email string `json:"email,omitempty"`
 	// EmailVerifiedVia is the way Email was proved, idp: followed by the social
 	// provider's identifier. It is empty exactly when Email is.
@@ -83,33 +74,18 @@ func (p Pending) Clone() Pending {
 	return p
 }
 
-// Create opens the account a pending signup carries, with the username its
-// person chose, the password a social or phone first login also asked for, and
-// the display name a phone first login may have carried. It is the pending
-// step's only write: the account and its username identifier are written in one
-// transaction, and the binding, the proved phone or the membership is written
-// beside it by the same rules the immediate first-login paths follow.
-//
-// A username that is empty or does not normalize is authn.ErrInvalidIdentifier,
-// one the system keeps for itself is authn.ErrUsernameReserved, and one another
-// account holds is authn.ErrAccountExists. A password the account store's policy
-// refuses, including the absence of the one a social or phone first login must
-// carry, is authn.ErrPasswordPolicy. None of them writes anything. An absent
-// display name is allowed; the account is named after the username in its place.
+// Create opens the account a pending signup carries: the chosen username, the password a social
+// or phone first login also asked for, and the display name, in one transaction with the
+// username identifier and the binding, phone or membership. None of the failures writes anything.
 func (r *Resolver) Create(ctx context.Context, p Pending, username, password, name string) (Result, error) {
 	switch p.Source {
 	case SourceSocial, SourcePhone, SourceEnterprise:
 	default:
 		return Result{}, fmt.Errorf("%w: resolve: the pending signup names no known source", authn.ErrInvalidArgument)
 	}
-	// An empty name has no normalization to fail on, and no account may hold
-	// one: it is the shape check's own failure, so the answer names the field.
 	if username == "" {
 		return Result{}, authn.UsernameShape(fmt.Errorf("%w: resolve: the pending signup has no username", authn.ErrInvalidIdentifier))
 	}
-	// The unique constraint of the creation transaction arbitrates a race for
-	// the name; this read only tells a name another account holds apart from one
-	// that does not normalize, which the answer route renders as two refusals.
 	_, err := r.accounts.Lookup(ctx, authn.IdentifierUsername, username)
 	switch {
 	case err == nil:
@@ -161,10 +137,9 @@ func pendingEnterprise(prov authn.SSOProvider, ext *authn.External, aliases []au
 	return Result{Pending: &p}
 }
 
-// enterprisePending is the account facts a just-in-time first login decided,
-// before a username is added. Both strategies use it: the user-confirm strategy
-// parks it at the pending signup until the person answers, and the claim
-// strategy opens the account immediately with the username its claim named.
+// enterprisePending is the account facts a just-in-time first login decided before a username
+// is added; both strategies use it, user-confirm parking it and claim opening the account
+// immediately.
 func enterprisePending(prov authn.SSOProvider, ext *authn.External, aliases []authn.ExternalLink) Pending {
 	return Pending{
 		Source:      SourceEnterprise,

@@ -7,8 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// A2: an existing binding is the account's login, and nothing but the binding's
-// display fields change.
+// An existing binding is the account's login, and nothing but the binding's display
+// fields change.
 func TestExistingBindingLogsInAndTouchesOnlyDisplayFields(t *testing.T) {
 	e := newEnv(t)
 	id := e.s.seed(t, seed{id: "a1", status: authn.StatusActive, email: "ann@home.org", emailVia: "idp:google", bindings: [][2]string{{"google", "g1"}}})

@@ -12,11 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/config"
 )
 
-// gateNamespace is where the keys this module reads are declared. They are the
-// gateway's: it needs the public URL and the trusted origins for its own
-// cross-origin check, so it declares them and this module, like every module
-// that needs the public URL, reads them in its own Prepare. This module declares
-// no input item.
+// gateNamespace is where the gateway declares the keys this module reads; this module
+// declares no input item.
 const gateNamespace = "authn.gate"
 
 const (
@@ -32,19 +29,12 @@ const (
 	systemMountItem  = endpointsItem + ".system"
 )
 
-// endpoints is the endpoint each scope's routes are mounted on. The scopes span
-// policy domains, and the endpoint decides which layers decide a request before
-// its handler, so the mount points are written per scope beside the base paths.
 type endpoints struct {
 	Default string `config:"default"`
 	Tenants string `config:"tenants"`
 	System  string `config:"system"`
 }
 
-// bases is the base path of the management scopes plus the ordinary surface.
-// The capability's routes span the levels, so the mount points are written per
-// scope: one path cannot serve routes the path taxonomy publishes under
-// different segments.
 type bases struct {
 	Default string `config:"default"`
 	Tenants string `config:"tenants"`
@@ -59,7 +49,6 @@ func defaultBases() bases {
 	}
 }
 
-// settings is the part of the gateway's section this module reads.
 type settings struct {
 	Mount struct {
 		Endpoints endpoints `config:"endpoints"`
@@ -69,15 +58,12 @@ type settings struct {
 	TrustedOrigins []string `config:"trusted-origins"`
 }
 
-// readSettings decodes the gateway's keys and holds them to what this module
-// can run on. Prepare and New both go through it, so the two see one
-// configuration.
+// readSettings decodes the gateway's keys and holds them to what this module can run on;
+// Prepare and New both go through it.
 func readSettings(reader config.Reader) (settings, error) {
 	var s settings
-	// The defaults are the ones the gateway declares, read from the shared
-	// values: when the gateway module is in the assembly it declares the
-	// mount keys and the decode fills them, and when a host supplies a gateway
-	// of its own nobody declares the keys and this is what the base paths are.
+	// The defaults are the gateway's declared defaults; a host gateway declares nothing, so these
+	// are what the base paths are.
 	s.Mount.Bases = defaultBases()
 	if err := reader.Decode(gateNamespace, &s); err != nil {
 		return settings{}, err
@@ -85,17 +71,11 @@ func readSettings(reader config.Reader) (settings, error) {
 	return s, s.check()
 }
 
-// key is the full path of an item the gateway declares, for a message.
 func key(item string) string { return gateNamespace + "." + item }
 
-// check refuses what this module cannot mount routes on. The gateway judges the
-// same keys when it is in the assembly; a host that supplies a gateway of its
-// own leaves nobody else to, and the base path and the public URL are what this
-// module hands to every module that mounts through it.
-//
-// A value that does not parse is not quoted, and one that does is quoted without
-// its user information, query or fragment: it may carry a password written where
-// none belongs.
+// check refuses what this module cannot mount routes on. The gateway judges the same keys when
+// present; a host gateway leaves that to this module. A value that does not parse is not quoted;
+// one that does is quoted without user information, query or fragment.
 func (s settings) check() error {
 	for _, item := range []struct {
 		name  string
@@ -135,10 +115,8 @@ func checkBasePath(item, p string) error {
 	return nil
 }
 
-// checkPublicURL holds the public URL to an origin without a path, and to https
-// unless its host is a loopback one, whose traffic never leaves the machine.
-// Empty is allowed: the modules that need the address refuse it themselves.
-// The origin's own shape is judged by mount.TrustedOrigins before this runs.
+// checkPublicURL holds the public URL to an origin without a path, and to https unless its
+// host is loopback. Empty is allowed; the modules that need it refuse it themselves.
 func checkPublicURL(raw string) error {
 	if raw == "" {
 		return nil

@@ -425,7 +425,6 @@ func TestTheSourceAddressPreThrottleHolds(t *testing.T) {
 	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("the send past the limit answered %d, want 429: %s", rec.Code, rec.Body.String())
 	}
-	// The refused request never reached the method, so it sent no message.
 	if m.calls != 2 {
 		t.Errorf("the method ran %d times, want two: the send past the limit still sent a message", m.calls)
 	}
@@ -443,7 +442,6 @@ func TestTheSourceAddressPreThrottleCountsSendsNotStarts(t *testing.T) {
 	r := newRig(t, m)
 	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "1"})
 
-	// Opening two flows that send nothing must not spend the allowance.
 	for i := 1; i <= 2; i++ {
 		if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
 			t.Fatalf("flow %d that sends nothing answered %d, want 200: %s", i, rec.Code, rec.Body.String())
@@ -616,8 +614,6 @@ func TestMethodsAndCurrentBehave(t *testing.T) {
 		t.Errorf("GET methods = %v, want one descriptor named password", listing.Body.String())
 	}
 
-	// The password method is never hidden by the disabled-methods switch, not
-	// even by a raw value that names it.
 	hidden := newRig(t, m)
 	hidden.p.settings = readerWithDisabled(t, "password")
 	got := hidden.send(http.MethodGet, "/api/v1/auth/methods", "")

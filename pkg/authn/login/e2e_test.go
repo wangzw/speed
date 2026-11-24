@@ -40,9 +40,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// listening is the record the entry point writes once an endpoint's address is
-// bound, the only place outside the process that says which port the operating
-// system picked for an endpoint configured on port 0.
 const listening = "an HTTP listener is listening"
 
 func requestBound() time.Duration {

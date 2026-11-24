@@ -22,9 +22,6 @@ func registerRig(t *testing.T) *rig {
 const registerBody = `{"username":"alice","email":"alice@example.com","password":"alice-password","` +
 	`display_name":"Alice","locale":"zh-CN","time_zone":"Asia/Shanghai"}`
 
-// fixedClock is a reading inside one wall-clock minute and one wall-clock hour.
-// A case that counts a budget bucket pins the product to it, so that the pair
-// of requests it sends cannot be split by a bucket boundary.
 var fixedClock = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
 func (r *rig) registerFrom(ip, body string) *httptest.ResponseRecorder {
@@ -222,8 +219,6 @@ func TestThePerSourceBudgetStopsARegistration(t *testing.T) {
 	if first.Code != http.StatusCreated {
 		t.Fatalf("the first registration answered %d, want 201: %s", first.Code, first.Body.String())
 	}
-	// Another source address is a bucket of its own: the budget this case set is
-	// spent for one address only.
 	other := r.registerFrom("198.51.100.8", registerBody)
 	if other.Code != http.StatusCreated {
 		t.Fatalf("a registration from another source address answered %d, want 201: %s",

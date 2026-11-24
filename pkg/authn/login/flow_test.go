@@ -119,8 +119,6 @@ func TestIDPAttributesAreTrimmedToTheDeclaredBounds(t *testing.T) {
 	for i := 0; i < authn.SessionIDPAttributesMax+4; i++ {
 		attrs[authn.ReservedPrefixIDP+"k"+string(rune('a'+i))] = "v"
 	}
-	// A multi-byte value longer than the bound must be cut without splitting a
-	// character.
 	attrs[authn.ReservedPrefixIDP+"long"] = strings.Repeat("世", 100)
 	attrs[authn.ReservedPrefixIDP+strings.Repeat("x", authn.SessionIDPKeyMax)] = "v"
 	attrs["plain"] = "v"
