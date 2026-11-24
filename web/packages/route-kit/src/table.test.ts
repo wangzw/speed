@@ -1,10 +1,3 @@
-/**
- * table.ts -- the registration surface's consistency check. Each malformed
- * shape the design names must throw and name the offending declaration, and
- * a valid table must pass silently (so the check discriminates only real
- * defects rather than rejecting everything).
- */
-
 import { describe, expect, it } from 'vitest'
 import { assertRouteTable } from './table.js'
 import type { RouteDeclaration, RouteTable } from './types.js'
@@ -32,7 +25,6 @@ describe('assertRouteTable', () => {
   })
 
   it('rejects a declaration with no view function, naming its path', () => {
-    // A JS host can omit the view; the type guardrail is what this asserts.
     const table = [{ path: '/cases' }] as unknown as RouteTable
     expect(() => assertRouteTable(table, fallback)).toThrow(/\/cases/)
   })
@@ -56,9 +48,6 @@ describe('assertRouteTable', () => {
   })
 
   it('accepts a literal declared before the param pattern it narrows', () => {
-    // '/cases/new' is strictly more specific than '/cases/:id'; declared
-    // first, first-declaration-wins routes the literal URL to it and every
-    // other URL to the param page.
     const table: RouteTable = [
       { path: '/cases/new', view },
       { path: '/cases/:id', view },

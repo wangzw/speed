@@ -1,10 +1,3 @@
-/**
- * presence.ts -- the effective registration surface. Each case pins one rule:
- * ungated declarations always stay, a gated one stays only when the predicate
- * is ready and every name it requires is present, and table order and
- * identity survive the narrowing.
- */
-
 import { describe, expect, it } from 'vitest'
 import { presentDeclarations } from './presence.js'
 import type { RoutePresence } from './types.js'

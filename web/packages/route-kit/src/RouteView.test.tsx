@@ -1,11 +1,3 @@
-/**
- * RouteView.tsx -- rendering the matched page or the fallback. Each case
- * pins a distinct decision: which declaration renders, what context its view
- * receives (the captured params), that the first match wins, that an
- * unmatched URL reaches the fallback with its own path, and that `permission`
- * is inert data this package never acts on.
- */
-
 import { screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
@@ -156,8 +148,6 @@ describe('RouteView with feature gating', () => {
     const absentHtml = absent.container.innerHTML
     absent.unmount()
 
-    // Removing the declaration leaves a genuinely unmatched path at the same
-    // URL; the two renders must be byte-identical, params included.
     const unregistered = renderRouteTable([], <RouteView />, options)
     expect(unregistered.container.innerHTML).toBe(absentHtml)
     expect(contexts).toEqual([

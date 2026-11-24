@@ -1,10 +1,3 @@
-/**
- * nav.ts -- navigation derivation from the table and the current path: which
- * declarations produce entries, and which single one the URL selects. Each
- * case pins a distinct rule (label presence, exact match, "sits below",
- * longest prefix, tie order) so a wrong selection rule fails loudly.
- */
-
 import { describe, expect, it } from 'vitest'
 import { deriveNavItems } from './nav.js'
 import type { RouteTable } from './types.js'
@@ -108,7 +101,6 @@ describe('deriveNavItems', () => {
     expect(items.find((item) => item.id === '/cases')?.href).toBe(
       '/console/cases',
     )
-    // The root path resolves to the prefix itself.
     expect(items.find((item) => item.id === '/')?.href).toBe('/console')
   })
 

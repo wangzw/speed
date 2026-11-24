@@ -1,38 +1,21 @@
 /**
- * The registration surface's consistency check. A route table is the one
- * place a product names its pages, so a broken table is a programmer error
- * caught at assembly (RouteProvider runs this before its children render),
- * never a runtime surprise: a view that silently never renders, or a path
- * that quietly shadows another.
- *
- * It fails on the three configuration mistakes the design calls out -- a
- * path that cannot be a path, a declaration with no view, a duplicate or
- * ambiguous pattern -- on a missing fallback, and on a gated table that
- * omits the feature-presence inputs it needs: a predicate and the two views
- * rendered while that predicate is pending or failed. It never inspects
- * `label` or `permission`: those are the host's data, not this package's
- * concern.
+ * The registration surface's consistency check, run at assembly: it fails on an
+ * invalid path, a missing view, a duplicate or ambiguous pattern, a missing
+ * fallback, or a gated table without its presence inputs.
  */
 
 import { isMoreSpecific, patternsConflict } from './pathing.js'
 import { isGated } from './presence.js'
 import type { RouteContext, RoutePresence, RouteTable } from './types.js'
 
-/** The fallback render function, as it arrives at runtime (a JS host may omit it). */
 type Fallback = ((context: RouteContext) => unknown) | undefined
 
-/** The feature-presence inputs a provider was given, as they arrive at runtime. */
 export interface RouteGating {
   readonly presence?: RoutePresence
   readonly pending?: (context: RouteContext) => unknown
   readonly failed?: (context: RouteContext) => unknown
 }
 
-/**
- * Throw if the table cannot be safely rendered, naming the offending
- * declaration. A valid table passes silently, so the check discriminates
- * only real defects.
- */
 export function assertRouteTable(
   table: RouteTable,
   fallback: Fallback,
@@ -67,11 +50,7 @@ export function assertRouteTable(
       if (!patternsConflict(declaration.path, other.path)) {
         return
       }
-      // A literal pattern declared before the param pattern it narrows is
-      // resolved by order: first-declaration-wins sends the literal URL to
-      // the literal page and every other URL to the param page. Declared
-      // the other way round, the general pattern shadows the literal one,
-      // and a pair that is not narrowed at all is a structural ambiguity.
+      // A literal declared before the param pattern it narrows resolves by order; the reverse shadows it.
       if (isMoreSpecific(declaration.path, other.path)) {
         return
       }
