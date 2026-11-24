@@ -50,14 +50,11 @@
  * text is only ever asserted for an answer that genuinely listed none.
  */
 
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { formatInstant } from '@speed/i18n'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
-import IconButton from '@mui/material/IconButton'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
@@ -67,6 +64,7 @@ import {
   useAuthnSessionRevokeOthers,
 } from '@speed/api-sdk'
 import {
+  ActionButton,
   ConfirmDialog,
   ListSkeleton,
   SectionCard,
@@ -116,6 +114,32 @@ function parseDate(iso: string | undefined): Date | null {
   }
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+/** Which control started the section's one write in flight. The control
+ * itself reports busy; every other write control in the scope is
+ * unavailable, so two attempts never overlap. */
+type PendingWrite =
+  | { readonly kind: 'others' }
+  | { readonly kind: 'row'; readonly id: string }
+
+/**
+ * Whether focus was lost when the initiating control's row left the
+ * document. A landed write that removes its own row hands focus to a
+ * neighbour, but only if the operator had not moved focus elsewhere while
+ * the write ran: the browser drops focus to the body (or leaves it on a
+ * detached node inside the removed row) in that case, while a connected
+ * control outside the row means the operator chose that place.
+ */
+function focusFellWith(removed: HTMLElement | null): boolean {
+  const active = document.activeElement
+  if (active === null || active === document.body) {
+    return true
+  }
+  if (!(active instanceof HTMLElement) || !active.isConnected) {
+    return true
+  }
+  return removed !== null && removed.contains(active)
 }
 
 /** The pending-state placeholder: rows shaped like the content rows, read
@@ -177,11 +201,32 @@ export function SessionsSection({
   // together. Each success names what changed -- the signed-out session or
   // the count of other devices.
   const feedback = useWriteFeedback()
-  const [revokingId, setRevokingId] = useState<string | null>(null)
+  // The write in flight and the control that started it. The initiating
+  // control reports busy; the scope's other write controls stay
+  // unavailable while it runs.
+  const [pendingWrite, setPendingWrite] = useState<PendingWrite | null>(null)
   // The 1-based page of the session list. It is clamped against the page
   // count on render below, so a revoke that shrinks the list can never
   // leave the view on a page past the end.
   const [page, setPage] = useState(1)
+  // The landing places when a landed write takes the control that started
+  // it out of the document: the row controls by session id, the list, and
+  // the section's named container for when the list itself goes away. The
+  // write's own removal record sits beside them; the confirmation's node is
+  // remembered too, so the bulk landing waits for this section's dialog
+  // rather than for the document to hold none.
+  const revokeButtons = useRef(new Map<string, HTMLButtonElement>())
+  const listRegion = useRef<HTMLElement | null>(null)
+  const sectionRegion = useRef<HTMLElement | null>(null)
+  const bulkButton = useRef<HTMLButtonElement | null>(null)
+  const confirmDialog = useRef<HTMLDivElement | null>(null)
+  const bulkDialog = useRef<HTMLDivElement | null>(null)
+  const rowRemoval = useRef<{
+    readonly id: string
+    readonly row: HTMLElement | null
+    readonly index: number
+  } | null>(null)
+  const bulkRemoval = useRef<HTMLButtonElement | null>(null)
 
   const timeZone = useAccountTimeZone()
   const formatTime = (value: string | number | Date): string =>
@@ -199,12 +244,11 @@ export function SessionsSection({
   // parked states.
   const pending = isPending && sessions === undefined
   const hasSessions = sessions !== undefined && sessions.length > 0
-  // Disabled through the whole attempt, including the refetch that follows
-  // the mutation, so no control changes context under a pending scope.
-  const busy =
-    revokeOneMutation.isPending ||
-    revokeOthersMutation.isPending ||
-    feedback.pending
+  // The scope is held for the whole attempt, including the refetch that
+  // follows the mutation, so no control changes context under a pending
+  // scope. The control that started the write reports busy; every other
+  // write control is unavailable.
+  const scopePending = pendingWrite !== null
 
   // The server lists only live sessions, so every non-current row is a
   // live device the section-top bulk action exists to sign out.
@@ -217,15 +261,34 @@ export function SessionsSection({
   const total = sessions?.length ?? 0
   const pageCount = Math.max(1, Math.ceil(total / SESSIONS_PER_PAGE))
   const currentPage = Math.min(page, pageCount)
+  const pageStart = (currentPage - 1) * SESSIONS_PER_PAGE
+  const pageSessions = (sessions ?? []).slice(
+    pageStart,
+    pageStart + SESSIONS_PER_PAGE,
+  )
 
   function handleRevokeSession(
     sessionId: string,
     deviceLabel: string,
   ): Promise<void> {
-    if (busy || sessionId === revokingId) {
+    if (pendingWrite !== null) {
       return Promise.resolve()
     }
-    setRevokingId(sessionId)
+    const control = revokeButtons.current.get(sessionId) ?? null
+    // The whole read, not the page in view: a revoke at a page edge brings
+    // the next page's first row up into the vacated place, so the neighbour
+    // may not be on the page the operator started from. The original
+    // position is recorded with it; the landing resolves it against the
+    // re-read page.
+    const order = (sessions ?? [])
+      .filter((entry) => entry.id != null && entry.current !== true)
+      .map((entry) => entry.id as string)
+    rowRemoval.current = {
+      id: sessionId,
+      row: control?.closest('li') ?? null,
+      index: order.indexOf(sessionId),
+    }
+    setPendingWrite({ kind: 'row', id: sessionId })
     return feedback.run(async () => {
       try {
         await revokeOneMutation.mutateAsync({ id: sessionId })
@@ -237,13 +300,22 @@ export function SessionsSection({
           device: deviceLabel,
           interpolation: { escapeValue: false },
         })
+      } catch (error) {
+        rowRemoval.current = null
+        throw error
       } finally {
-        setRevokingId(null)
+        setPendingWrite(null)
       }
     })
   }
 
   function handleRevokeOthers(): Promise<void> {
+    bulkRemoval.current = bulkButton.current
+    // This section's own confirmation, not any dialog the document holds:
+    // the host's shell can keep a drawer mounted with role="dialog" for the
+    // whole page's life.
+    bulkDialog.current = confirmDialog.current
+    setPendingWrite({ kind: 'others' })
     return feedback.run(async () => {
       let result:
         | { readonly revoked?: number }
@@ -253,6 +325,8 @@ export function SessionsSection({
           | { readonly revoked?: number }
           | undefined
       } catch (error) {
+        bulkRemoval.current = null
+        bulkDialog.current = null
         setOthersConfirmOpen(false)
         throw error
       }
@@ -261,8 +335,119 @@ export function SessionsSection({
         queryKey: getAuthnSessionListQueryKey(),
       })
       return t('sessions.revokeOthers.done', { count: result?.revoked ?? 0 })
+    }).finally(() => {
+      setPendingWrite(null)
     })
   }
+
+  // A landed row revoke takes its row out of the document. Focus goes to
+  // the same action on the row that now occupies the vacated place, else
+  // after it, else before it, else to the list (or the section's named
+  // container when the list goes away) -- in the commit that removes the
+  // row, and only when the removal is what took focus; an operator who
+  // moved elsewhere keeps that place. The candidates come from the re-read
+  // list at the original position, so a revoke at a page edge hands over to
+  // the row that slid up from the next page, and one that empties the last
+  // page hands over to the previous page's last row; only controls the
+  // current page renders are connected, so the rest are skipped.
+  useLayoutEffect(() => {
+    const target = rowRemoval.current
+    if (target === null) {
+      return
+    }
+    const remaining = new Set(
+      (sessions ?? [])
+        .filter((entry) => entry.id != null)
+        .map((entry) => entry.id as string),
+    )
+    if (remaining.has(target.id)) {
+      // Settled without removing the row (a refusal, or an answer that still
+      // carries it): there is nothing to land from.
+      if (pendingWrite === null) {
+        rowRemoval.current = null
+      }
+      return
+    }
+    rowRemoval.current = null
+    if (!focusFellWith(target.row)) {
+      return
+    }
+    const reread = (sessions ?? [])
+      .filter((entry) => entry.id != null && entry.current !== true)
+      .map((entry) => entry.id as string)
+    const index = Math.max(0, Math.min(target.index, reread.length))
+    const candidates = [
+      ...reread.slice(index),
+      ...reread.slice(0, index).reverse(),
+    ]
+    for (const id of candidates) {
+      const button = revokeButtons.current.get(id)
+      if (button !== undefined && button.isConnected) {
+        button.focus()
+        return
+      }
+    }
+    ;(listRegion.current ?? sectionRegion.current)?.focus()
+  }, [sessions, pendingWrite])
+
+  // A landed bulk revoke can take the control that opened the confirmation
+  // out of the document: no other session is left to sign out, so the
+  // section stops rendering it. Focus falls to the list under the same
+  // focus test. The confirmation's focus trap owns focus until it has
+  // animated out and unmounted, so the landing waits for this section's own
+  // dialog node to leave -- never for the document to hold no dialog, since
+  // the host's shell may keep a drawer mounted with role="dialog".
+  useLayoutEffect(() => {
+    const trigger = bulkRemoval.current
+    if (trigger === null) {
+      return
+    }
+    if (trigger.isConnected) {
+      // Settled without removing the control (an answer that still lists
+      // another session): there is nothing to land from.
+      if (pendingWrite === null) {
+        bulkRemoval.current = null
+        bulkDialog.current = null
+      }
+      return
+    }
+    let observer: MutationObserver | null = null
+    const land = (): void => {
+      if (bulkRemoval.current !== trigger || trigger.isConnected) {
+        return
+      }
+      const dialog = bulkDialog.current
+      if (dialog !== null && dialog.isConnected) {
+        return
+      }
+      bulkRemoval.current = null
+      bulkDialog.current = null
+      // The landing is decided in this pass, so the observer has no later
+      // mutation left to wait for.
+      observer?.disconnect()
+      // The confirmation was modal, so the only places focus can be while
+      // it closes are its own controls and the trigger; focus anywhere that
+      // survives is a place the operator chose.
+      const active = document.activeElement
+      const activeSurvives =
+        active instanceof HTMLElement &&
+        active.isConnected &&
+        active !== document.body
+      if (activeSurvives) {
+        return
+      }
+      ;(listRegion.current ?? sectionRegion.current)?.focus()
+    }
+    land()
+    if (bulkRemoval.current !== trigger) {
+      return
+    }
+    observer = new MutationObserver(land)
+    observer.observe(document.body, { childList: true })
+    return () => {
+      observer?.disconnect()
+    }
+  }, [sessions, pendingWrite])
 
   const showHeader = pending || hasSessions
 
@@ -271,15 +456,16 @@ export function SessionsSection({
   // its block header) and the section's own row is left out.
   const bulkAction =
     hasSessions && hasRevocableOther ? (
-      <Button
-        variant="outlined"
-        color="error"
+      <ActionButton
+        ref={bulkButton}
         size="small"
-        disabled={busy}
+        tone="danger"
+        busy={pendingWrite?.kind === 'others'}
+        unavailable={pendingWrite !== null && pendingWrite.kind !== 'others'}
         onClick={() => setOthersConfirmOpen(true)}
       >
         {t('sessions.revokeOthers.label')}
-      </Button>
+      </ActionButton>
     ) : undefined
   const headerAction =
     renderHeaderAction !== undefined && bulkAction !== undefined
@@ -293,6 +479,16 @@ export function SessionsSection({
         title={showHeader ? t('sessions.title') : undefined}
         actions={renderHeaderAction === undefined ? bulkAction : undefined}
       >
+        {/* The section's control group: the landing place when a landed
+            write takes the list itself away. Named and programmatically
+            focusable, so the reader is told which group the result belongs
+            to instead of being dropped on the document body. */}
+        <Box
+          ref={sectionRegion}
+          tabIndex={-1}
+          role="group"
+          aria-label={t('sessions.title')}
+        >
         <AccountAsyncSection
         pending={pending}
         payload={sessions}
@@ -311,12 +507,7 @@ export function SessionsSection({
           description: t('sessions.empty.description'),
         }}
       >
-        {(settledSessions) => {
-          const start = (currentPage - 1) * SESSIONS_PER_PAGE
-          const pageSessions = settledSessions.slice(
-            start,
-            start + SESSIONS_PER_PAGE,
-          )
+        {() => {
           return (
           <Box>
             {/* The rows are one real list: a screen-reader user hears each
@@ -328,6 +519,9 @@ export function SessionsSection({
             <Box
               component="ul"
               role="list"
+              ref={listRegion}
+              tabIndex={-1}
+              aria-label={t('sessions.title')}
               sx={{
                 listStyle: 'none',
                 m: 0,
@@ -407,30 +601,44 @@ export function SessionsSection({
                       )}
                     </Box>
                     {revocable ? (
-                      <IconButton
+                      <ActionButton
+                        ref={(node) => {
+                          if (id === null) {
+                            return
+                          }
+                          if (node === null) {
+                            revokeButtons.current.delete(id)
+                          } else {
+                            revokeButtons.current.set(id, node)
+                          }
+                        }}
+                        size="small"
+                        tone="danger"
                         aria-label={t('sessions.revokeAriaWithDevice', {
                           device: deviceLabel,
                           interpolation: { escapeValue: false },
                         })}
-                        size="small"
-                        disabled={busy || revokingId === id}
+                        busy={
+                          pendingWrite?.kind === 'row' &&
+                          pendingWrite.id === id
+                        }
+                        unavailable={
+                          pendingWrite !== null &&
+                          !(
+                            pendingWrite.kind === 'row' &&
+                            pendingWrite.id === id
+                          )
+                        }
                         onClick={() => {
                           if (id !== null) {
                             void handleRevokeSession(id, deviceLabel)
                           }
                         }}
-                        sx={{ color: 'error.main', flex: '0 0 auto' }}
+                        startIcon={<SignOutIcon size={16} />}
+                        sx={{ flex: '0 0 auto' }}
                       >
-                        {revokingId === id ? (
-                          <CircularProgress
-                            size={18}
-                            thickness={5}
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <SignOutIcon />
-                        )}
-                      </IconButton>
+                        {t('sessions.revokeRowLabel')}
+                      </ActionButton>
                     ) : null}
                   </Box>
                 )
@@ -446,10 +654,9 @@ export function SessionsSection({
                   mt: 2,
                 }}
               >
-                <Button
+                <ActionButton
                   size="small"
-                  variant="outlined"
-                  disabled={busy || currentPage <= 1}
+                  unavailable={scopePending || currentPage <= 1}
                   onClick={() => {
                     // Paging changes what the list describes: the settled
                     // result would otherwise name a device on another page.
@@ -458,24 +665,23 @@ export function SessionsSection({
                   }}
                 >
                   {t('sessions.prevPage')}
-                </Button>
+                </ActionButton>
                 <Typography variant="body2" color="text.secondary">
                   {t('sessions.pageIndicator', {
                     page: currentPage,
                     total: pageCount,
                   })}
                 </Typography>
-                <Button
+                <ActionButton
                   size="small"
-                  variant="outlined"
-                  disabled={busy || currentPage >= pageCount}
+                  unavailable={scopePending || currentPage >= pageCount}
                   onClick={() => {
                     feedback.reset()
                     setPage(currentPage + 1)
                   }}
                 >
                   {t('sessions.nextPage')}
-                </Button>
+                </ActionButton>
               </Box>
             )}
           </Box>
@@ -488,9 +694,11 @@ export function SessionsSection({
           It stays outside the settled content, so it is still rendered while
           the list is empty or a load failed. */}
       <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mt: 2 }} />
+        </Box>
       </SectionCard>
 
       <ConfirmDialog
+        ref={confirmDialog}
         open={othersConfirmOpen}
         title={t('sessions.revokeOthers.confirmTitle')}
         message={t('sessions.revokeOthers.confirmMessage')}

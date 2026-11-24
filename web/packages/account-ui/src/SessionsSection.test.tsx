@@ -101,6 +101,26 @@ function revokeAria(device: string): string {
   return zhCN.sessions.revokeAriaWithDevice.replace('{{device}}', device)
 }
 
+/** A DELETE answer the test resolves itself, so the write is observably in
+ * flight while the assertions run. */
+function deferredResponse(): {
+  readonly promise: Promise<Response>
+  readonly resolve: (response: Response) => void
+} {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+/** The row sign-out controls of the rendered page, in document order. */
+function revokeButtons(): HTMLElement[] {
+  return screen.getAllByRole('button', {
+    name: revokeAria(zhCN.sessions.deviceUnknown),
+  })
+}
+
 /** The instant the default row helper carries. */
 const SESSION_INSTANT = '2026-08-01T02:05:00.000Z'
 
@@ -384,7 +404,7 @@ describe('SessionsSection', () => {
   })
 
   it('raises the row revoke control to the 44px touch-target floor under a coarse pointer', async () => {
-    // The per-row revoke control is a compact icon button; on a
+    // The per-row revoke control is a compact labelled action; on a
     // finger-driven device it gates up to the 44x44 floor (the layout
     // design's pointer rule). jsdom evaluates no media condition, so the
     // emitted CSS is matched against the control itself: a coarse rule
@@ -466,14 +486,497 @@ describe('SessionsSection', () => {
     ).toBeTruthy()
     expect(
       screen.getByRole('button', { name: zhCN.sessions.prevPage }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
 
     await user.click(screen.getByRole('button', { name: zhCN.sessions.nextPage }))
     // The second page holds the remaining four rows.
     await waitFor(() => expect(bodyRows()).toHaveLength(4))
     expect(
       screen.getByRole('button', { name: zhCN.sessions.nextPage }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('keeps the last-page control focused and unavailable without a reason', async () => {
+    // A pager direction is a context control: on the last page the way
+    // forward cannot run, so it keeps focus and reports unavailable rather
+    // than disappearing from the tab order, and it carries no reason --
+    // nothing about the operator's input makes it so.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 12 }, (_, index) =>
+            session({ id: `session-${index}`, user_agent: '' }),
+          ),
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(bodyRows()).toHaveLength(8))
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sessions.nextPage }),
+    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(4))
+    const next = screen.getByRole('button', {
+      name: zhCN.sessions.nextPage,
+    })
+    // The clicked control keeps focus; it did not become natively disabled.
+    expect(document.activeElement).toBe(next)
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(next).not.toHaveAttribute('disabled')
+    expect(next).toHaveAccessibleDescription('')
+    expect(
+      screen.getByRole('button', { name: zhCN.sessions.prevPage }),
+    ).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('shows a labelled row sign-out action that keeps focus while its revoke is in flight', async () => {
+    // The row action carries a visible word beside its device-naming
+    // accessible name (the name embeds the visible text), and it keeps
+    // focus while the write runs; when the row leaves, focus moves to the
+    // same action on the next row.
+    const gate = deferredResponse()
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            ...(revoked
+              ? [session({ id: 'session-3' })]
+              : [session({ id: 'session-2' }), session({ id: 'session-3' })]),
+          ],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-2`
+      ) {
+        return gate.promise.then(() => {
+          revoked = true
+          return new Response(null, { status: 204 })
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(2))
+    const [initiating, next] = revokeButtons() as [HTMLElement, HTMLElement]
+    expect(initiating).toHaveTextContent(zhCN.sessions.revokeRowLabel)
+    expect(initiating.getAttribute('aria-label')).toContain(
+      zhCN.sessions.revokeRowLabel,
+    )
+
+    await user.click(initiating)
+    await waitFor(() =>
+      expect(initiating).toHaveAttribute('aria-busy', 'true'),
+    )
+    expect(document.activeElement).toBe(initiating)
+    expect(initiating).toHaveAttribute('aria-disabled', 'true')
+    expect(initiating).not.toHaveAttribute('disabled')
+
+    // A second activation of the busy control is swallowed.
+    await user.click(initiating)
+    expect(
+      rig.calls.filter((call) => call.method === 'DELETE'),
+    ).toHaveLength(1)
+
+    await act(async () => {
+      gate.resolve(new Response(null, { status: 204 }))
+    })
+    await waitFor(() => expect(revokeButtons()).toHaveLength(1))
+    // The revoked row left and focus moved on with it, to the same action
+    // on the next row rather than the document body.
+    await waitFor(() => expect(document.activeElement).toBe(next))
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('holds the other rows and the pager unavailable without a reason while a row revoke runs', async () => {
+    // The busy state belongs to the control that started the write alone.
+    // Its sibling rows and the pager are caught by the write's scope, so
+    // they are unavailable -- focusable, aria-disabled, no busy state and
+    // no reason -- and neither a click nor Enter sends a second request.
+    const gate = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 12 }, (_, index) =>
+            session({ id: `session-${index}`, user_agent: '' }),
+          ),
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-0`
+      ) {
+        return gate.promise
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(8))
+    const [initiating, sibling] = revokeButtons() as [
+      HTMLElement,
+      HTMLElement,
+    ]
+    const deleteCount = () =>
+      rig.calls.filter((call) => call.method === 'DELETE').length
+    await user.click(initiating)
+    await waitFor(() =>
+      expect(initiating).toHaveAttribute('aria-busy', 'true'),
+    )
+
+    expect(sibling).toHaveAttribute('aria-disabled', 'true')
+    expect(sibling).not.toHaveAttribute('aria-busy')
+    expect(sibling).toHaveAccessibleDescription('')
+    const before = deleteCount()
+    await user.click(sibling)
+    sibling.focus()
+    await user.keyboard('{Enter}')
+    expect(deleteCount()).toBe(before)
+
+    const previous = screen.getByRole('button', {
+      name: zhCN.sessions.prevPage,
+    })
+    const next = screen.getByRole('button', {
+      name: zhCN.sessions.nextPage,
+    })
+    expect(previous).toHaveAttribute('aria-disabled', 'true')
+    expect(next).toHaveAttribute('aria-disabled', 'true')
+    expect(previous).toHaveAccessibleDescription('')
+    expect(next).toHaveAccessibleDescription('')
+
+    await act(async () => {
+      gate.resolve(new Response(null, { status: 204 }))
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: zhCN.sessions.nextPage }),
+      ).not.toHaveAttribute('aria-disabled'),
+    )
+  })
+
+  it('hands focus to the previous row when the last sign-out control leaves', async () => {
+    // No row follows the revoked one, so the same action on the previous
+    // row takes focus in the commit that removes the row.
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            ...(revoked
+              ? [session({ id: 'session-2' })]
+              : [session({ id: 'session-2' }), session({ id: 'session-3' })]),
+          ],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-3`
+      ) {
+        revoked = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(2))
+    const [previous] = revokeButtons() as [HTMLElement, HTMLElement]
+    await user.click(revokeButtons()[1] as HTMLElement)
+    await waitFor(() => expect(revokeButtons()).toHaveLength(1))
+    await waitFor(() => expect(document.activeElement).toBe(previous))
+  })
+
+  it('lands on the row that slides up from the next page when the page’s last row is revoked', async () => {
+    // The page boundary is not a boundary for neighbours: revoking the last
+    // row of page one brings the first row of page two up into its place,
+    // and that row -- the next one in the read -- takes focus, not the
+    // previous row that happened to share the old page.
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 12 }, (_, index) => index)
+            .filter((index) => !(revoked && index === 7))
+            .map((index) => session({ id: `session-${index}`, user_agent: '' })),
+        })
+      }
+      if (call.method === 'DELETE' && call.path === `${SESSIONS_PATH}/session-7`) {
+        revoked = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(8))
+    await user.click(revokeButtons()[7] as HTMLElement)
+    expect(
+      await screen.findByText(
+        zhCN.sessions.revokedOne.replace(
+          '{{device}}',
+          zhCN.sessions.deviceUnknown,
+        ),
+      ),
+    ).toBeTruthy()
+    // Page one still holds eight rows: session-8 slid up into the vacated
+    // last place.
+    const buttons = revokeButtons()
+    expect(buttons).toHaveLength(8)
+    await waitFor(() => expect(document.activeElement).toBe(buttons[7]))
+  })
+
+  it('lands on the previous page’s last row when the last page empties', async () => {
+    // Revoking the only row on the last page clamps the view back to the
+    // page before it; the removal's neighbour is that page's last row, so
+    // its control takes focus rather than the list.
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 9 }, (_, index) => index)
+            .filter((index) => !(revoked && index === 8))
+            .map((index) => session({ id: `session-${index}`, user_agent: '' })),
+        })
+      }
+      if (call.method === 'DELETE' && call.path === `${SESSIONS_PATH}/session-8`) {
+        revoked = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(bodyRows()).toHaveLength(8))
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sessions.nextPage }),
+    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+    await user.click(revokeButtons()[0] as HTMLElement)
+    expect(
+      await screen.findByText(
+        zhCN.sessions.revokedOne.replace(
+          '{{device}}',
+          zhCN.sessions.deviceUnknown,
+        ),
+      ),
+    ).toBeTruthy()
+    await waitFor(() => expect(bodyRows()).toHaveLength(8))
+    const buttons = revokeButtons()
+    expect(document.activeElement).toBe(buttons[7])
+  })
+
+  it('lands focus on the list when no row action remains', async () => {
+    // The revoked row was the only one offering the action; the current
+    // session's row stays, so the list itself takes focus.
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            ...(revoked ? [] : [session({ id: 'session-2' })]),
+          ],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-2`
+      ) {
+        revoked = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(1))
+    await user.click(revokeButtons()[0] as HTMLElement)
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+    const list = screen.getByRole('list', { name: zhCN.sessions.title })
+    await waitFor(() => expect(document.activeElement).toBe(list))
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('lands focus on the section when the revoked row leaves an empty list', async () => {
+    // The last session's row -- no current session in this answer -- takes
+    // the list away entirely; the section's named group is the fallback
+    // rather than the document body.
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: revoked ? [] : [session({ id: 'session-2' })],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-2`
+      ) {
+        revoked = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(1))
+    await user.click(revokeButtons()[0] as HTMLElement)
+    expect(await screen.findByText(zhCN.sessions.empty.title)).toBeTruthy()
+    expect(screen.queryByRole('list')).toBeNull()
+    const section = screen.getByRole('group', { name: zhCN.sessions.title })
+    await waitFor(() => expect(document.activeElement).toBe(section))
+  })
+
+  it('does not take focus back when the operator moved it during the revoke', async () => {
+    // Focus is only handed over when the removal is what dropped it. Here
+    // the operator moves to another row's control while the write runs; the
+    // landing place must not pull focus back.
+    const gate = deferredResponse()
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            ...(revoked
+              ? [session({ id: 'session-3' })]
+              : [session({ id: 'session-2' }), session({ id: 'session-3' })]),
+          ],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-2`
+      ) {
+        return gate.promise.then(() => {
+          revoked = true
+          return new Response(null, { status: 204 })
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(2))
+    const [initiating] = revokeButtons() as [HTMLElement, HTMLElement]
+    const bulk = screen.getByRole('button', {
+      name: zhCN.sessions.revokeOthers.label,
+    })
+    await user.click(initiating)
+    await waitFor(() =>
+      expect(initiating).toHaveAttribute('aria-busy', 'true'),
+    )
+    // The operator moves to the section's other write control: a focusable
+    // place that is not where the removal would land focus.
+    bulk.focus()
+    expect(document.activeElement).toBe(bulk)
+
+    await act(async () => {
+      gate.resolve(new Response(null, { status: 204 }))
+    })
+    await waitFor(() => expect(revokeButtons()).toHaveLength(1))
+    expect(document.activeElement).toBe(bulk)
+  })
+
+  it('does not hand focus over for a row a later read removes', async () => {
+    // A revoke whose read still lists the row settles without a removal, so
+    // it leaves no landing record behind. A later, unrelated read that drops
+    // the row must not move focus on the operator's behalf.
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        reads += 1
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            // The refetch that follows the revoke still carries the row;
+            // only the read after it drops it.
+            ...(reads > 2 ? [] : [session({ id: 'session-2', user_agent: '' })]),
+          ],
+        })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-2`
+      ) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mountSection(respond)
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(revokeButtons()).toHaveLength(1))
+    const triggering = revokeButtons()[0] as HTMLElement
+    await user.click(triggering)
+    expect(
+      await screen.findByText(
+        zhCN.sessions.revokedOne.replace(
+          '{{device}}',
+          zhCN.sessions.deviceUnknown,
+        ),
+      ),
+    ).toBeTruthy()
+    // The row stayed and still carries focus; the write left no record to
+    // land from.
+    expect(revokeButtons()).toHaveLength(1)
+    expect(document.activeElement).toBe(triggering)
+
+    // A later, unrelated read now drops the row.
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['/api/v1/auth/sessions'],
+      })
+    })
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+    // Focus fell with the removed row to the body rather than being handed
+    // to the list on the stale record's behalf.
+    expect(document.activeElement).toBe(document.body)
   })
 
   it('revokes one session and refetches, dropping the revoked row', async () => {
@@ -630,20 +1133,16 @@ describe('SessionsSection', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(4))
     expect(
       screen.getByRole('button', { name: zhCN.sessions.prevPage }),
-    ).not.toBeDisabled()
+    ).not.toHaveAttribute('aria-disabled')
 
-    await user.click(
-      screen.getAllByRole('button', {
-        name: revokeAria(zhCN.sessions.deviceUnknown),
-      })[0] as HTMLElement,
-    )
+    await user.click(revokeButtons()[0] as HTMLElement)
     await waitFor(() => expect(releaseDelete).toBeDefined())
     expect(
       screen.getByRole('button', { name: zhCN.sessions.prevPage }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
     expect(
       screen.getByRole('button', { name: zhCN.sessions.nextPage }),
-    ).toBeDisabled()
+    ).toHaveAttribute('aria-disabled', 'true')
 
     await act(async () => {
       releaseDelete?.(new Response(null, { status: 204 }))
@@ -651,7 +1150,7 @@ describe('SessionsSection', () => {
     await waitFor(() =>
       expect(
         screen.getByRole('button', { name: zhCN.sessions.prevPage }),
-      ).not.toBeDisabled(),
+      ).not.toHaveAttribute('aria-disabled'),
     )
   })
 
@@ -749,9 +1248,7 @@ describe('SessionsSection', () => {
     // header actions: small, and painted with the same danger color the
     // row-level sign-out glyph carries.
     expect(bulk).toHaveClass('MuiButton-sizeSmall')
-    const rowRevoke = screen
-      .getAllByRole('button')
-      .find((button) => button.className.includes('MuiIconButton-root'))
+    const [rowRevoke] = revokeButtons()
     expect(rowRevoke).toBeDefined()
     // MUI paints the outlined bulk control through a CSS variable chain;
     // resolve it to compare the literal color the glyph carries.
@@ -789,6 +1286,333 @@ describe('SessionsSection', () => {
       ),
     ).toBeTruthy()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('keeps the bulk control busy and the row actions unavailable while the confirmed revoke runs', async () => {
+    // The confirmed bulk action is the control the operator started: it
+    // reports busy while the request runs. Each row's sign-out is a
+    // sibling write control in the same scope, so it is unavailable --
+    // focusable, no busy state, no reason -- rather than busy itself.
+    const gate = deferredResponse()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            session({ id: 'session-2' }),
+            session({ id: 'session-3' }),
+          ],
+        })
+      }
+      if (call.method === 'DELETE' && call.path === SESSIONS_PATH) {
+        return gate.promise
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mountSection(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.sessions.revokeOthers.label,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.sessions.revokeOthers.confirmLabel,
+      }),
+    )
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('dialog')).getByRole('button', {
+          name: zhCN.sessions.revokeOthers.confirmLabel,
+        }),
+      ).toHaveAttribute('aria-busy', 'true'),
+    )
+    // The rows behind the modal are outside the accessibility tree while
+    // it is open, so they are queried with the hidden-elements option.
+    const rowActions = screen.getAllByRole('button', {
+      name: revokeAria(zhCN.sessions.deviceUnknown),
+      hidden: true,
+    })
+    for (const row of rowActions) {
+      expect(row).toHaveAttribute('aria-disabled', 'true')
+      expect(row).not.toHaveAttribute('aria-busy')
+      expect(row).toHaveAccessibleDescription('')
+    }
+    // Neither a click nor Enter on a held row action sends a second
+    // request while the bulk revoke runs.
+    // Every DELETE counts, not only the bulk route's: a row action that
+    // slipped through its held state would send its own request.
+    const deletes = () =>
+      rig.calls.filter((call) => call.method === 'DELETE').length
+    const before = deletes()
+    const [firstRow] = rowActions as [HTMLElement]
+    await user.click(firstRow)
+    firstRow.focus()
+    await user.keyboard('{Enter}')
+    expect(deletes()).toBe(before)
+
+    await act(async () => {
+      gate.resolve(jsonResponse(200, { revoked: 2 }))
+    })
+    expect(
+      await screen.findByText(
+        zhCN.sessions.revokeOthers.done_other.replace('{{count}}', '2'),
+      ),
+    ).toBeTruthy()
+  })
+
+  it('returns focus to the bulk control when its confirmation closes while the refetch is in flight', async () => {
+    // The confirmed bulk action is the control the operator started. The
+    // answer closes the confirmation, but the refetch that follows still
+    // holds the section's write scope, so the control stays where it is --
+    // focused and busy -- until that refetch settles.
+    let reads = 0
+    let releaseRefetch: ((response: Response) => void) | undefined
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        reads += 1
+        if (reads > 1) {
+          // The refetch the bulk revoke triggered: held open so the
+          // control's focused busy state is observable.
+          return new Promise<Response>((resolve) => {
+            releaseRefetch = resolve
+          })
+        }
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            session({ id: 'session-2' }),
+            session({ id: 'session-3' }),
+          ],
+        })
+      }
+      if (call.method === 'DELETE' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, { revoked: 2 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    const bulk = await screen.findByRole('button', {
+      name: zhCN.sessions.revokeOthers.label,
+    })
+    await user.click(bulk)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.sessions.revokeOthers.confirmLabel,
+      }),
+    )
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(releaseRefetch).toBeDefined())
+    // Focus came back to the control that opened the confirmation and
+    // stays there: it reports itself busy instead of going natively
+    // disabled while the refetch it is waiting on runs.
+    await waitFor(() => expect(bulk).toHaveFocus())
+    expect(bulk).toHaveAttribute('aria-busy', 'true')
+    expect(bulk).toHaveAttribute('aria-disabled', 'true')
+
+    await act(async () => {
+      releaseRefetch?.(
+        jsonResponse(200, {
+          sessions: [session({ id: 'session-current', current: true })],
+        }),
+      )
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.sessions.revokeOthers.label,
+        }),
+      ).toBeNull(),
+    )
+  })
+
+  it('does not take focus back when the operator moved it while the bulk revoke lands', async () => {
+    // The bulk control leaves when the refetched list no longer holds
+    // another live session. The landing only runs for a focus the removal
+    // took: a place the operator chose before it lands stays theirs.
+    let reads = 0
+    let releaseRefetch: ((response: Response) => void) | undefined
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        reads += 1
+        if (reads > 1) {
+          return new Promise<Response>((resolve) => {
+            releaseRefetch = resolve
+          })
+        }
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            session({ id: 'session-2' }),
+          ],
+        })
+      }
+      if (call.method === 'DELETE' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, { revoked: 1 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.sessions.revokeOthers.label,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.sessions.revokeOthers.confirmLabel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(releaseRefetch).toBeDefined())
+
+    // The operator moves to the section's named container before the refetch
+    // removes the bulk control: a focusable place that is not the list the
+    // removal would land on.
+    const section = screen.getByRole('group', { name: zhCN.sessions.title })
+    section.focus()
+    expect(section).toHaveFocus()
+
+    await act(async () => {
+      releaseRefetch?.(
+        jsonResponse(200, {
+          sessions: [session({ id: 'session-current', current: true })],
+        }),
+      )
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', {
+          name: zhCN.sessions.revokeOthers.label,
+        }),
+      ).toBeNull(),
+    )
+    expect(section).toHaveFocus()
+  })
+
+  it('lands focus on the list when the bulk action leaves after revoking the other sessions', async () => {
+    // The success removes every other session, so the bulk control that
+    // opened the confirmation is no longer rendered; focus goes to the
+    // list rather than the document body.
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            ...(revoked
+              ? []
+              : [session({ id: 'session-2' }), session({ id: 'session-3' })]),
+          ],
+        })
+      }
+      if (call.method === 'DELETE' && call.path === SESSIONS_PATH) {
+        revoked = true
+        return jsonResponse(200, { revoked: 2 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.sessions.revokeOthers.label,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.sessions.revokeOthers.confirmLabel,
+      }),
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+    expect(
+      screen.queryByRole('button', { name: zhCN.sessions.revokeOthers.label }),
+    ).toBeNull()
+    const list = screen.getByRole('list', { name: zhCN.sessions.title })
+    await waitFor(() => expect(document.activeElement).toBe(list))
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('lands focus on the list although another role=dialog node stays in the document', async () => {
+    // The host's shell can keep a drawer mounted below the md breakpoint,
+    // and its paper carries role="dialog" for the whole page's life. The
+    // landing must wait for this section's own confirmation, not for the
+    // document to hold no dialog at all.
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({ id: 'session-current', current: true }),
+            ...(revoked
+              ? []
+              : [session({ id: 'session-2' }), session({ id: 'session-3' })]),
+          ],
+        })
+      }
+      if (call.method === 'DELETE' && call.path === SESSIONS_PATH) {
+        revoked = true
+        return jsonResponse(200, { revoked: 2 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(
+      respond,
+      <>
+        <div role="dialog" aria-label="shell drawer" />
+        <SessionsSection />
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.sessions.revokeOthers.label,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.sessions.revokeOthers.confirmTitle,
+    })
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.sessions.revokeOthers.confirmLabel,
+      }),
+    )
+    await waitFor(() => expect(bodyRows()).toHaveLength(1))
+    expect(
+      screen.queryByRole('button', { name: zhCN.sessions.revokeOthers.label }),
+    ).toBeNull()
+    const list = screen.getByRole('list', { name: zhCN.sessions.title })
+    await waitFor(() => expect(document.activeElement).toBe(list))
+    expect(document.activeElement).not.toBe(document.body)
   })
 
   it('renders a refused revoke as a code-text banner', async () => {
