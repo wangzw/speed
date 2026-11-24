@@ -1,21 +1,3 @@
-# Dependency updates, weekly.
-#
-# Minor and patch bumps of one ecosystem arrive as one pull request; a major
-# bump arrives alone, because it is the one that can break a build. Every
-# directory of an ecosystem is listed here, so a module or lockfile added later
-# needs a line added with it:
-#
-#   gomod            the Go modules go.work lists
-#   npm              the pnpm lockfile of the frontend workspace (web/); the
-#                    entry for /web also covers starters/demo/web, because
-#                    web/pnpm-workspace.yaml lists it as a member and
-#                    Dependabot reads each member's package.json
-#   github-actions   the workflows, and the local setup action's own uses: lines
-#   docker           the demo program's Dockerfile
-#
-# The commit-message prefixes are Conventional Commits headers the repository's
-# commit convention allows: `deps` for dependency bumps and `ci` for workflow
-# actions.
 
 version: 2
 
@@ -32,8 +14,6 @@ updates:
       gomod-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
-        # These carrier SDKs are pinned by the version-table guard in
-        # pkg/sms/deps_test.go and upgrade only in their own PRs.
         exclude-patterns:
           - "github.com/alibabacloud-go/dysmsapi-20170525/*"
           - "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms"
@@ -70,11 +50,6 @@ updates:
       interval: weekly
     commit-message:
       prefix: "chore(deps)"
-    # The node and golang images carry the toolchain, so they move together
-    # with its pins: .mise.toml, web/.nvmrc and go.work's go directive, files
-    # no Dependabot ecosystem edits. A pull request that moved an image alone
-    # would fail tools/check_toolchain.py, which holds the images to those
-    # pins. alpine is the runtime base, not a toolchain, and keeps updating.
     ignore:
       - dependency-name: "node"
       - dependency-name: "golang"

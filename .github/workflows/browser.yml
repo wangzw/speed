@@ -1,21 +1,3 @@
-# The frontend's browser tier, on a schedule.
-#
-# The cases assert real geometry, focus order and focusability in Chromium,
-# properties jsdom cannot answer (see docs/adr/adr-web-browser-tier.md). The
-# tier is not part of `make check`: it is slower by an order of magnitude and
-# depends on the machine's fonts, so this is the periodic leg that covers it.
-#
-# Chromium is not part of the .mise.toml toolchain, so the setup action installs
-# it with its system libraries. The command list stays in the Makefile
-# (`make web-browser`), exactly as ci.yml's does.
-#
-# Vitest writes a failing case's screenshots and attachments under the
-# browser project's `.vitest/` directory (its default attachmentsDir); a
-# `page.screenshot()` call with no explicit path still writes beside the
-# test file, under `__screenshots__`. Both locations are uploaded, and
-# `.vitest` is hidden, hence include-hidden-files.
-#
-# The cron is off the hour on purpose, like integration.yml's and e2e.yml's.
 
 name: browser
 
@@ -36,8 +18,6 @@ defaults:
     shell: bash
 
 env:
-  # The hosted runner's four cores, as ci.yml sets it; the setup action's
-  # frontend install takes its width from here.
   GATE_JOBS: "4"
 
 jobs:

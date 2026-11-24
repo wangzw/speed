@@ -1,17 +1,3 @@
-# The toolchain every workflow job starts from.
-#
-# The tools come from .mise.toml, so a pin bumped there is the pin CI runs, and
-# no workflow carries a tool version of its own. The whole set is installed by
-# default: the Makefile runs `go work edit` while it is parsed, so any job that
-# calls make needs go on PATH, and mise-action caches the installed set between
-# runs. A job that needs only a few of the tools names them in `tools`, and only
-# those are installed and put on PATH.
-#
-# The playwright input adds what a job needs on top of the toolchain, and is off
-# by default: a job that runs only Go and repository checks installs none of it.
-# That install takes the gate's width from GATE_JOBS, which the calling workflow
-# declares; a caller that omits it fails here rather than letting pnpm fall back
-# to its defaults.
 
 name: setup
 description: Install the .mise.toml toolchain, or a named subset of it, and optionally the frontend dependencies and Playwright's Chromium and WebKit
@@ -45,9 +31,6 @@ inputs:
 runs:
   using: composite
   steps:
-    # MISE_ENABLE_TOOLS limits mise to the named tools, so the ones .mise.toml
-    # lists beyond them are not reported as missing. It is set only when tools
-    # are named: an empty value would enable none.
     - name: Limit mise to the named tools
       if: inputs.tools != ''
       shell: bash
@@ -65,8 +48,6 @@ runs:
       shell: bash
       run: pnpm -C web install --frozen-lockfile --workspace-concurrency=1 --child-concurrency="${GATE_JOBS:?the calling workflow must set GATE_JOBS}"
 
-    # The libraries come from apt and need root, which a hosted runner's
-    # passwordless sudo provides; Playwright invokes sudo itself.
     - name: Install the system libraries Chromium and WebKit need
       if: inputs.playwright == 'true'
       shell: bash
