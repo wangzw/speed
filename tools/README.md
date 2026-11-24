@@ -54,6 +54,7 @@ python3 tools/check_platform_errors.py
 python3 tools/check_pnpm_filters.py
 python3 tools/check_web_build_scripts.py
 python3 tools/check_ci_jobs.py
+python3 tools/check_out_of_root_reads.py
 python3 tools/lint_composite_actions.py
 ```
 
@@ -541,3 +542,17 @@ job runs, a target that is no segment, a module no job covers, the workflow
 env missing `GATE_JOBS` or `-count=1`, or a gate job that could let a failure
 pass), 2 infrastructure error (the root is not a directory, or the Makefile,
 the workflow or `go.work` is missing or names nothing to compare).
+
+`check_out_of_root_reads.py` — fails when a test under
+`starters/demo/server` reads a file outside its module root, which Go leaves
+out of a cached test result's key: a package that reads one can be replayed
+while its input changed. A relative path literal is resolved from the
+package's own directory, the way `go test` runs it, and a `filepath.Join`
+whose arguments are all string literals is resolved once as a whole;
+comments, rune literals and absolute paths are not reads. The package
+directories the root Makefile's `UNCACHED_PACKAGES` assignment lists are
+exempt, because they run with `-count=1`, but their subdirectories are not.
+Exit codes: 0 clean, 1 a finding (each with file, line and the literal, or a
+listed entry that is not a directory carrying Go files), 2 infrastructure
+error (the root or the scope is not a directory, no Go file was read, or the
+Makefile carries no `UNCACHED_PACKAGES ?=` line).
