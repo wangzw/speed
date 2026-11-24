@@ -14,8 +14,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  // The browser cases stay out of each package's default program; a package
-  // that has them checks them through its own tsconfig.browser.json, which
-  // its `typecheck` script runs after the default program.
   "exclude": ["**/*.browser.test.tsx"]
 }

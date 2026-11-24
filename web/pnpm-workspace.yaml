@@ -1,40 +1,13 @@
-# pnpm workspace of the speed frontend packages. The repo root is a Go
-# workspace and stays one; web/ is deliberately its own pnpm workspace root
-# (see web/README.md "Why web/ is its own workspace root").
 packages:
   - packages/*
-  # The workspace's shared test-support package: a private member beside
-  # packages/ -- deliberately outside the deliverable set the release
-  # pipeline derives from web/packages/* -- consumed by the packages' test
-  # suites through the workspace alias map. The demo host carries its own
-  # equivalent instead (web/test-utils/README.md).
   - test-utils
-  # The demo starter's web host lives outside web/ -- exactly where a
-  # delivered consumer project lives -- and joins the workspace as an
-  # external member so it installs, lints, typechecks, tests and builds
-  # under the same one-lockfile workspace (starters/demo/web/package.json).
   - ../starters/demo/web
 
-# A member's dependency on a workspace sibling is resolved to that sibling when
-# the requested version range is satisfied locally, so a plain registry range
-# links in-repo exactly as a published install resolves from the registry --
-# the reason the demo host declares the @speed packages by version range
-# (`^0.0.1`) instead of the workspace protocol: a copy of the skeleton, dropped
-# outside this repository, installs them from the registry unchanged
-# (starters/demo/web/README.md).
 linkWorkspacePackages: true
 
-# jsdom pulls undici in transitively; the advisory fixed in 8.12.2 is below the
-# version jsdom's own range resolves in this lockfile, so the workspace pins the
-# floor here rather than waiting for jsdom to move. Remove it once jsdom's range
-# starts above 8.12.2 by itself.
-#
-# eslint and typescript-eslint still declare minimatch ^10.2.x, below the
-# 11.0.1 fix for GHSA-g3hv-75wg-m249 (glob parts amplification). No released
-# eslint or typescript-eslint line pulls 11 yet, so the workspace pins it
-# here. Both consumers only use the Minimatch class and minimatch() function,
-# which 11 keeps, and 11 still ships CommonJS and ESM entry points. Remove it
-# once their own ranges resolve 11 by themselves.
+# Security-floor pins, below what the dependants' own ranges resolve. Remove
+# each once its dependant's range passes the fixed version: undici 8.12.2,
+# minimatch 11.0.1 (GHSA-g3hv-75wg-m249).
 overrides:
   undici: ^8.12.2
   minimatch: ^11.0.1

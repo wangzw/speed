@@ -5,7 +5,6 @@ const REGION_TAG_NAMES = new Set([
   'SharedWriteFeedbackRegion',
 ])
 
-// The scan test holds this list to both source trees.
 export const WRITE_FEEDBACK_REGION_EXEMPTIONS = [
   {
     file: 'packages/admin-ui/src/AccountsPage.tsx',

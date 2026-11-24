@@ -1,11 +1,6 @@
-/**
- * The axe-core assertion harness shared by the workspace's component, page and
- * browser tests: the widget and page tiers plus the heading-order probe.
- *
- * A jsdom scan whose document has no h1 ancestor fails on page-has-heading-one;
- * supply the h1 ancestor context in the render rather than disabling the rule
- * silently.
- */
+/** The axe-core assertion harness for component, page and browser tests; a
+ * jsdom page scan needs an h1 ancestor or page-has-heading-one fails, so supply
+ * that ancestor in the render rather than disabling the rule. */
 
 import { expect } from 'vitest'
 import axe from 'axe-core'

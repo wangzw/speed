@@ -55,7 +55,6 @@ export default defineConfig(
   },
   {
     ...PACKAGE_RUNTIME_SRC,
-    // The single whitelist; extending it is an architecture change.
     ignores: [...PACKAGE_RUNTIME_SRC.ignores, 'packages/api-client/**'],
     rules: {
       'speed/no-direct-http': 'error',

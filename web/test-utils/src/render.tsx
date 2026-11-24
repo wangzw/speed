@@ -1,9 +1,6 @@
-/**
- * The render-primitive layer shared by the packages' and the app's DOM
- * harnesses: TEST_LANGUAGES, the deterministic createTestI18n base, the
- * retries-nothing createTestQueryClient, the RenderWithProviders option and
- * result shapes, and TestTimeZoneProvider.
- */
+/** The DOM render-primitive layer shared by package and app harnesses:
+ * TEST_LANGUAGES, the deterministic createTestI18n, the retries-nothing
+ * createTestQueryClient, RenderWithProviders, and TestTimeZoneProvider. */
 
 import type { ReactNode } from 'react'
 import type { RenderResult } from '@testing-library/react'
