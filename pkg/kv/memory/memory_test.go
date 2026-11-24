@@ -21,22 +21,18 @@ func newStore(t *testing.T) kv.KV {
 	return s
 }
 
-// TestConforms runs the shared contract. Every implementation of the capability
-// runs this same suite; what is specific to this backend is tested below and in
-// the package's own files.
+// TestConforms runs the shared contract.
 func TestConforms(t *testing.T) {
 	kvsuite.AssertConforms(t, newStore)
 }
 
-// TestTheSuiteTellsASlowStoreFromAWrongOne runs the shared suite's cases that
-// act on a key within its ttl against this implementation with every call
-// arriving late, as a loaded server makes it arrive. This store is correct, so
-// a case failing here is a case that reads a slow round trip as a wrong answer,
-// and would fail a correct backend on any loaded run.
+// TestTheSuiteTellsASlowStoreFromAWrongOne checks that the store passes the shared suite under added
+// latency.
 func TestTheSuiteTellsASlowStoreFromAWrongOne(t *testing.T) {
 	kvsuite.AssertUnderLatency(t, newStore)
 }
 
+// TestStanceIsAutoWhenOneReplicaSharesTheState checks that a single replica yields StateAuto.
 func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
 	got, err := stance(&Config{Replicas: 1})
 	if err != nil {
@@ -49,12 +45,7 @@ func TestStanceIsAutoWhenOneReplicaSharesTheState(t *testing.T) {
 	}
 }
 
-// TestStanceFailsTheStartupWhenSeveralReplicasShareTheState pins the deployment
-// precondition. A host that declared several replicas gets a startup that stops
-// and names the input it stopped on: this backend would give each replica its
-// own private map, every call would still succeed, and nothing else in the
-// process would ever notice. A stand-down would be worse than useless here — it
-// would leave the capability missing with the process still coming up.
+// TestStanceFailsTheStartupWhenSeveralReplicasShareTheState pins the deployment precondition.
 func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
 	_, err := stance(&Config{Replicas: 3})
 	if err == nil {
@@ -68,12 +59,8 @@ func TestStanceFailsTheStartupWhenSeveralReplicasShareTheState(t *testing.T) {
 	}
 }
 
-// TestExpiredEntriesAreSweptOutOfTheMap pins the active half of expiry: an
-// entry whose time passed while nothing asked for it is dropped by a later
-// write's sweep, rather than sitting in the map until the key is read again.
-// A process that gives every request its own ttl'd key — a rate-limit counter,
-// a session-revocation marker — would otherwise grow with every key it has
-// ever written.
+// TestExpiredEntriesAreSweptOutOfTheMap checks that writing live entries sweeps the long-expired ones
+// out of the map.
 func TestExpiredEntriesAreSweptOutOfTheMap(t *testing.T) {
 	s, ok := newStore(t).(*store)
 	if !ok {
@@ -81,17 +68,12 @@ func TestExpiredEntriesAreSweptOutOfTheMap(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// Plant entries that expired an hour ago. Planting them directly makes the
-	// case deterministic: it is about what later writes do with them, not
-	// about waiting for a clock.
 	const planted = 1000
 	expired := time.Now().Add(-time.Hour)
 	for i := range planted {
 		s.entries[fmt.Sprintf("dead-%d", i)] = entry{value: []byte("v"), expires: expired}
 	}
 
-	// Writes drive the sweep, and each sweeps a random sample of the map, so a
-	// batch of them covers the whole of it many times over.
 	const written = 500
 	for i := range written {
 		if err := s.Set(ctx, fmt.Sprintf("live-%d", i), []byte("v"), time.Minute); err != nil {

@@ -1,22 +1,4 @@
-// Package postgres is the PostgreSQL implementation of the key-value capability
-// pkg/kv declares.
-//
-// It is the sister of pkg/event/postgres: both exist for a deployment that
-// already runs PostgreSQL and does not want to bring up Redis for one more
-// thing, and both keep their own table.
-//
-// The table is created here, by this package, rather than declared as a
-// migration for pkg/db to apply. That is deliberate: this capability is below
-// the database module in the dependency graph — it is what a host deploys
-// *instead of* depending on a module stack — and taking a dependency on pkg/db
-// to get one table created would make every host that wants a counter carry
-// GORM.
-//
-// Every operation that has to be atomic is one statement, which the server
-// arbitrates, except the increment. It is one transaction, because an expired
-// row has to go before the write: PostgreSQL's ON CONFLICT would otherwise find
-// the row and take the update branch, and the counter would go on from a value
-// the capability says is no longer there.
+// Package postgres is the PostgreSQL implementation of the key-value capability pkg/kv declares.
 package postgres
 
 import (
@@ -45,61 +27,27 @@ const (
 	ModuleName = "kv.postgres"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
-	// table is this implementation's own, and it is not configurable: a name a
-	// host could point elsewhere would let two assemblies on one server
-	// overwrite each other's entries with no sign that they had.
-	table = "kv_entries"
-	// createTable runs only when the table is missing, rather than behind a
-	// ledger: this package has no migration machinery of its own, and the
-	// table being there is its own record of having been created.
-	//
-	// The key is bytes rather than text. The capability's keys are opaque, and
-	// a text column refuses two kinds of them outright: a NUL byte, and bytes
-	// that are not valid UTF-8.
-	createTable = `CREATE TABLE IF NOT EXISTS ` + table + ` (
+	table           = "kv_entries"
+	createTable     = `CREATE TABLE IF NOT EXISTS ` + table + ` (
 		key        BYTEA PRIMARY KEY,
 		value      BYTEA NOT NULL,
 		expires_at TIMESTAMPTZ
 	)`
-	// expiryIndex is what lets the sweep find expired rows without reading the
-	// table. Only rows with an expiry are in it.
 	expiryIndex       = table + `_expires_at`
 	createExpiryIndex = `CREATE INDEX IF NOT EXISTS ` + expiryIndex + ` ON ` + table +
 		` (expires_at) WHERE expires_at IS NOT NULL`
-	// tablePresent and indexPresent ask the catalog whether the table, and the
-	// expiry index on it, are there. Both resolve the table the way every other
-	// statement here does: through the search path.
 	tablePresent = `SELECT to_regclass('` + table + `') IS NOT NULL`
 	indexPresent = `SELECT EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
 		WHERE i.indrelid = to_regclass('` + table + `') AND c.relname = '` + expiryIndex + `')`
-	// keyColumnType reads the type the table's key column has, resolving the
-	// table the same way.
 	keyColumnType = `SELECT format_type(atttypid, atttypmod) FROM pg_attribute
 		WHERE attrelid = to_regclass('` + table + `') AND attname = 'key'`
-	// migrateTextKeys converts a table whose key column is text into the shape
-	// createTable builds, and respells the keys that are too long to keep
-	// their plain spelling, so every entry stays reachable under its key.
 	migrateTextKeys = `ALTER TABLE ` + table + ` ALTER COLUMN key TYPE BYTEA USING convert_to(key, 'UTF8')`
 	respellLongKeys = `UPDATE ` + table + ` SET key = substring(key FROM 1 FOR $1) || sha256(key)
 		WHERE length(key) > $1`
 )
 
-// maxPlainKeyLen is the longest key stored as its own bytes. PostgreSQL's
-// btree refuses an index entry past about a third of a page — some 2700 bytes
-// once compression has nothing to squeeze out — so a longer key could not be
-// the primary key at all.
 const maxPlainKeyLen = 1024
 
-// spell returns the bytes a key is stored under.
-//
-// A key up to maxPlainKeyLen bytes is stored as itself. A longer one is stored
-// as its first maxPlainKeyLen bytes followed by its SHA-256 digest: the prefix
-// keeps it recognisable to an operator reading the table, and the digest keeps
-// it distinct from every other long key sharing that prefix. The two forms
-// never meet, because every long spelling is longer than any plain one, and
-// the long spellings are as collision-resistant as SHA-256. A key is never cut
-// short without the digest: two keys sharing their first bytes would then
-// share an entry.
 func spell(key string) []byte {
 	if len(key) <= maxPlainKeyLen {
 		return []byte(key)
@@ -110,11 +58,10 @@ func spell(key string) []byte {
 	return append(out, sum[:]...)
 }
 
-// init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
-// Module is this module's descriptor, exported for the registries that do not
-// inherit the process-level registrations.
+// Module is this module's descriptor, exported for the registries that do not inherit the
+// process-level registrations.
 func Module() core.Module {
 	defaults := pgpool.Defaults()
 	return kv.NewModule(kv.Spec[pgpool.Config]{
@@ -124,17 +71,10 @@ func Module() core.Module {
 		Items:           pgpool.Items(),
 		Stance:          stance,
 		Open:            open,
-		// The connection string carries credentials; it has no shape to match,
-		// so the factory registers the value itself as a literal redaction rule
-		// before this module reaches the server.
-		Secrets: func(cfg *pgpool.Config) []string { return []string{cfg.DSN} },
+		Secrets:         func(cfg *pgpool.Config) []string { return []string{cfg.DSN} },
 	})
 }
 
-// stance states this implementation's stance, or reports what it cannot start
-// without, on the same terms as the other remote backends: an absent locator
-// stops the startup and names the missing input, and a configured one states
-// StateEnabled so a second configured backend fails the startup.
 func stance(cfg *pgpool.Config) (core.Enablement, error) {
 	if strings.TrimSpace(cfg.DSN) == "" {
 		return core.Enablement{}, fmt.Errorf("%s.%s gives no connection string, and this implementation "+
@@ -144,7 +84,6 @@ func stance(cfg *pgpool.Config) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// open builds the pool and makes sure the table is there.
 func open(ctx context.Context, cfg *pgpool.Config) (kv.KV, error) {
 	pool, err := pgpool.Connect(ctx, ModuleName, *cfg)
 	if err != nil {
@@ -158,28 +97,8 @@ func open(ctx context.Context, cfg *pgpool.Config) (kv.KV, error) {
 	return &store{pool: pool, sweepCtx: sweepCtx, stopSweeps: stopSweeps}, nil
 }
 
-// schemaLock names the advisory lock that serialises this implementation's
-// DDL within one database. It is hashed into the lock's key space by the
-// server, so it only has to be distinct from what other modules hash.
 const schemaLock = "speed:kv:" + table
 
-// prepareTable creates the table and its expiry index where they are missing,
-// holding a transaction-scoped advisory lock while it looks and creates.
-//
-// The lock is what makes several replicas starting at once against an empty
-// database safe. CREATE TABLE IF NOT EXISTS is not safe against a concurrent
-// copy of itself: two sessions can both find the table missing, and the one
-// that commits second fails on the catalog's unique index for the table's row
-// type — a replica that fails its startup for no fault of its own. Under the
-// lock the second session waits, then finds the table and does nothing.
-//
-// The catalog is asked before anything is created, and nothing is created that
-// is there. PostgreSQL checks CREATE on the schema before it looks for the
-// object an IF NOT EXISTS names, and ownership of the table before it looks for
-// an index: a start that ran the statements regardless would need both
-// privileges on every start, and a service running under a role that may only
-// read and write rows would fail on a database whose table is all there. The
-// lock and the catalog reads need no privilege of their own.
 func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	tx, beginErr := pool.Begin(ctx)
 	if beginErr != nil {
@@ -205,9 +124,6 @@ func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	switch keyType {
 	case "bytea":
 	case "text":
-		// A table from before the key column held bytes. Its keys are text,
-		// so their UTF-8 bytes are exactly the plain spelling, and only the
-		// long ones need a new one.
 		if _, alterErr := tx.Exec(ctx, migrateTextKeys); alterErr != nil {
 			return fmt.Errorf("converting the key column to bytes: %w", alterErr)
 		}
@@ -229,27 +145,18 @@ func prepareTable(ctx context.Context, pool *pgxpool.Pool) error {
 	return tx.Commit(ctx)
 }
 
-// store is the capability over one pool.
 type store struct {
 	pool *pgxpool.Pool
 
-	// sweepCtx bounds the sweeps running in the background, and stopSweeps
-	// ends them at Close.
 	sweepCtx   context.Context
 	stopSweeps context.CancelFunc
-	// sweeping is held by the one sweep that may run at a time, and
-	// nextSweep is the instant, in Unix nanoseconds, before which no new one
-	// starts.
-	sweeping  atomic.Bool
-	nextSweep atomic.Int64
-	// mu guards closed against a sweep being started while Close waits for
-	// the running ones.
-	mu     sync.Mutex
-	closed bool
-	sweeps sync.WaitGroup
+	sweeping   atomic.Bool
+	nextSweep  atomic.Int64
+	mu         sync.Mutex
+	closed     bool
+	sweeps     sync.WaitGroup
 }
 
-// Close waits for a running sweep to stop and releases the pool.
 func (s *store) Close(_ context.Context) error {
 	s.mu.Lock()
 	s.closed = true
@@ -260,38 +167,14 @@ func (s *store) Close(_ context.Context) error {
 	return nil
 }
 
-// sweepBatch bounds the rows one sweep deletes, so a backlog is worked off in
-// steps rather than in one long statement holding its locks.
 const sweepBatch = 1000
 
-// sweepEvery is the least time between two sweeps, unless the last one
-// deleted a full batch and so may have left more behind.
 const sweepEvery = time.Second
 
-// sweepExpired deletes up to a batch of expired rows. The rows are locked with
-// SKIP LOCKED, so a sweep never waits for a write in progress, and two
-// replicas sweeping at once delete different rows. Locking re-checks the
-// expiry against the row as it is now, so a row a write replaced since the
-// statement began is left alone.
 const sweepExpired = `DELETE FROM ` + table + ` WHERE key IN (
 	SELECT key FROM ` + table + ` WHERE expires_at <= now()
 	ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED)`
 
-// afterExpiringWrite gives the sweep a turn after a write that carried an
-// expiry.
-//
-// Expiry is otherwise lazy — an expired row is hidden from every read and
-// replaced by the next write to its key — and a key nothing writes again stays
-// in the table for good. A rate limiter writes one key per identity per
-// window, an idempotency guard one per request, and neither touches a key
-// again once it has expired, so without the sweep the table would grow with
-// every key ever written. The writes that add expiring rows are the clock: a
-// sweep runs at most once per sweepEvery, or right away when the last one
-// found a full batch, so the sweeping keeps pace with the rate rows expire at.
-//
-// The sweep runs in the background, off the caller's path, one at a time per
-// store. A failed sweep is not reported: nothing the caller did failed, and the
-// next turn tries again.
 func (s *store) afterExpiringWrite() {
 	if time.Now().UnixNano() < s.nextSweep.Load() {
 		return
@@ -319,14 +202,8 @@ func (s *store) afterExpiringWrite() {
 	}()
 }
 
-// live is the predicate that makes an expired row read as absent. It is written
-// out rather than kept in a view so that every statement that reads the table
-// carries it, and a statement that forgot it would be a row a caller can see
-// past its own ttl.
 const live = `(expires_at IS NULL OR expires_at > now())`
 
-// Get returns a copy of the value. pgx allocates it, so this implementation
-// never holds a slice the caller can write into.
 func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	var value []byte
 	err := s.pool.QueryRow(ctx,
@@ -340,7 +217,6 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	return value, true, nil
 }
 
-// Set stores the value, replacing any existing one and its expiry.
 func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	_, err := s.pool.Exec(ctx,
 		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, $2, `+expiryFrom("$3")+`)
@@ -352,12 +228,6 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 	return err
 }
 
-// nonNull folds a nil value into an empty one before it reaches PostgreSQL.
-//
-// The capability spells "empty" two ways — a nil slice and a zero-length one —
-// and means the same thing by both, but pgx sends a nil slice as SQL NULL. The
-// value column refuses NULL, and a comparison against NULL matches nothing, so
-// every value that reaches a statement goes through here.
 func nonNull(value []byte) []byte {
 	if value == nil {
 		return []byte{}
@@ -365,31 +235,19 @@ func nonNull(value []byte) []byte {
 	return value
 }
 
-// Delete removes the key, whether or not it was there.
 func (s *store) Delete(ctx context.Context, key string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM `+table+` WHERE key = $1`, spell(key))
 	return err
 }
 
-// IncrByFloat adds to the number under key, leaving the key's expiry alone.
 func (s *store) IncrByFloat(ctx context.Context, key string, delta float64) (float64, error) {
 	return s.increment(ctx, key, delta, 0, false)
 }
 
-// IncrByFloatWithTTL adds to the number under key and, when the key did not
-// exist, gives it the expiry in the same transaction.
 func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
 	return s.increment(ctx, key, delta, ttl, true)
 }
 
-// increment is both increment operations.
-//
-// The arithmetic runs in the database rather than in this process: reading a
-// value, adding to it and writing it back would let a concurrent increment land
-// between the read and the write, which is the loss the capability's own
-// documentation names. The value travels as its decimal text in both directions
-// — the column holds bytes and PostgreSQL's numeric type does not read them, so
-// the conversion happens in the statement.
 func (s *store) increment(ctx context.Context, key string, delta float64, ttl time.Duration, withTTL bool) (float64, error) {
 	if deltaErr := counter.CheckDelta(ModuleName, key, delta); deltaErr != nil {
 		return 0, deltaErr
@@ -400,9 +258,6 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// An expired row has to go first, or ON CONFLICT would find it and take the
-	// update branch, and the key would keep an expiry the capability says it no
-	// longer has.
 	if _, deleteErr := tx.Exec(ctx,
 		`DELETE FROM `+table+` WHERE key = $1 AND expires_at IS NOT NULL AND expires_at <= now()`,
 		spell(key)); deleteErr != nil {
@@ -414,10 +269,6 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		expires = ttlMicros(ttl)
 	}
 	var text string
-	// Every statement in this transaction names its own error rather than
-	// reusing one: the transaction spans several, and a single name would be
-	// reassigned by each, leaving a reader to work out which failure a return
-	// belongs to.
 	incrErr := tx.QueryRow(ctx,
 		`INSERT INTO `+table+` (key, value, expires_at) VALUES ($1, convert_to($2, 'UTF8'), `+expiryFrom("$3")+`)
 		 ON CONFLICT (key) DO UPDATE
@@ -427,12 +278,6 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	if incrErr != nil {
 		return 0, asNotNumeric(incrErr, key)
 	}
-	// The sum is judged before the commit, not after. PostgreSQL's numeric
-	// has no ceiling, so a sum past float64's range is a valid row that no
-	// caller can read back as a number; committing it and then reporting the
-	// failure would have a caller retry a write that happened. ParseFloat
-	// answers such a sum with an infinity, and the deferred rollback leaves
-	// the counter as it was.
 	got, parseErr := parseFloat(text)
 	if parseErr != nil && !errors.Is(parseErr, strconv.ErrRange) {
 		return 0, fmt.Errorf("%s: the increment of %q produced %q, which is not a number", ModuleName, key, text)
@@ -449,18 +294,11 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	return got, nil
 }
 
-// CompareAndSwap writes only on a match, and never touches the expiry.
-//
-// Each case is one statement, so the server arbitrates the whole swap and no
-// write between a comparison and its write can be taken for a mismatch. A row
-// a concurrent statement is writing is waited for, and the condition is judged
-// again against the row as that statement left it.
 func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error) {
 	old, newVal = nonNull(old), nonNull(newVal)
 	var one int
 	var err error
 	if len(old) > 0 {
-		// Only a live row can hold a non-empty value to match.
 		err = s.pool.QueryRow(ctx,
 			`UPDATE `+table+` SET value = $2 WHERE key = $1 AND value = $3::bytea AND `+live+` RETURNING 1`,
 			spell(key), newVal, old).Scan(&one)
@@ -476,28 +314,12 @@ func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []by
 	return true, nil
 }
 
-// swapFromEmpty is the swap for an empty old, which a missing key, an expired
-// one and an empty value all match.
-//
-// A missing key is created without an expiry. A row that is there is replaced
-// only when it matches: an expired row loses its expiry with its value, since
-// the key it held was absent, and a live empty one keeps its expiry, since the
-// swap never changes it. The conflict branch locks the row it found, so
-// several writers racing for one key are judged one after another, each
-// against what the one before it left.
 const swapFromEmpty = `INSERT INTO ` + table + ` (key, value) VALUES ($1, $2)
 	ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value,
 		expires_at = CASE WHEN ` + table + `.expires_at <= now() THEN NULL ELSE ` + table + `.expires_at END
 	WHERE ` + table + `.value = ''::bytea OR ` + table + `.expires_at <= now()
 	RETURNING 1`
 
-// SetIfAbsent stores the value with its expiry when the key is missing or
-// expired, and leaves a live key alone.
-//
-// It is one statement. A missing key is inserted; a row that is there is
-// replaced only when it has expired, and the conflict branch locks the row it
-// found, so several writers racing for one expired key are judged one after
-// another and only the first finds it expired.
 func (s *store) SetIfAbsent(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
 	var one int
 	err := s.pool.QueryRow(ctx,
@@ -518,25 +340,11 @@ func (s *store) SetIfAbsent(ctx context.Context, key string, value []byte, ttl t
 	return true, nil
 }
 
-// expiryFrom is the SQL for the instant a row stops being visible, given a
-// statement parameter holding the ttl in microseconds; zero means no expiry.
-//
-// The instant is the database's now() plus the ttl, never this process's
-// clock. Every statement judges a row's expiry against the database's now(),
-// so the instant has to come from the same clock: stamped by the writing
-// replica instead, a replica running ahead of the database would write keys
-// that live too long, one running behind would write keys that are expired
-// the moment they land, and replicas would disagree about whether a key exists.
 func expiryFrom(param string) string {
 	return `CASE WHEN ` + param + `::bigint > 0 THEN now() + ` + param +
 		`::bigint * interval '1 microsecond' END`
 }
 
-// ttlMicros turns a ttl into the whole microseconds expiryFrom takes.
-//
-// Rounding up rather than truncating is what keeps a positive ttl positive: a
-// ttl under a microsecond would truncate to zero, which reads as no expiry —
-// the opposite of what the caller asked for. A ttl of zero or less stays zero.
 func ttlMicros(ttl time.Duration) int64 {
 	if ttl <= 0 {
 		return 0
@@ -548,44 +356,15 @@ func ttlMicros(ttl time.Duration) int64 {
 	return micros
 }
 
-// formatFloat renders a delta as the shortest text that round-trips, which is
-// what the statement parses back into its own numeric type.
 func formatFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
 
-// parseFloat reads back what the statement produced.
-//
-// PostgreSQL writes its own numeric text, so what comes back is not necessarily
-// the shortest form this package would have written — but the capability says a
-// caller parses a counter rather than comparing its text, and the value the
-// caller receives is the float64 this returns.
 func parseFloat(text string) (float64, error) { return strconv.ParseFloat(text, 64) }
 
-// The SQLSTATE codes the increment statement raises when the stored value is
-// not a counter.
 const (
-	// invalidTextRepresentation is the numeric cast refusing the value's text.
 	invalidTextRepresentation = "22P02"
-	// characterNotInRepertoire is the decode refusing bytes that are not
-	// UTF-8, which it has to do before the cast can ask for a number.
-	characterNotInRepertoire = "22021"
+	characterNotInRepertoire  = "22021"
 )
 
-// asNotNumeric maps PostgreSQL's complaint about a value that is not a number
-// onto this capability's sentinel.
-//
-// It matches two complaints, not one. A value that is not a number is the
-// obvious case; a value that is not valid UTF-8 is the other, because the
-// statement has to decode the bytes before it can ask whether they are a
-// number, and the capability's values are opaque bytes that are allowed not to
-// be text at all. Both mean the same thing to a caller — this key does not hold
-// a counter — so both become the sentinel rather than one of them escaping as a
-// raw statement failure. The match is on the error code and narrow, so that
-// everything else stays as it came: a caller has to be able to tell a bad value
-// from a connection that dropped.
-//
-// The server's message is left behind rather than wrapped. It quotes the
-// offending text, and the value under a key may be anything a caller stored —
-// a credential, an address — that an error would carry into a log.
 func asNotNumeric(err error, key string) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) &&

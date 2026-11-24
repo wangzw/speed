@@ -12,11 +12,8 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// TestStanceFailsTheStartupWithoutAConnectionString pins the rule that a module
-// named in the command tree has to start: this one reaches PostgreSQL at a
-// locator, so being named without one stops the startup and names the input it
-// stopped on. A stand-down in its place would bring the process up with the
-// capability silently missing.
+// TestStanceFailsTheStartupWithoutAConnectionString checks that an empty DSN fails the startup,
+// naming the dsn key.
 func TestStanceFailsTheStartupWithoutAConnectionString(t *testing.T) {
 	_, err := stance(&pgpool.Config{})
 	if err == nil {
@@ -27,6 +24,7 @@ func TestStanceFailsTheStartupWithoutAConnectionString(t *testing.T) {
 	}
 }
 
+// TestStanceEnablesOnceAConnectionStringIsGiven checks that a DSN makes the stance StateEnabled.
 func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
 	got, err := stance(&pgpool.Config{DSN: "postgres://localhost/x"})
 	if err != nil {
@@ -37,9 +35,8 @@ func TestStanceEnablesOnceAConnectionStringIsGiven(t *testing.T) {
 	}
 }
 
-// TestOnlyTheServersNonNumericWordingBecomesTheSentinel covers the one mapping
-// this backend has to make, and the narrowness that keeps a connection failure
-// from being read as a bad value.
+// TestOnlyTheServersNonNumericComplaintsBecomeTheSentinel covers the one mapping this backend has
+// to make, and the narrowness that keeps a connection failure from being read as a bad value.
 func TestOnlyTheServersNonNumericComplaintsBecomeTheSentinel(t *testing.T) {
 	if got := asNotNumeric(nil, "k"); got != nil {
 		t.Fatalf("asNotNumeric(nil) = %v, want nil", got)

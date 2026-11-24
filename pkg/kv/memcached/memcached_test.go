@@ -13,11 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/kv/internal/memcachetest"
 )
 
-// TestStanceFailsTheStartupWithoutAServer pins the rule that a module named in
-// the command tree has to start: this one reaches Memcached at a server, so
-// being named without one stops the startup and names the input it stopped on.
-// A stand-down in its place would bring the process up with the capability
-// silently missing.
+// TestStanceFailsTheStartupWithoutAServer checks that no server list fails the startup, naming the
+// servers key.
 func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	_, err := stance(&Config{})
 	if err == nil {
@@ -28,12 +25,7 @@ func TestStanceFailsTheStartupWithoutAServer(t *testing.T) {
 	}
 }
 
-// TestStanceRefusesABlankServerEntry covers the other shape of a missing
-// server. gomemcache connects lazily and reads an empty address as the zero
-// port rather than skipping it, so an entry that is empty or only whitespace
-// would open cleanly and then fail every operation that lands on it, with
-// nothing at the startup naming the input. One such entry is enough to fail
-// the startup, whether or not the list also holds a real address.
+// TestStanceRefusesABlankServerEntry covers the other shape of a missing server.
 func TestStanceRefusesABlankServerEntry(t *testing.T) {
 	for _, servers := range [][]string{
 		{""},
@@ -65,13 +57,9 @@ func TestStanceRefusesABlankServerEntry(t *testing.T) {
 	}
 }
 
-// TestAnUnreachableServerFailsTheStartup pins the stage the capability puts a
-// connection failure in. The client connects lazily, so without a check at
-// open a mistyped or unreachable server passes the startup, the process
-// reports ready, and the failure lands on whichever request uses the store
-// first.
+// TestAnUnreachableServerFailsTheStartup pins the stage the capability puts a connection failure
+// in.
 func TestAnUnreachableServerFailsTheStartup(t *testing.T) {
-	// A port that was just free and has nothing listening on it.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listening: %v", err)
@@ -89,11 +77,8 @@ func TestAnUnreachableServerFailsTheStartup(t *testing.T) {
 	}
 }
 
-// TestCloseReleasesTheConnectionsTheClientKeeps pins the Close stage: the
-// connections this module opened are closed by this module. The client keeps
-// idle connections between operations, so a Close that released nothing would
-// leave them open on the server after the module shut down — for as long as
-// the process lives, in a host or a test binary that outlives the module.
+// TestCloseReleasesTheConnectionsTheClientKeeps pins the Close stage: the connections this module
+// opened are closed by this module.
 func TestCloseReleasesTheConnectionsTheClientKeeps(t *testing.T) {
 	server := startFakeServer(t)
 	opened, err := open(context.Background(), &Config{Servers: []string{server.addr()}, Timeout: time.Second})
@@ -116,14 +101,7 @@ func TestCloseReleasesTheConnectionsTheClientKeeps(t *testing.T) {
 	}
 }
 
-// TestBurstsOfOperationsReuseTheirConnections covers what a busy replica does
-// to its sockets. The client keeps only so many idle connections per server
-// and closes every connection past that when an operation returns it, so each
-// burst of concurrent operations — a wave of requests arriving together — ends
-// with most of its connections closed and the next burst dialling them again,
-// each close leaving a socket in TIME_WAIT. Under sustained bursty load the
-// replica runs out of local ports and operations fail to dial. The case sends
-// bursts of a modest width and counts the connections the server accepted.
+// TestBurstsOfOperationsReuseTheirConnections covers what a busy replica does to its sockets.
 func TestBurstsOfOperationsReuseTheirConnections(t *testing.T) {
 	server := startFakeServer(t)
 	opened, err := open(context.Background(), &Config{
@@ -152,20 +130,13 @@ func TestBurstsOfOperationsReuseTheirConnections(t *testing.T) {
 		close(start)
 		wg.Wait()
 	}
-	// One connection per operation of the widest burst at most, and one for
-	// the check the open makes.
 	if got := server.accepted.Load(); got > width+1 {
 		t.Fatalf("%d bursts of %d operations made the server accept %d connections: the client closes "+
 			"the connections a burst used and dials them again for the next", bursts, width, got)
 	}
 }
 
-// TestStanceFailsTheStartupWhenTheDataHasToBeKept is the deployment
-// precondition. This is the one backend here whose data can vanish without a
-// restart, and the failure it would otherwise cause is silent: entries are
-// dropped under memory pressure as normal operation and the server does not
-// report that it has. An assembly that declares the data has to be kept
-// therefore stops the startup, naming the declaration rather than a setting.
+// TestStanceFailsTheStartupWhenTheDataHasToBeKept is the deployment precondition.
 func TestStanceFailsTheStartupWhenTheDataHasToBeKept(t *testing.T) {
 	_, err := stance(&Config{Servers: []string{"127.0.0.1:11211"}, RequiresPersistence: true})
 	if err == nil {
@@ -176,6 +147,7 @@ func TestStanceFailsTheStartupWhenTheDataHasToBeKept(t *testing.T) {
 	}
 }
 
+// TestStanceEnablesOnceAServerIsNamed checks that a server makes the stance StateEnabled.
 func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	got, err := stance(&Config{Servers: []string{"127.0.0.1:11211"}})
 	if err != nil {
@@ -186,16 +158,10 @@ func TestStanceEnablesOnceAServerIsNamed(t *testing.T) {
 	}
 }
 
-// TestEveryKeyHasASpellingMemcachedAccepts pins the spelling rule at the
-// boundary the contract suite only crosses from far away: a key whose plain
-// spelling is exactly the server's limit keeps it, one byte more switches to
-// the digest, and the empty key — whose plain spelling is empty and refused —
-// gets the digest too. Every spelling is one the client and the server accept.
-//
-// The store here has no space, as every store a host opens has none.
+// TestEveryKeyHasASpellingMemcachedAccepts checks that a key fitting the plain length stays plain,
+// while empty, long and control-bearing keys get a distinct digest spelling within the limit.
 func TestEveryKeyHasASpellingMemcachedAccepts(t *testing.T) {
 	s := &store{}
-	// 187 raw bytes are 250 base64url characters; 188 are 251.
 	atLimit, pastLimit := strings.Repeat("a", 187), strings.Repeat("a", 188)
 	if got := s.spell(atLimit); strings.HasPrefix(got, digestPrefix) || len(got) != maxKeyLen {
 		t.Fatalf("a key whose plain spelling fits exactly was spelled %q", got)
@@ -214,12 +180,8 @@ func TestEveryKeyHasASpellingMemcachedAccepts(t *testing.T) {
 	}
 }
 
-// TestASpaceLeavesEverySpellingWithinTheLimit is the same rule for a store in
-// a key space, which is what every case against the shared server works in.
-// The space comes first and takes its length out of the server's limit, so a
-// key whose plain spelling would fit on its own but not behind the space
-// switches to the digest; spelling it plainly would hand the server a name
-// longer than it accepts, and the operation would fail.
+// TestASpaceLeavesEverySpellingWithinTheLimit is the same rule for a store in a key space, which
+// is what every case against the shared server works in.
 func TestASpaceLeavesEverySpellingWithinTheLimit(t *testing.T) {
 	s := &store{space: memcachetest.Space(t)}
 	room := maxKeyLen - len(s.space)
@@ -234,8 +196,6 @@ func TestASpaceLeavesEverySpellingWithinTheLimit(t *testing.T) {
 		if !inSpace {
 			t.Fatalf("the key of %d bytes is spelled %q, outside the store's space %q", n, got, s.space)
 		}
-		// A space ends at the first dot of an entry's name, so a spelling
-		// holding one would read as the end of a different space.
 		if strings.Contains(rest, ".") {
 			t.Fatalf("the key of %d bytes is spelled %q behind the space, and a dot there reads as "+
 				"another space's end", n, rest)

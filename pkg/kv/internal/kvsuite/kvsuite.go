@@ -1,18 +1,4 @@
-// Package kvsuite holds the contract every implementation of pkg/kv must
-// satisfy.
-//
-// It is written once and run by each backend, so "an implementation meets the
-// capability's semantics" is a single statement a backend either passes or does
-// not, rather than a claim each subpackage's own tests happen to cover. An
-// implementation joins the contract by calling AssertConforms with a factory
-// that builds an empty store.
-//
-// What is deliberately not here: durability, sharing across replicas, and
-// behaviour after a restart. Those are properties of a backend rather than of
-// the capability — an implementation that keeps values in one process's memory
-// is not a failing implementation of this contract, it is one whose deployment
-// precondition says so. A backend that does promise them tests them where its
-// own machinery lives.
+// Package kvsuite holds the contract every implementation of pkg/kv must satisfy, run by each backend through AssertConforms.
 package kvsuite
 
 import (
@@ -31,27 +17,16 @@ import (
 	"github.com/vislake/speed/pkg/kv"
 )
 
-// Factory builds a fresh, empty store for one subtest. Each call returns a
-// store with no relation to the ones before it.
+// Factory builds a fresh, empty store for one subtest.
+// Each call returns a store with no relation to the ones before it.
 type Factory func(t *testing.T) kv.KV
 
-// ttlSettle is how long a case waits before asserting that a key with a ttl has
-// aged out. It is comfortably longer than the ttls the cases set, and the
-// direction of the assertion is what makes that safe: a backend that expires
-// early still passes, one that never expires does not.
 const ttlSettle = 150 * time.Millisecond
 
-// shortTTL is the expiry the cases attach when they want one to pass.
 const shortTTL = 30 * time.Millisecond
 
-// contendedTTL is the expiry a case attaches when many writers race for a key
-// before it asserts on the result. It outlives the race and the reads that
-// follow it on a slow server, and it is short enough to wait out.
 const contendedTTL = 500 * time.Millisecond
 
-// liveTTL is the expiry the cases attach when they want a key to stay. It
-// outlives ttlSettle by a wide margin, so a wait shorter than it proves nothing
-// about a backend that expires too eagerly.
 const liveTTL = time.Hour
 
 // AssertConforms runs the whole contract against stores the factory builds.
@@ -119,9 +94,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 				t.Fatalf("Set on key %s: %v", describeKey(key), err)
 			}
 		}
-		// Read back only once every key is written, so two keys that landed
-		// on one entry show up as the later write's value under the earlier
-		// key.
 		for i, key := range keys {
 			got, present, err := s.Get(ctx, key)
 			if err != nil || !present {
@@ -131,7 +103,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 				t.Fatalf("key %s reads %q, want %q: two keys share one entry", describeKey(key), got, want)
 			}
 		}
-		// The other operations reach the same entry the writes did.
 		for _, key := range keys {
 			if swapped, err := s.CompareAndSwap(ctx, key, nil, []byte("x")); err != nil || swapped {
 				t.Fatalf("CompareAndSwap from absent on the present key %s: swapped=%v err=%v",
@@ -167,8 +138,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if err := s.Set(ctx, "k", []byte("second"), 0); err != nil {
 			t.Fatalf("second Set: %v", err)
 		}
-		// The second write carried no ttl, so the first one's must be gone:
-		// a store that kept it would drop the key while this case waits.
 		time.Sleep(ttlSettle)
 		got, present, err := s.Get(ctx, "k")
 		if err != nil || !present {
@@ -252,7 +221,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if _, err := s.IncrByFloatWithTTL(ctx, "n", 1, shortTTL); err != nil {
 			t.Fatalf("IncrByFloatWithTTL: %v", err)
 		}
-		// The key already existed and had no expiry, so it keeps having none.
 		time.Sleep(ttlSettle)
 		if _, present, err := s.Get(ctx, "n"); err != nil || !present {
 			t.Fatalf("Get after a ttl the key must have ignored: present=%v err=%v", present, err)
@@ -291,9 +259,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 			},
 		}
 		for name, incr := range increments {
-			// A delta that is not a number reaches no backend: the key is not
-			// created, and it is not reported as holding something non-numeric,
-			// because it holds nothing at all.
 			for _, delta := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
 				err := incr("absent", delta)
 				if err == nil {
@@ -306,9 +271,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 					t.Fatalf("%s by %v created the key: present=%v err=%v", name, delta, present, getErr)
 				}
 			}
-			// A sum past float64's range is refused before anything is
-			// written, so a caller never gets an error for a write that
-			// happened — which it would retry and count twice.
 			const largest = "1.7976931348623157e308"
 			if err := s.Set(ctx, "full", []byte(largest), 0); err != nil {
 				t.Fatalf("Set: %v", err)
@@ -329,8 +291,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 	t.Run("the non-numeric error leaves the stored value out of its text", func(t *testing.T) {
 		s := newStore(t)
 		ctx := context.Background()
-		// The value may be anything a caller stored, a credential or an
-		// address among them, and an error travels into logs.
 		for _, stored := range []string{"alice@example.com", "\xffalice@example.com"} {
 			if err := s.Set(ctx, "k", []byte(stored), 0); err != nil {
 				t.Fatalf("Set: %v", err)
@@ -505,8 +465,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if got, err := s.IncrByFloatWithTTL(ctx, "with-ttl", 1, shortTTL); err != nil || got != 1 {
 			t.Fatalf("IncrByFloatWithTTL on an expired key: got=%v err=%v, want 1", got, err)
 		}
-		// The key the plain increment created again has no expiry, and the
-		// one the increment with a ttl created has the new one.
 		time.Sleep(ttlSettle)
 		if _, present, err := s.Get(ctx, "plain"); err != nil || !present {
 			t.Fatalf("the key IncrByFloat recreated kept the old expiry: present=%v err=%v", present, err)
@@ -593,8 +551,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if len(winners) != 1 {
 			t.Fatalf("%d writers won set-if-absent, want exactly 1: %v", len(winners), winners)
 		}
-		// The winner is the one whose value is there, not merely one of them
-		// having reported success.
 		got, present, err := s.Get(ctx, "k")
 		if err != nil || !present {
 			t.Fatalf("Get after the race: present=%v err=%v", present, err)
@@ -607,11 +563,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 	t.Run("a swap whose match holds throughout always happens", func(t *testing.T) {
 		s := newStore(t)
 		ctx := context.Background()
-		// Every writer swaps the value for the same value, so it matches every
-		// writer's old at every moment and each swap finds what it expects,
-		// whichever order they land in. A store that reports a write refused
-		// for contention as a mismatch, without judging the entry again,
-		// answers false here although nothing ever failed to match.
 		if err := s.Set(ctx, "k", []byte("v"), 0); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
@@ -641,9 +592,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		for range rounds {
 			race("k", []byte("v"))
 		}
-		// An absent key and an empty value both match an empty old, so the
-		// writers racing to create an empty value all match too: the first
-		// creates it, and each of the others finds it matching.
 		for round := range rounds {
 			race(fmt.Sprintf("absent-%d", round), nil)
 		}
@@ -665,9 +613,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if got, present, err := s.Get(ctx, "k"); err != nil || !present || string(got) != "first" {
 			t.Fatalf("Get after SetIfAbsent: %q, present=%v, err=%v", got, present, err)
 		}
-		// A live key keeps its value and its expiry. The refused call carries
-		// a short ttl, and the key it leaves alone has none, so a store that
-		// applied the ttl anyway would drop the key while this case waits.
 		if stored, err := s.SetIfAbsent(ctx, "k", []byte("second"), shortTTL); err != nil || stored {
 			t.Fatalf("SetIfAbsent on a live key: stored=%v err=%v", stored, err)
 		}
@@ -675,7 +620,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if got, present, err := s.Get(ctx, "k"); err != nil || !present || string(got) != "first" {
 			t.Fatalf("Get after a refused SetIfAbsent: %q, present=%v, err=%v", got, present, err)
 		}
-		// A key an increment wrote is as present as any other.
 		if _, err := s.IncrByFloat(ctx, "n", 1); err != nil {
 			t.Fatalf("IncrByFloat: %v", err)
 		}
@@ -693,7 +637,6 @@ func AssertConforms(t *testing.T, newStore Factory) {
 		if got, present, err := s.Get(ctx, "k"); err != nil || !present || len(got) != 0 {
 			t.Fatalf("Get after a nil SetIfAbsent: %q, present=%v, err=%v", got, present, err)
 		}
-		// An empty value is a value: the key is present.
 		if stored, err := s.SetIfAbsent(ctx, "k", []byte("x"), 0); err != nil || stored {
 			t.Fatalf("SetIfAbsent over an empty value: stored=%v err=%v", stored, err)
 		}
@@ -709,23 +652,14 @@ func AssertConforms(t *testing.T, newStore Factory) {
 	assertWithinTTL(t, newStore)
 }
 
-// AssertUnderLatency runs the cases that act on a key while its ttl runs
-// against the factory's stores with every call arriving late — later than the
-// shortest ttl a case starts with — which is what a loaded server does to each
-// round trip.
-//
-// It checks this suite rather than a backend. A case that took a slow store
-// for a wrong one would fail a correct backend on every loaded run, and nothing
-// in the backend would be there to fix; running the cases against a store that
-// is correct and slow is what shows they tell the two apart. The in-memory
-// implementation is the store it is run against, since it has no server whose
-// own pace would add to the delay.
+// AssertUnderLatency runs the cases that act on a key while its ttl runs against the factory's
+// stores with every call arriving late — later than the shortest ttl a case starts with — which is
+// what a loaded server does to each round trip.
 func AssertUnderLatency(t *testing.T, newStore Factory) {
 	t.Helper()
 	assertWithinTTL(t, func(t *testing.T) kv.KV { return lagging{KV: newStore(t), lag: 2 * shortTTL} })
 }
 
-// lagging is a store every call to which arrives lag late.
 type lagging struct {
 	kv.KV
 	lag time.Duration
@@ -766,26 +700,8 @@ func (l lagging) SetIfAbsent(ctx context.Context, key string, value []byte, ttl 
 	return l.KV.SetIfAbsent(ctx, key, value, ttl)
 }
 
-// liveAttempts bounds how many times whileLive runs a case, each attempt with
-// twice the ttl of the one before: the last gives the round trips thirty-two
-// times the room of the first.
 const liveAttempts = 6
 
-// whileLive runs attempt on a fresh key with a ttl of first and, as long as an
-// attempt reports that it could not conclude, again on another fresh key with
-// twice the ttl.
-//
-// The cases it runs write a key with a ttl and then act on it expecting it
-// still live. Whether it still is depends on how long the round trips between
-// the write and the act took, which a loaded server stretches: a key given a
-// short ttl expires in between, and the act answers as it should for an
-// expired key — a case failing for a reason that is not the store's. So an
-// attempt times itself in this process, from before its write to after its
-// act. A span shorter than the ttl is one in which the key was live when it was
-// acted on, on every backend: each stamps an expiry and judges it on one clock,
-// at instants inside that span. Such an attempt concludes, and what it asserts
-// stands. A longer span concludes nothing either way, and neither does a wait
-// that had to land inside a window and landed past it.
 func whileLive(t *testing.T, first time.Duration, attempt func(key string, ttl time.Duration) (concluded bool)) {
 	t.Helper()
 	ttl := first
@@ -799,15 +715,10 @@ func whileLive(t *testing.T, first time.Duration, attempt func(key string, ttl t
 		ttl/2)
 }
 
-// sleepPast waits until a key written with ttl by a call that returned at
-// written has expired, with ttlSettle to spare.
 func sleepPast(written time.Time, ttl time.Duration) {
 	time.Sleep(time.Until(written.Add(ttl + ttlSettle)))
 }
 
-// assertWithinTTL is the part of the contract whose cases act on a key while
-// its ttl runs. Each runs through whileLive, so that a slow round trip is
-// told from a wrong answer.
 func assertWithinTTL(t *testing.T, newStore Factory) {
 	t.Helper()
 
@@ -841,12 +752,6 @@ func assertWithinTTL(t *testing.T, newStore Factory) {
 	t.Run("increment leaves an existing key's expiry alone", func(t *testing.T) {
 		s := newStore(t)
 		ctx := context.Background()
-		// The read after the increment has to land past the expiry the key was
-		// created with and before one restarted at the increment: a store that
-		// extended the key when it was incremented still holds it there, a
-		// store that left it alone does not. The increment comes half a ttl
-		// after the write so that the window between the two is half a ttl
-		// wide; the read lands a tenth of a ttl into it.
 		whileLive(t, 300*time.Millisecond, func(key string, ttl time.Duration) bool {
 			began := time.Now()
 			if err := s.Set(ctx, key, []byte("1"), ttl); err != nil {
@@ -873,9 +778,6 @@ func assertWithinTTL(t *testing.T, newStore Factory) {
 			if present {
 				t.Fatalf("Get past the %s ttl the key was created with found it: the increment extended it", ttl)
 			}
-			// Absent is also what a store that restarted the expiry answers
-			// once the restarted one has passed too, so a read that came back
-			// that late tells the two apart no better than a guess.
 			return time.Now().Before(incremented.Add(ttl))
 		})
 	})
@@ -933,8 +835,6 @@ func assertWithinTTL(t *testing.T, newStore Factory) {
 			if _, present, err := s.Get(ctx, key); err != nil || present {
 				t.Fatalf("Get past the ttl: present=%v err=%v", present, err)
 			}
-			// Past its expiry the key is absent, so the next call stores — here
-			// with no ttl, which the key then keeps.
 			if stored, err := s.SetIfAbsent(ctx, key, []byte("again"), 0); err != nil || !stored {
 				t.Fatalf("SetIfAbsent on an expired key: stored=%v err=%v", stored, err)
 			}
@@ -988,9 +888,6 @@ func assertWithinTTL(t *testing.T, newStore Factory) {
 			if err != nil {
 				t.Fatalf("Get after the race: %v", err)
 			}
-			// A race that outran the ttl may have let a writer find the first
-			// winner's key expired and win it again, and the key may have
-			// expired before the read.
 			if time.Since(began) >= ttl {
 				return false
 			}
@@ -1009,14 +906,6 @@ func assertWithinTTL(t *testing.T, newStore Factory) {
 	})
 }
 
-// raceOnExpiredKeys runs claim concurrently from several writers against each
-// of several keys that are stored but past their expiry, and fails unless each
-// key has exactly one winner whose value is the one stored.
-//
-// A key that has expired but is still held by the backend is a different
-// path from a key that was never written on every backend that decides expiry
-// itself: the entry is there to be contended, and the write that replaces it
-// is not a plain create. The race is probabilistic, so it runs over many keys.
 func raceOnExpiredKeys(t *testing.T, s kv.KV, claim func(key string, mine []byte) (bool, error)) {
 	t.Helper()
 	ctx := context.Background()
@@ -1071,16 +960,7 @@ func raceOnExpiredKeys(t *testing.T, s kv.KV, claim func(key string, mine []byte
 	}
 }
 
-// keysTheContractAllows is a set of distinct keys covering the shapes a
-// backend's own key rules refuse: the empty key, bytes that are not text, the
-// separators and wildcards of the backends' own grammars, and lengths past
-// every backend's limit. The long keys come in pairs that differ only in their
-// last byte, so a backend that shortened a key by cutting it would put both on
-// one entry.
 func keysTheContractAllows() []string {
-	// A chain of digests does not compress, so a backend that stores the key in
-	// an index cannot squeeze a long one under the index's row limit, and it
-	// is the same on every run.
 	noise := func(n int) string {
 		out := make([]byte, 0, n+sha256.Size)
 		block := sha256.Sum256(nil)
@@ -1108,8 +988,6 @@ func keysTheContractAllows() []string {
 	}
 }
 
-// describeKey names a key in a failure message without printing thousands of
-// bytes of it.
 func describeKey(key string) string {
 	if len(key) <= 32 {
 		return fmt.Sprintf("%q", key)

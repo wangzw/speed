@@ -1,26 +1,4 @@
-// Package memcached is the Memcached implementation of the key-value capability
-// pkg/kv declares.
-//
-// It delivers the capability, and it is the one implementation whose backend
-// cannot be trusted with an expiry. Two facts force the design here:
-//
-//   - Memcached's own increment takes an unsigned integer, and the capability's
-//     takes a float64 delta. Every increment therefore reads, adds and writes
-//     under a compare-and-swap, retrying when another writer got there first.
-//     The server arbitrates, which is what the capability requires; it is just
-//     arbitrating a swap rather than an add.
-//   - A compare-and-swap write carries an expiry, and there is no way to say
-//     "keep the one that is there". So the expiry is not kept in Memcached's
-//     expiration field at all. It travels inside the value as a header, and
-//     this implementation decides from it whether a key is still there. The
-//     expiration field is left unset.
-//
-// It is also the one implementation whose data can vanish without a restart: a
-// Memcached server drops entries under memory pressure as a matter of normal
-// operation, and it does not report that it has. Its stance says so — an
-// assembly that declares its data has to survive a restart stops the startup,
-// naming that declaration — rather than letting a host put data here and lose it
-// silently.
+// Package memcached is the Memcached implementation of the key-value capability pkg/kv declares.
 package memcached
 
 import (
@@ -49,34 +27,23 @@ const (
 	ModuleName = "kv.memcached"
 	// ConfigNamespace is where this implementation's input items are mounted.
 	ConfigNamespace = ModuleName
-	// casAttempts bounds the retries one swap-driven operation makes. Every
-	// increment of one key is a read, an add and a swap here — Memcached's own
-	// increment takes an unsigned integer and the capability's takes a float64
-	// — so a contended key retries a great many times, and the bound exists so
-	// that a pathological one fails rather than spins.
-	casAttempts = 5000
+	casAttempts     = 5000
 )
 
 // Config is what this implementation accepts.
 type Config struct {
-	// Servers is the list of addresses to spread keys over, as host:port. A
-	// host that names this implementation has to give it at least one.
+	// Servers is the list of addresses to spread keys over, as host:port.
+	// A host that names this implementation has to give it at least one.
 	Servers []string `config:"servers"`
 	// Timeout bounds one round trip to a server.
 	Timeout time.Duration `config:"timeout"`
 	// MaxIdleConns is how many idle connections the client keeps per server.
-	// A burst of concurrent operations wider than this closes the surplus
-	// when it ends and dials it again for the next burst, and every close
-	// leaves a local port in TIME_WAIT. Zero or less takes the default.
+	// A burst of concurrent operations wider than this closes the surplus when it ends and dials it
+	// again for the next burst, and every close leaves a local port in TIME_WAIT.
 	MaxIdleConns int `config:"max-idle-conns"`
-	// RequiresPersistence is the deployment fact this implementation's
-	// precondition is judged against: whether the data written here has to
-	// survive a restart.
-	//
-	// It states a fact about the deployment rather than a preference of this
-	// implementation. The default of false is the precondition holding — an
-	// assembly that declares nothing is taken to accept the loss — so a host
-	// that does need this data kept has to say so.
+	// RequiresPersistence is the deployment fact this implementation's precondition is judged against:
+	// whether the data written here has to survive a restart.
+	// It states a fact about the deployment rather than a preference of this implementation.
 	RequiresPersistence bool `config:"requires-persistence"`
 }
 
@@ -89,13 +56,10 @@ const (
 
 const defaultTimeout = 3 * time.Second
 
-// defaultMaxIdleConns is how many idle connections the client keeps per server
-// when the configuration names no number. The client library's own default is
-// two, which has a replica serving a few dozen concurrent requests dial most
-// of its connections anew for every wave of them.
+// defaultMaxIdleConns is how many idle connections the client keeps per server; the library
+// default of two makes a replica serving a few dozen concurrent requests dial anew each wave.
 const defaultMaxIdleConns = 32
 
-// init registers this module with the process registry.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is this module's descriptor.
@@ -127,19 +91,6 @@ func Module() core.Module {
 	})
 }
 
-// stance states this implementation's stance, or reports what it cannot start
-// without.
-//
-// A server list nobody gave it and a deployment that declares it needs its data
-// kept are both startup failures rather than stand-downs: a module named in the
-// command tree has been committed to, so one that cannot serve the assembly it
-// found itself in stops the startup and names the input it stopped on. The
-// second is the deployment precondition — this backend loses everything the
-// server held without a restart, so a host that needs it kept has the wrong
-// backend.
-//
-// A configured server list otherwise states StateEnabled, so a second configured
-// backend fails the startup.
 func stance(cfg *Config) (core.Enablement, error) {
 	if _, ok := usableServers(cfg.Servers); !ok {
 		return core.Enablement{}, fmt.Errorf("%s.%s names no usable server, and this implementation "+
@@ -157,19 +108,6 @@ func stance(cfg *Config) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// usableServers returns the addresses this implementation reaches Memcached
-// at, each with its surrounding whitespace trimmed, and reports whether the
-// list holds at least one.
-//
-// Trimming here rather than in the judgement alone is what keeps the guard and
-// the client on one value. Every entry goes straight to gomemcache, which
-// resolves the whole list at once and keeps none of it when one address fails
-// to resolve — so an entry this guard accepted and the client then refused
-// would leave a process running on a client with no server at all, failing
-// every operation with "no servers configured or available" and naming no
-// input. An entry that is empty or only whitespace is still refused outright
-// rather than skipped: dropping it would start against a list the host did not
-// write.
 func usableServers(servers []string) ([]string, bool) {
 	if len(servers) == 0 {
 		return nil, false
@@ -185,17 +123,7 @@ func usableServers(servers []string) ([]string, bool) {
 	return usable, true
 }
 
-// open builds the client and confirms every server answers it.
-//
-// The confirmation is what puts a connection failure where the capability
-// says it goes, in the startup. gomemcache connects lazily, so without it a
-// mistyped or unreachable server would pass the open and fail whichever request
-// used the store first. Every server is asked, not one: keys are spread over
-// the whole list, and an unreachable entry fails the keys that land on it.
 func open(ctx context.Context, cfg *Config) (kv.KV, error) {
-	// The stance has already refused a list holding no usable entry, so the
-	// list here has one; trimming the addresses is what keeps the client on
-	// the values the guard judged rather than on the text it was handed.
 	servers, _ := usableServers(cfg.Servers)
 	client := memcache.New(servers...)
 	client.Timeout = cfg.Timeout
@@ -214,27 +142,17 @@ func open(ctx context.Context, cfg *Config) (kv.KV, error) {
 	return &store{client: client}, nil
 }
 
-// store is the capability over one client.
 type store struct {
 	client *memcache.Client
-	// space is written in front of every key's spelling, so stores in one
-	// space share their entries. Every store open builds has none. The tests
-	// give each case a space of its own from memcachetest.Space, whose spaces
-	// keep the entries of stores in two of them apart, because the server the
-	// tests run against is shared by every test binary on the machine.
-	space string
+	space  string
 }
 
-// spell is the name the server keeps key's entry under: the store's space,
-// then the key spelled within what the space leaves of the server's limit.
 func (s *store) spell(key string) string {
 	return s.space + encodeKey(key, maxKeyLen-len(s.space))
 }
 
-// Close releases the idle connections the client keeps between operations.
 func (s *store) Close(context.Context) error { return s.client.Close() }
 
-// Get returns a copy of the value, absent when its header says it has expired.
 func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
@@ -248,16 +166,11 @@ func (s *store) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	}
 	value, live := expiry.Unwrap(item.Value)
 	if !live {
-		// Past its expiry, and Memcached was never told about it: the entry
-		// is still on the server, and reporting it absent here is what makes
-		// the key read as absent. The entry stays until a write replaces it
-		// or the server evicts it.
 		return nil, false, nil
 	}
 	return value, true, nil
 }
 
-// Set stores the value, replacing any existing one and its expiry.
 func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -268,7 +181,6 @@ func (s *store) Set(ctx context.Context, key string, value []byte, ttl time.Dura
 	})
 }
 
-// Delete removes the key, whether or not it was there.
 func (s *store) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -279,24 +191,14 @@ func (s *store) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// IncrByFloat adds to the number under key, leaving the key's expiry alone.
 func (s *store) IncrByFloat(ctx context.Context, key string, delta float64) (float64, error) {
 	return s.increment(ctx, key, delta, 0, false)
 }
 
-// IncrByFloatWithTTL adds to the number under key and, when the key did not
-// exist, gives it the expiry in the same step.
 func (s *store) IncrByFloatWithTTL(ctx context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
 	return s.increment(ctx, key, delta, ttl, true)
 }
 
-// increment reads, adds and writes under a compare-and-swap.
-//
-// The read-add-write is inside the swap rather than beside it: the value that
-// goes back carries the cas id of the value that came out, so a write that
-// would overwrite someone else's is refused by the server and this loop starts
-// again. That is what makes the operation atomic here — not a lock in this
-// process, which would reach no other writer.
 func (s *store) increment(ctx context.Context, key string, delta float64, ttl time.Duration, withTTL bool) (float64, error) {
 	if err := counter.CheckDelta(ModuleName, key, delta); err != nil {
 		return 0, err
@@ -309,15 +211,11 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		item, err := s.client.Get(encoded)
 		switch {
 		case errors.Is(err, memcache.ErrCacheMiss):
-			// Nothing is there, so this call creates the key — with the ttl
-			// when it was given one, and without when it was not.
 			next := delta
 			expires := time.Time{}
 			if withTTL {
 				expires = expiry.Of(ttl)
 			}
-			// Add rather than Set, so a writer that got there between the miss
-			// and this write wins instead of being overwritten.
 			addErr := s.client.Add(&memcache.Item{
 				Key:   encoded,
 				Value: expiry.Wrap([]byte(formatFloat(next)), expires),
@@ -343,7 +241,6 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 			}
 			current = parsed
 		} else {
-			// Expired. The write that follows creates it, so the ttl applies.
 			expires = time.Time{}
 			if withTTL {
 				expires = expiry.Of(ttl)
@@ -355,10 +252,6 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 		}
 		item.Value = expiry.Wrap([]byte(formatFloat(next)), expires)
 		if err := s.client.CompareAndSwap(item); err != nil {
-			// A conflict, or the entry is gone — deleted or evicted between
-			// the read and the write, which a compare-and-swap reports as a
-			// miss. Both are contention rather than failure: the retry reads
-			// it again, and a miss with nothing to read creates the key.
 			if errors.Is(err, memcache.ErrCASConflict) ||
 				errors.Is(err, memcache.ErrNotStored) ||
 				errors.Is(err, memcache.ErrCacheMiss) {
@@ -372,26 +265,18 @@ func (s *store) increment(ctx context.Context, key string, delta float64, ttl ti
 	return 0, fmt.Errorf("%s: %q stayed contested across %d attempts", ModuleName, key, casAttempts)
 }
 
-// CompareAndSwap writes only on a match, and never touches the expiry.
 func (s *store) CompareAndSwap(ctx context.Context, key string, old, newVal []byte) (bool, error) {
 	return s.writeIf(ctx, key, func(value []byte, expires time.Time, live bool) ([]byte, time.Time, bool) {
 		if !live {
-			// Missing or expired reads as empty, so only an empty old
-			// matches, and the write creates the key without an expiry.
 			value, expires = nil, time.Time{}
 		}
 		if !bytes.Equal(value, old) {
 			return nil, time.Time{}, false
 		}
-		// The expiry is carried over rather than reset: the swap never
-		// changes when a key stops being visible.
 		return newVal, expires, true
 	})
 }
 
-// SetIfAbsent stores the value with its expiry when the key is missing or
-// expired, and leaves a live key alone. It is a conditional write like the
-// swap, so an expired entry several writers race for has exactly one winner.
 func (s *store) SetIfAbsent(ctx context.Context, key string, value []byte, ttl time.Duration) (bool, error) {
 	return s.writeIf(ctx, key, func(_ []byte, _ time.Time, live bool) ([]byte, time.Time, bool) {
 		if live {
@@ -401,27 +286,8 @@ func (s *store) SetIfAbsent(ctx context.Context, key string, value []byte, ttl t
 	})
 }
 
-// decision is what a conditional write makes of the entry it found: the value
-// it read, that value's expiry, and whether the key is live. It returns the
-// value and expiry to write, or false to leave the entry alone.
 type decision func(value []byte, expires time.Time, live bool) ([]byte, time.Time, bool)
 
-// writeIf writes what decide asks for, only if the entry decide judged is
-// still the one there, and reports whether it wrote.
-//
-// Every write here is conditional on the server: a missing key is created with
-// Add, which fails when someone else created it first, and an entry that is
-// there — live or past its expiry — is replaced with a compare-and-swap
-// carrying the cas id it was read with, which fails when anyone else has
-// written it since. An expired entry goes through the second path like a live
-// one. It is still an entry to the server, because it is this implementation
-// and not Memcached that decided it aged out, and replacing it under its cas
-// id is what gives several writers racing for it exactly one winner.
-//
-// A write refused because the entry changed is not an answer yet: the entry is
-// read again and judged afresh, and the loop ends when decide refuses what is
-// now there or a write lands. Answering false on the refusal alone would be
-// wrong whenever the writer that got in first left the entry still matching.
 func (s *store) writeIf(ctx context.Context, key string, decide decision) (bool, error) {
 	encoded := s.spell(key)
 	for attempt := 0; attempt < casAttempts; attempt++ {
@@ -454,9 +320,6 @@ func (s *store) writeIf(ctx context.Context, key string, decide decision) (bool,
 		}
 		item.Value = expiry.Wrap(value, expires)
 		if casErr := s.client.CompareAndSwap(item); casErr != nil {
-			// Someone else wrote or removed it in between — the miss included,
-			// which is what a delete or an eviction between the read and the
-			// write reports. Each is contention, not failure.
 			if errors.Is(casErr, memcache.ErrCASConflict) ||
 				errors.Is(casErr, memcache.ErrNotStored) ||
 				errors.Is(casErr, memcache.ErrCacheMiss) {
@@ -470,34 +333,12 @@ func (s *store) writeIf(ctx context.Context, key string, decide decision) (bool,
 	return false, fmt.Errorf("%s: %q stayed contested across %d attempts", ModuleName, key, casAttempts)
 }
 
-// formatFloat renders a counter as the shortest text that round-trips.
 func formatFloat(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
 
-// maxKeyLen is the longest key Memcached accepts.
 const maxKeyLen = 250
 
-// digestPrefix starts the spelling of a key whose plain spelling Memcached
-// would refuse. The colon is outside the base64url alphabet, so no plain
-// spelling starts with it.
 const digestPrefix = "sha256:"
 
-// encodeKey makes an arbitrary key acceptable to Memcached, in a spelling of
-// at most limit bytes for any limit of at least the digest spelling's 50.
-//
-// The capability's keys are opaque strings of any length; Memcached's may not
-// contain a space or a control character, may not be empty and may not exceed
-// 250 bytes. The limit is those 250 for a store with no space, and what its
-// space leaves of them for one with a space. The plain spelling is the key in
-// base64url, which is injective and uses only characters Memcached accepts. A
-// key whose plain spelling is empty or longer than the limit is spelled
-// instead as the prefix and the base64url of its SHA-256 digest, which is 50
-// bytes whatever the key's length.
-//
-// Neither spelling puts two keys on one entry. The plain spellings are
-// injective among themselves, the digest spellings are as collision-resistant
-// as SHA-256, and the two never meet, because no plain spelling contains the
-// prefix's colon. A key is never cut short to fit: two keys sharing their first
-// 250 bytes would then share an entry.
 func encodeKey(key string, limit int) string {
 	plain := base64.RawURLEncoding.EncodeToString([]byte(key))
 	if plain != "" && len(plain) <= limit {

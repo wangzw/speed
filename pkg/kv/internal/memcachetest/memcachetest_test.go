@@ -5,12 +5,7 @@ import (
 	"testing"
 )
 
-// TestASpaceEndsAtItsOnlyDot pins the shape the isolation rests on. An entry's
-// name says which space it is in only because a space's one dot is its last
-// byte: a dot earlier in a space, or none at all, would let a longer space
-// start with a shorter one, and two cases' stores could then name one entry.
-// Every byte is one Memcached accepts in a key, and two calls never return the
-// same space.
+// TestASpaceEndsAtItsOnlyDot pins the shape the isolation rests on.
 func TestASpaceEndsAtItsOnlyDot(t *testing.T) {
 	seen := make(map[string]bool)
 	for range 1000 {
