@@ -14,22 +14,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// The cases here drive the module's handler through a gin engine the way its
-// route binds it — one catch-all each for GET and HEAD — and read the answer
-// off a recorder. The engine is this module's route and nothing else: the
-// entry point's own routing, the answer to a method that matches no route and
-// the shape of an error response are exercised against a real assembly in
-// module_test.go.
-
-// entryDoc and assetName are the two names the bundle below carries that the
-// cases lean on: the fallback target and one content-addressed file.
 const (
 	entryDoc  = "<!doctype html><title>app</title>"
 	assetName = "assets/app.abc123.js"
 )
 
-// bundle is a small built frontend: an entry document, a content-addressed
-// subtree, a file beside the entry one, and a subdirectory.
 func bundle() fstest.MapFS {
 	return fstest.MapFS{
 		entryDocument:          &fstest.MapFile{Data: []byte(entryDoc), ModTime: time.Unix(1_700_000_000, 0)},
@@ -40,8 +29,6 @@ func bundle() fstest.MapFS {
 	}
 }
 
-// testEngine binds this module's handler the way the module does: one catch-all
-// for GET and one for HEAD.
 func testEngine(fsys fs.FS, cfg Config) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -51,7 +38,6 @@ func testEngine(fsys fs.FS, cfg Config) *gin.Engine {
 	return engine
 }
 
-// ask issues one request against an engine and returns the recorder.
 func ask(t *testing.T, engine *gin.Engine, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, target, nil)
@@ -60,10 +46,10 @@ func ask(t *testing.T, engine *gin.Engine, method, target string) *httptest.Resp
 	return rec
 }
 
-// defaultConfig is the configuration the ordinary cases run with: the endpoint
-// name is unused by the handler, and the asset prefix is left to default.
 func defaultConfig() Config { return Config{Endpoint: "public"} }
 
+// TestAFileIsAnsweredWithItsBytesAndTheRightCacheHeader checks a content-addressed
+// file's bytes, its long cache header and its media type.
 func TestAFileIsAnsweredWithItsBytesAndTheRightCacheHeader(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
@@ -82,6 +68,8 @@ func TestAFileIsAnsweredWithItsBytesAndTheRightCacheHeader(t *testing.T) {
 	}
 }
 
+// TestAFileOutsideTheContentAddressedSubtreeIsNotCached checks that a file beside
+// the entry document is answered no-cache.
 func TestAFileOutsideTheContentAddressedSubtreeIsNotCached(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
@@ -94,6 +82,8 @@ func TestAFileOutsideTheContentAddressedSubtreeIsNotCached(t *testing.T) {
 	}
 }
 
+// TestAnUnknownPathFallsBackToTheEntryDocument checks that the root and a
+// client-side route fall back to the entry document with no-cache.
 func TestAnUnknownPathFallsBackToTheEntryDocument(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
@@ -111,6 +101,8 @@ func TestAnUnknownPathFallsBackToTheEntryDocument(t *testing.T) {
 	}
 }
 
+// TestAMissUnderTheContentAddressedSubtreeDoesNotFallBack checks that a missing
+// asset answers 404 rather than the entry document.
 func TestAMissUnderTheContentAddressedSubtreeDoesNotFallBack(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
@@ -126,14 +118,11 @@ func TestAMissUnderTheContentAddressedSubtreeDoesNotFallBack(t *testing.T) {
 	}
 }
 
+// TestAMissingStaticResourceDoesNotFallBack checks that a missing extensioned
+// path answers 404 rather than the entry document.
 func TestAMissingStaticResourceDoesNotFallBack(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
-	// A path the bundle does not carry and that is shaped like a static
-	// resource — its final segment carries a file extension — is a miss, not a
-	// client-side route. Answering it with the entry document would let the
-	// browser parse an HTML document where JSON or a script was expected,
-	// behind a 200 that reports no absence.
 	for _, target := range []string{
 		"/runtime-config.json",
 		"/favicon-missing.ico",
@@ -155,14 +144,9 @@ func TestAMissingStaticResourceDoesNotFallBack(t *testing.T) {
 	}
 }
 
+// TestAMissingResourceUnderAReservedPrefixDoesNotFallBack checks that an
+// extensionless resource under a reserved prefix answers 404.
 func TestAMissingResourceUnderAReservedPrefixDoesNotFallBack(t *testing.T) {
-	// A resource whose final segment carries no file extension cannot be told
-	// from a client-side route by its shape alone, so it is refused through a
-	// resource namespace instead: RFC 8615's well-known space, which no
-	// client-side router owns, is one by default. An ACME HTTP-01 challenge
-	// token is the case that matters — it is extensionless by definition, and
-	// answering it with the entry document would break certificate issuance
-	// behind a 200 that reports nothing.
 	engine := testEngine(bundle(), defaultConfig())
 
 	for _, target := range []string{
@@ -183,11 +167,9 @@ func TestAMissingResourceUnderAReservedPrefixDoesNotFallBack(t *testing.T) {
 	}
 }
 
+// TestAConfiguredResourcePrefixDoesNotFallBack checks that a configured prefix
+// answers 404 while a bare path outside it still falls back.
 func TestAConfiguredResourcePrefixDoesNotFallBack(t *testing.T) {
-	// An extensionless resource at an arbitrary path — a root CNAME, a bare
-	// runtime-config — carries nothing in its shape to place it on the resource
-	// side, so a deployment names its namespace in resource-prefixes. Outside
-	// every such prefix a bare path is still a client-side route and falls back.
 	cfg := defaultConfig()
 	cfg.ResourcePrefixes = []string{"CNAME", "runtime-config"}
 	engine := testEngine(bundle(), cfg)
@@ -203,9 +185,6 @@ func TestAConfiguredResourcePrefixDoesNotFallBack(t *testing.T) {
 		}
 	}
 
-	// A bare path outside every resource prefix is indistinguishable from a
-	// client-side route, so it falls back: the documented boundary, not an
-	// oversight.
 	rec := ask(t, engine, nethttp.MethodGet, "/favicon")
 	if rec.Code != nethttp.StatusOK || rec.Body.String() != entryDoc {
 		t.Fatalf("GET /favicon answered %d %q, want the entry document: an extensionless path "+
@@ -213,6 +192,8 @@ func TestAConfiguredResourcePrefixDoesNotFallBack(t *testing.T) {
 	}
 }
 
+// TestADirectoryIsTreatedAsAMissAndFallsBack checks that a directory falls back to
+// the entry document as a miss.
 func TestADirectoryIsTreatedAsAMissAndFallsBack(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
@@ -225,6 +206,8 @@ func TestADirectoryIsTreatedAsAMissAndFallsBack(t *testing.T) {
 	}
 }
 
+// TestHeadAnswersTheHeadersAndNoBody checks that HEAD answers the headers with no
+// body for a file and for the fallback.
 func TestHeadAnswersTheHeadersAndNoBody(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
@@ -255,6 +238,8 @@ func TestHeadAnswersTheHeadersAndNoBody(t *testing.T) {
 	})
 }
 
+// TestAnEmptyBundleAnswers404AndNotAFailure checks that an empty bundle answers
+// 404 rather than failing.
 func TestAnEmptyBundleAnswers404AndNotAFailure(t *testing.T) {
 	engine := testEngine(fstest.MapFS{}, defaultConfig())
 
@@ -270,17 +255,18 @@ func TestAnEmptyBundleAnswers404AndNotAFailure(t *testing.T) {
 	}
 }
 
+// TestAPathThatIsNotAValidBundlePathIsRefused checks that a traversal is refused.
 func TestAPathThatIsNotAValidBundlePathIsRefused(t *testing.T) {
 	engine := testEngine(bundle(), defaultConfig())
 
-	// A traversal reaches the handler through the wildcard parameter; it has to
-	// be refused rather than folded onto a file outside the bundle.
 	rec := ask(t, engine, nethttp.MethodGet, "/../index.html")
 	if rec.Code != nethttp.StatusNotFound {
 		t.Fatalf("GET /../index.html answered %d, want 404", rec.Code)
 	}
 }
 
+// TestAReadFailureOtherThanAbsenceAnswers500 checks that a non-absence read
+// failure answers 500.
 func TestAReadFailureOtherThanAbsenceAnswers500(t *testing.T) {
 	engine := testEngine(failingFS{}, defaultConfig())
 
@@ -293,10 +279,8 @@ func TestAReadFailureOtherThanAbsenceAnswers500(t *testing.T) {
 	}
 }
 
+// TestTheSameBundleFromDiskAnswersTheSame checks the seekable os.DirFS branch.
 func TestTheSameBundleFromDiskAnswersTheSame(t *testing.T) {
-	// os.DirFS yields real *os.File values, which are seekable, so this drives
-	// the branch ServeContent takes for a file it can seek, rather than the
-	// read-it-whole branch an in-memory bundle takes.
 	dir := t.TempDir()
 	for name, data := range map[string]string{
 		entryDocument: entryDoc,
@@ -328,10 +312,8 @@ func TestTheSameBundleFromDiskAnswersTheSame(t *testing.T) {
 	}
 }
 
+// TestAnUnseekableBundleIsReadWhole checks the read-it-whole branch of contents.
 func TestAnUnseekableBundleIsReadWhole(t *testing.T) {
-	// A file that is neither seekable nor randomly accessible drives the
-	// read-it-whole branch of contents, which the fs.FS kinds the ordinary cases
-	// use never reach.
 	engine := testEngine(plainFS{bundle()}, defaultConfig())
 
 	rec := ask(t, engine, nethttp.MethodGet, "/"+assetName)
@@ -347,6 +329,8 @@ func TestAnUnseekableBundleIsReadWhole(t *testing.T) {
 	}
 }
 
+// TestLookupKeyFoldsAndNeverClimbsAboveTheRoot checks lookupKey's cleaning of the
+// catch-all value.
 func TestLookupKeyFoldsAndNeverClimbsAboveTheRoot(t *testing.T) {
 	cases := map[string]string{
 		"/":                 ".",
@@ -364,17 +348,12 @@ func TestLookupKeyFoldsAndNeverClimbsAboveTheRoot(t *testing.T) {
 	}
 }
 
-// failingFS is an fs.FS whose every read fails for a reason other than absence,
-// which is the shape the 500 branch answers.
 type failingFS struct{}
 
 func (failingFS) Open(string) (fs.File, error) { return nil, errBoom }
 
 var errBoom = errors.New("boom")
 
-// plainFS wraps an fs.FS so its files expose only Read, Stat and Close: the
-// embedded fs.File promotes those three and nothing else, so a file that is
-// seekable underneath arrives here as one that is not.
 type plainFS struct{ inner fs.FS }
 
 func (p plainFS) Open(name string) (fs.File, error) {
