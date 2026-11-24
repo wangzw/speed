@@ -23,8 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// thresholdValue is one value written to one of this module's two settings,
-// and whether this layer acts on it.
 type thresholdValue struct {
 	name   string
 	key    string
@@ -32,12 +30,6 @@ type thresholdValue struct {
 	inside bool
 }
 
-// thresholdValues is the table both statements of the domains are driven
-// through: the settings store refusing a write, and the layer standing aside
-// on a value it reads. Each value is written in a form an administrative
-// endpoint hands the store — a number decoded from JSON, a text — as well as
-// in the declared type, since the domain is judged on the value the write
-// holds to the declared type, not on the form it arrived in.
 var thresholdValues = []thresholdValue{
 	{"a limit of one", limitPath, 1, true},
 	{"the default limit", limitPath, 100, true},
@@ -56,18 +48,8 @@ var thresholdValues = []thresholdValue{
 	{"a window one past the longest", windowPath, maxWindow + 1, false},
 }
 
-// A limit or a window this layer does not act on is refused when it is
-// written, as a value of the wrong type is: the settings store answers
-// ErrInvalidValue naming the key, and leaves the stored value as it was. On
-// the read side the layer stands aside on exactly the same values, for a row
-// stored before the domain was declared or written around the store, so the
-// write-time refusal and the read-time judgement are held to one table here —
-// a domain declared narrower or wider than the one the layer acts on fails
-// this case either way.
-//
-// Without the declaration, a write of zero or of a negative limit is stored
-// and every request the tenant makes is then let through, with nothing but a
-// line on standard error to say the limit is off.
+// TestAThresholdOutsideItsDomainIsRefusedWhereItIsWritten checks that the store
+// refuses and the layer stands aside on the same out-of-domain values.
 func TestAThresholdOutsideItsDomainIsRefusedWhereItIsWritten(t *testing.T) {
 	withDeliveredStore(t, func(ctx context.Context, store settings.Store) {
 		layer := settings.ForTenant("acme")
@@ -91,9 +73,8 @@ func TestAThresholdOutsideItsDomainIsRefusedWhereItIsWritten(t *testing.T) {
 	})
 }
 
-// A refused write leaves the limit the tenant had, and the layer goes on
-// limiting by it: the refusal is before the row is written, so nothing a
-// decision reads has changed.
+// TestARefusedLimitLeavesTheStoredOneInForce checks that a refused write leaves
+// the stored limit and the layer keeps limiting by it.
 func TestARefusedLimitLeavesTheStoredOneInForce(t *testing.T) {
 	withDeliveredStore(t, func(ctx context.Context, store settings.Store) {
 		layer := settings.ForTenant("acme")
@@ -124,9 +105,6 @@ func TestARefusedLimitLeavesTheStoredOneInForce(t *testing.T) {
 	})
 }
 
-// standsAsideOn reports whether the layer stands aside on a stored row
-// holding the value, the read-time judgement of the same domain. The other
-// threshold reads as its declared default, which lies inside its domain.
 func standsAsideOn(v thresholdValue) bool {
 	values := map[string]any{windowPath: defaults.Window, limitPath: defaults.Limit}
 	held, ok := heldAsDeclared(v)
@@ -141,9 +119,6 @@ func standsAsideOn(v thresholdValue) bool {
 	return d.tripped == reasonThresholdDomain
 }
 
-// heldAsDeclared is the value a row written from v reads back as, in the
-// declared type. A form this table uses and the conversion below does not
-// know is reported rather than guessed at.
 func heldAsDeclared(v thresholdValue) (any, bool) {
 	switch value := v.value.(type) {
 	case int:
@@ -163,13 +138,6 @@ func heldAsDeclared(v thresholdValue) (any, bool) {
 	return nil, false
 }
 
-// withDeliveredStore runs body against the settings store the settings module
-// delivers in an assembly that holds this module's declaration, over a SQLite
-// database the database module opened. This module is registered for its
-// declaration alone, the way the key table reads every registered module's:
-// it does not take part in the drive. The configuration reader and the logger
-// are supplied to the modules that deliver them, and those take part in the
-// drive without being named.
 func withDeliveredStore(t *testing.T, body func(ctx context.Context, store settings.Store)) {
 	t.Helper()
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "settings.db"), nil)
@@ -210,9 +178,6 @@ func withDeliveredStore(t *testing.T, body func(ctx context.Context, store setti
 	}
 }
 
-// applySettingsMigrations runs the settings module's own SQLite migrations,
-// read out of the declaration it registers, so the table the store writes
-// into is the one that module ships.
 func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	var tree fs.FS
@@ -244,22 +209,15 @@ func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// decodesNothing is the configuration reader of an assembly that configures
-// nothing, which leaves every declared default in place.
 type decodesNothing struct{}
 
 func (decodesNothing) Decode(string, any) error { return nil }
 
-// discardingLogger is the logging capability of an assembly whose records
-// nobody reads: the settings store writes one each time a write brings its
-// snapshot different rows.
 type discardingLogger struct{}
 
 func (discardingLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
 func (discardingLogger) Redaction() log.Redaction  { return nil }
 
-// acceptingBus takes every event and delivers none: the store publishes a
-// change after each write, and nothing here subscribes to it.
 type acceptingBus struct {
 	mu        sync.Mutex
 	published int

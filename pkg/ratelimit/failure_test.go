@@ -10,12 +10,8 @@ import (
 	"time"
 )
 
-// A backend that gives up on a call of its own accord answers with the
-// context package's errors too: a client library that bounds a call with its
-// own timeout returns context.DeadlineExceeded while the request that made the
-// call is still live. That is the backend failing, and it has to be reported
-// like any other backend failure; the request's own context is what tells a
-// caller's cancellation apart.
+// TestABackendTimeoutIsReportedWhileTheRequestIsLive checks that a backend's own
+// timeout and cancellation are reported while the request is still live.
 func TestABackendTimeoutIsReportedWhileTheRequestIsLive(t *testing.T) {
 	timedOut := fmt.Errorf("the backend's own call bound: %w", context.DeadlineExceeded)
 	cases := []struct {
@@ -58,15 +54,11 @@ func TestABackendTimeoutIsReportedWhileTheRequestIsLive(t *testing.T) {
 	}
 }
 
-// pinnedClock is a clock a test moves by hand, for the quiet period a class
-// has to keep before it may recover.
 type pinnedClock struct{ at time.Time }
 
 func (c *pinnedClock) now() time.Time           { return c.at }
 func (c *pinnedClock) advance(by time.Duration) { c.at = c.at.Add(by) }
 
-// signalOnAPinnedClock is a signal writing to out whose quiet period is
-// measured on a clock the test moves.
 func signalOnAPinnedClock(out *bytes.Buffer) (*signal, *pinnedClock) {
 	clock := &pinnedClock{at: pinnedAt}
 	s := newSignalTo(out)
@@ -74,20 +66,15 @@ func signalOnAPinnedClock(out *bytes.Buffer) (*signal, *pinnedClock) {
 	return s, clock
 }
 
-// TestAFailureConfinedToOneTenantWritesOneLine pins the promise the lines are
-// kept to: a failure that persists writes one line, not one per request. A
-// condition that holds for some requests and not others — one tenant's bad
-// row, one key's bad value, a backend that answers some calls — alternates
-// with decisions that pass, and a class that cleared on the first passing
-// decision would write two lines per alternation for as long as the condition
-// lasts.
+// TestAFailureConfinedToOneTenantWritesOneLine checks that a condition alternating
+// between failing and passing writes one failure line and one recovery.
 func TestAFailureConfinedToOneTenantWritesOneLine(t *testing.T) {
 	var out bytes.Buffer
 	s, clock := signalOnAPinnedClock(&out)
 
-	bad := stoppedAt(reasonThresholdDomain) // the tenant whose row is out of domain
+	bad := stoppedAt(reasonThresholdDomain)
 	bad.tenant = "bad"
-	good := everyClass // every other tenant
+	good := everyClass
 	good.tenant = "good"
 	step := func(d decision) {
 		s.settle(d)
@@ -110,15 +97,11 @@ func TestAFailureConfinedToOneTenantWritesOneLine(t *testing.T) {
 		t.Errorf("the line %q does not name the tenant the failure was first seen for", lines[0])
 	}
 
-	// A passing decision inside the quiet period is not a recovery: the
-	// condition has only been out of sight for a moment.
 	step(good)
 	if strings.Contains(out.String(), "back to limiting") {
 		t.Fatalf("the class recovered a second after its last failure:\n%s", out.String())
 	}
 
-	// Once the failing tenant has been quiet for long enough, the class
-	// recovers on the next decision that evaluates it, and says so once.
 	clock.advance(recoveryQuiet)
 	step(good)
 	step(good)
@@ -130,18 +113,8 @@ func TestAFailureConfinedToOneTenantWritesOneLine(t *testing.T) {
 	}
 }
 
-// TestTheQuietPeriodRunsFromTheLastFailure pins where the quiet period is
-// measured from. A condition confined to some decisions keeps recurring for as
-// long as it lasts, and every recurrence starts the quiet period again. Measured
-// from the first failure instead, the class would recover one quiet period
-// after the condition began however long it went on, and the next recurrence
-// would write a new failure line: a pair of lines per quiet period, which is
-// the flapping the period is there to prevent, only slower.
-//
-// The condition here lasts three quiet periods and recurs at half a period's
-// spacing, so a class measured from its first failure has already recovered
-// inside the loop; the last part pins the recovery to one quiet period after
-// the last failure, in both directions.
+// TestTheQuietPeriodRunsFromTheLastFailure checks that the quiet period restarts
+// on every recurrence and recovery follows one quiet period after the last.
 func TestTheQuietPeriodRunsFromTheLastFailure(t *testing.T) {
 	var out bytes.Buffer
 	s, clock := signalOnAPinnedClock(&out)
@@ -169,8 +142,6 @@ func TestTheQuietPeriodRunsFromTheLastFailure(t *testing.T) {
 		t.Fatalf("a failure that never went quiet wrote %d failure lines, want 1:\n%s", got, out.String())
 	}
 
-	// The condition has stopped. Just short of a quiet period after the last
-	// failure the class is still failing; at a quiet period it recovers.
 	clock.at = lastFailure.Add(recoveryQuiet - time.Second)
 	s.settle(good)
 	if strings.Contains(out.String(), "back to limiting") {
@@ -185,10 +156,8 @@ func TestTheQuietPeriodRunsFromTheLastFailure(t *testing.T) {
 	}
 }
 
-// TestAnEmptyEndpointListNamesTheKey pins the startup failure's fixing action:
-// the host is told which key to write. The sentinel alone says an input item
-// has no value and not which one, and a host running several modules is left
-// to guess.
+// TestAnEmptyEndpointListNamesTheKey checks that the startup failure names the
+// key to write.
 func TestAnEmptyEndpointListNamesTheKey(t *testing.T) {
 	_, err := Module().Prepare(context.Background(), registryWith(t, nil))
 	if err == nil {
@@ -199,9 +168,8 @@ func TestAnEmptyEndpointListNamesTheKey(t *testing.T) {
 	}
 }
 
-// TestACounterFailureLineNamesNoIdentity keeps the counter classes' lines to
-// the class alone. Their counting key carries the accountability key, and a
-// failure line on standard error is not the place to repeat it.
+// TestACounterFailureLineNamesNoIdentity checks that a counter class's line
+// carries no identity or tenant.
 func TestACounterFailureLineNamesNoIdentity(t *testing.T) {
 	var out bytes.Buffer
 	s := newSignalTo(&out)

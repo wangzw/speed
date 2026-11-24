@@ -26,15 +26,9 @@ import (
 )
 
 func init() {
-	// gin prints a warning to standard output when an engine is made in its debug
-	// mode, and the cases that build a context make one each.
 	gin.SetMode(gin.TestMode)
 }
 
-// pinnedAt is the instant the pinned clock stands at: the start of a window,
-// where the previous window weighs one. The weight a decision applies depends
-// on where in the window the request lands, so a test that lets the clock run
-// would pass or fail with the time of day.
 var pinnedAt = time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 
 func pinned(endpoints ...string) *limiter {
@@ -43,15 +37,8 @@ func pinned(endpoints ...string) *limiter {
 	return l
 }
 
-// --- the key ---------------------------------------------------------------
-
-// A tenant identifier may hold a colon, so a key built from a tenant segment
-// and an identity key has to keep the two apart. Without escaping, these two
-// would build one key and share one count across two tenants.
-//
-// The segments are the escape's inputs, not identity keys: an account
-// identifier cannot hold a colon, so no identity makes the second one, and the
-// test is about what the key builder does with a segment that does.
+// TestEscapeKeepsTwoDistinctPairsApart checks that a colon in a tenant segment
+// cannot make two distinct pairs share one key.
 func TestEscapeKeepsTwoDistinctPairsApart(t *testing.T) {
 	first := countKey("a:b", "c", 7)
 	second := countKey("a", "b:c", 7)
@@ -60,6 +47,7 @@ func TestEscapeKeepsTwoDistinctPairsApart(t *testing.T) {
 	}
 }
 
+// TestEscapeLeavesOrdinarySegmentsAlone checks that an ordinary key is unchanged.
 func TestEscapeLeavesOrdinarySegmentsAlone(t *testing.T) {
 	key := accountKey(t)
 	if got := countKey("acme", key, 7); got != "ratelimit:acme:"+key+":7" {
@@ -67,15 +55,16 @@ func TestEscapeLeavesOrdinarySegmentsAlone(t *testing.T) {
 	}
 }
 
+// TestEscapeEscapesTheEscapeItself checks that a literal "%3A" does not read back
+// as a colon.
 func TestEscapeEscapesTheEscapeItself(t *testing.T) {
-	// A segment holding a literal "%3A" must not read back as a colon.
 	if got := escape("%3A"); got == escape(":") {
 		t.Fatalf("a literal escape and a colon both became %q", got)
 	}
 }
 
-// --- the retry hint --------------------------------------------------------
-
+// TestRetryAfterRoundsUpAndNeverReachesZero checks that retryAfterSeconds rounds
+// up and never returns zero.
 func TestRetryAfterRoundsUpAndNeverReachesZero(t *testing.T) {
 	cases := []struct {
 		remaining time.Duration
@@ -93,8 +82,8 @@ func TestRetryAfterRoundsUpAndNeverReachesZero(t *testing.T) {
 	}
 }
 
-// --- counting --------------------------------------------------------------
-
+// TestCountLetsThroughUpToTheLimit checks that count allows the limit and refuses
+// the next with a retry hint.
 func TestCountLetsThroughUpToTheLimit(t *testing.T) {
 	kv := newFakeKV()
 	l := newLimiter(nil)
@@ -124,9 +113,8 @@ func TestCountLetsThroughUpToTheLimit(t *testing.T) {
 	}
 }
 
-// The increment happens before the decision, so a refused request still
-// consumes. Counting only what was let through would let a caller that is
-// already over its limit retry without spending anything.
+// TestCountSpendsOnRefusedRequestsToo checks that a refused request still
+// consumes a count.
 func TestCountSpendsOnRefusedRequestsToo(t *testing.T) {
 	kv := newFakeKV()
 	l := pinned()
@@ -141,8 +129,8 @@ func TestCountSpendsOnRefusedRequestsToo(t *testing.T) {
 	}
 }
 
-// A caller that keeps sending past its limit must not open the window up
-// again: the third request over a limit of one is still refused.
+// TestCountStaysRefusedAfterTheFirstRefusal checks that requests past the limit
+// stay refused.
 func TestCountStaysRefusedAfterTheFirstRefusal(t *testing.T) {
 	kv := newFakeKV()
 	l := pinned()
@@ -157,11 +145,8 @@ func TestCountStaysRefusedAfterTheFirstRefusal(t *testing.T) {
 	}
 }
 
-// The expiry must cover two windows. With one window's expiry the key written
-// in the previous window lapses the moment this one opens, for any identity
-// string that made its first request at the start of a window, and the
-// weighted term collapses to nothing — the layer then decides on the current
-// window alone, which is the single fixed window the design rejected.
+// TestCountAsksForTwoWindowsOfExpiry checks that the counting key asks for two
+// windows of expiry.
 func TestCountAsksForTwoWindowsOfExpiry(t *testing.T) {
 	kv := newFakeKV()
 	l := pinned()
@@ -177,8 +162,8 @@ func TestCountAsksForTwoWindowsOfExpiry(t *testing.T) {
 	}
 }
 
-// The previous window weighs into the estimate, so a caller that spent the
-// whole of it is refused early in the next one.
+// TestCountCarriesThePreviousWindowOver checks that the previous window's count
+// weighs into the estimate at a window start.
 func TestCountCarriesThePreviousWindowOver(t *testing.T) {
 	kv := newFakeKV()
 	l := pinned()
@@ -189,8 +174,6 @@ func TestCountCarriesThePreviousWindowOver(t *testing.T) {
 	previous := countKey("acme", accountKey(t), pinnedAt.UnixNano()/width-1)
 	kv.seed(previous, 10)
 
-	// At a window's start the previous window weighs one, so a limit of five
-	// is already spent.
 	var d decision
 	allowed, _ := l.count(context.Background(), accountKey(t), "acme", window, 5, &d)
 	if d.tripped != "" {
@@ -201,13 +184,8 @@ func TestCountCarriesThePreviousWindowOver(t *testing.T) {
 	}
 }
 
-// The previous window weighs by the part of this window that has not elapsed,
-// not by one and not by nothing. The clock stands three quarters into the
-// window, so the previous window's ten requests weigh 2.5 and, with this
-// request, the estimate is 3.5: a limit of four lets it through, and a limit of
-// three refuses it. A previous window weighed as one, or by the part that has
-// elapsed, refuses the first; one weighed as nothing lets the second through.
-// The seconds left in the window are read at the same instant.
+// TestCountWeighsThePreviousWindowByWhatHasNotElapsed checks that the previous
+// window weighs by the part of this window that has not elapsed.
 func TestCountWeighsThePreviousWindowByWhatHasNotElapsed(t *testing.T) {
 	const window = time.Minute
 	width := int64(window)
@@ -242,6 +220,8 @@ func TestCountWeighsThePreviousWindowByWhatHasNotElapsed(t *testing.T) {
 	}
 }
 
+// TestCountStandsAsideWhenTheReadFails checks that a failed read lets the request
+// through and trips the read class.
 func TestCountStandsAsideWhenTheReadFails(t *testing.T) {
 	l := newLimiter(nil)
 	l.counters = &fakeKV{readErr: errors.New("backend down")}
@@ -256,6 +236,8 @@ func TestCountStandsAsideWhenTheReadFails(t *testing.T) {
 	}
 }
 
+// TestCountStandsAsideWhenTheIncrementFails checks that a failed increment lets
+// the request through and trips its class.
 func TestCountStandsAsideWhenTheIncrementFails(t *testing.T) {
 	kv := newFakeKV()
 	kv.incrementErr = errors.New("backend down")
@@ -272,6 +254,8 @@ func TestCountStandsAsideWhenTheIncrementFails(t *testing.T) {
 	}
 }
 
+// TestCountStandsAsideOnAKeyHoldingNoNumber checks that a foreign value trips the
+// not-numeric class and lets the request through.
 func TestCountStandsAsideOnAKeyHoldingNoNumber(t *testing.T) {
 	kv := newFakeKV()
 	l := pinned()
@@ -290,8 +274,8 @@ func TestCountStandsAsideOnAKeyHoldingNoNumber(t *testing.T) {
 	}
 }
 
-// --- the thresholds --------------------------------------------------------
-
+// TestThresholdsReadsTheLayerItIsGiven checks that thresholds reads the named
+// layer's window and limit.
 func TestThresholdsReadsTheLayerItIsGiven(t *testing.T) {
 	store := &fakeStore{values: map[string]any{
 		windowPath: 2 * time.Minute,
@@ -310,17 +294,8 @@ func TestThresholdsReadsTheLayerItIsGiven(t *testing.T) {
 	}
 }
 
-// The settings module registers every declared item under its full path — the
-// namespace, a dot, then the item key — and a read is looked up by that exact
-// path. This holds the paths the layers read against the declaration itself, so
-// a read that named the bare item key cannot pass: it covers no declaration,
-// and every decision would therefore fail open on it with nothing in the
-// assembly to show for it.
-//
-// Both layers' readers are driven. The quota reads its two items and the shield
-// its three, and between them they have to cover every declared item: a declared
-// item no reader asks for is either dead weight in the declaration or a read
-// that went missing, and this case fails either way.
+// TestThresholdsReadsTheDeclaredPathOfEachItem checks that both layers read
+// exactly the declared full paths.
 func TestThresholdsReadsTheDeclaredPathOfEachItem(t *testing.T) {
 	declared, ok := declaredSettingsSchema()
 	if !ok {
@@ -330,8 +305,6 @@ func TestThresholdsReadsTheDeclaredPathOfEachItem(t *testing.T) {
 		t.Fatal("the declared schema has no items, so this case would check nothing")
 	}
 
-	// The store serves every key and records the ones it was asked for, so a
-	// read reaches the next item only if the one before it did not trip.
 	store := &recordingStore{}
 	l := newLimiter(nil)
 	l.store = store
@@ -359,6 +332,8 @@ func TestThresholdsReadsTheDeclaredPathOfEachItem(t *testing.T) {
 	}
 }
 
+// TestThresholdsStandsAsideWhenTheReadFails checks that a failed threshold read
+// trips its class.
 func TestThresholdsStandsAsideWhenTheReadFails(t *testing.T) {
 	l := newLimiter(nil)
 	l.store = &fakeStore{err: settings.ErrUnknownKey}
@@ -370,9 +345,8 @@ func TestThresholdsStandsAsideWhenTheReadFails(t *testing.T) {
 	}
 }
 
-// Both domains exclude zero. A limit of zero would refuse every request that
-// carries an identity, since the increment happens before the decision;
-// a window of zero leaves the window index undefined.
+// TestThresholdsStandsAsideOutsideTheDomain checks that a zero or negative window
+// or limit trips the domain class.
 func TestThresholdsStandsAsideOutsideTheDomain(t *testing.T) {
 	cases := map[string]map[string]any{
 		"zero limit":      {windowPath: time.Minute, limitPath: 0},
@@ -391,13 +365,8 @@ func TestThresholdsStandsAsideOutsideTheDomain(t *testing.T) {
 	}
 }
 
-// --- the decision ----------------------------------------------------------
-
-// An exempt route, a command with no authentication module and a layer whose
-// After edge did not land all arrive with no identity. The layer the module's
-// own descriptor registers, which reads the identity off the request's context,
-// lets such a request through without counting it. The limit here is zero, so a
-// layer that counted the request would trip the domain check and write a line.
+// TestARequestWithoutAnIdentityIsLetThroughAndNotCounted checks that a request
+// with no identity is let through and writes nothing.
 func TestARequestWithoutAnIdentityIsLetThroughAndNotCounted(t *testing.T) {
 	counters := newFakeKV()
 	var out lockedBuffer
@@ -414,8 +383,6 @@ func TestARequestWithoutAnIdentityIsLetThroughAndNotCounted(t *testing.T) {
 	if got := h.reached.count(); got != 1 {
 		t.Fatalf("the route served %d requests, want 1", got)
 	}
-	// A request that matches no route has no identity either, and the layer is
-	// as indifferent to it.
 	requireProblem(t, h.send(t, nethttp.MethodGet, "/nowhere", anonymous), nethttp.StatusNotFound)
 	if got := counters.size(); got != 0 {
 		t.Fatalf("the layer counted a request with no identity: %d keys written", got)
@@ -425,17 +392,14 @@ func TestARequestWithoutAnIdentityIsLetThroughAndNotCounted(t *testing.T) {
 	}
 }
 
-// A request past the limit is refused in the entry point's error shape, with
-// Retry-After on the response: the header is set before the response is written
-// and survives it. The clock stands at the start of a window, so the whole
-// window is what is left.
+// TestARequestPastTheLimitIsAnsweredTooManyRequestsWithRetryAfter checks the 429
+// shape and the Retry-After left in the window.
 func TestARequestPastTheLimitIsAnsweredTooManyRequestsWithRetryAfter(t *testing.T) {
 	l := pinned("public")
 	l.counters = newFakeKV()
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 1}}
 	h := startHost(t, hostOptions{limiter: l})
 
-	// The first request spends the window.
 	if got := h.get(t, "/things"); got.status != nethttp.StatusNoContent {
 		t.Fatalf("the first request was answered %d, want the route's 204", got.status)
 	}
@@ -455,10 +419,8 @@ func TestARequestPastTheLimitIsAnsweredTooManyRequestsWithRetryAfter(t *testing.
 	}
 }
 
-// When a module delivers the ErrorResponder capability the shape of the refusal
-// is its own, and what the layer hands it is the status and this module's
-// throttled type. The Retry-After the layer set before asking for the response
-// is still on it.
+// TestADeliveredErrorResponderDecidesTheShapeOfTheRefusal checks that a supplied
+// ErrorResponder decides the refusal's shape and receives the throttled problem.
 func TestADeliveredErrorResponderDecidesTheShapeOfTheRefusal(t *testing.T) {
 	responder := &capturingResponder{}
 	l := pinned("public")
@@ -487,10 +449,8 @@ func TestADeliveredErrorResponderDecidesTheShapeOfTheRefusal(t *testing.T) {
 	}
 }
 
-// The layer does not read the route, so a request that matches none is counted
-// like any other, and the one past the limit is refused by the layer where the
-// entry point would have answered 404. The decisions come to the same as for a
-// request with a route: reading no route is not a failure of any class.
+// TestARequestMatchingNoRouteIsCountedAndRefusedLikeAnyOther checks that a request
+// matching no route is counted and refused by the layer.
 func TestARequestMatchingNoRouteIsCountedAndRefusedLikeAnyOther(t *testing.T) {
 	counters := newFakeKV()
 	var out lockedBuffer
@@ -522,11 +482,8 @@ func TestARequestMatchingNoRouteIsCountedAndRefusedLikeAnyOther(t *testing.T) {
 	}
 }
 
-// A path that exists with another method is counted like any other request, and
-// the one past the limit is refused by the layer in place of the entry point's
-// 405. The request let through gets the entry point's 405 with its Allow header;
-// the refusal carries none, because a refusal that listed the methods of the
-// path would tell a caller who is over its limit what the path accepts.
+// TestARequestWhoseMethodIsNotAllowedIsCountedAndRefusedLikeAnyOther checks that a
+// wrong-method request is counted and the refusal carries no Allow header.
 func TestARequestWhoseMethodIsNotAllowedIsCountedAndRefusedLikeAnyOther(t *testing.T) {
 	l := pinned("public")
 	l.counters = newFakeKV()
@@ -547,8 +504,8 @@ func TestARequestWhoseMethodIsNotAllowedIsCountedAndRefusedLikeAnyOther(t *testi
 	}
 }
 
-// An unreadable threshold lets the request through: the route serves it, and
-// the class is reported.
+// TestARequestIsLetThroughWhenTheThresholdsAreUnreadable checks that an unreadable
+// threshold lets the request through and reports its class.
 func TestARequestIsLetThroughWhenTheThresholdsAreUnreadable(t *testing.T) {
 	var out lockedBuffer
 	l := pinned("public")
@@ -572,10 +529,6 @@ func TestARequestIsLetThroughWhenTheThresholdsAreUnreadable(t *testing.T) {
 	}
 }
 
-// --- the signal ------------------------------------------------------------
-
-// everyClass is the decision a request that ran the whole counting path
-// produced: it evaluated every class and tripped none.
 var everyClass = decision{evaluated: []reason{
 	reasonThresholdRead,
 	reasonThresholdDomain,
@@ -584,8 +537,6 @@ var everyClass = decision{evaluated: []reason{
 	reasonCounterIncrement,
 }}
 
-// stoppedAt is the decision a request the layer stopped at r produced: the
-// classes evaluated ahead of r in the layer's own order, then r itself.
 func stoppedAt(r reason) decision {
 	d := decision{}
 	for _, c := range everyClass.evaluated {
@@ -598,18 +549,14 @@ func stoppedAt(r reason) decision {
 	return d
 }
 
-// The classes do not imply one another: while one has been failing, another
-// has to be able to report itself. A single shared flag would keep the second
-// one from ever writing a line.
+// TestSignalReportsEachReasonOnItsOwn checks that each class reports itself while
+// another fails.
 func TestSignalReportsEachReasonOnItsOwn(t *testing.T) {
 	var out bytes.Buffer
 	s, clock := signalOnAPinnedClock(&out)
 
 	s.settle(stoppedAt(reasonCounterRead))
 	s.settle(stoppedAt(reasonCounterRead))
-	// The counter passes in a decision that reached it once it has been quiet
-	// long enough, so that class clears; the thresholds then fail and report
-	// themselves.
 	clock.advance(recoveryQuiet)
 	s.settle(everyClass)
 	s.settle(stoppedAt(reasonThresholdRead))
@@ -632,6 +579,8 @@ func TestSignalReportsEachReasonOnItsOwn(t *testing.T) {
 	}
 }
 
+// TestSignalWritesOneLinePerFailureAndOnePerRecovery checks the failure, recovery,
+// failure sequence.
 func TestSignalWritesOneLinePerFailureAndOnePerRecovery(t *testing.T) {
 	var out bytes.Buffer
 	s, clock := signalOnAPinnedClock(&out)
@@ -640,7 +589,7 @@ func TestSignalWritesOneLinePerFailureAndOnePerRecovery(t *testing.T) {
 		s.settle(stoppedAt(reasonCounterRead))
 	}
 	clock.advance(recoveryQuiet)
-	s.settle(everyClass) // a decision that evaluated this class and passed it
+	s.settle(everyClass)
 	s.settle(stoppedAt(reasonCounterRead))
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -649,20 +598,15 @@ func TestSignalWritesOneLinePerFailureAndOnePerRecovery(t *testing.T) {
 	}
 }
 
-// A class whose condition was fixed clears its flag even while another class
-// keeps failing, otherwise it can never report again. The thresholds are
-// evaluated ahead of the counter, so they clear in a decision that then trips
-// the counter.
+// TestSignalRecoversAClassWhileAnotherKeepsFailing checks that a fixed class
+// recovers while another keeps failing.
 func TestSignalRecoversAClassWhileAnotherKeepsFailing(t *testing.T) {
 	var out bytes.Buffer
 	s, clock := signalOnAPinnedClock(&out)
 
-	// The thresholds fail, then the counter fails behind them.
 	s.settle(stoppedAt(reasonThresholdRead))
 	s.settle(stoppedAt(reasonCounterRead))
 	s.settle(stoppedAt(reasonCounterRead))
-	// The thresholds recover in a decision that still trips the counter,
-	// once they have been quiet long enough.
 	clock.advance(recoveryQuiet)
 	s.settle(stoppedAt(reasonCounterRead))
 
@@ -679,8 +623,8 @@ func TestSignalRecoversAClassWhileAnotherKeepsFailing(t *testing.T) {
 	}
 }
 
-// --- the descriptor --------------------------------------------------------
-
+// TestDuplicateEndpointFindsTheSecondOne checks that duplicateEndpoint finds the
+// repeated name.
 func TestDuplicateEndpointFindsTheSecondOne(t *testing.T) {
 	if _, twice := duplicateEndpoint([]string{"public", "admin"}); twice {
 		t.Fatal("distinct names were read as a repeat")
@@ -691,6 +635,8 @@ func TestDuplicateEndpointFindsTheSecondOne(t *testing.T) {
 	}
 }
 
+// TestPrepareRefusesAnEmptyEndpointList checks that Prepare refuses an empty
+// endpoint list.
 func TestPrepareRefusesAnEmptyEndpointList(t *testing.T) {
 	_, err := Module().Prepare(context.Background(), registryWith(t, nil))
 	if !errors.Is(err, config.ErrMissingRequired) {
@@ -698,6 +644,8 @@ func TestPrepareRefusesAnEmptyEndpointList(t *testing.T) {
 	}
 }
 
+// TestPrepareRefusesARepeatedEndpoint checks that Prepare refuses a repeated
+// endpoint name.
 func TestPrepareRefusesARepeatedEndpoint(t *testing.T) {
 	_, err := Module().Prepare(context.Background(), registryWith(t, []string{"public", "public"}))
 	if !errors.Is(err, ErrDuplicateEndpoint) {
@@ -705,6 +653,8 @@ func TestPrepareRefusesARepeatedEndpoint(t *testing.T) {
 	}
 }
 
+// TestPrepareAcceptsAConfiguredEndpoint checks that Prepare accepts a configured
+// endpoint and states enabled.
 func TestPrepareAcceptsAConfiguredEndpoint(t *testing.T) {
 	stance, err := Module().Prepare(context.Background(), registryWith(t, []string{"public"}))
 	if err != nil {
@@ -715,19 +665,10 @@ func TestPrepareAcceptsAConfiguredEndpoint(t *testing.T) {
 	}
 }
 
-// hostLimiter is a type the host writes for itself. It embeds Limiter, so the
-// interface's unexported method reaches it through the embedding and it
-// delivers the capability without being this module's product.
 type hostLimiter struct{ Limiter }
 
-// Init wires this module's own product and leaves any other instance alone. An
-// instance the host supplied has only to deliver Limiter; when it is not this
-// module's product nothing is wired, so no layer is registered and the drive
-// asks for no entry point, settings store or key-value primitives. The registry
-// here holds none of them, so the second case, this module's own product
-// supplied the same way, ends the drive on the entry point. That is what shows
-// the first case passes because nothing was wired, not because wiring could not
-// fail.
+// TestInitWiresOnlyThisModulesOwnProduct checks that Init wires this module's
+// product and leaves a host-supplied instance alone.
 func TestInitWiresOnlyThisModulesOwnProduct(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -758,8 +699,8 @@ func TestInitWiresOnlyThisModulesOwnProduct(t *testing.T) {
 	}
 }
 
-// --- the layer -------------------------------------------------------------
-
+// TestMiddlewareCarriesItsTokenAndItsStage checks the quota layer's token, stage
+// and name.
 func TestMiddlewareCarriesItsTokenAndItsStage(t *testing.T) {
 	mw := newLimiter(nil).middleware()
 
@@ -780,11 +721,8 @@ func TestMiddlewareCarriesItsTokenAndItsStage(t *testing.T) {
 	}
 }
 
-// The layer's place on the chain comes from its stage: the throttling stage runs
-// after the identifying stage, which settles the identity and the tenant, and
-// before the recording stage, which is what keeps a refused request out of the
-// journal. The stand-in layers are placed by their own stages, so only the stage
-// order produces the order the chain listing shows.
+// TestTheLayerSitsInsideIdentityAndOutsideTheJournal checks that the chain places
+// the layer after identity and before recording.
 func TestTheLayerSitsInsideIdentityAndOutsideTheJournal(t *testing.T) {
 	l := pinned("public")
 	l.counters = newFakeKV()
@@ -818,8 +756,7 @@ func TestTheLayerSitsInsideIdentityAndOutsideTheJournal(t *testing.T) {
 	}
 }
 
-// The product must implement what the descriptor delivers, or the registry
-// ends the startup with ErrUndeliveredCapability.
+// TestProductDeliversTheLimiter checks that the product implements Limiter.
 func TestProductDeliversTheLimiter(t *testing.T) {
 	var delivered any = newLimiter(nil)
 	if _, ok := delivered.(Limiter); !ok {
@@ -827,13 +764,8 @@ func TestProductDeliversTheLimiter(t *testing.T) {
 	}
 }
 
-// --- the failure classes ---------------------------------------------------
-
-// A context the caller cancelled belongs to the caller, not to the backend: the
-// decision reports nothing and lets the request through. Folding it into the
-// counter class would write a failure line for one client disconnect and raise
-// that class's shared flag, so the next real backend failure would write
-// nothing.
+// TestDecideReportsNothingForACancelledContext checks that a caller cancellation
+// trips no class and writes nothing.
 func TestDecideReportsNothingForACancelledContext(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -862,9 +794,8 @@ func TestDecideReportsNothingForACancelledContext(t *testing.T) {
 	}
 }
 
-// Every diagnostic line carries the module's name once. The capability
-// directory and the module name are the same token here, so a format that
-// writes both repeats it.
+// TestDiagnosticsNameTheModuleOnce checks that each diagnostic and startup error
+// names the module once.
 func TestDiagnosticsNameTheModuleOnce(t *testing.T) {
 	var out bytes.Buffer
 	newSignalTo(&out).settle(stoppedAt(reasonCounterRead))
@@ -881,21 +812,18 @@ func TestDiagnosticsNameTheModuleOnce(t *testing.T) {
 	}
 }
 
-// A decision returns at the first class that trips, so a class behind it was
-// never asked about. Clearing it there would print "back to limiting" for a
-// condition nothing checked.
+// TestDecideClearsOnlyTheClassesItEvaluated checks that a class the decision never
+// reached is not reported recovered.
 func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 	var out bytes.Buffer
 	l := pinned()
 	var clock *pinnedClock
 	l.signal, clock = signalOnAPinnedClock(&out)
 
-	// One request through the layer, its class accounted for as handle does.
 	step := func() reason {
 		return decideOnce(t, l, context.Background()).tripped
 	}
 
-	// The counter read fails, so its class is reported.
 	l.counters = &fakeKV{readErr: errors.New("backend down")}
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
 	if tripped := step(); tripped != reasonCounterRead {
@@ -905,10 +833,6 @@ func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 		t.Fatalf("the counter class was not reported:\n%s", out.String())
 	}
 
-	// Only the thresholds are broken now, and the decision stops there: it
-	// never reached the counter class, so that class must not be cleared.
-	// The counter class has been quiet long enough by now, so it is only the
-	// decision not having asked about it that keeps it from clearing.
 	clock.advance(recoveryQuiet)
 	out.Reset()
 	l.counters = newFakeKV()
@@ -920,7 +844,6 @@ func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 		t.Fatalf("a class the decision never evaluated was reported recovered:\n%s", out.String())
 	}
 
-	// A decision that reaches the counter and passes clears it.
 	out.Reset()
 	l.store = &fakeStore{values: map[string]any{windowPath: time.Minute, limitPath: 10}}
 	if tripped := step(); tripped != "" {
@@ -931,10 +854,8 @@ func TestDecideClearsOnlyTheClassesItEvaluated(t *testing.T) {
 	}
 }
 
-// A window whose double overflows the duration type has its counting key
-// written with a non-positive expiry, which the key-value contract reads as
-// "no expiry": the key is then left in the store forever. It is out of domain
-// like any other window the module does not act on.
+// TestThresholdsStandsAsideOnAWindowTooLongToDouble checks that a window whose
+// double overflows the duration type trips the domain class.
 func TestThresholdsStandsAsideOnAWindowTooLongToDouble(t *testing.T) {
 	l := newLimiter(nil)
 	l.store = &fakeStore{values: map[string]any{
@@ -948,7 +869,6 @@ func TestThresholdsStandsAsideOnAWindowTooLongToDouble(t *testing.T) {
 	}
 }
 
-// containsLine reports whether any line of out holds both parts.
 func containsLine(out, first, second string) bool {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, first) && strings.Contains(line, second) {
@@ -958,15 +878,6 @@ func containsLine(out, first, second string) bool {
 	return false
 }
 
-// --- helpers ---------------------------------------------------------------
-
-// decideOnce runs one decision with an identity authntest builds, read back off
-// the request's context as the layer's handler reads it, on a context gin makes
-// for a test, carrying a request on ctx, and accounts for it as the handler does.
-//
-// The context has no chain behind it and no route, so what a case using it reads
-// is the decision and the signal. Whether a request went on, and what it was
-// answered with, is read off a real assembly by the cases that serve one.
 func decideOnce(t testing.TB, l *limiter, ctx context.Context) decision {
 	t.Helper()
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -981,9 +892,6 @@ func decideOnce(t testing.TB, l *limiter, ctx context.Context) decision {
 	return d
 }
 
-// declaredSettingsSchema picks this module's settings declaration out of its
-// own descriptor, so a case can hold the code to what the module declares
-// rather than to a copy of the declaration.
 func declaredSettingsSchema() (settings.Schema, bool) {
 	for _, resource := range Module().Resources {
 		if declared, ok := resource.(settings.Schema); ok {
@@ -993,10 +901,6 @@ func declaredSettingsSchema() (settings.Schema, bool) {
 	return settings.Schema{}, false
 }
 
-// recordingStore records the key of every read it serves.
-//
-// It answers under a value inside both domains, so that a decision reaches the
-// counter and a read's own failure cannot stand in for a wrong path.
 type recordingStore struct {
 	keys []string
 }
@@ -1040,7 +944,6 @@ func (s *recordingStore) Read(key string, reads ...settings.LayerRead) ([]settin
 	return results, nil
 }
 
-// fakeStore serves the two items this module reads.
 type fakeStore struct {
 	values map[string]any
 	err    error
@@ -1091,8 +994,6 @@ func (s *fakeStore) Read(key string, reads ...settings.LayerRead) ([]settings.La
 	return results, nil
 }
 
-// fakeKV is an in-process counter store that remembers what expiry each key
-// was created with.
 type fakeKV struct {
 	mu           sync.Mutex
 	values       map[string]float64
@@ -1145,8 +1046,6 @@ func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 	if k.incrementErr != nil {
 		return 0, k.incrementErr
 	}
-	// The expiry is attached when the call creates the key, exactly as the
-	// primitives specify: a live key keeps the expiry it already has.
 	if _, live := k.values[key]; !live {
 		k.ttls[key] = ttl
 	}
@@ -1174,7 +1073,6 @@ func (k *fakeKV) ttlOf(key string) time.Duration {
 	return k.ttls[key]
 }
 
-// size is the number of keys the store holds.
 func (k *fakeKV) size() int {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -1193,7 +1091,6 @@ func (k *fakeKV) putRaw(key, raw string) {
 	k.raw[key] = raw
 }
 
-// fakeReader serves this module's section.
 type fakeReader struct {
 	endpoints        []string
 	addressEndpoints []string
@@ -1209,18 +1106,11 @@ func (r fakeReader) Decode(_ string, target any) error {
 	return nil
 }
 
-// registryWith hands back a registry holding a configuration reader, so that
-// Prepare reaches the endpoint checks.
-//
-// The reader is the supplied instance of the config module, the way a host's
-// run hands in the reader it loaded. A supplied instance exists from the Supply
-// call on, so Prepare finds it although nothing has been constructed.
 func registryWith(t *testing.T, endpoints []string) *core.Registry {
 	t.Helper()
 	return registryReading(t, fakeReader{endpoints: endpoints})
 }
 
-// registryReading is registryWith for a reader that serves both endpoint lists.
 func registryReading(t *testing.T, reader fakeReader) *core.Registry {
 	t.Helper()
 	reg := core.New()
