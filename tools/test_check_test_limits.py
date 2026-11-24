@@ -5,7 +5,7 @@ Stdlib-only (unittest + tempfile). Run directly:
 
     python3 tools/test_check_test_limits.py
 
-Two rulings are pinned here, each with a case that would otherwise pass it.
+Three rulings are pinned here, each with a case that would otherwise pass it.
 A test may not derive a width from the host's core count -- `runtime.NumCPU`
 under any `runtime` alias, `runtime.GOMAXPROCS(0)`, a negative argument or a
 variable argument, `os.cpus` and `os.availableParallelism` under any import,
@@ -32,6 +32,13 @@ shared defaults themselves are held to their floors, because a lowered
 default would make every per-case limit pass; the floors live in their own
 file, are read at a raised value, and a missing file or key, invalid JSON,
 or a non-finite value is an infrastructure error rather than a silent pass.
+The third ruling keeps `coretest` bounds out of package initialization: a
+test-side file may not call `coretest` from a package-level declaration,
+an `init` body or `TestMain`, because the test log starts only at `M.Run`,
+so a value read before it is not hashed into `go test`'s cache key.
+Reachability is by name across one directory, so a package-level call to a
+two-layer local helper is reported while a call made when a case runs is
+not.
 
 Cases run over a scratch tree holding one clean Vitest package, its preset,
 its floors file, its async budget, one Playwright spec and its config. The
@@ -1757,6 +1764,364 @@ class TestExitCodes(GateCase):
         code, _, err = self.run_gate()
         self.assertEqual(2, code)
         self.assertIn("no top-level timeout", err)
+
+
+CORETEST_PATH = "github.com/vislake/speed/pkg/core/coretest"
+
+
+class TestCoretestIsReadWhenTheCaseRuns(GateCase):
+    """A coretest bound may not be evaluated before the test log starts.
+
+    The Go test log opens at `M.Run`, so a `GATE_TIME_SCALE` read from a
+    package-level declaration, an `init` body or `TestMain` never reaches
+    the value `go test` hashes into its cache key. Reachability is by name
+    across one directory, so a package-level call to a local helper that
+    reaches `coretest` any number of layers down is a finding too.
+    """
+
+    def test_a_package_level_bound_is_a_finding(self) -> None:
+        """A package-level var bound is a finding."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "var requestBound = coretest.Scale(3 * time.Second)\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        out = self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:10:", "coretest.Scale"
+        )
+        self.assertIn("cache key", out)
+        self.assertIn("when the case runs", out)
+
+    def test_a_parenthesized_var_block_is_a_finding(self) -> None:
+        """A parenthesized var block is the same position as a single var."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "var (\n"
+            "\trequestBound = coretest.Scale(3 * time.Second)\n"
+            "\twaitBound    = coretest.Scale(time.Second)\n"
+            ")\n\n"
+            "func TestBound(t *testing.T) {\n"
+            "\t_ = requestBound\n\t_ = waitBound\n}\n",
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("alpha_test.go:11:", out)
+        self.assertIn("alpha_test.go:12:", out)
+        self.assertEqual(2, out.count("coretest.Scale"))
+
+    def test_an_aliased_import_is_a_finding(self) -> None:
+        """A named import alias qualifies the call just as the package name does."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\tct \"{CORETEST_PATH}\"\n)\n\n"
+            "var requestBound = ct.Declared(3 * time.Second)\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:10:", "ct.Declared"
+        )
+
+    def test_a_package_level_function_literal_is_a_finding(self) -> None:
+        """A package-level function literal is judged even when nothing calls it."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "var makeBound = func() time.Duration {\n"
+            "\treturn coretest.Scale(3 * time.Second)\n"
+            "}\n\n"
+            "func TestBound(t *testing.T) { _ = makeBound() }\n",
+        )
+        out = self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:11:", "coretest.Scale"
+        )
+        self.assertIn("named top-level function", out)
+
+    def test_an_immediate_package_level_invocation_is_a_finding(self) -> None:
+        """An immediately invoked literal at package level runs at initialization."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "var requestBound = func() time.Duration {\n"
+            "\treturn coretest.Scale(3 * time.Second)\n"
+            "}()\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        out = self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:11:", "coretest.Scale"
+        )
+        self.assertIn("named top-level function", out)
+
+    def test_an_init_body_is_a_finding(self) -> None:
+        """An init body that reads coretest is a finding."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"os\"\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "var requestBound time.Duration\n\n"
+            "func init() {\n"
+            "\trequestBound = coretest.Scale(3 * time.Second)\n"
+            "}\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:14:", "coretest.Scale"
+        )
+
+    def test_a_test_main_body_is_a_finding(self) -> None:
+        """A TestMain body that reads coretest is a finding."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"os\"\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func TestMain(m *testing.M) {\n"
+            "\t_ = coretest.Scale(3 * time.Second)\n"
+            "\tos.Exit(m.Run())\n"
+            "}\n",
+        )
+        self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:12:", "coretest.Scale"
+        )
+
+    def test_a_two_layer_helper_across_files_is_a_finding(self) -> None:
+        """Reachability crosses files in a directory, two local functions deep."""
+        self.write(
+            "pkg/alpha/helpers_test.go",
+            "package alpha\n\nimport (\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func innerLimit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n\n"
+            "func limit() time.Duration {\n"
+            "\treturn innerLimit()\n"
+            "}\n",
+        )
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n)\n\n"
+            "var requestBound = 2 * limit()\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        out = self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:7:", "limit"
+        )
+        self.assertIn("coretest", out)
+
+    def test_a_three_layer_helper_chain_is_a_finding(self) -> None:
+        """A package-level call through three local helpers is a finding."""
+        self.write(
+            "pkg/alpha/helpers_test.go",
+            "package alpha\n\nimport (\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func topLimit() time.Duration {\n"
+            "\treturn middleLimit()\n"
+            "}\n\n"
+            "func middleLimit() time.Duration {\n"
+            "\treturn bottomLimit()\n"
+            "}\n\n"
+            "func bottomLimit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n",
+        )
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n)\n\n"
+            "var requestBound = topLimit()\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        out = self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:7:", "topLimit"
+        )
+        self.assertIn("coretest", out)
+
+    def test_a_test_main_calling_a_reaching_helper_is_a_finding(self) -> None:
+        """A TestMain body that calls a helper reaching coretest is a finding."""
+        self.write(
+            "pkg/alpha/helpers_test.go",
+            "package alpha\n\nimport (\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func waitLimit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n",
+        )
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"os\"\n\t\"testing\"\n)\n\n"
+            "func TestMain(m *testing.M) {\n"
+            "\t_ = waitLimit()\n"
+            "\tos.Exit(m.Run())\n"
+            "}\n",
+        )
+        out = self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:9:", "waitLimit"
+        )
+        self.assertIn("coretest", out)
+
+    def test_a_same_named_helper_in_another_directory_is_clean(self) -> None:
+        """A same-named helper in another directory does not make its calls reach coretest."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func limit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n\n"
+            "func TestBound(t *testing.T) { _ = limit() }\n",
+        )
+        self.write(
+            "pkg/beta/beta_test.go",
+            "package beta\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func limit() time.Duration { return 0 }\n\n"
+            "var requestBound = limit()\n\n"
+            "func TestBound(t *testing.T) {\n"
+            "\t_ = requestBound\n"
+            "\t_ = coretest.Declared(time.Second)\n"
+            "}\n",
+        )
+        self.assert_clean()
+
+    def test_an_interface_method_named_like_a_reaching_function_is_clean(self) -> None:
+        """An interface method declaration is not a call to the same-named function."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "type limiter interface {\n"
+            "\tlimit() time.Duration\n"
+            "}\n\n"
+            "func limit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n\n"
+            "func TestBound(t *testing.T) { _ = limit() }\n",
+        )
+        self.assert_clean()
+
+    def test_a_dot_import_is_a_finding(self) -> None:
+        """A dot import hides its calls from a qualifier scan, so it is the finding."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t. \"{CORETEST_PATH}\"\n)\n\n"
+            "var requestBound = Scale(3 * time.Second)\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:7:", CORETEST_PATH
+        )
+
+    def test_a_build_tagged_file_is_a_finding(self) -> None:
+        """A build-tagged test file is still test-side code."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "//go:build integration\n\npackage alpha\n\nimport (\n"
+            "\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "var requestBound = coretest.Scale(3 * time.Second)\n\n"
+            "func TestBound(t *testing.T) {\n\t_ = requestBound\n}\n",
+        )
+        self.assert_finding(
+            "pkg/alpha/alpha_test.go", "alpha_test.go:12:", "coretest.Scale"
+        )
+
+    def test_a_helper_package_ending_in_test_is_a_finding(self) -> None:
+        """A non-_test.go file of a helper package is test-side too."""
+        self.write(
+            "pkg/alphatest/helper.go",
+            "package alphatest\n\nimport (\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "var defaultWait = coretest.Scale(time.Second)\n",
+        )
+        self.assert_finding(
+            "pkg/alphatest/helper.go", "helper.go:9:", "coretest.Scale"
+        )
+
+    def test_a_call_inside_a_case_is_clean(self) -> None:
+        """A read inside a case is clean."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func TestBound(t *testing.T) {\n"
+            "\tlimit := coretest.Scale(3 * time.Second)\n"
+            "\t_ = limit\n"
+            "}\n",
+        )
+        self.assert_clean()
+
+    def test_a_call_inside_a_helper_function_is_clean(self) -> None:
+        """A helper called from a case evaluates its bound at run time."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "func waitLimit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n\n"
+            "func TestBound(t *testing.T) { _ = waitLimit() }\n",
+        )
+        self.assert_clean()
+
+    def test_a_call_in_a_comment_or_string_is_prose(self) -> None:
+        """A token in a comment or a string is prose, not a read."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "// var requestBound = coretest.Scale(3 * time.Second)\n"
+            "var note = \"coretest.Scale(3 * time.Second)\"\n\n"
+            "func TestBound(t *testing.T) { _ = note; _ = time.Second }\n",
+        )
+        self.assert_clean()
+
+    def test_a_method_call_named_like_a_reaching_function_is_clean(self) -> None:
+        """A method call is preceded by a dot and is not a package function."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "type clock struct{}\n\n"
+            "func (clock) limit() time.Duration { return 0 }\n\n"
+            "func limit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n\n"
+            "var now = clock{}\n"
+            "var requestBound = now.limit()\n\n"
+            "func TestBound(t *testing.T) { _ = requestBound; _ = limit }\n",
+        )
+        self.assert_clean()
+
+    def test_a_method_body_is_a_documented_blind_spot(self) -> None:
+        """A method called at a package-level position is a documented blind spot."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n\t\"time\"\n\n"
+            f"\t\"{CORETEST_PATH}\"\n)\n\n"
+            "type clock struct{}\n\n"
+            "func (clock) limit() time.Duration {\n"
+            "\treturn coretest.Scale(time.Second)\n"
+            "}\n\n"
+            "var now = clock{}.limit()\n\n"
+            "func TestBound(t *testing.T) { _ = now }\n",
+        )
+        self.assert_clean()
+
+    def test_a_file_without_the_import_is_clean(self) -> None:
+        """A directory with no coretest import has no read to place."""
+        self.write(
+            "pkg/alpha/alpha_test.go",
+            "package alpha\n\nimport (\n\t\"testing\"\n)\n\n"
+            "func compute() int { return 1 }\n\n"
+            "var derived = compute()\n\n"
+            "func TestDerived(t *testing.T) { _ = derived }\n",
+        )
+        self.assert_clean()
 
 
 class TestTheRealRepository(unittest.TestCase):
