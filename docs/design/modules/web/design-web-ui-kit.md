@@ -523,7 +523,7 @@ admin-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 
 | 浅色模式 warning、info、success 的 700 调 `main` 与白色标签 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`；`web/packages/tokens/src/color.ts` `colorTokens.semantic` |
 | 内容节表面 `SectionCard` | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`、`SectionCardProps` |
 | 操作行 `ActionRow` 与按钮档位 `ActionButton` | 已实现 | `web/packages/ui-kit/src/components/ActionRow.tsx` `ActionRow`、`ActionButton`、`ActionRowSize`、`ActionEmphasis`、`ActionTone` |
-| 按钮的可聚焦不可用（`ActionButton` 的 `busy`、`unavailable` 与原因关联） | 部分实现 | `web/packages/ui-kit/src/components/ActionRow.tsx` `ActionButton` |
+| 按钮的可聚焦不可用（`ActionButton` 的 `busy`、`unavailable` 与原因关联） | 已实现 | `web/packages/ui-kit/src/components/ActionRow.tsx` `ActionButton` |
 | 不可用外观随 `aria-disabled`（按钮、图标按钮、开关、复选框） | 已实现 | `web/packages/ui-kit/src/theme/unavailable.ts` `unavailableComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 激活守卫 `useActivationGuard` | 已实现 | `web/packages/ui-kit/src/activation-guard.ts` `useActivationGuard`、`ActivationGuardState` |
 | 统一焦点环 | 已实现 | `web/packages/ui-kit/src/theme/focus-ring.ts` `focusRingComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |

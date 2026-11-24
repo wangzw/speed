@@ -301,16 +301,16 @@
 使用者以键盘或读屏软件激活一个发起写入的控件后，只要该控件仍在页面上，写入进行中与落定后键盘焦点都必须停留在该控件上。
 
 - **验收**：以键盘激活保存按钮，写入进行中与落定后焦点都在该按钮上，再按 Tab 到达的是它之后的下一个控件；经确认对话框确认的写入，对话框关闭后焦点回到发起它的按钮并停留到落定之后；写入要求加强认证时，加强认证对话框关闭后焦点回到发起它的按钮；在侧边面板内发起的写入，焦点不移到面板顶部；写入落定后该按钮因输入已清空或已无改动而不可用时，焦点仍在该按钮上；以键盘切换一个改动即保存的开关，写入进行中与落定后焦点都在该开关上。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: the save control keeps keyboard focus through its write and explains an unmet precondition`
 
 ### REQ-presentation-041
 
 因前置条件不满足而不可用的发起写入的控件必须仍可经键盘到达，并向读屏软件给出它的不可用状态与原因。
 
 - **验收**：表单无改动、必填为空或对象已撤销时，发起控件仍可经 Tab 到达；聚焦它时读屏读出不可用，并读出界面文案给出的原因，同一条原因只读一次；激活它不发请求。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: the save control keeps keyboard focus through its write and explains an unmet precondition`
 
 ### REQ-presentation-029
 

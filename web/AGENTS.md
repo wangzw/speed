@@ -143,7 +143,15 @@ component to one `WriteFeedbackRegion`: a feedback scope is one
 regions in one component can show two results at once. Its message names
 the file, the component and the region count. The demo host turns this rule
 on over its own `src` too: a host is part of the product, so it uses the same
-rule and the same exemption list rather than a copy. Package tests and
+rule and the same exemption list rather than a copy.
+`speed/no-native-disabled-control` keeps a button-shaped MUI control
+natively focusable: it reports a non-literal `disabled` value and a
+`loading` value other than the literal `false`, either of which makes the
+control unfocusable the moment it becomes unavailable and drops a keyboard
+user's focus to the document body; the covered control reports
+unavailability through `aria-disabled` instead, as `ActionButton`'s `busy`
+and `unavailable` do. The demo host enables this rule over its own `src`
+with the same implementation and exemption list. Package tests and
 `test-utils/` are exempt by config for these rules, because fixture strings
 and scripted stand-ins are data.
 
@@ -192,6 +200,26 @@ upload row is its own slot): `FileUploader` renders each row's status as
 text from its `rows` props and never renders `WriteFeedbackRegion`, and a
 region rendered once inside a `rows.map(...)` is one JSX element rather
 than one per row, so the rule does not reach it.
+
+### Native disabled controls stay focusable
+
+An exemption exists only when the covered control cannot hold focus at the
+moment it becomes unavailable; that is the whole criterion. The component is
+registered in `NATIVE_DISABLED_EXEMPTIONS`
+(`web/eslint-rules/no-native-disabled-control.js`) with its file, the
+declaring component and one English sentence giving the reason, and a control
+that can hold focus takes `ActionButton`'s `busy` or `unavailable`, or
+`aria-disabled` with `useActivationGuard`, instead.
+
+The rule's workspace scan (`no-native-disabled-control.test.mjs`) lints every
+runtime TSX file in the scopes the two lint configs give the rule and holds
+the list exactly equal to the components whose covered controls a non-literal
+expression disables, failing on an unregistered hit and on a stale entry in
+either direction. The scan also fails on any covered control using the
+`loading` prop, which no exemption reaches, and on an inline `eslint-disable`
+comment naming the rule: an exemption is a registered entry with a reason,
+never a local escape. The scan runs with `noInlineConfig`, so no inline
+directive takes effect.
 
 The rules' unit tests run from the workspace root, not from a package
 directory (the rules live outside every package, so no per-package
