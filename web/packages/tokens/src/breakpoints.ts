@@ -1,14 +1,7 @@
-/**
- * Breakpoint tokens.
- *
- * The five named breakpoints and their values match the MUI theme
- * breakpoints surface exactly (same keys, same values), so a ui-kit theme
- * adapter assigns theme.breakpoints.values from these unchanged. A screen
- * width is "at or above" a breakpoint's value.
- */
-
+/** Named breakpoint keys. */
 export type BreakpointKey = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 
+/** Width in pixels per named breakpoint. */
 export type BreakpointValues = { readonly [Key in BreakpointKey]: number }
 
 /** The breakpoints section of the speed token tree (SpeedTokens["breakpoints"]). */

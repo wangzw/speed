@@ -1,19 +1,7 @@
-/**
- * Shadow tokens: one layered box-shadow per named elevation slot.
- *
- * Shadows are spelled as complete box-shadow values (layers, offsets,
- * blur, spread and color included), so consumers copy the string straight
- * into a style and the tokens package never guesses a color model.
- *
- * MUI theme mapping: theme.shadows is a 25-entry array indexed by elevation
- * 0..24, and every slot name here is a valid MUI index (1, 2, 4, 8, 16, 24).
- * Whether unlisted indices interpolate, repeat the nearest slot, or carry a
- * distinct speed design is a ui-kit theme-adapter decision, not a token
- * decision.
- */
-
+/** The MUI theme.shadows indices a named elevation slot maps to. */
 export type ElevationSlot = 1 | 2 | 4 | 8 | 16 | 24
 
+/** A complete CSS box-shadow value per elevation slot. */
 export type ShadowTokens = { readonly [Elevation in ElevationSlot]: string }
 
 export const shadowTokens: ShadowTokens = {

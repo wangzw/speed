@@ -1,13 +1,4 @@
-/**
- * Z-index tokens.
- *
- * The slot names are exactly the MUI theme zIndex keys (mobileStepper, fab,
- * speedDial, appBar, drawer, modal, snackbar, tooltip) and the values match
- * MUI's defaults, so a ui-kit theme adapter assigns theme.zIndex unchanged.
- * The defaults encode a sane ordering for the whole platform; overlays that
- * must stack above a slot without renegotiating the scale can add to it.
- */
-
+/** Named z-index slots, matching the MUI theme zIndex keys. */
 export type ZIndexKey =
   | 'mobileStepper'
   | 'fab'
@@ -18,6 +9,7 @@ export type ZIndexKey =
   | 'snackbar'
   | 'tooltip'
 
+/** Stack order per named z-index slot. */
 export type ZIndexValues = { readonly [Key in ZIndexKey]: number }
 
 /** The z-index section of the speed token tree (SpeedTokens["zIndex"]). */

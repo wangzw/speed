@@ -1,41 +1,9 @@
-/**
- * The deep-merge helper for token trees.
- *
- * Home decision (why merge lives here, not in a factory package): the merge
- * is defined over SpeedTokens itself -- its type argument is DeepPartial of
- * the token tree, it never mutates, and it treats objects as the only
- * mergeable unit. The theme factory consumes the *merged result* and must
- * not depend on a merging mechanism, so the merge ships with the tree it
- * merges.
- */
-
 import type { DeepPartial } from './types.js'
 
 /**
  * Merge `overrides` into a copy of `base`, recursively, and return the copy.
- *
- * Semantics, in contract form (each is pinned by a test):
- * - No argument is ever mutated. Copy-on-write: a branch that no override
- *   touches is shared with `base` by identity; every branch some override
- *   does touch is rebuilt. Because defaultTokens is deep-frozen at
- *   assembly (see defaultTokens.ts), the shared branches of a merge over it
- *   are frozen nodes: a write through one throws in strict mode instead of
- *   silently reaching the default tree, while the rebuilt branches are
- *   fresh objects owned by that result alone.
- * - The result is a faithful copy of `base`: every own key of `base`
- *   survives, even one whose value is `undefined` -- an override that
- *   omits a key never causes that key to vanish from the result.
- * - `undefined` values in overrides are skipped, so a partial override never
- *   blanks a token. Every other value (including null) replaces wholesale.
- * - Two plain objects at the same key merge recursively; anything else at
- *   that key replaces.
- * - Overrides apply in argument order; later overrides win.
- * - Every key lands as an own data property, written through
- *   Object.defineProperty, so a hostile override key such as "__proto__"
- *   can neither mutate the result's prototype nor be dropped silently:
- *   "__proto__" is defined non-enumerably (deep-merged like any other key,
- *   still readable off the result), so no [[Set]]-based copy such as
- *   Object.assign can ever carry it onto another object's prototype.
+ * No argument is mutated; `undefined` override values are skipped and every
+ * own key of `base` survives in the result.
  */
 export function deepMerge<T extends object>(
   base: T,
@@ -57,12 +25,8 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null
 }
 
-/**
- * Shallow-copy every own key of `source` onto `target` as an own data
- * property, values verbatim (an `undefined` value is copied too: this side
- * copies `base` data, and the result must stay a faithful copy of it -- the
- * skip-undefined rule belongs to the override side in mergeInto only).
- */
+// Copies base data verbatim, `undefined` included; the skip-undefined rule
+// applies only to the override side in mergeInto.
 function copyInto(target: Record<string, unknown>, source: Record<string, unknown>): void {
   for (const key of Object.keys(source)) {
     writeOwn(target, key, source[key])
@@ -97,11 +61,9 @@ function writeOwn(target: Record<string, unknown>, key: string, value: unknown):
   Object.defineProperty(target, key, {
     value,
     writable: true,
-    // "__proto__" must never be enumerable: an enumerable own "__proto__"
-    // data property is picked up by downstream [[Set]]-based copies
-    // (Object.assign) and would reassign the receiving object's prototype.
-    // Non-enumerable, the payload stays on the result -- own, readable,
-    // deep-merged like any other key -- but no copy operation can carry it.
+    // `__proto__` must stay non-enumerable: an enumerable own data property
+    // would be picked up by Object.assign-style copies and reassign the
+    // receiving object's prototype.
     enumerable: key !== '__proto__',
     configurable: true,
   })
