@@ -13,23 +13,11 @@ import {
   useAuthnSessionList,
 } from './index'
 
-/**
- * Exercises the generated surface (orval output, DO-NOT-EDIT) against a
- * bound fake request function: what is under test is that the generated
- * hooks and operation functions issue exactly the calls the spec
- * implies, with the query keys the generated code stamps -- never a
- * network, never a real client. The authn and audit operations stand in
- * for any generated group: every platform fragment's operations share
- * the identical generated shape, so this set pins the surface mechanics
- * the whole package relies on -- a query hook, a mutation hook, a
- * repeated (array) query parameter, and the generated query keys.
- */
 interface RecordedCall {
   path: string
   options?: RequestOptions
 }
 const calls: RecordedCall[] = []
-/** The payloads the endpoints would return, keyed by method + path. */
 const responses: Record<string, unknown> = {
   'GET /api/v1/auth/sessions': { sessions: [] },
   'GET /api/v1/auth/me': { account_id: 'user-1' },
@@ -43,8 +31,6 @@ const fakeRequestFn: RequestFn = (async <T>(
   return (responses[`${method} ${path}`] ?? undefined) as T
 }) as RequestFn
 
-/** The host's QueryClient, shared the way a real consumer shares one
- * QueryClientProvider across the app (the peer-family contract). */
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 })
@@ -63,17 +49,12 @@ describe('useAuthnSessionList', () => {
       expect(result.current.isSuccess).toBe(true)
     })
     expect(result.current.data).toEqual({ sessions: [] })
-    // react-query passes its own AbortSignal into the query function, so
-    // the recorded options carry a live signal -- assert the wire
-    // slice, not structural equality over the whole options object.
     expect(calls).toMatchObject([
       { path: '/api/v1/auth/sessions', options: { method: 'GET' } },
     ])
   })
 
   it('stamps the spec path as the query key, with no tenant prefix', () => {
-    // Query-key tenant namespacing is a consumer-shell discipline; the
-    // generated key is the bare spec path.
     expect(getAuthnSessionListQueryKey()).toEqual(['/api/v1/auth/sessions'])
   })
 })
@@ -119,10 +100,6 @@ describe('useAuthnLoginStart', () => {
 
 describe('auditAdminRecordsList', () => {
   it('passes a repeated (array) query parameter through the bound request function', async () => {
-    // The `action` parameter is declared `style: form, explode: true`
-    // in the spec, so orval types it as an array; the call must reach
-    // the transport with the array intact for it to expand into
-    // repeated query parameters.
     await auditAdminRecordsList({ action: ['login.create', 'login.failed'] })
     expect(calls).toMatchObject([
       {

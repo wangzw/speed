@@ -6,8 +6,6 @@ import {
   speedRequestCredentialless,
 } from './runtime'
 
-/** The host side of the seam: a request function that records every
- * call instead of touching a network. */
 interface RecordedCall {
   path: string
   options?: RequestOptions
@@ -71,13 +69,6 @@ describe('bindRequestFn / speedRequest', () => {
   })
 
   it('carries a repeated (array) query parameter through to the transport unchanged', async () => {
-    // A spec parameter declared `style: form, explode: true` -- audit's
-    // `action` on GET /api/v1/system/audit/records -- makes orval emit an
-    // array-typed field on that operation's params type. The seam's
-    // params type admits scalar arrays precisely so this call
-    // type-checks, and forward() must pass the array through untouched
-    // (the @speed/api-client transport expands it into repeated query
-    // parameters) rather than stringifying or dropping it.
     await speedRequest<unknown>({
       url: '/api/v1/system/audit/records',
       method: 'GET',
@@ -89,9 +80,6 @@ describe('bindRequestFn / speedRequest', () => {
   })
 
   it('never sets the omitAccessToken key on an ordinary speedRequest call', async () => {
-    // Exact-shape assertion: the flag is only ever present when a
-    // credential-less operation declared it, so hosts can rely on its
-    // absence meaning "attach the bearer token from the store".
     await speedRequest<unknown>({
       url: '/api/v1/notes',
       method: 'GET',
@@ -103,9 +91,6 @@ describe('bindRequestFn / speedRequest', () => {
   })
 
   it('forwards a raw-byte response flag as the transport blob responseType', async () => {
-    // A byte-returning operation declares responseType: 'blob'; the seam
-    // forwards it so the client reads the 2xx body as a Blob instead of
-    // JSON text.
     await speedRequest<Blob>({
       url: '/api/v1/files/f-1/content',
       method: 'GET',
@@ -120,8 +105,6 @@ describe('bindRequestFn / speedRequest', () => {
   })
 
   it('never sets responseType on an ordinary call', async () => {
-    // Exact-shape assertion: only an operation that declared the flag
-    // carries it, so an ordinary call's options keep their shape.
     await speedRequest<unknown>({ url: '/api/v1/notes', method: 'GET' })
     expect(calls).toEqual([
       { path: '/api/v1/notes', options: { method: 'GET' } },
@@ -151,8 +134,6 @@ describe('bindRequestFn / speedRequest', () => {
   })
 
   it('rebinding replaces the previous request function (last bind wins)', async () => {
-    // The second function records without a method option, so the
-    // recorded shape tells which function served the call.
     const second: RequestFn = (async <T>(path: string): Promise<T> => {
       calls.push({ path })
       return undefined as T
@@ -163,11 +144,6 @@ describe('bindRequestFn / speedRequest', () => {
   })
 
   it('throws a programmer error while no request function is bound', async () => {
-    // A fresh module instance (re-imported after resetModules) starts
-    // with the binding unset, so the unbound path is observable
-    // without exposing a reset on the package surface. speedRequest
-    // throws synchronously -- the unbound state is a programmer error,
-    // not a request outcome.
     vi.resetModules()
     const fresh = await import('./runtime')
     expect(() =>
@@ -175,8 +151,6 @@ describe('bindRequestFn / speedRequest', () => {
     ).toThrow(
       '[speed-api-sdk] no request function bound: call bindRequestFn(createClient(...)) once at bootstrap before any generated hook runs.',
     )
-    // Both mutators share the unbound guard -- a credential-less
-    // operation is no less a programmer error when nothing is bound.
     expect(() =>
       fresh.speedRequestCredentialless({
         url: '/api/v1/auth/token',
