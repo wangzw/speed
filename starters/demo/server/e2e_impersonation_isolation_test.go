@@ -1,11 +1,5 @@
 package main
 
-// The impersonation fixture's compile-time side. The SMS second factor is
-// compiled into the capability ceiling every build carries (see
-// capabilities.go); whether a run enables it is a configuration decision. The
-// impersonation freshness window is configuration, and the declared default a
-// baseline run reads is unchanged.
-
 import (
 	"reflect"
 	"testing"
@@ -15,18 +9,12 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// smsFactorModuleName is the SMS second factor's module name. It is written as
-// a literal on purpose: this case asserts the ceiling without importing the
-// package directly.
 const smsFactorModuleName = "authn.mfa.sms"
 
-// baselineMaxAuthAge is the declared default of authn.impersonation.max-auth-age.
 const baselineMaxAuthAge = 5 * time.Minute
 
-// TestDefaultBuildCompilesTheSMSFactor holds the ceiling: the binary registers
-// the SMS second factor, so a deployment can enable the step-up branch from
-// configuration. Before the capability roster became unconditional the module
-// was imported only behind a build tag.
+// TestDefaultBuildCompilesTheSMSFactor holds that the binary registers the SMS second factor so a
+// deployment can enable the step-up branch.
 func TestDefaultBuildCompilesTheSMSFactor(t *testing.T) {
 	t.Parallel()
 	if _, ok := core.ProcessRegistry.Lookup(smsFactorModuleName); !ok {
@@ -35,12 +23,8 @@ func TestDefaultBuildCompilesTheSMSFactor(t *testing.T) {
 	}
 }
 
-// TestDefaultBuildKeepsTheImpersonationDefaults holds the other half: the e2e
-// configuration lowers authn.impersonation.max-auth-age to one minute, but the
-// declared default the baseline reads stays at five minutes. The value is read
-// from the settings schema the impersonation module declares, so a change to the
-// declared default fails here even though no baseline configuration file names
-// the key.
+// TestDefaultBuildKeepsTheImpersonationDefaults holds that the declared default of
+// authn.impersonation.max-auth-age stays five minutes.
 func TestDefaultBuildKeepsTheImpersonationDefaults(t *testing.T) {
 	t.Parallel()
 	for _, resource := range core.Resources[settings.Schema](core.ProcessRegistry) {

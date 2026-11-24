@@ -1,30 +1,7 @@
-# The skeleton's own entry point: the commands a product built from this copy
-# runs. It carries one for each piece a product keeps; the repository's own
-# gates -- the documentation and tooling checks under its tools/ -- belong to
-# the repository and do not travel with a copy.
-#
-# Inside this repository this file is not the entry point. The root Makefile's
-# `make check` is, and it reaches the module below through go.work like every
-# other module. This file exists for the copy: a tree lifted out of the
-# repository has no root Makefile, so the product's own build, test and lint
-# commands have to live somewhere.
-#
-# Two things a copy supplies that this repository does not:
-#
-#   * The lint configuration. golangci-lint reads the nearest .golangci.yml
-#     upward from the directory it runs in; this repository keeps one at its
-#     root and a copy brings its own.
-#   * The frontend's dependencies. `web-install` installs them where the
-#     frontend package sits. Inside this repository that package is a member
-#     of the workspace under web/, whose single lockfile is what an install
-#     goes through, so the repository installs from the workspace root instead
-#     and this target is run by a copy.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-# The two trees this skeleton is made of: the Go program with its module, and
-# the frontend package whose build output the program embeds.
 GOMODULE := server
 FRONTEND := web
 
@@ -34,10 +11,6 @@ FRONTEND := web
 help: ## List the entry points
 	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-13s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# The frontend first: the Go build embeds the bundle, and go:embed requires
-# the file to exist when it compiles. The output is named explicitly: a build
-# of a pattern covering several packages discards its results, so `build ./...`
-# succeeds without writing a binary.
 build: web-build ## Build the frontend, then the Go program
 	go -C $(GOMODULE) build -o demo .
 
@@ -78,8 +51,6 @@ web-a11y: ## Run the frontend's route-level accessibility sweep
 web-build: ## Build the frontend into server/dist
 	pnpm -C $(FRONTEND) build
 
-# Each leg runs even after an earlier one failed, so one red result does not
-# hide the next, and the recipe fails at the end.
 check: ## Run everything above
 	@failed=; \
 	  $(MAKE) web-install || failed="$${failed:+$$failed; }web-install"; \

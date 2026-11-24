@@ -1,11 +1,5 @@
 package main
 
-// The SMS carrier, tested where it is compiled. A normal deployment's carriers
-// answer a per-template review they do not have; this one answers a real
-// per-language review from its configuration, so the template registry starts a
-// runtime template pending in every language and a language's verdict can come
-// from sms.log.approvals.
-
 import (
 	"context"
 	"fmt"
@@ -24,10 +18,8 @@ import (
 	smsregistry "github.com/vislake/speed/pkg/sms/registry"
 )
 
-// TestE2ESMSDeclaresPerTemplateApprovalAndStartsPending holds the carrier's
-// declaration and its initial verdict: the vendor reviews each template, and a
-// code the carrier has not been told about answers pending — the state the
-// registry records for a language a runtime template was registered in.
+// TestE2ESMSDeclaresPerTemplateApprovalAndStartsPending holds that a template the carrier was not told
+// about starts pending in every language.
 func TestE2ESMSDeclaresPerTemplateApprovalAndStartsPending(t *testing.T) {
 	t.Parallel()
 	carrier := &smslog.Product{}
@@ -47,11 +39,8 @@ func TestE2ESMSDeclaresPerTemplateApprovalAndStartsPending(t *testing.T) {
 	}
 }
 
-// TestE2ESMSTemplateStartsPendingAndSettlesOneLanguage drives the real
-// template registry over the log SMS carrier: a runtime template registered with
-// a code per language starts pending in both, the control moves one language's
-// verdict and the poller records it there alone, and disabling the template
-// leaves both languages' review states reported.
+// TestE2ESMSTemplateStartsPendingAndSettlesOneLanguage holds that a runtime template starts pending in
+// both languages, one language settles alone, and disabling it leaves both review states reported.
 func TestE2ESMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "sms-test.db")
@@ -161,11 +150,8 @@ func TestE2ESMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 	}
 }
 
-// TestE2ECarrierNamesTheMessageKindItSent holds the carrier's log record:
-// a notice says a message was sent and carries no verification_code, while a
-// verification message keeps the verification-code line and its code. The two
-// kinds travel through one carrier, so the declaration's kind is what keeps a
-// reader from reading a notice as a code.
+// TestE2ECarrierNamesTheMessageKindItSent holds that a notice carries no verification_code while a
+// verification message keeps the code line.
 func TestE2ECarrierNamesTheMessageKindItSent(t *testing.T) {
 	t.Parallel()
 	notice := sms.Resolved{
@@ -205,8 +191,6 @@ func TestE2ECarrierNamesTheMessageKindItSent(t *testing.T) {
 	}
 }
 
-// e2eSMSAttr reads one string attribute out of the pair list a log record is
-// built from.
 func e2eSMSAttr(attrs []any, key string) (string, bool) {
 	for i := 0; i+1 < len(attrs); i += 2 {
 		if name, ok := attrs[i].(string); ok && name == key {
@@ -217,7 +201,6 @@ func e2eSMSAttr(attrs []any, key string) (string, bool) {
 	return "", false
 }
 
-// recordNamed answers one record from a list by name.
 func recordNamed(records []sms.Record, name string) (sms.Record, bool) {
 	for _, record := range records {
 		if record.Name == name {

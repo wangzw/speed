@@ -1,53 +1,5 @@
 package main
 
-// The notification fixture: one notification type the platform baseline does
-// not declare, a worker that dispatches it to the members of every tenant, and
-// the preference-recipient wiring the baseline deliberately leaves out.
-//
-// The type is compiled into every build, beside the capabilities. The
-// notification capability collects its type taxonomy with core.Resources over
-// the available set, not the running set, so this declaration is part of the
-// binary's taxonomy even on a run that stands the fixture down. That is the
-// compile-time ceiling, and it is deliberate: whether the type is dispatched is
-// a run-time decision the module states in Prepare. A run that enables the
-// fixture gets the type, the worker and the recipient wiring; another run
-// leaves both absent from its feature set even though the code is present.
-//
-// The type's default channels are the in-app inbox, email and sms. The sms
-// channel is what the rollout journey drives: the catalog names the runtime
-// template the journey registers, and the template declares "to" among its
-// parameters because the delivery pipeline uses the dispatch's single
-// destination both as the recipient's address and as a template parameter.
-//
-// A dispatch addresses one recipient on the external channel their account can
-// actually be reached on. A proved phone number is the sms destination; with no
-// proved phone the account falls back to its email address, and sms is removed
-// from that recipient's effective set rather than attempted with the email as
-// its destination. A proved phone is not enough on its own: the sms channel is
-// chosen only when the SMS template registry holds the type's template for the
-// recipient's language — the template the rollout journey registers. Another
-// server that never registers it therefore falls back to email (or in-app alone)
-// instead of attempting sms with a template the registry does not hold; the
-// channel choice lives here, not in the type's default set, so the type's sms
-// membership does not leak an attempt into every server. The platform's sending
-// gate stays with the delivery pipeline: a held template that is disabled or
-// still awaiting review is still chosen, so its refusal is recorded rather than
-// hidden. The fixture writes the pruned set through the preference seam because
-// the delivery pipeline reads the effective channels when it consumes the job.
-//
-// The periodic schedule is the member-organization journey's dispatch: the
-// platform's scheduler enqueues one job per tenant per window and the handler
-// turns each job into one notification per addressable active member.
-//
-// The preference routes read the recipient from the request context, under the
-// key preferences.WithRecipient. The notification capability holds no identity,
-// so the host's identity side is what names the recipient; the baseline
-// deliberately does not, which leaves the matrix empty and its write refused.
-// This fixture wires it: a middleware after the authentication gateway copies
-// the caller's effective account onto the request context. The layer is
-// registered by this module's Init, so a run that stands the fixture down keeps
-// the baseline's semantics.
-
 import (
 	"context"
 	"embed"
@@ -72,12 +24,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The names this fixture owns. The module name is what capabilityModules names
-// in the serve roster; the job type is what the schedule enqueues and the
-// handler registers; the type key is the vocabulary both taxonomy consumers
-// collect. The SMS template name is the catalog entry's value: the rollout
-// journey registers a runtime template under exactly this name, with "to" as
-// its declared parameter (the dispatch carries no other).
 const (
 	demoNotificationModuleName  = "demo.notification"
 	demoNotificationJobType     = "demo.notification.dispatch"
@@ -86,21 +32,12 @@ const (
 	demoNotificationSMSTemplate = "demo-notice"
 )
 
-// demoNotificationEnabledItem is the switch that states whether this run
-// dispatches the fixture's notice. There is nothing in the fixture's own state
-// to infer it from — the type is part of the compile-time ceiling in every
-// build, and the tenancy roster is data — so the run states it explicitly.
 const demoNotificationEnabledItem = "enabled"
 
-// demoNotificationConfig is the fixture's configuration.
 type demoNotificationConfig struct {
-	// Enabled states whether the fixture publishes and dispatches its notice in
-	// this run. Off, the module stands itself down before it is constructed.
 	Enabled bool `config:"enabled"`
 }
 
-// demoNotificationSchema declares the fixture's one input item. It is a host
-// module, so the namespace is its own name.
 func demoNotificationSchema() config.Schema {
 	return config.Schema{
 		Namespace: demoNotificationModuleName,
@@ -115,10 +52,6 @@ func demoNotificationSchema() config.Schema {
 	}
 }
 
-// demoNotificationEnabled reads the switch. The configuration reader's absence
-// is the host's omission and is carried out as it stands: reading it as "the
-// fixture is off" would let a host that forgot the reader lose the fixture in
-// silence.
 func demoNotificationEnabled(reg *core.Registry) (bool, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -133,42 +66,20 @@ func demoNotificationEnabled(reg *core.Registry) (bool, error) {
 	return cfg.Enabled, nil
 }
 
-// demoNotificationEndpoint is the endpoint carrying the notification surface.
-// The name is the platform defaults document's; the preference routes mount
-// there and so does the recipient middleware.
 const demoNotificationEndpoint = "api"
 
-// demoNotificationInterval is the dispatch window. The scheduler enqueues one
-// job per tenant per window, so a tenant's members receive a notice at most
-// once per interval. It is short enough for a walkthrough to observe a notice
-// arrive, and long enough that a person marking the inbox read is not raced by
-// the next one.
 const demoNotificationInterval = 10 * time.Second
 
-// demoRecipientLayerName is the middleware layer's name on the api endpoint.
-// It appears in the chain listing, so it says which fixture added it.
 const demoRecipientLayerName = "demo.notification.recipient"
 
 //go:embed demo_notification_locales/*.json
 var demoNotificationLocales embed.FS
 
-// demoNotificationCatalog is the message catalog of the type. The keys are
-// "<type_key>.<channel>.<part>", which is where the delivery pipeline renders
-// an in-app message and an email from; the declaring module owns the text.
 var demoNotificationCatalog = i18n.Catalog{
 	FS:      demoNotificationLocales,
 	Pattern: "demo_notification_locales/*.json",
 }
 
-// demoNotificationType is the type a business module would declare for a
-// system notice a recipient may turn off. Its default channels are the in-app
-// inbox, email and sms: the rollout journey needs sms among them, while the
-// member-organization journey reaches the other two. It is unsubscribable — the
-// journey's preference write turns a channel off — and the only parameter it
-// exposes is the destination the delivery pipeline reads, which is the
-// recipient's own phone number or address. The catalog names the sms template
-// the journey registers; the template declares "to" as its only parameter
-// because the destination is also a template parameter.
 var demoNotificationType = notification.TypeSpec{
 	Key:   demoNotificationTypeKey,
 	Group: demoNotificationGroup,
@@ -181,41 +92,16 @@ var demoNotificationType = notification.TypeSpec{
 	RecipientVisibleParams: []string{"to"},
 }
 
-// demoNotificationSchedule is the periodic dispatch declaration. The
-// scheduler expands it per tenant in the roster, so a tenant created while the
-// process runs starts receiving notices on the next window.
 var demoNotificationSchedule = jobs.Schedule{
 	Key:      demoNotificationModuleName + ".periodic",
 	Type:     demoNotificationJobType,
 	Interval: demoNotificationInterval,
 }
 
-// init registers the module. The import is the wiring; capabilityModules is
-// what names it for a run.
 func init() { core.ProcessRegistry.Register(demoNotificationModule()) }
 
-// The product must deliver the job handler and report its type.
 var _ jobs.Handler = (*demoNotifier)(nil)
 
-// demoNotificationModule is the fixture's descriptor.
-//
-// The dispatcher, the account store, the membership store, the preference
-// matrix, the SMS template registry, the account profile seam, the locale
-// resolver and the handler registration face are required: without them the
-// fixture has nowhere to submit a dispatch, no member to address, no
-// recipient-aware channel set to write, no way to tell whether the sms channel
-// can carry the type's template in the recipient's language, no stored language
-// to render it in, no default to fall back to and no place to register its job.
-// The logger is optional, as it is for every module, and the host's default
-// logger carries the fixture's diagnostics when none is delivered.
-//
-// The module itself is compiled into every build; whether it runs is stated in
-// Prepare by the explicit demo.notification.enabled switch, off when absent. An
-// absent switch means the run does not dispatch the fixture, so it stands down
-// with that reason; there is no half-configured state, because the switch is
-// the whole of the fixture's own configuration. A run with no configuration
-// reader at all fails the start instead, because that is a host omission and
-// not a deployment that left the fixture off.
 func demoNotificationModule() core.Module {
 	resources := []any{
 		demoNotificationSchema(),
@@ -276,17 +162,10 @@ func demoNotificationModule() core.Module {
 	}
 }
 
-// demoSMSTemplates is the part of the SMS template registry this fixture
-// reads before it chooses the sms channel: one resolution, which answers
-// whether the registry holds a template for a language and can carry a message
-// in it. The narrow shape keeps the decision testable without the registry's
-// management surface.
 type demoSMSTemplates interface {
 	Resolve(sms.Message) (sms.Resolved, error)
 }
 
-// demoNotifier is the worker's product: the seams one dispatch needs, and the
-// logger its skipped members are reported on.
 type demoNotifier struct {
 	dispatcher notification.Dispatcher
 	prefs      notification.Preferences
@@ -298,7 +177,6 @@ type demoNotifier struct {
 	logger     *slog.Logger
 }
 
-// newDemoNotifier takes up what the descriptor requires.
 func newDemoNotifier(reg *core.Registry) (*demoNotifier, error) {
 	dispatcher, err := core.Resolve[notification.Dispatcher](reg)
 	if err != nil {
@@ -346,34 +224,20 @@ func newDemoNotifier(reg *core.Registry) (*demoNotifier, error) {
 	}, nil
 }
 
-// Type reports the job type the scheduler enqueues; see jobs.Handler.
 func (*demoNotifier) Type() string { return demoNotificationJobType }
 
 // Handle turns one periodic job into one dispatch per active member of the
-// tenant the job belongs to. The scheduler entered the tenant before handing
-// the job over, so the context already carries it.
-//
-// Each dispatch renders in the recipient's own language: the profiles read the
-// account's stored preference, and the resolver supplies the platform default
-// when no profile stores one. Two members of one tenant receive the same notice
-// in the languages each of them chose.
-//
-// A member this fixture cannot address — one with no proved phone and no email
-// address — is skipped with a log line rather than failed: the type's default
-// channels include email and sms, and the delivery pipeline answers a missing
-// destination as a failed channel, which would retry the whole job for one
-// unaddressable member. A dispatch that fails is joined into the returned
-// error, so the job retries; the per-recipient dedupe key of the dispatch makes
-// the members already submitted converge on one delivery job, so a retry adds
-// no second message once the language is stable.
+// tenant the job belongs to. A member with no proved phone and no email address
+// is skipped rather than failed, because the delivery pipeline answers a missing
+// destination as a failed channel and would retry the whole job.
 func (n *demoNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn) (jobs.Result, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
 		return jobs.Result{}, fmt.Errorf("%s: %w", demoNotificationModuleName, tenant.ErrNoTenantInContext)
 	}
-	// The system tenant is the platform's policy domain, not an organization: the
-	// notice this fixture dispatches is not addressed to its administrators.
-	// Personal tenants are real organizations and do receive it.
+	// The system tenant is the platform's policy domain, not an organization, so
+	// the notice is not addressed to its administrators; personal tenants do
+	// receive it.
 	if string(id) == string(authz.PlatformDomain) {
 		return jobs.Result{}, nil
 	}
@@ -408,25 +272,9 @@ func (n *demoNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progres
 }
 
 // notify addresses one recipient on the channels their account can be reached
-// on and submits one dispatch, rendered in the recipient's language. It
-// resolves the account's identifiers into a plan, writes the recipient-aware
-// channel set through the preference seam so the delivery pipeline reads the
-// same set when it consumes the job, and submits the dispatch under
-// occurrenceID.
-//
-// The sms channel is offered to the plan only after the SMS template registry
-// reports that it holds the type's template for the recipient's language, so a
-// server that never registered the rollout template skips sms instead of
-// failing the channel locally; the other channels still deliver. A template
-// the platform's sending gate refuses is still chosen, so the pipeline records
-// that refusal instead of the fixture hiding it. The resolution happens before
-// the plan is chosen because the destination the registry checks is the
-// recipient's proved phone, which the plan itself selects.
-//
-// The second result is false when the account has neither a proved phone nor an
-// email address; the caller reports that as a skip, not a failure. The tenant is
-// the caller's to name: both callers read it before calling, and the warning a
-// failed language read leaves names it.
+// on and submits one dispatch, rendered in the recipient's language, writing the
+// pruned channel set through the preference seam. The second result is false
+// when the account has no proved phone and no email address.
 func (n *demoNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.AccountID, occurrenceID string) (demoNoticePlan, bool, error) {
 	identifiers, err := n.accounts.Identifiers(ctx, id)
 	if err != nil {
@@ -463,12 +311,9 @@ func (n *demoNotifier) notify(ctx context.Context, tenantID tenant.ID, id authn.
 }
 
 // localeFor answers the language a notice to id goes out in: the account's
-// stored preference, and the run's configured default when it stores none. It
-// does not read the language of ctx: the notice belongs to the account, not to
-// the request that triggered it. A preference a profile cannot read leaves one
-// not end the search: the remaining profiles are asked, because one seam's
-// failed read says nothing about another's answer. The warning names the
-// notice's type and tenant, never the recipient.
+// stored preference, not the request's language, and the run's configured
+// default when no profile answers. The warning it logs names the type and
+// tenant, never the recipient.
 func (n *demoNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id authn.AccountID) i18n.Locale {
 	readFailed := false
 	for _, profile := range n.profiles {
@@ -490,22 +335,10 @@ func (n *demoNotifier) localeFor(ctx context.Context, tenantID tenant.ID, id aut
 	return n.resolver.Default()
 }
 
-// smsAddressable reports whether the type's sms template is one the registry
-// holds for the account's proved phone and locale: the template is in force and
-// declares the language, with the destination parameter the dispatch carries.
-//
-// ErrRejected is the one answer that says the registry cannot carry the message
-// at all — no such template, no code or body for the language, a parameter the
-// template does not declare — and it is what keeps the type's sms membership
-// from leaking an attempt into a server that never registered the template.
-// ErrNotSendable is deliberately different: the template is held and the
-// language is declared, but the platform's sending gate refuses it (the
-// template is disabled, the language is still under review, or the deployment's
-// sending switch is off). The delivery pipeline is where that gate belongs, and
-// its refusal is the product behaviour the rollout journey proves; the fixture
-// must not hide it by choosing another channel.
-//
-// An account with no proved phone has no sms destination and answers false.
+// smsAddressable reports whether the type's sms template is in force for the
+// account's proved phone and locale. ErrNotSendable counts as addressable: the
+// platform's sending gate refuses it, and the delivery pipeline must record that
+// refusal rather than the fixture choosing another channel.
 func (n *demoNotifier) smsAddressable(locale string, identifiers []authn.Identifier) bool {
 	phone, _ := demoNoticeDestinations(identifiers)
 	if phone == "" {
@@ -520,8 +353,6 @@ func (n *demoNotifier) smsAddressable(locale string, identifiers []authn.Identif
 	return err == nil || errors.Is(err, sms.ErrNotSendable)
 }
 
-// membersOf lists every membership of a tenant, following the paging cursor the
-// membership seam exposes.
 func (n *demoNotifier) membersOf(ctx context.Context, tenantID string) ([]authn.Membership, error) {
 	const pageSize = 200
 	var all []authn.Membership
@@ -539,16 +370,10 @@ func (n *demoNotifier) membersOf(ctx context.Context, tenantID string) ([]authn.
 	}
 }
 
-// wireDemoRecipient adds the layer that names the preference routes'
-// recipient: the caller's effective account, which is what an impersonation
-// reads as the impersonated one.
-//
-// It sits in the recording stage, inside the authentication gateway — the
-// gateway is the identifying stage, and it puts the identity on the request
-// context before calling the next layer — and outside the authorization guard.
-// The layer sets nothing when no identity is present, so a run without the
-// gateway, or a request that reached the handler before authentication did,
-// keeps the capability's own answer: a write with no recipient is refused.
+// wireDemoRecipient adds the layer that names the preference routes' recipient:
+// the caller's effective account, which is what an impersonation reads as the
+// impersonated one. It sits in the recording stage, inside the authentication
+// gateway and outside the authorization guard.
 func wireDemoRecipient(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if errors.Is(err, core.ErrMissingProvider) {
@@ -570,9 +395,6 @@ func wireDemoRecipient(reg *core.Registry) error {
 	return nil
 }
 
-// demoRecipientHandler copies the authenticated caller's effective account
-// onto the request context under preferences.WithRecipient. A request with no
-// identity leaves the context untouched.
 func demoRecipientHandler(c *gin.Context) {
 	if id, ok := authn.FromContext(c.Request.Context()); ok {
 		c.Request = c.Request.WithContext(
@@ -581,26 +403,14 @@ func demoRecipientHandler(c *gin.Context) {
 	c.Next()
 }
 
-// demoNoticePlan is how one recipient is addressed by one dispatch: the
-// single external destination the dispatch carries and the channels the
-// recipient can receive on. The capability carries one destination parameter
-// for every external channel, so a recipient is addressed on at most one of
-// them per dispatch.
 type demoNoticePlan struct {
-	// To is the destination the dispatch carries under "to". For sms it is the
-	// recipient's proved phone number and for email the address the account
-	// holds.
-	To string
-	// Channels is the subset of the type's channels the recipient can be
-	// reached on: in_app always, plus the one external channel To addresses.
+	To       string
 	Channels []notification.Channel
 }
 
 // demoNoticeDestinations resolves an account's identifiers into the two
-// destinations a dispatch can address: the proved phone number, which is the
-// sms destination, and the email address, which is the email destination. An
-// unproved phone is not a destination the product would send a notice to, so it
-// is ignored.
+// destinations a dispatch can address. An unproved phone is not a destination
+// the product would send a notice to, so it is ignored.
 func demoNoticeDestinations(identifiers []authn.Identifier) (phone, email string) {
 	for _, identifier := range identifiers {
 		if identifier.Value == "" {
@@ -620,19 +430,6 @@ func demoNoticeDestinations(identifiers []authn.Identifier) (phone, email string
 	return phone, email
 }
 
-// planDemoNotice resolves one account's identifiers into a delivery plan.
-//
-// A proved phone number is the sms destination when the registry holds the
-// type's template for the recipient's language; otherwise the account falls
-// back to its email address, which keeps the in-app and email channels
-// reachable. The platform's own sending gate — a disabled template, a language
-// still under review, the deployment's sending switch — is not part of this
-// choice: the delivery pipeline refuses such a send, and the fixture must let it
-// be observed rather than quietly choosing another channel. An account holding
-// neither destination is not addressable and is skipped rather than failed. A
-// proved phone with neither a held template nor an email address is still
-// addressable in-app; the dispatch carries the phone as its "to" parameter,
-// which the in-app channel does not read.
 func planDemoNotice(identifiers []authn.Identifier, smsAddressable bool) (demoNoticePlan, bool) {
 	phone, email := demoNoticeDestinations(identifiers)
 	switch {
@@ -657,16 +454,8 @@ func planDemoNotice(identifiers []authn.Identifier, smsAddressable bool) (demoNo
 }
 
 // pruneDemoChannels removes the channels a plan cannot address from the
-// recipient's effective set. It is deliberately monotonic: it only drops a
-// channel, never adds one back, so a channel the recipient turned off stays off
-// across every dispatch window.
-//
-// The write it feeds is needed because the delivery pipeline reads the
-// recipient's effective channels from the preference seam when it consumes the
-// job. A plan that addresses sms carries a phone number as the single
-// destination, so leaving email in the set would send the email to a phone
-// number; a plan that falls back to email must drop sms, or the sms channel
-// would be attempted with the email address as its destination.
+// recipient's effective set. It only drops a channel, never adds one back, so a
+// channel the recipient turned off stays off across every dispatch window.
 func pruneDemoChannels(effective []notification.Channel, plan demoNoticePlan) []notification.Channel {
 	addressable := make(map[notification.Channel]struct{}, len(plan.Channels))
 	for _, channel := range plan.Channels {

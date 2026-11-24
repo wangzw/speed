@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// requiredSSOTenant is the seed's tenant block with the SSO requirement switched
-// on in that tenant's own settings layer, so every request the tenant resolves
-// has to arrive through one of its identity providers.
 const requiredSSOTenant = `    - name: demo
       admins:
         - operator
@@ -19,14 +16,8 @@ const requiredSSOTenant = `    - name: demo
           value: "true"
 `
 
-// TestAnInvitationWriteUnderRequiredSSOIsRefusedForALocalPasswordSession holds
-// the tenant admission layer on a tenant-scoped invitation write. The tenant
-// administrator signs in with a local password, and the tenant requires a
-// sign-in through its identity provider: the write answers 401 sso_required
-// before the invitation handler decides anything, even though the caller is a
-// member holding the tenant's management permission. A run that serves the
-// tenant-administration route on an endpoint the admission layer does not guard
-// issues the invitation instead.
+// TestAnInvitationWriteUnderRequiredSSOIsRefusedForALocalPasswordSession holds that a tenant requiring
+// SSO refuses a local-password session's invitation write 401 sso_required before the handler decides.
 func TestAnInvitationWriteUnderRequiredSSOIsRefusedForALocalPasswordSession(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
@@ -43,9 +34,6 @@ func TestAnInvitationWriteUnderRequiredSSOIsRefusedForALocalPasswordSession(t *t
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, seedIdentifier, seedPassword)
-	// The api endpoint resolves the tenant from this header, so the request is
-	// decided in that tenant's domain; without it the admission layer has no
-	// tenant to check.
 	auth := map[string]string{
 		"Authorization": "Bearer " + token,
 		"X-Tenant":      demoTenant,

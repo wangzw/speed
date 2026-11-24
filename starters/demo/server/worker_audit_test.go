@@ -1,12 +1,5 @@
 package main
 
-// The worker's platform baseline carries the audit journal. Background paths
-// write audit rows — the account-deletion cleanup and the personal tenant's
-// create and delete in the event compensation — and a worker without the
-// journal would lose them silently. The case drives the modules the baseline
-// names with no HTTP entry point and has a background stand-in record one seam
-// entry, which is the row such a path writes.
-
 import (
 	"context"
 	"fmt"
@@ -25,11 +18,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// workerAuditAction is the action the stand-in records.
 const workerAuditAction = "test.worker.audit"
 
-// workerAuditWriter stands for a background capability that records an audit
-// row: it requires the audit seam and writes one entry when the run starts.
 func workerAuditWriterModule() core.Module {
 	return core.Module{
 		Name:     "test.worker-audit-writer",
@@ -48,8 +38,8 @@ func workerAuditWriterModule() core.Module {
 	}
 }
 
-// TestTheWorkerBaselineRecordsTheAuditRow holds the worker roster to its
-// background audit: the modules it names, with no router, record a seam entry.
+// TestTheWorkerBaselineRecordsTheAuditRow holds that the worker roster records a seam entry with no
+// router.
 func TestTheWorkerBaselineRecordsTheAuditRow(t *testing.T) {
 	t.Parallel()
 	if !slices.Contains(baselineWorker, auditjournal.ModuleName) {

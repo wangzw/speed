@@ -5,8 +5,6 @@ import (
 	"os/exec"
 )
 
-// programPackage is the demo server's main package, built into the program a
-// test package runs as a child.
 const programPackage = "github.com/vislake/speed/starters/demo/server"
 
 // BuildProgram builds the demo server program into out, with the race detector

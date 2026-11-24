@@ -1,21 +1,3 @@
-# Air's configuration for the demo program's local development loop.
-#
-# `make dev` starts vite in the background and air here in the foreground. Air
-# builds the default binary and runs `sqlite seed` before it hands the process to
-# `sqlite serve`, so every rebuild seeds the database the previous run used.
-# Seed is idempotent by contract, so a restart neither duplicates nor overwrites
-# a change made through the console.
-#
-# The run reads no configuration file: its values are the defaults compiled into
-# the binary (defaults.go) and whatever variables `mise exec` loaded from .env,
-# and the command line carries no --config. The e2e tier belongs to the
-# end-to-end run; its build and configuration are no part of local development.
-# Only Go sources are build inputs, so only they restart the server; the
-# frontend is vite's job, so its tree is not watched here.
-#
-# web/ is the frontend package's own tree, and var/ is the running program's
-# state (the SQLite file, the token signing key and the object store root).
-# Neither is a build input. tmp/ holds the binary air builds.
 
 root = "."
 tmp_dir = "tmp"

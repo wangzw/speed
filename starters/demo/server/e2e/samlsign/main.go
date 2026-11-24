@@ -1,17 +1,6 @@
 // Command samlsign signs one SAML response for the end-to-end tier's local
-// identity provider.
-//
-// The product validates a response with goxmldsig, so the fixture signs with the
-// same library rather than a second XML-DSig implementation. The command reads
-// the unsigned response document from standard input, signs its root element
-// with an enveloped signature and writes the base64 transport form, the value a
-// POST binding carries in the SAMLResponse field, to standard output. The
-// identity provider's material is one directory holding key.pem, its private
-// key, and cert.pem, the certificate the operator registers with the provider;
-// the command reads those two names and nothing else.
-//
-// The command belongs to the end-to-end harness only. The harness builds it into
-// its own run directory; nothing in the demo program imports it.
+// identity provider. It reads the unsigned document on standard input and writes
+// the base64 transport form to standard output.
 package main
 
 import (
@@ -30,7 +19,6 @@ import (
 	dsig "github.com/russellhaering/goxmldsig"
 )
 
-// The two files of the identity provider's directory.
 const (
 	keyFile  = "key.pem"
 	certFile = "cert.pem"
@@ -108,7 +96,6 @@ func sign(dir string, document []byte) (string, error) {
 	return base64.StdEncoding.EncodeToString(text.Bytes()), nil
 }
 
-// loadSigner reads a PEM private key, PKCS #8 or PKCS #1 RSA or SEC 1 EC.
 func loadSigner(material *os.Root) (crypto.Signer, error) {
 	block, err := readPEM(material, keyFile)
 	if err != nil {
@@ -131,7 +118,6 @@ func loadSigner(material *os.Root) (crypto.Signer, error) {
 	return key, nil
 }
 
-// loadCertificate reads the DER bytes of a PEM certificate.
 func loadCertificate(material *os.Root) ([]byte, error) {
 	block, err := readPEM(material, certFile)
 	if err != nil {
@@ -143,8 +129,6 @@ func loadCertificate(material *os.Root) ([]byte, error) {
 	return block.Bytes, nil
 }
 
-// readPEM reads the first PEM block of a file inside the identity provider's
-// directory.
 func readPEM(material *os.Root, path string) (*pem.Block, error) {
 	raw, err := material.ReadFile(path)
 	if err != nil {

@@ -6,17 +6,8 @@ import (
 	"testing"
 )
 
-// mayLeaveRouteCountUnchanged is the exemption table: the routing modules whose
-// removal cannot lower an endpoint's route count over the baseline template,
-// each with the reason. A module that mounts its routes only when a switch is on
-// mounts none here, so dropping it changes no route count and the removal check
-// cannot tell a real module from a name that registered nothing. The check stays
-// fail-closed otherwise: every other vacuous removal fails.
-//
-// org.personal is not exempt from the route-count table, but its removal is not
-// measurable there: the account module requires the provisioning seam it
-// provides, so a run without it does not start at all. That failure is held
-// instead. See TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration.
+// mayLeaveRouteCountUnchanged names the routing modules whose removal cannot
+// lower an endpoint's route count.
 var mayLeaveRouteCountUnchanged = map[string]string{
 	"authn.sso.saml": "the metadata route is mounted only while authn.sso.saml.enabled is true, and " +
 		"the baseline template leaves the switch off: the method and the metadata route are not " +
@@ -26,14 +17,8 @@ var mayLeaveRouteCountUnchanged = map[string]string{
 		"an SMS vendor account is not part of the baseline, so this removal is vacuous",
 }
 
-// TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration holds each
-// baseline exemption to its stated reason over the template this build's case
-// runs: dropping the module leaves every endpoint it describes at the same
-// route count. It also holds the personal module out of the table: the baseline
-// names org.personal and the module is always in force, so an exemption
-// claiming its removal is vacuous would be false. Since the account module
-// requires the provisioning seam this module provides, dropping it fails the
-// startup instead of lowering a route count; the case holds that failure.
+// TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration holds each baseline exemption to its
+// reason, and holds that dropping the personal module fails the startup instead.
 func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T) {
 	t.Parallel()
 	names := make([]string, 0, len(mayLeaveRouteCountUnchanged))
@@ -65,11 +50,6 @@ func TestTheBaselineRouteCountExemptionsAreTrueForItsConfiguration(t *testing.T)
 	}
 }
 
-// assertRouteCountsUnchanged holds an exemption's stated reason to the run:
-// every endpoint the removed modules describe keeps its route count, so the
-// removal is vacuous and only the build's exemption lets it pass. A
-// configuration that mounts the route reddens this assertion, which is what
-// retires the exemption.
 func assertRouteCountsUnchanged(t *testing.T, group variantGroup, before, after map[string]chainLine) {
 	t.Helper()
 	measured := false

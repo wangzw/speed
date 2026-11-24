@@ -2,9 +2,8 @@ package demotest
 
 import "os"
 
-// childEnvNames is the whole of what a child process starts with. A name joins
-// this list only by name, never as a prefix or a pattern, and only with a case
-// that fails without it.
+// A name joins childEnvNames only by exact name, never as a prefix or pattern,
+// and only when a test case fails without it.
 var childEnvNames = []string{
 	"HOME",
 	"TMPDIR",
@@ -25,8 +24,8 @@ var childEnvNames = []string{
 }
 
 // ChildEnv returns the environment a child process starts with: only the
-// variables in its list, each read with os.LookupEnv so the testing package
-// records the read, and an unset name counts as a value of its own.
+// variables in childEnvNames, each read with os.LookupEnv so the testing package
+// records the read.
 func ChildEnv() []string {
 	env := make([]string, 0, len(childEnvNames))
 	for _, name := range childEnvNames {

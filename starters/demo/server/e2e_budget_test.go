@@ -1,12 +1,5 @@
 package main
 
-// The e2e configuration widens the per-source and per-account send budgets so a
-// walkthrough is not throttled. This case holds the widened keys to three facts
-// at once: each is seeded, each lies inside the domain its module declares, and
-// each is above the declared default. The limits are read from the declarations
-// rather than restated here, so a module that moves a bound moves the case with
-// it.
-
 import (
 	"reflect"
 	"regexp"
@@ -18,15 +11,11 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// e2eWidenedBudget is one setting the e2e configuration widens: the
-// namespace its module declares it under and the item's key within it.
 type e2eWidenedBudget struct {
 	namespace string
 	key       string
 }
 
-// e2eWidenedBudgets are the send budgets the e2e configuration raises
-// above their declared defaults.
 var e2eWidenedBudgets = []e2eWidenedBudget{
 	{"authn.sms", "per-source-hourly"},
 	{"authn.sms", "per-source-daily"},
@@ -38,16 +27,10 @@ var e2eWidenedBudgets = []e2eWidenedBudget{
 	{"authn.login", "email-per-source-daily"},
 }
 
-// wholeNumberRange reads the range a declared integer domain states. The
-// declaration's rule is its own statement of what a write may store, so the
-// case reads the limits from it instead of restating them. A domain phrased
-// another way is reported rather than passed silently.
 var wholeNumberRange = regexp.MustCompile(`^whole numbers from ([0-9]+) to ([0-9]+)$`)
 
-// TestE2EWidensTheSendBudgets holds the e2e configuration's widened send
-// budgets to the declarations of the modules that own them: the keys are
-// seeded, and every value is inside its declared domain and above the declared
-// default.
+// TestE2EWidensTheSendBudgets holds that each widened key is seeded, inside its declared domain, and
+// above the declared default.
 func TestE2EWidensTheSendBudgets(t *testing.T) {
 	t.Parallel()
 	var seed seedInput
@@ -77,7 +60,6 @@ func TestE2EWidensTheSendBudgets(t *testing.T) {
 		}
 		rule := item.Domain.Rule()
 		if rule == "" {
-			// The zero domain admits every value of the declared type.
 			continue
 		}
 		match := wholeNumberRange.FindStringSubmatch(rule)
@@ -98,10 +80,6 @@ func TestE2EWidensTheSendBudgets(t *testing.T) {
 	}
 }
 
-// declaredIntegerSetting answers one integer setting's declaration and its
-// default, read off the schema the declaring module registers: the item
-// carries the domain, and the mount struct carries the default in the field
-// the same key tags.
 func declaredIntegerSetting(t *testing.T, budget e2eWidenedBudget) (settings.Item, int) {
 	t.Helper()
 	for _, resource := range core.Resources[settings.Schema](core.ProcessRegistry) {
@@ -123,8 +101,6 @@ func declaredIntegerSetting(t *testing.T, budget e2eWidenedBudget) (settings.Ite
 	return settings.Item{}, 0
 }
 
-// mountIntegerDefault reads the default of one integer item off a schema's
-// mount structs, matched by the config tag the item key is written under.
 func mountIntegerDefault(mounts []settings.Mount, key string) (int, bool) {
 	for _, mount := range mounts {
 		value := reflect.ValueOf(mount.Value)

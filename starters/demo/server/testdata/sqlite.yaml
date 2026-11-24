@@ -1,49 +1,15 @@
-# The sqlite stack: a SQLite database in a file, an in-memory key-value store
-# and an in-memory event bus. Nothing here reaches a network, so this
-# configuration runs the whole baseline with no external service up, and what it
-# writes stays — which is what tells it apart from sqlite-memory, whose database
-# is gone with the process that opened it. Sign in on this stack; probe the
-# assembly on that one.
-#
-# Run it from the starters/demo/server directory, so that every relative path in this
-# file — the token signing key, the object store's root, the database — resolves:
-#
-#   go -C starters/demo/server run . --config file:testdata/sqlite.yaml sqlite seed
-#   go -C starters/demo/server run . --config file:testdata/sqlite.yaml sqlite serve
-#
-# This file is an override document. The platform topology — the endpoint table
-# and every capability's mounting — is compiled into the binary
-# (server/defaults.go) and layered below this file, so what is written here is
-# what a deployment chooses: addresses, origins, the export destination, the
-# seed and the backend section at the bottom. Only the backend section differs
-# between the six stack files.
-#
-# No mounting key is repeated here: the loader accepts a required item from the
-# compiled-in document, whose mounting table is complete. A copy changes the
-# table in defaults.go, not in this file.
-#
 # The values marked DEV in a comment are a development default this skeleton
-# ships so a copy starts as it stands. Replace every one of them before a
-# deployment serves real traffic; AGENTS.md lists them together.
 
 http:
   listeners:
     backend:
       address: "127.0.0.1:8081"
-  # The CORS layer guards the api endpoint. This stack serves the frontend
-  # bundle from the same listener as the API, so a browser reaching the API from
-  # the page needs no CORS headers and this policy is not exercised here. It is
-  # kept as the starting point for a deployment that serves the frontend from an
-  # origin of its own: point allow-origins at the origins the product is served
-  # from.
   cors:
     endpoints:
       api:
         allow-origins:
           - "https://app.demo.test"
 
-# The operations surface's document metadata. Its endpoint is part of the
-# platform topology and comes from defaults.go.
 ops:
   title: demo
   version: 0.1.0
@@ -54,83 +20,42 @@ observability:
   otel:
     service-name: demo
 
-# The identity system's deployment values: the origin this deployment is
-# reached at, the token signing key, and the relying party the step-up is bound
-# to. The gateway's endpoint list and the account mount are platform topology
-# and come from defaults.go.
 authn:
   gate:
     mount:
-      # The origin this deployment is reached at from outside: the origin a
-      # browser signs in from, and the one the WebAuthn relying party is bound
-      # to. It is the address the backend listener serves (http.listeners),
-      # written by host name — a relying party id has to be a domain, so the
-      # loopback address is localhost.
       public-url: "http://localhost:8081"
   # DEV: the token signing key. The program generates one at
-  # var/token-signing-key.pem, relative to the working directory, on the first
-  # run and keeps it afterwards. Replace it with your own key material before a
-  # deployment serves real traffic. The issuer and audience default to the
-  # gateway's public URL.
   token:
     signing-key-file: var/token-signing-key.pem
   mfa:
     totp:
       issuer: demo
-    # WebAuthn. The relying party is bound to the origin the deployment is
-    # reached at (authn.gate.mount.public-url above); naming it here makes the
-    # binding visible and is where a copy points it at its own domain. The id
-    # has to be a domain, so it is localhost and not the loopback address the
-    # listener names.
     webauthn:
       rp-id: localhost
       rp-name: demo
       origins:
         - "http://localhost:8081"
 
-# The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:
     root: "./var/objects"
 
-# The first account, the tenants this deployment serves, and the platform role
-# a copy starts with. The seed command is idempotent: an account, a tenant, a
-# role, a grant or a binding already there is left as it stands. This stack's
-# database is a file, so a run of seed is still there for the serve that
-# follows.
 seed:
   # DEV: the initial operator's login name and password, and whether it
-  # administers the platform. Replace both before a deployment serves real
-  # traffic.
   accounts:
     - identifier: operator
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
-  # The business tenants the deployment serves. Each is registered in the
-  # roster, and each administrator named under it gets a membership and the
-  # tenant-admin role in that tenant's domain, so the console's tenant-addressed
-  # pages answer for them out of the box.
   # DEV: replace with the tenants this deployment actually serves and the
-  # accounts that administer each.
   tenants:
     - name: acme
       admins:
         - operator
-  # Lowered to the domain minimum for local demonstration: impersonation
-  # requires a non-SMS factor that has been active for at least
-  # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a
-  # freshly enrolled factor ineligible for a day. Production keeps the
-  # declared default; seed writes a value only while the global layer holds
-  # no explicit row for the key.
   settings:
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"
 
-# The engine. The database is a file under var/, the directory the token signing
-# key's first-run generation already establishes; it is a runtime artifact and
-# .gitignore keeps it out of the tree. A deployment points this at a path of its
-# own. The encryption key seals the columns a module encrypts at rest (a TOTP
 # seed among them); it is a DEV value and must be replaced.
 db:
   sqlite:

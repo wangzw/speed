@@ -32,27 +32,8 @@ import (
 	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
-// This file holds the differential case: the anonymous answers a run gives
-// must not depend on which modules the run assembled. The property is the one
-// the claim-based dispatch exists for — endpoint selection reads the
-// configuration's prefixes and nothing about the registered routes — and the
-// case is written so it can fail before that change: the endpoint a probe is
-// expected to reach is read from the table below, not from the configuration
-// under test.
-//
-// A variant process is this test binary re-executed with DEMO_SERVE_WITHOUT
-// naming modules to drop from the serve roster — baselineServe and
-// capabilityModules. TestMain sees the variable, skips the build and the test
-// run, prints the final inclusion list to standard error, and runs the program.
-// Product code carries no switch.
-
 const serveWithoutEnv = "DEMO_SERVE_WITHOUT"
 
-// serveWithout drops the named modules from the serve roster — the baseline
-// list and the capability ceiling — and reports the final list. It runs before
-// the command tree is built, so the serve command assembles what the lists name
-// and nothing else. A module leaves with the baseline module whose capability it
-// requires; the variant would not start otherwise.
 func serveWithout(list string) {
 	drop := map[string]bool{}
 	for _, name := range strings.Split(list, ",") {
@@ -75,16 +56,10 @@ func serveWithout(list string) {
 	fmt.Fprintln(os.Stderr, "serve-without: "+strings.Join(kept, ","))
 }
 
-// serveRoster is every module a serve run names in this build: the platform
-// core and the capability ceiling.
 func serveRoster() []string {
 	return slices.Concat(baselineServe, capabilityModules)
 }
 
-// expectedEndpoint answers which endpoint the ownership table says answers a
-// path on the backend listener. A path under no non-root prefix goes to web in
-// the merged topology; on the split one the backend listener has no fallback
-// and the dispatch answers, which is no endpoint at all.
 func expectedEndpoint(path string, split bool) string {
 	owner, prefix := "", ""
 	for claimed, endpoint := range demotest.ExpectedOwners() {
@@ -101,7 +76,6 @@ func expectedEndpoint(path string, split bool) string {
 	return "web"
 }
 
-// probe is one anonymous request the case sends to both runs.
 type probe struct {
 	listener string
 	method   string
@@ -109,25 +83,16 @@ type probe struct {
 	endpoint string
 }
 
-// probeMethods are the methods every documented path is asked with. An
-// operation documented for one method is asked with all of them: the gateway's
-// promise is that an unauthenticated refusal does not depend on whether the
-// method is the registered one.
 var probeMethods = []string{
 	http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
 	http.MethodPatch, http.MethodDelete, http.MethodOptions,
 }
 
-// outsideClaims are paths no claim of the table covers, besides the root.
 var outsideClaims = []string{
 	"/", "/admin/tenants", "/zz.json", "/.well-known/zz",
 	"/assets/zz.js", "//api/zz", "/API/zz", "/apix",
 }
 
-// buildProbes answers the request matrix: every documented path with every
-// method, the table's own prefixes at their boundaries, and paths outside every
-// claim. A documented path goes to the listener its fragment's endpoint sits
-// on; the table probes go to the backend listener.
 func buildProbes(t *testing.T, document []byte, claims map[string]endpointClaim, split bool) []probe {
 	t.Helper()
 	seen := map[probe]bool{}
@@ -192,28 +157,17 @@ func buildProbes(t *testing.T, document []byte, claims map[string]endpointClaim,
 	return probes
 }
 
-// anonRoute is one route registered as exempt, or as accepting a request with
-// no credential.
 type anonRoute struct {
 	method string
 	path   string
 }
 
-// frozenTable is the baseline's anonymous surface, by endpoint, read from the
-// gateway's startup diagnostics.
 type frozenTable map[string][]anonRoute
 
-// diagnosticPair matches one key="value" attribute of a diagnostic line. The
-// endpoint keys are the endpoint names; the message and module keys are
-// skipped by the value shape below.
 var diagnosticPair = regexp.MustCompile(`([A-Za-z0-9_.-]+)="([^"]*)"`)
 
-// routeToken matches one rendered route, "METHOD /path".
 var routeToken = regexp.MustCompile(`^([A-Z]+) (/.*)$`)
 
-// parseFrozenTable reads the two frozen tables the gateway writes at startup:
-// the exempt routes and the routes that accept a request with no credential.
-// For an anonymous request the two are the same surface, so both are collected.
 func parseFrozenTable(lines []string) frozenTable {
 	table := frozenTable{}
 	for _, line := range lines {
@@ -238,15 +192,11 @@ func parseFrozenTable(lines []string) frozenTable {
 	return table
 }
 
-// hitsAnonymousSurface reports whether a probe is one the guarantee exempts: it
-// hits the baseline's anonymous surface on the endpoint the expectation table
-// names. Such a request is not sent — sending it would change the rate limiter
-// and the journal — because its answer is allowed to differ.
+// Such a request is not sent — sending it would change the rate limiter and the
+// journal — because its answer is allowed to differ.
 func hitsAnonymousSurface(table frozenTable, ops []anonRoute, p probe) bool {
 	switch p.endpoint {
 	case "web":
-		// The frontend host's catch-all route covers the endpoint's whole
-		// path space, so every request there hits it.
 		return true
 	case "ops":
 		for _, route := range ops {
@@ -256,7 +206,6 @@ func hitsAnonymousSurface(table frozenTable, ops []anonRoute, p probe) bool {
 		}
 		return false
 	case "":
-		// The dispatch answers; it registers no route and no module answers.
 		return false
 	}
 	for _, route := range table[p.endpoint] {
@@ -268,9 +217,8 @@ func hitsAnonymousSurface(table frozenTable, ops []anonRoute, p probe) bool {
 }
 
 // routeMatches reports whether a request path matches a registered route
-// pattern: literal segments compare exactly, ":p" matches one segment, and
-// "*p" matches the rest. Trailing slashes are significant, as they are to the
-// engine.
+// pattern: ":p" matches one segment, "*p" the rest, and trailing slashes are
+// significant.
 func routeMatches(pattern, path string) bool {
 	if strings.HasSuffix(pattern, "/") != strings.HasSuffix(path, "/") {
 		return false
@@ -294,7 +242,6 @@ func routeMatches(pattern, path string) bool {
 	return len(pathSegments) == len(patternSegments)
 }
 
-// querylessSegments splits a path into non-empty segments.
 func querylessSegments(path string) []string {
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" {
@@ -303,14 +250,11 @@ func querylessSegments(path string) []string {
 	return strings.Split(trimmed, "/")
 }
 
-// chainLine is one endpoint's assembly diagnostic.
 type chainLine struct {
 	routes int
 	layers []string
 }
 
-// parseChains reads the assembly lines: the endpoint, its route count and the
-// chain as written.
 var (
 	chainEndpoint = regexp.MustCompile(`endpoint=([A-Za-z0-9_.-]+)`)
 	chainRoutes   = regexp.MustCompile(`routes=([0-9]+)`)
@@ -335,9 +279,6 @@ func parseChains(lines []string) map[string]chainLine {
 		}
 		for _, layer := range strings.Split(chain[1], " -> ") {
 			layer = strings.TrimSpace(layer)
-			// A layer carries the stage it stands in as a leading marker,
-			// "[observe] observability.otel(…)", or as a token of its own,
-			// "[observe]". Strip the marker; skip a token that is only one.
 			if strings.HasPrefix(layer, "[") {
 				end := strings.Index(layer, "]")
 				if end < 0 {
@@ -358,9 +299,6 @@ func parseChains(lines []string) map[string]chainLine {
 	return chains
 }
 
-// shapingTokens are the capabilities a module that shapes every answer
-// provides. Removing such a module changes the answers for reasons that have
-// nothing to do with endpoint selection, so the case leaves it in place.
 var shapingTokens = []core.Token{
 	(*authn.Verifier)(nil),
 	(*authn.Gate)(nil),
@@ -370,10 +308,8 @@ var shapingTokens = []core.Token{
 	(*i18n.Negotiator)(nil),
 }
 
-// preGateLayers maps the layer names a chain can carry before the gateway to
-// the module that delivers them. A layer this case does not know is a failure:
-// the answer-shaping set has to be decided for it before it can be left in
-// place.
+// A layer this case does not know is a failure: the answer-shaping set has to be
+// decided for it before it can be left in place.
 var preGateLayers = map[string]string{
 	"observability.otel":       otel.ModuleName,
 	"observability.otel:guard": otel.ModuleName,
@@ -383,16 +319,14 @@ var preGateLayers = map[string]string{
 	"ratelimit.address":        ratelimit.ModuleName,
 }
 
-// moduleClass is what the case does with a baseline module.
 type moduleClass int
 
 const (
-	classShaping moduleClass = iota // not removed: it shapes every answer
-	classRouting                    // removed in a variant of its own
-	classInfra                      // not removed: no routes on a guarded endpoint
+	classShaping moduleClass = iota
+	classRouting
+	classInfra
 )
 
-// assembledModule is the descriptor facts the classification needs.
 type assembledModule struct {
 	name          string
 	requires      []core.Requirement
@@ -400,13 +334,6 @@ type assembledModule struct {
 	specEndpoints []string
 }
 
-// assembledDescriptors reads the modules the reference run assembles — the
-// platform core and the capability ceiling — with their dependency declarations
-// and the endpoints their fragments describe. Every list is a seed of the
-// variants, and all of them are
-// in the dependency graph so that a variant dropping a module also leaves out
-// every module that requires it. A listed name that no module registers is a
-// failure: the lists and the registry would otherwise drift apart silently.
 func assembledDescriptors(t *testing.T) map[string]*assembledModule {
 	t.Helper()
 	named := map[string]bool{}
@@ -450,10 +377,6 @@ func assembledDescriptors(t *testing.T) map[string]*assembledModule {
 	return modules
 }
 
-// classifyModules gives every assembled module its class. A module is shaping
-// when it provides a capability every answer depends on, or when it is one of
-// the layers before the gateway; routing when it declares a fragment on a
-// guarded endpoint; and infrastructure otherwise.
 func classifyModules(t *testing.T, modules map[string]*assembledModule, guarded map[string]bool) map[string]moduleClass {
 	t.Helper()
 	mapped := map[string]bool{}
@@ -474,8 +397,6 @@ func classifyModules(t *testing.T, modules map[string]*assembledModule, guarded 
 	return classes
 }
 
-// guardedEndpointOf reports whether the module declares a fragment on a guarded
-// endpoint.
 func guardedEndpointOf(module *assembledModule, guarded map[string]bool) bool {
 	for _, endpoint := range module.specEndpoints {
 		if guarded[endpoint] {
@@ -485,8 +406,6 @@ func guardedEndpointOf(module *assembledModule, guarded map[string]bool) bool {
 	return false
 }
 
-// providesShapingToken reports whether one of the module's provisions is a
-// shaping capability.
 func providesShapingToken(provides []core.Token) bool {
 	for _, provision := range provides {
 		for _, wanted := range shapingTokens {
@@ -498,10 +417,6 @@ func providesShapingToken(provides []core.Token) bool {
 	return false
 }
 
-// withDependents adds every module that non-optionally requires a capability
-// the set provides, transitively. Removing a module without its dependents
-// would leave a run that cannot start for a reason unrelated to the claim, so
-// the variant takes them together.
 func withDependents(seed map[string]bool, modules map[string]*assembledModule) map[string]bool {
 	out := map[string]bool{}
 	for name := range seed {
@@ -539,29 +454,17 @@ func withDependents(seed map[string]bool, modules map[string]*assembledModule) m
 	}
 }
 
-// variantGroup is one run with a set of modules left out.
 type variantGroup struct {
 	id      string
 	modules []string
 }
 
-// mayNotStartGroups names the variants the case allows to leave not starting,
-// each with the reason. The guarantee is fail-closed: every variant that
-// buildGroups produces has to start, because leaving one out and still
-// standing up is what makes the differential comparison meaningful. A variant
-// that stops starting fails the case; only a debt written down here, with its
-// reason, may be left out of the guarantee.
 var mayNotStartGroups = map[string]string{
 	"org.personal": "authn.account requires the account provisioning seam this module provides, " +
 		"so an assembly without it does not start: a user account's personal tenant is written " +
 		"in the account's own transaction",
 }
 
-// variantStartOutcome decides what a variant's readiness result means. A run
-// that became ready passes. One that did not fails unless mayNotStartGroups
-// exempts the group, in which case the exemption's reason is returned for the
-// log. The decision is a function so a case can hold an unstarted variant to
-// it without launching one.
 func variantStartOutcome(group variantGroup, err error, output string) (exemption string, failure error) {
 	if err == nil {
 		return "", nil
@@ -572,11 +475,6 @@ func variantStartOutcome(group variantGroup, err error, output string) (exemptio
 	return "", fmt.Errorf("dropping %v left a run that does not start: %w\n%s", group.modules, err, output)
 }
 
-// routeCountOutcome decides what a variant's route count means for a removed
-// module: a lower count passes, and an unchanged or higher count passes only
-// when this build's exemption table names the module, whose reason is returned
-// for the log. The decision is a function so a case can hold an exemption to
-// the configuration it was written for without launching a run.
 func routeCountOutcome(removed, endpoint string, before, after int) (exemption string, failure error) {
 	if after < before {
 		return "", nil
@@ -588,13 +486,8 @@ func routeCountOutcome(removed, endpoint string, before, after int) (exemption s
 		"the removal is vacuous", removed, endpoint, after, before)
 }
 
-// TestEveryRoutingVariantMustStart holds the start guarantee to the variants
-// the case builds: an exemption has to be written down with its reason, and
-// every other variant fails when it does not start rather than leaving the
-// matrix silently. assembledDescriptors and classifyModules are the functions
-// the differential case itself uses, so the groups held here are the ones it
-// runs. Every module a build assembles is a seed of its own, so the start
-// property is held for every capability the binary carries.
+// TestEveryRoutingVariantMustStart holds that every variant the case builds starts unless an exemption
+// names it with its reason.
 func TestEveryRoutingVariantMustStart(t *testing.T) {
 	t.Parallel()
 	modules := assembledDescriptors(t)
@@ -621,10 +514,6 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 			t.Errorf("mayNotStartGroups names %q, which buildGroups does not produce: the exemption outlived its variant", id)
 		}
 	}
-	// The route-count exemptions are held the same way: an entry has to name a
-	// module this case removes and classifies as routing, and it has to carry
-	// its reason, so an exemption cannot silently outlive the module or the
-	// switch it was written for.
 	for name, reason := range mayLeaveRouteCountUnchanged {
 		if strings.TrimSpace(reason) == "" {
 			t.Errorf("mayLeaveRouteCountUnchanged exempts %q without a reason", name)
@@ -637,8 +526,6 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 			t.Errorf("mayLeaveRouteCountUnchanged names %q, which this case does not classify as routing", name)
 		}
 	}
-	// Every capability module a build assembles is a seed of a variant of its
-	// own, so the start property is held for it too.
 	for _, name := range capabilityModules {
 		if classes[name] == classShaping {
 			continue
@@ -650,13 +537,6 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 	}
 }
 
-// buildGroups writes the variants: one seed per baseline routing module, one
-// per capability module, and the groups that leave one endpoint with no routes
-// at all. Each variant is seeded by exactly one module; the modules that
-// non-optionally require what it provides go with it, and nothing else does. The
-// capability modules are seeds of their own so the start property is held for
-// every module the build assembles, not only for the platform core's routing
-// ones.
 func buildGroups(modules map[string]*assembledModule, classes map[string]moduleClass) []variantGroup {
 	names := make([]string, 0, len(baselineServe))
 	for _, name := range baselineServe {
@@ -690,9 +570,6 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 		}
 	}
 
-	// The capability modules are seeds of their own. A shaping module is left in
-	// place for the same reason the core's shaping modules are: its absence
-	// changes every answer for a reason unrelated to the assembly.
 	var extras []string
 	for _, name := range capabilityModules {
 		if modules[name] != nil && !slices.Contains(names, name) && classes[name] != classShaping {
@@ -704,9 +581,6 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 		group(name, map[string]bool{name: true})
 	}
 
-	// A module whose removal is expected to stop the run is a seed of its own
-	// even when it declares no fragment of its own: dropping it is how the case
-	// holds its startup property.
 	var mustNotStart []string
 	for name := range mayNotStartGroups {
 		mustNotStart = append(mustNotStart, name)
@@ -718,9 +592,6 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 		}
 	}
 
-	// The endpoint-wide variants name every routing module assembled for that
-	// endpoint, the capability modules included, so the group still removes the
-	// endpoint's whole routing surface.
 	endpointSeeds := slices.Concat(names, extras)
 	for _, endpoint := range []string{"admin", "api"} {
 		seed := map[string]bool{}
@@ -734,7 +605,6 @@ func buildGroups(modules map[string]*assembledModule, classes map[string]moduleC
 	return groups
 }
 
-// lockedBuffer is a writer safe to read while the child still writes to it.
 type lockedBuffer struct {
 	mu     sync.Mutex
 	buffer strings.Builder
@@ -752,7 +622,6 @@ func (b *lockedBuffer) String() string {
 	return b.buffer.String()
 }
 
-// variantProcess is one child: the baseline serve, or a variant of it.
 type variantProcess struct {
 	cmd *exec.Cmd
 
@@ -767,10 +636,6 @@ type variantProcess struct {
 	stopOnce sync.Once
 }
 
-// startChild launches the test binary as the program, with the given working
-// directory and extra environment. It is the test binary rather than a built
-// program because the variant changes baselineServe before run() builds the
-// command tree; TestMain sees serveWithoutEnv and takes that branch.
 func startChild(t *testing.T, binary, dir string, env []string, args ...string) *variantProcess {
 	t.Helper()
 	cmd := exec.Command(binary, args...)
@@ -794,8 +659,6 @@ func startChild(t *testing.T, binary, dir string, env []string, args ...string) 
 	return p
 }
 
-// consume keeps the child's standard output and closes ready when the ready
-// record arrives.
 func (p *variantProcess) consume(reader io.Reader) {
 	var pending []byte
 	chunk := make([]byte, 32*1024)
@@ -824,7 +687,6 @@ func (p *variantProcess) consume(reader io.Reader) {
 	}
 }
 
-// waitReady waits for the ready record and answers why it never came.
 func (p *variantProcess) waitReady(limit time.Duration) error {
 	select {
 	case <-p.ready:
@@ -838,26 +700,22 @@ func (p *variantProcess) waitReady(limit time.Duration) error {
 	}
 }
 
-// output is what the child has written to standard output so far.
 func (p *variantProcess) output() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return strings.Join(p.lines, "\n")
 }
 
-// linesCopy answers a copy of the child's standard output lines.
 func (p *variantProcess) linesCopy() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return slices.Clone(p.lines)
 }
 
-// stderrOutput is what the child has written to standard error so far.
 func (p *variantProcess) stderrOutput() string {
 	return p.stderr.String()
 }
 
-// stop asks the child to leave and waits for it.
 func (p *variantProcess) stop(limit time.Duration) {
 	p.stopOnce.Do(func() {
 		if p.cmd.Process == nil {
@@ -873,11 +731,6 @@ func (p *variantProcess) stop(limit time.Duration) {
 	})
 }
 
-// topology is one deployment shape: the merged one keeps web on the backend
-// listener beside the API, and the split one gives it a listener of its own.
-// body names the configuration the run reads; nil is the baseline differential
-// template, and a case that measures a configuration with capabilities turned
-// on names that configuration's own body.
 type topology struct {
 	name  string
 	ports int
@@ -885,10 +738,8 @@ type topology struct {
 	body  func(*testing.T, []int, string) string
 }
 
-// splitEndpoints is the split topology's endpoint table. It is written whole
-// because http.endpoints is a container leaf: a file that gives the key
-// replaces the platform defaults document's whole table rather than merging
-// into it, so a partial table would drop the endpoints it left out.
+// http.endpoints is a container leaf, so a partial table would drop the
+// endpoints it left out.
 const splitEndpoints = `  endpoints:
     api:
       listener: backend
@@ -910,28 +761,13 @@ const splitEndpoints = `  endpoints:
       prefixes: ["/"]
 `
 
-// render writes the topology's configuration with the given ports and database
-// locator. The merged topology takes the endpoint table from the platform
-// defaults document; the split one overrides the whole table to move the web
-// endpoint onto a listener of its own.
 func (topo topology) render(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
 	var body string
 	if topo.body != nil {
-		// A caller-supplied configuration carries its own shield. The case
-		// that supplies one reads route counts and sends no probe matrix, so
-		// the shield has nothing to count.
 		body = topo.body(t, ports[:listenerCount], dsn)
 	} else {
 		body = differentialConfigBody(t, ports[:listenerCount], dsn)
-		// The address shield is left off in this case's configuration. It counts
-		// requests per client address in this process's memory, and the baseline
-		// sends more requests before the matrix than a variant does (the expectation
-		// and comparator warm-ups), so the two runs would compare a 429 against a
-		// 401 for reasons that are about earlier traffic rather than about the
-		// assembled modules. This case's property is endpoint selection; the
-		// shipping default, which does shield the account endpoint, is held by
-		// TestServeAnswersTheProbes.
 		body += "ratelimit:\n  address-endpoints: []\n"
 	}
 	if !topo.split {
@@ -952,22 +788,12 @@ func (topo topology) render(t *testing.T, ports []int, dsn string) string {
 	return body
 }
 
-// bindFailure reports whether this child exited because it could not bind one
-// of its listeners, over the predicate every serving child shares.
 func bindFailure(child *variantProcess) bool {
 	return bindFailureText(child.stderrOutput())
 }
 
-// missingDependencyText is what the capability driver writes when a required
-// capability has no provider: the startup failure a negative case holds.
 const missingDependencyText = "core: capability has no available provider"
 
-// startupFailureMiss answers why a run did not fail its startup for the reason a
-// negative case holds, or the empty string when it did. The case holds a missing
-// dependency, so the failure is recognised positively by the driver's text on
-// standard error: a run that became ready did not fail at all, a run that timed
-// out may still be running, and a run that exited for any other reason -- a
-// taken port among them -- is not the failure the case means to prove.
 func startupFailureMiss(child *variantProcess, err error, want string) string {
 	if err == nil {
 		return fmt.Sprintf("the run started, want %s to stop it", want)
@@ -983,17 +809,11 @@ func startupFailureMiss(child *variantProcess, err error, want string) string {
 		want, err, child.stderrOutput())
 }
 
-// startVariant launches a variant and waits for it to become ready, retrying
-// with fresh ports when the child could not bind one. It returns the last child
-// and its error on a non-retryable or exhausted failure, so the caller can hold
-// the variant to its exemption.
 func startVariant(t *testing.T, topo topology, without []string) (*variantProcess, map[string]int, error) {
 	t.Helper()
 	return startVariantWith(t, topo, without, freePorts)
 }
 
-// startVariantWith is startVariant over a chosen port source, so a case can hand
-// the first attempt a port another listener holds and watch the retry.
 func startVariantWith(t *testing.T, topo topology, without []string,
 	source func(*testing.T, int) []int,
 ) (*variantProcess, map[string]int, error) {
@@ -1010,17 +830,11 @@ func startVariantWith(t *testing.T, topo topology, without []string,
 	return run.child, run.byName, err
 }
 
-// variantRun is one launch attempt: the child and the ports its endpoints
-// answer on.
 type variantRun struct {
 	child  *variantProcess
 	byName map[string]int
 }
 
-// launchOn is the variant's single launch over the given ports. The working
-// directory is a directory of the case's own, so the signing key the program
-// generates on its first run (var/, relative to the working directory) never
-// lands in the source tree.
 func launchOn(t *testing.T, topo topology, without []string, ports []int) (*variantProcess, map[string]int) {
 	t.Helper()
 	dir := t.TempDir()
@@ -1030,10 +844,6 @@ func launchOn(t *testing.T, topo topology, without []string, ports []int) (*vari
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the configuration: %v", err)
 	}
-	// The policy module refuses to start without the system tenant in the
-	// roster, and an in-memory database would lose the seeded row between
-	// processes. The seed runs first over the same file, with the program's own
-	// unmodified module set, so every variant starts from the same roster.
 	seeded := runCommandOn(t, seedHostBinary(), "file://"+configPath, "sqlite", seedCommand)
 	if seeded.err != nil {
 		t.Fatalf("seeding the variant's database failed: %v\n%s", seeded.err, seeded.combined())
@@ -1047,9 +857,7 @@ func launchOn(t *testing.T, topo topology, without []string, ports []int) (*vari
 		"--config", "file://"+configPath, "sqlite", serveCommand)
 	byName := map[string]int{
 		"backend": ports[backendListener],
-		// The merged topology claims the operations probes on the backend
-		// listener; the split one moves them onto a listener of their own.
-		"ops": ports[backendListener],
+		"ops":     ports[backendListener],
 	}
 	if topo.split {
 		byName["ops"] = ports[splitOpsListener]
@@ -1058,11 +866,8 @@ func launchOn(t *testing.T, topo topology, without []string, ports []int) (*vari
 	return child, byName
 }
 
-// TestATakenPortLeavesTheChildUnableToBind reproduces the gap freePorts leaves:
-// it closes the socket it probed before the child binds the address, so a port
-// it handed out can be taken in between. The test takes a port itself and hands
-// the child a port set holding only that address, then checks that the child
-// fails to bind and that bindFailure recognises the exit.
+// TestATakenPortLeavesTheChildUnableToBind reproduces the gap freePorts leaves: a port taken between
+// the probe and the bind fails the child.
 func TestATakenPortLeavesTheChildUnableToBind(t *testing.T) {
 	t.Parallel()
 	topo := topology{name: "merged", ports: listenerCount}
@@ -1082,11 +887,8 @@ func TestATakenPortLeavesTheChildUnableToBind(t *testing.T) {
 	}
 }
 
-// TestBindFailureIsOnlyTheTakenAddress holds the predicate's exclusions: the
-// listener's sentinel is shared with a certificate that cannot load, and the
-// net error is what separates a taken port from every other bind failure. A
-// predicate that returned true on the sentinel alone would retry a
-// configuration fault three times and report nothing.
+// TestBindFailureIsOnlyTheTakenAddress holds that a certificate that cannot load is not mistaken for a
+// taken port.
 func TestBindFailureIsOnlyTheTakenAddress(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1128,10 +930,8 @@ func TestBindFailureIsOnlyTheTakenAddress(t *testing.T) {
 	}
 }
 
-// TestStartVariantRetriesAPortTakenInTheGap holds the retry to the failure the
-// test above reproduces: the first attempt is handed a port another listener
-// holds, and the launch recovers with fresh ports instead of reporting the
-// collision as a property of the variant.
+// TestStartVariantRetriesAPortTakenInTheGap holds that a variant launch recovers over fresh ports
+// instead of reporting the collision.
 func TestStartVariantRetriesAPortTakenInTheGap(t *testing.T) {
 	t.Parallel()
 	topo := topology{name: "merged", ports: listenerCount}
@@ -1163,10 +963,8 @@ func TestStartVariantRetriesAPortTakenInTheGap(t *testing.T) {
 	}
 }
 
-// TestStartServingRetriesAPortTakenInTheGap holds the retry the ordinary
-// serving cases go through to the same failure: the first attempt is handed a
-// port another listener holds, and startServing recovers over fresh ports rather
-// than failing the case with a collision it did not cause.
+// TestStartServingRetriesAPortTakenInTheGap holds that the ordinary serving entry recovers over fresh
+// ports instead of failing the case.
 func TestStartServingRetriesAPortTakenInTheGap(t *testing.T) {
 	t.Parallel()
 	blocker, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1204,12 +1002,8 @@ func TestStartServingRetriesAPortTakenInTheGap(t *testing.T) {
 	}
 }
 
-// TestTheStartupFailureCriterionRejectsABindFailure holds the criterion the
-// negative startup cases assert on to both constructions: a run that starts is
-// not the failure they hold, and neither is a run that exited on a port taken
-// from under it. A criterion that only asked whether an error came back would
-// pass on the second, so a collision would read as the missing dependency the
-// case means to prove.
+// TestTheStartupFailureCriterionRejectsABindFailure holds that a run which started or exited on a
+// taken port is not the missing-dependency failure.
 func TestTheStartupFailureCriterionRejectsABindFailure(t *testing.T) {
 	t.Parallel()
 	const want = "the missing provisioning seam"
@@ -1239,9 +1033,6 @@ func TestTheStartupFailureCriterionRejectsABindFailure(t *testing.T) {
 		t.Fatalf("a run that started read as the held startup failure")
 	}
 
-	// A readiness timeout comes back with the child still running, and an
-	// unrelated startup error names something else: neither is the missing
-	// dependency the negative cases hold, so the criterion must reject both.
 	running := &variantProcess{stderr: &lockedBuffer{}}
 	if miss := startupFailureMiss(running, errors.New("the run wrote no ready record within 1s"), want); miss == "" {
 		t.Errorf("a run that timed out while still running read as %s", want)
@@ -1253,7 +1044,6 @@ func TestTheStartupFailureCriterionRejectsABindFailure(t *testing.T) {
 	}
 }
 
-// sendProbe makes one probe's request and reads the whole answer.
 func sendProbe(t *testing.T, client *http.Client, ports map[string]int, p probe) rawResponse {
 	t.Helper()
 	url := fmt.Sprintf("http://127.0.0.1:%d%s", ports[p.listener], p.path)
@@ -1273,10 +1063,8 @@ func sendProbe(t *testing.T, client *http.Client, ports map[string]int, p probe)
 	return rawResponse{status: res.StatusCode, header: res.Header, body: body}
 }
 
-// firstDifference answers a description of the first difference between two
-// answers, or "" when they are identical apart from Date: status, every header
-// (names canonical, values in order) and the body. Nothing else is filtered; a
-// header that changes between requests is reported for a person to judge.
+// firstDifference answers the first difference apart from Date: status, every
+// header (names canonical, values in order) and the body.
 func firstDifference(want, got rawResponse) string {
 	if want.status != got.status {
 		return fmt.Sprintf("status %d, want %d", got.status, want.status)
@@ -1308,17 +1096,12 @@ func firstDifference(want, got rawResponse) string {
 	return ""
 }
 
-// runDifferential runs one topology's differential matrix: a baseline run, then
-// one variant per group, with every non-exempt anonymous probe compared byte for
-// byte apart from Date. The variants run in parallel; how many run at once is
-// whatever -parallel allows.
 func runDifferential(t *testing.T, topo topology) {
 	t.Helper()
 	modules := assembledDescriptors(t)
 	guarded := guardedEndpointSet(t)
 	classes := classifyModules(t, modules, guarded)
 
-	// Completeness: every module the build assembles has a class.
 	for _, name := range serveRoster() {
 		if _, classified := classes[name]; !classified {
 			t.Errorf("the module %q was not classified", name)
@@ -1331,9 +1114,6 @@ func runDifferential(t *testing.T, topo topology) {
 	}
 
 	claims := claimsFromConfig(t, "the case's configuration", []byte(topo.render(t, []int{8080, 8081, 8082}, ":memory:")))
-	// The operations surface sits on the listener its endpoint claims: the
-	// backend listener in the merged topology, the ops listener in the split
-	// one.
 	document := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/openapi.json", ports[claims["ops"].listener]))
 	if document.status != http.StatusOK {
 		t.Fatalf("the baseline's /openapi.json answered %d: %s", document.status, document.body)
@@ -1348,15 +1128,8 @@ func runDifferential(t *testing.T, topo topology) {
 		t.Fatalf("the baseline wrote no frozen anonymous surface:\n%s", baseline.output())
 	}
 
-	// The completeness guard: every layer before the gateway is a layer of the
-	// entry point itself or one the mapping names, so a new shaping layer
-	// cannot slip into the comparison unclassified.
 	checkPreGateLayers(t, chains)
 
-	// Non-vacuity, first half: the expectation table is the one the baseline's
-	// own answers follow. A prefix the table says belongs to a guarded endpoint
-	// answers 401 in that endpoint's realm, so the probes below really are
-	// judged against the endpoint they are expected to reach.
 	client := &http.Client{Timeout: probeTimeout()}
 	for prefix, endpoint := range demotest.ExpectedOwners() {
 		if !guarded[endpoint] {
@@ -1378,8 +1151,6 @@ func runDifferential(t *testing.T, topo topology) {
 		}
 	}
 
-	// The comparator's own check: the same request twice is the same answer,
-	// and two answers that differ are reported as different.
 	first := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/system/tenants", ports["backend"]))
 	second := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/system/tenants", ports["backend"]))
 	if difference := firstDifference(first, second); difference != "" {
@@ -1393,7 +1164,6 @@ func runDifferential(t *testing.T, topo topology) {
 
 	opsRoutes := opsSurface(t, document.body)
 
-	// The baseline's answers are collected once and reused by every variant.
 	baselineAnswers := map[probe]rawResponse{}
 	compared := 0
 	for _, p := range probes {
@@ -1453,16 +1223,10 @@ func runDifferential(t *testing.T, topo topology) {
 	}
 }
 
-// checkPreGateLayers holds every layer before the gateway to the entry point's
-// own layers or the mapping. An unknown layer is a failure: the case has to be
-// told what it shapes before it can leave the module in place.
 func checkPreGateLayers(t *testing.T, chains map[string]chainLine) {
 	t.Helper()
 	for endpoint, chain := range chains {
 		if !slices.Contains(chain.layers, "authn.gate") {
-			// An endpoint the gateway does not guard has no pre-gate stretch;
-			// every layer on it answers, and the classification covers it as
-			// the endpoint's own chain.
 			continue
 		}
 		for _, layer := range chain.layers {
@@ -1482,9 +1246,6 @@ func checkPreGateLayers(t *testing.T, chains map[string]chainLine) {
 	}
 }
 
-// checkVariantRemoval holds that the variant really left the modules out: the
-// reported inclusion list does not name them, and the endpoints they mounted
-// routes on lost routes.
 func checkVariantRemoval(t *testing.T, baseline, variant *variantProcess, group variantGroup,
 	baselineChains map[string]chainLine,
 ) {
@@ -1532,8 +1293,6 @@ func checkVariantRemoval(t *testing.T, baseline, variant *variantProcess, group 
 	}
 }
 
-// endpointOfModule answers the guarded endpoints a module's fragments describe;
-// it is the endpoints whose route count a removal has to lower.
 func endpointOfModule(t *testing.T, name string) []string {
 	t.Helper()
 	var endpoints []string
@@ -1545,8 +1304,6 @@ func endpointOfModule(t *testing.T, name string) []string {
 	return endpoints
 }
 
-// variantGroupNamed answers the case's own variant for a module, so a case that
-// pins an exemption launches exactly the removal the differential matrix does.
 func variantGroupNamed(t *testing.T, name string) variantGroup {
 	t.Helper()
 	modules := assembledDescriptors(t)
@@ -1560,9 +1317,6 @@ func variantGroupNamed(t *testing.T, name string) variantGroup {
 	return variantGroup{}
 }
 
-// removalRouteCounts launches this build's baseline over the topology and one
-// variant per group, and answers each run's endpoint chains. The baseline's
-// chains are the counts a removal has to lower; each variant's are what it left.
 func removalRouteCounts(t *testing.T, topo topology, groups []variantGroup) (map[string]chainLine, map[string]map[string]chainLine) {
 	t.Helper()
 	baseline, _, err := startVariant(t, topo, nil)
@@ -1588,7 +1342,6 @@ func removalRouteCounts(t *testing.T, topo topology, groups []variantGroup) (map
 	return before, after
 }
 
-// opsSurface answers the routes the operations fragment declares, as patterns.
 func opsSurface(t *testing.T, document []byte) []anonRoute {
 	t.Helper()
 	var parsed struct {
@@ -1620,11 +1373,8 @@ func opsSurface(t *testing.T, document []byte) []anonRoute {
 	return routes
 }
 
-// TestAnonymousAnswersDoNotDependOnTheAssembly runs the differential matrix on
-// both deployment topologies, each variant in parallel with the others. A
-// parallel variant is a child process serving the whole probe matrix, and in the
-// race leg that child is the race-built test binary. The number in flight at
-// once is the caller's choice: it is whatever -parallel allows.
+// TestAnonymousAnswersDoNotDependOnTheAssembly runs the differential matrix on both deployment
+// topologies, each variant in parallel with the others.
 func TestAnonymousAnswersDoNotDependOnTheAssembly(t *testing.T) {
 	t.Parallel()
 	for _, topo := range []topology{

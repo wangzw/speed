@@ -1,27 +1,17 @@
 package main
 
-// The program-level case helper several tests share: a seeded serve on a
-// database file the two processes share, with the caller's extra configuration,
-// answered by the backend base URL and a token for the seeded account that holds
-// no business membership and no email address.
-
 import (
 	"fmt"
 	"path/filepath"
 	"testing"
 )
 
-// seededServe starts a seeded serve with the caller's extra configuration and
-// answers the backend base URL and a token for the account with no membership
-// and no email address (the configuration's second seed account).
 func seededServe(t *testing.T, extra string) (string, string) {
 	t.Helper()
 	base, token, _ := seededServeWithDatabase(t, extra)
 	return base, token
 }
 
-// seededServeWithDatabase is seededServe with the database file's locator too,
-// for a case that reads the rows the assembly wrote.
 func seededServeWithDatabase(t *testing.T, extra string) (string, string, string) {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "demo.db")

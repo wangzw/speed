@@ -1,14 +1,5 @@
 package main
 
-// The notification fixture's compile-time side: the fixture — its type, worker
-// and recipient wiring — is compiled into the capability ceiling.
-//
-// The type is part of the available set even in a run that never dispatches it:
-// notification.preferences and notification.delivery collect their taxonomy
-// over the available set, and the compile-time ceiling is that set. Whether a
-// run actually publishes and dispatches the type is the module's own Prepare
-// decision, reported by the startup diagnostics; it is not a different binary.
-
 import (
 	"testing"
 
@@ -16,8 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// TestDefaultBuildDeclaresTheNotificationType holds the ceiling: the binary
-// registers the fixture module and therefore declares its notification type.
+// TestDefaultBuildDeclaresTheNotificationType holds that the binary registers the fixture module and
+// declares its notification type.
 func TestDefaultBuildDeclaresTheNotificationType(t *testing.T) {
 	t.Parallel()
 	declared := make(map[string]string)

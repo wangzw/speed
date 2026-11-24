@@ -25,18 +25,12 @@ import (
 	"github.com/vislake/speed/pkg/db/sqlite"
 )
 
-// The account the end-to-end configuration seeds, and the TOTP seed the cases
-// write. The seed is fixed so that a person can import it into an authenticator
-// app; it is a fixture and not a credential.
 const (
 	memberUsername = "member"
 	memberPassword = "member-dev-secret"
 	totpSeed       = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 )
 
-// realConfigPath answers the end-to-end configuration the demo runs on, from
-// this package's directory. It is absolute so that a case can
-// change the working directory afterwards without losing it.
 func realConfigPath(t *testing.T) string {
 	t.Helper()
 	path, err := filepath.Abs(filepath.Join("..", "config.yaml"))
@@ -49,10 +43,6 @@ func realConfigPath(t *testing.T) string {
 	return path
 }
 
-// databaseSectionOf reads the configuration's db.sqlite section directly,
-// without going through the command's own extraction. It is the way a case
-// holds the command to the service's database rather than to the one the case
-// made up.
 func databaseSectionOf(t *testing.T, path string) map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -74,9 +64,6 @@ func databaseSectionOf(t *testing.T, path string) map[string]any {
 	return section
 }
 
-// encryptionKeyOf reads the database encryption key out of the configuration
-// directly. It is the way a case holds the command to the service's key rather
-// than to a key the command made up.
 func encryptionKeyOf(t *testing.T, path string) string {
 	t.Helper()
 	key, _ := databaseSectionOf(t, path)["encryption-key"].(string)
@@ -86,10 +73,6 @@ func encryptionKeyOf(t *testing.T, path string) string {
 	return key
 }
 
-// databaseLocatorOf reads the database locator out of the configuration
-// directly. The command resolves it against the working directory it runs in,
-// and a case that stood the service's database up has to resolve it the same
-// way instead of writing the file name it happens to have today.
 func databaseLocatorOf(t *testing.T, path string) string {
 	t.Helper()
 	locator, _ := databaseSectionOf(t, path)["dsn"].(string)
@@ -99,8 +82,6 @@ func databaseLocatorOf(t *testing.T, path string) string {
 	return locator
 }
 
-// resolveLocator resolves the configuration's database locator against a
-// working directory the way the service and the command both do.
 func resolveLocator(work, locator string) string {
 	if filepath.IsAbs(locator) {
 		return locator
@@ -108,11 +89,6 @@ func resolveLocator(work, locator string) string {
 	return filepath.Join(work, locator)
 }
 
-// productMigration reads one of the platform's migration files, from the pkg
-// module beside this starter. The command does not assemble the multi-factor or
-// TOTP modules, so their tables are the ones a service's migrate run leaves in
-// the database; the case builds them from the same files rather than from a
-// copy, so a renamed column breaks this case instead of passing silently.
 func productMigration(t *testing.T, relative string) string {
 	t.Helper()
 	path, err := filepath.Abs(filepath.Join("..", "..", "..", "..", "..", relative))
@@ -126,17 +102,10 @@ func productMigration(t *testing.T, relative string) string {
 	return string(raw)
 }
 
-// prepareService stands for the service's seed and migrate runs in a throwaway
-// working directory, and answers the database locator resolved in it, the
-// encryption key, and the account the configuration seeds. It changes the
-// working directory to the throwaway one, so every later relative locator in
-// the process resolves there.
 func prepareService(t *testing.T, source string) (dsn, key string, id authn.AccountID) {
 	t.Helper()
 	key = encryptionKeyOf(t, source)
 	locator := databaseLocatorOf(t, source)
-	// The factor tables are read before the working directory moves, because
-	// their paths are relative to this package.
 	factorTable := productMigration(t, filepath.Join("pkg", "authn", "mfa", "migrations", "sqlite",
 		"0001_authn_factors.sql"))
 	seedTable := productMigration(t, filepath.Join("pkg", "authn", "mfa", "totp", "migrations", "sqlite",
@@ -152,11 +121,6 @@ func prepareService(t *testing.T, source string) (dsn, key string, id authn.Acco
 	return dsn, key, id
 }
 
-// seedServiceDatabase stands for the service's seed and migrate runs: it writes
-// the end-to-end account through the account module and the provisioning
-// stand-in, and builds the factor tables the service's own migration set
-// creates. The key is read from the configuration, so the database it writes is
-// the service's database under the service's key.
 func seedServiceDatabase(t *testing.T, dsn, key string, migrations []string) authn.AccountID {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q,"encryption-key":%q}},"authn":{"account":{}}}`,
@@ -166,8 +130,6 @@ func seedServiceDatabase(t *testing.T, dsn, key string, migrations []string) aut
 	reg.Register(config.Module())
 	reg.Register(sqlite.Module())
 	reg.Register(authnaccount.Module())
-	// The account module requires a provisioning seam. This case writes the
-	// account store alone; the stand-in records the calls and writes nothing.
 	reg.Register(provisioningtest.Module())
 	reg.Supply(reader, config.ModuleName)
 
@@ -208,7 +170,6 @@ func seedServiceDatabase(t *testing.T, dsn, key string, migrations []string) aut
 	return id
 }
 
-// applyMigration runs the statements of one migration file on the handle.
 func applyMigration(database db.Database, script string) error {
 	for _, statement := range strings.Split(script, ";") {
 		if strings.TrimSpace(statement) == "" {
@@ -221,9 +182,6 @@ func applyMigration(database db.Database, script string) error {
 	return nil
 }
 
-// withDatabase opens the database at dsn under key, the way an assembly does,
-// and runs check while the handle is up. The handle is released when the drive
-// returns, so a later open of the same file has nothing else holding it.
 func withDatabase(t *testing.T, dsn, key string, check func(context.Context, db.Database) error) {
 	t.Helper()
 	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q,"encryption-key":%q}}}`, dsn, key)
@@ -248,9 +206,6 @@ func withDatabase(t *testing.T, dsn, key string, check func(context.Context, db.
 	}
 }
 
-// decodeOutputLine decodes the one JSON line the command writes on success. It
-// answers a map rather than the command's own type, so the key names and the
-// omitted key are held to the calling convention rather than to the struct.
 func decodeOutputLine(t *testing.T, stdout string) map[string]string {
 	t.Helper()
 	if strings.Count(stdout, "\n") != 1 || !strings.HasSuffix(stdout, "\n") {
@@ -263,7 +218,6 @@ func decodeOutputLine(t *testing.T, stdout string) map[string]string {
 	return written
 }
 
-// factorByID finds one factor in a listing.
 func factorByID(factors []authn.FactorRecord, id string) (authn.FactorRecord, bool) {
 	for _, factor := range factors {
 		if factor.ID == id {
@@ -273,9 +227,6 @@ func factorByID(factors []authn.FactorRecord, id string) (authn.FactorRecord, bo
 	return authn.FactorRecord{}, false
 }
 
-// assertActivatedWithin holds a factor's activation instant to the age the
-// caller asked for: the command reads its own clock, so the instant it wrote
-// lies between the instants the case observed around the run, less the age.
 func assertActivatedWithin(t *testing.T, record authn.FactorRecord, from, to time.Time, age time.Duration) {
 	t.Helper()
 	earliest := from.Add(-age)
@@ -286,11 +237,8 @@ func assertActivatedWithin(t *testing.T, record authn.FactorRecord, from, to tim
 	}
 }
 
-// TestTheConfigurationLocatorShapesNameOneFile holds the three shapes the
-// harness writes to one reading of the same file. The service's file transport
-// parses a locator as a URI, so file:/etc/app.yaml, file:///etc/app.yaml and
-// file://localhost/etc/app.yaml all name that path; a command that only strips
-// the file: prefix reads the localhost shape as a directory named localhost.
+// TestTheConfigurationLocatorShapesNameOneFile holds that file:/path, file:///path and
+// file://localhost/path all name the same file.
 func TestTheConfigurationLocatorShapesNameOneFile(t *testing.T) {
 	source := realConfigPath(t)
 	namespaces := []string{sqlite.ConfigNamespace, authnaccount.ConfigNamespace}
@@ -323,10 +271,8 @@ func TestTheConfigurationLocatorShapesNameOneFile(t *testing.T) {
 	}
 }
 
-// TestTheConfigurationLocatorDecodesPercentEscapes holds a name with a space to
-// its unescaped and escaped spellings reading one file. The opaque shape is
-// where url.Parse leaves the name encoded, so it is the one that would reach the
-// filesystem as three characters without the decode.
+// TestTheConfigurationLocatorDecodesPercentEscapes holds that an escaped and an unescaped spelling of
+// a name with a space read one file.
 func TestTheConfigurationLocatorDecodesPercentEscapes(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "my config.yaml")
@@ -360,11 +306,8 @@ func TestTheConfigurationLocatorDecodesPercentEscapes(t *testing.T) {
 	}
 }
 
-// TestTheCommandSeedsFactorsFromTheRealConfiguration is the acceptance case:
-// the command runs the way the harness runs it, against the end-to-end
-// configuration, and the factors it wrote are read back through the product's
-// own seams under the key that configuration states. A command that extracted
-// the key wrongly, or wrote plaintext, fails the read.
+// TestTheCommandSeedsFactorsFromTheRealConfiguration runs the command against the end-to-end
+// configuration and reads the factors back under the key the configuration states.
 func TestTheCommandSeedsFactorsFromTheRealConfiguration(t *testing.T) {
 	source := realConfigPath(t)
 	dsn, key, id := prepareService(t, source)
@@ -399,8 +342,6 @@ func TestTheCommandSeedsFactorsFromTheRealConfiguration(t *testing.T) {
 		t.Fatalf("the output names no SMS factor: %v", written)
 	}
 
-	// The read is an assembly of its own, under the key read straight from the
-	// configuration, so it holds the command to the service's key.
 	withDatabase(t, dsn, key, func(ctx context.Context, database db.Database) error {
 		seasoned, err := mfatest.Seasoned(ctx, database, id, time.Hour)
 		if err != nil {
@@ -445,8 +386,6 @@ func TestTheCommandSeedsFactorsFromTheRealConfiguration(t *testing.T) {
 		return nil
 	})
 
-	// The same read under another key must fail: a seed that came back anyway
-	// would have been written in the clear or under a key nobody configured.
 	withDatabase(t, dsn, "another-root-key-0123456789abcdef", func(ctx context.Context, database db.Database) error {
 		if _, _, err := mfatest.TOTPSecret(ctx, database, totpID); err == nil {
 			t.Error("the TOTP seed reads back under a key that is not the configuration's")
@@ -455,9 +394,8 @@ func TestTheCommandSeedsFactorsFromTheRealConfiguration(t *testing.T) {
 	})
 }
 
-// TestTheCommandLeavesOutTheFactorItDidNotWrite holds the output's shape from
-// the other side: a run that writes only a TOTP factor states no sms key at
-// all, rather than writing it empty.
+// TestTheCommandLeavesOutTheFactorItDidNotWrite holds that a run writing only a TOTP factor states no
+// sms key at all.
 func TestTheCommandLeavesOutTheFactorItDidNotWrite(t *testing.T) {
 	source := realConfigPath(t)
 	dsn, key, id := prepareService(t, source)
@@ -506,12 +444,8 @@ func TestTheCommandLeavesOutTheFactorItDidNotWrite(t *testing.T) {
 	})
 }
 
-// TestTheCommandRefusesWhatItCannotSeed holds the failure answers that need no
-// database: a missing required argument, a configuration written as a bare
-// path, one half of the TOTP pair, a run that asks for no factor at all, a
-// negative age, and a seed that is not base32. Each case names the fragment its
-// own refusal carries, and runs in an empty directory so a refusal that went on
-// to open the database would leave a file behind.
+// TestTheCommandRefusesWhatItCannotSeed holds every refusal that needs no database, each naming the
+// fragment its own answer carries.
 func TestTheCommandRefusesWhatItCannotSeed(t *testing.T) {
 	source := realConfigPath(t)
 	withConfig := func(extra ...string) []string {
@@ -604,10 +538,8 @@ func TestTheCommandRefusesWhatItCannotSeed(t *testing.T) {
 	}
 }
 
-// TestTheCommandRefusesAConfigurationWithoutAnEncryptionKey holds the nested
-// shape: the command reads db.sqlite.dsn and db.sqlite.encryption-key from the
-// section, and a document that leaves the key out is refused before any
-// database is opened.
+// TestTheCommandRefusesAConfigurationWithoutAnEncryptionKey holds that the nested db.sqlite section
+// must carry both dsn and encryption-key.
 func TestTheCommandRefusesAConfigurationWithoutAnEncryptionKey(t *testing.T) {
 	configDir := t.TempDir()
 	path := filepath.Join(configDir, "config.yaml")
@@ -642,9 +574,8 @@ func TestTheCommandRefusesAConfigurationWithoutAnEncryptionKey(t *testing.T) {
 	}
 }
 
-// TestTheCommandRefusesAnAccountThatIsNotThere holds the account answer: the
-// assembly loads and migrates, and the lookup then reports the name it could
-// not find.
+// TestTheCommandRefusesAnAccountThatIsNotThere holds that an unknown login name is reported after the
+// assembly loads and migrates.
 func TestTheCommandRefusesAnAccountThatIsNotThere(t *testing.T) {
 	source := realConfigPath(t)
 	work := t.TempDir()

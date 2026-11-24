@@ -30,21 +30,8 @@ import (
 	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
-// The cases run the program as a real child process and reach it over sockets:
-// what this skeleton demonstrates — that serve binds every endpoint and the
-// operations surface answers, that gen writes the merged document — is
-// assembly-level and not observable from inside the package.
-//
-// The child is built once in TestMain because building it is the slowest thing
-// here, and it is built for the race detector when this binary is, so the
-// detector watches the program under test rather than only this harness.
-
-// hostBinary is the compiled program every case runs.
 var hostBinary string
 
-// deployDirEnv names the deployment directory ./treecheck hands the
-// deployment-template cases. Those cases read files outside the module root, so
-// only that driver runs them, and this binary builds no program when it does.
 const deployDirEnv = "TREECHECK_DEPLOY_DIR"
 
 func startLimit() time.Duration {
@@ -59,30 +46,20 @@ func commandLimit() time.Duration {
 	return coretest.Scale(60 * time.Second)
 }
 
-// probeTimeout bounds one request of a running program. It is a wait for an
-// answer, so it is generous: a passing case returns as soon as the answer does.
 func probeTimeout() time.Duration {
 	return coretest.Scale(30 * time.Second)
 }
 
-// raceWarning starts every report the race detector writes. A child that writes
-// one has a data race in the program or in a module it runs, and the case fails
-// naming it, whatever its exit status says.
 const raceWarning = "WARNING: DATA RACE"
 
+// TestMain builds the program once and runs the suite.
 func TestMain(m *testing.M) {
-	// A differential case re-executes this binary as the program, naming the
-	// modules its variant leaves out. That branch builds nothing and runs no
-	// test: it drops the modules from baselineServe, says what the run then
-	// includes, and becomes the program. The product code carries no switch for
-	// it; the variable is read here, in the test binary.
 	if list, ok := os.LookupEnv(serveWithoutEnv); ok {
 		serveWithout(list)
 		os.Exit(run())
 	}
 
-	// Clear after the re-entry branch, which reads DEMO_SERVE_WITHOUT: no case
-	// may see a host-prefix or OpenTelemetry variable, because the cache key
+	// No case may see a host-prefix or OpenTelemetry variable: the cache key
 	// cannot record what an in-process configuration load reads from them.
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
@@ -95,16 +72,10 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	// The re-entry check starts this binary only to see what environment it
-	// inherited. It needs no program, so it runs its single case and exits
-	// before the build below instead of paying for a link it never uses.
 	if _, ok := os.LookupEnv(testProcessProbeEnv); ok {
 		os.Exit(m.Run())
 	}
 
-	// The deployment-template cases read files outside the module root, so only
-	// ./treecheck runs them, naming the deployment directory through
-	// deployDirEnv. That run starts no child and needs no program.
 	if os.Getenv(deployDirEnv) != "" {
 		os.Exit(m.Run())
 	}
@@ -129,12 +100,10 @@ func childEnv() []string {
 	return demotest.ChildEnv()
 }
 
-// testProcessProbeEnv marks the re-entered run of this test binary. It cannot
-// carry the host's prefix, which TestMain clears before any case runs.
 const testProcessProbeEnv = "TREECHECK_TEST_PROCESS_PROBE"
 
-// TestChildEnvForwardsOnlyTheNamedVariables checks that a child receives a
-// listed variable and not one the host exports outside the list.
+// TestChildEnvForwardsOnlyTheNamedVariables checks that a child receives a listed variable and not one
+// the host exports outside the list.
 func TestChildEnvForwardsOnlyTheNamedVariables(t *testing.T) {
 	t.Setenv("TREECHECK_ENV_PROBE", "outside")
 	t.Setenv("LANG", "C.UTF-8")
@@ -147,8 +116,8 @@ func TestChildEnvForwardsOnlyTheNamedVariables(t *testing.T) {
 	}
 }
 
-// TestTheTestProcessDropsTheHostPrefix checks that a fresh run of this test
-// binary does not inherit a DEMO_* variable from the host.
+// TestTheTestProcessDropsTheHostPrefix checks that a fresh run of this test binary does not inherit a
+// DEMO_* variable from the host.
 func TestTheTestProcessDropsTheHostPrefix(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandLimit())
 	defer cancel()
@@ -163,8 +132,6 @@ func TestTheTestProcessDropsTheHostPrefix(t *testing.T) {
 	}
 }
 
-// reentryFailure names the cause the re-entered binary reported, so a failure
-// that is not the host prefix surviving is not read as one.
 func reentryFailure(out []byte) string {
 	if strings.Contains(string(out), "inherited DEMO_PROBE") {
 		return "the re-entered test binary inherited DEMO_PROBE from the host"
@@ -172,8 +139,8 @@ func reentryFailure(out []byte) string {
 	return "the re-entered test binary failed for a reason other than the host prefix"
 }
 
-// TestReentryFailureNamesTheActualCause checks that a failure unrelated to the
-// host prefix is not reported as the prefix surviving.
+// TestReentryFailureNamesTheActualCause checks that a failure unrelated to the host prefix is not
+// reported as the prefix surviving.
 func TestReentryFailureNamesTheActualCause(t *testing.T) {
 	probe := []byte("--- FAIL: TestTheHostPrefixIsAbsent\n" +
 		"    demo_test.go:167: the test process inherited DEMO_PROBE from the host\n")
@@ -185,9 +152,8 @@ func TestReentryFailureNamesTheActualCause(t *testing.T) {
 	}
 }
 
-// TestTheHostPrefixIsAbsent is the case the re-entry check runs in a fresh
-// process: it fails when DEMO_PROBE survived into the process. It returns
-// without the probe marker, so an ordinary run of the suite does nothing.
+// TestTheHostPrefixIsAbsent is the case a fresh process runs: it fails when DEMO_PROBE survived into
+// it.
 func TestTheHostPrefixIsAbsent(t *testing.T) {
 	if _, ok := os.LookupEnv(testProcessProbeEnv); !ok {
 		return
@@ -197,11 +163,6 @@ func TestTheHostPrefixIsAbsent(t *testing.T) {
 	}
 }
 
-// demoSeedSection is the seed section of the configuration template, kept apart
-// so that a case can take it out whole: a configuration whose seed section is
-// missing is one the command has to refuse, and a case cannot say that by
-// editing a line of it. Its second account carries a hash rather than a
-// plaintext password, so one case covers both credential forms.
 const demoSeedSection = `seed:
   accounts:
     - identifier: "operator"
@@ -225,19 +186,6 @@ const demoSeedSection = `seed:
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"`
 
-// demoConfig is the sqlite-memory configuration a case writes: the listener
-// address, the token signing key, the object store's root and the database
-// locator, with those filled in. It is an override document, the shape
-// testdata/sqlite-memory.yaml holds — the public address among it, so the
-// WebAuthn relying party the sample binds is the one a case runs on — and the
-// platform topology it leaves out arrives from the embedded defaults document,
-// exactly as it does for the binary a person runs. No mounting key is repeated:
-// the defaults document satisfies a required item. The seed section is one
-// account more than the sample's: the case that seeds signs in with two, one
-// given a plaintext password and one given a hash, and the sample files carry
-// only the first shape so that a copy starts with one operator to replace rather
-// than two. A case of its own holds the template to the sample's WebAuthn block,
-// so the two do not drift apart.
 const demoConfig = `http:
   listeners:
     backend:
@@ -279,28 +227,17 @@ db:
     encryption-key: "dev-only-change-me-0123456789abcdef"
 `
 
-// The listener a case's configuration declares. One listener carries every
-// endpoint, so a case that names it indexes the free ports by this; the
-// differential case's split topology adds indices of its own.
 const (
 	backendListener = iota
 	listenerCount
 )
 
-// The split topology's extra listeners, indexed into its own port slice.
 const (
 	splitOpsListener      = 1
 	splitFrontendListener = 2
 	splitListenerCount    = 3
 )
 
-// freePorts hands back n ports that are free at the moment they are asked for.
-// The listeners are closed before the caller uses the ports, so a port could be
-// taken between here and there, and a collision reads as a serve that never
-// became ready. The ordinary serving cases go through startServing and the
-// differential runs through startVariant; both recognise that exit and start
-// the whole attempt again over fresh ports, and freePorts is the port source
-// they retry from.
 func freePorts(t *testing.T, n int) []int {
 	t.Helper()
 	ports := make([]int, 0, n)
@@ -319,36 +256,18 @@ func freePorts(t *testing.T, n int) []int {
 	return ports
 }
 
-// writeConfig writes the sqlite-memory configuration with the given endpoints
-// and returns the locator that names it. The locator is a file URL, because the
-// config locator is a URI and its scheme is what selects the transport. The
-// token signing key is minted for the case in a directory of its own, named by
-// an absolute path so the child resolves it whatever its working directory; the
-// object store's root is a directory of the case's own too, so a run writes no
-// bytes into the source tree.
 func writeConfig(t *testing.T, ports []int) string {
 	t.Helper()
-	// The database is the stack's own: it lives in the process, which is enough
-	// for a case that runs one command.
 	return writeConfigWith(t, ports, ":memory:")
 }
 
-// writeConfigWith is writeConfig with the database locator chosen by the caller.
-//
-// A database in a file is what two commands of this tree can share. The
-// sqlite-memory stack's own locator names a database held inside the process
-// that opened it, and a case that runs the command that seeds and then the one
-// that serves is two processes: what the first wrote is gone before the second
-// starts, and the second finds the tables and none of the rows.
+// writeConfigWith is writeConfig with the database locator chosen by the
+// caller, which is what lets two commands share a file.
 func writeConfigWith(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
 	return writeConfigFile(t, configBody(t, ports, dsn))
 }
 
-// writeConfigReplacing is writeConfigWith with one edit applied to the
-// configuration it writes. A case that holds what a run does with a
-// configuration a copy could get wrong needs one, and a needle that is not
-// there is the case failing rather than a run over the wrong file.
 func writeConfigReplacing(t *testing.T, ports []int, dsn, old, new string) string {
 	t.Helper()
 	body := configBody(t, ports, dsn)
@@ -359,12 +278,6 @@ func writeConfigReplacing(t *testing.T, ports []int, dsn, old, new string) strin
 	return writeConfigFile(t, replaced)
 }
 
-// configBody is the configuration a case runs over: the template with the
-// case's two listener ports, its token signing key, its object store root and
-// its database locator filled in. The key is minted for the case in a directory
-// of its own, named by an absolute path so the child resolves it whatever its
-// working directory, and the object store's root is a directory of the case's
-// own, so a run writes no bytes into the source tree.
 func configBody(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
 	key := filepath.Join(t.TempDir(), "token-signing-key.pem")
@@ -376,9 +289,6 @@ func configBody(t *testing.T, ports []int, dsn string) string {
 		demoSeedSection, dsn)
 }
 
-// writeConfigFile writes a configuration body and answers with the locator that
-// names it. The locator is a file URL, because the config locator is a URI and
-// its scheme is what selects the transport.
 func writeConfigFile(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "demo.yaml")
@@ -388,42 +298,30 @@ func writeConfigFile(t *testing.T, body string) string {
 	return "file://" + path
 }
 
-// commandResult is what a one-shot command left behind.
 type commandResult struct {
 	stdout string
 	stderr string
 	err    error
 }
 
-// combined is both streams, for a failure message.
 func (r commandResult) combined() string {
 	return "standard output:\n" + r.stdout + "\nstandard error:\n" + r.stderr
 }
 
-// runCommand runs one command of the binary to completion under a time bound.
 func runCommand(t *testing.T, config string, args ...string) commandResult {
 	t.Helper()
 	return runCommandOn(t, hostBinary, config, args...)
 }
 
-// seedHostBinary is the program the seed command runs as: the binary TestMain
-// built.
 func seedHostBinary() string {
 	return hostBinary
 }
 
-// runCommandOn is runCommand over a named program.
 func runCommandOn(t *testing.T, binary, config string, args ...string) commandResult {
 	t.Helper()
 	return runCommandArgs(t, binary, "", append([]string{"--config", config}, args...), nil)
 }
 
-// runCommandArgs is runCommandOn with the argument list and the extra
-// environment entries the caller names, so a case can run a command with no
-// configuration source at all. An empty dir leaves the child in the test's own
-// working directory; a case that runs on the compiled-in defaults names one of
-// its own, so the relative paths the document holds resolve outside the source
-// tree.
 func runCommandArgs(t *testing.T, binary, dir string, args, extraEnv []string) commandResult {
 	t.Helper()
 	if binary == "" {
@@ -449,7 +347,6 @@ func runCommandArgs(t *testing.T, binary, dir string, args, extraEnv []string) c
 	return res
 }
 
-// process is a long-running command of the binary: serve.
 type process struct {
 	cmd *exec.Cmd
 
@@ -466,26 +363,16 @@ type process struct {
 	stopOnce sync.Once
 }
 
-// start launches a long-running command without waiting for it: the caller
-// waits for ready afterwards. Its stop is registered as a cleanup.
 func start(t *testing.T, config string, args ...string) *process {
 	t.Helper()
 	return startArgs(t, "", append([]string{"--config", config}, args...), nil)
 }
 
-// startArgs is start with the argument list and the extra environment entries
-// the caller names; a case that runs on the compiled-in defaults passes no
-// --config at all. An empty dir leaves the child in the test's own working
-// directory.
 func startArgs(t *testing.T, dir string, args, extraEnv []string) *process {
 	t.Helper()
 	return startProcess(t, hostBinary, dir, args, extraEnv)
 }
 
-// startProcess starts a named program as a long-running child. The end-to-end
-// cases' own binary comes through here too, so every serving child's standard
-// error is captured the same way and a bind failure is recognisable on all of
-// them.
 func startProcess(t *testing.T, binary, dir string, args, extraEnv []string) *process {
 	t.Helper()
 	if binary == "" {
@@ -516,12 +403,8 @@ func startProcess(t *testing.T, binary, dir string, args, extraEnv []string) *pr
 		p.consume(stderr, true)
 	}()
 	go func() {
-		// Wait closes the pipes, so the readers have to reach EOF first: a
-		// child that writes on its way out would otherwise lose whatever the
-		// reader had not consumed when Wait returned. The readers reach EOF
-		// only when every holder of the write end has exited, so a descendant
-		// that inherited standard error and never exits would hold this wait
-		// open; no child these cases start has such a descendant.
+		// Wait closes the pipes, so the readers must reach EOF first or a child's last
+		// write is lost.
 		p.readers.Wait()
 		p.waitErr = cmd.Wait()
 		close(p.done)
@@ -535,10 +418,6 @@ func startProcess(t *testing.T, binary, dir string, args, extraEnv []string) *pr
 	return p
 }
 
-// consume reads one of the child's streams line by line and keeps what it read.
-// On standard output it also closes the ready channel once the ready record is
-// seen; standard error carries the startup diagnostics, which a case reads to
-// learn which modules the run did not enable.
 func (p *process) consume(r io.Reader, diagnostic bool) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
@@ -557,26 +436,20 @@ func (p *process) consume(r io.Reader, diagnostic bool) {
 	}
 }
 
-// output is what the child has written to standard output so far.
 func (p *process) output() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return strings.Join(p.lines, "\n")
 }
 
-// stderr is what the child has written to standard error so far: the startup
-// diagnostics, and any failure the process reported before leaving.
 func (p *process) stderr() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return strings.Join(p.diagnostics, "\n")
 }
 
-// waitReadyErr waits for the ready record and answers why it never came. The
-// output readers are drained before the child is reaped, so once done closes a
-// caller that reads standard error afterwards sees the whole failure. The record
-// is written once every module has started, so a wait that sees it is past the
-// binding of every endpoint — a wait on a port alone would not be.
+// waitReadyErr waits for the ready record and answers why it never came, after
+// draining the readers.
 func (p *process) waitReadyErr(limit time.Duration) error {
 	select {
 	case <-p.ready:
@@ -588,7 +461,6 @@ func (p *process) waitReadyErr(limit time.Duration) error {
 	}
 }
 
-// stop asks the child to stop and waits for it to leave.
 func (p *process) stop(t *testing.T) {
 	t.Helper()
 	p.stopOnce.Do(func() {
@@ -604,19 +476,12 @@ func (p *process) stop(t *testing.T) {
 			<-p.done
 			t.Errorf("serve did not leave within %s of SIGTERM\n%s", limit, p.output())
 		}
-		// The readers drain before Wait runs, so done closes only once the
-		// captured diagnostics are complete.
 		p.readers.Wait()
 	})
 }
 
-// TestProcessReadsTheLastLineBeforeExit holds the captured standard error to a
-// line written on the child's last write. cmd.Wait closes the pipes as soon as
-// the direct child exits, so a reader that has not drained them loses whatever
-// follows; only waiting for the readers first keeps it. The writer here is a
-// subshell the child backgrounds, so it still holds the write end after the
-// child itself is gone: without the wait the parent closes the read end before
-// the line is written, and it is lost every time.
+// TestProcessReadsTheLastLineBeforeExit holds the captured standard error to a line written on the
+// child's last write.
 func TestProcessReadsTheLastLineBeforeExit(t *testing.T) {
 	t.Parallel()
 	const marker = "the last line the child wrote"
@@ -629,33 +494,19 @@ func TestProcessReadsTheLastLineBeforeExit(t *testing.T) {
 	}
 }
 
-// bindFailure reports whether this child exited because it could not bind one
-// of its listeners, over the same predicate the differential child uses.
 func (p *process) bindFailure() bool {
 	return bindFailureText(p.stderr())
 }
 
-// launchRetries is how many times a launch is retried when a port freePorts
-// handed out was taken before the child bound it.
 const launchRetries = 3
 
-// bindFailureText reports whether a child's standard error says it exited
-// because it could not bind one of its listeners. freePorts closes the socket
-// it probed before the child binds the address, so another listener can take
-// the port in that gap; that is a property of the port rather than of the run,
-// and it is the only non-ready exit a launch retries. The detection matches the
-// listener's bind sentinel together with the net error for a taken address, so
-// a certificate that cannot load, which shares the sentinel, is not retried.
+// bindFailureText recognises a taken port from the bind sentinel and the net
+// error, so a certificate that cannot load is not retried.
 func bindFailureText(stderr string) bool {
 	return strings.Contains(stderr, speedhttp.ErrListen.Error()) &&
 		strings.Contains(stderr, "address already in use")
 }
 
-// startWithRetry runs one launch attempt and waits for the child's ready
-// record. When the child exited because a probed port was taken before it could
-// bind, the attempt runs again from source over fresh ports, so a collision is
-// never reported as the case's own failure. Any other failure, or an exhausted
-// retry budget, comes back to the caller with the last child and its ports.
 func startWithRetry[T any](t *testing.T,
 	source func(*testing.T, int) []int, portCount int,
 	attempt func(ports []int) T,
@@ -677,14 +528,6 @@ func startWithRetry[T any](t *testing.T,
 	}
 }
 
-// startServing starts a serving child over a configuration the case renders for
-// one attempt's ports, and waits for its ready record. It is the entry the
-// ordinary serving cases go through; the differential case launches through
-// startVariant, which holds the same retry. An attempt whose child exits on a
-// taken port is rendered again over fresh ports, so a collision beside the
-// suite's other children is not read as the case's failure. It answers the child
-// and the ports it serves on; the caller builds its addresses from the returned
-// ports, not from the ones it saw while rendering.
 func startServing(t *testing.T, attempt func(ports []int) *process) (*process, []int) {
 	t.Helper()
 	child, ports, err := startServingFrom(t, freePorts, attempt)
@@ -694,8 +537,6 @@ func startServing(t *testing.T, attempt func(ports []int) *process) (*process, [
 	return child, ports
 }
 
-// startServingFrom is startServing over a chosen port source, so a case can
-// hand the first attempt a port another listener holds and watch the retry.
 func startServingFrom(t *testing.T, source func(*testing.T, int) []int,
 	attempt func(ports []int) *process,
 ) (*process, []int, error) {
@@ -707,28 +548,22 @@ func startServingFrom(t *testing.T, source func(*testing.T, int) []int,
 	)
 }
 
-// response is one HTTP answer, kept whole so a case can assert on it.
 type response struct {
 	status int
 	body   []byte
 }
 
-// get makes one unauthenticated request of an address and reads the whole
-// answer.
 func get(t *testing.T, url string) response {
 	t.Helper()
 	return send(t, &http.Client{Timeout: probeTimeout()}, http.MethodGet, url, nil, nil)
 }
 
-// rawResponse is one answer with its headers, for the cases that compare two
-// anonymous answers byte for byte.
 type rawResponse struct {
 	status int
 	header http.Header
 	body   []byte
 }
 
-// getRaw makes one unauthenticated request and keeps the answer's headers.
 func getRaw(t *testing.T, url string) rawResponse {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -747,10 +582,8 @@ func getRaw(t *testing.T, url string) rawResponse {
 	return rawResponse{status: res.StatusCode, header: res.Header, body: body}
 }
 
-// sameExceptDate holds two answers to be identical apart from Date: status,
-// every header (names canonical, values in order) and the body. Nothing else is
-// filtered: a header that changes from one request to the next is a difference
-// the case reports rather than one it hides.
+// sameExceptDate holds two answers identical apart from Date: status, every
+// header and the body.
 func sameExceptDate(t *testing.T, what string, want, got rawResponse) {
 	t.Helper()
 	if want.status != got.status {
@@ -778,12 +611,8 @@ func sameExceptDate(t *testing.T, what string, want, got rawResponse) {
 	}
 }
 
-// send makes one request and reads the whole answer. A non-nil body is encoded
-// as JSON and the content type is set for it; the headers are set as given.
-// withTenant copies a request's headers and adds the tenant the request
-// announces as X-Tenant. The api endpoint resolves a tenant from that header,
-// so a tenant-addressed management route there is decided in that tenant's
-// policy domain; the account and admin endpoints ignore it.
+// send makes one request and reads the whole answer; withTenant adds X-Tenant,
+// and tenantOfPath answers the tenant a /api/v1/tenants/ path names.
 func withTenant(headers map[string]string, tenant string) map[string]string {
 	out := make(map[string]string, len(headers)+1)
 	for name, value := range headers {
@@ -793,8 +622,6 @@ func withTenant(headers map[string]string, tenant string) map[string]string {
 	return out
 }
 
-// tenantOfPath answers the tenant a path under /api/v1/tenants/ names, so a
-// case that drives the console's pages announces the same one as the route.
 func tenantOfPath(path string) string {
 	rest, ok := strings.CutPrefix(path, "/api/v1/tenants/")
 	if !ok {
@@ -838,12 +665,7 @@ func send(t *testing.T, client *http.Client, method, url string, body any,
 	return response{status: res.StatusCode, body: answer}
 }
 
-// signIn runs a password login to the end and answers with the access token it
-// hands out.
-//
-// The flow takes two calls: the first carries the credentials and leaves the
-// flow ready, and the second takes the result with the complete step. Both need
-// the flow cookie, which is why the client keeps a jar.
+// signIn runs a password login to the end and answers with the access token.
 func signIn(t *testing.T, accountBase, identifier, password string) string {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
@@ -877,16 +699,10 @@ func signIn(t *testing.T, accountBase, identifier, password string) string {
 	return token.AccessToken
 }
 
-// TestServeAnswersTheProbes seeds and then serves on a file-backed sqlite
-// database, and reads the operations surface: the liveness and readiness probes
-// answer 200 and the merged document holds the operations the modules declared.
-// The database is a file because the platform policy module refuses to start
-// without the system tenant in the roster, and the seed and the serve are two
-// processes: an in-memory database would lose the row between them.
+// TestServeAnswersTheProbes seeds and serves on a file-backed database and reads the operations probes
+// and the merged document.
 func TestServeAnswersTheProbes(t *testing.T) {
 	t.Parallel()
-	// config is the configuration the successful attempt ran over, for the
-	// platform-claims check below: a retry rewrites it with the fresh ports.
 	var config string
 	serve, ports := startServing(t, func(ports []int) *process {
 		config = writeConfigWith(t, ports, filepath.Join(t.TempDir(), "probes.db"))
@@ -896,11 +712,6 @@ func TestServeAnswersTheProbes(t *testing.T) {
 		return start(t, config, "sqlite", serveCommand)
 	})
 
-	// The address shield is assembled on the account endpoint. The startup
-	// line lists each endpoint's chain as written, so a run whose configuration
-	// names the account endpoint reports the layer there. Its place before the
-	// gateway is what makes it a shield: it counts a source that has not
-	// identified itself yet.
 	chains := parseChains(strings.Split(serve.output(), "\n"))
 	account, ok := chains["account"]
 	if !ok {
@@ -948,13 +759,6 @@ func TestServeAnswersTheProbes(t *testing.T) {
 		t.Errorf("the served document holds no paths:\n%s", document.body)
 	}
 
-	// The web endpoint answers for whatever bundle the binary embeds, and what
-	// that is depends on the checkout rather than on the code: the built
-	// frontend once the workspace has built it, and nothing servable before
-	// that. Both answers are the host module's — its entry document when the
-	// bundle carries one, the problem document for a bundle without an entry
-	// document when it does not — so the case pins the shape of each rather
-	// than a state the caller cannot control.
 	web := get(t, fmt.Sprintf("http://127.0.0.1:%d/", ports[backendListener]))
 	switch web.status {
 	case http.StatusOK:
@@ -969,13 +773,6 @@ func TestServeAnswersTheProbes(t *testing.T) {
 		t.Errorf("GET / on the web endpoint answered %d, want 200 with the built frontend or 404 without it", web.status)
 	}
 
-	// The platform baseline is assembled, and not merely the infrastructure the
-	// skeleton began with. Two routes only the identity system mounts answer on
-	// the account endpoint: the exempt list of login methods, and the token
-	// module's published verification keys — the latter only because the signing
-	// key the configuration names was read. A module missing from the assembly
-	// leaves the path undeclared, which the gateway refuses with 401 rather than
-	// 200, so each status distinguishes "assembled" from "not".
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	for _, path := range []string{"/api/v1/auth/methods", "/api/v1/auth/jwks.json"} {
 		res := get(t, accountBase+path)
@@ -984,17 +781,6 @@ func TestServeAnswersTheProbes(t *testing.T) {
 		}
 	}
 
-	// The assembly does not show through an anonymous answer on a guarded
-	// endpoint. The two paths below are both under prefixes the admin endpoint
-	// claims, and the two capabilities behind them are assembled differently:
-	// sms.admin is imported for the contract but named by no baseline command,
-	// so it registers no route here, while tenant.admin runs. The dispatch selects an
-	// endpoint by its claims alone, so both requests reach the admin chain and
-	// the gateway refuses each before any route matters — same status, same
-	// headers but Date, same body, and a challenge for the admin realm. Before
-	// the claims existed the selection was derived from the assembly, and
-	// /api/v1/system/sms/templates answered with the frontend bundle while
-	// /api/v1/system/tenants answered 401.
 	templates := getRaw(t, accountBase+"/api/v1/system/sms/templates")
 	tenants := getRaw(t, accountBase+"/api/v1/system/tenants")
 	for _, answer := range []struct {
@@ -1015,20 +801,8 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	}
 	sameExceptDate(t, "GET /api/v1/system/sms/templates and GET /api/v1/system/tenants", templates, tenants)
 
-	// Every operation of the platform's API surface falls under a prefix its
-	// own endpoint claims. The check reads the served document — the available
-	// set of this binary — and the committed platform contract, and holds each
-	// of them against this case's configuration and the six samples.
 	checkPlatformClaims(t, config, document.body)
 
-	// The deployment assembles two factor kinds, and the second one is what
-	// makes a step-up completable -- which is why it is here rather than left
-	// for a copy to add. A step-up asks for a factor kind the session has not
-	// already proved, so a TOTP-only deployment leaves a session that signed in
-	// with TOTP nothing to raise itself with and refuses the step-up start. The
-	// listing the login engine mounts publishes the kinds the assembly takes
-	// in, so it is where "a second kind is here" is read: the signing-in copy
-	// carries TOTP and WebAuthn, and both are listed.
 	discovery := get(t, accountBase+"/api/v1/auth/methods")
 	var listed struct {
 		MFA struct {
@@ -1044,26 +818,13 @@ func TestServeAnswersTheProbes(t *testing.T) {
 			listed.MFA.Factors)
 	}
 
-	// The preference matrix is assembled and not merely declared. It reports the
-	// endpoints it mounted its routes on once it has taken up its required seams
-	// — the database and the roster — so the line is written only by a run that
-	// assembled it, and only after it mounted. The outbound delivery pipeline
-	// requires the matrix, the queue and its registration face, and the same
-	// run reaching ready is what says its requirements were all satisfied.
 	if out := serve.output(); !strings.Contains(out, "notification.preferences: the preference routes are mounted") {
 		t.Errorf("serve reported no preference mount, so the preference matrix was not assembled:\n%s", out)
 	}
 }
 
-// TestTheGuardsOfferNoBasicChallenge holds that a 401 on a guarded endpoint
-// carries no Basic challenge.
-//
-// The static password table is the only backend that takes the Basic scheme,
-// and a browser opens its native credential prompt for a Basic challenge on any
-// 401 — so a session that lapsed on a guarded endpoint would raise a native
-// password box in front of a signed-in user instead of letting the frontend end
-// the session and return to its own login page. The demo wires no Basic backend,
-// so the challenge names Bearer alone and a browser has nothing to prompt from.
+// TestTheGuardsOfferNoBasicChallenge holds that a 401 on a guarded endpoint carries no Basic
+// challenge.
 func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	t.Parallel()
 	_, ports := startServing(t, func(ports []int) *process {
@@ -1076,9 +837,6 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: probeTimeout()}
-	// One guarded endpoint per gateway chain: the account endpoint, the admin
-	// endpoint and the api endpoint, whose chain also carries tenant resolution
-	// and the authorization guard.
 	for _, path := range []string{
 		"/api/v1/auth/me",
 		"/api/v1/system/tenants",
@@ -1107,16 +865,12 @@ func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	}
 }
 
-// TestGenWritesTheMergedDocument runs gen and reads what it wrote: a document a
-// JSON parser accepts, carrying the operations the modules declared and the
-// fragments they came from. It is run twice, once writing a file and once
-// writing standard output, because the two are the two ways the command
-// delivers its result.
+// TestGenWritesTheMergedDocument runs gen and reads the document it writes to a file and to standard
+// output.
 func TestGenWritesTheMergedDocument(t *testing.T) {
 	t.Parallel()
 	config := writeConfig(t, freePorts(t, listenerCount))
 
-	// merged is the part of the document a case asserts on.
 	type merged struct {
 		OpenAPI string `json:"openapi"`
 		Info    struct {
@@ -1150,16 +904,6 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 				t.Errorf("the document has no GET %s", path)
 			}
 		}
-		// The operations of this starter's own modules carry the
-		// application-owner tag orval's platform generation filters on; no
-		// platform operation carries it. Which operations those are is read
-		// from each fragment's declaring module, judged by gen's own criterion
-		// — the platform module path, read from the core package rather than
-		// written down — so the case and gen agree on the direction: code
-		// under the platform module path is platform-owned, every other
-		// module path is application-owned. A second business module is marked
-		// by gen the same way the first one is, and the case has to agree with
-		// it rather than call the correct mark an error.
 		platform := platformModulePath()
 		expected := map[string]bool{}
 		declaring := map[string]string{}
@@ -1192,12 +936,6 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 			}
 		}
 		if applicationOwned, declared := expected["POST /api/v1/orgs"]; !declared {
-			// The named anchor: self-service creation is a platform module's
-			// route now, so it must be in the document and must not carry the
-			// application-owned tag. The generic loop below holds the tag to
-			// the declaring module's package; this names the route the move
-			// touched, so a fragment dropped from the imports is reported here
-			// rather than only as a smaller document.
 			t.Errorf("the document has no POST /api/v1/orgs, which the self-service creation module declares")
 		} else if applicationOwned {
 			t.Errorf("the self-service creation route is application-owned; it is a platform module's route")
@@ -1242,12 +980,6 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 			t.Errorf("the document's x-fragments names no ops fragment: %+v", doc.Fragments)
 		}
 
-		// Every module the binary's imports reach and that declares a fragment
-		// is in the document, whether or not a command names it for a run. The
-		// available set is what the imports reach, and gen merges the whole of
-		// it; a platform module left unimported drops its fragment from the
-		// contract silently, so the declaring set the process registry holds is
-		// what the document is held against.
 		declared := map[string]int{}
 		for _, spec := range core.Resources[speedhttp.Spec](core.ProcessRegistry) {
 			declared[spec.Module]++
@@ -1266,14 +998,6 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 			}
 		}
 
-		// The platform modules whose fragment belongs to the contract whether or
-		// not a run enables them: the SMS management surface is held out of the
-		// baseline by the credential criterion, the SAML provider is named by
-		// capabilityModules and stands down unless its switch is on, and the
-		// preference matrix mounts on the endpoints its own configuration names.
-		// All three still declare a fragment, and a case that reads only the
-		// registry would miss it — a module left unimported shrinks both sides
-		// together.
 		for _, module := range []string{"sms.admin", "authn.sso.saml", "notification.preferences"} {
 			if merged[module] == 0 {
 				t.Errorf("the document names no fragment for %s: it declares one, and no command has "+
@@ -1306,11 +1030,8 @@ func TestGenWritesTheMergedDocument(t *testing.T) {
 	})
 }
 
-// TestMarkOperationsWithNoOwnedOperationIsIdentity pins the byte-level
-// property gen relies on: with no application-owned operation, the document
-// markOperations writes is the document Merge wrote. markOperations mirrors
-// pkg/ops/openapi's document shape by hand, so a top-level field Merge starts
-// writing would otherwise be dropped from the contract silently.
+// TestMarkOperationsWithNoOwnedOperationIsIdentity pins that with no application-owned operation the
+// marked document equals Merge's.
 func TestMarkOperationsWithNoOwnedOperationIsIdentity(t *testing.T) {
 	t.Parallel()
 	specs := core.Resources[speedhttp.Spec](core.ProcessRegistry)
@@ -1327,37 +1048,17 @@ func TestMarkOperationsWithNoOwnedOperationIsIdentity(t *testing.T) {
 	}
 }
 
-// The credentials the seed writes and this case signs in with.
 const (
 	seedIdentifier = "operator"
 	seedPassword   = "operator-dev-secret"
-	// hashIdentifier is the account the configuration gives as a hash instead
-	// of as a plaintext password. It signs in with the same password, because
-	// the entry the configuration carries is that password's — the same entry
-	// the static credential table holds.
 	hashIdentifier = "ops"
-	// demoTenant is the tenant the configuration under test names, the one the
-	// seed registers and binds the administrator in.
-	demoTenant = "demo"
+	demoTenant     = "demo"
 )
 
-// TestSeedBootstrapsTheConsole runs the seed command against a database that no
-// other command has touched, runs it a second time, and then holds what it is
-// for: an account it writes signs in, and one it marks as a platform
-// administrator reaches the platform's management surface, which refuses a
-// caller that holds no permission.
-//
-// It runs on the sqlite stack, whose database is a file, because the command
-// that seeds and the command that serves are two processes and sqlite-memory's
-// database belongs to one of them. The seed carries the migrations with it — it
-// drives past them — so it is run on a database that was never migrated.
+// TestSeedBootstrapsTheConsole runs seed twice on an untouched database and holds that a seeded
+// account signs in and a platform administrator reaches the management surface.
 func TestSeedBootstrapsTheConsole(t *testing.T) {
 	t.Parallel()
-	// The database is a file the seed and every serve attempt share: the seed
-	// leaves it unchanged on a second run, so it runs once over the same path.
-	// Each serve attempt renders a fresh configuration, so its listeners, its
-	// token signing key and its object-store directory change between attempts
-	// while the database stays the one the seed wrote.
 	dsn := filepath.Join(t.TempDir(), "demo.db")
 	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
 
@@ -1415,8 +1116,6 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 
 	accountBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	adminBase := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
-	// adminGet signs in with the seeded credential and reads one administration
-	// route, which the gateway guards and the authorization layer decides on.
 	adminGet := func(t *testing.T, identifier, path string) response {
 		t.Helper()
 		token := signIn(t, accountBase, identifier, seedPassword)
@@ -1428,8 +1127,6 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 			adminBase+path, nil, headers)
 	}
 
-	// The account the seed marks is an administrator: the platform roster
-	// answers, and it holds the tenant the seed registered.
 	allowed := adminGet(t, seedIdentifier, "/api/v1/system/tenants")
 	if allowed.status != http.StatusOK {
 		t.Fatalf("the seeded administrator was refused the tenant roster with %d: %s",
@@ -1441,21 +1138,11 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	if err := json.Unmarshal(allowed.body, &listed); err != nil {
 		t.Fatalf("reading the roster: %v\n%s", err, allowed.body)
 	}
-	// The seed writes two accounts, and the default personal-tenant policy
-	// builds one for each: the roster is the system tenant, the business tenant
-	// the seed registered and the two personal tenants.
 	if len(listed.Tenants) != 4 {
 		t.Errorf("the roster holds %d tenant(s), want the system tenant, the one the seed registered "+
 			"and a personal tenant for each of the two seeded accounts", len(listed.Tenants))
 	}
 
-	// Both administration roles are builtin in the domains the seed wrote them:
-	// platform-admin only in the system domain, tenant-admin in the system and
-	// business tenant domains. The console reads the flag and withholds the
-	// role's write controls; the server refuses those writes whether or not a
-	// client does. A role without the flag is one the console offers to delete,
-	// and deleting the role that holds every declared permission locks the
-	// operator out of the console.
 	rolesIn := func(domain string) map[string]bool {
 		got := adminGet(t, seedIdentifier, "/api/v1/system/tenants/"+domain+"/roles")
 		if got.status != http.StatusOK {
@@ -1501,9 +1188,6 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 			tenantRoles)
 	}
 
-	// The bindings say the same per account, which the roles alone do not: the
-	// platform administrator holds platform-admin and tenant-admin in the system
-	// tenant and only tenant-admin in the business tenant.
 	profile := adminGet(t, seedIdentifier, "/api/v1/auth/me")
 	if profile.status != http.StatusOK {
 		t.Fatalf("reading the administrator's profile answered %d: %s", profile.status, profile.body)
@@ -1550,9 +1234,6 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		t.Errorf("the business tenant's administrator holds the platform-admin binding: %v", tenantBindings)
 	}
 
-	// The platform binding rests on a system membership: the policy refuses the
-	// binding without one, so finding the account among the system tenant's
-	// members holds the seed's order — the membership is written first.
 	members := adminGet(t, seedIdentifier,
 		"/api/v1/tenants/"+string(authz.PlatformDomain)+"/members")
 	if members.status != http.StatusOK {
@@ -1578,13 +1259,6 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 			systemMembers.Members)
 	}
 
-	// The administrator reaches the console's tenant-addressed pages for the
-	// tenant the seed registered. A binding in the platform domain alone does
-	// not answer for a tenant — the role is a per-domain row — so the seed
-	// writes the role and its grants into the tenant's domain too. Each of
-	// these reads answered 403 before that, which is what this case holds
-	// against. The SSO provider group is not among them: this configuration
-	// leaves authn.admin.sso.enabled off, so its route is not mounted.
 	for _, path := range []string{
 		"/api/v1/tenants/" + demoTenant + "/members",
 		"/api/v1/tenants/" + demoTenant + "/invitations",
@@ -1596,20 +1270,12 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		}
 	}
 
-	// The account the seed marks nothing for signs in — which is what an entry
-	// given as a hash rather than as a plaintext has to produce — and reaches
-	// nothing that asks for a permission.
 	if refused := adminGet(t, hashIdentifier, "/api/v1/system/tenants"); refused.status != http.StatusForbidden {
 		t.Errorf("the account holding no role reached the roster with %d, want %d: %s",
 			refused.status, http.StatusForbidden, refused.body)
 	}
 }
 
-// emailSeedSection is the seed section the adoption cases run: the operator is
-// named by an email address and created with a username, the shape the
-// deployment template renders. The address is the entry's configured login name
-// and the username is the second one; the tenant administrator is named by the
-// same address, so the configuration is valid.
 const emailSeedSection = `seed:
   accounts:
     - identifier: "operator@demo.example.test"
@@ -1622,11 +1288,6 @@ const emailSeedSection = `seed:
       admins:
         - operator@demo.example.test`
 
-// takenAddressSeedSection creates the account the adoption entry's address names
-// under a username of its own, so that address is taken while the adoption
-// entry's username is free. The tenant list is written empty because it is a
-// container leaf: the compiled defaults name the walkthrough tenant, whose
-// administrator this section's account list does not hold.
 const takenAddressSeedSection = `seed:
   accounts:
     - identifier: "operator@demo.example.test"
@@ -1636,13 +1297,11 @@ const takenAddressSeedSection = `seed:
       platform-admin: true
   tenants: []`
 
-// The operator's two login names in emailSeedSection.
 const (
 	emailSeedIdentifier = "operator@demo.example.test"
 	emailSeedUsername   = "operator"
 )
 
-// accountCount is how many live accounts the database holds.
 func accountCount(t *testing.T, ctx context.Context, accounts authn.Accounts) int {
 	t.Helper()
 	listed, _, err := accounts.List(ctx, authn.AccountQuery{})
@@ -1652,19 +1311,8 @@ func accountCount(t *testing.T, ctx context.Context, accounts authn.Accounts) in
 	return len(listed)
 }
 
-// TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved holds the seed to an
-// account entry that names both an email address and a username, after the
-// holder removes the address from the account page. The address is released and
-// the username remains, so the second run finds the account under its username:
-// it adopts that account, writes the address back to nothing and starts no
-// second account. A run that looked only the address up would try to create the
-// account again, collide with the username's unique constraint and fail the
-// deployment's seed step.
-//
-// The administrator's membership is removed before the second run too, because
-// the line that reconciles it is not the one that adopts the account: an adopted
-// account still gets a missing administrator membership written, which is what
-// keeps the operator administering the deployment after the address is gone.
+// TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved holds that a run finds the account by its
+// username after the holder removed the address, and restores its administrator membership.
 func TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved(t *testing.T) {
 	t.Parallel()
 	ports := freePorts(t, listenerCount)
@@ -1679,9 +1327,6 @@ func TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved(t *testing.T) {
 		t.Fatalf("the seed did not create the operator (%q):\n%s", want, first.combined())
 	}
 
-	// The holder removes the address from the account page: the account keeps its
-	// username, and the address no longer names it. The administrator's tenant
-	// membership goes with it, to be restored by the second run.
 	withSeededAccounts(t, dsn, func(ctx context.Context, accounts authn.Accounts,
 		admin authn.AccountAdmin, memberships authn.Memberships,
 	) {
@@ -1753,9 +1398,8 @@ func TestSeedAdoptsAnAccountWhoseEmailIdentifierWasRemoved(t *testing.T) {
 	})
 }
 
-// TestSeedCreatesAnAccountWhenNeitherLoginNameExists is the regression beside
-// the adoption: an entry whose address and username are both free is created as
-// before, and both names resolve to the one account the run wrote.
+// TestSeedCreatesAnAccountWhenNeitherLoginNameExists holds that an entry whose address and username
+// are both free is created once and both names resolve.
 func TestSeedCreatesAnAccountWhenNeitherLoginNameExists(t *testing.T) {
 	t.Parallel()
 	ports := freePorts(t, listenerCount)
@@ -1788,16 +1432,12 @@ func TestSeedCreatesAnAccountWhenNeitherLoginNameExists(t *testing.T) {
 	})
 }
 
-// TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds holds the skip semantics
-// the adoption path sits beside: the configured address already names an
-// account, so the run leaves that account as it stands and does not create a
-// second one under the free username.
+// TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds holds that a configured address that already
+// names an account leaves it as it stands.
 func TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds(t *testing.T) {
 	t.Parallel()
 	ports := freePorts(t, listenerCount)
 	dsn := filepath.Join(t.TempDir(), "address-taken.db")
-	// The first run writes the account holding the operator's address under a
-	// different username.
 	takenConfig := writeConfigReplacing(t, ports, dsn, demoSeedSection, takenAddressSeedSection)
 	if res := runCommand(t, takenConfig, "sqlite", seedCommand); res.err != nil {
 		t.Fatalf("seeding the account that holds the address failed: %v\n%s", res.err, res.combined())
@@ -1826,22 +1466,8 @@ func TestSeedSkipsAnEntryWhoseAddressAnotherAccountHolds(t *testing.T) {
 	})
 }
 
-// TestSeedBindsTheAdministratorInEveryServedTenant holds the seed's bindings
-// against a deployment that serves more than one tenant: the administrator
-// must hold the platform-administrator role in each configured tenant's
-// domain, not only in the platform domain and not only in the first tenant.
-//
-// A role and its binding are per-domain rows. A binding in the platform domain
-// alone does not answer for a tenant, and the console's tenant-addressed pages
-// decide in the tenant the path names, so an implementation that writes one
-// binding for the whole run leaves a deployment with a configured tenant whose
-// administration pages are refused with 403. The reads below are exactly those
-// pages, one request per tenant the configuration names.
-// TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot holds the gate in the
-// assembled program: the seeded operator has no email and writes freely, while
-// an account created with an administrator-asserted address reads pending and
-// is refused every management write with 403 contact-required until its holder
-// proves the address.
+// TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot holds that a seeded
+// operator with no email writes freely while an asserted address is refused.
 func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
@@ -1881,10 +1507,10 @@ func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
 	}
 }
 
+// TestSeedBindsTheAdministratorInEveryServedTenant holds that the administrator holds the
+// platform-administrator role in every configured tenant's domain.
 func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 	t.Parallel()
-	// Two tenants, so a seed that binds the first one it reads is
-	// distinguishable from one that binds them all.
 	secondTenant := "acme"
 	dsn := filepath.Join(t.TempDir(), "demo.db")
 	write := func(ports []int) string {
@@ -1908,8 +1534,6 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 	client := &http.Client{Timeout: probeTimeout()}
 	token := signIn(t, accountBase, seedIdentifier, seedPassword)
 	for _, tenant := range []string{demoTenant, secondTenant} {
-		// The SSO provider group is not here for the reason the tenant-admin
-		// case gives: this configuration leaves its item off.
 		for _, path := range []string{
 			"/members",
 			"/invitations",
@@ -1925,12 +1549,8 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 	}
 }
 
-// TestCreatingATenantWritesTheFirstTenantAdminBinding holds the registration's
-// whole path in the assembled program: the route goes through the host's
-// tenant.Provisioner, the new tenant's domain gets its tenant-admin role, and
-// the caller becomes the tenant's first administrator with a membership and the
-// tenant-admin binding. A route that wrote only the roster row would leave a
-// tenant nobody can enter, which the roster cannot detect on a later removal.
+// TestCreatingATenantWritesTheFirstTenantAdminBinding holds that registration writes the tenant-admin
+// role and the creator's membership and binding.
 func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
@@ -1983,9 +1603,6 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 		t.Errorf("the creator's bindings = %+v, want one tenant-admin", listed.Bindings)
 	}
 
-	// The binding names the creator the tenant's first administrator, and the
-	// membership is what lets it enter the tenant: a binding alone names an
-	// account the admission layer refuses.
 	members := send(t, client, http.MethodGet,
 		base+"/api/v1/tenants/"+created+"/members", nil, withTenant(auth, created))
 	if members.status != http.StatusOK {
@@ -2010,8 +1627,6 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 		t.Errorf("the creator is not an active member of the tenant it created: %+v", roster.Members)
 	}
 
-	// The provisioned role carries the builtin mark, as the seeded
-	// administrator roles do: the management surface may not delete it.
 	deleted := send(t, client, http.MethodDelete,
 		base+"/api/v1/system/tenants/"+created+"/roles/"+string(authz.TenantAdminRole), nil, auth)
 	if deleted.status != http.StatusConflict {
@@ -2020,11 +1635,8 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 	}
 }
 
-// TestRemovingASystemMembershipWithdrawsThePlatformBinding holds the cascade in
-// the assembled program: a platform-administrator binding is written only for an
-// active system member, and removing that membership withdraws the binding in
-// the same request. The event bus this stack runs delivers in-process, so the
-// read after the removal observes what the cascade left.
+// TestRemovingASystemMembershipWithdrawsThePlatformBinding holds that removing an active system
+// membership withdraws the platform-administrator binding.
 func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
@@ -2061,8 +1673,6 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 		t.Fatalf("reading the target's account identifier: %v\n%s", err, profile.body)
 	}
 
-	// A platform-administrator binding is refused without the membership, so the
-	// membership is written first — the order the seed uses as well.
 	member := send(t, client, http.MethodPut,
 		base+"/api/v1/tenants/"+system+"/members/"+who.AccountID,
 		map[string]any{"active": true}, withTenant(auth, system))
@@ -2105,10 +1715,6 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	if removed.status != http.StatusNoContent {
 		t.Fatalf("removing the target's system membership answered %d:\n%s", removed.status, removed.body)
 	}
-	// The change reaches the policy module through the outbox relay, which the
-	// baseline runs in the same process: the withdrawal is eventual, bounded by
-	// the relay's poll interval, so the case waits for it rather than reading
-	// once.
 	deadline := time.Now().Add(coretest.Scale(30 * time.Second))
 	for rolesOf()[string(authz.PlatformAdminRole)] && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
@@ -2118,16 +1724,8 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	}
 }
 
-// TestTheNotificationSurfaceIsReachable holds that the notification routes the
-// console's notification center calls answer a signed-in caller rather than the
-// authorization guard's 403.
-//
-// The notification capability declares no permission point of its own, so its
-// routes carry no gate and the guard, whose default is closed, refuses each one
-// 403 — which is what every route here answered before the host registered them
-// open. The case signs in as the administrator the seed writes and holds the
-// four reads reachable, then opens the stream and reads the event-stream answer
-// its handler writes before the first frame.
+// TestTheNotificationSurfaceIsReachable holds that the notification routes answer a signed-in caller
+// rather than the guard's 403.
 func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
@@ -2141,9 +1739,6 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 		return start(t, writeConfigWith(t, ports, dsn), "sqlite", serveCommand)
 	})
 
-	// The api endpoint is tenant-scoped: the request announces the tenant the
-	// seed registered and the administrator is bound in, and carries the access
-	// token the login above handed out.
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	token := signIn(t, base, seedIdentifier, seedPassword)
 	headers := map[string]string{
@@ -2163,10 +1758,6 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 		}
 	}
 
-	// The stream is a long-lived SSE connection. Its handler writes the status
-	// and the event-stream content type before the first frame, so the client's
-	// Do returns once the connection is admitted and the case reads both without
-	// waiting for an event; cancelling the request's context ends the read.
 	ctx, cancel := context.WithTimeout(context.Background(), coretest.Scale(30*time.Second))
 	defer cancel()
 	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/v1/notifications/stream", nil)
@@ -2190,15 +1781,8 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 	cancel()
 }
 
-// TestTheJournalRecordsTheSeamWritesAndNoRequestRow holds the journal's two
-// capture paths to what this product carries: the seam a capability records its
-// own write at, and the request-level sample, which the platform defaults leave
-// empty. The object store's client-facing routes the old sample named are gone —
-// the capability has no terminal-user API, and bytes are reached through a URL
-// the business backend mints — so the case asks for them and finds no route and
-// no row. The account creation is recorded by the authentication module at its
-// seam: exactly one row, and no request row beside it. The profile read the
-// frontend polls on its own is performed too and must leave no request row.
+// TestTheJournalRecordsTheSeamWritesAndNoRequestRow holds that a seam write leaves one row, no request
+// row sits beside it, and a polled read leaves none.
 func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "demo.db")
@@ -2220,15 +1804,10 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 		"X-Tenant":      demoTenant,
 	}
 
-	// The frontend reads the caller's profile after every load. The sample
-	// names no read, so this one leaves the journal untouched.
 	if res := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil, headers); res.status != http.StatusOK {
 		t.Fatalf("GET /api/v1/auth/me answered %d, want 200:\n%s", res.status, res.body)
 	}
 
-	// The object store answers no client-facing route at all: a declaration and
-	// a delete, the two requests the old sample named, reach no endpoint
-	// handler.
 	for _, gone := range []struct{ method, path string }{
 		{http.MethodPost, "/api/v1/objects"},
 		{http.MethodDelete, "/api/v1/objects/absent"},
@@ -2239,9 +1818,6 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 		}
 	}
 
-	// The account-management action is recorded at the seam. The empty sample
-	// names no request, so one call leaves one seam row and no request row
-	// beside it.
 	created := send(t, client, http.MethodPost, base+"/api/v1/system/auth/accounts", map[string]any{
 		"kind":               "user",
 		"username":           "sample-admin-write",
@@ -2253,9 +1829,6 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 		t.Fatalf("creating an account answered %d, want 201:\n%s", created.status, created.body)
 	}
 
-	// The journal's query surface reads the rows back. The read is repeated
-	// until the seam row is there: a capture path writes after the handler
-	// returns, so a read can beat the row.
 	type record struct {
 		Source string `json:"source"`
 		Action string `json:"action"`
@@ -2318,14 +1891,8 @@ func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 	}
 }
 
-// TestTheSeedRefusesAConfigurationItCannotWrite holds the ways a seed whose
-// configuration is wrong used to pass for success: an account list that is
-// empty, an account that names no credential, and an account whose credential
-// key is misspelled. Each used to leave the operator with no way to sign in
-// while the command reported seeded — and the second leaves the account in the
-// database with no credential at all, which is the state a later run cannot
-// repair and cannot report. The third is refused by the strict decode of the
-// account entry before the command's own check sees it.
+// TestTheSeedRefusesAConfigurationItCannotWrite holds that an empty account list, an account with no
+// credential and a misspelled credential key all fail the command.
 func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -2370,14 +1937,8 @@ func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
 	}
 }
 
-// TestTheConfigTemplateMirrorsTheSampleFile holds the configuration a case runs
-// to the sample file it documents itself as mirroring. The template is a second
-// copy of the platform sections, and a section written into the sample alone —
-// the WebAuthn relying party is the one this guards — would be a deliverable a
-// copy runs and no case does, so the second factor that turns a step-up into a
-// completable flow would be exercised by nothing here. The comparison is against
-// the sample file's own text rather than a constant, so a change to the sample
-// obliges the template to follow it.
+// TestTheConfigTemplateMirrorsTheSampleFile holds the case configuration to the sample file it
+// documents itself as mirroring.
 func TestTheConfigTemplateMirrorsTheSampleFile(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join("testdata", "sqlite-memory.yaml"))
@@ -2396,16 +1957,11 @@ func TestTheConfigTemplateMirrorsTheSampleFile(t *testing.T) {
 	}
 }
 
-// flyProxyCarrier is the part of the deployment template's http section this
-// case reads: the module-level proxy settings, which every endpoint inherits.
 type flyProxyCarrier struct {
 	TrustedProxies  []string `config:"trusted-proxies"`
 	RemoteIPHeaders []string `config:"remote-ip-headers"`
 }
 
-// renderDeployTemplate renders deploy/fly.yaml.tmpl the way deploy/entrypoint.sh
-// does: every placeholder gets a value of the shape the entrypoint renders.
-// Only ./treecheck runs these cases, through deployDirEnv.
 func renderDeployTemplate(t *testing.T) string {
 	t.Helper()
 	dir, ok := os.LookupEnv(deployDirEnv)
@@ -2452,19 +2008,11 @@ func renderDeployTemplate(t *testing.T) string {
 	return rendered
 }
 
-// TestTheDeployTemplateTrustsTheFlyProxy holds the deployment template, not a
-// test-local copy of it, to the one proxy a Fly Machine is reached through.
-// Fly's proxy is the only peer whose forwarded headers are believed, and the
-// client address is read from Fly-Client-IP because Fly appends the app's own
-// Anycast address as the rightmost X-Forwarded-For entry. The template is
-// rendered the way deploy/entrypoint.sh renders it and loaded through the same
-// pkg/config entry point the binary uses, so a deployment that runs the
-// template carries the trust settings this case asserts.
+// TestTheDeployTemplateTrustsTheFlyProxy holds the rendered deployment template to Fly's proxy as the
+// only trusted peer.
 func TestTheDeployTemplateTrustsTheFlyProxy(t *testing.T) {
 	t.Parallel()
 	rendered := renderDeployTemplate(t)
-	// The default build carries the mail and social methods, so every section
-	// the template names is a declared input item.
 
 	var carrier flyProxyCarrier
 	readEffective(t, "deploy/fly.yaml.tmpl", writeConfigFile(t, rendered), "http", &carrier)
@@ -2479,14 +2027,6 @@ func TestTheDeployTemplateTrustsTheFlyProxy(t *testing.T) {
 	}
 }
 
-// deploySeedCarrier is the account entry the deployment template's seed item
-// carries: the login name the operator signs in with, and the address written
-// beside it.
-//
-// The account fields mirror the seed module's own entry type. The library
-// decodes a list element whole and refuses a member no field answers for, so
-// every member the template writes has to be named here even though this case
-// reads only the identifier and the username.
 type deploySeedCarrier struct {
 	Accounts []struct {
 		Identifier    string `config:"identifier"`
@@ -2498,17 +2038,11 @@ type deploySeedCarrier struct {
 	} `config:"accounts"`
 }
 
-// TestTheDeployTemplateSeedsTheOperatorUsername holds the template to the seed
-// entry the entrypoint renders. The address is the identifier the account is
-// looked up by, and the username is the login name it is created with: a
-// placeholder left in place would seed a username the login surface cannot
-// find. The case renders the template the way deploy/entrypoint.sh does and
-// reads the item back, so the placeholder and its input cannot drift apart.
+// TestTheDeployTemplateSeedsTheOperatorUsername holds the rendered template to a seed entry whose
+// username placeholder cannot survive.
 func TestTheDeployTemplateSeedsTheOperatorUsername(t *testing.T) {
 	t.Parallel()
 	rendered := renderDeployTemplate(t)
-	// The default build carries the mail and social methods, so the template's
-	// sections are all declared input items.
 	locator := writeConfigFile(t, rendered)
 	var got deploySeedCarrier
 	readEffective(t, "deploy/fly.yaml.tmpl", locator, seedNamespace, &got)
@@ -2522,11 +2056,6 @@ func TestTheDeployTemplateSeedsTheOperatorUsername(t *testing.T) {
 	}
 }
 
-// yamlBlock answers the block a key opens: the key's own line and every
-// following line indented more deeply than it, which is the mapping or sequence
-// beneath that key. The key is matched on its trimmed text, so the caller passes
-// the key with its trailing colon; the empty string means the document holds no
-// such key.
 func yamlBlock(doc, key string) string {
 	lines := strings.Split(doc, "\n")
 	for i, line := range lines {

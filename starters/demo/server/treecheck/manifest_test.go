@@ -9,14 +9,8 @@ import (
 	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
-// backendPrefixManifestPath is the dev-proxy manifest the frontend package
-// carries, relative to this package's directory.
 const backendPrefixManifestPath = "../../web/backend-prefixes.json"
 
-// readPrefixManifest decodes that manifest into one prefix-to-endpoint table.
-// The file groups prefixes by the endpoint that claims them, which is the shape
-// the dev proxy and the frontend's route guard read; the comparison works on
-// the flat table, because that is the claim the configuration makes.
 func readPrefixManifest(t *testing.T) map[string]string {
 	t.Helper()
 	doc, err := os.ReadFile(filepath.Clean(backendPrefixManifestPath))
@@ -48,9 +42,8 @@ func readPrefixManifest(t *testing.T) map[string]string {
 	return owners
 }
 
-// TestThePrefixManifestMatchesTheOwnershipTable checks that the frontend's
-// prefix manifest and the ownership table give each prefix the same endpoint,
-// in both directions.
+// TestThePrefixManifestMatchesTheOwnershipTable checks that the frontend's prefix manifest and the
+// ownership table agree in both directions.
 func TestThePrefixManifestMatchesTheOwnershipTable(t *testing.T) {
 	t.Parallel()
 	owners := readPrefixManifest(t)

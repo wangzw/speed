@@ -1,20 +1,5 @@
 package main
 
-// The delivery ledger's record of a locally refused SMS.
-//
-// The rollout journey's end-to-end spec asserts what the browser renders: the
-// SMS page keeps showing the template disabled with its review states, and the
-// process log carries no carrier line and no external-send record. A refusal
-// that never reaches a carrier writes no log line, so the ledger's failed row —
-// its status, its reason naming the template, and the absent carrier receipt —
-// is observed here instead.
-//
-// The case drives the refusal through the product's own routes and the
-// fixture's periodic dispatch: the platform operator registers a runtime
-// template with the codes the catalog names and disables it, a member proves a
-// phone number through the ordinary verification-code flow, and the next
-// dispatch window attempts the sms channel and records the refusal.
-
 import (
 	"context"
 	"database/sql"
@@ -31,27 +16,18 @@ import (
 	_ "github.com/vislake/speed/pkg/db/sqlite" // registers the sqlite driver this case reads the ledger through
 )
 
-// The template this case registers. Its name is what the notification catalog
-// names for the type's sms template, so the fixture's channel choice resolves it
-// and the delivery pipeline attempts the sms channel.
 const (
 	e2eLedgerTemplate = demoNotificationSMSTemplate
 	e2eLedgerENCode   = "demo-notice-en"
 	e2eLedgerZHCode   = "demo-notice-zh"
 )
 
-// The phone number this case proves through the SMS login method. A first
-// sign-in on an unheld number asks for the account's username and password
-// while registration is open; the personal tenant its creation writes is the
-// organization the worker dispatches to, and the proved phone is the sms
-// destination.
 const (
 	e2eLedgerMemberPhone    = "+15550100001"
 	e2eLedgerMemberUsername = "ledger-member"
 	e2eLedgerMemberPassword = "ledger-member-secret"
 )
 
-// e2eLedgerRow is one row of notification_sends as this case reads it.
 type e2eLedgerRow struct {
 	RowID             int64
 	Status            string
@@ -59,12 +35,8 @@ type e2eLedgerRow struct {
 	ProviderReceiptID sql.NullString
 }
 
-// TestRefusedSMSTemplateIsRecordedFailedInTheLedger signs in as the seeded
-// platform operator, registers the rollout template, disables it, and waits for
-// the periodic dispatch to address a member whose phone number is proved. It
-// then reads notification_sends directly: the sms row the dispatch produced is
-// failed, its reason names the template, and it carries no carrier receipt,
-// because the local gate stopped the message before any carrier was called.
+// TestRefusedSMSTemplateIsRecordedFailedInTheLedger holds that a disabled template leaves a failed sms
+// row naming the template and carrying no carrier receipt.
 func TestRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 	t.Parallel()
 	binary := e2eBinary(t)
@@ -82,9 +54,6 @@ func TestRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 	operator := signIn(t, base, e2eOperatorUsername, e2eOperatorPassword)
 	auth := map[string]string{"Authorization": "Bearer " + operator}
 
-	// The template the catalog names, registered with a vendor code per
-	// language. It starts enabled, so the readiness check below is the case's
-	// own: the disable route is what creates the refusal state.
 	registered := send(t, client, http.MethodPost, base+"/api/v1/system/sms/templates", map[string]any{
 		"name":   e2eLedgerTemplate,
 		"kind":   "notification",
@@ -106,10 +75,6 @@ func TestRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 			disabled.status, http.StatusNoContent, disabled.body)
 	}
 
-	// A member proves a phone number through the product's own code flow. The
-	// fixture addresses a recipient by their proved phone, and the personal
-	// tenant the registration wrote is the organization the worker dispatches
-	// to.
 	proofE2EPhone(t, base, serve)
 
 	dsn := filepath.Join(filepath.Dir(configPath), "e2e.db")
@@ -135,10 +100,6 @@ func TestRefusedSMSTemplateIsRecordedFailedInTheLedger(t *testing.T) {
 	}
 }
 
-// proofE2EPhone signs a member in with the SMS method on a number no account
-// holds, reading the code the log SMS carrier writes. With registration open the
-// completion opens the account and writes its personal tenant, so the fixture
-// has an addressable recipient whose proved phone is the sms destination.
 func proofE2EPhone(t *testing.T, base string, serve *process) {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
@@ -170,7 +131,6 @@ func proofE2EPhone(t *testing.T, base string, serve *process) {
 	}
 	flow = decodeE2EFlow(t, answered.body)
 	if flow.State == "signup" {
-		// A first sign-in on an unheld number asks for the account it opens.
 		if flow.Next.Kind != "challenge" {
 			t.Fatalf("the SMS signup offered kind %q, want the account fields:\n%s",
 				flow.Next.Kind, answered.body)
@@ -202,9 +162,6 @@ func proofE2EPhone(t *testing.T, base string, serve *process) {
 	}
 }
 
-// e2eSMSCode polls the child's output for the log SMS record and answers the
-// verification code it carries. The value is read off the logfmt record's last
-// verification_code attribute, and a notice line carries none.
 func e2eSMSCode(t *testing.T, p *process) string {
 	t.Helper()
 	const (
@@ -236,8 +193,6 @@ func e2eSMSCode(t *testing.T, p *process) string {
 	}
 }
 
-// e2eLedgerMark is the newest rowid the sms channel holds before an action,
-// or zero when it holds none.
 func e2eLedgerMark(t *testing.T, dsn string) int64 {
 	t.Helper()
 	rows, err := readE2ELedger(dsn, 0)
@@ -253,10 +208,6 @@ func e2eLedgerMark(t *testing.T, dsn string) int64 {
 	return newest
 }
 
-// waitForE2ELedgerRows polls the ledger until the dispatch's sms row lands.
-// The delivery pipeline writes the channel's row after the job queue hands the
-// dispatch over, and the fixture dispatches on its own window, so the wait
-// covers several windows rather than a fixed pause.
 func waitForE2ELedgerRows(t *testing.T, dsn string, after int64) []e2eLedgerRow {
 	t.Helper()
 	deadline := time.Now().Add(coretest.Scale(45 * time.Second))
@@ -278,10 +229,6 @@ func waitForE2ELedgerRows(t *testing.T, dsn string, after int64) []e2eLedgerRow 
 	}
 }
 
-// readE2ELedger reads the sms rows of the demo type after a cursor. The
-// connection is read-only and the statement names the table and its columns
-// directly: notification_sends is notification.delivery's own table, and this
-// case is the one place a test asserts on it.
 func readE2ELedger(dsn string, after int64) ([]e2eLedgerRow, error) {
 	database, err := sql.Open("sqlite", "file:"+dsn+"?mode=ro")
 	if err != nil {

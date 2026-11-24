@@ -1,17 +1,3 @@
-# The four external backends the non-memory stacks run on: PostgreSQL, Redis,
-# NATS and memcached. The sqlite-memory stack needs none of them; each of the
-# other four names a subset, and the stack files under testdata/ say which.
-#
-#   docker compose -f starters/demo/compose.yaml up -d
-#
-# The ports are the ones the testdata/ stack files point at, so a service
-# brought up here is reachable at the address its configuration already names.
-#
-# The repository's own tests no longer use this file and no longer compete for
-# these ports: `make deps-up` allocates four free loopback ports for the
-# checkout it runs in and starts the root compose file on them, so a test stack
-# and this one can be up together. Only a bare `docker compose up` against the
-# root file still publishes the defaults below, and only that collides here.
 services:
   postgres:
     image: postgres:17-alpine
@@ -32,8 +18,6 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
 
-  # JetStream is on: both the NATS key-value store and the NATS event bus are
-  # built on it, and a server started without -js answers neither.
   nats:
     image: nats:2-alpine
     command: ["-js"]

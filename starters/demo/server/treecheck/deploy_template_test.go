@@ -13,25 +13,18 @@ import (
 	"github.com/vislake/speed/starters/demo/server/internal/demotest"
 )
 
-// deployDirEnv names the deployment directory the main package's
-// deployment-template cases read.
 const deployDirEnv = "TREECHECK_DEPLOY_DIR"
 
-// deployCasePrefix is the name prefix the main package's deployment-template
-// cases share.
 const deployCasePrefix = "TestTheDeployTemplate"
 
-// mainPackage is the demo server package whose deployment-template cases this
-// driver runs.
 const mainPackage = "github.com/vislake/speed/starters/demo/server"
 
-// commandLimit bounds one nested go command or one run of the test binary.
 func commandLimit() time.Duration {
 	return coretest.Scale(180 * time.Second)
 }
 
-// TestTheDeployTemplateCasesPass checks that the main package's
-// deployment-template cases pass when its test binary runs from the module root.
+// TestTheDeployTemplateCasesPass checks that the main package's deployment-template cases pass from
+// the module root.
 func TestTheDeployTemplateCasesPass(t *testing.T) {
 	t.Parallel()
 	binary := filepath.Join(t.TempDir(), "demo.test")
@@ -64,7 +57,6 @@ func TestTheDeployTemplateCasesPass(t *testing.T) {
 	}
 }
 
-// listDeployCases answers the case names the test binary would run.
 func listDeployCases(t *testing.T, binary string, env []string) []string {
 	t.Helper()
 	stdout, stderr, err := runTestBinary(t, binary, env, "-test.list", "^"+deployCasePrefix)
@@ -84,8 +76,6 @@ func listDeployCases(t *testing.T, binary string, env []string) []string {
 	return names
 }
 
-// runTestBinary runs the built test binary from the module root and answers
-// its two streams and exit error.
 func runTestBinary(t *testing.T, binary string, env []string, args ...string) (string, string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), commandLimit())
@@ -103,7 +93,6 @@ func runTestBinary(t *testing.T, binary string, env []string, args ...string) (s
 	return stdout.String(), stderr.String(), err
 }
 
-// runGo runs one nested go command and answers its combined output.
 func runGo(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), commandLimit())

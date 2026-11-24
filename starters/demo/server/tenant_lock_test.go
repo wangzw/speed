@@ -9,8 +9,8 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// The host's local removal lock serialises one tenant and leaves another
-// tenant's removals alone.
+// TestTheHostRemovalLockSerialisesOneTenant holds that the local removal lock serialises one tenant
+// and leaves another tenant's removals alone.
 func TestTheHostRemovalLockSerialisesOneTenant(t *testing.T) {
 	t.Parallel()
 	lock := &tenantRemovalLock{dialect: db.SQLite, byTenant: make(map[string]chan struct{})}

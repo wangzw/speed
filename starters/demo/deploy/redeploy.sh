@@ -1,51 +1,4 @@
 #!/usr/bin/env bash
-# Redeploy the demo to Fly, rebuilding its volume when the new version cannot
-# start against the existing database.
-#
-# Order: deploy first and keep the data when the new version is healthy. Health
-# is a three-valued verdict, not a boolean:
-#
-#   healthy        every machine is started and both checks pass, or the public
-#                  /healthz probe answers 200 when the checks cannot be read.
-#   unhealthy      a started machine's required check is still warning or
-#                  critical after the poll window.
-#   indeterminate  health could not be determined: flyctl failed, its output
-#                  was not usable, a required check was absent or reported no
-#                  readable status (unknown, missing, empty or not a string),
-#                  a machine was in a state other than started or stopped, a
-#                  stopped machine could not be woken, or the public probe did
-#                  not answer 200.
-#
-# Only `unhealthy` leads to the rebuild. `indeterminate` ends the run with
-# "cannot determine health" and nothing is destroyed, so a network failure can
-# never take a healthy deployment's volume with it.
-#
-# Health is read from `flyctl machine list --json`: the named `ready` check
-# and the service check flyctl generates from [[http_service.checks]], named
-# servicecheck-* (port 8080 here). A machine fly.toml's auto_stop_machines may
-# have stopped is woken with `flyctl machine start` and read again, so a stopped
-# machine is not mistaken for an unhealthy one. When the checks cannot be read
-# the script falls back to polling GET /healthz on the public address.
-#
-# Before it destroys anything the script reads the machine and volume lists
-# again, twice: once before the confirmation and once after it. A read that
-# fails ends the run with "cannot determine cloud state" and nothing is
-# destroyed.
-#
-# The rebuild destroys the machine, destroys the volume, creates a fresh one,
-# and deploys again; the entrypoint builds the database on first boot. Nothing
-# here needs ssh, so a crash loop cannot block the repair.
-#
-# The rebuild is destructive: the volume carries the database, the token
-# signing key (/data/var) and the object store (/data/objects), so every
-# session is invalidated and uploaded objects are lost.
-#
-# --dry-run prints the commands and the decision logic and runs nothing.
-# --yes skips the confirmation before the destructive step.
-#
-# The defaults mirror starters/demo/fly.toml; APP, REGION, VOLUME and BASE
-# override them, and HEALTH_TIMEOUT and HEALTH_INTERVAL change the health poll.
-# --help carries the full text.
 set -euo pipefail
 
 usage() {
@@ -128,8 +81,6 @@ for arg in "$@"; do
   esac
 done
 
-# The script may be reached through a symlink outside the repository (a copy
-# on PATH), so the checkout is located from the file a chain of links ends at.
 source_path=$0
 while [ -L "$source_path" ]; do
   link_dir=$(cd -P -- "$(dirname -- "$source_path")" && pwd)
@@ -149,9 +100,6 @@ fi
 
 FLY_TOML=$(dirname -- "$SCRIPT_DIR")/fly.toml
 
-# The value of the first `key = "value"` line in fly.toml, empty when the file
-# is absent or the key is not there. It reads the simple strings this file
-# names and is not a TOML parser.
 toml_string() {
   if [ ! -r "$FLY_TOML" ]; then
     return 0
@@ -232,14 +180,6 @@ HEALTH_ROUTE=none
 say() { printf '\n== %s\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
 
-# One verdict per machines list: "healthy", "unhealthy: <reasons>",
-# "indeterminate: <reason>", or "stopped: <ids>". The named check is the
-# top-level [checks.ready] block in fly.toml; the service check is the one
-# flyctl generates from [[http_service.checks]], named servicecheck-*. A
-# machine that is not started and not stopped, a list with no checks at all, or
-# a list missing a required check cannot judge health, so it reports
-# indeterminate. A stopped machine reports its id so the caller can wake it and
-# read again; only a started machine with a failing check is unhealthy.
 MACHINE_HEALTH_PY='
 import json, sys
 
@@ -316,11 +256,6 @@ else:
     print("healthy")
 '
 
-# 0: every machine is started and both checks pass; 1: a started machine's
-# required check is not passing; 2: the checks cannot be read (flyctl failed,
-# the output was not usable, a required check is absent, or a required check
-# reports no readable status); 3: a machine is stopped, so its id is left in
-# MACHINE_STOPPED_IDS to be woken and read again.
 MACHINE_STOPPED_IDS=""
 machine_health() {
   local json status verdict
@@ -359,7 +294,6 @@ machine_health() {
   esac
 }
 
-# Wakes every machine id in $1. Non-zero when a wake call fails.
 wake_machines() {
   local id
   for id in $1; do
@@ -372,24 +306,6 @@ wake_machines() {
   return 0
 }
 
-# Health is judged over repeated attempts, with three outcomes:
-#   0  healthy: a machine check passed, or the probe answered 200
-#   1  unhealthy: the final attempt read a started machine with a failing check
-#   2  indeterminate: health could not be determined
-# Each attempt overwrites the verdict, so the most recent attempt's reading
-# wins: a later definite unhealthy reading replaces an earlier attempt that
-# could not read the checks, and vice versa. An attempt that cannot read the
-# checks (flyctl failed, the output was not usable, a required check was
-# absent or reported no readable status, a wake failed, or the probe did not
-# answer 200) sets indeterminate.
-# The run returns unhealthy only when the final attempt was a definite reading
-# of a started machine with a failing required check; otherwise it returns
-# indeterminate, so the caller never destroys on a reading it could not take or
-# one that did not say the checks fail.
-# The public listener answers /healthz from the frontend's fallback once the
-# process serves: an extensionless path is a client-side route, so the entry
-# document answers with 200. That probe runs only when the machine checks
-# cannot be read.
 health() {
   local attempts=0 code deadline machine_status use_probe verdict=indeterminate
   deadline=$((SECONDS + HEALTH_TIMEOUT))
@@ -462,10 +378,6 @@ die() {
   exit 1
 }
 
-# Reads the machine and volume lists, requiring both to answer with usable
-# JSON, and leaves them in MACHINES_JSON and VOLUMES_JSON for the destroy step.
-# Non-zero means the cloud state cannot be determined, so nothing may be
-# destroyed.
 MACHINES_JSON=""
 VOLUMES_JSON=""
 read_cloud_state() {

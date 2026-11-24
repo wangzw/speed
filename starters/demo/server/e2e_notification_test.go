@@ -1,18 +1,5 @@
 package main
 
-// The notification fixture, tested where it is compiled: the type is in the
-// available set both taxonomy consumers read, a dispatch that the worker submits
-// writes an inbox row for the member and renders the email from the module's own
-// catalog in the recipient's language — Chinese for a member who stored zh-CN,
-// the platform default for a member who stored none — the preference write
-// succeeds because the fixture names the recipient, and an anonymous caller is
-// still refused.
-//
-// The dispatch is the worker's: the module declares a jobs.Schedule and the
-// handler turns each window into one dispatch per active tenant member. Nothing
-// here calls an HTTP endpoint to make a notification happen; the browser tier
-// would only observe what this worker produces.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -32,8 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The accounts the notification cases register. They are not seed rows, and
-// each case's database is a file of its own, so the names collide with nothing.
 const (
 	e2eNotifyUsername = "notice-member"
 	e2eNotifyPassword = "notice-member-password-1"
@@ -44,19 +29,12 @@ const (
 	e2eNotifyChineseEmail    = "notice-member-zh@example.test"
 )
 
-// The languages the notification cases exercise: the one a member stores on the
-// account, and the platform default a member with no stored preference resolves
-// to.
 const (
 	e2eChineseLocale = "zh-CN"
 	e2eDefaultLocale = "en-US"
-	// e2eThirdLocale is the run's default in the cases that hold the
-	// fallback itself. It is neither the language a member stores nor the one a
-	// request carries, so a hard-coded "en-US" fails those cases.
-	e2eThirdLocale = "fr-FR"
+	e2eThirdLocale   = "fr-FR"
 )
 
-// notificationTypeView is one entry of GET /notifications/types.
 type notificationTypeView struct {
 	Key                    string   `json:"key"`
 	Group                  string   `json:"group"`
@@ -65,14 +43,12 @@ type notificationTypeView struct {
 	RecipientVisibleParams []string `json:"recipient_visible_params"`
 }
 
-// preferenceView is one row of GET /notifications/preferences.
 type preferenceView struct {
 	TypeKey  string   `json:"type_key"`
 	Channels []string `json:"channels"`
 	Explicit bool     `json:"explicit"`
 }
 
-// messageView is one message of GET /notifications/messages.
 type messageView struct {
 	ID      string `json:"id"`
 	TypeKey string `json:"type_key"`
@@ -81,16 +57,13 @@ type messageView struct {
 	Body    string `json:"body"`
 }
 
-// messagePage is the listing's answer.
 type messagePage struct {
 	Messages []messageView `json:"messages"`
 	Total    int           `json:"total"`
 }
 
-// TestE2ENotificationTypeReachesBothTaxonomyConsumers holds the declaration
-// side: the demo notification module is named for the serve roster, its type is in the
-// available set notification.preferences and notification.delivery collect with
-// core.Resources, and its schedule names the handler this module registers.
+// TestE2ENotificationTypeReachesBothTaxonomyConsumers holds that the type is in the available set both
+// taxonomy consumers collect and its schedule names the registered handler.
 func TestE2ENotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 	t.Parallel()
 	if !slices.Contains(capabilityModules, demoNotificationModuleName) {
@@ -149,11 +122,8 @@ func TestE2ENotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 	}
 }
 
-// TestE2ENotificationJourneyIsReachable drives the fixture end to end over
-// the real binary: a registered member gets a tenant, the worker writes
-// the type into the member's inbox, the email is rendered from the type's
-// catalog, the member turns the email channel off and the write succeeds, an
-// anonymous caller is still refused, and the next windows write no email.
+// TestE2ENotificationJourneyIsReachable drives the fixture end to end: the
+// worker writes the notice and turning the channel off stops later windows.
 func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 	t.Parallel()
 	binary := e2eBinary(t)
@@ -167,9 +137,6 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: probeTimeout()}
 
-	// The member registers, signs in, proves an email address and ensures a
-	// tenant. The account needs an email identifier for the email channel's
-	// destination, and registration is the UI's own path to one.
 	token := registerE2EMember(t, client, base, serve,
 		e2eNotifyUsername, e2eNotifyEmail, e2eNotifyPassword)
 	headers := map[string]string{
@@ -177,7 +144,6 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 		"X-Tenant":      personalTenantName(t, client, base, token),
 	}
 
-	// The preferences consumer sees the type with its declared defaults.
 	var types struct {
 		Types []notificationTypeView `json:"types"`
 	}
@@ -195,8 +161,6 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 		t.Errorf("the type's listed default channels are %v, want %v", typeView.DefaultChannels, want)
 	}
 
-	// The worker dispatches once per window. Wait for the first message; the
-	// delivery consumer accepting the type is what proves it collected it.
 	page := waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+demoNotificationGroup,
 		headers, 1, serve)
 	first := page.Messages[0]
@@ -210,11 +174,6 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 		t.Errorf("the in-app body is %q, want the catalog's %q", first.Body, want)
 	}
 
-	// This member holds an email address but no phone number, so the fixture
-	// addresses them by email: sms is removed from their effective set and is
-	// not attempted with the address as its destination. The worker writes that
-	// set before it submits the dispatch, so the first message above is the
-	// signal that the write has landed.
 	var prefs struct {
 		Preferences []preferenceView `json:"preferences"`
 	}
@@ -225,9 +184,6 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 			"removed; the recipient has no proved phone number", row, want)
 	}
 
-	// The email channel renders the same message from the catalog. The review
-	// mail carrier writes the rendered subject and body to the process log; a
-	// fallback to the raw key would leave the key in the line instead.
 	subject := e2eCatalogEntry(t, e2eDefaultLocale, "demo.notice.email.subject")
 	body := e2eCatalogEntry(t, e2eDefaultLocale, "demo.notice.email.body_text")
 	waitForLogLine(t, serve, subject)
@@ -239,9 +195,6 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 		t.Errorf("the log mail line carries no rendered body %q", body)
 	}
 
-	// The preference write succeeds: the assembly names the caller as the
-	// recipient on the request context. Without that wiring the capability
-	// refuses a write with no recipient as a 400.
 	written := send(t, client, http.MethodPut,
 		base+"/api/v1/notifications/preferences/"+demoNotificationTypeKey+"/email",
 		map[string]any{"enabled": false}, headers)
@@ -265,9 +218,6 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 		t.Errorf("the stored preference row is %+v, want in_app alone and explicit true", row)
 	}
 
-	// A caller with no account is still refused. The notification routes are
-	// open on the authorization guard, not anonymous: the gateway answers a
-	// request carrying no credential before the preference handler runs.
 	anonymous := send(t, client, http.MethodPut,
 		base+"/api/v1/notifications/preferences/"+demoNotificationTypeKey+"/email",
 		map[string]any{"enabled": true}, map[string]string{"X-Tenant": headers["X-Tenant"]})
@@ -276,15 +226,8 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 			anonymous.status, anonymous.body)
 	}
 
-	// Two windows after the write send no email. The first is waited out so an
-	// in-flight window enqueued before the write cannot be mistaken for a
-	// post-write one; the count is taken again at the second.
-	//
-	// The operator owns a personal tenant of its own by now, and a personal
-	// tenant is a real organization that receives notices too. Every window
-	// therefore carries one more email, addressed to the operator rather than
-	// to the member this case registered. Count only the lines addressed to the
-	// member, which is the delivery the preference governs.
+	// The operator's personal tenant also receives notices, so every window carries
+	// one more email addressed to the operator; count only the member's lines.
 	emailLines := func() int {
 		count := 0
 		for _, line := range strings.Split(serve.output(), "\n") {
@@ -305,11 +248,8 @@ func TestE2ENotificationJourneyIsReachable(t *testing.T) {
 	}
 }
 
-// TestE2ENotificationRendersInTheRecipientsLanguage holds the dispatch
-// language: a member whose account stores zh-CN receives the notice rendered
-// from the zh-CN catalog, in the inbox and in the email alike. The journey case
-// above holds the other direction — the same fixture with a member who stores no
-// preference, which resolves to the platform default.
+// TestE2ENotificationRendersInTheRecipientsLanguage holds that a member whose account stores zh-CN
+// receives the notice in the inbox and the email in that language.
 func TestE2ENotificationRendersInTheRecipientsLanguage(t *testing.T) {
 	t.Parallel()
 	binary := e2eBinary(t)
@@ -326,9 +266,6 @@ func TestE2ENotificationRendersInTheRecipientsLanguage(t *testing.T) {
 	token := registerE2EMember(t, client, base, serve,
 		e2eNotifyChineseUsername, e2eNotifyChineseEmail, e2eNotifyChinesePassword)
 
-	// The preference is stored before the tenant exists, so every dispatch the
-	// worker makes for it already resolves the recipient's language. The write
-	// goes through the profile route the interface's own personalization uses.
 	stored := send(t, client, http.MethodPatch, base+"/api/v1/auth/me",
 		map[string]string{"locale": e2eChineseLocale},
 		map[string]string{"Authorization": "Bearer " + token})
@@ -342,8 +279,6 @@ func TestE2ENotificationRendersInTheRecipientsLanguage(t *testing.T) {
 		"X-Tenant":      personalTenantName(t, client, base, token),
 	}
 
-	// The worker's first window for this tenant renders the notice — and the
-	// email the same dispatch carries — in the recipient's language.
 	page := waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+demoNotificationGroup,
 		headers, 1, serve)
 	first := page.Messages[0]
@@ -367,12 +302,6 @@ func TestE2ENotificationRendersInTheRecipientsLanguage(t *testing.T) {
 	}
 }
 
-// registerE2EMember registers a member over the binary's own routes
-// and answers its signed-in token. Registration leaves the address pending
-// rather than binding it as an identifier, and the self-service add writes one
-// only once the code is presented; the log mail carrier writes that code to
-// the process log, so the member proves the address the way the walkthrough
-// does.
 func registerE2EMember(t *testing.T, client *http.Client, base string, serve *process,
 	username, email, password string,
 ) string {
@@ -401,10 +330,6 @@ func registerE2EMember(t *testing.T, client *http.Client, base string, serve *pr
 	return token
 }
 
-// personalTenantName reads the caller's own personal tenant from the account's
-// tenant list and answers its name, which the tenant-scoped routes read from
-// the X-Tenant header. The account's creation transaction wrote the tenant; the
-// host has no backfill route.
 func personalTenantName(t *testing.T, client *http.Client, base, token string) string {
 	t.Helper()
 	read := send(t, client, http.MethodGet, base+"/api/v1/auth/me/tenants", nil,
@@ -430,7 +355,6 @@ func personalTenantName(t *testing.T, client *http.Client, base, token string) s
 	return ""
 }
 
-// readJSON makes one authorized GET and decodes its answer.
 func readJSON(t *testing.T, client *http.Client, url string, headers map[string]string, into any) {
 	t.Helper()
 	res := send(t, client, http.MethodGet, url, nil, headers)
@@ -442,7 +366,6 @@ func readJSON(t *testing.T, client *http.Client, url string, headers map[string]
 	}
 }
 
-// preferenceRow finds the demo notification type's row in the matrix.
 func preferenceRow(t *testing.T, rows []preferenceView) preferenceView {
 	t.Helper()
 	for _, row := range rows {
@@ -454,10 +377,8 @@ func preferenceRow(t *testing.T, rows []preferenceView) preferenceView {
 	return preferenceView{}
 }
 
-// waitForMessages polls the inbox until it holds at least want messages. The
-// api endpoint carries the rate limiter, so the poll is spaced and a 429 is
-// waited out rather than reported: the fixture's own read must not spend the
-// budget the journey's windows do not.
+// A 429 is waited out rather than reported, because the fixture's own poll must
+// not spend the budget the journey's windows use.
 func waitForMessages(t *testing.T, client *http.Client, url string, headers map[string]string,
 	want int, serve *process,
 ) messagePage {
@@ -472,12 +393,8 @@ func waitForMessages(t *testing.T, client *http.Client, url string, headers map[
 	return page
 }
 
-// waitForInbox polls until one answer holds want messages or the bound expires.
-// A 429 is waited out with a longer pause because the api rate limiter is
-// spending the fixture's budget, but it does not step around the bound: a
-// server that keeps answering 429 would otherwise never end the wait. The
-// timeout names the last answer's status and body, so a wait that spent its
-// bound on 429 is distinguishable from a worker that never dispatched.
+// waitForInbox polls until one answer holds want messages or the bound expires;
+// a 429 is waited out with a longer pause but does not step around the bound.
 func waitForInbox(want int, bound time.Duration, poll func() (response, error),
 	output func() string,
 ) (messagePage, error) {
@@ -513,11 +430,8 @@ func waitForInbox(want int, bound time.Duration, poll func() (response, error),
 	}
 }
 
-// TestWaitForInbox429HoldsTheBound pins the rate-limit branch to the deadline: a
-// server that answers 429 to every read must end the wait at the bound instead
-// of looping forever. The wait runs in a goroutine because the bug being pinned
-// is one that never returns; the outer select fails the case rather than letting
-// an unfixed implementation hang the suite.
+// TestWaitForInbox429HoldsTheBound pins that a server answering 429 to every read ends the wait at the
+// bound instead of looping forever.
 func TestWaitForInbox429HoldsTheBound(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -564,7 +478,6 @@ func TestWaitForInbox429HoldsTheBound(t *testing.T) {
 	}
 }
 
-// waitForLogLine polls the child's output for a line carrying needle.
 func waitForLogLine(t *testing.T, serve *process, needle string) {
 	t.Helper()
 	deadline := time.Now().Add(coretest.Scale(20 * time.Second))
@@ -579,8 +492,6 @@ func waitForLogLine(t *testing.T, serve *process, needle string) {
 	}
 }
 
-// e2eCatalogEntry reads one message from the fixture's catalog for a
-// language, so the cases expect the shipped text rather than a hardcoded copy.
 func e2eCatalogEntry(t *testing.T, locale, key string) string {
 	t.Helper()
 	raw, err := fs.ReadFile(demoNotificationLocales, "demo_notification_locales/"+locale+".json")

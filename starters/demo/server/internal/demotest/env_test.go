@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestChildEnvForwardsOnlyTheListedVariables checks that a listed variable
-// reaches the child and one the host exports outside the list does not.
+// TestChildEnvForwardsOnlyTheListedVariables checks that a listed variable reaches the child and one
+// the host exports outside the list does not.
 func TestChildEnvForwardsOnlyTheListedVariables(t *testing.T) {
 	t.Setenv("TREECHECK_ENV_PROBE", "outside")
 	t.Setenv("LANG", "C.UTF-8")

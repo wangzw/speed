@@ -1,34 +1,6 @@
-# The template for the local development primary config source. Copy it to
-# local.yaml, which the repository's .env selects through DEMO_CONFIG and which
-# is git-ignored, then fill the social credentials.
-#
-# It is an override document over the platform defaults compiled into the
-# binary (defaults.go): everything it does not state comes from there. Tests
-# pass --config, which overrides DEMO_CONFIG, so nothing here reaches a test
-# run.
 
-# Social sign-in. To offer a provider, uncomment the `login:` line together
-# with that provider's two lines and fill them. While they stay commented out
-# the method stands itself down; an item that is present but empty counts as
-# given, so fill both or neither. Register these redirect URIs with each
-# provider:
-#   http://localhost:8080/api/v1/auth/callback/google
-#   http://localhost:8080/api/v1/auth/callback/github
 authn:
-  # login:
-  #   google:
-  #     client-id: "..."
-  #     client-secret: "..."
-  #   github:
-  #     client-id: "..."
-  #     client-secret: "..."
 
-  # The browser reaches the vite dev server at http://localhost:8080, which
-  # proxies the API namespaces to the backend at 127.0.0.1:8081. The
-  # origin-bound features — token issuer, OAuth redirect target, WebAuthn —
-  # follow this value, so open the app at http://localhost:8080 and keep the
-  # host spelling `localhost`: a session set for one host is not sent to the
-  # other.
   gate:
     mount:
       public-url: "http://localhost:8080"
@@ -36,49 +8,16 @@ authn:
     webauthn:
       origins: ["http://localhost:8080"]
 
-  # The human-verification gate is off on both surfaces. The declared defaults
-  # are the proof of work on the non-phone surface and the captcha on the phone
-  # surface, and `make dev` sends its SMS and email codes through log carriers,
-  # so a challenge would sit in front of every send. Stating both here keeps the
-  # local path off whatever those defaults become. The phone surface guards the
-  # SMS sends; the other surface guards every send that does not address a phone
-  # number.
   humanverify:
     mode: off
     phone-mode: off
 
-  # The invitation notice's acceptance landing. `authn.invitemail` links to
-  # <accept-base-url>/invitations/<token>, and the local loop serves the
-  # frontend at http://localhost:8080. An empty value leaves the notice unsent;
-  # the issue answer still reports not_configured and hands back the link.
-  # The log mail carrier below is not a delivery channel for an invitation, so
-  # with it every issue also reports not_configured and the console's one-time
-  # panel hands out the link. The e2e configuration
-  # (server/e2e/config.yaml, which the e2e run copies) already states this
-  # value; the local template repeats it so `make dev` matches that behavior.
   invitemail:
     accept-base-url: "http://localhost:8080"
 
-# The mail channel's carrier. `authn.emailcode` renders verification codes and
-# writes each rendered message to the process output instead of reaching a
-# relay; `authn.invitemail` treats this carrier as not configured, because it
-# reaches no recipient, and reports not_configured for every invitation. The
-# e2e configuration and the e2e run already carry the same carrier; the local
-# template states it so `make dev` matches that behavior.
 mail:
   carrier: log
 
-# The SMS family with the log carrier: every message, verification code
-# included, is written to the process output instead of reaching a vendor. The
-# template set is a container leaf that only the primary config source may
-# carry, which is why it lives here rather than in .env. The registry declares
-# the three templates the authentication module requires (login, second factor,
-# enrollment) and the optional reset one, whose presence publishes the SMS
-# channel of the anonymous password reset. Each code is a label the log carrier
-# writes, not a vendor identifier. Read a code from the process output: search
-# for "log sms: a verification code was sent" and read its verification_code
-# field (the attribute is not named "code" because that name is a registered
-# sensitive key of the process and the logging layer masks the value).
 sms:
   carrier: log
   registry:
@@ -108,10 +47,6 @@ sms:
           en-US: "demo-reset"
           zh-CN: "demo-reset-zh"
 
-# The seed settings. `make dev` runs `sqlite seed` before every serve. The
-# allowed-prefixes setting defaults to the empty table, which admits no number
-# at all; signup defaults to closed, which lets a code reach only a number an
-# account already holds.
 seed:
   settings:
     - key: "authn.mfa.sensitive-min-age"

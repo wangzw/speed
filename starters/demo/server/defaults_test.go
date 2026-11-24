@@ -14,15 +14,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// The platform defaults document is compiled into the program (defaults.go).
-// These cases hold the two facts that move made: a run with no configuration
-// file at all starts on the document, and the document's key values are the
-// ones the YAML file and the sample configurations used to carry.
-
-// clearHostEnvironment removes every variable under the host's prefix and
-// every OpenTelemetry one for the duration of a case, so the values it decodes
-// are the document's alone rather than whatever the process running the suite
-// happens to export.
 func clearHostEnvironment(t *testing.T) {
 	t.Helper()
 	for _, kv := range os.Environ() {
@@ -45,24 +36,20 @@ func clearHostEnvironment(t *testing.T) {
 	}
 }
 
-// compiledListener is one entry of http.listeners.
 type compiledListener struct {
 	Address string `config:"address"`
 }
 
-// compiledEndpoint is one entry of http.endpoints.
 type compiledEndpoint struct {
 	Listener     string   `config:"listener"`
 	Prefixes     []string `config:"prefixes"`
 	MaxBodyBytes int      `config:"max-body-bytes"`
 }
 
-// compiledCORSPolicy is one entry of http.cors.endpoints.
 type compiledCORSPolicy struct {
 	AllowOrigins []string `config:"allow-origins"`
 }
 
-// compiledSeedAccount is one entry of seed.accounts.
 type compiledSeedAccount struct {
 	Identifier    string `config:"identifier"`
 	Password      string `config:"password"`
@@ -70,21 +57,16 @@ type compiledSeedAccount struct {
 	PlatformAdmin bool   `config:"platform-admin"`
 }
 
-// compiledSeedTenant is one entry of seed.tenants.
 type compiledSeedTenant struct {
 	Name   string   `config:"name"`
 	Admins []string `config:"admins"`
 }
 
-// compiledSeedSetting is one entry of seed.settings.
 type compiledSeedSetting struct {
 	Key   string `config:"key"`
 	Value string `config:"value"`
 }
 
-// compiledDefaults is the whole document as the loader hands it out. The
-// fields mirror the sections the host writes; a field is here because the
-// document states it and a case below holds it to its value.
 type compiledDefaults struct {
 	HTTP struct {
 		Listeners map[string]compiledListener `config:"listeners"`
@@ -225,12 +207,8 @@ type compiledDefaults struct {
 	} `config:"db"`
 }
 
-// TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun loads the configuration
-// of a run with no primary source and holds the key values to what the deleted
-// defaults.go and the sqlite sample carried: the endpoint claim table, every
-// capability's mounting, the development origin, the local seed and the sqlite
-// locator. A value that moves out of the document without a replacement shows
-// here as the zero it fell back to.
+// TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun loads a run with no primary source and holds
+// the document's endpoint table, mounting, origin, seed and sqlite locator to their values.
 func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	clearHostEnvironment(t)
 	reader, err := config.Load(t.Context(), core.ProcessRegistry, nil)
@@ -242,8 +220,6 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 		t.Fatalf("decoding the compiled defaults: %v", err)
 	}
 
-	// The one listener a bare run binds, and the namespace map the dispatch
-	// selects an endpoint by.
 	wantListeners := map[string]string{
 		"backend": "127.0.0.1:8081",
 	}
@@ -292,7 +268,6 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 		t.Errorf("http.cors.endpoints.api.allow-origins = %v, want the development origin", got)
 	}
 
-	// The operations surface's document metadata.
 	wantString(t, "ops.endpoint", doc.Ops.Endpoint, "ops")
 	wantString(t, "ops.title", doc.Ops.Title, "demo")
 	wantString(t, "ops.version", doc.Ops.Version, "0.1.0")
@@ -304,8 +279,6 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "observability.otel.service-name", doc.Observability.OTel.ServiceName, "demo")
 	wantString(t, "webui.endpoint", doc.WebUI.Endpoint, "web")
 
-	// The identity system: what the gateway guards, the origin a bare run is
-	// reached at, the signing key the program mints, and the relying party.
 	wantStrings(t, "authn.gate.endpoints", doc.Authn.Gate.Endpoints, []string{"api", "account", "admin"})
 	wantString(t, "authn.gate.mount.public-url", doc.Authn.Gate.Mount.PublicURL, "http://localhost:8081")
 	wantString(t, "authn.gate.mount.endpoints.default", doc.Authn.Gate.Mount.Endpoints.Default, "account")
@@ -317,7 +290,6 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantString(t, "authn.mfa.webauthn.rp-name", doc.Authn.MFA.WebAuthn.RPName, "Speed Demo")
 	wantStrings(t, "authn.mfa.webauthn.origins", doc.Authn.MFA.WebAuthn.Origins, []string{"http://localhost:8081"})
 
-	// Tenancy and authorization.
 	wantStrings(t, "tenant.resolve.endpoints", doc.Tenant.Resolve.Endpoints, []string{"api"})
 	wantString(t, "tenant.resolve.extractor", doc.Tenant.Resolve.Extractor, "header")
 	wantStrings(t, "tenant.admission.endpoints", doc.Tenant.Admission.Endpoints, []string{"api"})
@@ -330,8 +302,6 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantStrings(t, "authz.self.endpoints", doc.Authz.Self.Endpoints, []string{"api"})
 	wantStrings(t, "authz.tenantadmin.endpoints", doc.Authz.TenantAdmin.Endpoints, []string{"api"})
 
-	// The journal, the two limiting layers, settings, the feature document and
-	// the notification surfaces.
 	wantStrings(t, "audit.journal.endpoints", doc.Audit.Journal.Endpoints, []string{"api", "account", "admin"})
 	if len(doc.Audit.Journal.Requests) != 0 {
 		t.Errorf("audit.journal.requests = %v, want the empty sample", doc.Audit.Journal.Requests)
@@ -346,13 +316,10 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 	wantStrings(t, "notification.stream.endpoints", doc.Notification.Stream.Endpoints, []string{"api"})
 	wantStrings(t, "notification.preferences.endpoints", doc.Notification.Preferences.Endpoints, []string{"api"})
 
-	// The object store's local root and the content route it publishes on.
 	wantString(t, "objectstore.fs.root", doc.Objectstore.FS.Root, "./var/objects")
 	wantStrings(t, "objectstore.metadata.content-endpoints",
 		doc.Objectstore.Metadata.ContentEndpoints, []string{"content"})
 
-	// The local seed a bare run starts from: the development operator, the
-	// walkthrough tenant and the runtime setting.
 	wantAccounts := []compiledSeedAccount{{
 		Identifier:    "operator",
 		Password:      demoOperatorLogin,
@@ -376,28 +343,12 @@ func TestTheCompiledDefaultsHoldTheTopologyAndTheLocalRun(t *testing.T) {
 		t.Errorf("seed.settings = %+v, want %+v", doc.Seed.Settings, wantSettings)
 	}
 
-	// The sqlite stack: a database under var/ and the development root key.
 	wantString(t, "db.sqlite.dsn", doc.DB.SQLite.DSN, "./var/demo.db")
 	wantString(t, "db.sqlite.encryption-key", doc.DB.SQLite.EncryptionKey, demoEncryptionKey)
 }
 
-// TestABareRunStartsOnTheCompiledDefaults runs seed and then serve with no
-// --config and no DEMO_CONFIG: the program has to satisfy its own required
-// items, bind the listener the environment names, reach the sqlite database,
-// mint the token signing key, seed the development operator and issue a token
-// signed with the origin the document names.
-//
-// The listener address is the one value the case moves off the document, as
-// JSON through DEMO_HTTP__LISTENERS: a suite that bound 127.0.0.1:8081 could not
-// run beside another process. The move also exercises the environment origin the
-// document's runtime-different values take, and the run log then names the
-// address the variable gave.
-//
-// The single listener is also what the operations probes share with the API:
-// GET /ready and GET /api/v1/auth/methods both answer 200 on the same address.
-// A build that kept the operations endpoint on a listener of its own would
-// answer the probe on one port and the API on another, so one of the two
-// requests below fails.
+// TestABareRunStartsOnTheCompiledDefaults runs seed and serve with no
+// configuration source and holds that the program binds, seeds and issues a token.
 func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 	dir := t.TempDir()
 	env := func(ports []int) []string {
@@ -411,8 +362,6 @@ func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 	if !strings.Contains(seeded.stdout, "seeded: account operator") {
 		t.Errorf("seed did not write the document's operator account:\n%s", seeded.combined())
 	}
-	// The document names both paths relative to the working directory the
-	// program runs in, which is the case's own here.
 	for _, path := range []string{
 		filepath.Join("var", "token-signing-key.pem"),
 		filepath.Join("var", "demo.db"),
@@ -427,7 +376,6 @@ func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 	})
 	backendPort := ports[backendListener]
 
-	// The environment's address is the one bound, over the document's.
 	if want := fmt.Sprintf("address=127.0.0.1:%d", backendPort); !strings.Contains(serve.output(), want) {
 		t.Errorf("the run log names no listener at %s; the environment's value did not "+
 			"reach the listener set:\n%s", want, serve.output())
@@ -441,20 +389,14 @@ func TestABareRunStartsOnTheCompiledDefaults(t *testing.T) {
 			methods.status, methods.body)
 	}
 
-	// The seeded account signs in, which is the database, the seed, the minted
-	// key and the token issuer all working together.
 	token := signIn(t, base, "operator", demoOperatorLogin)
 	if issuer := tokenIssuer(t, token); issuer != "http://localhost:8081" {
 		t.Errorf("the issued token's iss = %q, want the document's public URL", issuer)
 	}
 }
 
-// TestTheCompiledDefaultsNameTheTenantManagementEndpoints holds the document
-// this binary compiles in to the two endpoint items the tenant management
-// surfaces mount on. A layered read cannot tell the document from the modules'
-// own prototype defaults, which carry the same value; this case reads the
-// document alone, where the entries are this assembly's own statement of the
-// topology.
+// TestTheCompiledDefaultsNameTheTenantManagementEndpoints holds the document this binary compiles in
+// to the two tenant-management endpoint items.
 func TestTheCompiledDefaultsNameTheTenantManagementEndpoints(t *testing.T) {
 	var doc compiledDefaults
 	if err := json.Unmarshal(platformDefaults{}.Data(), &doc); err != nil {
@@ -464,12 +406,8 @@ func TestTheCompiledDefaultsNameTheTenantManagementEndpoints(t *testing.T) {
 	wantStrings(t, "settings.tenantadmin.endpoints", doc.Settings.TenantAdmin.Endpoints, []string{"api"})
 }
 
-// TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes holds the two facts
-// the single-listener topology rests on: a bare run binds one socket, and the
-// operations endpoint claims its three probe paths explicitly on it instead of
-// relying on the root fallback. The web endpoint owns "/", so an operations
-// endpoint that omitted prefixes would either lose the claim conflict check or
-// take the whole path space with it.
+// TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes holds that a bare run binds one socket and
+// the operations endpoint claims its three probes explicitly.
 func TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes(t *testing.T) {
 	clearHostEnvironment(t)
 	reader, err := config.Load(t.Context(), core.ProcessRegistry, nil)
@@ -499,14 +437,8 @@ func TestTheCompiledDefaultsNameOneListenerAndTheOpsPrefixes(t *testing.T) {
 		[]string{"/health", "/ready", "/openapi.json"})
 }
 
-// TestTheSampleStacksBindTheCompiledListener holds the six sample
-// configurations to the compiled defaults for the values a copy inherits unless
-// it changes them: the backend listener, the operations document's server
-// origin, the public URL the gateway advertises and the WebAuthn origin. A
-// sample is an override document and may choose another address, but what it
-// ships is the compiled default, so a copy starts on the socket a bare run
-// binds and the dev server's proxy target reaches it without a flag. A sample
-// left on an older port runs a socket nothing names.
+// TestTheSampleStacksBindTheCompiledListener holds the six samples to the compiled listener,
+// operations origin, public URL and WebAuthn origin.
 func TestTheSampleStacksBindTheCompiledListener(t *testing.T) {
 	clearHostEnvironment(t)
 	reader, err := config.Load(t.Context(), core.ProcessRegistry, nil)
@@ -535,8 +467,6 @@ func TestTheSampleStacksBindTheCompiledListener(t *testing.T) {
 	}
 }
 
-// tokenIssuer reads the iss claim out of a JWT without verifying it. The case
-// is about which value the program signed, not about the signature's validity.
 func tokenIssuer(t *testing.T, token string) string {
 	t.Helper()
 	parts := strings.Split(token, ".")
@@ -556,7 +486,6 @@ func tokenIssuer(t *testing.T, token string) string {
 	return claims.Issuer
 }
 
-// wantString fails the case when one loaded value is not the expected one.
 func wantString(t *testing.T, name, got, want string) {
 	t.Helper()
 	if got != want {
@@ -564,7 +493,6 @@ func wantString(t *testing.T, name, got, want string) {
 	}
 }
 
-// wantStrings fails the case when one loaded list is not the expected one.
 func wantStrings(t *testing.T, name string, got, want []string) {
 	t.Helper()
 	if !slices.Equal(got, want) {
