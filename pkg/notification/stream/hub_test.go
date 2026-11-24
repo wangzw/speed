@@ -38,9 +38,7 @@ func TestPublishDoesNotBlockOnAFullBuffer(t *testing.T) {
 	}
 }
 
-// Close is idempotent and never closes the message channel: a second Close is a
-// no-op, the done signal is set, and a receive on the channel blocks rather than
-// returning a closed-channel zero value.
+// Close is idempotent and never closes the message channel.
 func TestCloseIsIdempotentAndNeverClosesTheChannel(t *testing.T) {
 	h := &Hub{}
 	conn := h.Subscribe("t1", "u1")
@@ -86,9 +84,7 @@ func TestPublishMatchesOnlyTheConnectionsOwnScope(t *testing.T) {
 	}
 }
 
-// The frame carries the payload without its tenant identifier: the tenant is
-// the scope the hub matched on and is internal, so it is not something the
-// browser reads. The rest of the payload is unchanged.
+// The frame carries the payload without its tenant identifier.
 func TestTheFrameCarriesNoTenantIdentifier(t *testing.T) {
 	h := &Hub{}
 	conn := h.Subscribe("t1", "u1")
@@ -179,9 +175,8 @@ func TestCloseAllEndsEveryConnection(t *testing.T) {
 	}
 }
 
-// Concurrent publishes against a closing and reopening connection never panic:
-// the message channel is never closed, so a send racing a Close lands or is
-// dropped and never hits a closed channel.
+// Concurrent publishes against a closing and reopening connection never
+// panic.
 func TestConcurrentPublishAndCloseDoNotPanic(t *testing.T) {
 	h := &Hub{}
 	conn := h.Subscribe("t1", "u1")

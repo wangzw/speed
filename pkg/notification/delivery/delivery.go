@@ -1,41 +1,6 @@
-// Package delivery is the notification capability's outbound pipeline: one
-// delivery intent goes in, is validated, and is enqueued as one job; when the
-// job is consumed the intent is validated again, a carried destination is held
-// to the recipient once more, the recipient's effective channels are resolved,
-// and each channel is rendered, sent through its seam and recorded as one ledger
-// row.
-//
-// The submission seam is notification.Dispatcher, delivered exclusively by this
-// module. Dispatcher.Dispatch validates, holds a carried destination against the
-// recipient's own identifiers and enqueues — it does not render, does not send
-// and writes no storage. The other half of the pipeline is a jobs.Handler this
-// module registers in its Init; jobs.db claims the job, enters its tenant and
-// hands it over, and the handler does the per-channel work.
-//
-// A channel's availability is a matter of assembly. in_app is always available —
-// the inbox is a required dependency — while email needs a mail sender and sms
-// needs both the sms registry and the sms sender. A channel whose seam is absent
-// is skipped and recorded as one `skipped` row, which is not a failure and does
-// not enter the joined error; it tells "this assembly has no such channel" apart
-// from "the vendor refused the send".
-//
-// The delivery is at-least-once. Every channel attempt derives an idempotency
-// key, and the (tenant_id, idempotency_key) uniqueness on notification_sends is
-// what makes a repeated consumption skip the channels already settled and make
-// up only the ones that are not.
-//
-// A settled external channel means the carrier accepted the message and returned
-// a receipt; it does not mean the recipient received it. A carrier whose receipts
-// are asynchronous answers only with a message identifier, and the final delivery
-// state is the carrier's to report, not this module's to record.
-//
-// The module declares no configuration namespace and reads no input item: the
-// parameters of a delivery job are fixed by this module at enqueue time, not
-// taken from configuration. It does declare the delivery-budget settings — the
-// per-recipient windows and the deployment window that bound both external
-// channels, and the per-tenant fan-out windows for sms — and checks them before
-// a dispatch is queued: email on the key-value counters, sms over the shared
-// ledger.
+// Package delivery is the notification capability's outbound pipeline: a
+// delivery intent is validated and enqueued as one job, then delivered per
+// channel when the job is consumed, one ledger row per attempt.
 package delivery
 
 import (
@@ -71,25 +36,16 @@ import (
 // pipeline's job type is registered under.
 const ModuleName = "notification.delivery"
 
-// JobType is the type of the job a dispatch is enqueued as, and the type this
-// module's handler is registered under. It is the module's own name: the job is
-// the module's work, and a second registration under it is a defect the handler
-// registration refuses.
+// JobType is the type of the job a dispatch is enqueued as, and the type
+// this module's handler is registered under.
 const JobType = ModuleName
 
-// The conditional features this module declares: one per external channel, and
-// each is posted in Init from the same seam judgement the send path reads.
 const (
 	featureEmail = "notification.channel.email"
 	featureSMS   = "notification.channel.sms"
 )
 
-// The parameters of a delivery job, fixed by this module. A send is one external
-// call that may take seconds, so it is given a generation timeout and the
-// queue's ordinary retry budget; a dispatch is ordinary work and takes the
-// normal priority.
 const (
-	// jobTimeout bounds one execution of the delivery job.
 	jobTimeout = 30 * time.Second
 	// jobMaxRetries is how many times the job may fail before it is sent to
 	// dead_letter.
@@ -99,9 +55,6 @@ const (
 //go:embed migrations
 var migrationRoot embed.FS
 
-// migrationsFS is migrationRoot with the wrapping directory removed, so the tree
-// the database module sees has one directory per dialect at its root, which is
-// the shape it reads.
 var migrationsFS = func() fs.FS {
 	sub, err := fs.Sub(migrationRoot, "migrations")
 	if err != nil {
@@ -112,8 +65,6 @@ var migrationsFS = func() fs.FS {
 	return sub
 }()
 
-// init registers this module with the process registry. Importing the package is
-// what puts the outbound delivery pipeline in a binary's available set.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // The product must deliver the declared seam and be registrable as a handler.
@@ -123,53 +74,6 @@ var (
 )
 
 // Module is the descriptor a host registers.
-//
-// The queue, the handler registration face, the database, the tenant roster, the
-// preferences seam, the inbox seam, the message localizer, the preference
-// resolver, the account store, the key-value capability and the shared sms
-// ledger are all required and hard. A pipeline with no queue has nowhere to put
-// a dispatch, one with no registration face cannot be run, one with no table has
-// nowhere to record a send, one with no roster carries no filter to scope its
-// ledger writes by tenant, one with no preferences cannot resolve a recipient's
-// channels, one with no inbox cannot write an in-app message, one with no
-// localizer cannot render one, one with no resolver cannot render an email's
-// time in the recipient's zone, one with no account store cannot tell whether a
-// destination belongs to the recipient, one with no key-value store cannot count
-// an email delivery's budget, and one with no ledger cannot bound an sms attempt.
-// The key-value store, the ledger and the account store are hard requirements
-// rather than absences the module works around: a delivery budget that cannot
-// count and an ownership rule that cannot read would each let a message through,
-// which is the direction the requirement forbids.
-//
-// The settings store is optional: a dispatch reads its budget limits through it,
-// and an absence is a legal assembly in which every budget reads its declared
-// default. Declaring it also orders this module after settings, so the snapshot a
-// dispatch reads has been loaded.
-//
-// The database must carry a root key. A recipient is folded into a keyed digest
-// through Database.BlindIndex for the shared ledger's destination column and for
-// the email counter keys, and Start refuses a database without the key rather
-// than writing an unkeyed digest.
-//
-// The metric capability is optional too: an assembly without one reports no
-// utilization, and a dispatch then only compares the counts. Its absence changes
-// what is observed, never what is refused.
-//
-// The mail sender, the sms registry and the sms sender are optional, and none of
-// their absences fails the startup: a channel is available exactly when the seams
-// it sends through are present — email on the mail sender, sms on both the
-// registry and the sender.
-//
-// The logging capability is optional too. The pipeline takes it up in New and
-// names it after this module, because the delivery job runs on a context the
-// queue created: no entry point injects a logger into it, and the external-send
-// lines would otherwise fall back to the process default logger and never reach
-// the destinations a host configured. An assembly without logging keeps the
-// default logger, which is what it had before.
-//
-// The submission seam is delivered exclusively: one process has exactly one
-// outbound pipeline, so a second provider fails the startup rather than one of
-// them silently winning.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -202,19 +106,10 @@ func Module() core.Module {
 			feature.Spec{Name: featureSMS, Conditional: true},
 		},
 
-		// New takes up what the descriptor requires and collects the type
-		// taxonomy. It reads no table of its own: this stage runs before the
-		// migrations are applied, so the ledger table is not there yet. The table
-		// is first touched when a job is consumed.
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newPipeline(reg)
 		},
 
-		// Init registers the handler with the queue's registration face and
-		// reports the channels this assembly can send on. The handler set is
-		// fixed before the queue starts, so this runs early enough that every
-		// delivery job has a handler to run it. The report runs here and not in
-		// New: New is outside the board's posting window, where a post panics.
 		Init: func(_ context.Context, reg *core.Registry, instance any) error {
 			p, ok := productOf(instance)
 			if !ok {
@@ -239,104 +134,56 @@ func Module() core.Module {
 	}
 }
 
-// productOf narrows an instance to this module's product. An instance of another
-// shape is one the host supplied for this module, and the callbacks leave it
-// alone.
 func productOf(instance any) (*pipeline, bool) {
 	p, ok := instance.(*pipeline)
 	return p, ok && p != nil
 }
 
-// channelSeams is the set of channel seams this assembly delivered. A nil seam
-// is an absent one, and a channel with an absent seam is skipped rather than
-// failed.
 type channelSeams struct {
-	// mailer hands a rendered email to the carrier.
-	mailer mail.Sender
-	// registry resolves an sms message against the templates in force.
+	mailer   mail.Sender
 	registry sms.Registry
-	// sender hands a resolved sms message to the vendor.
-	sender sms.Sender
+	sender   sms.Sender
 }
 
-// emailReady reports whether the email channel can send in this assembly.
 func (s channelSeams) emailReady() bool { return s.mailer != nil }
 
-// smsReady reports whether the sms channel can send in this assembly: both the
-// registry and the sender seam have to be present.
 func (s channelSeams) smsReady() bool {
 	return s.registry != nil && s.sender != nil
 }
 
-// pipeline is the module's product. It implements notification.Dispatcher and is
-// registered as a jobs.Handler. The taxonomy, the seams and the dependencies are
-// read-only once New has built it, so Dispatch and Handle share no mutable state
-// and may be called from more than one goroutine at once.
 type pipeline struct {
 	queue     jobs.Queue
 	handlers  jobs.Handlers
 	prefs     notification.Preferences
 	inbox     notification.Inbox
 	localizer i18n.Localizer
-	// resolver reads the recipient's stored time zone off the request path. The
-	// handler runs on a context the queue created, which names no zone, so the
-	// email channel reads the recipient's preference through it; the in-app
-	// channel writes a marker for the client to resolve instead.
-	resolver i18n.Resolver
-	ledger   *ledger
-	taxonomy taxonomy
-	seams    channelSeams
+	resolver  i18n.Resolver
+	ledger    *ledger
+	taxonomy  taxonomy
+	seams     channelSeams
 	// accounts reads the recipient's identifiers and asks which account a
-	// destination belongs to. It is what tells the recipient's own address from
-	// anyone else's, and it is a hard dependency: without it a dispatch carrying
-	// a destination cannot be checked and is refused.
+	// destination belongs to.
 	accounts authn.Accounts
-	// counters holds the email budgets, one fixed window per key. It is the
-	// key-value capability, whose increment is atomic across replicas. The sms
-	// budgets are counted over the shared ledger instead.
 	counters kv.KV
-	// attempts is the shared sms ledger. Every sms attempt is written here, and
-	// every sms budget is a count over its rows; the authn capability reads and
-	// writes the same ledger, so the cross-channel ceiling is one count. The
-	// refunds run over this store's own handle; the counts and the attempt row of
-	// one charge run over a transaction (see newLedger).
 	attempts budget.Store
-	// newLedger builds the ledger over a transaction, so the counts a dispatch is
-	// compared against and the attempt row it writes are one commitment. It is a
-	// field rather than a bare budget.New so a case can hold the outage direction
-	// — a ledger that cannot be counted must refuse, not pass.
+	// newLedger builds the ledger over a transaction, so the counts a
+	// dispatch is compared against and the attempt row it writes are one
+	// commitment.
 	newLedger func(*gorm.DB) budget.Store
-	// dialect decides whether the send takes the transaction-scoped advisory lock
-	// the authentication channel also takes. SQLite serialises writers itself, so
-	// there is no lock to take there.
-	dialect db.Dialect
+	dialect   db.Dialect
 	// blindIndex is the database's keyed digest, the same blind index the
-	// authentication channel hashes its destinations through. A recipient's
-	// ledger row and email counter keys are computed through it, so the ledger's
-	// destination column holds a keyed digest and never a plain one.
+	// authentication channel hashes its destinations through.
 	blindIndex func(string) string
-	// settings reads the budget limits on every dispatch.
-	settings *settingReader
+	settings   *settingReader
 	// meters reports each budget's utilization. Its instruments are nil when the
 	// assembly delivered no metric capability, and a report is then a no-op.
 	meters *meters
-	// logger is where the external-send lines are written. It is the assembly's
-	// logging capability named after this module, or the process default logger
-	// when the assembly delivered none; it is never taken from the handler's
-	// context, which carries no injected logger (see Module).
 	logger *slog.Logger
 	// tenantNames answers the name a tenant identifier is addressed by, nil
-	// when the assembly supplies no resolver. Every text a recipient can read
-	// names the tenant by name, never by the internal identifier, so a pipeline
-	// with no resolver names no tenant rather than exposing the identifier.
+	// when the assembly supplies no resolver.
 	tenantNames authn.TenantNameResolver
 }
 
-// newPipeline takes up what the descriptor requires and assembles the product.
-// The tenant roster is taken up so that the roster and its statement filter are
-// part of the assembly this module's scoped ledger writes run under; the tenant a
-// delivery belongs to comes from the handler's own context, set by jobs.db when
-// it claims the job.
 func newPipeline(reg *core.Registry) (*pipeline, error) {
 	queue, err := core.Resolve[jobs.Queue](reg)
 	if err != nil {
@@ -440,15 +287,6 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	}, nil
 }
 
-// moduleLogger takes up the logging capability when the assembly delivers one,
-// and answers the process default logger otherwise.
-//
-// The returned logger carries this module's name, which is what tells its lines
-// apart from every other module's once they reach a shared destination. An
-// absence is a legal assembly and is told apart from a failed lookup by the
-// sentinel: anything other than "no provider" is the lookup itself failing, and
-// that ends the startup rather than quietly sending this module's records
-// somewhere the host did not configure.
 func moduleLogger(reg *core.Registry) (*slog.Logger, error) {
 	delivered, err := core.Resolve[log.Logger](reg)
 	switch {
@@ -477,7 +315,6 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 	}
 }
 
-// register binds this module's product as the handler for its job type.
 func (p *pipeline) register() error {
 	if err := p.handlers.Register(p); err != nil {
 		return fmt.Errorf("%s: registering the delivery handler: %w", ModuleName, err)
@@ -485,12 +322,6 @@ func (p *pipeline) register() error {
 	return nil
 }
 
-// checkEncryptionKey proves the database carries a root key before any dispatch
-// is served. The recipient digest on an attempt row and in an email counter key
-// is computed through the blind index, which panics on a database assembled
-// without a key rather than writing an unkeyed digest anybody could reverse. The
-// self-check is a recover around one digest, the same way the authentication SMS
-// module refuses to start without the key.
 func (p *pipeline) checkEncryptionKey() error {
 	var missing bool
 	func() {
@@ -509,10 +340,6 @@ func (p *pipeline) checkEncryptionKey() error {
 	return nil
 }
 
-// postFeatures reports the external channels this assembly can send on. It runs
-// in Init, inside the board's posting window, and reuses the seam judgements the
-// send path reads: email on the mail sender, sms only when both its seams are
-// present. A process with no board skips the report silently.
 func (p *pipeline) postFeatures(reg *core.Registry) {
 	board, err := core.Resolve[feature.Board](reg)
 	if err != nil {

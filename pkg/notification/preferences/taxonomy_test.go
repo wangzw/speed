@@ -10,12 +10,8 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// TestTheTaxonomyTakesTheAvailableSetNotTheParticipationSet holds the source
-// domain the design fixes: a type a registered module declares is in the
-// taxonomy even when that module is not taken in by the run. The ghost module is
-// registered but left out of the participating set; its type is still in the
-// taxonomy, because a type is a piece of vocabulary and a word does not leave
-// the language because one command did not load it.
+// TestTheTaxonomyTakesTheAvailableSetNotTheParticipationSet checks that the
+// taxonomy takes the available set rather than the participation set.
 func TestTheTaxonomyTakesTheAvailableSetNotTheParticipationSet(t *testing.T) {
 	ghost := declaringModule("ghost", aSpec("ghost.digest.ready", true, notification.ChannelInApp))
 	live := declaringModule("billing", aSpec("billing.invoice_paid", true, notification.ChannelInApp))
@@ -39,14 +35,8 @@ func TestTheTaxonomyTakesTheAvailableSetNotTheParticipationSet(t *testing.T) {
 	})
 }
 
-// TestADeclarationThatIsNotSelfConsistentFailsTheStartup holds every rule of the
-// criterion against a declaration: an empty key, an unknown default channel, an
-// empty default channel set, a default channel listed twice, and a repeated
-// parameter whitelist entry. Each is ErrInvalidConfig, raised in New, naming the
-// declaring module.
-//
-// Unsubscribable is not one of these rules: it constrains `Set`, not which
-// channels a type may go out under by default.
+// TestADeclarationThatIsNotSelfConsistentFailsTheStartup holds every rule
+// of the criterion against a declaration.
 func TestADeclarationThatIsNotSelfConsistentFailsTheStartup(t *testing.T) {
 	cases := map[string]notification.TypeSpec{
 		"empty key": {
@@ -120,7 +110,6 @@ func TestTypesIsSortedAndCopied(t *testing.T) {
 		if len(got) != 2 || got[0].Key != "alpha.one" || got[1].Key != "beta.two" {
 			t.Fatalf("Types() keys = %v, want ascending order", keysOf(got))
 		}
-		// A caller mutating the returned slice must not change the module's.
 		got[0].Key = "mutated"
 		got[0].DefaultChannels[0] = notification.ChannelSMS
 		fresh, _ := prefs.Type("alpha.one")
@@ -134,7 +123,6 @@ func TestTypesIsSortedAndCopied(t *testing.T) {
 	})
 }
 
-// keysOf lists the keys of a spec slice, for diagnostics.
 func keysOf(specs []notification.TypeSpec) []string {
 	out := make([]string, len(specs))
 	for i, spec := range specs {

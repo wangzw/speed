@@ -23,21 +23,12 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// descRig is one drive of this module's descriptor over a real database and
-// roster, with the capabilities a case leaves out omitted and the entry point
-// stood in for.
 type descRig struct {
-	// withDB and withCat bring the real database and roster modules in; leaving
-	// one out is what makes the corresponding requirement unmet.
 	withDB, withCat bool
-	// endpoints is the notification.inbox.endpoints list. Nil leaves the item
-	// unset.
-	endpoints []string
-	// router, when set, is the entry point stand-in.
-	router *stubRouter
+	endpoints       []string
+	router          *stubRouter
 }
 
-// body renders the configuration this rig drives on.
 func (r descRig) body(t *testing.T) string {
 	t.Helper()
 	section := map[string]any{}
@@ -55,13 +46,8 @@ func (r descRig) body(t *testing.T) string {
 	return string(encoded)
 }
 
-// drive assembles the modules the case asks for, loads the configuration through
-// the real loader, and drives to depth.
 func (r descRig) drive(t *testing.T, depth core.Stage, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
-	// The loader collects its manifest from the modules it is given, so the
-	// database module is named here to declare the "db" section even when the
-	// drive leaves it out.
 	reader := authntest.ConfigReaderAll(t, r.body(t), Module(), sqlite.Module(), catalog.Module())
 
 	modules := []core.Module{Module()}

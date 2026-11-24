@@ -22,10 +22,6 @@ import (
 	"github.com/vislake/speed/pkg/sms/budget"
 )
 
-// The full paths of the delivery-budget settings, as an operator writes them.
-// The cases state them literally rather than through the package's own path
-// variables, so a case run against a tree that does not declare them fails on the
-// settings store's refusal rather than on a missing identifier.
 const (
 	perRecipientHourlySetting   = "notification.delivery.per-recipient-hourly"
 	perRecipientDailySetting    = "notification.delivery.per-recipient-daily"
@@ -34,10 +30,8 @@ const (
 	attemptHourlySetting        = "notification.delivery.attempt-hourly"
 )
 
-// The new budgets declare the defaults the abuse redesign plans: twenty
-// different recipients an hour and three hundred attempts an hour per tenant.
-// The restored email budgets declare the values the module used before the sms
-// path moved to the shared ledger.
+// TestTheNewBudgetsDeclareThePlannedDefaults checks the tenant-distinct and
+// attempt defaults.
 func TestTheNewBudgetsDeclareThePlannedDefaults(t *testing.T) {
 	if got := defaultSettings.TenantDistinctHourly; got != 20 {
 		t.Errorf("the tenant distinct default is %d, want 20", got)
@@ -57,8 +51,7 @@ func TestTheNewBudgetsDeclareThePlannedDefaults(t *testing.T) {
 }
 
 // TestTheCeilingFallbackIsTheLedgerDefault holds this reader's fallback to the
-// ledger module's one statement of the ceiling's default, so a literal here
-// cannot drift from the declared value.
+// ledger module's stated ceiling default, so no literal can drift.
 func TestTheCeilingFallbackIsTheLedgerDefault(t *testing.T) {
 	r := newSettingReader(nil, nil)
 	if got := r.limits().ceilingHourly; got != budget.DefaultCeilingHourly {
@@ -67,7 +60,6 @@ func TestTheCeilingFallbackIsTheLedgerDefault(t *testing.T) {
 	}
 }
 
-// setBudget writes one delivery-budget limit on the global layer.
 func (r *rig) setBudget(t *testing.T, key string, value int) {
 	t.Helper()
 	if err := r.settings.Set(t.Context(), settings.Write{
@@ -97,8 +89,6 @@ func (r *rig) liftOtherBudgets(t *testing.T, keep string) {
 	}
 }
 
-// smsSpec is the declared type the sms budget cases use: sms is its default
-// channel, and it admits the destination parameter the sms channel reads.
 func smsSpec() notification.TypeSpec {
 	return notification.TypeSpec{
 		Key:             typeName,
@@ -108,9 +98,6 @@ func smsSpec() notification.TypeSpec {
 	}
 }
 
-// newSMSRig assembles a run that can send sms: both seams are present, the type
-// declares sms, and the catalog names a template so a send succeeds unless the
-// case makes it fail.
 func newSMSRig(t *testing.T, configure func(*host)) *rig {
 	t.Helper()
 	if configure == nil {
@@ -126,12 +113,10 @@ func newSMSRig(t *testing.T, configure func(*host)) *rig {
 	return r
 }
 
-// dispatchSMS builds one sms dispatch to a destination.
 func dispatchSMS(userID, occurrence, to string) notification.Dispatch {
 	return dispatch(userID, occurrence, map[string]any{"to": to, "invoice_id": "inv-1"})
 }
 
-// handleLastJob consumes the most recently enqueued delivery job.
 func (r *rig) handleLastJob(t *testing.T, ctx context.Context) error {
 	t.Helper()
 	tasks := r.queue.enqueued()
@@ -143,8 +128,6 @@ func (r *rig) handleLastJob(t *testing.T, ctx context.Context) error {
 	return err
 }
 
-// throttledBy asserts that err is the platform's retryable rejection and returns
-// it, so a case can hold the retry time it carries.
 func throttledBy(t *testing.T, err error) *authn.ThrottledError {
 	t.Helper()
 	var throttled *authn.ThrottledError
@@ -180,10 +163,8 @@ func TestThePerRecipientHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 	}
 }
 
-// The per-recipient daily budget refuses the dispatch past its limit on its own:
-// the hourly window is raised so that only the daily one can refuse, and the
-// retry time it reports is bounded by the daily window rather than the hourly
-// one.
+// The per-recipient daily budget refuses the dispatch past its limit on
+// its own.
 func TestThePerRecipientDailyBudgetRefusesPastTheLimit(t *testing.T) {
 	r := newSMSRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -222,7 +203,6 @@ func TestTheTenantDistinctHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 			t.Fatalf("the dispatch to %s inside the distinct budget ended with %v", c.user, err)
 		}
 	}
-	// A repeat destination does not add a distinct one.
 	if _, err := r.p.Dispatch(ctx, dispatchSMS("u1", "occ-2", "+15550001")); err != nil {
 		t.Fatalf("a repeat destination was refused by the distinct budget: %v", err)
 	}
@@ -259,10 +239,7 @@ func TestTheTenantAttemptHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 	}
 }
 
-// A definitive carrier failure refunds the attempt: the send budget frees, so the
-// next dispatch to the same recipient passes, while a refused dispatch cannot
-// hand a fresh attempt budget back. The refund is what the ledger stores, and the
-// notification row still records the failed delivery.
+// A definitive carrier failure refunds the attempt.
 func TestARefundFreesTheSendBudgetButNotTheAttemptBudget(t *testing.T) {
 	t.Run("send budget freed", func(t *testing.T) {
 		r := newSMSRig(t, nil)
@@ -313,17 +290,10 @@ func TestARefundFreesTheSendBudgetButNotTheAttemptBudget(t *testing.T) {
 	})
 }
 
-// ceilingSetting is the cross-channel ceiling's full path, as an operator
-// writes it. The ledger module declares it under the shared sms namespace, and
-// this module reads that one declaration.
 const ceilingSetting = "sms.ceiling-hourly"
 
-// The cross-channel ceiling refuses a dispatch at its limit even when the rows
-// filling it were written by both channels. It is consulted before the carrier,
-// so a refused dispatch enqueues nothing, reaches no sender and writes no row.
-//
-// Skipping the ceiling check lets the dispatch through, which is the failure
-// this case reports.
+// The cross-channel ceiling refuses a dispatch at its limit even when the
+// rows filling it were written by both channels.
 func TestTheSharedCeilingRefusesBeforeTheCarrier(t *testing.T) {
 	r := newSMSRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -358,12 +328,7 @@ func TestTheSharedCeilingRefusesBeforeTheCarrier(t *testing.T) {
 	}
 }
 
-// A refunded attempt frees the cross-channel ceiling: the ceiling counts the
-// ledger the same way the send budgets do, so a certain failure gives its share
-// back.
-//
-// Skipping the ceiling check makes the dispatch at the ceiling pass where this
-// case requires a refusal.
+// A refunded attempt frees the cross-channel ceiling.
 func TestARefundedAttemptFreesTheSharedCeiling(t *testing.T) {
 	r := newSMSRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -390,10 +355,8 @@ func TestARefundedAttemptFreesTheSharedCeiling(t *testing.T) {
 	}
 }
 
-// The ceiling's accounting matches the ledger's predicates on the real send
-// path: a successful send stays in both the send and the attempt counts, and a
-// definitive provider failure frees the ceiling and the send budget while the
-// attempt count keeps the refunded row.
+// The ceiling's accounting matches the ledger's predicates on the real
+// send path.
 func TestTheCeilingFollowsTheLedgerPredicates(t *testing.T) {
 	r := newSMSRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -434,9 +397,7 @@ func TestTheCeilingFollowsTheLedgerPredicates(t *testing.T) {
 	}
 }
 
-// A dispatch that makes no sms attempt spends no share of the ceiling: it writes
-// no ledger row, so the shared count does not move and a later sms dispatch is
-// still admitted.
+// A dispatch that makes no sms attempt spends no share of the ceiling.
 func TestADispatchWithoutAnSMSAttemptSpendsNoCeiling(t *testing.T) {
 	r := newRig(t, func(h *host) {
 		h.sms = true
@@ -460,9 +421,8 @@ func TestADispatchWithoutAnSMSAttemptSpendsNoCeiling(t *testing.T) {
 	}
 }
 
-// The lock the ceiling is charged under is the one the authentication path
-// takes, so the two channels serialise on one lock. The value is stated as the
-// literal the authentication path writes.
+// The lock the ceiling is charged under is the one the authentication
+// path takes, so the two channels serialise on one lock.
 func TestTheCeilingLockNameIsTheSharedKey(t *testing.T) {
 	if ceilingLockKey != "sms.budget:lock:ceiling" {
 		t.Errorf("the ceiling lock key = %q, want %q", ceilingLockKey, "sms.budget:lock:ceiling")
@@ -536,8 +496,7 @@ func TestEverySMSAttemptWritesOneLedgerRow(t *testing.T) {
 }
 
 // A spent counter left in the key-value store by the old budget is not
-// consulted by the sms path: the ledger is authoritative for sms, so a dispatch
-// the old key would have refused passes.
+// consulted by the sms path.
 func TestTheOldKVCountersAreNotConsulted(t *testing.T) {
 	r := newSMSRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -554,15 +513,13 @@ func TestTheOldKVCountersAreNotConsulted(t *testing.T) {
 	}
 }
 
-// oldRecipientSubject is the digest the key-value budget folded a recipient into.
 func oldRecipientSubject(tenantID, userID string) string {
 	sum := sha256.Sum256([]byte(tenantID + "\x00" + userID))
 	return hex.EncodeToString(sum[:])
 }
 
-// A dispatch that resolves to no sms channel writes no ledger row, so it spends
-// none of the sms budgets. The email budget is lifted here: it is a separate
-// path, and only the sms ledger is under test.
+// A dispatch that resolves to no sms channel writes no ledger row, so it
+// spends none of the sms budgets.
 func TestAnInAppOrEmailOnlyDispatchDoesNotSpendAnSMSBudget(t *testing.T) {
 	r := newRig(t, func(h *host) { h.mail = true })
 	ctx := r.tenantCtx("t1")
@@ -612,9 +569,7 @@ func (f failingBudgetStore) Count(context.Context, budget.Query) (int64, error) 
 	return 0, f.err
 }
 
-// A budget that cannot be counted is an outage, not a pass: the dispatch ends
-// with an error that reads as authn.ErrUnavailable and carries the store's own
-// cause, and nothing is enqueued.
+// A budget that cannot be counted is an outage, not a pass.
 func TestADispatchWhoseLedgerCannotBeCountedIsRefused(t *testing.T) {
 	r := newSMSRig(t, nil)
 	ctx := r.tenantCtx("t1")
@@ -657,8 +612,6 @@ func TestTheBudgetLimitsAreReadFromTheStore(t *testing.T) {
 	}
 }
 
-// emailCounter reads one email budget counter from the key-value store and
-// reports whether it is present.
 func (r *rig) emailCounter(t *testing.T, key string) (float64, bool) {
 	t.Helper()
 	raw, present, err := r.kv.Get(r.t.Context(), key)
@@ -675,9 +628,7 @@ func (r *rig) emailCounter(t *testing.T, key string) (float64, bool) {
 	return value, true
 }
 
-// emailRecipientHourlyKey is the fixed-window key one recipient's hourly email
-// count lands on. It is the layout the module used before the sms path moved to
-// the shared ledger. The daily and deployment keys follow the same shape.
+// emailRecipientHourlyKey is the fixed-window key one recipient's hourly email count lands on; the daily and deployment keys follow the same shape.
 func (r *rig) emailRecipientHourlyKey(tenantID, userID string, now time.Time) string {
 	return ModuleName + ":budget:recipient-hourly:" + r.p.recipientHash(tenantID, userID) + ":" + now.Format(hourLayout)
 }
@@ -703,10 +654,8 @@ func (r *rig) emailCounterAmong(t *testing.T, keys ...string) (float64, bool) {
 	return 0, false
 }
 
-// The email per-recipient hourly budget refuses an email delivery past the
-// limit and enqueues nothing for the refused one. Disabling the restored email
-// charge lets the refused dispatch through, which is the failure this case
-// reports.
+// The email per-recipient hourly budget refuses an email delivery past
+// the limit and enqueues nothing for the refused one.
 func TestTheEmailPerRecipientHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 	r := newRig(t, func(h *host) { h.mail = true })
 	ctx := r.tenantCtx("t1")
@@ -729,9 +678,8 @@ func TestTheEmailPerRecipientHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 	}
 }
 
-// The email deployment-wide budget refuses an email delivery once the whole
-// deployment has reached it, even when every recipient is still inside its own
-// window.
+// The email deployment-wide budget refuses a delivery once the whole deployment
+// has reached it, though every recipient is within its own window.
 func TestTheEmailGlobalHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 	r := newRig(t, func(h *host) { h.mail = true })
 	ctx := r.tenantCtx("t1")
@@ -749,10 +697,8 @@ func TestTheEmailGlobalHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 	}
 }
 
-// An email delivery charges the key-value counters the module used before the
-// sms path moved to the ledger: the recipient's hourly and daily windows and the
-// deployment window each hold one for the delivery. A test that stops charging
-// email finds no counter and fails here.
+// An email delivery charges the key-value counters the module used before
+// the sms path moved to the ledger.
 func TestAnEmailDeliveryChargesTheKeyValueCounters(t *testing.T) {
 	r := newRig(t, func(h *host) { h.mail = true })
 	ctx := r.tenantCtx("t1")

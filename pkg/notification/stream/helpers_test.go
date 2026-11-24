@@ -17,9 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// stubBus is a stand-in event.Bus. It records every subscription by type and,
-// on Publish, runs every handler of that type on the caller's own goroutine, so
-// a case observes delivery by the time Publish returns.
 type stubBus struct {
 	mu       sync.Mutex
 	handlers map[string][]event.Handler
@@ -45,7 +42,6 @@ func (b *stubBus) Publish(ctx context.Context, evt event.Event) error {
 	return nil
 }
 
-// subscribed reports how many handlers are registered for one event type.
 func (b *stubBus) subscribed(eventType string) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -54,8 +50,6 @@ func (b *stubBus) subscribed(eventType string) int {
 
 var _ event.Bus = (*stubBus)(nil)
 
-// inboxEvent builds an event.Event carrying the payload shape the inbox
-// publishes.
 func inboxEvent(tenant, recipient string) event.Event {
 	return event.Event{
 		Type: eventInboxCreated,
@@ -68,10 +62,8 @@ func inboxEvent(tenant, recipient string) event.Event {
 	}
 }
 
-// mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }
 
-// stubEndpoint records the routes registered on it.
 type stubEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -93,9 +85,6 @@ func (e *stubEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// stubRouter is a stand-in speedhttp.Router over a fixed set of endpoints. A
-// name it does not hold is an error, the way the real entry point answers an
-// undeclared endpoint.
 type stubRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*stubEndpoint
@@ -133,8 +122,6 @@ func (r *stubRouter) endpoint(name string) *stubEndpoint {
 	return r.endpoints[name]
 }
 
-// errUnknownEndpoint is the error a stub router answers an undeclared name
-// with.
 func errUnknownEndpoint(name string) error {
 	return &unknownEndpoint{name: name}
 }
@@ -143,20 +130,16 @@ type unknownEndpoint struct{ name string }
 
 func (e *unknownEndpoint) Error() string { return "the entry point declares no endpoint " + e.name }
 
-// loggerStub delivers the logging capability over a recorder, so the module's
-// startup diagnostic lands in a case's buffer rather than on the test's output.
 type loggerStub struct{ logger *slog.Logger }
 
 func (l loggerStub) Named(string) *slog.Logger { return l.logger }
 func (loggerStub) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes redaction registrations and masks nothing.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
 func (noRules) AddPattern(string, log.Matcher) {}
 
-// logBuffer collects what the module logs.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -178,8 +161,6 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// standIn is a module that delivers instance for the tokens named, the way
-// another module delivers its capability exclusively.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -192,8 +173,6 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// rig is the module's route mounted on a real gin engine with a stand-in bus,
-// so a case reaches the handler over a real HTTP surface.
 type rig struct {
 	t      *testing.T
 	p      *product
@@ -201,9 +180,6 @@ type rig struct {
 	engine *gin.Engine
 }
 
-// newRig builds the product over a stub bus, subscribes it as Init does, and
-// mounts the stream route on a fresh gin engine through the same declared
-// operation and mount guard the module registers with.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -220,9 +196,6 @@ func newRig(t *testing.T) *rig {
 	return &rig{t: t, p: p, bus: bus, engine: engine}
 }
 
-// newTestProduct builds a product over a stub bus and this module's logger, for
-// a case that drives the Hub and the subscription directly. It hands back the
-// stub too, so the case can read what was subscribed.
 func newTestProduct() (*product, *stubBus) {
 	bus := newStubBus()
 	p := &product{
@@ -234,16 +207,12 @@ func newTestProduct() (*product, *stubBus) {
 	return p, bus
 }
 
-// plainWriter is an http.ResponseWriter with neither Flush nor Unwrap: the
-// chain that ends with no flusher.
 type plainWriter struct{ w http.ResponseWriter }
 
 func (p plainWriter) Header() http.Header         { return p.w.Header() }
 func (p plainWriter) Write(b []byte) (int, error) { return p.w.Write(b) }
 func (p plainWriter) WriteHeader(code int)        { p.w.WriteHeader(code) }
 
-// wrapper is an http.ResponseWriter that leaves Unwrap behind and nothing else,
-// the way a layer that replaced the writer does.
 type wrapper struct{ w http.ResponseWriter }
 
 func (u wrapper) Header() http.Header         { return u.w.Header() }
@@ -276,9 +245,6 @@ func (r *rig) firstConnection(t *testing.T) *connection {
 	}
 }
 
-// flushRecorder is an http.ResponseWriter that publishes, on a channel, the
-// bytes written since its previous flush. A case reads the frames the handler
-// flushes while the stream is still running.
 type flushRecorder struct {
 	header  http.Header
 	mu      sync.Mutex
@@ -363,7 +329,6 @@ func (w *timingRecorder) Flush() {
 	}
 }
 
-// timingSnapshot is one read of a timingRecorder's state.
 type timingSnapshot struct {
 	status       int
 	writes       int

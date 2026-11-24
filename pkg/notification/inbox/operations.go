@@ -6,17 +6,13 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section. The title and the version are the ones the
-// hand-written fragment published before the declaration generated it.
 const (
 	fragmentTitle   = "notification inbox"
 	fragmentVersion = "1.0.0"
 )
 
 // The paths the operations are declared at, relative to the API root the
-// module's Spec carries. The mounting resolves them against that root, so the
-// path is written once and the fragment keeps the relative form the platform
-// publishes.
+// module's Spec carries.
 const (
 	pathMessagesFragment    = "/notifications/messages"
 	pathUnreadCountFragment = "/notifications/messages/unread-count"
@@ -24,49 +20,44 @@ const (
 	pathMessageReadFragment = "/notifications/messages/:message_id/read"
 )
 
-// ListMessagesInput is the request of the listing: the group filter and the
-// page bounds. A limit left off or written as zero is the default page; a limit
-// outside the accepted range, a negative offset, or a non-numeric limit or
-// offset is refused whole with the module's bad-request problem.
+// ListMessagesInput is the request of the listing: the group filter and
+// the page bounds.
 type ListMessagesInput struct {
-	Group  string `query:"group" description:"Filter by group; absent or empty means every group"`
-	Limit  int    `query:"limit" description:"Page size; absent or zero is the default page, and a value outside the accepted range is refused whole rather than clamped"`
-	Offset int    `query:"offset" description:"Number of items to skip; negative is refused"`
+	// Group filters by group; empty means every group.
+	Group string `query:"group" description:"Filter by group; absent or empty means every group"`
+	// Limit is the page size; zero takes the default, and a value outside the
+	// accepted range is refused rather than clamped.
+	Limit int `query:"limit" description:"Page size; absent or zero is the default page, and a value outside the accepted range is refused whole rather than clamped"`
+	// Offset is the number of items to skip; negative is refused.
+	Offset int `query:"offset" description:"Number of items to skip; negative is refused"`
 }
 
 // MarkMessageReadInput is the request of the per-message marking: the
 // identifier the listing returned.
 type MarkMessageReadInput struct {
+	// MessageID is the message to mark, as returned in the listing; one this
+	// recipient cannot see is answered as not found.
 	MessageID string `path:"message_id" description:"The message identifier, as returned in the listing. An identifier this recipient cannot see is answered as not found."`
 }
 
-// The success bodies. Each is an alias of an anonymous struct, so the fragment
-// publishes the wrapper inline, as the hand-written fragment did, rather than as
-// a component of its own.
 type (
-	// messagePageBody is the 200 answer of a listing: one page and the total the
-	// filter matches.
 	messagePageBody = struct {
 		_        struct{}              `description:"One page of messages and the number of rows the filter matches."`
 		Messages []NotificationMessage `json:"messages" required:"true" description:"The page's messages, newest first; the empty array when the page has none."`
 		Total    int                   `json:"total" required:"true" description:"The number of the caller's unexpired messages the filter matches, without the page bound."`
 	}
 
-	// unreadCountBody is the 200 answer of the unread count.
 	unreadCountBody = struct {
 		_      struct{} `description:"The caller's unread count."`
 		Unread int      `json:"unread" required:"true" description:"The number of unread, unexpired messages in the caller's inbox."`
 	}
 
-	// readAllBody is the 200 answer of marking every unread message read.
 	readAllBody = struct {
 		_         struct{} `description:"How many messages this call marked read."`
 		ReadCount int      `json:"read_count" required:"true" description:"The number of rows whose read_at changed; zero when nothing was unread."`
 	}
 )
 
-// listMessagesOperation declares GET /notifications/messages: one page of the
-// caller's messages.
 var listMessagesOperation = speedhttp.NewOperation[ListMessagesInput, messagePageBody](
 	"notification.inbox.listMessages",
 	http.MethodGet,
@@ -89,8 +80,6 @@ var listMessagesOperation = speedhttp.NewOperation[ListMessagesInput, messagePag
 	},
 )
 
-// unreadCountOperation declares GET /notifications/messages/unread-count: the
-// number of the caller's unread, unexpired messages.
 var unreadCountOperation = speedhttp.NewOperation[struct{}, unreadCountBody](
 	"notification.inbox.getUnreadCount",
 	http.MethodGet,
@@ -111,8 +100,6 @@ var unreadCountOperation = speedhttp.NewOperation[struct{}, unreadCountBody](
 	},
 )
 
-// markAllMessagesReadOperation declares POST /notifications/messages/read-all:
-// every unread message of the caller is marked read.
 var markAllMessagesReadOperation = speedhttp.NewOperation[struct{}, readAllBody](
 	"notification.inbox.markAllMessagesRead",
 	http.MethodPost,
@@ -133,8 +120,6 @@ var markAllMessagesReadOperation = speedhttp.NewOperation[struct{}, readAllBody]
 	},
 )
 
-// markMessageReadOperation declares POST
-// /notifications/messages/:message_id/read: one message is marked read.
 var markMessageReadOperation = speedhttp.NewOperation[MarkMessageReadInput, struct{}](
 	"notification.inbox.markMessageRead",
 	http.MethodPost,
@@ -156,8 +141,6 @@ var markMessageReadOperation = speedhttp.NewOperation[MarkMessageReadInput, stru
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	listMessagesOperation,
 	unreadCountOperation,

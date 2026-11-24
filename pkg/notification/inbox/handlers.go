@@ -19,22 +19,11 @@ const (
 	messageNotFoundCode = "message-not-found"
 )
 
-// The page bounds of GET /messages. A limit left off, or written as zero, is
-// the default page; a limit outside the range, or a negative offset, is refused
-// whole rather than clamped.
 const (
 	defaultPageLimit = 50
 	maxPageLimit     = 200
 )
 
-// caller reads the identity the gateway put on the request and answers with the
-// account whose inbox is being read.
-//
-// A route is reached with no identity when the gateway is absent or the request
-// carried no credential; either way there is no recipient to serve, so the
-// answer is the status alone — the routes hold no realm challenge of their own.
-// The recipient is the identity's effective account, so an impersonation reads
-// the impersonated account's inbox.
 func (s *inboxStore) caller(ctx context.Context) (string, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -69,8 +58,6 @@ func (s *inboxStore) listMessages(ctx context.Context, in ListMessagesInput) (me
 	return messagePageBody{Messages: views, Total: page.Total}, nil
 }
 
-// unreadCount answers GET /api/v1/notifications/messages/unread-count: the
-// number of the caller's unread, unexpired messages.
 func (s *inboxStore) unreadCount(ctx context.Context, _ struct{}) (unreadCountBody, error) {
 	recipient, err := s.caller(ctx)
 	if err != nil {
@@ -83,9 +70,6 @@ func (s *inboxStore) unreadCount(ctx context.Context, _ struct{}) (unreadCountBo
 	return unreadCountBody{Unread: n}, nil
 }
 
-// markAllRead answers POST /api/v1/notifications/messages/read-all: it marks
-// every unread message of the caller read and answers how many were marked. A
-// repeat matches nothing and answers zero.
 func (s *inboxStore) markAllRead(ctx context.Context, _ struct{}) (readAllBody, error) {
 	recipient, err := s.caller(ctx)
 	if err != nil {
@@ -98,9 +82,6 @@ func (s *inboxStore) markAllRead(ctx context.Context, _ struct{}) (readAllBody, 
 	return readAllBody{ReadCount: n}, nil
 }
 
-// markMessageRead answers POST
-// /api/v1/notifications/messages/:message_id/read: it marks one message read and
-// answers 204, or 404 when the message is not one this recipient can see.
 func (s *inboxStore) markMessageRead(ctx context.Context, in MarkMessageReadInput) (struct{}, error) {
 	recipient, err := s.caller(ctx)
 	if err != nil {
@@ -112,11 +93,6 @@ func (s *inboxStore) markMessageRead(ctx context.Context, in MarkMessageReadInpu
 	return struct{}{}, nil
 }
 
-// answer maps a failure a method returned to the answer it belongs to. The
-// mapping is closed and fail-closed: a request whose shape cannot be read is a
-// 400, a message this recipient cannot see is a 404 of the message-not-found
-// code, and every other failure — a database that could not answer, anything
-// unnamed — is a 503 whose cause stays in the log and never reaches the caller.
 func (s *inboxStore) answer(ctx context.Context, op string, err error) error {
 	switch {
 	case errors.Is(err, notification.ErrInvalidRequest):

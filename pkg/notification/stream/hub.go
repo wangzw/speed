@@ -8,49 +8,29 @@ import (
 )
 
 // bufferDepth is how many frames one connection may hold unread before it
-// starts dropping its own. It is a fixed value of this module and not a
-// configuration item: it bounds a single connection's tolerance, and a
-// connection that falls further behind drops its own frames rather than
-// stalling the publisher.
+// starts dropping its own.
 const bufferDepth = 64
 
-// frameEventName is the SSE event name every frame carries. The name is fixed
-// and part of this module's promise: a connected client parses on it, so
-// changing it breaks every client already reading the stream.
 const frameEventName = "message"
 
-// frame is one SSE event waiting to be written: the event name and the JSON
-// data that follows it.
 type frame struct {
 	event string
 	data  []byte
 }
 
-// scope is the (tenant, recipient) pair a connection is subscribed under and a
-// published event is matched by.
 type scope struct {
 	tenant    string
 	recipient string
 }
 
 // Hub is the per-replica registry of live connections. It holds only this
-// replica's connections, in memory; it stores nothing, guarantees no delivery
-// and does not cross replicas.
-//
-// Subscribe, Publish and Close may be called concurrently from different
-// goroutines. Adding and removing a connection happen under one mutex; Publish
-// takes the matched set of connections out under that same mutex and delivers
-// outside it, so delivery never holds a lock a slow reader could stretch.
-//
-// The zero value is a usable Hub holding no connections.
+// replica's connections, in memory; it stores nothing, guarantees no
+// delivery and does not cross replicas.
 type Hub struct {
 	mu    sync.Mutex
 	conns map[scope][]*connection
 }
 
-// connection is one established stream. It carries the scope it is subscribed
-// under, the message buffer Publish fills, and the close signal the reader
-// selects on.
 type connection struct {
 	scope scope
 	ch    chan frame
@@ -82,21 +62,6 @@ func (h *Hub) Subscribe(tenant, recipient string) *connection {
 
 // Publish delivers evt to every connection whose scope matches the event's
 // (tenant_id, recipient_user_id).
-//
-// It never blocks and never reports an error. An event that names no tenant or
-// no recipient cannot be placed in any scope and is dropped; one whose payload
-// cannot be read or serialized is dropped too. Each matched connection gets one
-// non-blocking send, so a connection whose buffer is full drops its own frame
-// and Publish moves on. Dropping is per-connection: one slow client never
-// affects another, and never delays the publisher.
-//
-// Matching is done before any send is attempted: an event is looked up by its
-// scope, so a connection outside that scope never takes a send at all.
-//
-// The frame carries the payload without its tenant identifier: that value is
-// internal and is the scope the hub matched on, not something a browser is
-// shown. The recipient's account identifier stays, because it is the account
-// identifier the API uses everywhere.
 func (h *Hub) Publish(evt event.Event) {
 	fields, ok := event.PayloadFields(evt.Payload)
 	if !ok {
@@ -133,14 +98,7 @@ func (h *Hub) Publish(evt event.Event) {
 	}
 }
 
-// Close unregisters c and signals its reader to stop. It never closes the
-// message buffer: closing a channel a concurrent Publish may be sending on is
-// the very race that would panic a concurrent Hub, and the buffer is reclaimed
-// with the connection instead. A send that arrives after the reader has gone
-// either lands in the still-existing buffer or is dropped by the non-blocking
-// branch, and neither panics.
-//
-// Close is idempotent and safe on a nil connection.
+// Close unregisters c and signals its reader to stop.
 func (h *Hub) Close(c *connection) {
 	if c == nil {
 		return
@@ -167,7 +125,6 @@ func (h *Hub) closeAll() {
 	}
 }
 
-// remove drops c from the index. It is called with the mutex held.
 func (h *Hub) remove(c *connection) {
 	list := h.conns[c.scope]
 	for i, existing := range list {

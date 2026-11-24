@@ -10,7 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// sample is one rendered message a case writes.
 func sample() notification.Message {
 	return notification.Message{
 		TypeKey: "billing.invoice_paid",
@@ -22,7 +21,6 @@ func sample() notification.Message {
 	}
 }
 
-// writeOne writes the sample with the given dedupe key for the recipient.
 func writeOne(t *testing.T, in notification.Inbox, ctx context.Context, recipient, dedupeKey string) notification.Message {
 	t.Helper()
 	m, err := in.Write(ctx, recipient, sample(), dedupeKey)
@@ -32,9 +30,8 @@ func writeOne(t *testing.T, in notification.Inbox, ctx context.Context, recipien
 	return m
 }
 
-// Writing a message lands one row and publishes one created event; writing the
-// same dedupe key again returns the row already there, writes nothing more and
-// publishes no second event.
+// Writing a message lands one row and one created event; the same dedupe key
+// again returns that row and publishes nothing.
 func TestWriteIsIdempotentOnTheDedupeKey(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		sink := &sink{}
@@ -69,9 +66,8 @@ func TestWriteIsIdempotentOnTheDedupeKey(t *testing.T) {
 	})
 }
 
-// A write with no event bus in the assembly publishes nothing and lands the row
-// exactly as it otherwise would: the created event accelerates a push, and a
-// write is not what depends on it.
+// A write with no event bus in the assembly publishes nothing and lands
+// the row exactly as it otherwise would.
 func TestWriteLandsTheRowWithoutABus(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		e.on(t, host{}).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -279,9 +275,8 @@ func TestUnreadCountCountsOnlyUnreadUnexpired(t *testing.T) {
 	})
 }
 
-// MarkRead sets read_at once, keeps the first-read timestamp across a repeat,
-// and answers the same ErrMessageNotFound for an unknown identifier, another
-// recipient's and another tenant's.
+// MarkRead sets read_at once and keeps it across a repeat, and answers
+// ErrMessageNotFound for an unknown, another recipient's or another tenant's message.
 func TestMarkReadIsIdempotentAndAnswersOneNotFound(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		e.on(t, host{}).drive(t, func(_ context.Context, reg *core.Registry) error {
@@ -311,7 +306,6 @@ func TestMarkReadIsIdempotentAndAnswersOneNotFound(t *testing.T) {
 				t.Errorf("the first-read timestamp moved from %v to %v across a repeat", *firstRead, again)
 			}
 
-			// The three invisible cases are one answer.
 			for _, id := range []string{"ghost", "mine-other", "theirs"} {
 				if err := in.MarkRead(acme, "user-1", id); !errors.Is(err, notification.ErrMessageNotFound) {
 					t.Errorf("marking %q gave %v, want ErrMessageNotFound", id, err)

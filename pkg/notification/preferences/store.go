@@ -16,12 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// preferenceRow is the row shape of the notification_preferences table.
-//
-// It embeds the tenant convention, which is both the declaration that a row
-// belongs to a tenant and the column that carries it: a statement issued through
-// this model is scoped to the tenant of its context, filled with it on insert
-// and judged against it on write. The key leads with that column.
 type preferenceRow struct {
 	tenant.Model
 	ID              string    `gorm:"column:id;primaryKey"`
@@ -32,17 +26,8 @@ type preferenceRow struct {
 	UpdatedAt       time.Time `gorm:"column:updated_at;not null"`
 }
 
-// TableName is the table the preferences live in.
 func (preferenceRow) TableName() string { return tableName }
 
-// Effective reports the channels a recipient's dispatches of a type go out
-// under; see notification.Preferences.
-//
-// A type that cannot be unsubscribed takes all of its default channels and is
-// never read from the table. A type that can be unsubscribed takes the row the
-// recipient has for it, or the default channels when there is none. A type no
-// module declares is refused. The result is deduplicated and ordered by the
-// closed channel set.
 func (p *product) Effective(ctx context.Context, recipient, typeKey string) ([]notification.Channel, error) {
 	if _, ok := tenant.FromContext(ctx); !ok {
 		return nil, fmt.Errorf("%w: the request carries no tenant", tenant.ErrNoTenantInContext)
@@ -71,14 +56,6 @@ func (p *product) Effective(ctx context.Context, recipient, typeKey string) ([]n
 	return canonicalChannels(stored), nil
 }
 
-// Set replaces a recipient's channel set for a type and returns the effective
-// set written; see notification.Preferences.
-//
-// The type has to be in the taxonomy and has to be unsubscribable — a type that
-// cannot be unsubscribed never has a preference row — and every channel has to
-// be in the closed set. The write is an upsert on the unique index, so two
-// concurrent writes of one (tenant, recipient, type) leave one row, and the
-// channels are stored as a stable-sorted JSON array.
 func (p *product) Set(ctx context.Context, recipient, typeKey string, channels []notification.Channel) ([]notification.Channel, error) {
 	if _, ok := tenant.FromContext(ctx); !ok {
 		return nil, fmt.Errorf("%w: the request carries no tenant", tenant.ErrNoTenantInContext)
@@ -126,9 +103,6 @@ func (p *product) Set(ctx context.Context, recipient, typeKey string, channels [
 	return canonical, nil
 }
 
-// loadStored reads, in one statement, the channels every type the recipient has
-// an explicit row for carries. The map's key is the type key and its value is
-// the stored channel set; a type with no row is absent.
 func (p *product) loadStored(ctx context.Context, recipient string) (map[string][]notification.Channel, error) {
 	var rows []preferenceRow
 	err := p.handle.WithContext(ctx).
@@ -149,8 +123,6 @@ func (p *product) loadStored(ctx context.Context, recipient string) (map[string]
 	return out, nil
 }
 
-// encodeChannels writes a channel set as the stable-sorted JSON array the
-// channels column holds.
 func encodeChannels(channels []notification.Channel) (string, error) {
 	encoded, err := json.Marshal(channels)
 	if err != nil {
@@ -159,7 +131,6 @@ func encodeChannels(channels []notification.Channel) (string, error) {
 	return string(encoded), nil
 }
 
-// decodeChannels reads the channels column back into a channel set.
 func decodeChannels(encoded string) ([]notification.Channel, error) {
 	var channels []notification.Channel
 	if err := json.Unmarshal([]byte(encoded), &channels); err != nil {
@@ -206,8 +177,6 @@ func canonicalChannels(channels []notification.Channel) []notification.Channel {
 	return out
 }
 
-// sameSet reports whether two channel sets hold the same channels, whatever
-// their order or repetition.
 func sameSet(a, b []notification.Channel) bool {
 	ca, cb := canonicalChannels(a), canonicalChannels(b)
 	if len(ca) != len(cb) {
@@ -221,8 +190,6 @@ func sameSet(a, b []notification.Channel) bool {
 	return true
 }
 
-// applyToggle produces the target set a PUT asks for: with enabled the channel
-// is added, without it the channel is removed, and the result is canonical.
 func applyToggle(current []notification.Channel, channel notification.Channel, enabled bool) []notification.Channel {
 	if enabled {
 		return canonicalChannels(append(append([]notification.Channel(nil), current...), channel))

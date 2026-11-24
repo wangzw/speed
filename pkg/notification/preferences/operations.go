@@ -6,8 +6,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section. The title and the version are the ones the
-// hand-written fragment published before the declaration generated it.
 const (
 	fragmentTitle   = "notification preferences"
 	fragmentVersion = "1.0.0"
@@ -22,23 +20,17 @@ const (
 	pathPreferenceChannelFragment = "/notifications/preferences/:type_key/:channel"
 )
 
-// The success bodies. Each is an alias of an anonymous struct, so the fragment
-// publishes the wrapper inline, as the hand-written fragment did, rather than as
-// a component of its own.
 type (
-	// typesBody is the 200 answer of GET /types: the taxonomy itself.
 	typesBody = struct {
 		_     struct{}           `description:"The taxonomy: one entry per notification type, ordered by type key."`
 		Types []NotificationType `json:"types" required:"true" description:"Every type collected for this process, ordered by type key; the set comes from module declarations rather than from a table."`
 	}
 
-	// preferencesBody is the 200 answer of GET /preferences: one row per type.
 	preferencesBody = struct {
 		_           struct{}                 `description:"The caller's preference matrix: one row per notification type in the taxonomy, ordered by type key."`
 		Preferences []NotificationPreference `json:"preferences" required:"true" description:"One row per type in the taxonomy, ordered by type key; each row's channels is the caller's effective set for that type."`
 	}
 
-	// preferenceSetBody is the 200 answer of the PUT: the type's effective set.
 	preferenceSetBody = struct {
 		_        struct{} `description:"The type's effective channel set after the update."`
 		TypeKey  string   `json:"type_key" required:"true" description:"The type key the update applied to, echoed from the path."`
@@ -50,21 +42,22 @@ type (
 // body's target state. The state is a pointer so that a body naming none is
 // told apart from one naming false.
 type SetPreferenceInput struct {
-	_       struct{} `description:"The body of a single-channel preference update."`
-	TypeKey string   `path:"type_key" description:"The notification type key, as listed by GET /notifications/types; a key not in the taxonomy is answered 400."`
-	Channel string   `path:"channel" enum:"in_app,email,sms" description:"The channel to turn on or off: one of in_app, email, sms. Any other value is answered 400 before the no-op check."`
-	Enabled *bool    `json:"enabled" required:"true" description:"The target state of the channel; a body naming none is told apart from one naming false"`
+	_ struct{} `description:"The body of a single-channel preference update."`
+	// TypeKey is the notification type key; a key not in the taxonomy is answered
+	// 400.
+	TypeKey string `path:"type_key" description:"The notification type key, as listed by GET /notifications/types; a key not in the taxonomy is answered 400."`
+	// Channel is the channel to turn on or off; any other value is answered 400.
+	Channel string `path:"channel" enum:"in_app,email,sms" description:"The channel to turn on or off: one of in_app, email, sms. Any other value is answered 400 before the no-op check."`
+	// Enabled is the target state; nil is told apart from false.
+	Enabled *bool `json:"enabled" required:"true" description:"The target state of the channel; a body naming none is told apart from one naming false"`
 }
 
-// problemResponse declares one error answer in the default problem shape, with
-// the given response headers.
 func problemResponse(status int, description string, headers ...speedhttp.Header) speedhttp.Response {
 	response := speedhttp.ProblemResponse(status, description)
 	response.Headers = headers
 	return response
 }
 
-// listTypesOperation declares GET /types: the taxonomy every recipient shares.
 var listTypesOperation = speedhttp.NewOperation[struct{}, typesBody](
 	"notification.preferences.listTypes",
 	http.MethodGet,
@@ -86,7 +79,6 @@ var listTypesOperation = speedhttp.NewOperation[struct{}, typesBody](
 	},
 )
 
-// listPreferencesOperation declares GET /preferences: the caller's matrix.
 var listPreferencesOperation = speedhttp.NewOperation[struct{}, preferencesBody](
 	"notification.preferences.listPreferences",
 	http.MethodGet,
@@ -106,9 +98,6 @@ var listPreferencesOperation = speedhttp.NewOperation[struct{}, preferencesBody]
 			Body: &speedhttp.Body{MediaType: "application/json"},
 		},
 		problemResponse(http.StatusServiceUnavailable, "The preference matrix could not be read",
-			// The old handler set Vary before it read the table, so a refusal
-			// carried it too; a simple operation writes only the success
-			// headers itself, so the failure declares it as well.
 			speedhttp.Header{
 				Name:        "Vary",
 				Description: "Accept-Language: the body does not vary by language, but this module's error responses do.",
@@ -117,8 +106,6 @@ var listPreferencesOperation = speedhttp.NewOperation[struct{}, preferencesBody]
 	},
 )
 
-// updatePreferenceOperation declares PUT /preferences/:type_key/:channel: one
-// channel is turned on or off and the type's effective set is answered.
 var updatePreferenceOperation = speedhttp.NewOperation[SetPreferenceInput, preferenceSetBody](
 	"notification.preferences.updatePreference",
 	http.MethodPut,
@@ -148,8 +135,6 @@ var updatePreferenceOperation = speedhttp.NewOperation[SetPreferenceInput, prefe
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	listTypesOperation,
 	listPreferencesOperation,

@@ -17,20 +17,8 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// The cases built on this file drive the module's descriptor through a real
-// registry: the configuration module with a reader the real loader produced,
-// this module itself, and stand-ins for the required bus and the optional
-// entry point. What a product built by hand cannot show is which callback takes
-// up which dependency and what the descriptor says of its own delivery, which
-// is none.
-
-// streamBody is the configuration a default drive runs on: one endpoint of the
-// entry point, "public", that the stream route is mounted on.
 const streamBody = `{"notification": {"stream": {"endpoints": ["public"]}}}`
 
-// assembly is one drive. The zero value mounts the route on "public" with a
-// stand-in bus and entry point; each field takes one capability away or
-// replaces a stand-in or the body.
 type assembly struct {
 	body     string
 	noBus    bool
@@ -40,7 +28,6 @@ type assembly struct {
 	logger   *slog.Logger
 }
 
-// drive advances the assembly to depth and runs a no-op action.
 func (a assembly) drive(t *testing.T, depth core.Stage) error {
 	t.Helper()
 	body := a.body
@@ -92,9 +79,7 @@ func TestThisModuleDeliversNothing(t *testing.T) {
 	}
 }
 
-// The event bus is required; the entry point and the logger are optional. The
-// gateway is not declared at all: this module never resolves it, so where the
-// stream route sits relative to one is the host's assembly.
+// The event bus is required; the entry point and the logger are optional.
 func TestTheDescriptorRequiresTheBusAndLeavesTheRestOptional(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -158,9 +143,8 @@ func TestTheAssemblyMountsTheRouteAndSubscribes(t *testing.T) {
 	}
 }
 
-// Init takes up the optional logging capability and writes the start diagnostic
-// through it, so a command that assembles logging sees what the push module
-// mounted.
+// Init takes up the optional logging capability and writes the start
+// diagnostic through it.
 func TestTheOptionalLoggerIsTakenUpInInit(t *testing.T) {
 	logs := &logBuffer{}
 	if err := (assembly{logger: logs.logger()}).drive(t, core.StageStart); err != nil {
@@ -183,9 +167,8 @@ func TestTheModuleConstructsWithoutAnEntryPoint(t *testing.T) {
 	}
 }
 
-// The endpoint list is required of a run that mounts the route and is read
-// nowhere by a run that assembles no entry point: a list with nothing in it then
-// mounts nothing because there is nothing to mount on, and the module starts.
+// The endpoint list is required of a run that mounts the route and is
+// read nowhere by a run that assembles no entry point.
 func TestWithoutAnEntryPointAnEmptyEndpointListIsLegal(t *testing.T) {
 	cases := map[string]string{
 		"an empty list":  `{"notification": {"stream": {"endpoints": []}}}`,
@@ -205,9 +188,7 @@ func TestWithoutAnEntryPointAnEmptyEndpointListIsLegal(t *testing.T) {
 	}
 }
 
-// An entry point present makes the endpoint list required: the route is mounted
-// on the endpoints the module is told to, and a list that names none would drop
-// it silently. Every shape the module cannot run on fails Init, naming the key.
+// An entry point present makes the endpoint list required.
 func TestWithAnEntryPointTheEndpointListRefusesShapesItCannotRunOn(t *testing.T) {
 	cases := map[string]string{
 		"empty":      `[]`,

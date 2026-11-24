@@ -27,7 +27,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// engine is one database capability this module is exercised on.
 type engine struct {
 	name     string
 	database core.Module
@@ -35,12 +34,8 @@ type engine struct {
 	locate   func(t *testing.T) string
 }
 
-// engines lists the database capabilities a case is exercised on, SQLite first:
-// a case that names none of its own runs on engines[0].
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name an engine whose locator would fail for want of one.
+// engines lists the database capabilities a case is exercised on, SQLite
+// first: a case that names none of its own runs on engines[0].
 var engines = []engine{
 	{
 		name:     "sqlite",
@@ -50,10 +45,6 @@ var engines = []engine{
 	},
 }
 
-// host is one assembled run of this module: the engine and the database it sits
-// on, whether an event bus takes part, the notification.inbox configuration
-// section, whatever extra modules a case takes in, and the stage the run
-// reaches.
 type host struct {
 	database core.Module
 	section  string
@@ -64,7 +55,6 @@ type host struct {
 	depth    core.Stage
 }
 
-// on builds a host on an engine over a fresh database of that engine's own.
 func (e engine) on(t *testing.T, h host) host {
 	h.database = e.database
 	h.section = e.section
@@ -72,8 +62,6 @@ func (e engine) on(t *testing.T, h host) host {
 	return h
 }
 
-// drive loads the configuration the way a host loads it, drives a registry to
-// the run's depth, and runs action there.
 func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	dir := t.TempDir()
@@ -144,11 +132,8 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	}
 }
 
-// errCaseFailed ends a drive whose case has already reported what went wrong,
-// so the drive still shuts down and the pool it opened is released.
 var errCaseFailed = errors.New("the case failed")
 
-// forEachEngine runs a case on every engine this module is exercised on.
 func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 	t.Helper()
 	for _, e := range engines {
@@ -156,7 +141,6 @@ func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 	}
 }
 
-// inboxOf resolves the inbox face.
 func inboxOf(t *testing.T, reg *core.Registry) notification.Inbox {
 	t.Helper()
 	face, err := core.Resolve[notification.Inbox](reg)
@@ -166,8 +150,6 @@ func inboxOf(t *testing.T, reg *core.Registry) notification.Inbox {
 	return face
 }
 
-// product resolves the module's own product, for a case that reads the handle
-// or mounts the routes by hand.
 func product(t *testing.T, reg *core.Registry) *inboxStore {
 	t.Helper()
 	face := inboxOf(t, reg)
@@ -178,8 +160,6 @@ func product(t *testing.T, reg *core.Registry) *inboxStore {
 	return s
 }
 
-// tenantCtx registers a tenant in the roster and returns a context that belongs
-// to it.
 func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	t.Helper()
 	cam, err := core.Resolve[tenant.Catalog](reg)
@@ -198,9 +178,6 @@ func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	return ctx
 }
 
-// rowCount counts the rows in the in-app message table, past the tenant filter,
-// so a case can hold what actually landed. It reads through a raw statement,
-// which the tenant filter leaves alone.
 func rowCount(t *testing.T, s *inboxStore) int64 {
 	t.Helper()
 	var row struct {
@@ -212,7 +189,6 @@ func rowCount(t *testing.T, s *inboxStore) int64 {
 	return row.N
 }
 
-// storedRow is one row read directly out of the table.
 type storedRow struct {
 	TenantID        string `gorm:"column:tenant_id"`
 	ID              string `gorm:"column:id"`
@@ -225,7 +201,6 @@ type storedRow struct {
 	DedupeKey       string `gorm:"column:dedupe_key"`
 }
 
-// rowsOf reads every row back past the tenant filter, keyed by identifier.
 func rowsOf(t *testing.T, s *inboxStore) map[string]storedRow {
 	t.Helper()
 	var raw []storedRow
@@ -271,13 +246,11 @@ func plant(t *testing.T, s *inboxStore, tenantID string, r message) {
 	}
 }
 
-// sink is a subscriber that records the events it receives.
 type sink struct {
 	mu       sync.Mutex
 	received []event.Event
 }
 
-// module subscribes this sink to the created event in its own Init.
 func (s *sink) module() core.Module {
 	return core.Module{
 		Name:     "test.sink",
@@ -299,17 +272,14 @@ func (s *sink) module() core.Module {
 	}
 }
 
-// events lists what the sink received.
 func (s *sink) events() []event.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]event.Event(nil), s.received...)
 }
 
-// mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }
 
-// stubEndpoint records the routes registered on it.
 type stubEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -331,7 +301,6 @@ func (e *stubEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// stubRouter is a stand-in speedhttp.Router over a fixed set of endpoints.
 type stubRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*stubEndpoint
@@ -369,8 +338,6 @@ func (r *stubRouter) endpoint(name string) *stubEndpoint {
 	return r.endpoints[name]
 }
 
-// standIn is a module that delivers instance for the token named, the way
-// another module delivers its capability exclusively.
 func standIn(name string, instance any, token core.Token) core.Module {
 	return core.Module{
 		Name:     name,
@@ -392,8 +359,6 @@ func engineFor(t *testing.T, s *inboxStore) *gin.Engine {
 	return engine
 }
 
-// requestContext installs an identity on a tenant's context, the way the
-// gateway and the resolving middleware leave it for a handler.
 func requestContext(t *testing.T, base context.Context, opts ...authntest.Option) context.Context {
 	t.Helper()
 	return authntest.Context(t, base, opts...)

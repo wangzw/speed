@@ -6,26 +6,15 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The fragment's info section. The title and the version are the ones the
-// hand-written fragment published before the declaration generated it.
 const (
 	fragmentTitle   = "notification stream"
 	fragmentVersion = "1.0.0"
 )
 
-// pathStreamFragment is the route as the fragment writes it: relative to the
-// API root the module's Spec declares. The mounting resolves it to the absolute
-// path the route is registered at.
 const pathStreamFragment = "/notifications/stream"
 
-// streamInput is the declaration's input type. The route reads no parameter and
-// no body: the recipient comes from the request's identity and the tenant comes
-// from the resolving layer, both left in the context the handler receives.
 type streamInput struct{}
 
-// subscribeOperation declares the stream route and binds its types. The handler
-// builds its own answer, so this is a reply operation: the success answer is one
-// text/event-stream the handler produces through the entry point's SSE writer.
 var subscribeOperation = speedhttp.NewReplyOperation[streamInput](
 	"notification.stream.subscribe",
 	http.MethodGet,
@@ -58,6 +47,4 @@ var subscribeOperation = speedhttp.NewReplyOperation[streamInput](
 	},
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the route is mounted from the same declaration.
 var operations = speedhttp.Operations{subscribeOperation}

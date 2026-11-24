@@ -26,7 +26,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
 
-// engine is one database capability this module is exercised on.
 type engine struct {
 	name     string
 	database core.Module
@@ -34,12 +33,8 @@ type engine struct {
 	locate   func(t *testing.T) string
 }
 
-// engines lists the database capabilities a case is exercised on, SQLite first:
-// a case that names none of its own runs on engines[0].
-//
-// Only the engines whose fixture needs nothing installed belong here. The
-// integration build appends the ones that reach a server, so an untagged run
-// cannot name an engine whose locator would fail for want of one.
+// engines lists the database capabilities a case is exercised on, SQLite
+// first: a case that names none of its own runs on engines[0].
 var engines = []engine{
 	{
 		name:     "sqlite",
@@ -49,7 +44,6 @@ var engines = []engine{
 	},
 }
 
-// forEachEngine runs a case on every engine.
 func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 	t.Helper()
 	for _, e := range engines {
@@ -57,26 +51,17 @@ func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 	}
 }
 
-// harness is one assembled run of this module: the engine it sits on, the
-// modules that declare notification types, the entry point a case supplies, the
-// endpoint list the module is told to mount on, and the stage the run reaches.
 type harness struct {
-	engine engine
-	dsn    string
-	// declare holds modules that take part in the run and declare types.
-	declare []core.Module
-	// registered holds modules that are registered but left out of the
-	// participating set, the shape a module a command does not drive has.
+	engine     engine
+	dsn        string
+	declare    []core.Module
 	registered []core.Module
-	// endpoints is the notification.preferences.endpoints list. Nil leaves the
-	// item unset, the shape a configuration that names none has.
 	endpoints  []string
 	withRouter bool
 	router     speedhttp.Router
 	depth      core.Stage
 }
 
-// on builds the harness on an engine over a fresh database of that engine's own.
 func (e engine) on(t *testing.T, h harness) harness {
 	h.engine = e
 	if h.dsn == "" {
@@ -85,13 +70,6 @@ func (e engine) on(t *testing.T, h harness) harness {
 	return h
 }
 
-// drive loads the configuration the way a host loads it, drives a registry to
-// the run's depth, and runs action there. A drive failure is fatal; a case that
-// expects one calls run instead.
-//
-// The sections are the database's, the logging capability's, and this module's
-// own when a case names endpoints; the loader refuses a key no module declares,
-// so a case that leaves the endpoint list unset carries no section for it.
 func (h harness) drive(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) {
 	t.Helper()
 	if err := h.run(t, action); err != nil {
@@ -99,8 +77,6 @@ func (h harness) drive(t *testing.T, action func(ctx context.Context, reg *core.
 	}
 }
 
-// run is the body of drive, returning the drive's error rather than failing on
-// it, so a case can hold the startup to a refusal.
 func (h harness) run(t *testing.T, action func(ctx context.Context, reg *core.Registry) error) error {
 	t.Helper()
 	chosen := h.engine
@@ -172,8 +148,6 @@ func (h harness) run(t *testing.T, action func(ctx context.Context, reg *core.Re
 			continue
 		}
 		seen[m.Name] = true
-		// Registered but not participating: the way a command leaves a module
-		// in the available set without driving it.
 		reg.Register(m)
 	}
 	reg.Supply(reader, config.ModuleName)
@@ -188,8 +162,6 @@ func (h harness) run(t *testing.T, action func(ctx context.Context, reg *core.Re
 	})
 }
 
-// declaringModule is a stand-in business module that declares notification types
-// through its Resources, the way a real one does.
 func declaringModule(name string, specs ...notification.TypeSpec) core.Module {
 	resources := make([]any, len(specs))
 	for i, spec := range specs {
@@ -198,7 +170,6 @@ func declaringModule(name string, specs ...notification.TypeSpec) core.Module {
 	return core.Module{Name: name, Resources: resources}
 }
 
-// preferencesOf resolves the preferences seam.
 func preferencesOf(t *testing.T, reg *core.Registry) notification.Preferences {
 	t.Helper()
 	prefs, err := core.Resolve[notification.Preferences](reg)
@@ -208,7 +179,6 @@ func preferencesOf(t *testing.T, reg *core.Registry) notification.Preferences {
 	return prefs
 }
 
-// productOfAssembly narrows the resolved seam to this module's product.
 func productOfAssembly(t *testing.T, reg *core.Registry) *product {
 	t.Helper()
 	prefs := preferencesOf(t, reg)
@@ -219,8 +189,6 @@ func productOfAssembly(t *testing.T, reg *core.Registry) *product {
 	return p
 }
 
-// tenantCtx registers a tenant in the roster and returns a context that belongs
-// to it.
 func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	t.Helper()
 	roster, err := core.Resolve[tenant.Catalog](reg)
@@ -239,8 +207,6 @@ func tenantCtx(t *testing.T, reg *core.Registry, id string) context.Context {
 	return ctx
 }
 
-// rowCount counts the rows in the preference table, for the cases that care
-// whether a write happened.
 func rowCount(t *testing.T, reg *core.Registry) int64 {
 	t.Helper()
 	p := productOfAssembly(t, reg)
@@ -251,7 +217,6 @@ func rowCount(t *testing.T, reg *core.Registry) int64 {
 	return n
 }
 
-// aSpec is a valid declaration a case can lean on, with the key it is given.
 func aSpec(key string, unsubscribable bool, channels ...notification.Channel) notification.TypeSpec {
 	spec := notification.TypeSpec{
 		Key:             key,
@@ -265,10 +230,8 @@ func aSpec(key string, unsubscribable bool, channels ...notification.Channel) no
 	return spec
 }
 
-// mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }
 
-// stubEndpoint records the routes registered on it.
 type stubEndpoint struct {
 	mu     sync.Mutex
 	routes []mountedRoute
@@ -290,7 +253,6 @@ func (e *stubEndpoint) registered() []mountedRoute {
 	return append([]mountedRoute(nil), e.routes...)
 }
 
-// stubRouter is a stand-in http.Router over a fixed set of endpoints.
 type stubRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]*stubEndpoint
@@ -328,7 +290,6 @@ func (r *stubRouter) endpoint(name string) *stubEndpoint {
 	return r.endpoints[name]
 }
 
-// standIn is a module that delivers instance for the tokens named.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, tk := range tokens {
@@ -341,10 +302,9 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 	}
 }
 
-// serveHandler drives one request through a gin engine that carries a single
-// route, so a case exercises a handler's decision order without an entry point.
-// pattern is the route as it is mounted — with the same :params — and target is
-// the concrete path the request asks for.
+// serveHandler drives one request through a gin engine that carries a
+// single route, so a case exercises a handler's decision order without an
+// entry point.
 func serveHandler(t *testing.T, method, pattern, target string, ctx context.Context, body io.Reader, handler gin.HandlerFunc) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

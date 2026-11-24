@@ -15,15 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// TestTheModuleMountsOnlyOnTheEndpointsItNames holds that the preference routes
-// go on the endpoints the module is told to and on none else.
-//
-// The entry point declares two endpoints, and one of them has its whole path
-// space taken by a catch-all — the shape a frontend bundle leaves on the
-// endpoint it is given. gin refuses a concrete route beside a catch-all on one
-// method tree, and the entry point reports that refusal as a route conflict when
-// it assembles the chains, so a module that mounted on every declared endpoint
-// would mount into the catch-all and the process would not come up.
+// TestTheModuleMountsOnlyOnTheEndpointsItNames holds that the preference
+// routes go on the endpoints the module is told to and on none else.
 func TestTheModuleMountsOnlyOnTheEndpointsItNames(t *testing.T) {
 	api := &stubEndpoint{}
 	covered := newCoveredEndpoint()
@@ -117,9 +110,6 @@ func TestAMalformedEndpointListIsNotReadWithoutARouter(t *testing.T) {
 	}
 }
 
-// mixedRouter is an entry point whose endpoints are of different shapes: the
-// generic stubRouter holds one endpoint type, and the case that needs a plain
-// registration surface beside one a catch-all covers needs two.
 type mixedRouter struct {
 	mu        sync.Mutex
 	endpoints map[string]speedhttp.Endpoint
@@ -130,7 +120,6 @@ func newMixedRouter() *mixedRouter {
 	return &mixedRouter{endpoints: map[string]speedhttp.Endpoint{}}
 }
 
-// declare names an endpoint and gives it its surface.
 func (r *mixedRouter) declare(name string, e speedhttp.Endpoint) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -154,12 +143,6 @@ func (r *mixedRouter) Endpoints() []string {
 	return append([]string(nil), r.order...)
 }
 
-// coveredEndpoint is an endpoint whose whole path space a catch-all already
-// covers — the shape the frontend module leaves on the endpoint it is given. It
-// offers each route to a real gin engine, so a route the engine refuses beside
-// the catch-all is recorded rather than raised: the entry point reports that
-// refusal as a route conflict when it assembles the chains, and a case reads it
-// here.
 type coveredEndpoint struct {
 	mu      sync.Mutex
 	engine  *gin.Engine
@@ -167,8 +150,6 @@ type coveredEndpoint struct {
 	refused []mountedRoute
 }
 
-// newCoveredEndpoint builds an endpoint already carrying the frontend's
-// catch-all on the GET method tree.
 func newCoveredEndpoint() *coveredEndpoint {
 	gin.SetMode(gin.TestMode)
 	e := &coveredEndpoint{engine: gin.New()}
@@ -186,9 +167,6 @@ func (e *coveredEndpoint) Route(method, path string, handlers ...gin.HandlerFunc
 	e.routes = append(e.routes, mountedRoute{method, path})
 }
 
-// offerRoute binds one route and hands back whatever gin raised, or nil when it
-// took the route. It is the entry point's own probe, repeated here so the
-// refusal is observed where the mounting happens.
 func offerRoute(engine *gin.Engine, method, path string, handlers []gin.HandlerFunc) (raised any) {
 	defer func() { raised = recover() }()
 	engine.Handle(method, path, handlers...)

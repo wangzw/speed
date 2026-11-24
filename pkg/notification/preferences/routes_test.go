@@ -14,16 +14,14 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// wantRoutes is the closed route set.
 var wantRoutes = map[mountedRoute]bool{
 	{http.MethodGet, "/api/v1/notifications/types"}:                          true,
 	{http.MethodGet, "/api/v1/notifications/preferences"}:                    true,
 	{http.MethodPut, "/api/v1/notifications/preferences/:type_key/:channel"}: true,
 }
 
-// TestTheModuleMountsItsWholeRouteSet holds that every route in the closed set is
-// mounted on an endpoint the module is told to carry them, and that the entry
-// point's other endpoints are left alone.
+// TestTheModuleMountsItsWholeRouteSet holds that every route of the closed set
+// is mounted on a declared endpoint and other endpoints are left alone.
 func TestTheModuleMountsItsWholeRouteSet(t *testing.T) {
 	router := newStubRouter("public", "admin")
 	h := engines[0].on(t, harness{withRouter: true, router: router, endpoints: []string{"public"}})
@@ -100,9 +98,8 @@ func TestGetTypesReportsTheTaxonomy(t *testing.T) {
 	})
 }
 
-// TestGetPreferencesReportsTheEffectiveMatrix holds the GET /preferences body:
-// one row per type, the effective set, and explicit telling a stored row from
-// the default channels. It reads the table, so it runs on every engine.
+// TestGetPreferencesReportsTheEffectiveMatrix holds the GET /preferences
+// body.
 func TestGetPreferencesReportsTheEffectiveMatrix(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		spec := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
@@ -111,7 +108,6 @@ func TestGetPreferencesReportsTheEffectiveMatrix(t *testing.T) {
 			ctx := tenantCtx(t, reg, "acme")
 			p := productOfAssembly(t, reg)
 
-			// No stored row yet: the default channels, not explicit.
 			row := getPreferences(t, ctx, p)
 			if len(row.Preferences) != 1 {
 				t.Fatalf("the matrix has %d rows, want 1", len(row.Preferences))
@@ -124,7 +120,6 @@ func TestGetPreferencesReportsTheEffectiveMatrix(t *testing.T) {
 				t.Errorf("channels = %v, want the default [in_app email]", first.Channels)
 			}
 
-			// After a write the row is explicit and carries the written set.
 			if _, err := preferencesOf(t, reg).Set(ctx, "user-1", "billing.invoice_paid", []notification.Channel{notification.ChannelSMS}); err != nil {
 				t.Fatalf("Set: %v", err)
 			}
@@ -141,13 +136,10 @@ func TestGetPreferencesReportsTheEffectiveMatrix(t *testing.T) {
 	})
 }
 
-// preferenceMatrix is the GET /preferences body.
 type preferenceMatrix struct {
 	Preferences []NotificationPreference `json:"preferences"`
 }
 
-// getPreferences drives GET /preferences with the recipient on the context and
-// decodes the body.
 func getPreferences(t *testing.T, ctx context.Context, p *product) preferenceMatrix {
 	t.Helper()
 	rec := serveHandler(t, http.MethodGet, pathPreferences, "/api/v1/notifications/preferences",
@@ -165,16 +157,11 @@ func getPreferences(t *testing.T, ctx context.Context, p *product) preferenceMat
 	return body
 }
 
-// putPreference drives one PUT and returns the recorder, so a case reads the
-// status and the body. The request carries the declared application/json media
-// type, which the entry point requires to bind the body.
 func putPreference(t *testing.T, ctx context.Context, p *product, typeKey, channel, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	return putPreferenceAs(t, ctx, p, typeKey, channel, body, "application/json")
 }
 
-// putPreferenceAs drives one PUT with the given Content-Type. An empty value
-// sends none, so a case can hold the entry point's 415 refusal.
 func putPreferenceAs(t *testing.T, ctx context.Context, p *product, typeKey, channel, body, contentType string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -193,10 +180,7 @@ func putPreferenceAs(t *testing.T, ctx context.Context, p *product, typeKey, cha
 	return rec
 }
 
-// TestPutFollowsTheFixedDecisionOrder holds the order the design fixes: a body
-// naming no enabled is refused first, the channel is checked before the type and
-// before any no-op branch, the type before unsubscribability, and only then is
-// the set written.
+// TestPutFollowsTheFixedDecisionOrder checks the order in which a PUT is judged.
 func TestPutFollowsTheFixedDecisionOrder(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		unsubscribable := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
@@ -221,11 +205,7 @@ func TestPutFollowsTheFixedDecisionOrder(t *testing.T) {
 				want    expect
 			}{
 				{"enabled is missing", "billing.invoice_paid", "email", `{}`, expect{status: http.StatusBadRequest, code: badRequestCode}},
-				// A literal null body binds as the empty object at the entry point,
-				// which reaches the handler as a body naming no enabled.
 				{"body is null", "billing.invoice_paid", "email", `null`, expect{status: http.StatusBadRequest, code: badRequestCode}},
-				// A literal null enabled decodes into the pointer as nil, the same
-				// state as a body naming no enabled, so the handler refuses it.
 				{"enabled is null", "billing.invoice_paid", "email", `{"enabled": null}`, expect{status: http.StatusBadRequest, code: badRequestCode}},
 				// The channel is checked before the type: an unknown channel on an
 				// unknown type is refused as a bad request on the channel.
@@ -261,16 +241,8 @@ func TestPutFollowsTheFixedDecisionOrder(t *testing.T) {
 	})
 }
 
-// TestPutRefusesABodyOutsideTheDeclaration holds the entry point's binding
-// refusals: a Content-Type that is not application/json is a 415, and an empty
-// body (the declaration marks it required), a body that is not a JSON object, a
-// body whose enabled is not a boolean, or one that carries a member the
-// declaration does not describe is a 400. A literal null is not among them: the
-// entry point binds it as the empty object, so it is the module's refusal and is
-// held by TestPutFollowsTheFixedDecisionOrder. These answers are the entry
-// point's, so they carry the default problem document — about:blank, the
-// standard English status text and no detail — and none of them reaches the
-// handler or writes a row.
+// TestPutRefusesABodyOutsideTheDeclaration holds the entry point's
+// binding refusals.
 func TestPutRefusesABodyOutsideTheDeclaration(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		spec := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
@@ -319,10 +291,7 @@ func TestPutRefusesABodyOutsideTheDeclaration(t *testing.T) {
 	})
 }
 
-// TestPutIsANoOpWhenTheTargetEqualsTheCurrentSet holds the no-op branch: adding a
-// channel already present, and removing one already absent, answer 200 and write
-// nothing. In particular, PUTing a type that has no stored row to its own
-// defaults writes no row, so explicit stays false.
+// TestPutIsANoOpWhenTheTargetEqualsTheCurrentSet holds the no-op branch.
 func TestPutIsANoOpWhenTheTargetEqualsTheCurrentSet(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		spec := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
@@ -331,8 +300,6 @@ func TestPutIsANoOpWhenTheTargetEqualsTheCurrentSet(t *testing.T) {
 			ctx := tenantCtx(t, reg, "acme")
 			p := productOfAssembly(t, reg)
 
-			// No stored row; adding a channel that is already in the default set
-			// is a no-op and lands no row.
 			rec := putPreference(t, ctx, p, "billing.invoice_paid", "email", `{"enabled": true}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("PUT answered %d, want 200: %s", rec.Code, rec.Body.String())
@@ -344,7 +311,6 @@ func TestPutIsANoOpWhenTheTargetEqualsTheCurrentSet(t *testing.T) {
 				t.Errorf("the no-op PUT answered channels %v, want the current effective set", got)
 			}
 
-			// A stored row now; removing a channel that is not in it is a no-op too.
 			if _, err := preferencesOf(t, reg).Set(ctx, "user-1", "billing.invoice_paid", []notification.Channel{notification.ChannelInApp}); err != nil {
 				t.Fatalf("Set: %v", err)
 			}
@@ -360,9 +326,8 @@ func TestPutIsANoOpWhenTheTargetEqualsTheCurrentSet(t *testing.T) {
 	})
 }
 
-// TestPutWritesTheTargetSetAndAnswersTheEffectiveSet holds the write branch:
-// adding and removing a channel both land a row and the answer carries the
-// effective set.
+// TestPutWritesTheTargetSetAndAnswersTheEffectiveSet holds the write
+// branch.
 func TestPutWritesTheTargetSetAndAnswersTheEffectiveSet(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		spec := aSpec("billing.invoice_paid", true, notification.ChannelInApp, notification.ChannelEmail)
@@ -371,7 +336,6 @@ func TestPutWritesTheTargetSetAndAnswersTheEffectiveSet(t *testing.T) {
 			ctx := tenantCtx(t, reg, "acme")
 			p := productOfAssembly(t, reg)
 
-			// Remove email from the default set: a write lands a row.
 			rec := putPreference(t, ctx, p, "billing.invoice_paid", "email", `{"enabled": false}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("PUT answered %d, want 200: %s", rec.Code, rec.Body.String())
@@ -383,7 +347,6 @@ func TestPutWritesTheTargetSetAndAnswersTheEffectiveSet(t *testing.T) {
 				t.Errorf("the write branch landed %d rows, want 1", n)
 			}
 
-			// Add sms back: the answer is the new effective set.
 			rec = putPreference(t, ctx, p, "billing.invoice_paid", "sms", `{"enabled": true}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("PUT answered %d, want 200: %s", rec.Code, rec.Body.String())
@@ -396,7 +359,6 @@ func TestPutWritesTheTargetSetAndAnswersTheEffectiveSet(t *testing.T) {
 	})
 }
 
-// putChannels decodes a PUT body's channel list.
 func putChannels(t *testing.T, body []byte) []string {
 	t.Helper()
 	var out struct {
@@ -408,14 +370,12 @@ func putChannels(t *testing.T, body []byte) []string {
 	return out.Channels
 }
 
-// problem is the members of a problem document a case reads.
 type problem struct {
 	Type   string `json:"type"`
 	Title  string `json:"title"`
 	Detail string `json:"detail"`
 }
 
-// problemOf decodes a problem body's members.
 func problemOf(t *testing.T, body []byte) problem {
 	t.Helper()
 	var out problem

@@ -1,22 +1,6 @@
--- The in-app messages: one row per message written into one account's inbox.
---
--- The tenant column leads the key, as it does on every scoped table: the model
--- carries tenant.Model, and the key the convention declares is the key the table
--- must declare. It is not null, so a row that belongs to no tenant cannot land
--- here.
---
--- Every instant is stored as milliseconds since the Unix epoch rather than as a
--- timestamp type, so a row written through the model path and a value planted by
--- hand carry the same number on either engine. expires_at is empty for a message
--- that never expires; read_at is empty until the first marking and holds that
--- first-read instant afterwards.
---
--- group is a reserved word, so it is quoted here and reached through GORM's
--- model path, which quotes it in turn. The unique index on dedupe_key is what
--- makes a repeated write of one key converge on the row already there; the dedupe
--- key already carries the tenant, so one global unique index is enough. The
--- (tenant_id, recipient_user_id, created_at) index serves a recipient's listing
--- in created_at order.
+-- The in-app messages: one row per message in one account's inbox, with tenant_id leading the key as on every scoped table.
+-- Every instant is milliseconds since the Unix epoch. expires_at is empty for a message that never expires; read_at holds the first-read instant.
+-- group is a reserved word, so it is quoted. The unique index on dedupe_key makes a repeated write converge on the existing row, and the (tenant_id, recipient_user_id, created_at) index serves a recipient's listing.
 CREATE TABLE IF NOT EXISTS in_app_messages (
     tenant_id         TEXT    NOT NULL,
     id                TEXT    NOT NULL,

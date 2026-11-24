@@ -12,12 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The closed set of ledger statuses. A row is exactly one of these: a channel a
-// carrier accepted, a channel that was available and whose send failed
-// terminally, and a channel whose seam is not in this assembly. A carrier's
-// receipt is acceptance, not delivery — a vendor with asynchronous receipts
-// answers only with a message identifier, and the final state is not on this
-// ledger. The set matches the CHECK the migration declares.
 const (
 	statusSucceeded = "succeeded"
 	statusFailed    = "failed"
@@ -29,16 +23,6 @@ const (
 // three are kept in step by hand.
 const tableName = "notification_sends"
 
-// sendRow is the row shape of the ledger.
-//
-// It embeds the tenant convention, which is both the declaration that a row
-// belongs to a tenant and the column that carries it: a statement issued through
-// this model is scoped to the tenant of its context, filled with it on insert
-// and judged against it on write. The key leads with that column, as every
-// scoped table's does.
-//
-// Every instant is a count of milliseconds since the Unix epoch, matching the
-// columns the migration declares.
 type sendRow struct {
 	tenant.Model
 	ID                string  `gorm:"column:id;primaryKey"`
@@ -55,10 +39,8 @@ type sendRow struct {
 	UpdatedAt         int64   `gorm:"column:updated_at;not null"`
 }
 
-// TableName is the table the ledger rows live in.
 func (sendRow) TableName() string { return tableName }
 
-// ledger reads and writes the delivery ledger.
 type ledger struct {
 	handle *gorm.DB
 }
@@ -78,13 +60,6 @@ func (l *ledger) lookup(ctx context.Context, key string) (string, bool, error) {
 	return row.Status, true, nil
 }
 
-// record lands one channel's result. It inserts the row, or updates the row the
-// same key already holds: a channel that failed on one attempt and is retried
-// settles into the same row rather than leaving its first failure beside the
-// second. The unique index on (tenant_id, idempotency_key) is what settles a
-// concurrent pair of writes into one row; the tenant column is filled from the
-// context by the model's own filter, and a context carrying no tenant is refused
-// with nothing written.
 func (l *ledger) record(ctx context.Context, row sendRow) error {
 	err := l.handle.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "idempotency_key"}},
@@ -96,11 +71,8 @@ func (l *ledger) record(ctx context.Context, row sendRow) error {
 	return nil
 }
 
-// nowMS is the instant a row is stamped from.
 func nowMS() int64 { return time.Now().UTC().UnixMilli() }
 
-// textPtr is the value an optional text column takes: the text, or a null when
-// it is empty.
 func textPtr(s string) *string {
 	if s == "" {
 		return nil

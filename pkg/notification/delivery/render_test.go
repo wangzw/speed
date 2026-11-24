@@ -1,10 +1,5 @@
 package delivery
 
-// The email channel still renders its time segments on the server, in the
-// recipient's stored zone. A zone read that fails must not be read as "no zone
-// stored": that would freeze the instant at UTC. The read is reported, the
-// channel fails, no text is rendered, and the job retries.
-
 import (
 	"context"
 	"errors"
@@ -18,9 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// emailCatalog is a one-locale catalog carrying an email subject and a
-// plain-text body whose time segment uses the conventional layout with an
-// explicit offset.
 func emailCatalog() i18n.Catalog {
 	return i18n.Catalog{
 		FS: fstest.MapFS{
@@ -56,22 +48,14 @@ func (p *failingThenStoredProfile) TimeZoneFor(context.Context, string) (string,
 	return p.zone, true, nil
 }
 
-// readCalls reports how many times the zone was read.
 func (p *failingThenStoredProfile) readCalls() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.calls
 }
 
-// TestTheEmailChannelFailsWithoutRenderingWhenTheZoneReadFails holds the two
-// halves of the failure: the first consumption returns the read's error, sends
-// no mail and records the channel as failed; the second consumption, whose read
-// succeeds, renders the instant at the stored zone. A server that treated the
-// failure as "unset" would send a `+0000` body on the first consumption, which
-// this case would see in the carrier's messages. The case also pins the read
-// count — one per consumption, so a job that read the zone twice would fail it
-// — and the failure line the read writes: one Error naming the type and the
-// cause, never the recipient.
+// TestTheEmailChannelFailsWithoutRenderingWhenTheZoneReadFails holds the
+// two halves of the failure.
 func TestTheEmailChannelFailsWithoutRenderingWhenTheZoneReadFails(t *testing.T) {
 	instant := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
 	readErr := errors.New("the account store is unreachable")
@@ -127,7 +111,6 @@ func TestTheEmailChannelFailsWithoutRenderingWhenTheZoneReadFails(t *testing.T) 
 		t.Errorf("the failure line %q names the recipient", reported[0])
 	}
 
-	// The retry reads the stored zone and renders the instant there.
 	readsBeforeRetry := profile.readCalls()
 	if _, err := r.p.Handle(ctx, job, nil); err != nil {
 		t.Fatalf("the retry failed: %v", err)
@@ -150,11 +133,8 @@ func TestTheEmailChannelFailsWithoutRenderingWhenTheZoneReadFails(t *testing.T) 
 	}
 }
 
-// TestAnSmsTimeParameterIsUTCAtWholeSecondPrecision holds the wire shape of an
-// sms time parameter: RFC 3339 in UTC, at second precision. Go's Format omits
-// the sub-second part when the layout carries none, so a JSON stringification —
-// which would carry nanoseconds — is not the answer. A value in another zone is
-// written as the same instant in UTC.
+// TestAnSmsTimeParameterIsUTCAtWholeSecondPrecision holds the wire shape
+// of an sms time parameter: RFC 3339 in UTC, at second precision.
 func TestAnSmsTimeParameterIsUTCAtWholeSecondPrecision(t *testing.T) {
 	at := time.Date(2026, 11, 20, 9, 30, 0, 123456789, time.UTC)
 	got, err := stringify(at)

@@ -1,10 +1,8 @@
 package delivery
 
-// The queue codec protects a time parameter's type across the job payload: a
-// {{name, time, layout}} segment in an email catalog needs a time.Time, and
-// encoding/json would otherwise write it as a bare string. The codec walks
-// map[string]any and []any; every other container is refused at validation,
-// because it would reach the consumer as a shape the codec cannot restore.
+// The queue codec protects a time parameter's type across the job
+// payload: a {{name, time, layout}} segment in an email catalog needs a
+// time.Time, and encoding/json would otherwise write it as a bare string.
 
 import (
 	"encoding/json"
@@ -15,8 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// codecRig assembles the module with a type that accepts every parameter name,
-// so a case isolates the codec's own rule from the whitelist.
 func codecRig(t *testing.T) *rig {
 	t.Helper()
 	return newRig(t, func(h *host) {
@@ -29,11 +25,8 @@ func codecRig(t *testing.T) *rig {
 	})
 }
 
-// TestValidateRefusesAParameterTheQueueCodecCannotCarry holds the reserved
-// shapes: a pointer to an instant, a typed slice or map of instants, and a
-// typed container whose elements the codec cannot inspect. Each would decode
-// as a different shape than the producer wrote, so each is ErrInvalidRequest
-// at both ends of the queue.
+// TestValidateRefusesAParameterTheQueueCodecCannotCarry holds the
+// reserved shapes.
 func TestValidateRefusesAParameterTheQueueCodecCannotCarry(t *testing.T) {
 	instant := time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC)
 	instantPtr := &instant
@@ -60,11 +53,8 @@ func TestValidateRefusesAParameterTheQueueCodecCannotCarry(t *testing.T) {
 	}
 }
 
-// TestValidateRefusesTheReservedTimeMarkerKeyAtAnyDepth holds that a producer
-// cannot hand the codec a map carrying the reserved key: it is the codec's own
-// wire shape, and accepting one would let a producer choose what the consumer
-// restores. The check walks maps and slices, including the top-level parameter
-// map itself.
+// TestValidateRefusesTheReservedTimeMarkerKeyAtAnyDepth holds that a
+// producer cannot hand the codec a map carrying the reserved key.
 func TestValidateRefusesTheReservedTimeMarkerKeyAtAnyDepth(t *testing.T) {
 	marked := instantText(time.Date(2026, 11, 20, 9, 30, 0, 0, time.UTC))
 	cases := map[string]map[string]any{
@@ -84,10 +74,8 @@ func TestValidateRefusesTheReservedTimeMarkerKeyAtAnyDepth(t *testing.T) {
 	}
 }
 
-// TestAReservedKeyIsReportedAsTheUnreadableShape holds the sentinel even for a
-// type whose whitelist does not list the reserved name: the shape is checked
-// first, so a producer learns that the key is the codec's rather than that it
-// simply was not allowed.
+// TestAReservedKeyIsReportedAsTheUnreadableShape holds the sentinel even
+// for a type whose whitelist does not list the reserved name.
 func TestAReservedKeyIsReportedAsTheUnreadableShape(t *testing.T) {
 	r := newRig(t, nil) // the default declaration carries a whitelist
 	params := map[string]any{
@@ -103,10 +91,8 @@ func TestAReservedKeyIsReportedAsTheUnreadableShape(t *testing.T) {
 	}
 }
 
-// TestTheQueueCodecRoundTripsTimeParametersAtAnyDepth holds the allowed shapes:
-// an instant at the top level and one nested in map[string]any and []any comes
-// back as a time.Time with the same moment. Those are the only containers the
-// codec walks, which is why validation refuses the rest.
+// TestTheQueueCodecRoundTripsTimeParametersAtAnyDepth holds the allowed
+// shapes.
 func TestTheQueueCodecRoundTripsTimeParametersAtAnyDepth(t *testing.T) {
 	instant := time.Date(2026, 11, 20, 9, 30, 0, 123456789, time.UTC)
 	d := dispatch("u1", "occ-1", map[string]any{
@@ -156,10 +142,8 @@ func TestTheQueueCodecRoundTripsTimeParametersAtAnyDepth(t *testing.T) {
 	assertInstant("list[1].at", item["at"])
 }
 
-// TestAReservedObjectWithMoreThanOneKeyStaysAMapAndIsRefused holds the codec's
-// own report: only an object carrying the reserved key alone is restored to an
-// instant, so a producer's multi-key object stays a map and validation then
-// refuses it rather than silently rewriting the parameter.
+// TestAReservedObjectWithMoreThanOneKeyStaysAMapAndIsRefused holds the
+// codec's own report.
 func TestAReservedObjectWithMoreThanOneKeyStaysAMapAndIsRefused(t *testing.T) {
 	r := codecRig(t)
 	d := dispatch("u1", "occ-1", map[string]any{
@@ -181,7 +165,6 @@ func TestAReservedObjectWithMoreThanOneKeyStaysAMapAndIsRefused(t *testing.T) {
 	}
 }
 
-// instantText renders an instant the way the codec marks one on the wire.
 func instantText(at time.Time) string {
 	return at.Format(time.RFC3339Nano)
 }

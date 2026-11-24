@@ -18,18 +18,10 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// ceilingLockKey is the transaction-scoped advisory lock the cross-channel
-// ceiling is counted and charged under. The authentication capability takes the
-// same key before it counts the ceiling and writes its ledger row, so the two
-// sending channels serialise on one lock and not two. The value is written
-// literally in both places; a test in this package pins it to the literal the
-// authentication path uses.
+// ceilingLockKey is the transaction-scoped advisory lock the
+// cross-channel ceiling is counted and charged under.
 const ceilingLockKey = "sms.budget:lock:ceiling"
 
-// The windows a notification SMS attempt is budgeted over. Every window is a
-// sliding one: the ledger answers a count of rows since an instant, so the count
-// frees as the oldest row ages out. The hourly windows are one hour and the daily
-// one a day.
 const (
 	hourlyWindow = time.Hour
 	dailyWindow  = 24 * time.Hour
@@ -45,21 +37,11 @@ const (
 	dimensionAttemptHourly        = "attempt-hourly"
 )
 
-// externalAttempts is which external channels one dispatch will attempt: a
-// channel is attempted when the recipient's effective channels name it and this
-// assembly delivered the seams it sends through. A dispatch that resolves to
-// in_app alone, or to an external channel whose seam this assembly did not
-// deliver, makes no external attempt and therefore spends none of the budgets.
 type externalAttempts struct {
 	email bool
 	sms   bool
 }
 
-// channelAttempts reads the recipient's effective channels once and answers
-// which external channels the dispatch will attempt. It is the one read of the
-// preference matrix this module makes before the handler's own. A preference
-// that changes between the two is not reconciled: the budget was charged for
-// what the matrix said when the dispatch arrived.
 func (p *pipeline) channelAttempts(ctx context.Context, d notification.Dispatch) (externalAttempts, error) {
 	channels, err := p.prefs.Effective(ctx, d.Recipient.UserID, d.TypeKey)
 	if err != nil {
@@ -81,13 +63,8 @@ func (p *pipeline) channelAttempts(ctx context.Context, d notification.Dispatch)
 	return attempts, nil
 }
 
-// budgetKeyPrefix starts every email counter's key. The key-value store has no
-// namespace of its own, so each key carries the module name.
 const budgetKeyPrefix = ModuleName + ":budget:"
 
-// The bucket widths and key layouts of the email budgets. A budget is a fixed
-// window: one key per bucket, and a new bucket starts from zero. The layout names
-// the bucket, so two dispatches in one window land on one key.
 const (
 	hourlyBucket = time.Hour
 	dailyBucket  = 24 * time.Hour
@@ -95,28 +72,15 @@ const (
 	dayLayout    = "20060102"
 )
 
-// emailBudgetCheck is one window an email delivery is charged against.
 type emailBudgetCheck struct {
 	key    string
 	limit  int
 	bucket time.Duration
 }
 
-// chargeEmailBudget charges one email delivery against the per-recipient windows
-// and then the deployment-wide one, in that order, and returns the first budget
-// that the charge takes over as a throttled error. The increment happens before
-// the comparison, so a refused dispatch still spends: counting only what was let
-// through would let a caller already over its limit retry without paying.
-//
-// The email budgets keep the fixed-window key-value counters the module used
-// before the sms path moved to the shared ledger. Only an email delivery is
-// charged here: an sms attempt is counted and charged over the ledger, and the
-// two channels use the same setting values but their own counters. One email
-// delivery is one carrier call and spends one unit.
-//
-// A budget that cannot be counted is an outage and not a pass: the error carries
-// authn.ErrUnavailable, so the rejection direction is to refuse rather than to
-// let an uncounted message through.
+// chargeEmailBudget charges one email delivery against the per-recipient
+// windows and then the deployment-wide one, in that order, and returns
+// the first budget that the charge takes over as a throttled error.
 func (p *pipeline) chargeEmailBudget(ctx context.Context, id tenant.ID, d notification.Dispatch) error {
 	limits := p.settings.limits()
 	now := time.Now().UTC()
@@ -150,40 +114,17 @@ func untilNextBucket(now time.Time, bucket time.Duration) time.Duration {
 	return wait
 }
 
-// budgetCheck is one window a dispatch is compared against.
 type budgetCheck struct {
 	query     budget.Query
 	limit     int
 	dimension string
 	window    time.Duration
-	// distinct counts different destinations rather than rows.
-	distinct bool
+	distinct  bool
 }
 
-// chargeSMSAttempt consults the shared cross-channel ceiling and this channel's
-// own sms budgets in order and, when they all admit the attempt, writes one
-// ledger row for it and answers its identifier. The row is the attempt: it is
-// written before the carrier answers, so the consumer can mark it refunded when
-// the message certainly did not leave the process.
-//
-// The cross-channel ceiling is consulted first. It is the one count both sending
-// channels share, read from the ledger by CountCeiling, and the row written here
-// spends it like an authentication attempt does. The count and the write run in
-// one transaction under the same transaction-scoped advisory lock the
-// authentication path takes (ceilingLockKey), so a notification attempt and an
-// authentication attempt cannot both read the count below the ceiling and both
-// commit a row. This module declares no ceiling of its own: the setting is the
-// ledger module's sms.ceiling-hourly, and a second notification-only ceiling
-// would only let the vendor bill two caps at once.
-//
-// The channel's own windows are then checked per recipient hourly, per recipient
-// daily, per tenant distinct destination hourly and per tenant attempt hourly, in
-// that order; the first one over stops the check and the later ones are not read.
-// A refused dispatch writes no row, so it spends none of the budgets.
-//
-// A budget that cannot be read is an outage and not a pass: the error carries
-// authn.ErrUnavailable, so the rejection direction is to refuse rather than to
-// let an uncounted message through.
+// chargeSMSAttempt consults the shared cross-channel ceiling and this
+// channel's own sms budgets in order and, when they all admit the
+// attempt, writes one ledger row for it and answers its identifier.
 func (p *pipeline) chargeSMSAttempt(ctx context.Context, id tenant.ID, d notification.Dispatch) (budget.ID, error) {
 	limits := p.settings.limits()
 	now := time.Now().UTC()
@@ -234,10 +175,8 @@ func (p *pipeline) chargeSMSAttempt(ctx context.Context, id tenant.ID, d notific
 			if count < int64(c.limit) {
 				continue
 			}
-			// The distinct budget bounds the different recipients a tenant reaches,
-			// not the messages it sends: a destination already inside the window adds
-			// no new one, so a repeat is admitted and the per-recipient budgets still
-			// bound it.
+			// The distinct budget bounds different recipients, not messages: a
+			// repeat destination adds no new one.
 			if c.distinct {
 				present, err := ledger.Count(ctx, hourly)
 				if err != nil {
@@ -272,12 +211,6 @@ func (p *pipeline) chargeSMSAttempt(ctx context.Context, id tenant.ID, d notific
 	return attempt, nil
 }
 
-// takeCeilingLock takes the transaction-scoped advisory lock the cross-channel
-// ceiling is charged under. The authentication path takes the same key inside its
-// own send transaction, so a notification attempt waits for an authentication
-// attempt's ceiling count and write to commit, and the other way round. SQLite
-// serialises writers at the database itself, so there is no lock to take and the
-// dialect check skips the statement.
 func (p *pipeline) takeCeilingLock(tx *gorm.DB) error {
 	if p.dialect != db.Postgres {
 		return nil
@@ -288,12 +221,9 @@ func (p *pipeline) takeCeilingLock(tx *gorm.DB) error {
 	return nil
 }
 
-// throttleCeiling applies the cross-channel ceiling: the count of non-refunded,
-// non-suppressed attempts both channels wrote in the window. A refunded attempt
-// frees its share, which is why a definitive failure gives the ceiling back just
-// as it gives the send budgets back. The oldest counted attempt is when the
-// window frees a slot, and the refusal carries that moment as its retry. A ledger
-// that cannot be read is an outage and not a pass.
+// throttleCeiling applies the cross-channel ceiling: the count of
+// non-refunded, non-suppressed attempts both channels wrote in the
+// window.
 func (p *pipeline) throttleCeiling(ctx context.Context, ledger budget.Store, limit int, since, now time.Time) error {
 	n, err := ledger.CountCeiling(ctx, since)
 	if err != nil {
@@ -318,8 +248,6 @@ func (p *pipeline) throttleCeiling(ctx context.Context, ledger budget.Store, lim
 	return &authn.ThrottledError{RetryAfter: retry}
 }
 
-// countBudget reads one count: different destinations for a distinct budget,
-// rows otherwise.
 func countBudget(ctx context.Context, ledger budget.Store, q budget.Query, distinct bool) (int64, error) {
 	if distinct {
 		return ledger.CountDistinctDestinations(ctx, q)
@@ -327,11 +255,8 @@ func countBudget(ctx context.Context, ledger budget.Store, q budget.Query, disti
 	return ledger.Count(ctx, q)
 }
 
-// retryAfter is how long the window a check fell into has left: when the oldest
-// row the check counted ages out, the window has room again. A read that fails,
-// and a window that holds no row, answers the whole window, which is the safe
-// direction: a caller is told to wait rather than retrying at once. The delay is
-// never below one second.
+// retryAfter is how long the window a check fell into has left: when the
+// oldest row the check counted ages out, the window has room again.
 func retryAfter(ctx context.Context, ledger budget.Store, q budget.Query, window time.Duration, now time.Time) time.Duration {
 	oldest, ok, err := ledger.Oldest(ctx, q)
 	if err != nil || !ok {
@@ -344,12 +269,9 @@ func retryAfter(ctx context.Context, ledger budget.Store, q budget.Query, window
 	return wait
 }
 
-// refundAttempt marks one charged attempt refunded: the message certainly did not
-// reach the carrier, so it leaves the send budgets while it stays in the attempt
-// budgets. A zero identifier names no row and is the no-sms-attempt case, and a
-// refund failure is written to the module's log rather than failing the send: the
-// row then keeps counting, which is the conservative direction, and retrying the
-// job to refund it would send the message again.
+// refundAttempt marks one charged attempt refunded: the message certainly
+// did not reach the carrier, so it leaves the send budgets while it stays
+// in the attempt budgets.
 func (p *pipeline) refundAttempt(ctx context.Context, id budget.ID) {
 	if id <= 0 {
 		return
@@ -360,10 +282,9 @@ func (p *pipeline) refundAttempt(ctx context.Context, id budget.ID) {
 	}
 }
 
-// definitiveFailure reports whether a carrier's error is one that says the
-// message certainly did not leave the process: a throttle, a rejection or a
-// destination this deployment cannot route. An uncertain outcome is not
-// definitive — the message may have gone out — so it keeps its send budget.
+// definitiveFailure reports whether a carrier's error is one that says
+// the message certainly did not leave the process: a throttle, a
+// rejection or a destination this deployment cannot route.
 func definitiveFailure(err error) bool {
 	switch {
 	case errors.Is(err, mail.ErrThrottled), errors.Is(err, sms.ErrThrottled):
@@ -377,13 +298,6 @@ func definitiveFailure(err error) bool {
 	}
 }
 
-// recipientHash is the digest one recipient's ledger rows and email counters are
-// written under. It folds the tenant and the recipient identifier into a
-// fixed-length digest: the identifier's own text can carry the separator a plain
-// concatenation would use, and two tenants may use the same identifier for
-// different accounts. It is the database's blind index over that folded text, so
-// the digest is keyed under the same root key the authentication channel uses and
-// the plaintext is never written to the ledger.
 func (p *pipeline) recipientHash(tenantID, userID string) string {
 	return p.blindIndex(tenantID + "\x00" + userID)
 }

@@ -15,7 +15,8 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// TestTheModuleIsNamedAsDesigned pins the module name.
+// TestTheModuleIsNamedAsDesigned checks that Module and ModuleName report
+// "notification.preferences".
 func TestTheModuleIsNamedAsDesigned(t *testing.T) {
 	if Module().Name != "notification.preferences" {
 		t.Errorf("the module is named %q, want notification.preferences", Module().Name)
@@ -39,8 +40,8 @@ func TestTheDescriptorDeliversPreferencesExclusively(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorRequiresItsDependencies holds which capabilities are required
-// and which are optional, exactly as the design fixes them.
+// TestTheDescriptorRequiresItsDependencies checks which capabilities are
+// required and which are optional.
 func TestTheDescriptorRequiresItsDependencies(t *testing.T) {
 	required := map[core.Token]bool{}
 	optional := map[core.Token]bool{}
@@ -64,9 +65,8 @@ func TestTheDescriptorRequiresItsDependencies(t *testing.T) {
 	}
 }
 
-// TestTheDescriptorDeclaresItsConfigNamespace holds that this module declares a
-// configuration schema of its own under its own name: it reads the endpoint list
-// its routes are mounted by, so it needs one.
+// TestTheDescriptorDeclaresItsConfigNamespace holds that this module
+// declares a configuration schema of its own under its own name.
 func TestTheDescriptorDeclaresItsConfigNamespace(t *testing.T) {
 	var declared config.Schema
 	found := false
@@ -156,7 +156,6 @@ func TestTheModuleDeclaresItsMessageCatalog(t *testing.T) {
 	}
 }
 
-// localeKeys reads one locale file's key set.
 func localeKeys(t *testing.T, name string) map[string]string {
 	t.Helper()
 	raw, err := fs.ReadFile(localesFS, name)
