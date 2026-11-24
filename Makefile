@@ -30,6 +30,8 @@ WEB_CACHE_TYPECHECK_ARGS := $(if $(filter on,$(WEB_CACHE)),--incremental)
 # file content rather than mtime.
 # The lint cache covers a local rule only while its implementation lives under
 # web/eslint-rules/ and its options are plain values.
+# A lint rule that becomes type-aware, or reads files besides the one it lints,
+# has to drop this per-file cache.
 
 UNCACHED_PACKAGES ?= ./starters/demo/server/treecheck ./starters/demo/server/e2e/factorseed
 
