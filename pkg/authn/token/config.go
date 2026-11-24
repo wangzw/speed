@@ -32,7 +32,6 @@ const (
 // to carry and a deployment rarely cares about, so it has a fixed default.
 const clientIDDefault = "speed"
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// Issuer is the "iss" claim, the value every verifier compares exactly.
 	// Empty takes the public address the deployment is reached at.
@@ -51,20 +50,15 @@ type moduleConfig struct {
 	VerifyKeyFiles []string `config:"verify-key-files"`
 }
 
-// configDefaults is what this module is worth without a configuration file. The
-// issuer and the audience default off the gateway's public address, so they are
-// resolved rather than held here.
 var configDefaults = moduleConfig{
 	ClientID:  clientIDDefault,
 	Algorithm: algES256,
 }
 
-// gateMount is the part of the gateway's configuration this module reads.
 type gateMount struct {
 	PublicURL string `config:"public-url"`
 }
 
-// resolved is the configuration this module actually runs on.
 type resolved struct {
 	issuer      string
 	audience    []string
@@ -127,8 +121,6 @@ func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 	return r, nil
 }
 
-// schema declares this module's input items. The signing key file is a secret
-// and takes the ordinary origins.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -161,9 +153,6 @@ func schema() config.Schema {
 	}
 }
 
-// readConfig decodes this module's section and the gateway's public address and
-// validates both. Prepare and New both go through it, so the two see one
-// configuration.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

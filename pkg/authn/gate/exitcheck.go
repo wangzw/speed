@@ -17,12 +17,8 @@ const (
 	// AuthTime may be. It allows for two hosts whose clocks differ a little and
 	// no more; an authentication that claims to be further ahead has not
 	// happened yet.
-	authTimeSkew = 120 * time.Second
-	// maxMethods bounds how many authentication methods one principal names.
-	maxMethods = 8
-	// maxAttributes, maxAttributeBytes, maxAttributeValue and maxAttributeKey
-	// bound the attribute set: its entry count, the keys and values taken
-	// together, one value, and one key.
+	authTimeSkew      = 120 * time.Second
+	maxMethods        = 8
 	maxAttributes     = 32
 	maxAttributeBytes = 4 << 10
 	maxAttributeValue = 256
@@ -112,7 +108,6 @@ func checkPrincipal(p authn.Principal, now time.Time, b *backend, d *dispatch) (
 	return p, ""
 }
 
-// isHexDigit reports whether c is a lower-case ASCII hexadecimal digit.
 func isHexDigit(c byte) bool {
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
 }
@@ -141,8 +136,6 @@ func uuidShape(s string) bool {
 	return true
 }
 
-// checkMethods holds the method set to its shape: non-empty, every entry in the
-// closed set, no repeats and at most maxMethods of them.
 func checkMethods(methods []authn.Method) string {
 	if len(methods) == 0 {
 		return "the principal names no authentication method"
@@ -163,9 +156,6 @@ func checkMethods(methods []authn.Method) string {
 	return ""
 }
 
-// checkAttributes holds the attribute set to its bounds: the number of entries,
-// the size of keys and values taken together, the spelling of a key and the
-// content of a value.
 func checkAttributes(attrs map[string]string) string {
 	if len(attrs) > maxAttributes {
 		return "the attribute set has more entries than the bound allows"
@@ -189,7 +179,6 @@ func checkAttributes(attrs map[string]string) string {
 	return ""
 }
 
-// attributeKey reports whether k matches ^[a-z0-9][a-z0-9._-]{0,63}$.
 func attributeKey(k string) bool {
 	if k == "" || len(k) > maxAttributeKey {
 		return false

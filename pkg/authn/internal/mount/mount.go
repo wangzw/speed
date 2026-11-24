@@ -135,7 +135,6 @@ func Declared(m Mounter, operation speedhttp.Declared, rel string, h gin.Handler
 // Option qualifies one registration.
 type Option func(*routeSpec)
 
-// routeSpec is what the options of one registration add up to.
 type routeSpec struct {
 	impersonable bool
 	scope        speedhttp.Scope

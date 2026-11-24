@@ -39,8 +39,6 @@ const (
 	bucketCount     = bucketAnonymous + 1
 )
 
-// bucketName is the name a bucket is reported under, in the log line and as the
-// value of the outcome attribute.
 func bucketName(bucket int) string {
 	if bucket == bucketAnonymous {
 		return "anonymous"

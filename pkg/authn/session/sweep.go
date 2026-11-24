@@ -17,18 +17,13 @@ const (
 	sweepInterval = 10 * time.Minute
 	sweepBatch    = 1000
 	sweepBatches  = 100
-	// stopWait is how long Stop waits for the sweep to return. The context Stop
-	// is given has its cancellation removed, so the bound is this module's own.
-	stopWait = 5 * time.Second
+	stopWait      = 5 * time.Second
 )
 
-// sweepPace is how often the sweep runs. It is a field of the product so that a
-// test can drive the sweep without waiting for the interval.
 type sweepPace struct {
 	interval time.Duration
 }
 
-// sweeper is the goroutine that deletes rows that ended and are past retention.
 type sweeper struct {
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -56,8 +51,6 @@ func (p *product) start(ctx context.Context) error {
 	return nil
 }
 
-// probe reads the table once. A missing table is ErrNotMigrated, and any other
-// failure is returned as it is.
 func (p *product) probe(ctx context.Context) error {
 	err := p.handle.WithContext(ctx).Exec("SELECT 1 FROM " + tableName + " WHERE 1 = 0").Error
 	switch {
@@ -71,7 +64,6 @@ func (p *product) probe(ctx context.Context) error {
 	return fmt.Errorf("%s%s: probing the table %s: %w", diagnosticPrefix, ModuleName, tableName, err)
 }
 
-// stop ends the sweep and waits for it, at most stopWait.
 func (p *product) stop(_ context.Context) {
 	p.sweepMu.Lock()
 	s := p.sweep

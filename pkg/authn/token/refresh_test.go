@@ -77,8 +77,6 @@ func (f *fakeSettings) set(key string, d time.Duration) {
 	f.values[key] = d
 }
 
-// setBool writes a boolean setting, which is how a case turns the session check
-// off.
 func (f *fakeSettings) setBool(key string, b bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -202,7 +200,6 @@ func (f *fakeSessions) ForCredential(_ context.Context, _ authn.AccountID, _ str
 	return f.forResult, nil
 }
 
-// fakePasswords is a password-class credential checker a test answers with.
 type fakePasswords struct {
 	authn.Passwords
 	mu     sync.Mutex
@@ -223,7 +220,6 @@ func (f *fakePasswords) VerifyServiceSecret(_ context.Context, clientID, secret 
 	return fn(clientID, secret)
 }
 
-// fakeThrottle is a failure back-off a test drives.
 type fakeThrottle struct {
 	authn.Throttle
 	mu          sync.Mutex
@@ -260,8 +256,6 @@ func (f *fakeThrottle) Succeed(_ context.Context, _ authn.ThrottleScope, key str
 	return f.succeedErr
 }
 
-// fakeImpersonation records the records ended by force and answers for one
-// record's validity, which the issuing path asks for the remaining time.
 type fakeImpersonation struct {
 	authn.Impersonation
 	mu        sync.Mutex
@@ -287,7 +281,6 @@ func (f *fakeImpersonation) Active(_ context.Context, _ string) (authn.Impersona
 	return f.grant, f.active, f.activeErr
 }
 
-// recordingBus records published events and the handlers subscribed to it.
 type recordingBus struct {
 	event.Bus
 	mu     sync.Mutex
@@ -312,7 +305,6 @@ func (b *recordingBus) Subscribe(eventType string, _ string, h event.Handler) {
 	b.subs[eventType] = append(b.subs[eventType], h)
 }
 
-// subscribedTypes is the set of event types a handler was registered for.
 func (b *recordingBus) subscribedTypes() []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -323,8 +315,6 @@ func (b *recordingBus) subscribedTypes() []string {
 	return out
 }
 
-// deliver hands the payload to every handler subscribed to eventType, as a
-// transport would.
 func (b *recordingBus) deliver(eventType string, payload any) {
 	b.mu.Lock()
 	handlers := append([]event.Handler(nil), b.subs[eventType]...)
@@ -344,8 +334,6 @@ func (b *recordingBus) types() []string {
 	return out
 }
 
-// recordingAudit records the audit entries a case writes. When err is set every
-// write fails with it, standing for an audit store that cannot be reached.
 type recordingAudit struct {
 	audit.Audit
 	mu      sync.Mutex
@@ -375,7 +363,6 @@ func (a *recordingAudit) actions() []string {
 	return out
 }
 
-// logBuffer collects the log lines a module writes.
 type logBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -395,8 +382,6 @@ func (l *logBuffer) String() string {
 	return l.buf.String()
 }
 
-// rig is a token product over a real SQLite database with every collaborator a
-// test moves by hand.
 type rig struct {
 	t         *testing.T
 	p         *product
@@ -453,8 +438,6 @@ func newRig(t *testing.T) *rig {
 	return r
 }
 
-// activeRecord makes the fake impersonation answer an active record id that
-// binds acct-admin to the issued account and ends at endsAt.
 func (r *rig) activeRecord(id string, endsAt time.Time) {
 	r.imp.mu.Lock()
 	defer r.imp.mu.Unlock()
@@ -468,8 +451,6 @@ type fakeAccounts struct {
 	authn.Accounts
 }
 
-// tokenSession puts a live token session in the session store and returns its
-// identifier.
 func (r *rig) tokenSession() authn.SessionID {
 	id := authn.SessionID("sess-token-1")
 	r.sessions.put(id, authn.SessionStatus{
@@ -483,7 +464,6 @@ func (r *rig) tokenSession() authn.SessionID {
 	return id
 }
 
-// issueRefresh makes the first refresh token of a fresh token session.
 func (r *rig) issueRefresh() (authn.SessionID, authn.RefreshToken) {
 	r.t.Helper()
 	id := r.tokenSession()
@@ -494,7 +474,6 @@ func (r *rig) issueRefresh() (authn.SessionID, authn.RefreshToken) {
 	return id, refresh
 }
 
-// applyTokenMigration creates the refresh table from the module's migration.
 func applyTokenMigration(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	body, err := fs.ReadFile(migrationsFS, "sqlite/0001_authn_refresh_tokens.sql")
@@ -511,7 +490,6 @@ func applyTokenMigration(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// rowByDigest reads one row of the refresh table by the digest of a token.
 func (r *rig) rowByDigest(value string) refreshRow {
 	r.t.Helper()
 	var out []refreshRow
@@ -526,7 +504,6 @@ func (r *rig) rowByDigest(value string) refreshRow {
 	return out[0]
 }
 
-// rowsForSession lists the rows of one session.
 func (r *rig) rowsForSession(id authn.SessionID) []refreshRow {
 	r.t.Helper()
 	var out []refreshRow
@@ -540,6 +517,8 @@ func (r *rig) rowsForSession(id authn.SessionID) []refreshRow {
 	return out
 }
 
+// checks that NewRefresh is refused for a session that is not a token
+// session.
 func TestNewRefreshOnlyForTokenSessions(t *testing.T) {
 	ctx := context.Background()
 	for _, kind := range []authn.SessionKind{authn.SessionBrowser, authn.SessionService} {
@@ -567,6 +546,7 @@ func TestNewRefreshOnlyForTokenSessions(t *testing.T) {
 	})
 }
 
+// checks that NewRefresh for a token session stores only the digest.
 func TestNewRefreshForATokenSessionStoresOnlyTheDigest(t *testing.T) {
 	r := newRig(t)
 	id, refresh := r.issueRefresh()
@@ -585,6 +565,8 @@ func TestNewRefreshForATokenSessionStoresOnlyTheDigest(t *testing.T) {
 	}
 }
 
+// TestRefreshRotatesIntoASiblingAndReadsTheSessionFresh checks that refresh
+// rotates into a sibling and reads the session fresh.
 func TestRefreshRotatesIntoASiblingAndReadsTheSessionFresh(t *testing.T) {
 	r := newRig(t)
 	id, first := r.issueRefresh()
@@ -622,6 +604,8 @@ func TestRefreshRotatesIntoASiblingAndReadsTheSessionFresh(t *testing.T) {
 	}
 }
 
+// TestConcurrentPresentationOfOneTokenHasExactlyOneWinner checks that
+// concurrent presentation of one token has exactly one winner.
 func TestConcurrentPresentationOfOneTokenHasExactlyOneWinner(t *testing.T) {
 	r := newRig(t)
 	_, first := r.issueRefresh()
@@ -659,9 +643,6 @@ func TestConcurrentPresentationOfOneTokenHasExactlyOneWinner(t *testing.T) {
 	if winners != 1 {
 		t.Fatalf("%d of %d concurrent presentations won, want exactly one", winners, racers)
 	}
-	// The losers are treated as reuse (the default grace is strict), so the
-	// family is revoked exactly once per loser and the event and audit are
-	// written.
 	if got := r.sessions.revoked; len(got) != racers-1 {
 		t.Errorf("the family was revoked %d times, want %d", len(got), racers-1)
 	}
@@ -673,6 +654,8 @@ func TestConcurrentPresentationOfOneTokenHasExactlyOneWinner(t *testing.T) {
 	}
 }
 
+// TestARetryInsideTheGraceGetsASibling checks that a retry inside the grace
+// gets a sibling.
 func TestARetryInsideTheGraceGetsASibling(t *testing.T) {
 	r := newRig(t)
 	r.settings.set(refreshGracePath, time.Minute)
@@ -697,6 +680,8 @@ func TestARetryInsideTheGraceGetsASibling(t *testing.T) {
 	}
 }
 
+// TestAPresentationPastTheGraceIsAReuse checks that a presentation past the
+// grace is a reuse.
 func TestAPresentationPastTheGraceIsAReuse(t *testing.T) {
 	r := newRig(t)
 	_, first := r.issueRefresh()
@@ -705,8 +690,6 @@ func TestAPresentationPastTheGraceIsAReuse(t *testing.T) {
 	if _, _, err := r.p.Refresh(ctx, first.Value); err != nil {
 		t.Fatalf("the first rotation failed: %v", err)
 	}
-	// Move the row's used_at an hour back, past any grace, so the second
-	// presentation is read as a reuse rather than a retry.
 	row := r.rowByDigest(first.Value)
 	if err := r.p.handle.Exec("UPDATE "+tableName+" SET used_at = ? WHERE id = ?",
 		epoch.Add(-time.Hour), row.ID).Error; err != nil {
@@ -733,6 +716,8 @@ func TestAPresentationPastTheGraceIsAReuse(t *testing.T) {
 	}
 }
 
+// TestRefreshOfAnUnknownTokenIsInvalidGrantAndRevokesNothing checks that
+// refresh of an unknown token is invalid grant and revokes nothing.
 func TestRefreshOfAnUnknownTokenIsInvalidGrantAndRevokesNothing(t *testing.T) {
 	r := newRig(t)
 	_, _, err := r.p.Refresh(context.Background(), "spd_rt_"+strings.Repeat("A", 43))
@@ -744,18 +729,20 @@ func TestRefreshOfAnUnknownTokenIsInvalidGrantAndRevokesNothing(t *testing.T) {
 	}
 }
 
+// TestRefreshAfterTheSessionTurnsInactiveIsInvalidGrant checks that refresh
+// after the session turns inactive is invalid grant.
 func TestRefreshAfterTheSessionTurnsInactiveIsInvalidGrant(t *testing.T) {
 	ctx := context.Background()
 	r := newRig(t)
 	id, first := r.issueRefresh()
-	// A revoked session, a disabled account and a changed password all reach the
-	// module the same way: StatusFresh reports it is no longer active.
 	r.sessions.put(id, authn.SessionStatus{Active: false, Account: account, Kind: authn.SessionToken})
 	if _, _, err := r.p.Refresh(ctx, first.Value); !errors.Is(err, authn.ErrInvalidGrant) {
 		t.Fatalf("a refresh over an inactive session gave %v, want ErrInvalidGrant", err)
 	}
 }
 
+// TestRefreshOfAnIdleExpiredRowIsInvalidGrant checks that refresh of an idle
+// expired row is invalid grant.
 func TestRefreshOfAnIdleExpiredRowIsInvalidGrant(t *testing.T) {
 	r := newRig(t)
 	_, first := r.issueRefresh()
@@ -768,10 +755,9 @@ func TestRefreshOfAnIdleExpiredRowIsInvalidGrant(t *testing.T) {
 	}
 }
 
+// TestARefreshTokenOutlivesTheSessionIdleTimeout checks that a refresh token
+// outlives the session idle timeout.
 func TestARefreshTokenOutlivesTheSessionIdleTimeout(t *testing.T) {
-	// A token session has no idle timeout of its own; the refresh row carries the
-	// idle window. A rotation well past the browser idle timeout still succeeds
-	// while the row is within its own idle window and the session is active.
 	r := newRig(t)
 	_, first := r.issueRefresh()
 	r.clock.advance(2 * time.Hour)
@@ -811,8 +797,6 @@ func TestTheMigrationCreatesTheTable(t *testing.T) {
 	}
 }
 
-// applyMigrationFile applies one dialect's migration to a handle, statement by
-// statement.
 func applyMigrationFile(t *testing.T, handle *gorm.DB, dialect string) {
 	t.Helper()
 	body, err := fs.ReadFile(migrationsFS, dialect+"/0001_authn_refresh_tokens.sql")
@@ -831,8 +815,7 @@ func applyMigrationFile(t *testing.T, handle *gorm.DB, dialect string) {
 
 // TestBothDialectMigrationsRejectADuplicateTokenHash holds the uniqueness of
 // token_hash in both migrations: a second row carrying the same digest is
-// refused. The postgres migration is applied too, so a loss there is caught, not
-// only in the SQLite one.
+// refused.
 func TestBothDialectMigrationsRejectADuplicateTokenHash(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
@@ -859,7 +842,7 @@ func TestBothDialectMigrationsRejectADuplicateTokenHash(t *testing.T) {
 // a widened level or a dropped time.
 func TestARotationCopiesTheSessionsAuthenticationFacts(t *testing.T) {
 	r := newRig(t)
-	_, first := r.issueRefresh() // the fixture session: single factor, AuthTime epoch
+	_, first := r.issueRefresh()
 	access, _, err := r.p.Refresh(context.Background(), first.Value)
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
@@ -931,10 +914,9 @@ func TestARefreshWhoseRowDisappearsMidCallIsInvalidGrant(t *testing.T) {
 	}
 }
 
-// TestTheRowStoresTimesAsUTCText holds the stored representation, not just the
-// instant: the column text carries the UTC designator, which is what the SQLite
-// string comparisons rely on. The clock is in a non-UTC zone, so a bind without
-// the UTC conversion would store the offset instead.
+// TestTheRowStoresTimesAsUTCText holds the stored representation, not just
+// the instant: the column text carries the UTC designator, which is what the
+// SQLite string comparisons rely on.
 func TestTheRowStoresTimesAsUTCText(t *testing.T) {
 	r := newRig(t)
 	r.clock.t = time.Date(2026, time.October, 12, 16, 0, 0, 0, time.FixedZone("UTC+8", 8*3600))
@@ -1030,7 +1012,7 @@ func TestTheRefreshGraceBoundaryIsInclusive(t *testing.T) {
 	if _, _, err := r.p.Refresh(ctx, first.Value); err != nil {
 		t.Fatalf("the first rotation failed: %v", err)
 	}
-	r.clock.advance(grace) // now - used_at == grace exactly
+	r.clock.advance(grace)
 	_, retried, err := r.p.Refresh(ctx, first.Value)
 	if err != nil {
 		t.Fatalf("a retry at exactly the grace boundary gave %v, want a sibling", err)

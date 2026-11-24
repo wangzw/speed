@@ -30,15 +30,11 @@ func (r *recorder) Fatalf(format string, args ...any) {
 	r.message = fmt.Sprintf(format, args...)
 }
 
-// build runs Context against a recorder and returns what came back.
 func build(opts ...authntest.Option) (context.Context, *recorder) {
 	r := &recorder{}
 	return authntest.Context(r, context.Background(), opts...), r
 }
 
-// mustBuild runs Context against the real handle, which fails the test on a
-// refusal, and returns the identity and the level read back through the root
-// package's readers.
 func mustBuild(t *testing.T, opts ...authntest.Option) (authn.Identity, authn.Access) {
 	t.Helper()
 	ctx := authntest.Context(t, context.Background(), opts...)
@@ -72,10 +68,7 @@ func attributesOf(size int) map[string]string {
 }
 
 // TestEachOptionIsReadBackThroughTheRootPackage holds every option to the
-// reader the production code uses. An option wired to the wrong field, or to
-// none, would leave a consumer's test asserting against a default it did not
-// ask for. Each case sets one option, over a base that makes the combination
-// admissible, and reads the one field back.
+// reader the production code uses.
 func TestEachOptionIsReadBackThroughTheRootPackage(t *testing.T) {
 	authTime := time.Date(2026, time.March, 4, 5, 6, 7, 0, time.UTC)
 	impersonation := []authntest.Option{
@@ -173,9 +166,8 @@ func TestEachOptionIsReadBackThroughTheRootPackage(t *testing.T) {
 }
 
 // TestAnImpersonationIsKeyedByItsActor is the design's named assertion, held
-// once more where a consumer meets it: the key is the actor, and it is not the
-// account. A key that followed Account would charge an administrator's
-// allowance to whoever was impersonated.
+// once more where a consumer meets it: the key is the actor, and it is not
+// the account.
 func TestAnImpersonationIsKeyedByItsActor(t *testing.T) {
 	id, _ := mustBuild(t,
 		authntest.WithAccount("acct-user"),
@@ -197,9 +189,8 @@ func TestAnImpersonationIsKeyedByItsActor(t *testing.T) {
 	}
 }
 
-// TestUnsaidFieldsTakeTheDocumentedDefaults pins the defaults the godoc states.
-// A default that drifted would change what every consumer's test was silently
-// asserting against.
+// TestUnsaidFieldsTakeTheDocumentedDefaults pins the defaults the godoc
+// states.
 func TestUnsaidFieldsTakeTheDocumentedDefaults(t *testing.T) {
 	id, access := mustBuild(t)
 
@@ -286,8 +277,7 @@ func TestContextKeepsWhatWasAlreadyInTheContext(t *testing.T) {
 // TestWhatTheCallerHandedOverIsCopied holds that an option does not keep a
 // reference to the map or the slice it was given: a test that builds its
 // options once and edits the literal before the context is made must not see
-// the edit in the identity. The edit lands between the option and the call,
-// which is the only window where the identity's own copy cannot help.
+// the edit in the identity.
 func TestWhatTheCallerHandedOverIsCopied(t *testing.T) {
 	attrs := map[string]string{"region": "eu"}
 	methods := []authn.Method{authn.MethodPassword, authn.MethodTOTP}
@@ -493,9 +483,7 @@ func TestALaterOptionOverridesAnEarlierOne(t *testing.T) {
 
 // TestAnAnonymousContextCarriesTheLevelAndNobody holds the two shapes the
 // gateway leaves on a request that has no identity and has decided something
-// about the route: an exempt route and an optional one with no credential. The
-// level reads back, and the identity does not exist, so a module's anonymous
-// branch is driven by the context the gateway would have produced.
+// about the route: an exempt route and an optional one with no credential.
 func TestAnAnonymousContextCarriesTheLevelAndNobody(t *testing.T) {
 	for name, level := range map[string]authn.Access{"open": authn.AccessOpen, "optional": authn.AccessOptional} {
 		t.Run(name, func(t *testing.T) {

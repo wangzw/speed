@@ -52,16 +52,23 @@ func (s AccountStatus) String() string {
 // Account is one account as the account module reports it. It carries no
 // credential and no personal field the capability does not keep.
 type Account struct {
-	ID          AccountID
-	Kind        AccountKind
-	Status      AccountStatus
+	// ID is the account's identifier.
+	ID AccountID
+	// Kind is user or service.
+	Kind AccountKind
+	// Status is where the account stands.
+	Status AccountStatus
+	// DisplayName is the account's display name.
 	DisplayName string
 	MFARequired bool // the account must register a factor
 	Protected   bool // true: the account may not be impersonated, whatever a Decider says
+	// PasswordSet reports whether a password credential exists.
 	PasswordSet bool
-	Attributes  map[string]string
-	ValidAfter  time.Time // a session or token issued before this instant is void
-	CreatedAt   time.Time
+	// Attributes is the host-writable attribute set.
+	Attributes map[string]string
+	ValidAfter time.Time // a session or token issued before this instant is void
+	// CreatedAt is when the account was created.
+	CreatedAt time.Time
 }
 
 // Clone returns a copy that shares no map with a.
@@ -144,17 +151,23 @@ func (s SignupState) Valid() bool { return s <= SignupVerified }
 // when the account first reached Verified, the zero time while it never did,
 // and the zero time for None.
 type SignupStatus struct {
+	// State is how far verification has got.
 	State SignupState
+	// Email is the address of that state.
 	Email string
+	// Since is when the account first reached verified.
 	Since time.Time
 }
 
 // RegisterAccount is the input of an anonymous self-registration. The email
 // address is only a contact awaiting verification; it is not a login name.
 type RegisterAccount struct {
-	Username    string
-	Email       string // required; written to authn_pending_contacts once normalized
-	Password    string
+	// Username is the login name.
+	Username string
+	Email    string // required; written to authn_pending_contacts once normalized
+	// Password is the account password, held to the policy.
+	Password string
+	// DisplayName is the display name the account starts with.
 	DisplayName string
 	Locale      string // written to the i18n.locale attribute
 	TimeZone    string // written to the i18n.tz attribute
@@ -165,32 +178,42 @@ type RegisterAccount struct {
 // contact, so Contact is true for one this module writes; SignIn is the axis a
 // holder chooses, and neither rewrites the other.
 type IdentifierFlags struct {
+	// Contact says the handle is a contact of the account.
 	Contact bool
-	SignIn  bool
+	// SignIn says the handle may be used to sign in.
+	SignIn bool
 }
 
 // CreateAccount is what creating an account takes. An email and a phone must
 // already be verified, so each carries the way it was; there is no row awaiting
 // verification. Password and PasswordHash are alternatives.
 type CreateAccount struct {
-	ID                  AccountID // for an import only; empty generates one
-	Kind                AccountKind
-	DisplayName         string
+	ID AccountID // for an import only; empty generates one
+	// Kind is user or service.
+	Kind AccountKind
+	// DisplayName is the display name the account starts with.
+	DisplayName string
+	// Username is the login name.
 	Username            string
 	UsernameVerifiedVia Verification // the way the username came about; the zero value is admin
 	Email               string       // must have been verified
-	EmailVerifiedVia    Verification
-	Phone               string // must have been verified
-	PhoneVerifiedVia    Verification
-	EmailFlags          IdentifierFlags // an import only: the source record's sign-in axis of Email; the address is a contact regardless
-	PhoneFlags          IdentifierFlags // an import only: the source record's sign-in axis of Phone; the number is a contact regardless
-	DefaultContact      bool            // an import only: the source record names Email its default contact; true only for a proved email
-	Password            string          // an alternative to PasswordHash
-	PasswordHash        string          // PHC or legacy form, for an import
-	MustChangePassword  bool
-	MFARequired         bool
-	Attributes          map[string]string
-	Via                 string // admin, jit, signup or import: written into the event payload
+	// EmailVerifiedVia is how the email address was proved.
+	EmailVerifiedVia Verification
+	Phone            string // must have been verified
+	// PhoneVerifiedVia is how the phone number was proved.
+	PhoneVerifiedVia Verification
+	EmailFlags       IdentifierFlags // an import only: the source record's sign-in axis of Email; the address is a contact regardless
+	PhoneFlags       IdentifierFlags // an import only: the source record's sign-in axis of Phone; the number is a contact regardless
+	DefaultContact   bool            // an import only: the source record names Email its default contact; true only for a proved email
+	Password         string          // an alternative to PasswordHash
+	PasswordHash     string          // PHC or legacy form, for an import
+	// MustChangePassword marks a credential that must be changed at first use.
+	MustChangePassword bool
+	// MFARequired asks the account to register a factor.
+	MFARequired bool
+	// Attributes is the initial host-writable attribute set.
+	Attributes map[string]string
+	Via        string // admin, jit, signup or import: written into the event payload
 }
 
 // Clone returns a copy that shares no map with c.
@@ -261,6 +284,7 @@ func (p Page) EffectiveLimit() int { return pageLimit(p.Limit) }
 // no filter.
 type MemberQuery struct {
 	Page
+	// Query narrows the listing to display names and login identifiers beginning with it.
 	Query string
 }
 
@@ -269,20 +293,28 @@ type MemberQuery struct {
 // which is the input a login method hands the engine, and it carries the subject
 // only as the key it is stored under.
 type ExternalBinding struct {
-	ID            string
-	Provider      string
-	Subject       string
-	Email         string // the last address declared; for display only, it takes part in no decision
+	// ID is the binding row identifier.
+	ID string
+	// Provider is the external namespace the subject belongs to.
+	Provider string
+	// Subject is the stable identifier inside that namespace.
+	Subject string
+	Email   string // the last address declared; for display only, it takes part in no decision
+	// EmailVerified says the provider proved the address.
 	EmailVerified bool
-	CreatedAt     time.Time
-	LastLoginAt   time.Time // the zero time: never
+	// CreatedAt is when the binding was written.
+	CreatedAt   time.Time
+	LastLoginAt time.Time // the zero time: never
 }
 
 // ServiceSecretInfo is what is known of one service-account secret after it was
 // created. It never holds the secret.
 type ServiceSecretInfo struct {
-	ID         string
-	Label      string
+	// ID is the secret row identifier.
+	ID string
+	// Label is the human-readable label.
+	Label string
+	// CreatedAt is when the secret was created.
 	CreatedAt  time.Time
 	ExpiresAt  time.Time // the zero time: does not expire
 	RevokedAt  time.Time // the zero time: not revoked
@@ -294,11 +326,14 @@ type ServiceSecretInfo struct {
 // module. The zero value, with Active false, is suspended and reads as not a
 // member, as does a membership that is not there.
 type Membership struct {
-	Account   AccountID
+	// Account is the member.
+	Account AccountID
+	// Tenant is the tenant the account belongs to.
 	Tenant    string
 	Active    bool   // the zero value, suspended, reads as not a member
 	Source    string // admin, initial, invite, import or jit:<provider>
 	SSOExempt bool   // an emergency pass while the tenant enforces SSO
+	// CreatedAt is when the membership was written.
 	CreatedAt time.Time
 }
 

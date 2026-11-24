@@ -7,6 +7,8 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
+// TestShapeRulesMaskEveryOccurrenceInAValue checks that shape rules mask
+// every occurrence in a value.
 func TestShapeRulesMaskEveryOccurrenceInAValue(t *testing.T) {
 	const jwtTwo = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJib2IifQ.YW5vdGhlcnNpZw"
 	for _, c := range []struct {
@@ -93,6 +95,7 @@ func TestASchemeInsideAWordDoesNotEndTheScan(t *testing.T) {
 	}
 }
 
+// TestSchemeMatcherHoldsItsEdges checks that scheme matcher holds its edges.
 func TestSchemeMatcherHoldsItsEdges(t *testing.T) {
 	for _, c := range []struct {
 		name    string

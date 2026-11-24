@@ -53,9 +53,6 @@ const (
 	refreshGraceMax   = 60 * time.Second
 )
 
-// accessTTLUpperBound is the longest an access token may live, and it is the
-// setting's own upper bound: the issuing path refuses a lifetime past it, and
-// the design's bound on exp - iat is the same hour.
 const accessTTLUpperBound = accessTTLMax
 
 // options carries the settings items and their declared defaults. It is the
@@ -69,8 +66,6 @@ type options struct {
 	CheckSession   bool          `config:"check-session"`
 }
 
-// defaults is the declared default of every setting, and what each reads as when
-// the assembly carries no settings store.
 var defaults = options{
 	AccessTTL:      10 * time.Minute,
 	Leeway:         30 * time.Second,
@@ -93,12 +88,8 @@ func refreshGraceInDomain(d time.Duration) bool {
 
 func checkTTLInDomain(d time.Duration) bool { return inRange(d, 0, checkTTLMax) }
 
-// checkSessionInDomain admits both booleans: the setting's domain is its whole
-// type, and the strict value is its declared default.
 func checkSessionInDomain(bool) bool { return true }
 
-// settingsSchema declares this module's runtime parameters, each with the domain
-// the code acts on.
 func settingsSchema() settings.Schema {
 	return settings.Schema{
 		Namespace: ConfigNamespace,
@@ -205,15 +196,10 @@ func (r *settingReader) refreshGrace() time.Duration {
 	return readSetting(r, refreshGracePath, defaults.RefreshGrace, refreshGraceInDomain)
 }
 
-// checkSession is whether the verifying backend runs its session step. A read
-// that fails reads as the declared default, which is the strict value.
 func (r *settingReader) checkSession() bool {
 	return readSetting(r, checkSessionPath, defaults.CheckSession, checkSessionInDomain)
 }
 
-// checkTTL is the lifetime of the verifying backend's own caches, read from the
-// session module's setting. Zero turns the caches off, so every request reads
-// the store.
 func (r *settingReader) checkTTL() time.Duration {
 	return readSetting(r, checkTTLPath, defaultCheckTTL, checkTTLInDomain)
 }

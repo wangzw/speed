@@ -66,8 +66,7 @@ func TestNormalizedKeepsTheEdgesOfItsDomainsAndNothingOutside(t *testing.T) {
 }
 
 // TestAFixedKeysCountDecaysAfterTheWindow: a fixed key is never swept, so its
-// count has to decay on its own. The wait is shorter than the window, so the
-// count is told apart from the wait by what the next failure costs.
+// count has to decay on its own.
 func TestAFixedKeysCountDecaysAfterTheWindow(t *testing.T) {
 	p := ThrottleParams{FreeAttempts: 1, Window: time.Minute, MaxBackoff: time.Hour}
 	fixed := func(clock *clockAt) *Throttle {

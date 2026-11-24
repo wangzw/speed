@@ -29,6 +29,8 @@ type countingRegistration struct {
 
 func (r *countingRegistration) Unregister() error { r.n.Add(1); return nil }
 
+// TestDrainEndsWhenTheContextDoes checks that drain ends when the context
+// does.
 func TestDrainEndsWhenTheContextDoes(t *testing.T) {
 	g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
 	g.inFlight.Add(1)
@@ -40,6 +42,8 @@ func TestDrainEndsWhenTheContextDoes(t *testing.T) {
 	}
 }
 
+// TestCloseWaitsForCallsInFlightAndWithdrawsTheCounter checks that close
+// waits for calls in flight and withdraws the counter.
 func TestCloseWaitsForCallsInFlightAndWithdrawsTheCounter(t *testing.T) {
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: 20 * time.Millisecond, inFlight: 1},
 		basicBackend("static", "static."))
@@ -57,6 +61,8 @@ func TestCloseWaitsForCallsInFlightAndWithdrawsTheCounter(t *testing.T) {
 	}
 }
 
+// TestCallbacksTolerateATypedNilProduct checks that callbacks tolerate a
+// typed nil product.
 func TestCallbacksTolerateATypedNilProduct(t *testing.T) {
 	var none *gateway
 	m := Module()
@@ -78,6 +84,8 @@ type unregisterFails struct{ embedded.Registration }
 
 func (unregisterFails) Unregister() error { return errors.New("unregister refused") }
 
+// TestCloseReportsACounterThatWillNotBeWithdrawn checks that close reports a
+// counter that will not be withdrawn.
 func TestCloseReportsACounterThatWillNotBeWithdrawn(t *testing.T) {
 	g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
 	g.metrics = unregisterFails{}
@@ -86,6 +94,8 @@ func TestCloseReportsACounterThatWillNotBeWithdrawn(t *testing.T) {
 	}
 }
 
+// TestTheCounterIsWithdrawnWhenTheGatewayCloses checks that the counter is
+// withdrawn when the gateway closes.
 func TestTheCounterIsWithdrawnWhenTheGatewayCloses(t *testing.T) {
 	collected := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(collected))
@@ -110,12 +120,14 @@ func TestTheCounterIsWithdrawnWhenTheGatewayCloses(t *testing.T) {
 	}
 }
 
+// TestAGateThatRefusedForCapacityStillServesTheNextCall checks that a gate
+// that refused for capacity still serves the next call.
 func TestAGateThatRefusedForCapacityStillServesTheNextCall(t *testing.T) {
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: time.Second, inFlight: 1},
 		passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
 
-	g.slots <- struct{}{} // the one slot is taken
+	g.slots <- struct{}{}
 	w, _ := run(g, "public", withBasic(request("GET", "/x"), "a", "b"))
 	if w.Code != nethttp.StatusServiceUnavailable {
 		t.Fatalf("a full gate answered %d, want 503", w.Code)
@@ -137,6 +149,8 @@ func TestAGateThatRefusedForCapacityStillServesTheNextCall(t *testing.T) {
 	}
 }
 
+// checks that a budget overrun belongs to the backend even when the caller
+// had more time.
 func TestABudgetOverrunIsTheBackendsEvenWhenTheCallerHadMoreTime(t *testing.T) {
 	for name, answer := range map[string]func(*fakeVerifier) authn.Verdict{
 		"a pass":    func(f *fakeVerifier) authn.Verdict { return held(f, "alice") },
@@ -169,11 +183,10 @@ func TestABudgetOverrunIsTheBackendsEvenWhenTheCallerHadMoreTime(t *testing.T) {
 	}
 }
 
-// TestNoCallHoldsASlotOnceDrainHasReturned holds the atomicity enter promises:
-// a call is counted in the in-flight wait group under the same lock Stop flips
-// the flag under, so a call that got a slot before Stop is waited for by drain,
-// and one that did not is refused. Once drain has returned nobody may still hold
-// a slot.
+// TestNoCallHoldsASlotOnceDrainHasReturned holds the atomicity enter
+// promises: a call is counted in the in-flight wait group under the same lock
+// Stop flips the flag under, so a call that got a slot before Stop is waited
+// for by drain, and one that did not is refused.
 func TestNoCallHoldsASlotOnceDrainHasReturned(t *testing.T) {
 	const rounds, callers = 1500, 64
 	for round := range rounds {
@@ -212,12 +225,7 @@ func TestNoCallHoldsASlotOnceDrainHasReturned(t *testing.T) {
 }
 
 // TestNoRegistrationIsLostToTheSeal holds the lock the registration surface
-// is written under. Registrants may register from goroutines of their own, so
-// the seal races them: a registration that returned has to be in the frozen
-// table, and one that lost the race has to have panicked rather than vanished.
-// Without the lock a registration can be appended after the seal read the list
-// and be believed made. It reads its result off the table and is run under the
-// race detector, which is where an unlocked write shows first.
+// is written under.
 func TestNoRegistrationIsLostToTheSeal(t *testing.T) {
 	for round := range 300 {
 		g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
@@ -364,10 +372,8 @@ func TestPassesAreCountedExactlyUnderConcurrency(t *testing.T) {
 }
 
 // TestOpeningAndSealingTheWindowRaceWithRegistrations holds that opening and
-// sealing the registration window are safe against registrations made from other
-// goroutines. A registration that arrives while the window is shut or sealed
-// panics and is recovered; what the case asks of the race detector is that none of
-// them reads or writes the window's state without its lock.
+// sealing the registration window are safe against registrations made from
+// other goroutines.
 func TestOpeningAndSealingTheWindowRaceWithRegistrations(t *testing.T) {
 	g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
 	g.mu.Lock()

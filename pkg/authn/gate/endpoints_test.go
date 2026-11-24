@@ -10,8 +10,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// layered reports, for each endpoint of the router, how many authentication
-// layers the drive registered on it.
 func layered(r *fakeRouter) map[string]int {
 	out := make(map[string]int, len(r.endpoints))
 	for name, e := range r.endpoints {
@@ -20,11 +18,9 @@ func layered(r *fakeRouter) map[string]int {
 	return out
 }
 
-// TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares holds
-// the default the design settled on: guard everything, and narrow by writing
-// names. The side a mistake falls on is refusal, so an endpoint nobody thought of
-// is guarded and not served open, and the way to give one a way past is to
-// narrow the list or to register an exemption.
+// TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares
+// holds the default the design settled on: guard everything, and narrow by
+// writing names.
 func TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -57,11 +53,10 @@ func TestWithNoEndpointsKeyTheGatewayGuardsEveryEndpointTheEntryPointDeclares(t 
 	}
 }
 
-// TestTheWildcardIsExpandedAtInitAgainstTheEndpointsDeclaredThen holds where the
-// expansion happens: in Init, against the set the entry point has by then, so
-// that the default does not depend on which names were written anywhere. An
-// exemption on an endpoint of the full set lands, and one on a name that is not
-// in it does not.
+// TestTheWildcardIsExpandedAtInitAgainstTheEndpointsDeclaredThen holds where
+// the expansion happens: in Init, against the set the entry point has by
+// then, so that the default does not depend on which names were written
+// anywhere.
 func TestTheWildcardIsExpandedAtInitAgainstTheEndpointsDeclaredThen(t *testing.T) {
 	var guarded []string
 	router := routerWith("a", "b", "c")

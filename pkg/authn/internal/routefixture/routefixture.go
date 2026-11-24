@@ -282,7 +282,6 @@ func Assembly(t *testing.T, module core.Module) ([]core.Module, map[string]any) 
 	return stubs, config
 }
 
-// standIn is a module delivering one capability over the instance handed in.
 func standIn(name string, instance any, token core.Token) core.Module {
 	return routecontract.StandIn("stand-in."+name, instance, token)
 }
@@ -317,7 +316,6 @@ func SigningKey(t *testing.T) map[string]any {
 	}
 }
 
-// provides reports whether a module delivers the capability a token designates.
 func provides(module core.Module, token core.Token) bool {
 	for _, provision := range module.Provides {
 		if provision.Token == token {

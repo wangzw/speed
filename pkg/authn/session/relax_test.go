@@ -12,8 +12,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// recordingAudit keeps the rows it was asked to write, and fails them when a
-// case told it to.
 type recordingAudit struct {
 	mu   sync.Mutex
 	rows []audit.Entry
@@ -33,22 +31,16 @@ func (a *recordingAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), a.rows...)
 }
 
-// withAudit attaches an audit seam to the fixture's product and returns it, the
-// way Init would take one up.
 func (f *fixture) withAudit() *recordingAudit {
 	a := &recordingAudit{}
 	f.p.audit = a
 	return a
 }
 
-// deliverSettingsChange hands a settings.changed event to whatever this module
-// subscribed for it, as a replica that received the change would.
 func (f *fixture) deliverSettingsChange(change settings.Change) {
 	f.bus.deliver(event.Event{Type: settings.ChangedEventType, Payload: change})
 }
 
-// relaxWarns returns the Warn lines of the relaxation monitor that carry every
-// one of the substrings.
 func relaxWarns(f *fixture, substrings ...string) []string {
 	var out []string
 	for _, line := range strings.Split(f.logs.String(), "\n") {

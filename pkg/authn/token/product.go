@@ -45,16 +45,11 @@ const (
 	mandatoryAttribute      = "mandatory"
 )
 
-// diagnostic is a caution collected while the keys were loaded, written once at
-// startup: a private key file other users can read, which the module can point
-// out but not undo.
 type diagnostic struct {
 	file   string
 	reason string
 }
 
-// meters are the instruments this module reports through. The zero value records
-// nothing, which is what an assembly without a meter provider gets.
 type meters struct {
 	operations    metric.Int64Counter
 	auditFailures metric.Int64Counter
@@ -143,8 +138,6 @@ func newProduct(cfg resolved, keys *keySet, database db.Database, mounter mount.
 	return p
 }
 
-// wire takes up what is optional, writes the startup diagnostics and mounts the
-// routes. It runs in Init, where every instance exists.
 func (p *product) wire(reg *core.Registry) error {
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(ModuleName)
@@ -253,8 +246,6 @@ func (p *product) diagnose() {
 	}
 }
 
-// mountRoutes registers the routes this module mounts: the key set on its
-// public route, and the token and revocation endpoints on their callback route.
 func (p *product) mountRoutes() {
 	p.mountJWKS()
 	p.mountTokenRoutes()

@@ -190,9 +190,9 @@ func TestTheAccountIsReadOnceWhileItsSnapshotHolds(t *testing.T) {
 	}
 }
 
-// An impersonation-ended event that names no record clears every cached answer
-// on the replica, which is what the publication that ends all impersonations at
-// once carries. Until the next read the replica has no record left to serve.
+// An impersonation-ended event that names no record clears every cached
+// answer on the replica, which is what the publication that ends all
+// impersonations at once carries.
 func TestAnImpersonationEndedWithNoRecordClearsEveryCachedAnswer(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	_, token := impersonate(t, f)
@@ -200,8 +200,6 @@ func TestAnImpersonationEndedWithNoRecordClearsEveryCachedAnswer(t *testing.T) {
 		t.Fatalf("the session is not an impersonation to begin with: %+v", p)
 	}
 
-	// The record ends and the replica is told that impersonations ended, with no
-	// record named.
 	f.imp.end("grant-1")
 	f.bus.deliver(event.Event{ID: "imp-all", Type: authn.EventImpersonationEnded, Payload: authn.ImpersonationEnded{}})
 	if p := principalOf(f.verify(token)); p.Actor != "" || p.Account != admin {

@@ -81,10 +81,15 @@ func Secure(publicURL string) bool {
 // SameSite. A writer that cannot carry a Domain on an http public URL refuses
 // that configuration before it builds a cookie.
 type Spec struct {
-	Stem     string
-	Value    string
-	Domain   string
-	MaxAge   int
+	// Stem is the cookie's unprefixed name.
+	Stem string
+	// Value is the cookie's value.
+	Value string
+	// Domain is the cookie's Domain attribute; empty for a host-only cookie.
+	Domain string
+	// MaxAge is the cookie's Max-Age in seconds.
+	MaxAge int
+	// SameSite is the writer's SameSite attribute.
 	SameSite http.SameSite
 }
 

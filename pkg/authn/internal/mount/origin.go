@@ -30,8 +30,6 @@ func Origin(publicURL string) (string, error) {
 	return canonicalOrigin(publicURL, true)
 }
 
-// trustedOrigin is an entry of the trusted list in the canonical form of Origin.
-// An entry is an origin and nothing more, so a path is refused here as well.
 func trustedOrigin(entry string) (string, error) {
 	return canonicalOrigin(entry, false)
 }
@@ -70,7 +68,6 @@ func canonicalOrigin(raw string, allowPath bool) (string, error) {
 	return origin, nil
 }
 
-// defaultPort is the port a browser leaves out of an origin for each scheme.
 var defaultPort = map[string]int{"http": 80, "https": 443}
 
 // TrustedOrigins is every origin the cross-origin check trusts: the origin of

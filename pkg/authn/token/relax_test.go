@@ -27,14 +27,10 @@ var watched = []struct {
 	{refreshGracePath, "0s", "30s"},
 }
 
-// feedChange hands a settings.ChangedEventType event carrying the change to the
-// module's subscription, as a bus delivery would.
 func feedChange(r *rig, change settings.Change) {
 	feedChangeAt(r, "", change)
 }
 
-// feedChangeAt hands a settings.changed event carrying the change and the tenant
-// it belongs to to the module's subscription, as a bus delivery would.
 func feedChangeAt(r *rig, tenant string, change settings.Change) {
 	_ = r.p.onSettingsChanged(context.Background(), event.Event{
 		Type:     settings.ChangedEventType,
@@ -116,10 +112,10 @@ func TestASensitiveChangeIsSkippedEntirely(t *testing.T) {
 	}
 }
 
-// TestADeleteThatFallsBackToAMorePermissiveDefaultIsReported holds the reading
-// of a layer that held no row: a delete reverses to the declared default, and
-// when that default checks less than the value it replaced the change is a
-// relaxation. leeway's default (30s) is wider than the removed 0s.
+// TestADeleteThatFallsBackToAMorePermissiveDefaultIsReported holds the
+// reading of a layer that held no row: a delete reverses to the declared
+// default, and when that default checks less than the value it replaced the
+// change is a relaxation.
 func TestADeleteThatFallsBackToAMorePermissiveDefaultIsReported(t *testing.T) {
 	r := newRig(t)
 	feedChange(r, settings.Change{Key: leewayPath, Old: "0s", Deleted: true})

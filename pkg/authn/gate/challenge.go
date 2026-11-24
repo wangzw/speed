@@ -86,8 +86,6 @@ func (c *challenge) valueFor(refused *backend) string {
 	return c.base
 }
 
-// backendChallenge is one backend's part of the challenge: what it wrote itself,
-// or one challenge per scheme it takes.
 func backendChallenge(b *backend, realm string, rejected bool) []string {
 	if b.challenger != nil {
 		given := b.challenger.Challenge(realm, rejected)
@@ -124,8 +122,6 @@ func joinChallenges(all []string) string {
 	return strings.Join(out, ", ")
 }
 
-// canonicalScheme renders a folded scheme name the way a challenge writes it.
-// Scheme names are case-insensitive, so this is presentation alone.
 func canonicalScheme(scheme string) string {
 	if scheme == "" {
 		return scheme

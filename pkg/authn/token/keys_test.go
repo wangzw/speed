@@ -19,8 +19,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// keyFile writes pemBytes to a file of the given name under a fresh directory
-// and returns its path.
 func keyFile(t *testing.T, name string, pemBytes []byte, mode os.FileMode) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
@@ -41,6 +39,8 @@ func generatedKey(t *testing.T, alg string) string {
 	return keyFile(t, alg+".pem", pemBytes, 0o600)
 }
 
+// TestALoadedSigningKeyBecomesTheSigningKey checks that a loaded signing key
+// becomes the signing key.
 func TestALoadedSigningKeyBecomesTheSigningKey(t *testing.T) {
 	path := generatedKey(t, algES256)
 	set, diags, err := loadKeySet(resolved{algorithm: algES256, signingFile: path})
@@ -64,6 +64,8 @@ func TestALoadedSigningKeyBecomesTheSigningKey(t *testing.T) {
 	}
 }
 
+// TestAVerificationKeyFileDoesNotBecomeASigningKey checks that a verification
+// key file does not become a signing key.
 func TestAVerificationKeyFileDoesNotBecomeASigningKey(t *testing.T) {
 	path := generatedKey(t, algES256)
 	set, _, err := loadKeySet(resolved{algorithm: algES256, verifyFiles: []string{path}})
@@ -78,6 +80,7 @@ func TestAVerificationKeyFileDoesNotBecomeASigningKey(t *testing.T) {
 	}
 }
 
+// TestNoKeyAtAllIsRefused checks that no key at all is refused.
 func TestNoKeyAtAllIsRefused(t *testing.T) {
 	_, _, err := loadKeySet(resolved{algorithm: algES256})
 	if !errors.Is(err, authn.ErrInvalidKey) {
@@ -85,6 +88,8 @@ func TestNoKeyAtAllIsRefused(t *testing.T) {
 	}
 }
 
+// TestADuplicateKidIsRefusedAndNamesTheFile checks that a duplicate kid is
+// refused and names the file.
 func TestADuplicateKidIsRefusedAndNamesTheFile(t *testing.T) {
 	pemBytes, err := GenerateKey(algES256)
 	if err != nil {
@@ -101,6 +106,8 @@ func TestADuplicateKidIsRefusedAndNamesTheFile(t *testing.T) {
 	}
 }
 
+// TestAnRSAKeyBelowTheFloorIsRefused checks that an rsa key below the floor
+// is refused.
 func TestAnRSAKeyBelowTheFloorIsRefused(t *testing.T) {
 	k, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
@@ -120,6 +127,8 @@ func TestAnRSAKeyBelowTheFloorIsRefused(t *testing.T) {
 	}
 }
 
+// TestAKeyOfTheWrongAlgorithmIsRefused checks that a key of the wrong
+// algorithm is refused.
 func TestAKeyOfTheWrongAlgorithmIsRefused(t *testing.T) {
 	path := generatedKey(t, algES256)
 	_, _, err := loadKeySet(resolved{algorithm: algRS256, signingFile: path})
@@ -131,6 +140,8 @@ func TestAKeyOfTheWrongAlgorithmIsRefused(t *testing.T) {
 	}
 }
 
+// TestAPublicKeyFileWhereASigningKeyIsRequiredIsRefused checks that a public
+// key file where a signing key is required is refused.
 func TestAPublicKeyFileWhereASigningKeyIsRequiredIsRefused(t *testing.T) {
 	path := generatedKey(t, algES256)
 	set, _, err := loadKeySet(resolved{algorithm: algES256, verifyFiles: []string{path}})
@@ -149,6 +160,8 @@ func TestAPublicKeyFileWhereASigningKeyIsRequiredIsRefused(t *testing.T) {
 	}
 }
 
+// TestAPrivateKeyOtherUsersCanReadIsWarnedNotFatal checks that a private key
+// other users can read is warned not fatal.
 func TestAPrivateKeyOtherUsersCanReadIsWarnedNotFatal(t *testing.T) {
 	pemBytes, err := GenerateKey(algES256)
 	if err != nil {
@@ -170,6 +183,7 @@ func TestAPrivateKeyOtherUsersCanReadIsWarnedNotFatal(t *testing.T) {
 	}
 }
 
+// checks that GenerateKey round-trips every supported algorithm.
 func TestGenerateKeyRoundTripsForEverySupportedAlgorithm(t *testing.T) {
 	for _, alg := range []string{algES256, algRS256} {
 		t.Run(alg, func(t *testing.T) {
@@ -185,12 +199,15 @@ func TestGenerateKeyRoundTripsForEverySupportedAlgorithm(t *testing.T) {
 	}
 }
 
+// checks that GenerateKey refuses an unsupported algorithm.
 func TestGenerateKeyRefusesAnUnsupportedAlgorithm(t *testing.T) {
 	if _, err := GenerateKey("HS256"); !errors.Is(err, authn.ErrInvalidKey) {
 		t.Fatalf("GenerateKey(HS256) gave %v, want ErrInvalidKey", err)
 	}
 }
 
+// TestASignatureRoundTripsThroughTheHeaderAndTheClaims checks that a
+// signature round trips through the header and the claims.
 func TestASignatureRoundTripsThroughTheHeaderAndTheClaims(t *testing.T) {
 	path := generatedKey(t, algES256)
 	set, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: path})
@@ -248,6 +265,8 @@ func TestASignatureRoundTripsThroughTheHeaderAndTheClaims(t *testing.T) {
 	}
 }
 
+// TestAnAlgorithmOutsideTheAllowListIsRefusedAtParse checks that an algorithm
+// outside the allow list is refused at parse.
 func TestAnAlgorithmOutsideTheAllowListIsRefusedAtParse(t *testing.T) {
 	path := generatedKey(t, algES256)
 	set, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: path})
@@ -267,6 +286,8 @@ func TestAnAlgorithmOutsideTheAllowListIsRefusedAtParse(t *testing.T) {
 	}
 }
 
+// TestAVerificationWithTheWrongKeyFails checks that a verification with the
+// wrong key fails.
 func TestAVerificationWithTheWrongKeyFails(t *testing.T) {
 	one := generatedKey(t, algES256)
 	two := generatedKey(t, algES256)
@@ -327,6 +348,7 @@ func TestTheAccessTokenTypeIsTheRFC9068Literal(t *testing.T) {
 	}
 }
 
+// TestANonP256KeyIsRefused checks that a non p256 key is refused.
 func TestANonP256KeyIsRefused(t *testing.T) {
 	k, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
 	if err != nil {
@@ -371,7 +393,6 @@ func rfc7638Thumbprint(t *testing.T, pub *ecdsa.PublicKey) string {
 	if pub.Curve != elliptic.P256() {
 		t.Fatalf("the fixture key is not P-256")
 	}
-	// Bytes is the uncompressed point, 0x04 || X || Y, 65 bytes for P-256.
 	point, err := pub.Bytes()
 	if err != nil {
 		t.Fatalf("encoding the public key's point: %v", err)
@@ -444,7 +465,7 @@ func TestSigningWithAVerifyOnlyKeyIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := keyEntry{kid: signSet.signing.kid, alg: algES256, pub: signSet.signing.pub} // no private half
+	entry := keyEntry{kid: signSet.signing.kid, alg: algES256, pub: signSet.signing.pub}
 	payload, err := tokenClaims{Subject: "a"}.marshal()
 	if err != nil {
 		t.Fatal(err)

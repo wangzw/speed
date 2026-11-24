@@ -29,9 +29,6 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// testCheckSessionKey is the setting this module carries for the session step.
-// It is written out here rather than read from a constant so that a case names
-// the key the design lists.
 const testCheckSessionKey = "authn.token.check-session"
 
 // TestTheCheckSessionSettingOffLetsARevokedSessionVerify holds that the session
@@ -54,10 +51,9 @@ func TestTheCheckSessionSettingOffLetsARevokedSessionVerify(t *testing.T) {
 }
 
 // TestRelaxingTheCheckSessionSettingWritesAWarnAndAnAuditRecord holds the
-// visibility of turning the session check off: the write publishes a change, the
-// module's subscription answers it with one Warn naming the key and never the
-// value, and one best-effort audit record with the relaxed action. A change back
-// to the strict value writes nothing.
+// visibility of turning the session check off: the write publishes a change,
+// the module's subscription answers it with one Warn naming the key and never
+// the value, and one best-effort audit record with the relaxed action.
 func TestRelaxingTheCheckSessionSettingWritesAWarnAndAnAuditRecord(t *testing.T) {
 	store, bus := deliveredSettings(t)
 	r := newRig(t)
@@ -137,8 +133,6 @@ func TestAConfigurationCarryingTheRemovedCheckSessionItemFailsStartup(t *testing
 	}
 }
 
-// writeDeliveredSetting writes one value into a store the settings module
-// delivered. A failure is fatal: the case exists to hold the key is declared.
 func writeDeliveredSetting(t *testing.T, store settings.Store, key string, value any) {
 	t.Helper()
 	write := settings.Write{Layer: settings.Global(), Key: key, Value: value, Actor: "test"}
@@ -147,9 +141,6 @@ func writeDeliveredSetting(t *testing.T, store settings.Store, key string, value
 	}
 }
 
-// deliveredBus is the event bus of the settings assembly: it keeps what the
-// store publishes, so a case can hand the change to the module's subscription
-// with the payload the store itself built.
 type deliveredBus struct {
 	mu        sync.Mutex
 	published []event.Event
@@ -164,7 +155,6 @@ func (b *deliveredBus) Publish(_ context.Context, evt event.Event) error {
 
 func (b *deliveredBus) Subscribe(string, string, event.Handler) {}
 
-// lastChange decodes the payload of the most recent settings.changed event.
 func (b *deliveredBus) lastChange(t *testing.T) settings.Change {
 	t.Helper()
 	b.mu.Lock()
@@ -231,8 +221,6 @@ func deliveredSettings(t *testing.T) (settings.Store, *deliveredBus) {
 	return store, bus
 }
 
-// applySettingsMigrations runs the settings module's own SQLite migrations, read
-// out of the declaration it registers.
 func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	t.Helper()
 	var tree fs.FS
@@ -264,32 +252,22 @@ func applySettingsMigrations(t *testing.T, handle *gorm.DB) {
 	}
 }
 
-// deliveredConfig is the configuration reader of an assembly that configures
-// nothing, which leaves every declared default in place.
 type deliveredConfig struct{}
 
 func (deliveredConfig) Decode(string, any) error { return nil }
 
-// deliveredLogger is the logging capability of an assembly whose records nobody
-// reads.
 type deliveredLogger struct{}
 
 func (deliveredLogger) Named(string) *slog.Logger { return slog.New(slog.DiscardHandler) }
 func (deliveredLogger) Redaction() log.Redaction  { return nil }
 
-// capturedLogger is a logging capability whose records a case reads back.
 type capturedLogger struct{ logger *slog.Logger }
 
 func (c capturedLogger) Named(string) *slog.Logger { return c.logger }
 func (c capturedLogger) Redaction() log.Redaction  { return nil }
 
-// TestTheCheckSessionSwitchIsReadAfterTheSettingsSnapshotLoads drives the real
-// registry through both modules' Init in one assembly. The settings snapshot is
-// loaded in its Init, so the switch set to false before the process starts must
-// be visible to the token module's startup diagnostic: one Warn naming the key
-// and direction relax, and no read-failure Error. It fails when the token module
-// leaves the settings store out of its Requires, because the dependency order
-// then places its Init first.
+// TestTheCheckSessionSwitchIsReadAfterTheSettingsSnapshotLoads drives the
+// real registry through both modules' Init in one assembly.
 func TestTheCheckSessionSwitchIsReadAfterTheSettingsSnapshotLoads(t *testing.T) {
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "assembly.db"), nil)
 	applySettingsMigrations(t, database.DB())

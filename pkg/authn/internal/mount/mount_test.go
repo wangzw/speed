@@ -11,9 +11,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// fake is a Mounter written out in full. Its being assignable is what holds
-// the method set: a method added to the interface, dropped from it, or given
-// another signature stops this file from compiling.
 type fake struct{}
 
 func (*fake) Public(string, string, gin.HandlerFunc, ...Option)   {}

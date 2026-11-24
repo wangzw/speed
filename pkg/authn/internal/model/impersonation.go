@@ -27,6 +27,7 @@ func ValidEndReason(s string) bool {
 
 // ImpersonationRequest is what starting an impersonation takes.
 type ImpersonationRequest struct {
+	// Target is the account to act as.
 	Target AccountID
 	Tenant string        // the tenant the impersonation is confined to; required
 	Reason string        // 1 to 500 characters, no control character
@@ -35,15 +36,23 @@ type ImpersonationRequest struct {
 
 // ImpersonationGrant is one impersonation record.
 type ImpersonationGrant struct {
-	ID        string
-	Actor     AccountID
-	Target    AccountID
-	Tenant    string
-	Reason    string // only in the audit row and the record; never in an event
+	// ID is the record identifier.
+	ID string
+	// Actor is the impersonating account.
+	Actor AccountID
+	// Target is the impersonated account.
+	Target AccountID
+	// Tenant is the tenant the impersonation is confined to.
+	Tenant string
+	Reason string // only in the audit row and the record; never in an event
+	// SessionID is the session the record is attached to.
 	SessionID SessionID
+	// StartedAt is when the record began.
 	StartedAt time.Time
-	EndsAt    time.Time
-	EndedAt   time.Time // the zero time: not ended
+	// EndsAt is when the record lapses.
+	EndsAt  time.Time
+	EndedAt time.Time // the zero time: not ended
+	// EndedBy names who ended the record.
 	EndedBy   string
 	EndReason string // one of the End constants
 }
@@ -54,10 +63,14 @@ type ImpersonationGrant struct {
 // tenant's records are selected in the store rather than filtered out of a full
 // page afterwards.
 type GrantQuery struct {
+	// Actor filters by the impersonating account. Target filters by the
+	// impersonated account.
 	Actor, Target AccountID
-	Tenant        string
-	After         string
-	Limit         int // see Page.EffectiveLimit
+	// Tenant filters by tenant.
+	Tenant string
+	// After is the cursor of the previous page.
+	After string
+	Limit int // see Page.EffectiveLimit
 }
 
 // EffectiveLimit is the page size the query asks for, read as Page's is.

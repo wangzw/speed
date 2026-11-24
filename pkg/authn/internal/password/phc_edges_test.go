@@ -14,8 +14,6 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// variedBytes is n bytes that differ from each other, so that a salt cut short
-// or a key read from the wrong place is not the same bytes as the whole.
 func variedBytes(n int) []byte {
 	b := make([]byte, n)
 	for i := range b {

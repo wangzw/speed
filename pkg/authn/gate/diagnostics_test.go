@@ -17,6 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
+// checks that Describe names the carriers a backend takes.
 func TestDescribeNamesWhatABackendTakes(t *testing.T) {
 	full, err := admitBackend(&fakeVerifier{name: "hybrid", accepts: authn.Accepts{
 		Schemes: []string{"bearer"}, Cookies: []string{"sid"}, Accounts: "acme.", Impersonation: true, SSO: true,
@@ -43,6 +44,8 @@ func TestDescribeNamesWhatABackendTakes(t *testing.T) {
 	}
 }
 
+// TestEveryUnprefixedCookieNameIsWarnedAbout checks that every unprefixed
+// cookie name is warned about.
 func TestEveryUnprefixedCookieNameIsWarnedAbout(t *testing.T) {
 	h := &recorder{}
 	g := testGateway(t, []string{"public"}, cookieBackend("session", "__Host-a", "plain"))
@@ -55,6 +58,8 @@ func TestEveryUnprefixedCookieNameIsWarnedAbout(t *testing.T) {
 	}
 }
 
+// TestAnAccessConflictNamesTheKindItIsWith checks that an access conflict
+// names the kind it is with.
 func TestAnAccessConflictNamesTheKindItIsWith(t *testing.T) {
 	for other, register := range map[string]func(*gateway){
 		"Optional":     func(g *gateway) { g.Optional("public", "GET", "/x") },
@@ -72,6 +77,8 @@ func TestAnAccessConflictNamesTheKindItIsWith(t *testing.T) {
 	}
 }
 
+// TestGuardedAndReachableAreDescribedWhetherOrNotThereIsAny checks that
+// guarded and reachable are described whether or not there is any.
 func TestGuardedAndReachableAreDescribedWhetherOrNotThereIsAny(t *testing.T) {
 	if got := describeGuarded(nil); !strings.Contains(got, "no endpoint") {
 		t.Errorf("an empty guarded set reads %q", got)
@@ -87,6 +94,8 @@ func TestGuardedAndReachableAreDescribedWhetherOrNotThereIsAny(t *testing.T) {
 	}
 }
 
+// TestRegistrationAttrsListOnlyEndpointsThatCarryTheKind checks that
+// registration attrs list only endpoints that carry the kind.
 func TestRegistrationAttrsListOnlyEndpointsThatCarryTheKind(t *testing.T) {
 	routes := map[string]map[route]access{
 		"a": {{method: "GET", path: "/x"}: {exempt: true}},
@@ -105,6 +114,7 @@ func TestRegistrationAttrsListOnlyEndpointsThatCarryTheKind(t *testing.T) {
 	}
 }
 
+// checks that the mount-endpoint judgement names the setting it judged.
 func TestMountEndpointJudgementSaysWhichSettingItJudged(t *testing.T) {
 	for name, c := range map[string]struct {
 		configured string
@@ -127,6 +137,8 @@ func TestMountEndpointJudgementSaysWhichSettingItJudged(t *testing.T) {
 	}
 }
 
+// TestReachableListsTheEndpointsTheScopeGuardCovers checks that reachable
+// lists the endpoints the scope guard covers.
 func TestReachableListsTheEndpointsTheScopeGuardCovers(t *testing.T) {
 	g := testGateway(t, []string{"admin", "public"}, basicBackend("static", "static."))
 	if got := g.reachable(); len(got) != 0 {
@@ -138,6 +150,8 @@ func TestReachableListsTheEndpointsTheScopeGuardCovers(t *testing.T) {
 	}
 }
 
+// TestTheConclusionCounterIsDescribedAndUnitised checks that the conclusion
+// counter is described and unitised.
 func TestTheConclusionCounterIsDescribedAndUnitised(t *testing.T) {
 	collected := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(collected))
@@ -211,16 +225,11 @@ func TestStartupDiagnosticsNameWhatIsOpenedAndWhatImpersonationReaches(t *testin
 	}
 }
 
-// fieldName is how the design writes a log field: lower case, words joined by
-// underscores, no hyphen and no space.
 var fieldName = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 
 // TestEveryFieldTheStartupDiagnosticsWriteIsNamedInTheDesignsStyle holds the
 // field names of the lines the gateway writes at startup to the one style the
-// design fixes for log fields. The cases that read a refusal's fields hold
-// those names; this one reads every attribute of every startup line, with
-// nothing registered, which is the state in which the frozen tables are written
-// under their headings and not under the names of endpoints.
+// design fixes for log fields.
 func TestEveryFieldTheStartupDiagnosticsWriteIsNamedInTheDesignsStyle(t *testing.T) {
 	logs := liveAssembly{
 		backends: []authn.Verifier{basicBackend("static", "static.")},

@@ -13,8 +13,6 @@ import (
 // knob an operator turns, where how long an entry is believed, check-ttl, is.
 const cacheCapacity = 10_000
 
-// grantEntry is what the impersonation cache holds: what Impersonation.Active
-// answered for a record.
 type grantEntry struct {
 	grant  authn.ImpersonationGrant
 	active bool
@@ -79,8 +77,6 @@ func (p *product) accountFor(ctx context.Context, id authn.AccountID) (authn.Acc
 	return a, nil
 }
 
-// activeGrant asks the impersonation capability whether a record holds, through
-// the cache. An answer is cached for check-ttl and a failure is not.
 func (p *product) activeGrant(ctx context.Context, id string) (authn.ImpersonationGrant, bool, error) {
 	cs := p.caches()
 	if g, ok := cs.grants.Get(id); ok {

@@ -13,15 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The cases here hold the cookie side of the gateway: what counts as a cookie
-// credential, which carrier wins when a request has both, what the cross-origin
-// check lets through, and when a refused cookie is cleared. Each carrier is its
-// own backend with its own call counter, because "which backend was asked, and
-// how many times" is how these cases tell a request that was judged from one that
-// was refused unread.
-
-// carrierBackends builds the three backends a request can reach: a bearer one, a
-// cookie one that can clear its cookie, and the Basic one. Each counts its calls.
 type carrierBackends struct {
 	token, session, basic *fakeVerifier
 	tokenCalls            atomic.Int64
@@ -42,8 +33,6 @@ func newCarrierBackends() *carrierBackends {
 	return c
 }
 
-// verifiers lists the backends the gateway is built from, the cookie one wrapped
-// so that clearing its cookie is observable.
 func (c *carrierBackends) verifiers() []authn.Verifier {
 	return []authn.Verifier{
 		c.token,
@@ -52,8 +41,6 @@ func (c *carrierBackends) verifiers() []authn.Verifier {
 	}
 }
 
-// gateway builds a gateway over the backends, sealed against a router with one
-// endpoint named "public", and with the given settings filled in around it.
 func (c *carrierBackends) gateway(t *testing.T, set settings) *gateway {
 	t.Helper()
 	set.endpoints = []string{"public"}
@@ -291,22 +278,10 @@ func TestACookieCredentialIsHandedOverWithItsNameAndNoScheme(t *testing.T) {
 	}
 }
 
-// TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames holds the check against
-// the cases the rules in the design describe: Sec-Fetch-Site, Origin against
-// Host, the trusted origins in the form a browser sends them, and a request that
-// carries neither header. The check is the standard library's, so the cases are also a record of
-// what it does with each, which is what the design's non-guarantee is written
-// against.
-//
-// The request with neither Sec-Fetch-Site nor Origin is let through. That is the
-// library's behaviour and a known boundary: a client that sends neither is a
-// program or a browser too old for the check, and nothing here can tell the two
-// apart. The case asserts that it passes so that the boundary is a recorded one.
-//
-// The check applies to the two carriers a browser attaches to a request by
-// itself, a cookie and a Basic header, which the browser stores after a Basic
-// challenge and sends on a cross-site navigation. A Bearer header is never
-// attached by a browser, so a cross-site request carrying one is not held to it.
+// TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames holds the check
+// against the cases the rules in the design describe: Sec-Fetch-Site, Origin
+// against Host, the trusted origins in the form a browser sends them, and a
+// request that carries neither header.
 func TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames(t *testing.T) {
 	const sibling = "https://sibling.example.com"
 	trusting := settings{trustedOrigins: []string{sibling}}
@@ -426,13 +401,7 @@ func TestTheCrossOriginCheckHoldsEveryVectorTheDesignNames(t *testing.T) {
 
 // TestTheCrossOriginCheckSparesOnlyTheBearerScheme holds the criterion of the
 // check at the scheme a backend that is not one of this module's own can
-// declare. The gateway reads nothing of a credential and cannot know whether a
-// browser stores and sends a scheme by itself, which it does for Basic, Digest,
-// Negotiate and NTLM and for no scheme that a page's own script writes, so the
-// one header scheme it knows is never attached by a browser is Bearer and every
-// other is held to the check. A cross-site request that carries a scheme nobody
-// listed is refused unread; a list of the schemes browsers keep would let the
-// next one through.
+// declare.
 func TestTheCrossOriginCheckSparesOnlyTheBearerScheme(t *testing.T) {
 	const sibling = "https://sibling.example.com"
 	crossSite := map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"}
@@ -493,11 +462,8 @@ func TestTheCrossOriginCheckSparesOnlyTheBearerScheme(t *testing.T) {
 }
 
 // TestACookieIsClearedOnlyWhenTheBackendRefusedIt holds the one trigger of
-// ClearCookie from every other way a request with a cookie can end badly: only a
-// refusal by the backend that took the cookie clears it. A refusal the gateway
-// made itself, before the backend was asked or after it answered, says nothing
-// about whether the cookie holds, and clearing it would log a user out for the
-// gateway's own decision.
+// ClearCookie from every other way a request with a cookie can end badly:
+// only a refusal by the backend that took the cookie clears it.
 func TestACookieIsClearedOnlyWhenTheBackendRefusedIt(t *testing.T) {
 	cookieOnly := func(r *nethttp.Request) *nethttp.Request { return withCookie(r, "sid", "v") }
 	for _, c := range []struct {

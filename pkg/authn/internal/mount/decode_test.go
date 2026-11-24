@@ -13,8 +13,6 @@ type decoded struct {
 	S string `json:"s"`
 }
 
-// decodeWith runs Decode as a handler's first step and reports what it returned,
-// what it left in dst, and whether the chain was ended.
 func decodeWith(contentType, body string) (code int, ok bool, got decoded, aborted bool, problemType string) {
 	var dst decoded
 	var res bool

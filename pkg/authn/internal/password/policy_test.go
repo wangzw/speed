@@ -2,6 +2,7 @@ package password
 
 import "testing"
 
+// TestNormalizeIsNFKC checks that normalize is nfkc.
 func TestNormalizeIsNFKC(t *testing.T) {
 	for _, c := range []struct{ name, in, want string }{
 		{"fullwidth digits", "１２３４", "1234"},
@@ -16,6 +17,8 @@ func TestNormalizeIsNFKC(t *testing.T) {
 	}
 }
 
+// TestEffectiveFallsBackOnACombinationBelowTheFloor checks that effective
+// falls back on a combination below the floor.
 func TestEffectiveFallsBackOnACombinationBelowTheFloor(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -67,6 +70,7 @@ func TestEffectiveFallsBackOnACombinationBelowTheFloor(t *testing.T) {
 	}
 }
 
+// checks that Hold takes the capacity a derivation would.
 func TestHoldTakesTheCapacityADerivationWould(t *testing.T) {
 	g := NewGovernor(1, 1024)
 	release, err := g.Hold(t.Context(), 1024, 0)

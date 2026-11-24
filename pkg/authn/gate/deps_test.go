@@ -28,8 +28,6 @@ var forbidden = []string{
 	"github.com/vislake/speed/pkg/tenant",
 }
 
-// depsOf is every package in the closure of this package's non-test files, one
-// import path a line.
 func depsOf(t *testing.T) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", ".")
@@ -42,8 +40,6 @@ func depsOf(t *testing.T) []string {
 	return strings.Fields(string(out))
 }
 
-// forbiddenIn reports the packages of the listing that are, or sit under, one of the
-// forbidden ones.
 func forbiddenIn(listing []string) []string {
 	var out []string
 	for _, pkg := range listing {
@@ -59,11 +55,6 @@ func forbiddenIn(listing []string) []string {
 // TestTheGatewayHoldsNoStoreAndNoTenantInItsClosure holds the dependency
 // statement of the design over the closure and not only over the direct
 // imports: something it imports for another reason could bring a store in.
-//
-// The controls make the case more than an empty listing: the closure has to hold
-// the packages the gateway is known to use, and the reading has to find a
-// forbidden package in a listing that has one, under its own path and under a
-// subpackage.
 func TestTheGatewayHoldsNoStoreAndNoTenantInItsClosure(t *testing.T) {
 	listing := depsOf(t)
 

@@ -112,12 +112,19 @@ const (
 // a method whose bindings land under Name: empty means the bindings land under
 // Name, and is also the value for a method that binds no external identity.
 type MethodDescriptor struct {
-	Name             string
-	Kind             MethodKind
-	Protocol         MethodProtocol
-	Label            string
-	Fields           []Field
-	OpensAccount     bool
+	// Name is the method stable name.
+	Name string
+	// Kind is the rendering class.
+	Kind MethodKind
+	// Protocol is the wire protocol a redirect or enterprise method speaks.
+	Protocol MethodProtocol
+	// Label is the brand name, untranslated.
+	Label string
+	// Fields are the inputs the first step asks for.
+	Fields []Field
+	// OpensAccount says the method may open an account.
+	OpensAccount bool
+	// BindingProviders are the provider values its link flow stores.
 	BindingProviders []string
 }
 
@@ -184,5 +191,6 @@ type LoginMethodSwitch interface {
 // implementation reports what it could not release and does not decide whether
 // the flow ends.
 type MethodAbandoner interface {
+	// Abandon releases whatever the method kept for the flow.
 	Abandon(ctx context.Context, f FlowState) error
 }

@@ -13,19 +13,17 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// heapObjects is the bytes the heap holds in objects, garbage not yet swept
-// included, which is what a process would be charged for.
 func heapObjects() uint64 {
 	sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
 	metrics.Read(sample)
 	return sample[0].Value.Uint64()
 }
 
-// TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget holds the memory bound
-// on what the process holds and not on what the Governor counts: entries that
-// state 64 MiB are checked all at once against a budget of 128 MiB, so at most
-// two of them can run, and the heap stays within the budget and a fixed
-// overhead. Without the bound the twelve would hold 768 MiB between them.
+// TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget holds the memory
+// bound on what the process holds and not on what the Governor counts:
+// entries that state 64 MiB are checked all at once against a budget of 128
+// MiB, so at most two of them can run, and the heap stays within the budget
+// and a fixed overhead.
 func TestDerivationsOfLargeEntriesNeverHoldMoreThanTheBudget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("allocates what the entries state")

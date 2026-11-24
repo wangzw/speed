@@ -4,9 +4,9 @@ import (
 	"testing"
 )
 
-// The session index is bounded like the cache beside it: past its capacity the
-// least recently used identifier is dropped, and an identifier it no longer holds
-// is a no-op to remove. An account's entry is taken from it whole.
+// The session index is bounded like the cache beside it: past its capacity
+// the least recently used identifier is dropped, and an identifier it no
+// longer holds is a no-op to remove.
 func TestTheSessionIndexIsBounded(t *testing.T) {
 	x := newSessionIndex(2)
 	x.add("s1", "k1", alice)
@@ -15,7 +15,6 @@ func TestTheSessionIndexIsBounded(t *testing.T) {
 		t.Fatalf("size = %d, want 2", x.size())
 	}
 
-	// A third entry past the capacity drops the oldest.
 	x.add("s3", "k3", alice)
 	if x.size() != 2 {
 		t.Errorf("size = %d after overflowing, want the capacity 2", x.size())
@@ -27,14 +26,11 @@ func TestTheSessionIndexIsBounded(t *testing.T) {
 		t.Errorf("remove(s3) = %q, %v, want k3 and true", key, ok)
 	}
 
-	// Adding an identifier that is already recorded makes it the most recently
-	// used and updates what it points at.
 	x.add("s2", "k2b", bob)
 	if key, _ := x.remove("s2"); key != "k2b" {
 		t.Errorf("remove(s2) = %q, want the updated key k2b", key)
 	}
 
-	// Taking an account's entries returns them and drops them from the index.
 	x.add("s4", "k4", bob)
 	x.add("s5", "k5", alice)
 	taken := x.takeAccount(bob)

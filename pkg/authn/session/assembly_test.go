@@ -23,8 +23,6 @@ const (
 	accountsModule = "stand-in.accounts"
 )
 
-// standIn declares the capabilities a stand-in provides, each without a New: the
-// instance is supplied by the case.
 func standIn(name string, tokens ...core.Token) core.Module {
 	provides := make([]core.Provision, len(tokens))
 	for i, token := range tokens {
@@ -90,7 +88,6 @@ func TestTheModuleDeliversItsThreeCapabilities(t *testing.T) {
 	if sessions == nil || verifier == nil || lifecycle == nil {
 		t.Fatalf("a capability resolved to nil: Sessions %v, Verifier %v, AccountLifecycle %v", sessions, verifier, lifecycle)
 	}
-	// One instance satisfies all three, as the module's design says.
 	if sessions != verifier.(authn.Sessions) {
 		t.Errorf("the session store and the verifying backend are different instances")
 	}
@@ -180,7 +177,6 @@ func TestACommandWithoutARequiredCapabilityFails(t *testing.T) {
 	reg.Register(Module())
 	reg.Register(standIn(dbModule, (*db.Database)(nil)))
 	reg.Register(standIn(mountModule, (*mount.Mounter)(nil)))
-	// No accounts provider.
 	reg.Register(config.Module())
 	reg.Supply(d.open(t, d.newDSN(t)), dbModule)
 	reg.Supply(mounttest.New(t), mountModule)

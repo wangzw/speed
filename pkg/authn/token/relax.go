@@ -25,9 +25,6 @@ const (
 	dirRelaxed = "relax"
 )
 
-// relaxing is, for each setting of this module whose move relaxes a check, the
-// direction it relaxes in. A setting absent from the table relaxes nothing and
-// is not watched.
 var relaxing = map[string]string{
 	accessTTLPath:      dirIncrease,
 	leewayPath:         dirIncrease,
@@ -95,8 +92,6 @@ func (p *product) warnRelaxation(key, direction string) {
 		slog.String("setting", key), slog.String("direction", direction))
 }
 
-// reportRelaxation writes the Warn and the best-effort audit record of one
-// relaxation.
 func (p *product) reportRelaxation(ctx context.Context, key, direction string) {
 	p.warnRelaxation(key, direction)
 	if p.audit == nil {
@@ -115,9 +110,6 @@ func (p *product) reportRelaxation(ctx context.Context, key, direction string) {
 	}
 }
 
-// relaxes reports whether the change moved the key in its relaxing direction. A
-// layer that held no row reads as the declared default, which is the strict end
-// of every watched setting.
 func relaxes(direction, key, oldText string, oldEmpty bool, newText string, newEmpty bool) bool {
 	before, okBefore := numberValue(key, oldText, oldEmpty)
 	after, okAfter := numberValue(key, newText, newEmpty)
@@ -130,9 +122,6 @@ func relaxes(direction, key, oldText string, oldEmpty bool, newText string, newE
 	return after < before
 }
 
-// numberValue reads the text of a watched setting as a number to compare, in the
-// unit of the setting: a duration in nanoseconds. A layer that held no row reads
-// as the declared default.
 func numberValue(key, text string, empty bool) (int64, bool) {
 	if empty {
 		return declaredNumber(key)
@@ -144,8 +133,6 @@ func numberValue(key, text string, empty bool) (int64, bool) {
 	return n, err == nil
 }
 
-// declaredNumber is the declared default of one of the watched settings, as the
-// comparison reads it.
 func declaredNumber(key string) (int64, bool) {
 	switch key {
 	case accessTTLPath:

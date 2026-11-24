@@ -58,8 +58,6 @@ func (p *product) served(e *sessionEntry) authn.SessionStatus {
 	return st
 }
 
-// readStatus reads the row of a session and the account it belongs to and builds
-// the entry. fresh reads the account from the store and not from the cache.
 func (p *product) readStatus(ctx context.Context, cs *cacheSet, id authn.SessionID, fresh bool) (*sessionEntry, error) {
 	row, err := p.byID(ctx, id)
 	if errors.Is(err, errNoRow) {
@@ -136,9 +134,6 @@ func accountPermits(a authn.Account, created time.Time) bool {
 	return a.Status == authn.StatusActive && !created.Before(a.ValidAfter)
 }
 
-// rowPayload reads the payload of a row and holds it to the row: the identifier,
-// the account and the kind it records are the row's, and the attributes are within
-// the bounds of the idp.* set.
 func rowPayload(row sessionRow) (payload, error) {
 	pl, ok, err := decodePayload([]byte(row.Data))
 	if err != nil || !ok {
@@ -153,7 +148,6 @@ func rowPayload(row sessionRow) (payload, error) {
 	return pl, nil
 }
 
-// accountFor reads an account, through the snapshot cache or from the store.
 func (p *product) accountFor(ctx context.Context, cs *cacheSet, id authn.AccountID, fresh bool) (authn.Account, error) {
 	if fresh {
 		a, err := p.accounts.Get(ctx, id)

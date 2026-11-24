@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/profile"
 )
 
-// provenWay is one way Verification records, with the words a description uses
-// to name it.
 type provenWay struct {
 	via   string
 	named string
@@ -21,12 +19,7 @@ type provenWay struct {
 // TestTheProvenDescriptionsNameTheProvingWays holds the two identifier views'
 // `proven` descriptions to Verification.Proves: the description names every
 // way once, in runs joined by commas and conjunctions, and each run carries
-// only ways that share a Proves() answer. The ways in the proving runs are
-// exactly the proving set, and the rest are exactly the non-proving set,
-// invite among them. A description that named invite among the proofs, left a
-// way out, or mixed the two kinds in one run fails here. It reads runs instead
-// of a fixed connector, so rewording the sentence keeps it honest as long as
-// the two kinds stay apart.
+// only ways that share a Proves() answer.
 func TestTheProvenDescriptionsNameTheProvingWays(t *testing.T) {
 	ways := []provenWay{
 		{authn.VerifiedViaSMSCode, "sms-code"},
@@ -124,8 +117,6 @@ func describedRuns(description string, ways []provenWay) [][]string {
 	return runs
 }
 
-// wordPositions returns every offset at which name occurs in text as a whole
-// word, rejecting an occurrence a letter, digit, hyphen or underscore abuts.
 func wordPositions(text, name string) []int {
 	var positions []int
 	for from := 0; ; {

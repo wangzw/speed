@@ -25,7 +25,6 @@ func init() {
 	gin.SetMode(gin.ReleaseMode)
 }
 
-// arrival is what the layer behind the gateway saw.
 type arrival struct {
 	reached bool
 	id      identity.Identity
@@ -33,8 +32,6 @@ type arrival struct {
 	access  authn.Access
 }
 
-// run puts one request through the gateway's layer on an endpoint and reports
-// the response together with what reached the layer behind it.
 func run(g *gateway, endpoint string, r *nethttp.Request) (*httptest.ResponseRecorder, *arrival) {
 	engine, seen := layerOn(g, endpoint)
 	w := httptest.NewRecorder()
@@ -67,14 +64,11 @@ func engineWith(layer gin.HandlerFunc) (*gin.Engine, *arrival) {
 	engine.Use(layer)
 	engine.NoRoute(func(c *gin.Context) {
 		record(seen, c)
-		// A handler that writes nothing leaves the engine's own answer to a
-		// request with no route, a 404 and its body, in place.
 		c.Status(nethttp.StatusOK)
 	})
 	return engine, seen
 }
 
-// record notes what a handler behind the gateway was handed.
 func record(seen *arrival, c *gin.Context) {
 	seen.reached = true
 	seen.id, seen.carried = identity.From(c.Request.Context())
@@ -110,12 +104,8 @@ func conclusionOf(t *testing.T, g *gateway, endpoint string, edit func(*nethttp.
 	return w, h.only(t)
 }
 
-// TestARequestWithNoUsableCredentialIsRefusedByTheGateway holds the refusals the
-// gateway reaches without asking anybody.
-//
-// Two Authorization headers is the case worth naming: picking one of them would
-// let a caller who can add a header choose which credential is judged, and which
-// one that is would be the header order.
+// TestARequestWithNoUsableCredentialIsRefusedByTheGateway holds the refusals
+// the gateway reaches without asking anybody.
 func TestARequestWithNoUsableCredentialIsRefusedByTheGateway(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -298,10 +288,9 @@ func TestACredentialReachesOnlyTheBackendThatTakesItsCarrier(t *testing.T) {
 }
 
 // TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie holds the
-// precedence: when the header is there it is the credential, the cookie is not
-// read and not asked about, and a header that does not hold is not made up for
-// by a cookie that might. Two carriers judged separately would be two ways for a
-// caller to get through.
+// precedence: when the header is there it is the credential, the cookie is
+// not read and not asked about, and a header that does not hold is not made
+// up for by a cookie that might.
 func TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie(t *testing.T) {
 	t.Run("a header and a cookie that both hold", func(t *testing.T) {
 		var tokenAsked, cookieAsked atomic.Int64
@@ -325,7 +314,7 @@ func TestTheAuthorizationHeaderIsReadAloneAndDoesNotFallBackToACookie(t *testing
 
 	t.Run("a header that does not hold beside a cookie that does", func(t *testing.T) {
 		var cookieAsked atomic.Int64
-		token := schemeBackend("token", "bearer") // denies
+		token := schemeBackend("token", "bearer")
 		cookie := passes(cookieBackend("session", "sid"))
 		cookie.asked = &cookieAsked
 		g := testGateway(t, []string{"public"}, token, cookie)
@@ -389,7 +378,6 @@ func TestTwoCookiesABackendTakesAreAmbiguousAndRefused(t *testing.T) {
 		t.Errorf("a backend was asked %d time(s) about an ambiguous request", asked.Load())
 	}
 
-	// The control: either cookie alone is a credential.
 	for _, r := range []*nethttp.Request{
 		withCookie(request("GET", "/x"), "sid", "a"), withCookie(request("GET", "/x"), "other", "b"),
 	} {
@@ -547,13 +535,11 @@ func TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous(t *testin
 		t.Errorf("the buckets read %v, want one anonymous and nothing else", tally)
 	}
 
-	// The same request on a route that is not optional is refused.
 	w = httptest.NewRecorder()
 	engine.ServeHTTP(w, request("GET", "/orders"))
 	if w.Code != nethttp.StatusUnauthorized {
 		t.Errorf("a request with no credential on a guarded route answered %d, want %d", w.Code, nethttp.StatusUnauthorized)
 	}
-	// And on the optional route under another method.
 	engine2, _ := routedEngine(g, "public", [2]string{"POST", "/catalog"})
 	w = httptest.NewRecorder()
 	engine2.ServeHTTP(w, request("POST", "/catalog"))
@@ -562,11 +548,10 @@ func TestAnOptionalRouteLetsARequestWithNoCredentialThroughAsAnonymous(t *testin
 	}
 }
 
-// TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse holds the other
-// half of the optional route, which is the half that matters: a credential that
-// is there is judged, and one that does not hold is a 401, never an anonymous
-// pass. Passing it as anonymous would let an expired or stolen credential be
-// ignored on this route without the caller noticing it had stopped working.
+// TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse holds the
+// other half of the optional route, which is the half that matters: a
+// credential that is there is judged, and one that does not hold is a 401,
+// never an anonymous pass.
 func TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -615,7 +600,7 @@ func TestACredentialOnAnOptionalRouteIsAuthenticatedAsAnywhereElse(t *testing.T)
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			basic := passes(basicBackend("static", "static."))
-			cookie := cookieBackend("session", "sid") // denies
+			cookie := cookieBackend("session", "sid")
 			if c.verify != nil {
 				basic.verify = c.verify
 			}
@@ -782,9 +767,9 @@ func TestTheChallengeNameFollowsTheCarrier(t *testing.T) {
 }
 
 // TestTheBackendAndTheChallengeAreNotTheBackendsToChoose holds that nothing a
-// backend hands over reaches the two fields the gateway stamps: the backend is
-// the name the gateway read from the verifier, and the challenge is the
-// carrier's. A backend cannot make its identities read as another backend's.
+// backend hands over reaches the two fields the gateway stamps: the backend
+// is the name the gateway read from the verifier, and the challenge is the
+// carrier's.
 func TestTheBackendAndTheChallengeAreNotTheBackendsToChoose(t *testing.T) {
 	b := schemeBackend("honest", "bearer")
 	b.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -801,11 +786,10 @@ func TestTheBackendAndTheChallengeAreNotTheBackendsToChoose(t *testing.T) {
 	}
 }
 
-// TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway holds
-// what the gateway puts on the request's logger: the account, the backend, and,
-// when they apply, the actor of an impersonation and the session. The caller is
-// settled here and nowhere else, so a record written behind the gateway can be
-// attributed to its caller only if the gateway bound it.
+// TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway
+// holds what the gateway puts on the request's logger: the account, the
+// backend, and, when they apply, the actor of an impersonation and the
+// session.
 func TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway(t *testing.T) {
 	plain := basicBackend("static", "static.")
 	plain.verify = func(context.Context, authn.Credential) authn.Verdict { return held(plain, "ops") }
@@ -859,16 +843,8 @@ func TestAPassBindsTheCorrelationFieldsOnTheLoggerOfTheLayersBehindTheGateway(t 
 	}
 }
 
-// TestTheGatewaysOwnDefectBecomesAStatusCode holds the recover the gateway does
-// for itself.
-//
-// The entry point's fallback would answer the panic with a 500 as well, and it
-// could not say which layer raised it: the response is the same whoever crashed.
-// The gateway recovering is what answers it as its own defect — counted in none
-// of the buckets, logged with the endpoint and the stack — and what writes that
-// answer through the entry point's error response like any other refusal. The
-// engine here carries no fallback, so a panic that was not recovered would leave
-// ServeHTTP altogether.
+// TestTheGatewaysOwnDefectBecomesAStatusCode holds the recover the gateway
+// does for itself.
 func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
 	g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
 	sealed(t, g, routerWith("public"))
@@ -902,12 +878,6 @@ func TestTheGatewaysOwnDefectBecomesAStatusCode(t *testing.T) {
 
 // TestALayerCannotBeBuiltBeforeTheDispatchTable pins an ordering inside Init
 // that has no other signal.
-//
-// The layer is built out of the table — the challenge it answers a refusal with
-// names the schemes in it — so registering on the endpoints before the table
-// exists takes it while it is still nil. Read from the outside that ordering
-// looks like a free choice, and getting it wrong does not fail at registration
-// or at startup: it fails on the first request, several frames from the cause.
 func TestALayerCannotBeBuiltBeforeTheDispatchTable(t *testing.T) {
 	g, err := newGateway(settings{endpoints: []string{"public"}, budget: time.Second, inFlight: 1})
 	if err != nil {
@@ -956,11 +926,6 @@ func TestDrainingReturnsOnceTheCallsInFlightAreDone(t *testing.T) {
 }
 
 // TestAnOutageIsChargedToWhoCouldNotAnswer holds the attribution of a 503.
-//
-// Stopping, and the in-flight gate being full, are this module's own limits: the
-// backend was never asked. Charging them to it sends an operator to read the
-// logs of a credential store that is working perfectly, while the thing that
-// actually refused the request says nothing.
 func TestAnOutageIsChargedToWhoCouldNotAnswer(t *testing.T) {
 	t.Run("after the gateway has stopped", func(t *testing.T) {
 		g := testGateway(t, []string{"public"}, passes(basicBackend("static", "static.")))
@@ -994,11 +959,8 @@ func TestAnOutageIsChargedToWhoCouldNotAnswer(t *testing.T) {
 	})
 }
 
-// TestARefusalMayCarryRetryAfterOnlyWhenTheCapacityWasInUse holds the one header
-// a 503 may carry. A backend that says its derivation capacity is in use is a
-// condition that passes, so the answer says to ask again in a second; no other
-// cause of a 503 says anything about when to come back, and a Retry-After on one
-// would be a promise nobody made.
+// TestARefusalMayCarryRetryAfterOnlyWhenTheCapacityWasInUse holds the one
+// header a 503 may carry.
 func TestARefusalMayCarryRetryAfterOnlyWhenTheCapacityWasInUse(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -1067,11 +1029,9 @@ func TestEveryResponseOnAGuardedRouteVariesByTheCredentialCarriers(t *testing.T)
 	}
 }
 
-// TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs holds ClearCookie: it
-// is called when the backend refuses a credential that came in a cookie, so a
-// browser does not keep sending one that cannot hold. A header credential that is
-// refused clears nothing here, where the backend takes no cookie; the same for a
-// backend that takes both carriers is held in request_edges_test.go.
+// TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs holds ClearCookie:
+// it is called when the backend refuses a credential that came in a cookie,
+// so a browser does not keep sending one that cannot hold.
 func TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -1112,7 +1072,7 @@ func TestACookieThatIsRefusedIsClearedAndNoOtherCredentialIs(t *testing.T) {
 	}
 
 	t.Run("a backend that cannot clear", func(t *testing.T) {
-		cookie := cookieBackend("session", "sid") // denies, and implements no CookieClearer
+		cookie := cookieBackend("session", "sid")
 		g := testGateway(t, []string{"public"}, cookie)
 		sealed(t, g, routerWith("public"))
 		w, _ := run(g, "public", withCookie(request("GET", "/x"), "sid", "stale"))

@@ -23,18 +23,8 @@ var registrations = []struct {
 	{"Impersonable", func(g *gateway, e, m, p string) { g.Impersonable(e, m, p) }},
 }
 
-// TestRegisteringOutsideTheWindowPanics holds both ends of the three-state gate
-// for every one of the three registrations.
-//
-// Before the window a registrant is still constructing, and the instance it
-// would register with may not exist. After it the tables are frozen and requests
-// read them, so a late registration would change what is guarded while requests
-// are already being served. Neither is something a caller can retry, which is
-// why it is a panic rather than a value handed back.
-//
-// The panic text is part of what is held here: it is the only thing the caller
-// sees, and it has to say which method was called, which side of the window the
-// call fell on and where the call belongs.
+// TestRegisteringOutsideTheWindowPanics holds both ends of the three-state
+// gate for every one of the three registrations.
 func TestRegisteringOutsideTheWindowPanics(t *testing.T) {
 	for _, reg := range registrations {
 		t.Run(reg.name+" before the window opens", func(t *testing.T) {
@@ -67,15 +57,9 @@ func TestRegisteringOutsideTheWindowPanics(t *testing.T) {
 	}
 }
 
-// TestARegistrationThatCannotLandFailsTheStartup holds the two validations Start
-// makes of the endpoint every registration names, each with its own sentinel and
-// for each of the three kinds.
-//
-// The unguarded case is the one worth spelling out: the direction is already
-// fail-closed, since a registration on an endpoint nobody guards changes
-// nothing. Swallowing it silently is what the sentinel prevents — the registrant
-// believes a route is public, or open to an impersonation, and nothing anywhere
-// says it is not.
+// TestARegistrationThatCannotLandFailsTheStartup holds the two validations
+// Start makes of the endpoint every registration names, each with its own
+// sentinel and for each of the three kinds.
 func TestARegistrationThatCannotLandFailsTheStartup(t *testing.T) {
 	for _, reg := range registrations {
 		for _, c := range []struct {
@@ -106,10 +90,8 @@ func TestARegistrationThatCannotLandFailsTheStartup(t *testing.T) {
 	}
 }
 
-// TestOneRouteWithTwoLevelsThatExcludeEachOtherFailsTheStartup holds which pairs
-// of registrations conflict. An exempt route reads no credential, so it has no
-// identity that could be optional or impersonating; Optional and Impersonable
-// act on requests that do not overlap, so they may share a route.
+// TestOneRouteWithTwoLevelsThatExcludeEachOtherFailsTheStartup holds which
+// pairs of registrations conflict.
 func TestOneRouteWithTwoLevelsThatExcludeEachOtherFailsTheStartup(t *testing.T) {
 	type call struct {
 		kind     string
@@ -193,9 +175,7 @@ func TestTheFrozenTableCarriesEachKindOnTheRoutesItWasRegisteredOn(t *testing.T)
 
 // TestTheFrozenTablesAreWrittenByEndpointMethodAndPath holds the startup
 // diagnostics that state what is public, what is optional and what admits an
-// impersonation. They name the routes the way a registrant wrote them — method
-// and path, under the endpoint they are on — and a route registered twice is one
-// entry of it, because it is one registration.
+// impersonation.
 func TestTheFrozenTablesAreWrittenByEndpointMethodAndPath(t *testing.T) {
 	logs := liveAssembly{
 		endpoints: []string{"public", "admin"},
@@ -265,8 +245,6 @@ func TestAnEmptyFrozenTableSaysSo(t *testing.T) {
 	}
 }
 
-// renderAttrs writes slog's alternating attributes as text, so a case can look
-// for what a line says.
 func renderAttrs(attrs []any) string {
 	var b strings.Builder
 	for _, a := range attrs {
@@ -276,13 +254,8 @@ func renderAttrs(attrs []any) string {
 	return b.String()
 }
 
-// TestAnExemptRouteReachesNoBackendAtAll holds the ordering the whole exemption
-// mechanism rests on.
-//
-// The exemption is judged before the Authorization header is read. Were it
-// judged after, a public health check would consume a backend call on every
-// probe, and a backend that is down would take the health check down with it —
-// the one route that must answer when everything else cannot.
+// TestAnExemptRouteReachesNoBackendAtAll holds the ordering the whole
+// exemption mechanism rests on.
 func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 	var asked atomic.Int64
 	backend := passes(basicBackend("static", "static."))
@@ -315,9 +288,6 @@ func TestAnExemptRouteReachesNoBackendAtAll(t *testing.T) {
 			"carries no identity, and the access level says why", exempt.body, want)
 	}
 
-	// The guarded route with the same credential is the control: the backend is
-	// reachable and the credential is good, so the silence above is the
-	// exemption's doing.
 	requireStatus(t, "a guarded route with a good credential", guarded, nethttp.StatusOK)
 	if want := "reached as static.alice [required]"; guarded.body != want {
 		t.Errorf("the guarded route answered %q, want %q", guarded.body, want)
@@ -369,12 +339,8 @@ func TestAnOptionalRouteTakesARequestWithNoCredentialAndJudgesOneWithACredential
 	requireStatus(t, "a route beside the optional one", other, nethttp.StatusUnauthorized)
 }
 
-// TestAnExemptionMatchesTheRegisteredMethodAndPathOnly holds that the method is
-// part of what is exempted.
-//
-// Only GET /both is exempted, and POST /both is a route on the same path that
-// carries its own handler and its own business. Exempting by path alone would
-// open the one by exempting the other. The same holds for the other two kinds.
+// TestAnExemptionMatchesTheRegisteredMethodAndPathOnly holds that the method
+// is part of what is exempted.
 func TestAnExemptionMatchesTheRegisteredMethodAndPathOnly(t *testing.T) {
 	var get, post, other, optionalGet, optionalPost reply
 	liveAssembly{
@@ -417,14 +383,6 @@ func TestAnExemptionMatchesTheRegisteredMethodAndPathOnly(t *testing.T) {
 
 // TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly holds the
 // comparison for a route that carries a parameter or a catch-all.
-//
-// The exemption is written the way the route was registered, and what it covers
-// is that route: every request the router matches to it, and no request matched
-// to another. GET /accounts/me is a route of its own beside GET /accounts/:id —
-// the router prefers the static segment — and its path is what the router
-// reports for it, so the exemption of the parameter route does not reach it. A
-// comparison that read the exemption as a pattern over the request's path would
-// reach it.
 func TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly(t *testing.T) {
 	var parameter, sibling, catchAll, nested, elsewhere reply
 	liveAssembly{
@@ -460,19 +418,9 @@ func TestAnExemptionWrittenAsTheRouteWasRegisteredCoversThatRouteOnly(t *testing
 		"GET /accounts/me", sibling, "GET /private/logo.png", elsewhere, true)
 }
 
-// TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches holds the cost the
-// comparison accepts: a registration that no route carries, in those exact
-// characters, is not an error and is not a match.
-//
-// Each exemption below names a route that exists in some other spelling — a
-// parameter called something else, one concrete instance of it, a trailing
-// slash, a lower-case method, a path in another case, a pattern in the standard
-// library's wildcard syntax — and none of them gets that route through. The
-// startup succeeds anyway, because this module cannot read the routing table and
-// so cannot tell a spelling no route carries from one a route will carry later.
-// The empty path is the one the lookup has to refuse by name: it is what the
-// router reports for a request that matched nothing, so an exemption registered
-// with it would be one every unmatched request hit.
+// TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches holds the cost
+// the comparison accepts: a registration that no route carries, in those
+// exact characters, is not an error and is not a match.
 func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 	routes := []liveRoute{
 		{endpoint: "public", method: "GET", path: "/accounts/:id"},
@@ -522,33 +470,18 @@ func TestAnExemptionSpelledDifferentlyFromEveryRouteNeverMatches(t *testing.T) {
 		for i, r := range requests {
 			requireStatus(t, fmt.Sprintf("%s %s, which no %s is spelled as", r.method, r.path, kind),
 				got[i], nethttp.StatusUnauthorized)
-			// Every one of them is an unmatched request refused by the gateway,
-			// so they are one answer: same status, same headers, same body.
 			requireSameReply(t, fmt.Sprintf("%s %s, which no %s is spelled as", r.method, r.path, kind),
 				requests[0].method+" "+requests[0].path, got[0], r.method+" "+r.path, got[i], true)
 		}
 	}
 }
 
-// TestARequestTheRouterAnswersWithoutARouteIsStillChallenged holds the position
-// of the gateway relative to the router's own answers: a request that matches no
-// route, one the matched path does not allow the method for, and a HEAD to a
-// route registered for GET alone, are all answered by the gateway first when they
-// carry no credential, and by the router once they do.
-//
-// The gateway answering first is what keeps an unauthenticated caller from
-// telling a path that does not exist from one that does, and that includes the
-// Allow header a 405 carries: it names the methods a path accepts, so a refusal
-// that carried it would answer the question the refusal exists to withhold. The
-// credentialed half is what shows the router's answer, Allow included, was not
-// lost.
-//
-// None of the three is a request a registration covers, because the router
-// reports no route for them. That is held with exemptions and optional routes
-// written for exactly those requests — GET /nowhere, POST /health and HEAD
-// /health, none of them a route anyone registered — which would let the requests
-// through if the path the router reports for an unmatched request, or for a
-// request whose method the path does not allow, were the path that was asked for.
+// TestARequestTheRouterAnswersWithoutARouteIsStillChallenged holds the
+// position of the gateway relative to the router's own answers: a request
+// that matches no route, one the matched path does not allow the method for,
+// and a HEAD to a route registered for GET alone, are all answered by the
+// gateway first when they carry no credential, and by the router once they
+// do.
 func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 	requests := []struct {
 		name   string
@@ -570,9 +503,6 @@ func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 
 	bare := make([]reply, len(requests))
 	credentialed := make([]reply, len(requests))
-	// An exemption and an optional route are tried in two drives, since one route
-	// may not be both. The last drive is the one the assertions below read, and
-	// the first is held to the same refusals.
 	for _, assemble := range []func(liveAssembly) liveAssembly{
 		func(a liveAssembly) liveAssembly { a.exempt = unrouted; return a },
 		func(a liveAssembly) liveAssembly { a.optional = unrouted; return a },
@@ -614,10 +544,8 @@ func TestARequestTheRouterAnswersWithoutARouteIsStillChallenged(t *testing.T) {
 	}
 }
 
-// TestAnEndpointWithNoRegistrationExemptsNothing holds what an endpoint carrying
-// no registration is left with. Reading an empty table as "nothing was
-// registered, so let everything through" would open every guarded endpoint that
-// nobody wrote an exemption for.
+// TestAnEndpointWithNoRegistrationExemptsNothing holds what an endpoint
+// carrying no registration is left with.
 func TestAnEndpointWithNoRegistrationExemptsNothing(t *testing.T) {
 	var health, nowhere reply
 	liveAssembly{
@@ -635,14 +563,8 @@ func TestAnEndpointWithNoRegistrationExemptsNothing(t *testing.T) {
 		"the registered route", health, "the path no route carries", nowhere, true)
 }
 
-// TestARegistrationOnlyAppliesToTheEndpointItWasRegisteredOn holds the keying of
-// the tables.
-//
-// A registration is made against one endpoint by name. A gateway that consulted
-// the wrong endpoint's table — or one table for all of them — would open a public
-// route's path on every endpoint it guards. That is an authentication bypass
-// produced by a one-word mistake and visible nowhere else: both endpoints go on
-// answering, one of them without a credential.
+// TestARegistrationOnlyAppliesToTheEndpointItWasRegisteredOn holds the keying
+// of the tables.
 func TestARegistrationOnlyAppliesToTheEndpointItWasRegisteredOn(t *testing.T) {
 	var opened, guarded, optionalHere, optionalThere reply
 	liveAssembly{
@@ -700,9 +622,6 @@ func panicked(t *testing.T, what string, fn func()) (text string) {
 	return ""
 }
 
-// mustContain fails when the rendered message does not carry the fragment,
-// naming what the fragment stands for so that a missing one reads as the
-// property that was lost rather than as a string mismatch.
 func mustContain(t *testing.T, text, fragment, why string) {
 	t.Helper()
 	if !strings.Contains(text, fragment) {

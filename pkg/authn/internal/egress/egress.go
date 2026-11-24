@@ -59,7 +59,6 @@ func New(o Options) *http.Client {
 	return build(o, hooks{})
 }
 
-// hooks are the points a test replaces. Production leaves them zero.
 type hooks struct {
 	// lookup resolves a host name; nil means the system resolver.
 	lookup func(ctx context.Context, host string) ([]netip.Addr, error)
@@ -164,8 +163,6 @@ func dialAll(dialer *net.Dialer, lookup func(context.Context, string) ([]netip.A
 	}
 }
 
-// callKey is the context key under which [guarded] carries the context of the
-// call to the dial.
 type callKey struct{}
 
 // endWithCall returns ctx bounded by the call it was started for: it ends when
@@ -219,8 +216,6 @@ func shareOfDeadline(ctx context.Context, remaining int) (context.Context, conte
 	return context.WithTimeout(ctx, time.Until(deadline)/time.Duration(remaining))
 }
 
-// guarded enforces the scheme and the body cap around the transport and carries
-// the call's context to the dial.
 type guarded struct {
 	next http.RoundTripper
 }

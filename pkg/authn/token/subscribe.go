@@ -18,8 +18,6 @@ import (
 // cleared again.
 const seenCapacity = 1024
 
-// seenEvents is a bounded set of the event identifiers a handler has finished
-// with.
 type seenEvents struct {
 	mu    sync.Mutex
 	order *list.List
@@ -99,8 +97,6 @@ func (p *product) once(h func(context.Context, event.Event) error) event.Handler
 	}
 }
 
-// onSessionRevoked drops the snapshot cached for the account the revoked session
-// belongs to, so a change that came with the revocation is read again.
 func (p *product) onSessionRevoked(_ context.Context, evt event.Event) error {
 	var payload authn.SessionRevoked
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {
@@ -110,8 +106,6 @@ func (p *product) onSessionRevoked(_ context.Context, evt event.Event) error {
 	return nil
 }
 
-// onAccountStatusChanged drops the snapshot cached for the account the event
-// names, so the next verification reads its status and valid-after again.
 func (p *product) onAccountStatusChanged(_ context.Context, evt event.Event) error {
 	var payload authn.AccountStatusChanged
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {
@@ -121,7 +115,6 @@ func (p *product) onAccountStatusChanged(_ context.Context, evt event.Event) err
 	return nil
 }
 
-// onAccountDeleted drops the snapshot cached for the account the event names.
 func (p *product) onAccountDeleted(_ context.Context, evt event.Event) error {
 	var payload authn.AccountDeleted
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {
@@ -131,8 +124,6 @@ func (p *product) onAccountDeleted(_ context.Context, evt event.Event) error {
 	return nil
 }
 
-// onImpersonationEnded drops the record cached for the impersonation the event
-// names, so the next verification asks the capability again.
 func (p *product) onImpersonationEnded(_ context.Context, evt event.Event) error {
 	var payload authn.ImpersonationEnded
 	if err := event.DecodePayload(evt.Payload, &payload); err != nil {

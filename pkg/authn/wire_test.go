@@ -54,11 +54,10 @@ func TestTheNewValueTypesAreTheModelsOwn(t *testing.T) {
 	}
 }
 
-// TestTheWireValuesOfTheNewConstantsAreFrozen pins what is written to a table, a
-// token, a payload or a route: the status numbers of the status column, the texts
-// of the kind columns, the closed sets that other modules and clients compare.
-// The model's own tests hold the same values; these are read through the root
-// names, which is where a host and every module reads them.
+// TestTheWireValuesOfTheNewConstantsAreFrozen pins what is written to a
+// table, a token, a payload or a route: the status numbers of the status
+// column, the texts of the kind columns, the closed sets that other modules
+// and clients compare.
 func TestTheWireValuesOfTheNewConstantsAreFrozen(t *testing.T) {
 	if StatusDisabled != 0 || StatusActive != 1 || StatusDeleted != 2 {
 		t.Errorf("account statuses read %d, %d, %d, want 0, 1, 2 (the status column)", StatusDisabled, StatusActive, StatusDeleted)

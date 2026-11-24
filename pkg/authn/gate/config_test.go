@@ -13,9 +13,6 @@ import (
 	"github.com/vislake/speed/pkg/core"
 )
 
-// sound is a configuration that resolves, which each case then spoils in one
-// way. A case that spoils one field has to find that field's check refusing it,
-// not another's.
 func sound() moduleConfig {
 	return moduleConfig{
 		Endpoints:  []string{"public"},
@@ -30,14 +27,6 @@ func sound() moduleConfig {
 
 // TestAConfigurationThisGatewayCannotRunOnIsRefused holds the inputs that are
 // refused rather than run on.
-//
-// The repeated endpoint is the one worth naming: it would register the
-// authentication layer twice on that endpoint, so every request would be
-// authenticated twice and every backend asked twice — doubling the load on a
-// credential store and every counter read off it, for no gain at all. The empty
-// list and the wildcard written beside names are the two this module's
-// default-to-everything makes mistakes worth refusing: neither can be read as
-// what the writer meant.
 func TestAConfigurationThisGatewayCannotRunOnIsRefused(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -103,9 +92,6 @@ func TestAConfigurationThisGatewayCannotRunOnIsRefused(t *testing.T) {
 			if !strings.Contains(err.Error(), c.mentions) {
 				t.Errorf("the failure reads %q and does not say what is wrong (looked for %q)", err, c.mentions)
 			}
-			// The sentinel table is closed over what this module judges itself,
-			// and a caller tells a configuration it has to correct from every
-			// other startup failure by it.
 			if !errors.Is(err, c.want) {
 				t.Errorf("the failure reads %q and does not wrap %v", err, c.want)
 			}
@@ -177,10 +163,9 @@ func TestASoundConfigurationResolves(t *testing.T) {
 	}
 }
 
-// TestTheDefaultsAreTheDesignsAndGuardEverything holds what a gateway is worth
-// with no configuration file at all: it guards every endpoint, with a five
-// second budget, a width of 64 and the base path /api/v1/auth. The default is the side a
-// mistake falls on refusal.
+// TestTheDefaultsAreTheDesignsAndGuardEverything holds what a gateway is
+// worth with no configuration file at all: it guards every endpoint, with a
+// five second budget, a width of 64 and the base path /api/v1/auth.
 func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	reader := authntest.ConfigReader(t, Module(), `{}`)
 	set, err := readSettings(reader)
@@ -201,13 +186,9 @@ func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	}
 }
 
-// TestAGatewayToldToGuardNothingRefusesToStart holds the only answer this module
-// has when the configuration writes an empty list: a startup failure naming the
-// key. A gateway that guards no endpoint is a configuration mistake and not a way
-// to switch authentication off, since every route on every endpoint would be
-// served without a credential; the way to have no gateway is to leave the module
-// out of the command. The absent key is not this case: it is the default, and the
-// default guards everything.
+// TestAGatewayToldToGuardNothingRefusesToStart holds the only answer this
+// module has when the configuration writes an empty list: a startup failure
+// naming the key.
 func TestAGatewayToldToGuardNothingRefusesToStart(t *testing.T) {
 	_, err := prepare(authntest.ConfigReader(t, Module(), `{"authn":{"gate":{"endpoints":[]}}}`))
 	if err == nil {
@@ -264,10 +245,9 @@ func TestTheEndpointListAndTheMountKeysAreReadFromConfiguration(t *testing.T) {
 	}
 }
 
-// TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone holds the origins of
-// the two items that decide the guard: the endpoint list and the trusted
-// origins. A command line argument must not be able to change which endpoints
-// are guarded or which origins are trusted.
+// TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone holds the origins
+// of the two items that decide the guard: the endpoint list and the trusted
+// origins.
 func TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone(t *testing.T) {
 	items := schema().Items
 	for _, key := range []string{endpointsItem, trustedOriginsItem} {
@@ -298,15 +278,8 @@ func TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone(t *testing.T) {
 	}
 }
 
-// TestWhereAHostWritesThisModulesInputs pins the two names that are easy to swap
-// for one another, because both are spelled out of the same two words.
-//
-// The configuration namespace is this module's own name: each backend hangs its
-// section under the capability directory too, and a gateway that took the bare
-// heading would sit on the path they extend. The startup diagnostics go the other
-// way — they are prefixed with the capability directory, because a reader
-// scanning them is looking for what authentication did, not for which of its
-// modules said so.
+// TestWhereAHostWritesThisModulesInputs pins the two names that are easy to
+// swap for one another, because both are spelled out of the same two words.
 func TestWhereAHostWritesThisModulesInputs(t *testing.T) {
 	if ConfigNamespace != ModuleName {
 		t.Errorf("the configuration namespace is %q while the module is %q, so a host writing "+

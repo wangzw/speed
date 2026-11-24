@@ -11,8 +11,7 @@ import (
 )
 
 // Start probes the table, and a table the migrations did not create is
-// ErrNotMigrated, naming the remedy. Run over both dialects, so each dialect's
-// missing-table wording is recognised as well as the probe that reads it.
+// ErrNotMigrated, naming the remedy.
 func TestStartRefusesAnUnmigratedTable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d, withoutMigration())
@@ -23,10 +22,8 @@ func TestStartRefusesAnUnmigratedTable(t *testing.T) {
 	})
 }
 
-// Both dialects' wording for a missing table is recognised: SQLite says "no such
-// table", PostgreSQL says the relation does not exist. Without the PostgreSQL
-// branch a deployment whose migrations had not run would fail with a plain error
-// instead of ErrNotMigrated.
+// Both dialects' wording for a missing table is recognised: SQLite says "no
+// such table", PostgreSQL says the relation does not exist.
 func TestAMissingTableIsRecognisedInBothDialects(t *testing.T) {
 	for name, err := range map[string]error{
 		"sqlite":   errors.New("no such table: authn_sessions"),
@@ -57,9 +54,7 @@ func TestStartAndStopDriveTheSweep(t *testing.T) {
 }
 
 // The sweep deletes browser and token rows whose absolute period ended past
-// retention, and service rows only once revoked and past retention. A row within
-// retention is kept, and a service row that follows a secret with no expiry is
-// never deleted by the clock.
+// retention, and service rows only once revoked and past retention.
 func TestTheSweepDeletesEndedRowsPastRetentionAndNoOthers(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)

@@ -26,7 +26,6 @@ var (
 	staticBackend  = &fakeVerifier{name: "static", accepts: authn.Accepts{Schemes: []string{"basic"}, Accounts: "static."}}
 )
 
-// exitTable is the dispatch table the unit cases check against.
 func exitTable(t *testing.T) *dispatch {
 	t.Helper()
 	d, err := buildDispatch([]authn.Verifier{plainBackend, capableBackend, corpBackend, staticBackend})
@@ -36,7 +35,6 @@ func exitTable(t *testing.T) *dispatch {
 	return d
 }
 
-// backendNamed finds an admitted backend by name.
 func backendNamed(t *testing.T, d *dispatch, name string) *backend {
 	t.Helper()
 	for _, b := range d.backends {
@@ -60,16 +58,12 @@ func wellFormed() authn.Principal {
 	}
 }
 
-// impersonating is a principal that passes the exit check for a backend that
-// declared the impersonation capability.
 func impersonating() authn.Principal {
 	p := wellFormed()
 	p.Actor, p.Session, p.Scope = "admin-9", "0198f0aa-0000-7000-8000-000000000002", "tenant-a"
 	return p
 }
 
-// attributes builds n attributes whose keys are key0, key1, ... and whose
-// values are value bytes long.
 func attributes(n, value int) map[string]string {
 	out := make(map[string]string, n)
 	for i := range n {
@@ -78,11 +72,9 @@ func attributes(n, value int) map[string]string {
 	return out
 }
 
-// TestThePrincipalABackendHandsOverIsHeldToItsShapesAndBounds holds every item of
-// the exit check from both sides: the value just inside its bound passes and the
-// one just outside it does not. A bound that drifted by one in either direction
-// either refuses a legitimate backend or lets a defective one through, and
-// neither shows up anywhere but here.
+// TestThePrincipalABackendHandsOverIsHeldToItsShapesAndBounds holds every
+// item of the exit check from both sides: the value just inside its bound
+// passes and the one just outside it does not.
 func TestThePrincipalABackendHandsOverIsHeldToItsShapesAndBounds(t *testing.T) {
 	d := exitTable(t)
 	capable := backendNamed(t, d, "capable")
@@ -91,7 +83,6 @@ func TestThePrincipalABackendHandsOverIsHeldToItsShapesAndBounds(t *testing.T) {
 		authn.MethodOAuth, authn.MethodOIDC, authn.MethodSAML, authn.MethodStatic,
 		authn.MethodClientSecret,
 	}
-	// A key at the bound, and one past it.
 	key64 := strings.Repeat("k", 64)
 	manyLong := func(first int) func(*authn.Principal) {
 		return func(p *authn.Principal) {
@@ -238,15 +229,10 @@ func TestThePrincipalABackendHandsOverIsHeldToItsShapesAndBounds(t *testing.T) {
 	}
 }
 
-// TestTheWorstCaseAttributeSetAnSSOBackendHandsOverPassesTheExitCheck holds the
-// largest set the design lets a login write: 24 attributes of the account with
-// keys and values of 2 KiB together, and 8 idp.* attributes with keys of 32 bytes
-// and values of 128 bytes. That is 32 entries and 3328 bytes, inside the
-// gateway's bounds of 32 entries and 4 KiB, so the room the exit check keeps for
-// the attributes the provider asserted is not eaten by the account's own. The
-// case builds the set to those figures and asserts them before it asserts the
-// pass, so a change to either side of the arithmetic fails here and not at a
-// user's first login. A 33rd entry is refused.
+// TestTheWorstCaseAttributeSetAnSSOBackendHandsOverPassesTheExitCheck holds
+// the largest set the design lets a login write: 24 attributes of the account
+// with keys and values of 2 KiB together, and 8 idp.* attributes with keys of
+// 32 bytes and values of 128 bytes.
 func TestTheWorstCaseAttributeSetAnSSOBackendHandsOverPassesTheExitCheck(t *testing.T) {
 	d := exitTable(t)
 	capable := backendNamed(t, d, "capable")
@@ -287,8 +273,6 @@ func TestTheWorstCaseAttributeSetAnSSOBackendHandsOverPassesTheExitCheck(t *test
 		t.Errorf("the worst-case attribute set was refused (%s), want it to pass", reason)
 	}
 
-	// The entry count is at its bound, so a 33rd entry is refused, while the bytes
-	// have 768 left.
 	attrs["one-more"] = "x"
 	if _, reason := checkPrincipal(p, anchor, capable, d); reason == "" {
 		t.Error("a 33rd entry passed the exit check, want it refused")
@@ -296,9 +280,9 @@ func TestTheWorstCaseAttributeSetAnSSOBackendHandsOverPassesTheExitCheck(t *test
 }
 
 // TestACapabilityABackendDidNotDeclareIsNotOneItMayUse holds the capability
-// declaration from both sides: the same principals that pass for a backend that
-// declared the capability are refused for one that did not, whatever else about
-// them is sound. This is the half of the exit check no bound can stand in for.
+// declaration from both sides: the same principals that pass for a backend
+// that declared the capability are refused for one that did not, whatever
+// else about them is sound.
 func TestACapabilityABackendDidNotDeclareIsNotOneItMayUse(t *testing.T) {
 	d := exitTable(t)
 	plain, capable := backendNamed(t, d, "plain"), backendNamed(t, d, "capable")
@@ -330,7 +314,6 @@ func TestACapabilityABackendDidNotDeclareIsNotOneItMayUse(t *testing.T) {
 		})
 	}
 
-	// A backend that declared one of the two does not thereby have the other.
 	onlySSO := &backend{name: "sso", sso: true}
 	if _, reason := checkPrincipal(impersonating(), anchor, onlySSO, d); reason == "" {
 		t.Error("a backend that declared SSO alone was let impersonate")
@@ -379,7 +362,7 @@ func TestTheNamespaceCheckAppliesToTheActorAsWellAsTheAccount(t *testing.T) {
 // gateway owes the identity: the zero assurance reads as not stated, and an
 // identity carrying it into the layers behind would read as weaker than the
 // weakest verified credential, or as nothing a requirement could be compared
-// with. Every other level goes through as it was.
+// with.
 func TestAnUnstatedAssuranceIsStampedAsASingleFactor(t *testing.T) {
 	d := exitTable(t)
 	plain := backendNamed(t, d, "plain")
@@ -403,10 +386,8 @@ func TestAnUnstatedAssuranceIsStampedAsASingleFactor(t *testing.T) {
 	}
 }
 
-// TestTheReasonAnExitCheckGivesEchoesNothingTheBackendWrote holds the one thing
-// the failing item's name must not carry: a value. The reason reaches the log,
-// and an attribute value, an account or a scope is as likely to be a secret as
-// anything else a backend holds.
+// TestTheReasonAnExitCheckGivesEchoesNothingTheBackendWrote holds the one
+// thing the failing item's name must not carry: a value.
 func TestTheReasonAnExitCheckGivesEchoesNothingTheBackendWrote(t *testing.T) {
 	d := exitTable(t)
 	capable := backendNamed(t, d, "capable")
@@ -435,16 +416,9 @@ func TestTheReasonAnExitCheckGivesEchoesNothingTheBackendWrote(t *testing.T) {
 	}
 }
 
-// TestAPassThatFailsTheExitCheckIsRefusedAsTheGatewaysOwnDefectFinding holds what
-// a request concludes with when the backend said yes and the principal it said it
-// with is wrong.
-//
-// It is a 401 and not a 503, because the backend answered; it is charged to the
-// gateway, which made the judgement, and counted with the refusals; and it is
-// written at Error, because a backend returning a principal outside what it may
-// is a defect somebody has to fix, and a line written at Info is one a production
-// pipeline drops. The identity is not stamped, and no cookie is cleared, since the
-// credential itself was not refused.
+// TestAPassThatFailsTheExitCheckIsRefusedAsTheGatewaysOwnDefectFinding holds
+// what a request concludes with when the backend said yes and the principal
+// it said it with is wrong.
 func TestAPassThatFailsTheExitCheckIsRefusedAsTheGatewaysOwnDefectFinding(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -491,9 +465,8 @@ func TestAPassThatFailsTheExitCheckIsRefusedAsTheGatewaysOwnDefectFinding(t *tes
 
 // TestABackendReturnsOnlyAccountsInsideItsOwnNamespace holds the account
 // namespace check on the request path, which is what stops a backend from
-// stamping an identity that belongs to another one, for each of the three kinds
-// of namespace. The dot is part of a declared prefix: without it a backend that
-// declared "corp." could stamp "corporate.root".
+// stamping an identity that belongs to another one, for each of the three
+// kinds of namespace.
 func TestABackendReturnsOnlyAccountsInsideItsOwnNamespace(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -582,11 +555,10 @@ func TestAnUnstatedAssuranceReachesTheLayersBehindAsASingleFactor(t *testing.T) 
 	}
 }
 
-// TestTheSkewAllowedAheadIsMeasuredAgainstTheGatewaysClock holds the 120 seconds
-// on the request path with the gateway's clock replaced: an authentication time
-// exactly that far ahead of the clock passes, and one nanosecond further is
-// refused as the gateway's own defect finding. The bound moves with the clock the
-// gateway holds and not with the one the backend read.
+// TestTheSkewAllowedAheadIsMeasuredAgainstTheGatewaysClock holds the 120
+// seconds on the request path with the gateway's clock replaced: an
+// authentication time exactly that far ahead of the clock passes, and one
+// nanosecond further is refused as the gateway's own defect finding.
 func TestTheSkewAllowedAheadIsMeasuredAgainstTheGatewaysClock(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -629,10 +601,8 @@ func TestTheSkewAllowedAheadIsMeasuredAgainstTheGatewaysClock(t *testing.T) {
 	}
 }
 
-// TestABackendNameThatIsNotTheShapeIsRefusedAtTheExitToo holds the recheck of the
-// name the identity is stamped with. Admission refuses such a name, so the case
-// builds the backend by hand: the check is the second line, for a table built any
-// other way.
+// TestABackendNameThatIsNotTheShapeIsRefusedAtTheExitToo holds the recheck of
+// the name the identity is stamped with.
 func TestABackendNameThatIsNotTheShapeIsRefusedAtTheExitToo(t *testing.T) {
 	d := exitTable(t)
 	for name, spelt := range map[string]string{"empty": "", "with a space": "a b", "in capitals": "Static", "with a newline": "a\nb"} {

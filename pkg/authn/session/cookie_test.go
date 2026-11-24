@@ -21,9 +21,8 @@ const (
 	bareCookieName   = "authn-sid"
 )
 
-// The cookie's name and its attributes are what the deployment's public address
-// and the two configuration items come to. Each branch is asserted on its own,
-// with the address that selects it.
+// The cookie's name and its attributes are what the deployment's public
+// address and the two configuration items come to.
 func TestTheCookieNameFollowsThePublicAddressAndTheTwoItems(t *testing.T) {
 	for name, c := range map[string]struct {
 		cfg      moduleConfig
@@ -230,9 +229,8 @@ func TestSetCookieWritesNothingForASessionWithoutAToken(t *testing.T) {
 	}
 }
 
-// A deployment that omits same-site gets the declared default, and that default
-// is lax. The cookie decides its SameSite from the shared value and not from the
-// item being present.
+// A deployment that omits same-site gets the declared default, and that
+// default is lax.
 func TestAnOmittedSameSiteFallsToTheDeclaredDefault(t *testing.T) {
 	if configDefaults.SameSite != "lax" {
 		t.Fatalf("the declared same-site default is %q, want lax", configDefaults.SameSite)
@@ -258,12 +256,8 @@ func TestAPrivateAddressOverHttpIsNotTreatedAsSecure(t *testing.T) {
 }
 
 // Every Set-Cookie the module writes for the session cookie, on SetCookie, on
-// ClearCookie and on the clearing cookie a reply attaches, carries Secure exactly
-// when the public URL is https. On an http address, which starts only on a
-// loopback host, the cookie is authn-sid with HttpOnly, Path=/, no Domain and
-// the configured SameSite and without Secure, which WebKit on Linux does not
-// store when it is set over http. On https, https://localhost included, it is
-// __Host-authn-sid and Secure.
+// ClearCookie and on the clearing cookie a reply attaches, carries Secure
+// exactly when the public URL is https.
 func TestTheSessionCookieIsSecureOnAnHTTPSAddressAlone(t *testing.T) {
 	for _, c := range []struct {
 		address, name string
@@ -313,12 +307,11 @@ func TestTheSessionCookieIsSecureOnAnHTTPSAddressAlone(t *testing.T) {
 	}
 }
 
-// The clearing cookie a reply attaches has to name the same cookie the session
-// was written as, or the browser keeps the session cookie and adds a second one:
-// every attribute that identifies the cookie or that a browser checks before
-// replacing it is the session cookie's, in each configuration of the name, the
-// Domain and the SameSite. The library's own clearing header is held to the same
-// attributes, so the two ways a cookie is cleared agree.
+// The clearing cookie a reply attaches has to name the same cookie the
+// session was written as, or the browser keeps the session cookie and adds a
+// second one: every attribute that identifies the cookie or that a browser
+// checks before replacing it is the session cookie's, in each configuration
+// of the name, the Domain and the SameSite.
 func TestTheClearingCookieMatchesTheSessionCookie(t *testing.T) {
 	const https = "https://app.example.com"
 	for name, c := range map[string]struct {

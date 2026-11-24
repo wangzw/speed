@@ -8,9 +8,6 @@ import (
 	"time"
 )
 
-// requireAllSet fails when any field of v, a struct, is its zero value, at any
-// depth through pointers, slices and maps. A fixture that passes it cannot
-// hide a field a Clone forgot.
 func requireAllSet(t *testing.T, name string, v reflect.Value) {
 	t.Helper()
 	switch v.Kind() {
@@ -77,8 +74,7 @@ func fullProof() Proof {
 	}
 }
 
-// Clone must carry every field. The fixtures have every field set (checked), so
-// a Clone that drops or rewrites one fails DeepEqual.
+// Clone must carry every field.
 func TestCloneCarriesEveryField(t *testing.T) {
 	p, pr, ps, ex := fullPrincipal(), fullProof(), Pass{Methods: []Method{MethodWebAuthn}, UserVerified: true}, fullExternal()
 	requireAllSet(t, "Principal", reflect.ValueOf(p))
@@ -98,7 +94,6 @@ func TestCloneCarriesEveryField(t *testing.T) {
 		t.Errorf("External.Clone = %+v, want %+v", got, ex)
 	}
 
-	// The other polarity of every flag: a Clone that forces one true fails here.
 	pr = fullProof()
 	pr.UserVerified, pr.IDPAsserted, pr.PasswordChanged = false, false, false
 	pr.External.EmailVerified, pr.Aliases[0].EmailVerified = false, false

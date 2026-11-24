@@ -346,9 +346,6 @@ func fullSSOProvider() SSOProvider {
 	}
 }
 
-// shares reports the path of the first map, slice or pointer that a and b hold
-// in common, which is where a copy still reaches the original. It walks both
-// values in step.
 func shares(path string, a, b reflect.Value) (string, bool) {
 	switch a.Kind() {
 	case reflect.Map:
@@ -396,11 +393,10 @@ func shares(path string, a, b reflect.Value) (string, bool) {
 	return "", false
 }
 
-// TestCloneSharesNothingWithTheOriginal is the property of every Clone of this
-// package: the copy is equal to the original, no map, slice or pointer is the
-// same one, and writing into the original's after the copy was taken does not
-// change the copy. The walk is over the fields as reflection finds them, so a
-// field added to a type later is covered without touching this test.
+// TestCloneSharesNothingWithTheOriginal is the property of every Clone of
+// this package: the copy is equal to the original, no map, slice or pointer
+// is the same one, and writing into the original's after the copy was taken
+// does not change the copy.
 func TestCloneSharesNothingWithTheOriginal(t *testing.T) {
 	type cloner struct {
 		name  string
@@ -508,8 +504,6 @@ func TestCloneKeepsWhatIsNilNil(t *testing.T) {
 	}
 }
 
-// hasReference reports whether a type holds a map, a slice or a pointer at any
-// depth through structs, which is what makes a plain copy of a value share.
 func hasReference(t reflect.Type) bool {
 	switch t.Kind() {
 	case reflect.Map, reflect.Slice, reflect.Pointer:
@@ -528,8 +522,8 @@ func hasReference(t reflect.Type) bool {
 }
 
 // TestEveryTypeWithAReferenceHasAClone holds the rule that a record holding a
-// map, a slice or a pointer carries the Clone that copies it, and that a record
-// without any has none to forget. A type added with a map and no Clone fails here.
+// map, a slice or a pointer carries the Clone that copies it, and that a
+// record without any has none to forget.
 func TestEveryTypeWithAReferenceHasAClone(t *testing.T) {
 	for _, typ := range []reflect.Type{
 		reflect.TypeFor[Account](), reflect.TypeFor[CreateAccount](), reflect.TypeFor[Verification](),
@@ -543,7 +537,6 @@ func TestEveryTypeWithAReferenceHasAClone(t *testing.T) {
 		reflect.TypeFor[ImpersonationGrant](), reflect.TypeFor[GrantQuery](), reflect.TypeFor[IssueToken](),
 		reflect.TypeFor[AccessToken](), reflect.TypeFor[RefreshToken](), reflect.TypeFor[SendCode](),
 		reflect.TypeFor[SSOProvider](),
-		// the types that were already here
 		reflect.TypeFor[Principal](), reflect.TypeFor[Proof](), reflect.TypeFor[Pass](), reflect.TypeFor[External](),
 	} {
 		_, has := typ.MethodByName("Clone")

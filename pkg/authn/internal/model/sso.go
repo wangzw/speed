@@ -29,9 +29,12 @@ const (
 // SSOProvider is one enterprise IdP of a tenant. What is read out of the store
 // never holds the client secret, and Config holds no secret either.
 type SSOProvider struct {
-	ID           string
-	Tenant       string
-	Protocol     string // SSOProtocolOIDC or SSOProtocolSAML
+	// ID is the provider identifier.
+	ID string
+	// Tenant is the tenant the provider belongs to.
+	Tenant   string
+	Protocol string // SSOProtocolOIDC or SSOProtocolSAML
+	// Name is the display name.
 	Name         string
 	Enabled      bool   // the zero value reads as disabled
 	Provisioning string // ProvisioningJIT or ProvisioningPreprovisioned
@@ -40,13 +43,17 @@ type SSOProvider struct {
 	UsernameStrategy string
 	// UsernameClaim is the claim UsernameStrategyClaim reads. It is empty for
 	// every other strategy.
-	UsernameClaim     string
-	TrustIDPMFA       bool
+	UsernameClaim string
+	// TrustIDPMFA believes the IdP multi-factor declaration.
+	TrustIDPMFA bool
+	// AllowIDPInitiated permits an IdP-initiated sign-in.
 	AllowIDPInitiated bool
-	AllowSHA1         bool
-	MergeExisting     bool            // whether JIT may merge into an existing account; false by default
-	Config            json.RawMessage // holds no secret when read out
-	Version           int
+	// AllowSHA1 permits SHA-1 signatures.
+	AllowSHA1     bool
+	MergeExisting bool            // whether JIT may merge into an existing account; false by default
+	Config        json.RawMessage // holds no secret when read out
+	// Version is the optimistic-concurrency version.
+	Version int
 }
 
 // Clone returns a copy that shares no slice with p.
@@ -59,6 +66,8 @@ func (p SSOProvider) Clone() SSOProvider {
 // true only once the domain owner has published the claim's token in the DNS
 // TXT record; an unverified claim takes no part in domain discovery.
 type SSOProviderDomain struct {
-	Domain   string
+	// Domain is the claimed email domain.
+	Domain string
+	// Verified says the DNS claim was proved.
 	Verified bool
 }

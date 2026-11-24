@@ -63,7 +63,6 @@ func hostOf(address string) string {
 	return h
 }
 
-// fixedLookup answers every name the table holds and records the names asked.
 type fixedLookup struct {
 	mu    sync.Mutex
 	table map[string][]string
@@ -145,6 +144,8 @@ func ok(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, "ok")
 }
 
+// TestALoopbackServerIsRefusedByDefault checks that a loopback server is
+// refused by default.
 func TestALoopbackServerIsRefusedByDefault(t *testing.T) {
 	var hits counter
 	srv, pool := tlsServer(t, hits.handler(ok))
@@ -164,6 +165,8 @@ func TestALoopbackServerIsRefusedByDefault(t *testing.T) {
 	}
 }
 
+// TestTheDevelopmentSwitchReachesLoopback checks that the development switch
+// reaches loopback.
 func TestTheDevelopmentSwitchReachesLoopback(t *testing.T) {
 	var hits counter
 	srv, pool := tlsServer(t, hits.handler(ok))
@@ -182,6 +185,8 @@ func TestTheDevelopmentSwitchReachesLoopback(t *testing.T) {
 	}
 }
 
+// TestTheDevelopmentSwitchDoesNotOpenAnythingButLoopback checks that the
+// development switch does not open anything but loopback.
 func TestTheDevelopmentSwitchDoesNotOpenAnythingButLoopback(t *testing.T) {
 	var j judged
 	client := build(Options{AllowLoopback: true}, hooks{control: j.hook})
@@ -196,11 +201,7 @@ func TestTheDevelopmentSwitchDoesNotOpenAnythingButLoopback(t *testing.T) {
 
 // TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint holds the
 // boundary of the loopback switch: it opens loopback addresses and nothing
-// else. With the switch on, a plain http endpoint at a non-loopback address is
-// still refused, and refused before a connection is attempted, because the
-// switch moves the address judgement alone and the transport admits https only.
-// Both social methods build their client through the same constructor with the
-// same option, so this case covers the switch's effect for each of them.
+// else.
 func TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint(t *testing.T) {
 	var j judged
 	client := build(Options{AllowLoopback: true}, hooks{control: j.hook})
@@ -216,6 +217,8 @@ func TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint(t *testin
 	}
 }
 
+// TestACertificateTheRootsDoNotTrustIsRefused checks that a certificate the
+// roots do not trust is refused.
 func TestACertificateTheRootsDoNotTrustIsRefused(t *testing.T) {
 	var hits counter
 	srv, _ := tlsServer(t, hits.handler(ok))
@@ -232,6 +235,8 @@ func TestACertificateTheRootsDoNotTrustIsRefused(t *testing.T) {
 	}
 }
 
+// TestTheClientCarriesNoTotalTimeoutAndNoProxy checks that the client carries
+// no total timeout and no proxy.
 func TestTheClientCarriesNoTotalTimeoutAndNoProxy(t *testing.T) {
 	client := New(Options{})
 	if client.Timeout != 0 {
@@ -249,6 +254,8 @@ func TestTheClientCarriesNoTotalTimeoutAndNoProxy(t *testing.T) {
 	}
 }
 
+// TestARedirectIsHandedBackAndNotFollowed checks that a redirect is handed
+// back and not followed.
 func TestARedirectIsHandedBackAndNotFollowed(t *testing.T) {
 	var hits counter
 	mux := http.NewServeMux()
@@ -271,6 +278,8 @@ func TestARedirectIsHandedBackAndNotFollowed(t *testing.T) {
 	}
 }
 
+// TestARedirectToAnotherHostIsNotFollowed checks that a redirect to another
+// host is not followed.
 func TestARedirectToAnotherHostIsNotFollowed(t *testing.T) {
 	var hits counter
 	srv, pool := tlsServer(t, hits.handler(func(w http.ResponseWriter, r *http.Request) {
@@ -291,14 +300,14 @@ func TestARedirectToAnotherHostIsNotFollowed(t *testing.T) {
 	}
 }
 
+// TestAnyOtherSchemeIsRefusedBeforeDialling checks that any other scheme is
+// refused before dialling.
 func TestAnyOtherSchemeIsRefusedBeforeDialling(t *testing.T) {
 	var hits counter
 	plain := httptest.NewServer(hits.handler(ok))
 	t.Cleanup(plain.Close)
 
 	var j judged
-	// The switch is on, so the loopback server is reachable by address: the
-	// scheme is the only thing standing between the request and a response.
 	client := build(Options{AllowLoopback: true}, hooks{control: j.hook})
 
 	for _, url := range []string{plain.URL, "ftp://127.0.0.1:21/", "file:///etc/passwd", "ws://127.0.0.1:1/"} {
@@ -315,6 +324,8 @@ func TestAnyOtherSchemeIsRefusedBeforeDialling(t *testing.T) {
 	}
 }
 
+// TestARefusedSchemeClosesTheRequestBody checks that a refused scheme closes
+// the request body.
 func TestARefusedSchemeClosesTheRequestBody(t *testing.T) {
 	client := New(Options{})
 	body := &closeRecorder{Reader: strings.NewReader("x")}
@@ -340,6 +351,7 @@ func (c *closeRecorder) Close() error {
 	return nil
 }
 
+// checks that the body cap is enforced at its boundary.
 func TestTheBodyCap(t *testing.T) {
 	payload := func(n int) []byte { return bytes.Repeat([]byte{'a'}, n) }
 	gz := func(n int) []byte {
@@ -405,6 +417,7 @@ func TestTheBodyCap(t *testing.T) {
 	}
 }
 
+// TestCappedBodyAtTheBoundary checks that capped body at the boundary.
 func TestCappedBodyAtTheBoundary(t *testing.T) {
 	const limit = 10
 	data := func(n int) string { return strings.Repeat("x", n) }
@@ -446,11 +459,12 @@ func TestCappedBodyAtTheBoundary(t *testing.T) {
 	}
 }
 
+// TestAProxyInTheEnvironmentIsNotUsed checks that a proxy in the environment
+// is not used.
 func TestAProxyInTheEnvironmentIsNotUsed(t *testing.T) {
 	var hits counter
 	srv, pool := tlsServer(t, hits.handler(ok))
 
-	// A listener standing in for the proxy, counting what connects to it.
 	proxy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -494,6 +508,8 @@ func TestAProxyInTheEnvironmentIsNotUsed(t *testing.T) {
 	}
 }
 
+// TestEveryRecordOfANameIsJudged checks that every record of a name is
+// judged.
 func TestEveryRecordOfANameIsJudged(t *testing.T) {
 	var hits counter
 	srv, pool := tlsServer(t, hits.handler(ok))
@@ -571,6 +587,8 @@ func equal(a, b []string) bool {
 	return true
 }
 
+// checks that an IPv4 literal written in another notation is judged by the
+// address it connects to.
 func TestAnIPv4LiteralInAnotherNotationIsJudgedByWhereItConnects(t *testing.T) {
 	var hits counter
 	srv, pool := tlsServer(t, hits.handler(ok))
@@ -612,6 +630,7 @@ func TestAnIPv4LiteralInAnotherNotationIsJudgedByWhereItConnects(t *testing.T) {
 	})
 }
 
+// TestTheConnectionTimeJudgement checks that the connection time judgement.
 func TestTheConnectionTimeJudgement(t *testing.T) {
 	cases := []struct {
 		network, address string
@@ -649,6 +668,8 @@ func TestTheConnectionTimeJudgement(t *testing.T) {
 	}
 }
 
+// TestAnAttemptGetsAShareOfTheDeadline checks that an attempt gets a share of
+// the deadline.
 func TestAnAttemptGetsAShareOfTheDeadline(t *testing.T) {
 	t.Run("with a deadline the share is the time left over the attempts left", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -682,6 +703,8 @@ func TestAnAttemptGetsAShareOfTheDeadline(t *testing.T) {
 	})
 }
 
+// TestACallStopsAtItsContextDeadline checks that a call stops at its context
+// deadline.
 func TestACallStopsAtItsContextDeadline(t *testing.T) {
 	release := make(chan struct{})
 	srv, pool := tlsServer(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
@@ -704,10 +727,7 @@ func TestACallStopsAtItsContextDeadline(t *testing.T) {
 // TestWrappingTheTransportKeepsEveryRefusal holds the way a caller adds the
 // trace headers: it wraps the client's Transport in observability.Transport
 // from outside, and the egress client is given no entry point of its own for
-// it. The judgement sits in the dialer and the scheme and body checks sit in
-// the transport the wrapper delegates to, so none of them may be lost to the
-// extra layer. A wrapper that answered a request itself, or that rebuilt the
-// transport, would let a caller reach an address the client refuses.
+// it.
 func TestWrappingTheTransportKeepsEveryRefusal(t *testing.T) {
 	wrapped := func(o Options) *http.Client {
 		client := build(o, hooks{})

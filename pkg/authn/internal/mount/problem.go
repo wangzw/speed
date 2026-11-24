@@ -13,8 +13,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// typePrefix starts the Problem.Type of every failure this capability's handlers
-// write. The machine-readable code follows it.
 const typePrefix = "urn:speed:authn:"
 
 // The problem codes, the closed set of what a handler of this capability

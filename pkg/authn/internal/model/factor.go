@@ -6,8 +6,11 @@ import "time"
 type FactorKind string
 
 const (
-	FactorTOTP     FactorKind = "totp"
-	FactorSMS      FactorKind = "sms"
+	// FactorTOTP is a time-based one-time password factor.
+	FactorTOTP FactorKind = "totp"
+	// FactorSMS is an SMS second factor.
+	FactorSMS FactorKind = "sms"
+	// FactorWebAuthn is a passkey factor.
 	FactorWebAuthn FactorKind = "webauthn"
 )
 
@@ -15,21 +18,33 @@ const (
 type FactorStatus uint8
 
 const (
-	FactorPending FactorStatus = iota // the zero value: awaiting confirmation, not to be used for verification
+	// FactorPending is the zero value: awaiting confirmation, not to be used for
+	// verification.
+	FactorPending FactorStatus = iota
+	// FactorActive is a factor that may be used.
 	FactorActive
+	// FactorDisabled is a factor that may not be used.
 	FactorDisabled
 )
 
 // FactorRecord is one factor an account has registered.
 type FactorRecord struct {
-	ID          string
-	Account     AccountID
-	Kind        FactorKind
-	Label       string
-	Status      FactorStatus
-	CreatedAt   time.Time
+	// ID is the factor row identifier.
+	ID string
+	// Account is the account the factor belongs to.
+	Account AccountID
+	// Kind is the factor kind.
+	Kind FactorKind
+	// Label is the human-readable label.
+	Label string
+	// Status is where the factor stands.
+	Status FactorStatus
+	// CreatedAt is when the factor was registered.
+	CreatedAt time.Time
+	// ActivatedAt is when the last enrollment step completed.
 	ActivatedAt time.Time
-	LastUsedAt  time.Time
+	// LastUsedAt is the last successful verification.
+	LastUsedAt time.Time
 }
 
 // MFAOutcome is what the multi-factor policy decides for one login. The zero
@@ -46,6 +61,7 @@ const (
 // MFAResult is the assurance one login reached, as the multi-factor module
 // composes it from the first factor's proof and the second factor's pass.
 type MFAResult struct {
+	// Assurance is the level the login reached.
 	Assurance  Assurance
 	IDPAssured bool // the multi-factor level is an enterprise IdP's declaration, not locally verified factors
 }

@@ -10,8 +10,6 @@ import (
 
 var requirementNow = time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
 
-// identityAt builds the identity a gateway would stamp for an authentication of
-// the given level at the given age.
 func identityAt(assurance Assurance, age time.Duration, idpAssured bool) Identity {
 	p := Principal{
 		Account:    "acct",
@@ -27,11 +25,8 @@ func identityAt(assurance Assurance, age time.Duration, idpAssured bool) Identit
 	return identity.New(p, "b", "Bearer")
 }
 
-// TestFreshFirstFactorIsASingleFactorWithinFiveMinutes holds the one place the
-// five minutes and the absence of the local flag are written. The assertions are
-// on the value and on what it does to Identity.Satisfies, so a constructor that
-// returned the right numbers with a flag that reached nothing, or the reverse, is
-// found.
+// TestFreshFirstFactorIsASingleFactorWithinFiveMinutes holds the one place
+// the five minutes and the absence of the local flag are written.
 func TestFreshFirstFactorIsASingleFactorWithinFiveMinutes(t *testing.T) {
 	r := FreshFirstFactor()
 	if r.Assurance != AssuranceSingle || r.MaxAge != 5*time.Minute || r.Local {
@@ -106,8 +101,6 @@ func TestAWindowThatIsNotPositiveIsARequirementNobodyMeets(t *testing.T) {
 			t.Errorf("FreshLocalMulti(%v) = %+v, which also dropped the level or the local flag", w, r)
 		}
 	}
-	// The same fresh identity does satisfy a positive window, so the refusals
-	// above are the window's and not the identity's.
 	if !best.Satisfies(FreshLocalMulti(time.Nanosecond), requirementNow) {
 		t.Error("a local multi-factor authentication of this instant does not satisfy a window of a nanosecond")
 	}

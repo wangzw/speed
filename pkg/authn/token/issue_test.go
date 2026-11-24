@@ -23,8 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/internal/dbtest"
 )
 
-// issuedClaims parses an access token of the rig's set, verifies its signature
-// and returns the claims.
 func (r *rig) issuedClaims(raw string) map[string]any {
 	r.t.Helper()
 	parsed, err := parseSigned(raw, r.keys.algorithms)
@@ -38,7 +36,6 @@ func (r *rig) issuedClaims(raw string) map[string]any {
 	return claims
 }
 
-// normalIssue is the ordinary issue request of a login session.
 func normalIssue(session authn.SessionID) authn.IssueToken {
 	return authn.IssueToken{
 		Account:   account,
@@ -49,6 +46,7 @@ func normalIssue(session authn.SessionID) authn.IssueToken {
 	}
 }
 
+// checks that the issued claim set is the design's table.
 func TestTheIssuedClaimSetIsTheDesignsTable(t *testing.T) {
 	r := newRig(t)
 	session := authn.SessionID("sess-1")
@@ -104,6 +102,8 @@ func TestTheIssuedClaimSetIsTheDesignsTable(t *testing.T) {
 	}
 }
 
+// TestAnImpersonationTokenCarriesTheOperatorsLevelAndTheActor checks that an
+// impersonation token carries the operators level and the actor.
 func TestAnImpersonationTokenCarriesTheOperatorsLevelAndTheActor(t *testing.T) {
 	r := newRig(t)
 	in := normalIssue(authn.SessionID("sess-1"))
@@ -193,6 +193,8 @@ func TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold(t *testing.T) {
 	}
 }
 
+// checks that a contributor returning a reserved claim, or an error, fails
+// the issue.
 func TestAContributorThatReturnsAReservedClaimOrAnErrorFailsTheIssue(t *testing.T) {
 	ctx := context.Background()
 	t.Run("a reserved name", func(t *testing.T) {
@@ -222,6 +224,7 @@ func TestAContributorThatReturnsAReservedClaimOrAnErrorFailsTheIssue(t *testing.
 	})
 }
 
+// checks that a contributor sees the issue's own facts.
 func TestAContributorSeesTheIssuesOwnFacts(t *testing.T) {
 	r := newRig(t)
 	var seen authn.Principal
@@ -249,6 +252,8 @@ func TestAContributorSeesTheIssuesOwnFacts(t *testing.T) {
 	}
 }
 
+// checks that an over-long lifetime is refused and a zero one takes the
+// setting.
 func TestAnOverLongLifetimeIsRefusedAndAZeroOneTakesTheSetting(t *testing.T) {
 	r := newRig(t)
 	ctx := context.Background()
@@ -270,6 +275,7 @@ func TestAnOverLongLifetimeIsRefusedAndAZeroOneTakesTheSetting(t *testing.T) {
 	}
 }
 
+// checks that an issue with no signing key is ErrNoSigningKey.
 func TestIssueWithoutASigningKeyIsErrNoSigningKey(t *testing.T) {
 	r := newRig(t)
 	r.p.keys.signing = nil
@@ -278,7 +284,6 @@ func TestIssueWithoutASigningKeyIsErrNoSigningKey(t *testing.T) {
 	}
 }
 
-// contributor is a ClaimsContributor a test answers with.
 type contributor struct {
 	claims map[string]any
 	err    error
@@ -292,8 +297,6 @@ func (c contributor) Claims(_ context.Context, p authn.Principal) (map[string]an
 	return c.claims, c.err
 }
 
-// signSample signs a minimal access token with the set's signing key, for the
-// rotation drill.
 func signSample(t *testing.T, set *keySet) string {
 	t.Helper()
 	payload, err := tokenClaims{
@@ -317,8 +320,6 @@ func signSample(t *testing.T, set *keySet) string {
 	return raw
 }
 
-// verifies reports whether a token's signature holds against a set's key of the
-// given kid.
 func verifies(raw string, set *keySet, kid string) bool {
 	parsed, err := parseSigned(raw, set.algorithms)
 	if err != nil {
@@ -354,10 +355,9 @@ func jwksKIDs(t *testing.T, set *keySet) map[string]bool {
 	return out
 }
 
-// TestAKeyRotationRollsOverInTwoPhases walks the four-step rotation: publish a
-// new key for verification, switch the signing key to it, then retire the old
-// one. Throughout, a token signed by a key that is still in the set verifies and
-// one signed by a retired key does not.
+// TestAKeyRotationRollsOverInTwoPhases walks the four-step rotation: publish
+// a new key for verification, switch the signing key to it, then retire the
+// old one.
 func TestAKeyRotationRollsOverInTwoPhases(t *testing.T) {
 	a := generatedKey(t, algES256)
 	b := generatedKey(t, algES256)
@@ -366,17 +366,14 @@ func TestAKeyRotationRollsOverInTwoPhases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Step 1: B is added to every replica's verification files while A still signs.
 	signAverifyAB, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: a, verifyFiles: []string{b}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Step 3: the signing key moves to B and A stays for verification.
 	signBverifyA, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: b, verifyFiles: []string{a}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Step 4: A is retired.
 	signB, _, err := loadKeySet(resolved{algorithm: algES256, signingFile: b})
 	if err != nil {
 		t.Fatal(err)
@@ -391,8 +388,6 @@ func TestAKeyRotationRollsOverInTwoPhases(t *testing.T) {
 		t.Fatal("the two keys share a kid")
 	}
 
-	// A token signed by A keeps verifying while A is trusted, and stops once A
-	// is retired.
 	for _, set := range []*keySet{signA, signAverifyAB, signBverifyA} {
 		if !verifies(tokenA, set, kidA) {
 			t.Error("a token signed by A did not verify while A is in the set")
@@ -401,13 +396,11 @@ func TestAKeyRotationRollsOverInTwoPhases(t *testing.T) {
 	if verifies(tokenA, signB, kidA) {
 		t.Error("a token signed by A verified after A was retired")
 	}
-	// The token signed by B verifies wherever B is published.
 	for _, set := range []*keySet{signAverifyAB, signBverifyA, signB} {
 		if !verifies(tokenB, set, kidB) {
 			t.Error("a token signed by B did not verify where B is published")
 		}
 	}
-	// The published set carries both kids while the rotation is in flight.
 	if kids := jwksKIDs(t, signBverifyA); !kids[kidA] || !kids[kidB] {
 		t.Errorf("the JWKS during the rotation holds %v, want both kids", kids)
 	}
@@ -428,17 +421,14 @@ const (
 	throttleStandIn  = "stand-in.throttle"
 )
 
-// standIn is a module that declares the capability token, delivers without a New
-// so the case supplies the instance.
 func standIn(name string, token core.Token) core.Module {
 	return core.Module{Name: name, Provides: []core.Provision{{Token: token}}}
 }
 
 // TestTheModuleDeliversTheTokenSurfaceThroughTheRegistry drives the real
-// registry through this module's descriptor: it arrives at Init with the product
-// constructed, resolves the token surface from it and issues through it. It is
-// what holds that the registration delivers the interface the design names, and
-// that New reads the configuration and loads the keys.
+// registry through this module's descriptor: it arrives at Init with the
+// product constructed, resolves the token surface from it and issues through
+// it.
 func TestTheModuleDeliversTheTokenSurfaceThroughTheRegistry(t *testing.T) {
 	database := dbtest.SQLite(t, filepath.Join(t.TempDir(), "tokens.db")+"?_pragma=busy_timeout(5000)", nil)
 	mounter := mounttest.New(t)
@@ -543,8 +533,6 @@ func TestTheRevokeLengthBoundaryActsOnATokenOfExactlyTheLimit(t *testing.T) {
 	}
 }
 
-// sizedAccessToken signs an access token for session whose compact form is
-// exactly size bytes, padding the claims with an ignored field.
 func (r *rig) sizedAccessToken(t *testing.T, session authn.SessionID, size int) string {
 	t.Helper()
 	claimsFor := func(pad int) tokenClaims {

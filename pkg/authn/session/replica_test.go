@@ -23,7 +23,6 @@ func TestARevocationReachesAnotherReplicaThroughTheEvent(t *testing.T) {
 		}
 		noErr(t, a.p.Revoke(context.Background(), issued.ID, authn.ReasonAdmin))
 
-		// Within check-ttl the second replica does not know.
 		if got := outcomeOf(b.verify(issued.Token)); got.String() != "authenticated" {
 			t.Errorf("the second replica answered %s before its cache entry ran out", got)
 		}

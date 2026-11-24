@@ -11,20 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// The cases in this file hold the gateway's part of the promise the entry point
-// describes in its dispatch section: on a guarded endpoint, an unauthenticated
-// request is answered by the gateway before the endpoint's router writes its own
-// answer, so the status, the headers and the body do not depend on which route
-// the request matched, whether any route matched, or whether the method is
-// allowed.
-//
-// This is a regression guard, not a fail-before: the behaviour exists today, and
-// the case is here to notice a change that would give an unauthenticated caller
-// a way to read the endpoint's route table. The non-hollowness of the cookie
-// half is the Set-Cookie assertion: a wrong cookie name would silently turn
-// every cookie request into an anonymous one, which is indistinguishable from
-// the anonymous refusal except for the clear the backend writes.
-
 // routeIndependenceRequest is one shape of request whose refusal must be
 // identical to the others'.
 type routeIndependenceRequest struct {
@@ -93,37 +79,20 @@ func requireClearsCookie(t *testing.T, what string, got reply, name string) {
 	}
 }
 
-// asCookie puts a cookie with the given name and value on a client request. The
-// server-side withCookie builds a request for the middleware directly; these
-// cases go through the entry point over a socket.
 func asCookie(name, value string) func(*nethttp.Request) {
 	return func(r *nethttp.Request) {
 		r.AddCookie(&nethttp.Cookie{Name: name, Value: value})
 	}
 }
 
-// asUntrustedOrigin marks a request as made by a page of another origin, which
-// the cross-origin check refuses on an unsafe method carrying a browser-attached
-// credential.
 func asUntrustedOrigin(r *nethttp.Request) {
 	r.Header.Set("Origin", "https://evil.example")
 }
 
 // TestTheRefusalDoesNotDependOnTheMatchedRoute holds the gateway's promise
-// against the real entry point on a real socket: five shapes of unauthenticated
-// request, each with three kinds of credential, all answered identically.
-//
-// The five shapes cover the routes the router can report: a registered guarded
-// route, no match at all, a method the registered exempt route does not allow, a
-// HEAD to a route registered for GET only, and an OPTIONS preflight with no
-// Origin. The router reports no route for the last three, so a gateway that let
-// the entry point answer them would show 405 with Allow or 404, and one that
-// passed unmatched paths through would show the route's own status. With no
-// credential, with a Bearer no backend accepts, and with an invalid cookie whose
-// name is read off the backend's declaration, every one of the five must produce
-// the same status, the same headers and the same body. The declared name is one
-// no production code names, so a gateway that ignored the declaration and wrote
-// the session backend's default in its place would read no cookie here at all.
+// against the real entry point on a real socket: five shapes of
+// unauthenticated request, each with three kinds of credential, all answered
+// identically.
 func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
 	cookie := cookieBackend("session", "__Host-gate-probe")
 	cookieName := cookie.accepts.Cookies[0]
@@ -193,8 +162,6 @@ func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
 		for _, class := range classes {
 			got := replies[cred.name][class.name]
 			requireStatus(t, fmt.Sprintf("%s with %s", class.name, cred.name), got, nethttp.StatusUnauthorized)
-			// A HEAD reply has no body by protocol, so the body is compared
-			// wherever there is one.
 			requireSameReply(t,
 				fmt.Sprintf("%s with %s", class.name, cred.name),
 				reference, want, class.name, got,
@@ -208,17 +175,12 @@ func TestTheRefusalDoesNotDependOnTheMatchedRoute(t *testing.T) {
 	for _, class := range classes {
 		requireClearsCookie(t, class.name+" with an invalid cookie", replies[invalidCookie][class.name], cookieName)
 	}
-	// Five shapes plus the optional route reach the backend with the invalid
-	// cookie; the two refused by the cross-origin check reach no backend at all.
 	if want := int64(len(classes) + 1); cleared.Load() != want {
 		t.Errorf("the cookie backend judged %d cookie presentation(s), want %d: the five shapes "+
 			"of request and the optional route reach it, and the cross-origin refusal does not",
 			cleared.Load(), want)
 	}
 
-	// An optional route with a credential that does not hold is refused exactly
-	// as the unmatched path is: Optional only answers a request with no
-	// credential.
 	requireSameReply(t, "an optional route with an invalid Bearer", reference,
 		replies["Bearer zz"][reference], "GET /catalog", optionalBearer, true)
 	requireSameReply(t, "an optional route with an invalid cookie", reference,

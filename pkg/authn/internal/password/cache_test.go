@@ -145,7 +145,7 @@ func TestTheCacheHoldsNoMoreThanItsCapacity(t *testing.T) {
 
 	c.Remember(ttl, "a", e, "secret")
 	c.Remember(ttl, "b", e, "secret")
-	if !c.Hit(ttl, "a", e, "secret") { // a is now the most recently used
+	if !c.Hit(ttl, "a", e, "secret") {
 		t.Fatal("a recorded check did not hit")
 	}
 	c.Remember(ttl, "c", e, "secret")

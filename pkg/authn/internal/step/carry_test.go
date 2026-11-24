@@ -13,6 +13,8 @@ import (
 
 var at = time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 
+// TestProofAndPassAndRecordSurviveTheStepWhole checks that proof and pass and
+// record survive the step whole.
 func TestProofAndPassAndRecordSurviveTheStepWhole(t *testing.T) {
 	proof := model.Proof{
 		Account:    "acct",
@@ -27,7 +29,6 @@ func TestProofAndPassAndRecordSurviveTheStepWhole(t *testing.T) {
 	if got := step.ProofOf(step.Proven(proof)); !reflect.DeepEqual(got, proof) {
 		t.Errorf("ProofOf = %+v, want %+v", got, proof)
 	}
-	// The other polarity of every flag.
 	proof.UserVerified, proof.IDPAsserted = false, false
 	proof.External.EmailVerified, proof.Aliases[0].EmailVerified = false, false
 	if got := step.ProofOf(step.Proven(proof)); !reflect.DeepEqual(got, proof) {
@@ -50,6 +51,8 @@ func TestProofAndPassAndRecordSurviveTheStepWhole(t *testing.T) {
 	}
 }
 
+// TestEveryAnswerWithStateKeepsItAndCopiesItIn checks that every answer with
+// state keeps it and copies it in.
 func TestEveryAnswerWithStateKeepsItAndCopiesItIn(t *testing.T) {
 	for name, mk := range map[string]func([]byte) step.Step{
 		"prompt":   func(b []byte) step.Step { return step.Prompt("n", b, model.Field{Name: "f"}) },
@@ -120,8 +123,7 @@ func TestReadersOfOtherKindsReadZero(t *testing.T) {
 }
 
 // A cause reaches the log and changes nothing: the kind is the constructor's,
-// whatever error rides along. A backend that returns the gateway's own timeout
-// as the cause of a refusal must not turn a wrong password into an outage.
+// whatever error rides along.
 func TestACauseNeverChangesTheKind(t *testing.T) {
 	for _, cause := range []error{errors.New("x"), context.DeadlineExceeded, context.Canceled, nil} {
 		if got := step.KindOf(step.Refused(cause)); got != step.KindRefused {

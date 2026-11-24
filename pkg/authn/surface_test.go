@@ -1074,7 +1074,6 @@ func surfaceOf(dir string) ([]string, error) {
 	return out, nil
 }
 
-// membersOf renders the exported fields and methods of a named type.
 func membersOf(name string, typ types.Type) []string {
 	typ = types.Unalias(typ)
 	var out []string
@@ -1098,9 +1097,6 @@ func membersOf(name string, typ types.Type) []string {
 	return out
 }
 
-// surfaceDiff reports, in both directions, how got and want differ: an entry in
-// the source and not in the pinned list, and one the list names that the source
-// no longer has.
 func surfaceDiff(got, want []string) []string {
 	var out []string
 	for _, entry := range got {
@@ -1118,7 +1114,6 @@ func surfaceDiff(got, want []string) []string {
 	return out
 }
 
-// forbiddenIn reports the entries whose name is one of forbiddenNames.
 func forbiddenIn(entries []string) []string {
 	var out []string
 	for _, e := range entries {
@@ -1130,9 +1125,6 @@ func forbiddenIn(entries []string) []string {
 	return out
 }
 
-// rootSurface is the package's own surface, computed once: type-checking it
-// type-checks the standard library packages it imports from source, which is
-// the slow part, and two cases read the result.
 var rootSurface = sync.OnceValues(func() ([]string, error) { return surfaceOf(".") })
 
 // TestExportedSurfaceIsPinned compares what the type checker says the package
@@ -1152,10 +1144,7 @@ func TestExportedSurfaceIsPinned(t *testing.T) {
 }
 
 // TestTheAuthntestSurfaceIsPinned compares what the type checker says
-// pkg/authn/authntest exports with its list, in both directions. The list
-// is read from the source, so a symbol that is added without anyone deciding it
-// belongs in the test builders, or one that is removed while its callers in other
-// modules still stand, fails here.
+// pkg/authn/authntest exports with its list, in both directions.
 func TestTheAuthntestSurfaceIsPinned(t *testing.T) {
 	got, err := surfaceOf("authntest")
 	if err != nil {
@@ -1174,9 +1163,7 @@ func TestTheAuthntestSurfaceIsPinned(t *testing.T) {
 }
 
 // TestTheSurfaceHoldsNoNameOfTheOwnershipModel holds the list itself, and the
-// source behind it, away from the forbidden names. The pinned list
-// is a hand-written file, so a name could be re-added to it by the same hand
-// that re-added it to the code; the list and the checker's view are both asked.
+// source behind it, away from the forbidden names.
 func TestTheSurfaceHoldsNoNameOfTheOwnershipModel(t *testing.T) {
 	for _, e := range forbiddenIn(exportedSurface) {
 		t.Errorf("the pinned surface lists %q, a name the surface may not carry", e)
@@ -1190,8 +1177,6 @@ func TestTheSurfaceHoldsNoNameOfTheOwnershipModel(t *testing.T) {
 	}
 }
 
-// writeSurfacePackage writes a package of the given files into a fresh
-// directory and returns it.
 func writeSurfacePackage(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -1204,14 +1189,8 @@ func writeSurfacePackage(t *testing.T, files map[string]string) string {
 }
 
 // TestTheSurfaceCheckSeesWhatItIsMeantToSee runs the checker over a package
-// built to hold each shape the real one relies on, and over a violating one, so
-// the pin cannot pass by seeing nothing.
-//
-// The shapes: an alias whose target carries methods and fields (the alias form
-// the root uses for Identity and Principal), an embedded method promoted into
-// the method set, a pointer-receiver method, an interface with its methods, an
-// unexported type whose methods are not on the surface, a test file whose
-// declarations are not on it, and the forbidden names.
+// built to hold each shape the real one relies on, and over a violating one,
+// so the pin cannot pass by seeing nothing.
 func TestTheSurfaceCheckSeesWhatItIsMeantToSee(t *testing.T) {
 	dir := writeSurfacePackage(t, map[string]string{
 		"p.go": `package p
@@ -1279,13 +1258,13 @@ const KindA Kind = "a"
 		"type Alias",
 		"field Alias.Open",
 		"method Alias.Read",
-		"method Alias.Write", // a pointer receiver, which the method set of *T holds
+		"method Alias.Write",
 		"field Shape.Visible",
-		"method Shape.Promoted", // promoted through the embedded field
+		"method Shape.Promoted",
 		"type Reader", "method Reader.Read",
-		"field Payload.AccountID",  // a struct declared here rather than aliased
-		"method Decider.Decide",    // an interface whose method takes a type of the package
-		"type Kind", "const KindA", // a named string with a typed constant
+		"field Payload.AccountID",
+		"method Decider.Decide",
+		"type Kind", "const KindA",
 	} {
 		if !slices.Contains(got, want) {
 			t.Errorf("the checker does not list %q; got %q", want, got)
@@ -1337,10 +1316,8 @@ func (f claimsContributorFunc) Claims(ctx context.Context, p Principal) (map[str
 var _ ClaimsContributor = claimsContributorFunc(nil)
 
 // TestTheClaimsContributorDocHoldsTheDesignClaimSet holds the reserved claim
-// names in the ClaimsContributor doc to the design's closed set, name for name
-// and in order. The set is written in the interface comment alone, so this reads
-// it back out of the source: a name added, dropped, reordered or respelled there
-// fails here.
+// names in the ClaimsContributor doc to the design's closed set, name for
+// name and in order.
 func TestTheClaimsContributorDocHoldsTheDesignClaimSet(t *testing.T) {
 	got := reservedClaimNamesFromDoc(t)
 	want := []string{
@@ -1374,16 +1351,7 @@ func reservedClaimNamesFromDoc(t *testing.T) []string {
 
 // TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet forces the reserved
 // claim set the ClaimsContributor doc promises and the set the token module
-// enforces to be one set. The doc is the contract a host reads; the module's
-// reservedClaims map, in another package, is what refuses a contributor claim at
-// issue time. The two are written in two files and nothing but this test ties
-// them, so a name dropped from reservedClaims while the doc still lists it — or
-// the reverse — passes every other test and leaves the contract describing
-// behaviour that is not there.
-//
-// The set is read from the token module's source rather than through an
-// identifier: this test is in package authn, and importing the token module here
-// would close an import cycle (the token module itself imports this package).
+// enforces to be one set.
 func TestTheClaimsContributorDocAndTheTokenModuleHoldOneSet(t *testing.T) {
 	doc := reservedClaimNamesFromDoc(t)
 	enforced := reservedClaimNamesFromToken(t)
@@ -1467,8 +1435,6 @@ func reservedClaimNamesFromToken(t *testing.T) []string {
 	return nil
 }
 
-// claimsContributorDoc returns the doc comment of the ClaimsContributor
-// declaration read from claims.go.
 func claimsContributorDoc(t *testing.T) string {
 	t.Helper()
 	fset := token.NewFileSet()

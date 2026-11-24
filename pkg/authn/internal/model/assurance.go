@@ -8,14 +8,23 @@ import "time"
 type Method string
 
 const (
-	MethodPassword     Method = "pwd"
-	MethodSMS          Method = "sms"
-	MethodTOTP         Method = "otp"
-	MethodWebAuthn     Method = "webauthn"
-	MethodOAuth        Method = "oauth" // social login
-	MethodOIDC         Method = "oidc"  // enterprise OIDC
-	MethodSAML         Method = "saml"
-	MethodStatic       Method = "static"
+	// MethodPassword is a password.
+	MethodPassword Method = "pwd"
+	// MethodSMS is an SMS verification code.
+	MethodSMS Method = "sms"
+	// MethodTOTP is a time-based one-time password.
+	MethodTOTP Method = "otp"
+	// MethodWebAuthn is a passkey assertion.
+	MethodWebAuthn Method = "webauthn"
+	// MethodOAuth is a social login.
+	MethodOAuth Method = "oauth"
+	// MethodOIDC is an enterprise OIDC login.
+	MethodOIDC Method = "oidc"
+	// MethodSAML is an enterprise SAML assertion.
+	MethodSAML Method = "saml"
+	// MethodStatic is a static credential table entry.
+	MethodStatic Method = "static"
+	// MethodClientSecret is a service account's client credential.
 	MethodClientSecret Method = "client-secret"
 )
 
@@ -37,9 +46,13 @@ func (m Method) Valid() bool {
 type Assurance uint8
 
 const (
-	AssuranceNone   Assurance = iota
-	AssuranceSingle           // one factor
-	AssuranceMulti            // two factors of different kinds, or a passkey with user verification
+	// AssuranceNone is the zero level: nobody stated an assurance.
+	AssuranceNone Assurance = iota
+	// AssuranceSingle is one factor.
+	AssuranceSingle
+	// AssuranceMulti is two factors of different kinds, or a passkey with user
+	// verification.
+	AssuranceMulti
 )
 
 // Access is the level of access the gateway recorded for the route a request
@@ -48,15 +61,21 @@ const (
 type Access uint8
 
 const (
-	AccessUnknown  Access = iota // an unguarded endpoint, no gateway, or a gateway not made by the gateway module
-	AccessOpen                   // the route is exempt
-	AccessOptional               // the route accepts a request with no credential
-	AccessRequired               // the route is guarded and carries no registration
+	// AccessUnknown is an unguarded endpoint, no gateway, or a gateway not made
+	// by the gateway module.
+	AccessUnknown Access = iota
+	// AccessOpen is a route that is exempt.
+	AccessOpen
+	// AccessOptional is a route that accepts a request with no credential.
+	AccessOptional
+	// AccessRequired is a route that is guarded and carries no registration.
+	AccessRequired
 )
 
 // Requirement is the least authentication strength a route accepts. A zero
 // MaxAge asks for no freshness.
 type Requirement struct {
+	// Assurance is the lowest level the requirement accepts.
 	Assurance Assurance
 	MaxAge    time.Duration // the most the time since AuthTime may be
 	Local     bool          // when true, an assurance only an IdP declared does not count

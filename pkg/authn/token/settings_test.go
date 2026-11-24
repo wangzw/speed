@@ -11,9 +11,9 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestTheSettingDomainsAdmitTheirBounds holds the endpoints of the domains this
-// module declares: a value exactly at a bound is inside it, and one past it is
-// out. The declared defaults are checked against the design at the same time.
+// TestTheSettingDomainsAdmitTheirBounds holds the endpoints of the domains
+// this module declares: a value exactly at a bound is inside it, and one past
+// it is out.
 func TestTheSettingDomainsAdmitTheirBounds(t *testing.T) {
 	if !accessTTLInDomain(accessTTLMin) || !accessTTLInDomain(accessTTLMax) {
 		t.Error("an access-ttl at its own bound is outside the domain")
@@ -47,8 +47,6 @@ func TestTheSettingDomainsAdmitTheirBounds(t *testing.T) {
 		t.Errorf("the refresh-idle-ttl and refresh-grace defaults are %v and %v",
 			defaults.RefreshIdleTTL, defaults.RefreshGrace)
 	}
-	// The design's own bound on exp - iat is one hour, which is the access-ttl
-	// domain's upper bound.
 	if accessTTLUpperBound != time.Hour {
 		t.Errorf("the access-ttl upper bound is %v, want one hour", accessTTLUpperBound)
 	}
@@ -72,9 +70,8 @@ func TestEachSettingReadsAsItsDefaultWithoutAStore(t *testing.T) {
 	}
 }
 
-// TestTheCheckTTLDomainAdmitsItsUpperBound holds the session check-ttl domain's
-// top: sixty seconds is inside it and one past is not. The bound is a literal so
-// a change to the constant is caught here.
+// TestTheCheckTTLDomainAdmitsItsUpperBound holds the session check-ttl
+// domain's top: sixty seconds is inside it and one past is not.
 func TestTheCheckTTLDomainAdmitsItsUpperBound(t *testing.T) {
 	if checkTTLMax != 60*time.Second {
 		t.Errorf("the check-ttl upper bound is %v, want 60s", checkTTLMax)
@@ -113,7 +110,7 @@ func (s *steerStore) Get(_ settings.Layer, key string, target any) error {
 // declared default is used instead.
 func TestASettingOutsideItsDomainReadsAsTheDefault(t *testing.T) {
 	reader := newSettingReader(slog.Default())
-	reader.store = &steerStore{value: 5 * time.Minute} // leeway's domain tops out at 120s
+	reader.store = &steerStore{value: 5 * time.Minute}
 	if got := reader.leeway(); got != defaults.Leeway {
 		t.Errorf("an out-of-domain leeway read %v, want the default %v", got, defaults.Leeway)
 	}
@@ -129,8 +126,6 @@ func TestASettingThatCannotBeReadReadsAsTheDefault(t *testing.T) {
 	}
 }
 
-// switchStore is a settings store whose read can be toggled to fail, so a case
-// can drive settingReader.report's bookkeeping.
 type switchStore struct {
 	settings.Store
 	mu  sync.Mutex
@@ -164,17 +159,17 @@ func TestTheSettingFaultIsReportedOnceAndCleared(t *testing.T) {
 	store := &switchStore{err: errors.New("boom")}
 	reader.store = store
 
-	reader.leeway() // the fault is reported
-	reader.leeway() // the same fault is not reported again
+	reader.leeway()
+	reader.leeway()
 	if got := strings.Count(logs.String(), leewayPath); got != 1 {
 		t.Fatalf("the standing fault was reported %d times, want 1", got)
 	}
 
 	store.setErr(nil)
-	reader.leeway() // a good read clears the fault
+	reader.leeway()
 
 	store.setErr(errors.New("boom"))
-	reader.leeway() // the fault stands again and is reported
+	reader.leeway()
 	if got := strings.Count(logs.String(), leewayPath); got != 2 {
 		t.Errorf("the recurring fault was reported %d times, want 2", got)
 	}

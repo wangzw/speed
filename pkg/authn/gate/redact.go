@@ -110,7 +110,6 @@ var sessionCookieKeys = map[string]struct{}{
 // is the length of the longest key of the two sets.
 var longestPairKey = longestKey(secretPairKeys, sessionCookieKeys)
 
-// longestKey is the length of the longest key of the sets.
 func longestKey(sets ...map[string]struct{}) int {
 	n := 0
 	for _, set := range sets {
@@ -121,9 +120,6 @@ func longestKey(sets ...map[string]struct{}) int {
 	return n
 }
 
-// tokenPrefixes begin the opaque tokens the authn modules issue, which are
-// secrets wherever they are written: the refresh token, the service secret and
-// the invitation's acceptance token.
 var tokenPrefixes = []string{"spd_rt_", "spd_cs_", "spd_inv_"}
 
 // shapeMatcher masks the values whose shape says they are secrets whatever they
@@ -180,8 +176,6 @@ func appendJWTSpans(spans []log.Span, value string) []log.Span {
 	return spans
 }
 
-// isJWTByte reports whether b can sit in a compact JWT: the base64url alphabet
-// and the dot between segments.
 func isJWTByte(b byte) bool { return b == '.' || isKeyByte(b) }
 
 // appendTokenSpans masks each token that begins with prefix, from the prefix to
@@ -227,9 +221,6 @@ func appendURISpans(spans []log.Span, value, prefix string) []log.Span {
 	return spans
 }
 
-// appendPairSpans masks the value of each key=value pair whose key is a secret
-// pair key or a session cookie name, from the '=' to the next '&', ';',
-// whitespace or quote.
 func appendPairSpans(spans []log.Span, value string) []log.Span {
 	for from := 0; from < len(value); {
 		eq := strings.IndexByte(value[from:], '=')
@@ -257,8 +248,6 @@ func appendPairSpans(spans []log.Span, value string) []log.Span {
 	return spans
 }
 
-// isSecretKey reports whether key, compared without regard to case, is a key
-// whose value is a secret.
 func isSecretKey(key string) bool {
 	folded := strings.ToLower(key)
 	if _, found := secretPairKeys[folded]; found {
@@ -268,13 +257,10 @@ func isSecretKey(key string) bool {
 	return found
 }
 
-// isKeyByte reports whether b can sit in a key or a URL-safe token: a letter, a
-// digit, an underscore or a hyphen.
 func isKeyByte(b byte) bool {
 	return isWordByte(b) || b == '_' || b == '-'
 }
 
-// isPairEnd reports whether b ends the value of a pair.
 func isPairEnd(b byte) bool { return b == '&' || b == ';' || isSpaceByte(b) }
 
 // credentialMatcher builds the rule that masks the value following an
@@ -358,8 +344,6 @@ func indexFold(s, needle string, from int) int {
 	return -1
 }
 
-// equalFoldASCII reports whether two equal-length strings match once ASCII
-// letters are folded. needle is already lower case.
 func equalFoldASCII(s, needle string) bool {
 	for i := 0; i < len(needle); i++ {
 		c := s[i]
@@ -373,8 +357,6 @@ func equalFoldASCII(s, needle string) bool {
 	return true
 }
 
-// startsWord reports whether position at begins a word, so that the tail of a
-// longer token is not taken for a scheme name.
 func startsWord(s string, at int) bool {
 	if at == 0 {
 		return true
@@ -382,8 +364,6 @@ func startsWord(s string, at int) bool {
 	return !isWordByte(s[at-1])
 }
 
-// isWordByte reports whether b can sit inside a scheme name. Scheme names are
-// tokens, so this is the ASCII letter and digit set.
 func isWordByte(b byte) bool {
 	switch {
 	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9':
@@ -451,7 +431,6 @@ func valueSpan(value string, from int) (log.Span, bool) {
 	return log.Span{Start: from, End: end}, true
 }
 
-// isSpaceByte reports whether b ends a credential value.
 func isSpaceByte(b byte) bool {
 	switch b {
 	case ' ', '\t', '\n', '\r', '"', '\'':

@@ -14,11 +14,8 @@ import (
 	"testing"
 )
 
-// cheapArgon2id is an Argon2id parameter set a test can afford. It is far below
-// what OWASP recommends and is read all the same: the reader sets no floor.
 var cheapArgon2id = Params{Algorithm: Argon2id, MemoryKiB: 64, Iterations: 1, Parallelism: 1}
 
-// salt16 and salt8 are fixed salts for the cases that write an entry by hand.
 var (
 	salt16 = []byte("sixteen byte slt")
 	salt8  = []byte("8 bytes!")
@@ -37,12 +34,9 @@ func pbkdf2Literal(t *testing.T, plaintext string, salt []byte, iterations, leng
 		base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(key)
 }
 
-// TestAnEntryIsReadBackAtTheParametersItWasWrittenWith holds the round trip for
-// each algorithm, and holds that the entry verifies the password it was made from
-// and no other. Reading the parameters back and verifying are both needed: a
-// writer that ignored a parameter would read back at the default, and one that
-// stated a parameter and derived at another would read back right and never
-// verify.
+// TestAnEntryIsReadBackAtTheParametersItWasWrittenWith holds the round trip
+// for each algorithm, and holds that the entry verifies the password it was
+// made from and no other.
 func TestAnEntryIsReadBackAtTheParametersItWasWrittenWith(t *testing.T) {
 	for _, p := range []Params{
 		cheapArgon2id,
@@ -97,16 +91,12 @@ func TestTwoEntriesOfOnePasswordDiffer(t *testing.T) {
 	}
 }
 
-// TestTheStoredFormatIsTheOneTheDesignStates holds the format from the outside,
-// in literals and not through this package's writer. A table outlives the binary
-// that reads it and an entry may come from another tool, so the format is a
-// contract: this case goes red when the field order, the separators, the
-// parameter spelling or the base64 variant change.
+// TestTheStoredFormatIsTheOneTheDesignStates holds the format from the
+// outside, in literals and not through this package's writer.
 func TestTheStoredFormatIsTheOneTheDesignStates(t *testing.T) {
 	const plaintext = "correct horse"
 
 	t.Run("an Argon2id entry written by the reference implementation's form", func(t *testing.T) {
-		// Written once with the library under parameters m=64,t=1,p=1.
 		encoded, err := cheapArgon2id.Hash(plaintext)
 		if err != nil {
 			t.Fatal(err)
@@ -213,9 +203,9 @@ func TestTheStoredFormatIsTheOneTheDesignStates(t *testing.T) {
 	})
 }
 
-// TestWhatCannotBeAnEntryIsRefusedWhenItIsRead holds the shapes Parse turns away,
-// each of which would otherwise reach a derivation or be accepted on the
-// leniency of a decoder. Every one wraps ErrMalformedHash.
+// TestWhatCannotBeAnEntryIsRefusedWhenItIsRead holds the shapes Parse turns
+// away, each of which would otherwise reach a derivation or be accepted on
+// the leniency of a decoder.
 func TestWhatCannotBeAnEntryIsRefusedWhenItIsRead(t *testing.T) {
 	good64 := base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
 	good16 := base64.RawStdEncoding.EncodeToString(salt16)
@@ -383,8 +373,7 @@ func TestAnEntryIsHeldToItsBoundsFromBothSides(t *testing.T) {
 }
 
 // TestReadingAnEntryNeverEchoesIt holds the rule an error about a credential
-// has to keep: the thing it complains about is the secret. Each case fails on
-// one field, so that the text of the failure could quote the others.
+// has to keep: the thing it complains about is the secret.
 func TestReadingAnEntryNeverEchoesIt(t *testing.T) {
 	secrets := []string{"c2VjcmV0c2FsdHNlY3JldHM", "c2VjcmV0a2V5bWF0ZXJpYWxzZWNyZXRrZXltYXRlcmlhbA", "not base64!"}
 	for _, broken := range []string{
@@ -407,11 +396,9 @@ func TestReadingAnEntryNeverEchoesIt(t *testing.T) {
 	}
 }
 
-// TestAHostileEntryIsRefusedBeforeAnythingIsDerived holds the reason the bounds
-// come before the derivation: an entry's own numbers must not decide what one
-// check costs. The entry asks for four gigabytes of memory and a count of
-// billions; Parse refuses it, and the zero Entry a refused read leaves verifies
-// nothing, so there is no derivation to reach.
+// TestAHostileEntryIsRefusedBeforeAnythingIsDerived holds the reason the
+// bounds come before the derivation: an entry's own numbers must not decide
+// what one check costs.
 func TestAHostileEntryIsRefusedBeforeAnythingIsDerived(t *testing.T) {
 	good := base64.RawStdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
 	for _, hostile := range []string{
@@ -430,9 +417,7 @@ func TestAHostileEntryIsRefusedBeforeAnythingIsDerived(t *testing.T) {
 }
 
 // TestTheWriterRefusesWhatNoReaderWouldAccept holds Params.Hash to what Parse
-// reads. The standard library takes a count below one as one and does not
-// complain, so without the refusal the writer would hand back an entry that every
-// startup reading the table then turns away.
+// reads.
 func TestTheWriterRefusesWhatNoReaderWouldAccept(t *testing.T) {
 	for _, p := range []Params{
 		{},
@@ -549,18 +534,10 @@ func TestADigestStandsForTheEntryAsItWasWritten(t *testing.T) {
 	}
 }
 
-// fipsChild marks the copy of the test binary that
-// TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead starts under FIPS
-// 140-only mode.
 const fipsChild = "SPEED_AUTHN_PASSWORD_FIPS_CHILD"
 
-// TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead holds the same rule
-// for what the derivation itself refuses. In FIPS 140-only mode the standard
-// library will not derive from a salt shorter than 128 bits, so an entry
-// carrying one reads as well formed and then refuses the right password for
-// ever. Whether a derivation can run is the derivation's own answer, and it is
-// asked when the entry is read. The mode is fixed when a process starts, so the
-// case runs in a copy of this test binary started under it.
+// TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead holds the same
+// rule for what the derivation itself refuses.
 func TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead(t *testing.T) {
 	if os.Getenv(fipsChild) == "" {
 		child := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
@@ -571,8 +548,6 @@ func TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead(t *testing.T) {
 		return
 	}
 
-	// Eight bytes of salt: enough for the format, short of what the derivation
-	// accepts in this mode.
 	for _, short := range []string{
 		"$pbkdf2-sha256$i=2,l=32$" + base64.RawStdEncoding.EncodeToString(salt8) + "$" +
 			base64.RawStdEncoding.EncodeToString(make([]byte, 32)),
@@ -594,7 +569,6 @@ func TestASaltThisProcessCannotDeriveWithIsRefusedWhenItIsRead(t *testing.T) {
 		}
 	}
 
-	// An entry the writer wrote is one the derivation accepts in this mode too.
 	written, err := Params{Algorithm: PBKDF2SHA256, PBKDF2Iterations: 1000}.Hash("a long enough password")
 	if err != nil {
 		t.Fatalf("writing an entry in FIPS 140-only mode: %v", err)

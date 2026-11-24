@@ -6,16 +6,21 @@ import "time"
 type IdentifierKind string
 
 const (
+	// IdentifierUsername is a username.
 	IdentifierUsername IdentifierKind = "username"
-	IdentifierEmail    IdentifierKind = "email"
-	IdentifierPhone    IdentifierKind = "phone"
+	// IdentifierEmail is an email address.
+	IdentifierEmail IdentifierKind = "email"
+	// IdentifierPhone is a phone number.
+	IdentifierPhone IdentifierKind = "phone"
 )
 
 // Identifier is one handle bound to an account. SignIn and Contact are two
 // independent axes of the same handle, and DefaultContact is the email address
 // an account's notifications go to.
 type Identifier struct {
-	ID             string
+	// ID is the identifier row identifier.
+	ID string
+	// Kind is the identifier kind.
 	Kind           IdentifierKind
 	Value          string    // normalized
 	VerifiedAt     time.Time // non-zero

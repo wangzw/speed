@@ -11,19 +11,16 @@ import (
 	"testing"
 )
 
-// This file is the cross-module summary case the events design calls for: the
-// closed sets it fixes (the audit detail key names, the instruments and their
-// attribute keys and values) are held against every module of the capability
-// directory at once, by reading the sources. Each module's own case holds its
-// own set; a module that adds a key or a value outside the design's set has no
-// own case to catch it, and this one does, because it aggregates over the tree
-// instead of over one module's table.
+// This file is the cross-module summary case: the closed sets (the audit detail
+// key names, the instruments and their attribute keys and values) are held
+// against every module of the capability directory at once, by reading the
+// sources. Each module's own case holds its own set; a module that adds a key or
+// a value outside the set has no own case to catch it, and this one does,
+// because it aggregates over the tree instead of over one module's table.
 //
-// The sets below are transcribed from design-authn-events.md. They are the
-// contract, so they are written out here and not derived from the code under
-// test; only what the code uses is read from the source.
+// The sets below are the contract, so they are written out here and not derived
+// from the code under test; only what the code uses is read from the source.
 
-// auditDetailKeys is the design's closed set of audit detail key names.
 var auditDetailKeys = []string{
 	"method", "delivery", "reason_class", "sid", "peer", "identifier_mac", "factor_id",
 	"kind", "scope", "by", "channel", "tenant", "change", "provider", "ttl_seconds",
@@ -31,15 +28,11 @@ var auditDetailKeys = []string{
 	"session", "grant_id", "action_id", "role", "invited_by",
 }
 
-// metricAttributeKeys is the union of the attribute keys of the design's
-// instrument table.
 var metricAttributeKeys = []string{
 	"outcome", "method", "factor", "scope", "operation", "channel", "protocol",
 	"algorithm", "hook", "mandatory", "purpose", "dimension",
 }
 
-// metricInstruments is the design's instrument names, Meter authn. The
-// admission counter is tenant-owned and is not in this set.
 var metricInstruments = []string{
 	"authn.gate.conclusions", "authn.login.completions", "authn.password.verifications",
 	"authn.password.derive.duration", "authn.password.reset.operations", "authn.mfa.verifications",
@@ -50,9 +43,6 @@ var metricInstruments = []string{
 	"authn.cleanup.failures",
 }
 
-// metricAttributeValues is the union, per attribute key, of the closed value
-// sets of the design's instrument table. A value belongs if the key it is
-// reported under lists it in any row.
 var metricAttributeValues = map[string][]string{
 	"outcome": {
 		"unspoken", "authenticated", "denied", "unavailable", "anonymous",
@@ -95,7 +85,6 @@ func setOf(vs []string) map[string]bool {
 	return m
 }
 
-// scanner reads the authn tree and holds what it finds.
 type scanner struct {
 	t         *testing.T
 	fset      *token.FileSet
@@ -145,7 +134,6 @@ func newScanner(t *testing.T) *scanner {
 	}
 }
 
-// parse reads every non-test Go file under each root and keeps the tree.
 func (s *scanner) parse(roots []string) map[string][]*ast.File {
 	byDir := map[string][]*ast.File{}
 	for _, root := range roots {
@@ -178,9 +166,6 @@ func (s *scanner) parse(roots []string) map[string][]*ast.File {
 	return byDir
 }
 
-// collectConsts gathers every const declaration per directory and settles the
-// names that resolve to a string literal, a few passes so that a constant built
-// from another constant settles too.
 func (s *scanner) collectConsts(byDir map[string][]*ast.File) {
 	for dir, files := range byDir {
 		s.rawConst[dir] = map[string]ast.Expr{}
@@ -268,8 +253,6 @@ func (s *scanner) resolveIn(expr ast.Expr, dir string) (string, bool) {
 	return "", false
 }
 
-// resolve resolves a name or literal that stands for itself at a use site, the
-// same way a constant is resolved but falling back across the directory map.
 func (s *scanner) resolve(expr ast.Expr, dir string) (string, bool) {
 	return s.resolveIn(expr, dir)
 }
@@ -284,8 +267,6 @@ func isStringConvert(c *ast.CallExpr) bool {
 	return false
 }
 
-// collectFuncsAndCalls records every function declaration and every call in the
-// tree, for tracing a value that reaches an attribute through a parameter.
 func (s *scanner) collectFuncsAndCalls(byDir map[string][]*ast.File) {
 	for dir, files := range byDir {
 		for _, f := range files {
@@ -314,8 +295,6 @@ func calleeName(fun ast.Expr) string {
 	return ""
 }
 
-// scan walks one parsed file, tracking the enclosing function so that a value
-// passed through a parameter can be traced to the call sites.
 func (s *scanner) scan(byDir map[string][]*ast.File) {
 	for dir, files := range byDir {
 		for _, f := range files {
@@ -348,8 +327,6 @@ func (w *walker) Visit(n ast.Node) ast.Visitor {
 	return w
 }
 
-// sensitiveLiteral marks a directory as holding a secret configuration value: a
-// config item whose Sensitive field is set.
 func (s *scanner) sensitiveLiteral(lit *ast.CompositeLit, dir string) {
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
@@ -366,8 +343,6 @@ func (s *scanner) sensitiveLiteral(lit *ast.CompositeLit, dir string) {
 	}
 }
 
-// literalRegisterCall marks a directory that registers a secret literal for
-// redaction, which is the other way a module holds a secret value.
 func (s *scanner) literalRegisterCall(call *ast.CallExpr, dir string) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Register" {
@@ -378,9 +353,6 @@ func (s *scanner) literalRegisterCall(call *ast.CallExpr, dir string) {
 	}
 }
 
-// attributeCall holds an attribute constructor call against the design: the
-// key it reports under is in the closed set, and a value that can be read from
-// the source is in the key's value set.
 func (s *scanner) attributeCall(call *ast.CallExpr, dir string, fn *ast.FuncDecl) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
@@ -439,8 +411,6 @@ func (s *scanner) valuesOf(expr ast.Expr, dir string, fn *ast.FuncDecl) []string
 	return out
 }
 
-// instrumentCall holds an instrument-creation call's name against the design's
-// instrument set.
 func (s *scanner) instrumentCall(call *ast.CallExpr, dir string) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
@@ -461,8 +431,6 @@ func (s *scanner) instrumentCall(call *ast.CallExpr, dir string) {
 	}
 }
 
-// detailLiteral holds the keys of a map literal that is the Detail of an audit
-// entry, whether written inline, through a variable, or returned by a helper.
 func (s *scanner) detailLiteral(lit *ast.CompositeLit, dir string, fn *ast.FuncDecl) {
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
@@ -477,7 +445,6 @@ func (s *scanner) detailLiteral(lit *ast.CompositeLit, dir string, fn *ast.FuncD
 	}
 }
 
-// addDetailValue records the keys a Detail expression carries.
 func (s *scanner) addDetailValue(value ast.Expr, dir string, fn *ast.FuncDecl) {
 	site := s.fset.Position(value.Pos()).String()
 	switch v := value.(type) {
@@ -485,8 +452,6 @@ func (s *scanner) addDetailValue(value ast.Expr, dir string, fn *ast.FuncDecl) {
 		s.addMapKeys(v, dir, site)
 	case *ast.Ident:
 		if !s.addVarKeys(v.Name, dir, fn) {
-			// A parameter of a helper that builds the entry: the callers hand
-			// the map in, so read the argument they pass.
 			s.addParamArgDetails(fn, v.Name, dir)
 		}
 	case *ast.CallExpr:
@@ -509,9 +474,6 @@ func (s *scanner) addDetailValue(value ast.Expr, dir string, fn *ast.FuncDecl) {
 	}
 }
 
-// detailAssign reads a map written to a variable or an index whose name marks
-// it as a detail, so a detail built in two statements is read as well as one
-// written inline.
 func (s *scanner) detailAssign(as *ast.AssignStmt, dir string) {
 	for i, lhs := range as.Lhs {
 		switch l := lhs.(type) {
@@ -534,7 +496,6 @@ func (s *scanner) detailAssign(as *ast.AssignStmt, dir string) {
 	}
 }
 
-// addVarKeys records the keys of a map literal assigned to name in fn's body.
 func (s *scanner) addVarKeys(name, dir string, fn *ast.FuncDecl) bool {
 	if fn == nil || fn.Body == nil {
 		return false
@@ -559,7 +520,6 @@ func (s *scanner) addVarKeys(name, dir string, fn *ast.FuncDecl) bool {
 		}
 		return true
 	})
-	// Index writes on the variable.
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		as, ok := n.(*ast.AssignStmt)
 		if !ok {
@@ -602,7 +562,6 @@ func (s *scanner) addParamArgDetails(fn *ast.FuncDecl, param, dir string) {
 	}
 }
 
-// addMapKeys records every key of a map literal.
 func (s *scanner) addMapKeys(lit *ast.CompositeLit, dir, site string) {
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
@@ -613,8 +572,6 @@ func (s *scanner) addMapKeys(lit *ast.CompositeLit, dir, site string) {
 	}
 }
 
-// recordDetailKey resolves one key expression and records it, or notes that it
-// could not be read.
 func (s *scanner) recordDetailKey(expr ast.Expr, dir, site string) {
 	if v, ok := s.resolve(expr, dir); ok {
 		s.detailKeys[v] = site
@@ -673,7 +630,7 @@ func TestTheSummaryScanReachedTheTree(t *testing.T) {
 
 // TestEveryAuditDetailKeyIsInTheDesignsSet holds the first cross-module
 // discipline: whatever key any module of the tree writes into an audit row's
-// detail belongs to the design's closed set.
+// detail belongs to the closed set.
 func TestEveryAuditDetailKeyIsInTheDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)
@@ -691,8 +648,6 @@ func TestEveryAuditDetailKeyIsInTheDesignsSet(t *testing.T) {
 		t.Errorf("the audit detail key at %s is not a name or a literal the case can read", site)
 	}
 
-	// The module-declared detail key constants are read too, so a constant
-	// written with an off-set value fails even where no literal site shows it.
 	seen := 0
 	for dir, consts := range s.dirConst {
 		for name, value := range consts {
@@ -711,7 +666,7 @@ func TestEveryAuditDetailKeyIsInTheDesignsSet(t *testing.T) {
 }
 
 // TestEveryMetricAttributeKeyIsInTheDesignsSet holds the attribute keys the
-// tree reports under against the design's set.
+// tree reports under against the closed set.
 func TestEveryMetricAttributeKeyIsInTheDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)
@@ -728,7 +683,7 @@ func TestEveryMetricAttributeKeyIsInTheDesignsSet(t *testing.T) {
 }
 
 // TestEveryMetricInstrumentIsInTheDesignsSet holds the instrument names the
-// authn tree registers against the design's set.
+// authn tree registers against the closed set.
 func TestEveryMetricInstrumentIsInTheDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(instrumentRoots)
@@ -746,8 +701,7 @@ func TestEveryMetricInstrumentIsInTheDesignsSet(t *testing.T) {
 
 // TestEveryMetricAttributeValueIsInItsDesignsSet holds the values that can be
 // read from the sources against the value set of the key they are reported
-// under. A value that arrives from data or a computation is not read; what is
-// read is what the source names, and it must be in the set.
+// under.
 func TestEveryMetricAttributeValueIsInItsDesignsSet(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)
@@ -761,7 +715,7 @@ func TestEveryMetricAttributeValueIsInItsDesignsSet(t *testing.T) {
 	for _, av := range s.attrVals {
 		set, ok := metricAttributeValues[av.key]
 		if !ok {
-			continue // the key itself is held by the attribute-key case
+			continue
 		}
 		if !setOf(set)[av.value] {
 			t.Errorf("the value %q of attribute %q at %s is outside the design's set for that key", av.value, av.key, av.site)
@@ -769,15 +723,10 @@ func TestEveryMetricAttributeValueIsInItsDesignsSet(t *testing.T) {
 	}
 }
 
-// TestEveryModuleHoldingASecretShipsASentinelTest holds the third cross-module
-// discipline: the design says a module that holds a secret configuration value
+// TestEveryModuleHoldingASecretShipsASentinelTest holds the third
+// cross-module discipline: a module that holds a secret configuration value
 // registers the value as a literal matcher and asserts, through a test over its
-// error paths, that the configured sentinel never reaches the output. A module
-// that holds a secret and ships no such test is a module the discipline does not
-// reach, and the design says the discipline has no mechanism behind it but those
-// tests. Whether a module's secret value does reach an output needs a running
-// module with a configured secret, which a source read cannot do; what a source
-// read can hold is that the case exists for every module that holds a secret.
+// error paths, that the configured sentinel never reaches the output.
 func TestEveryModuleHoldingASecretShipsASentinelTest(t *testing.T) {
 	s := newScanner(t)
 	byDir := s.parse(auditAttrRoots)

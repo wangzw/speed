@@ -56,7 +56,6 @@ func NewCache(capacity int, now func() time.Time) *Cache {
 	return c
 }
 
-// key is the cache key of one check.
 func (c *Cache) key(subject string, e Entry, password string) string {
 	mac := hmac.New(sha256.New, c.secret[:])
 	digest := e.Digest()

@@ -36,13 +36,10 @@ import (
 // operating system picked for an endpoint configured on port 0.
 const listeningMsg = "an HTTP listener is listening"
 
-// waitBound bounds every request these cases send, so that a request that
-// would hang fails the case instead of holding the binary.
 func waitBound() time.Duration {
 	return coretest.Scale(5 * time.Second)
 }
 
-// liveRoute names a route, or an exemption, on one endpoint.
 type liveRoute struct {
 	endpoint string
 	method   string
@@ -100,7 +97,6 @@ func whoReached(c *gin.Context) {
 	c.String(nethttp.StatusOK, "reached as %s [%s]", who, accessName(identity.AccessFrom(c.Request.Context())))
 }
 
-// accessName names an access level the way a case writes it.
 func accessName(a authn.Access) string {
 	switch a {
 	case authn.AccessOpen:
@@ -113,14 +109,12 @@ func accessName(a authn.Access) string {
 	return "unknown"
 }
 
-// reply is what a client got back.
 type reply struct {
 	status int
 	header nethttp.Header
 	body   string
 }
 
-// live is what a case holds while the assembly serves.
 type live struct {
 	t         *testing.T
 	ctx       context.Context
@@ -161,23 +155,18 @@ func (l *live) send(endpoint, method, path string, edits ...func(*nethttp.Reques
 	return reply{status: resp.StatusCode, header: resp.Header, body: string(body)}
 }
 
-// asAlice puts alice's Basic credential on a request.
 func asAlice(r *nethttp.Request) { r.SetBasicAuth("alice", "secret") }
 
-// asBearer returns an edit that puts a Bearer credential on a request.
 func asBearer(token string) func(*nethttp.Request) {
 	return func(r *nethttp.Request) { r.Header.Set(authHeader, "Bearer "+token) }
 }
 
-// recordsOf lists what the case's logger has been handed, as the records
-// themselves.
 func (h *recorder) recordsOf() []slog.Record {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]slog.Record(nil), h.records...)
 }
 
-// recordNamed returns the first record written with msg.
 func (h *recorder) recordNamed(msg string) (slog.Record, bool) {
 	for _, r := range h.recordsOf() {
 		if r.Message == msg {
@@ -187,7 +176,6 @@ func (h *recorder) recordNamed(msg string) (slog.Record, bool) {
 	return slog.Record{}, false
 }
 
-// attrText renders a record's attribute as the string it holds.
 func attrText(r slog.Record, key string) string {
 	v, ok := attr(r, key)
 	if !ok {
@@ -196,15 +184,11 @@ func attrText(r slog.Record, key string) string {
 	return v.String()
 }
 
-// recordingLogging delivers the logging capability over a logger the case holds,
-// so that what the entry point and the gateway write is read back as records.
 type recordingLogging struct{ logger *slog.Logger }
 
 func (l recordingLogging) Named(string) *slog.Logger { return l.logger }
 func (recordingLogging) Redaction() log.Redaction    { return noRules{} }
 
-// noRules takes the gateway's redaction registrations and masks nothing: what
-// these cases read is the records, not their masking.
 type noRules struct{}
 
 func (noRules) AddKeys(...string)              {}
@@ -212,9 +196,6 @@ func (noRules) AddPattern(string, log.Matcher) {}
 
 var _ log.Logger = recordingLogging{}
 
-// body is the configuration for the entry point and the gateway: one endpoint
-// per name on a listener of its own on a loopback port the operating system
-// picks, all of them guarded.
 func (a liveAssembly) body(endpoints []string) string {
 	declared := make([]string, len(endpoints))
 	listeners := make([]string, len(endpoints))
@@ -248,8 +229,6 @@ func (a liveAssembly) body(endpoints []string) string {
 	return top + "}"
 }
 
-// registrant is the module that makes the registrations a real registrant makes:
-// routes on the entry point and exemptions on the gateway, both in its Init.
 func (a liveAssembly) registrant() core.Module {
 	return core.Module{
 		Name: "stand-in.registrant",
@@ -288,9 +267,6 @@ func (a liveAssembly) registrant() core.Module {
 	}
 }
 
-// serve drives the assembly to Serve and hands the case the running entry
-// point; the assembly is stopped and closed when the case returns, and the drive
-// has to come back clean.
 func (a liveAssembly) serve(t *testing.T, use func(l *live)) *recorder {
 	t.Helper()
 
@@ -364,8 +340,6 @@ func (a liveAssembly) serve(t *testing.T, use func(l *live)) *recorder {
 	return logs
 }
 
-// boundAddresses reads each endpoint's bound address out of the records the
-// entry point wrote when it bound them.
 func boundAddresses(logs *recorder, endpoints []string) (map[string]string, error) {
 	found := make(map[string]string, len(endpoints))
 	for _, r := range logs.recordsOf() {
@@ -383,8 +357,6 @@ func boundAddresses(logs *recorder, endpoints []string) (map[string]string, erro
 	return found, nil
 }
 
-// requireStatus reports a reply that is not the status the case expects, with
-// what the reply held.
 func requireStatus(t *testing.T, what string, got reply, want int) {
 	t.Helper()
 	if got.status != want {
@@ -401,8 +373,6 @@ func requireChallenge(t *testing.T, what string, got reply) {
 	}
 }
 
-// sighting is what a layer on the chain saw of the request passing through it:
-// that it ran, and whether the gateway had stamped an identity by then.
 type sighting struct {
 	ran     atomic.Bool
 	carried atomic.Bool
@@ -449,15 +419,8 @@ func observer(name string, seen *sighting, place func(*speedhttp.Middleware)) co
 	}
 }
 
-// TestALayerInAnEarlierStageSitsOutsideTheGateway holds where the stages put a
-// layer relative to the gateway.
-//
-// The gateway is in the identifying stage. A layer in an earlier stage — the
-// guarding stage here — runs before the gateway has stamped an identity. A layer
-// that declares itself inside the gateway, in the gateway's own stage, runs
-// after. The second is the control: it shows the request did reach the gateway's
-// pass, so the first layer not seeing an identity is its stage and not a request
-// that was never admitted.
+// TestALayerInAnEarlierStageSitsOutsideTheGateway holds where the stages put
+// a layer relative to the gateway.
 func TestALayerInAnEarlierStageSitsOutsideTheGateway(t *testing.T) {
 	var outside, inside sighting
 	var got reply

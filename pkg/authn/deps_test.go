@@ -60,7 +60,6 @@ var valueTypePackages = map[string][]string{
 	internalPrefix + "step":     {modelPath},
 }
 
-// listed is what the checks below read about one package of the module.
 type listed struct {
 	ImportPath string
 	Standard   bool
@@ -82,8 +81,6 @@ type listed struct {
 	Imports []string
 }
 
-// sourceFiles are the non-test files of a package that go list reports under
-// any of its file lists.
 func (p listed) sourceFiles() []string {
 	var out []string
 	for _, list := range [][]string{p.GoFiles, p.CgoFiles, p.IgnoredGoFiles, p.InvalidGoFiles} {
@@ -97,8 +94,6 @@ func (p listed) sourceFiles() []string {
 	return out
 }
 
-// readSourceImports adds the imports of every non-test file of the package to
-// Imports.
 func (p *listed) readSourceImports() error {
 	for _, name := range p.sourceFiles() {
 		imps, err := readImports(filepath.Join(p.Dir, name))
@@ -114,7 +109,6 @@ func (p *listed) readSourceImports() error {
 	return nil
 }
 
-// readImports parses the import clauses of one file and returns the paths.
 func readImports(path string) ([]string, error) {
 	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 	if err != nil {
@@ -129,15 +123,11 @@ func readImports(path string) ([]string, error) {
 	return out, nil
 }
 
-// isStandard reports whether an import path is the standard library's, which is
-// the paths whose first element has no dot.
 func isStandard(path string) bool {
 	first, _, _ := strings.Cut(path, "/")
 	return !strings.Contains(first, ".")
 }
 
-// moduleRoot finds the directory of the pkg module from where this source file
-// is, so that the answer does not depend on the directory the tests run from.
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -314,9 +304,6 @@ func rootImportViolations(pkgs []listed) []string {
 	return out
 }
 
-// layerViolations is the second rule: the value-type packages depend on the
-// standard library, and on model where the table above says so, and on nothing
-// else.
 func layerViolations(pkgs []listed) []string {
 	var out []string
 	for path, allow := range valueTypePackages {
@@ -434,13 +421,10 @@ func unusedWriterViolations(pkgs []listed) []string {
 	return out
 }
 
-// isTenant reports whether an import path is the tenant module or one of its
-// subpackages.
 func isTenant(path string) bool {
 	return path == tenantPath || strings.HasPrefix(path, tenantPath+"/")
 }
 
-// inAuthnTree reports whether an import path is the root package or sits under it.
 func inAuthnTree(path string) bool {
 	return path == rootPath || strings.HasPrefix(path, rootPath+"/")
 }
@@ -563,11 +547,6 @@ func closureViolations(pkgs []listed) []string {
 
 // TestTheRootPackageImportsOnlyWhatItMay is the executable form of the
 // packaging decision's dependency statement, over the tree as it stands.
-//
-// Every package of the module is listed, not this one alone: the third rule has
-// to see all of them, and the positive controls below make sure the listing
-// holds what the rules are about — a listing that came back empty would let
-// every rule pass.
 func TestTheRootPackageImportsOnlyWhatItMay(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
@@ -661,13 +640,9 @@ func mapKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// TestTheModuleRootIsFoundFromAnyDirectory holds that the checks do not depend
-// on the directory they run from: a test binary started elsewhere still lists
-// this module.
-//
-// A test binary built with -trimpath does not know where its source is, and
-// finds the module from the working directory alone, which is what the next
-// test holds; there is nothing to find it from here.
+// TestTheModuleRootIsFoundFromAnyDirectory holds that the checks do not
+// depend on the directory they run from: a test binary started elsewhere
+// still lists this module.
 func TestTheModuleRootIsFoundFromAnyDirectory(t *testing.T) {
 	if _, file, _, ok := runtime.Caller(0); !ok || !filepath.IsAbs(file) {
 		t.Skip("built with -trimpath: the source file's directory is not recorded")
@@ -704,8 +679,6 @@ func TestTheModuleRootIsFoundFromTrimmedSourcePaths(t *testing.T) {
 	}
 }
 
-// writeTree writes files, named by slash-separated path, under a fresh
-// directory and returns it.
 func writeTree(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -814,14 +787,10 @@ import (
 	})
 }
 
-// isolated keeps go list of a scratch module off the workspace and the network.
 var isolated = []string{"GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off"}
 
 // TestTheDependencyRulesFailOnAViolatingTree runs each rule over a tree that
-// breaks it and asks for the failure, so the rules cannot pass vacuously. The
-// tree is listed with the real go list: the file-by-file split between
-// production and test imports is go list's, and that is the very property the
-// authntest rule depends on.
+// breaks it and asks for the failure, so the rules cannot pass vacuously.
 func TestTheDependencyRulesFailOnAViolatingTree(t *testing.T) {
 	tree := violatingTree(t)
 	pkgs := listModule(t, tree, isolated)
@@ -1060,9 +1029,7 @@ const (
 	goJosePath       = "github.com/go-jose/go-jose/v4"
 	goJoseFloor      = "v4.1.5"
 	tokenPackagePath = rootPath + "/token"
-	// unsafeClaims is the library's escape hatch, which decodes a token's
-	// claims without checking its signature.
-	unsafeClaims = "UnsafeClaimsWithoutVerification"
+	unsafeClaims     = "UnsafeClaimsWithoutVerification"
 )
 
 // The module binds several third-party libraries, each to one leaf package: the
@@ -1239,8 +1206,6 @@ func libraryConfinementViolations(pkgs []listed, libPath string, leaves ...strin
 	return out
 }
 
-// underAnyLeaf reports whether path is one of the leaf packages or sits under
-// one: a bridge library that a leaf bridges is the leaf's whole subtree.
 func underAnyLeaf(path string, leaves []string) bool {
 	for _, leaf := range leaves {
 		if path == leaf || strings.HasPrefix(path, leaf+"/") {
@@ -1310,8 +1275,6 @@ func requiredVersion(gomod, path string) (string, bool) {
 	return "", false
 }
 
-// versionNumbers reads the major, minor and patch of a vX.Y.Z version, ignoring
-// any prerelease or build suffix.
 func versionNumbers(v string) [3]int {
 	v = strings.TrimPrefix(v, "v")
 	if i := strings.IndexAny(v, "-+"); i >= 0 {
@@ -1343,6 +1306,8 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
+// checks that the token bridge is the only non-test importer of go-jose and
+// that pkg/go.mod holds the library at or above its floor.
 func TestTheTokenBridgeIsTheOnlyGoJoseUserAndTheFloorIsHeld(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
@@ -1402,12 +1367,8 @@ func pinViolation(gomod string, lib pinnedLibrary) string {
 
 // TestEachBridgeLibraryIsConfinedToItsLeaf is the executable form of the
 // design's per-library confinement statement: the pquerna/otp, go-webauthn,
-// gosaml2 and goxmldsig bindings appear in the non-test files of their own leaf
-// package and nowhere else.
-//
-// The leaf package is looked for in the listing first and has to import the
-// library, so a rule that reads no file of it is reported rather than passing on
-// an empty read.
+// gosaml2 and goxmldsig bindings appear in the non-test files of their own
+// leaf package and nowhere else.
 func TestEachBridgeLibraryIsConfinedToItsLeaf(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
@@ -1453,9 +1414,8 @@ func TestEachPinnedLibraryStatesTheTableVersion(t *testing.T) {
 
 // TestTheVersionPinFailsOnADriftedRequirement holds the pin above to be a pin
 // and not a floor: a go.mod that states a version above the table's, or below
-// it, or does not name the library at all, is reported, so the check cannot pass
-// on the real tree by only ever accepting a lower bound. A requirement at the
-// exact version is not reported.
+// it, or does not name the library at all, is reported, so the check cannot
+// pass on the real tree by only ever accepting a lower bound.
 func TestTheVersionPinFailsOnADriftedRequirement(t *testing.T) {
 	lib := pinnedLibrary{path: otpPath, version: otpVersion}
 	line := func(version string) string { return "\t" + otpPath + " " + version + "\n" }
@@ -1469,13 +1429,9 @@ func TestTheVersionPinFailsOnADriftedRequirement(t *testing.T) {
 	}
 }
 
-// TestTheBridgeConfinementFailsOnAViolatingTree runs the confinement rule over
-// a tree that imports a bridge library from outside its leaf, so the rule can
-// fail and is not passing on the real tree by accident. The leaf's own files
-// may import the library and its subpackages, and its test file may import the
-// library; an import of the library or of a subpackage of it from another
-// package is reported, the second of which shows the rule reads the library's
-// subpackages too.
+// TestTheBridgeConfinementFailsOnAViolatingTree runs the confinement rule
+// over a tree that imports a bridge library from outside its leaf, so the
+// rule can fail and is not passing on the real tree by accident.
 func TestTheBridgeConfinementFailsOnAViolatingTree(t *testing.T) {
 	tree := writeTree(t, map[string]string{
 		"go.mod":                        "module " + moduleImportPath + "\n\ngo 1.26\n",
@@ -1500,9 +1456,7 @@ func TestTheBridgeConfinementFailsOnAViolatingTree(t *testing.T) {
 
 // TestTheGuardImportRuleFailsOnAViolatingTree runs the guard rule over a tree
 // whose guard package imports a factor leaf, so the rule can fail and is not
-// passing on the real tree by accident. The standard library, the root package,
-// the HTTP entry point and gin are allowed; an import of any other package of
-// the capability, a factor module among them, is reported.
+// passing on the real tree by accident.
 func TestTheGuardImportRuleFailsOnAViolatingTree(t *testing.T) {
 	tree := writeTree(t, map[string]string{
 		"go.mod":               "module " + moduleImportPath + "\n\ngo 1.26\n",
@@ -1518,16 +1472,9 @@ func TestTheGuardImportRuleFailsOnAViolatingTree(t *testing.T) {
 	}
 }
 
-// TestTheMultiLeafBridgesAreConfinedToTheirLeaves holds the libraries more than
-// one leaf bridges, each to the set of leaves that bridge it: a non-test import
-// from a package outside the set is reported. It also holds the floored
-// libraries among them at or above their floor, where pkg/go.mod requires one
-// below the floor or does not require it at all.
-//
-// Each library gets a positive control: at least one leaf has to import it, so
-// the rule cannot pass on a listing that holds none of the leaves and reads no
-// import to judge. The exact pin of a multi-leaf library is held by
-// TestEachPinnedLibraryStatesTheTableVersion, over the same library.
+// TestTheMultiLeafBridgesAreConfinedToTheirLeaves holds the libraries more
+// than one leaf bridges, each to the set of leaves that bridge it: a non-test
+// import from a package outside the set is reported.
 func TestTheMultiLeafBridgesAreConfinedToTheirLeaves(t *testing.T) {
 	root := moduleRoot(t)
 	pkgs := listModule(t, root, nil)
@@ -1565,11 +1512,10 @@ func TestTheMultiLeafBridgesAreConfinedToTheirLeaves(t *testing.T) {
 	}
 }
 
-// TestTheFloorFailsBelowIt holds the floor above to be a floor and not a pin: a
-// go.mod that states a version below the floor, or does not name the library at
-// all, is reported; a requirement exactly at the floor, and one above it, are
-// not. Without this the floor check could pass on the real tree while accepting
-// any lower bound, or none.
+// TestTheFloorFailsBelowIt holds the floor above to be a floor and not a pin:
+// a go.mod that states a version below the floor, or does not name the
+// library at all, is reported; a requirement exactly at the floor, and one
+// above it, are not.
 func TestTheFloorFailsBelowIt(t *testing.T) {
 	lib := floorLibrary{path: xOAuth2Path, floor: xOAuth2Floor}
 	line := func(version string) string { return "\t" + xOAuth2Path + " " + version + "\n" }
@@ -1587,9 +1533,8 @@ func TestTheFloorFailsBelowIt(t *testing.T) {
 
 // TestTheMultiLeafConfinementFailsOnAViolatingTree runs the confinement rule
 // over a tree in which a library more than one leaf bridges is imported from
-// each of its allowed leaves and from a package that is not one of them, so the
-// rule can fail and is not passing on the real tree by accident. An import from
-// any allowed leaf is allowed, and an import from another package is reported.
+// each of its allowed leaves and from a package that is not one of them, so
+// the rule can fail and is not passing on the real tree by accident.
 func TestTheMultiLeafConfinementFailsOnAViolatingTree(t *testing.T) {
 	tree := writeTree(t, map[string]string{
 		"go.mod":                  "module " + moduleImportPath + "\n\ngo 1.26\n",
@@ -1609,11 +1554,9 @@ func TestTheMultiLeafConfinementFailsOnAViolatingTree(t *testing.T) {
 	}
 }
 
-// TestTheRootPackageDoesNotImportTheSendingCapability states outright what the
-// import budget already holds: the root package must not reach the top-level
-// sending capability. The capability belongs to the SMS module's leaf, which
-// takes it as a requirement, so a host that takes authentication in is not handed
-// the sms tree, and the sending capability stays usable on its own.
+// TestTheRootPackageDoesNotImportTheSendingCapability states outright what
+// the import budget already holds: the root package must not reach the
+// top-level sending capability.
 func TestTheRootPackageDoesNotImportTheSendingCapability(t *testing.T) {
 	const smsCapabilityPath = moduleImportPath + "/sms"
 	pkgs := listModule(t, moduleRoot(t), nil)

@@ -37,15 +37,9 @@ func problemBody(t *testing.T, what string, got reply) map[string]any {
 	return members
 }
 
-// TestARefusalIsWrittenThroughTheEntryPointsErrorResponse holds that the gateway
-// decides the status and the header and the entry point decides the rest.
-//
-// The status is the gateway's conclusion, the challenge is set before the
-// response is written and survives it, and the body is the entry point's
-// default problem details object carrying the status and the standard title of
-// it and nothing else: why the request was refused, and which backend said so,
-// reach the log and no further. A body that carried the backend's cause would
-// hand a caller the text of a backend's own error.
+// TestARefusalIsWrittenThroughTheEntryPointsErrorResponse holds that the
+// gateway decides the status and the header and the entry point decides the
+// rest.
 func TestARefusalIsWrittenThroughTheEntryPointsErrorResponse(t *testing.T) {
 	const cause = "wrong password for alice in db-7"
 	for _, c := range []struct {
@@ -142,20 +136,16 @@ func (s *shapedResponder) RespondError(w nethttp.ResponseWriter, _ *nethttp.Requ
 	_, _ = fmt.Fprintf(w, "shaped %d", p.Status)
 }
 
-// problems returns what the responder has been asked to write.
 func (s *shapedResponder) problems() []speedhttp.Problem {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]speedhttp.Problem(nil), s.asked...)
 }
 
-// TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays holds the other
-// half: when a module delivers the error shape, it decides the whole of it, and
-// the header the gateway set before asking for the response is still on it.
-//
-// What the gateway hands over is the status. The body, the media type and
-// everything about the shape are the responder's, and a 401 that lost its
-// challenge on the way through would leave the caller not knowing what to send.
+// TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays holds the
+// other half: when a module delivers the error shape, it decides the whole of
+// it, and the header the gateway set before asking for the response is still
+// on it.
 func TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays(t *testing.T) {
 	responder := &shapedResponder{}
 	delivers := core.Module{
@@ -211,15 +201,8 @@ func TestADeliveredErrorResponderDecidesTheShapeAndTheHeaderStays(t *testing.T) 
 	}
 }
 
-// TestABackendPanicIsAnsweredByTheGatewayNotTheFallback holds where a backend's
-// panic is caught.
-//
-// The entry point has a fallback that answers any panic with a 500, and it
-// cannot say which layer or module crashed. The gateway catches a backend's
-// panic at the call site, which is what answers it as the outage it is — a 503,
-// charged to that backend, with its stack in the log — and what lets every
-// other backend go on being answered by the same process. A 500 here would be
-// the fallback's answer, with no backend named.
+// TestABackendPanicIsAnsweredByTheGatewayNotTheFallback holds where a
+// backend's panic is caught.
 func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 	crashing := basicBackend("static", "static.")
 	crashing.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -270,11 +253,9 @@ func TestABackendPanicIsAnsweredByTheGatewayNotTheFallback(t *testing.T) {
 	}
 }
 
-// TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer holds the boundary
-// of that recover: it is the gateway's own, and stops where the gateway's code
-// does. A panic in a handler the gateway let through belongs to the fallback,
-// which answers it as the 500 it is and writes its own record; the gateway
-// neither catches it nor writes a line about a defect that is not its.
+// TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer holds the
+// boundary of that recover: it is the gateway's own, and stops where the
+// gateway's code does.
 func TestAHandlerPanicBehindTheGatewayIsTheEntryPointsToAnswer(t *testing.T) {
 	var crashed reply
 	logs := liveAssembly{

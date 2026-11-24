@@ -17,8 +17,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// seen is what a handler read out of its request, which is what a module's test
-// asserts about.
 type seen struct {
 	calls   int
 	id      authn.Identity
@@ -189,8 +187,6 @@ func TestAGuardedRouteNeedsTheIdentityTheTestChose(t *testing.T) {
 		t.Errorf("handler read has %v, account %q, access %d, want alice at AccessRequired", s.has, s.account, s.access)
 	}
 
-	// The identity is set per Mounter and read per request: changing it changes
-	// the next request and not the ones already served.
 	m.As(authntest.WithAccount("bob"))
 	get(m, "/api/v1/auth/sessions")
 	if s.account != "bob" {
@@ -283,11 +279,9 @@ func TestTheTrustedOriginsAreTheOptionsOwn(t *testing.T) {
 	}
 }
 
-// TestAHandlerThatPanicsEndsInA500 holds that the stand-in survives a handler's
-// panic, so a test that drives one gets a response instead of the panic ending the
-// test. The panic's own response belongs to the entry point's fallback, not to the
-// stand-in, whose default shape drops the representation headers, so its headers
-// are not held here.
+// TestAHandlerThatPanicsEndsInA500 holds that the stand-in survives a
+// handler's panic, so a test that drives one gets a response instead of the
+// panic ending the test.
 func TestAHandlerThatPanicsEndsInA500(t *testing.T) {
 	m := mounttest.New(t)
 	m.Public(http.MethodGet, "/boom", func(*gin.Context) { panic("boom") })
@@ -335,8 +329,6 @@ func TestAConflictingRegistrationPanicsAsTheRouterDoes(t *testing.T) {
 	m.Public(http.MethodGet, "/x", func(*gin.Context) {})
 }
 
-// refuses stands in for the *testing.T handed to New, so that the refusal of an
-// origin can be observed without failing the case that provokes it.
 type refuses struct {
 	testing.TB
 	failed bool

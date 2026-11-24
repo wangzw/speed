@@ -15,19 +15,18 @@ import (
 	"testing"
 )
 
-// seamSignatures is the method set of every capability interface the design
-// gives a signature for, written as the design writes it: the name, then the
-// parameters and results with their names and groupings. TestTheSeamsMatchTheDesign
-// reads the interfaces from the source of this package and compares them with
-// these, so a method added, dropped, renamed or given another signature is
-// found, and so is a parameter that lost its name.
+// seamSignatures is the method set of every capability interface that has a
+// signature here, written with the name, then the parameters and results with
+// their names and groupings. TestTheSeamsMatchTheDesign reads the interfaces
+// from the source of this package and compares them with these, so a method
+// added, dropped, renamed or given another signature is found, and so is a
+// parameter that lost its name.
 //
 // Every interface here is implemented outside this package, so a changed
 // signature breaks each implementer: a module delivers the account, session,
 // token, factor, login, SMS, SSO and impersonation contracts and the gate, a
 // host delivers Decider, Provisioner and its own credential backends, and the
-// tenant admission layer delivers ScopeGuard. Every entry is the design's own
-// signature, Passwords.Clear among them.
+// tenant admission layer delivers ScopeGuard. Passwords.Clear is among them.
 var seamSignatures = map[string][]string{
 	"Accounts": {
 		"Get(ctx context.Context, id AccountID) (Account, error)",
@@ -313,12 +312,9 @@ func interfaceMethods(t *testing.T, dir string) map[string][]string {
 	return out
 }
 
-// TestTheSeamsMatchTheDesign holds the method set of each capability interface
-// to the signatures the design writes, in both directions: an interface that has
-// a method the design does not list fails as surely as one that lacks one. The
-// set of this package's interfaces is held to seamSignatures in both directions
-// too, so an interface declared here without an entry there fails rather than
-// going unchecked.
+// TestTheSeamsMatchTheDesign holds the method set of each capability
+// interface to the signatures written here, in both directions: an interface
+// that has a method not listed fails as surely as one that lacks one.
 func TestTheSeamsMatchTheDesign(t *testing.T) {
 	got := interfaceMethods(t, ".")
 	for name, want := range seamSignatures {
@@ -372,11 +368,11 @@ type Seam interface {
 		}
 	}
 	for _, drifted := range []string{
-		"Do(ctx context.Context, id int) error",                   // another parameter type
-		"Do(ctx context.Context, identifier string) error",        // a parameter renamed
-		"Do(ctx context.Context, id string) (string, error)",      // another result
-		"Renamed(ctx context.Context, other, extra string) error", // a parameter added
-		"Done(ctx context.Context, id string) error",              // a method renamed
+		"Do(ctx context.Context, id int) error",
+		"Do(ctx context.Context, identifier string) error",
+		"Do(ctx context.Context, id string) (string, error)",
+		"Renamed(ctx context.Context, other, extra string) error",
+		"Done(ctx context.Context, id string) error",
 	} {
 		if slices.Contains(got, drifted) {
 			t.Errorf("the reader matched the drifted signature %q", drifted)

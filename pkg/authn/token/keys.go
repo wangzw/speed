@@ -23,16 +23,12 @@ const (
 	algRS256 = "RS256"
 )
 
-// useSig is the key-use the published keys carry: signature.
 const useSig = "sig"
 
 // The sizes of a generated key. An ES256 key is a P-256 pair; an RS256 key is
 // an RSA pair of the least size the startup check accepts.
 const (
-	// rsaBits is the modulus size of a generated RSA key. The startup check
-	// refuses a configured key below minRSABits.
-	rsaBits = 2048
-	// minRSABits is the least RSA modulus a configured key may have.
+	rsaBits    = 2048
 	minRSABits = 2048
 )
 
@@ -165,8 +161,6 @@ func loadKeyFile(path, algorithm string, mustSign bool) (keyEntry, *diagnostic, 
 	return keyEntry{kid: kid, alg: alg, pub: pub, signer: signer, file: path}, diag, nil
 }
 
-// keyAlgorithm is the algorithm a public key carries: ES256 for a P-256 ECDSA
-// key, RS256 for an RSA key of at least minRSABits. Any other key is refused.
 func keyAlgorithm(pub crypto.PublicKey) (string, error) {
 	switch key := pub.(type) {
 	case *ecdsa.PublicKey:

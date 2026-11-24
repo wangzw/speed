@@ -32,6 +32,8 @@ func requirementTokens(reqs []core.Requirement) []any {
 	return out
 }
 
+// TestTheModuleDeclaresWhatTheDesignSays checks that the module declares what
+// the design says.
 func TestTheModuleDeclaresWhatTheDesignSays(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
@@ -81,6 +83,8 @@ func TestTheModuleDeclaresWhatTheDesignSays(t *testing.T) {
 	}
 }
 
+// TestStartWithoutTheTableIsNotMigrated checks that start without the table
+// is not migrated.
 func TestStartWithoutTheTableIsNotMigrated(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "tokens.db") + "?_pragma=busy_timeout(5000)"
 	database := dbtest.SQLite(t, dsn, nil)
@@ -103,9 +107,8 @@ func TestStartWithoutTheTableIsNotMigrated(t *testing.T) {
 	p.stop(t.Context())
 }
 
-// TestStartLaunchesTheSweepAndStopEndsIt holds the module wiring: a successful
-// start leaves the refresh-token sweep running, and stop ends it. Without the
-// call from start the table would still be probed but the sweep would never run.
+// TestStartLaunchesTheSweepAndStopEndsIt holds the module wiring: a
+// successful start leaves the refresh-token sweep running, and stop ends it.
 func TestStartLaunchesTheSweepAndStopEndsIt(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "tokens.db") + "?_pragma=busy_timeout(5000)"
 	database := dbtest.SQLite(t, dsn, nil)
@@ -133,10 +136,9 @@ func TestStartLaunchesTheSweepAndStopEndsIt(t *testing.T) {
 	}
 }
 
-// TestWireMountsTheTokenEndpoints holds the module wiring: wire mounts the token
-// and revocation endpoints, so an assembly that reaches Init answers POST
-// B/token. Without the call from wire the key set would still mount and the
-// endpoints would answer 404.
+// TestWireMountsTheTokenEndpoints holds the module wiring: wire mounts the
+// token and revocation endpoints, so an assembly that reaches Init answers
+// POST B/token.
 func TestWireMountsTheTokenEndpoints(t *testing.T) {
 	r := newRig(t)
 	m := mounttest.New(t)
@@ -157,6 +159,8 @@ func TestWireMountsTheTokenEndpoints(t *testing.T) {
 	}
 }
 
+// TestTheModuleNamesItsStableSurfaceAsTheDesignFixesIt checks that the module
+// names its stable surface as the design fixes it.
 func TestTheModuleNamesItsStableSurfaceAsTheDesignFixesIt(t *testing.T) {
 	if backendName != "token" {
 		t.Errorf("the backend name is %q, want token", backendName)
@@ -182,6 +186,7 @@ func TestTheModuleNamesItsStableSurfaceAsTheDesignFixesIt(t *testing.T) {
 	}
 }
 
+// checks that a contributor returning a reserved claim fails the issue.
 func TestAContributorThatReturnsAReservedClaimFailsTheIssue(t *testing.T) {
 	if err := checkContributorClaims(map[string]any{"role": "admin"}); err != nil {
 		t.Errorf("an ordinary claim was refused: %v", err)
@@ -197,6 +202,8 @@ func TestAContributorThatReturnsAReservedClaimFailsTheIssue(t *testing.T) {
 	}
 }
 
+// TestMarshalMergesAnExtraClaimAndRefusesAReservedOne checks that marshal
+// merges an extra claim and refuses a reserved one.
 func TestMarshalMergesAnExtraClaimAndRefusesAReservedOne(t *testing.T) {
 	c := tokenClaims{
 		Issuer:   "iss",
@@ -281,6 +288,8 @@ func TestImportingThePackageRegistersTheModule(t *testing.T) {
 	}
 }
 
+// TestARefreshTokenHasThePrefixAndIsStoredAsItsDigest checks that a refresh
+// token has the prefix and is stored as its digest.
 func TestARefreshTokenHasThePrefixAndIsStoredAsItsDigest(t *testing.T) {
 	token, err := newRefreshToken()
 	if err != nil {

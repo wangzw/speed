@@ -360,9 +360,6 @@ func (s *spec) checkMethods() error {
 	return nil
 }
 
-// checkNamespace holds the one account namespace rule that needs nothing the
-// gateway alone knows: the static prefix belongs to the backend named static,
-// and that backend may hand back nothing else.
 func (s *spec) checkNamespace() error {
 	for _, c := range []struct {
 		name string

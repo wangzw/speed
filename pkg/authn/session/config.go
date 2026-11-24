@@ -25,7 +25,6 @@ const (
 	gatePublicURLItem = "mount.public-url"
 )
 
-// moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
 	// CookieDomain, when non-empty, is written as the Domain attribute of the
 	// session cookie and makes the cookie __Secure-authn-sid, which loses the
@@ -37,10 +36,8 @@ type moduleConfig struct {
 	SameSite string `config:"same-site"`
 }
 
-// configDefaults is what this module is worth without a configuration file.
 var configDefaults = moduleConfig{SameSite: "lax"}
 
-// gateMount is the part of the gateway's configuration this module reads.
 type gateMount struct {
 	PublicURL string `config:"public-url"`
 }
@@ -58,7 +55,6 @@ type cookieSpec struct {
 	sameSite  http.SameSite
 }
 
-// cookie builds the session cookie with the given value and Max-Age.
 func (s cookieSpec) cookie(value string, maxAge int) *http.Cookie {
 	return cookiename.Cookie(s.publicURL, cookiename.Spec{
 		Stem:     cookiename.Session,
@@ -69,18 +65,12 @@ func (s cookieSpec) cookie(value string, maxAge int) *http.Cookie {
 	})
 }
 
-// name is the name the session cookie is written and read under, the one
-// cookiename.Cookie gives it.
 func (s cookieSpec) name() string {
 	return cookiename.Name(s.publicURL, cookiename.Session, s.domain)
 }
 
-// domainShape is a host name as a cookie's Domain attribute may carry it:
-// letters, digits and hyphens in labels separated by dots.
 var domainShape = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
-// resolve turns decoded configuration into the cookie this module writes,
-// refusing what cannot be run on.
 func (c moduleConfig) resolve(gm gateMount) (cookieSpec, error) {
 	var spec cookieSpec
 
@@ -151,7 +141,6 @@ func publicHost(raw string) (host string, admitted, plainHTTP bool, err error) {
 	return host, !plainHTTP || cookiename.LoopbackHost(u.Hostname()), plainHTTP, nil
 }
 
-// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -169,9 +158,6 @@ func schema() config.Schema {
 	}
 }
 
-// readConfig decodes this module's section and the gateway's address and
-// validates both. Prepare and New both go through it, so the two see one
-// cookie.
 func readConfig(reader config.Reader) (cookieSpec, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {

@@ -9,21 +9,12 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// named is a backend taking the scheme of its own name and the library account
-// namespace, for the cases about what a backend's name and its declarations are
-// held to.
 func named(name string) *fakeVerifier {
 	return &fakeVerifier{name: name, accepts: authn.Accepts{Schemes: []string{"s-" + name}}}
 }
 
 // TestADeclarationTheGatewayCannotHonourFailsTheStartup holds the shapes a
 // backend is refused for on its own.
-//
-// Each would otherwise become a request-time surprise: a name outside the form
-// is stamped on every identity and written into log lines, a scheme outside the
-// token form reaches a caller in a challenge nobody can parse, a backend that
-// takes no carrier can never be reached, and a prefix that is not spelt as an
-// account identifier is a namespace nothing can be in.
 func TestADeclarationTheGatewayCannotHonourFailsTheStartup(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -76,8 +67,6 @@ func TestADeclarationTheGatewayCannotHonourFailsTheStartup(t *testing.T) {
 		})
 	}
 
-	// The controls: the same shapes at their edges are admitted, so each refusal
-	// above is the spoiled field and not the frame around it.
 	for _, ok := range []authn.Verifier{
 		named("a"),
 		named("0.9-x"),
@@ -100,10 +89,8 @@ func TestAGatewayWithNoBackendRefusesToStart(t *testing.T) {
 	}
 }
 
-// TestTwoBackendsTakingOneCarrierFailTheStartupNamingBoth holds the overlap the
-// build is able to detect. A carrier key with two answerers has no answer at
-// request time: whichever the table happened to hold would win, and which that
-// is would be a matter of registration order.
+// TestTwoBackendsTakingOneCarrierFailTheStartupNamingBoth holds the overlap
+// the build is able to detect.
 func TestTwoBackendsTakingOneCarrierFailTheStartupNamingBoth(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -158,11 +145,9 @@ func TestTwoBackendsTakingOneCarrierFailTheStartupNamingBoth(t *testing.T) {
 		})
 	}
 
-	// The cookie and the scheme of one name are two keys, and do not collide.
 	if _, err := buildDispatch([]authn.Verifier{schemeBackend("one", "sid"), cookieBackend("two", "sid")}); err != nil {
 		t.Errorf("a scheme and a cookie of the same spelling were taken for one key: %v", err)
 	}
-	// Cookie names are case-sensitive, as RFC 6265 has them.
 	if _, err := buildDispatch([]authn.Verifier{cookieBackend("one", "sid"), cookieBackend("two", "SID")}); err != nil {
 		t.Errorf("two cookie names that differ in case were taken for one: %v", err)
 	}
@@ -210,8 +195,6 @@ func TestAccountPrefixesMayNotNestOrRepeat(t *testing.T) {
 		})
 	}
 
-	// Backends that declare no prefix share the library namespace, which is
-	// what the session and token backends do, and do not conflict.
 	if _, err := buildDispatch([]authn.Verifier{schemeBackend("one", "a"), schemeBackend("two", "b")}); err != nil {
 		t.Errorf("two backends in the library namespace were refused: %v", err)
 	}
@@ -387,9 +370,9 @@ func TestTheNamespaceCheckHoldsEachBackendToItsOwnNamespace(t *testing.T) {
 		{"library", "0198f0aa-0000-7000-8000-000000000000", true},
 		{"library", "alice", true},
 		{"library", "Static.ops", true},
-		{"library", "static.ops", false}, // belongs to the backend named static
+		{"library", "static.ops", false},
 		{"library", "static.", false},
-		{"library", "corp.alice", false}, // belongs to the backend declaring corp.
+		{"library", "corp.alice", false},
 		{"library", "corp.", false},
 		{"library", "corporate", true},
 	} {

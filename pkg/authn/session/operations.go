@@ -32,15 +32,24 @@ const (
 type AuthnSessionView struct {
 	_ struct{} `description:"Whether the request carries a signed-in identity and, when it does, the facts the identity is built from."`
 
-	Authenticated bool           `json:"authenticated" required:"true" description:"False when nobody is signed in; every other field is then absent"`
-	SessionID     string         `json:"session_id,omitempty" description:"The public identifier of the session the request came with; absent when nobody is signed in."`
-	AccountID     string         `json:"account_id,omitempty" description:"The account the request is taken to be from; the impersonated account while impersonating"`
-	ActorID       string         `json:"actor_id,omitempty" description:"The account whose hands are on the request; present only while impersonating"`
-	Impersonating bool           `json:"impersonating,omitempty" description:"True only while the identity is impersonating another account; absent otherwise."`
-	Methods       []authn.Method `json:"methods,omitempty" items.enum:"pwd,sms,otp,webauthn,oauth,oidc,saml,static,client-secret" description:"The authentication methods the identity completed, each from the closed set named by the enum; absent when the session records none."`
-	Assurance     string         `json:"assurance,omitempty" enum:"none,single,multi" description:"The assurance level the authentication reached; \"none\" when the identity carries no level."`
-	AuthTime      *time.Time     `json:"auth_time,omitempty" description:"The instant of the last interactive authentication, absent when the identity carries none"`
-	Provider      string         `json:"provider,omitempty" description:"The backend that verified the credential"`
+	// Authenticated reports whether the request carries a signed-in identity.
+	Authenticated bool `json:"authenticated" required:"true" description:"False when nobody is signed in; every other field is then absent"`
+	// SessionID is the public identifier of the session.
+	SessionID string `json:"session_id,omitempty" description:"The public identifier of the session the request came with; absent when nobody is signed in."`
+	// AccountID is the account the request is taken to be from.
+	AccountID string `json:"account_id,omitempty" description:"The account the request is taken to be from; the impersonated account while impersonating"`
+	// ActorID is the account whose hands are on the request, present only while impersonating.
+	ActorID string `json:"actor_id,omitempty" description:"The account whose hands are on the request; present only while impersonating"`
+	// Impersonating reports whether the identity is acting as another account.
+	Impersonating bool `json:"impersonating,omitempty" description:"True only while the identity is impersonating another account; absent otherwise."`
+	// Methods are the authentication methods the identity completed.
+	Methods []authn.Method `json:"methods,omitempty" items.enum:"pwd,sms,otp,webauthn,oauth,oidc,saml,static,client-secret" description:"The authentication methods the identity completed, each from the closed set named by the enum; absent when the session records none."`
+	// Assurance is the level the authentication reached.
+	Assurance string `json:"assurance,omitempty" enum:"none,single,multi" description:"The assurance level the authentication reached; \"none\" when the identity carries no level."`
+	// AuthTime is the instant of the last interactive authentication.
+	AuthTime *time.Time `json:"auth_time,omitempty" description:"The instant of the last interactive authentication, absent when the identity carries none"`
+	// Provider is the backend that verified the credential.
+	Provider string `json:"provider,omitempty" description:"The backend that verified the credential"`
 }
 
 // AuthnSessionItem is one live session of the caller's, as the listing reports
@@ -48,20 +57,29 @@ type AuthnSessionView struct {
 type AuthnSessionItem struct {
 	_ struct{} `description:"One live session of the caller's, as the listing reports it."`
 
-	ID         string    `json:"id" required:"true" description:"The public session identifier; it names the row and is not a credential."`
-	Kind       string    `json:"kind" required:"true" description:"The session kind, browser or token; service-account sessions are never listed."`
-	CreatedAt  time.Time `json:"created_at" required:"true" description:"When the session was created, as an RFC 3339 instant in UTC."`
+	// ID is the public session identifier.
+	ID string `json:"id" required:"true" description:"The public session identifier; it names the row and is not a credential."`
+	// Kind is the session kind.
+	Kind string `json:"kind" required:"true" description:"The session kind, browser or token; service-account sessions are never listed."`
+	// CreatedAt is when the session was created.
+	CreatedAt time.Time `json:"created_at" required:"true" description:"When the session was created, as an RFC 3339 instant in UTC."`
+	// LastSeenAt is the last activity the row was written for.
 	LastSeenAt time.Time `json:"last_seen_at" required:"true" description:"Last activity of the session, as an RFC 3339 instant in UTC. For a browser session this is the last use the row was written for: touches are coalesced, written at most once per effective touch interval — the configured interval capped at half the idle timeout — so the value lags the newest use by up to that interval. A token session has no renewal path, so its value is the creation time."`
-	ExpiresAt  time.Time `json:"expires_at" required:"true" description:"The absolute expiry, as an RFC 3339 instant in UTC. A browser session can stop being valid earlier, once its idle timeout passes."`
-	ClientIP   string    `json:"client_ip" required:"true" description:"Empty when the session carries none"`
-	UserAgent  string    `json:"user_agent" required:"true" description:"Empty when the session carries none"`
-	Current    bool      `json:"current" required:"true" description:"Whether this is the session the request came with"`
+	// ExpiresAt is the absolute expiry.
+	ExpiresAt time.Time `json:"expires_at" required:"true" description:"The absolute expiry, as an RFC 3339 instant in UTC. A browser session can stop being valid earlier, once its idle timeout passes."`
+	// ClientIP is the address the entry point reported, or empty.
+	ClientIP string `json:"client_ip" required:"true" description:"Empty when the session carries none"`
+	// UserAgent is the client the session was opened from, or empty.
+	UserAgent string `json:"user_agent" required:"true" description:"Empty when the session carries none"`
+	// Current says this is the session the request came with.
+	Current bool `json:"current" required:"true" description:"Whether this is the session the request came with"`
 }
 
 // AuthnSessionList is the page of the caller's own live sessions.
 type AuthnSessionList struct {
 	_ struct{} `description:"The caller's own live sessions, in the order the listing reports them."`
 
+	// Sessions are the live browser and token sessions of the account.
 	Sessions []AuthnSessionItem `json:"sessions" required:"true" description:"The live browser and token sessions of the account, most recently created first; the empty array when there are none."`
 }
 
@@ -70,12 +88,10 @@ type AuthnSessionList struct {
 type AuthnSessionRevoked struct {
 	_ struct{} `description:"The outcome of revoking every session of the caller's but the current one."`
 
+	// Revoked is the number of sessions revoked.
 	Revoked int `json:"revoked" required:"true" description:"The number of sessions revoked"`
 }
 
-// revokeOneInput is the declaration's input for the route that revokes one
-// session by identifier: the identifier is a path parameter and the operation
-// takes no body.
 type revokeOneInput struct {
 	ID string `path:"id" description:"The public session identifier, as returned in the session listing. It names the row and is not a credential."`
 }
@@ -90,8 +106,6 @@ var challengeHeader = speedhttp.Header{
 	Description: "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
 }
 
-// unauthorized is the declaration of a 401 that carries the capability's
-// challenge.
 func unauthorized(description string) speedhttp.Response {
 	response := speedhttp.ProblemResponse(http.StatusUnauthorized, description)
 	response.Headers = []speedhttp.Header{challengeHeader}
@@ -106,9 +120,6 @@ var commonFailures = []speedhttp.Response{
 	unauthorized("No usable credential"),
 }
 
-// sessionOperation declares the read route and binds its types: the handler
-// receives no input and returns the view, so the entry point binds the request
-// and writes the declared 200.
 var sessionOperation = speedhttp.NewOperation[struct{}, AuthnSessionView](
 	"authn.session.get",
 	http.MethodGet,
@@ -227,8 +238,6 @@ var revokeOneOperation = speedhttp.NewReplyOperation[revokeOneInput](
 	),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
 	sessionOperation,
 	logoutOperation,

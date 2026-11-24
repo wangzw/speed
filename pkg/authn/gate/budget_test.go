@@ -15,17 +15,12 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// ended is what a request concluded with: the status it was answered with, the
-// one record a refusal writes (a pass writes none), and whether the layer behind
-// the gateway was reached.
 type ended struct {
 	status  int
 	rec     *slog.Record
 	reached bool
 }
 
-// concludeUnder runs one request on the public endpoint, with the context the
-// case gives it and a recorder behind its logger, and reports how it ended.
 func concludeUnder(t *testing.T, g *gateway, ctx context.Context, edit func(*nethttp.Request) *nethttp.Request) ended {
 	t.Helper()
 	h := &recorder{}
@@ -43,21 +38,10 @@ func concludeUnder(t *testing.T, g *gateway, ctx context.Context, edit func(*net
 	return out
 }
 
-// asAliceBasic puts alice's Basic credential on a request.
 func asAliceBasic(r *nethttp.Request) *nethttp.Request { return withBasic(r, "alice", "secret") }
 
-// TestAnAnswerThatArrivesAfterTheBudgetIsNotHonoured holds what the call budget
-// is actually for.
-//
-// It does not cut the wait short. The call is synchronous, and abandoning it
-// would either go on holding the in-flight slot, which changes nothing, or
-// release it and let goroutines parked inside a broken backend grow without
-// bound. What the budget does is invalidate the answer: a backend that takes
-// longer than the budget and then says the credential holds does not get its
-// caller admitted, and the request ends as the outage it was.
-//
-// Without this, a backend slow enough to be considered down could still
-// authenticate a caller, arbitrarily late, on a request the caller gave up on.
+// TestAnAnswerThatArrivesAfterTheBudgetIsNotHonoured holds what the call
+// budget is actually for.
 func TestAnAnswerThatArrivesAfterTheBudgetIsNotHonoured(t *testing.T) {
 	slow := basicBackend("static", "static.")
 	slow.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -84,12 +68,8 @@ func TestAnAnswerThatArrivesAfterTheBudgetIsNotHonoured(t *testing.T) {
 	}
 }
 
-// TestARefusalThatArrivesAfterTheBudgetIsNotHonouredEither holds the other half
-// of the same rule. A backend slower than the budget is one that cannot answer in
-// the time it is given, and whatever it says afterwards — a pass or a refusal —
-// ends the request as its outage. The refusal is not kept as a 401: what raises a
-// conclusion to an outage is the budget having run out, which the gateway reads
-// off its own call context, never what the backend put into the refusal.
+// TestARefusalThatArrivesAfterTheBudgetIsNotHonouredEither holds the other
+// half of the same rule.
 func TestARefusalThatArrivesAfterTheBudgetIsNotHonouredEither(t *testing.T) {
 	slow := basicBackend("static", "static.")
 	slow.verify = func(context.Context, authn.Credential) authn.Verdict {
@@ -144,13 +124,8 @@ func TestAnAnswerWithinTheBudgetIsHonoured(t *testing.T) {
 	}
 }
 
-// TestTheInFlightGateRefusesRatherThanQueues holds the bound this module puts on
-// its own side.
-//
-// A backend that has stopped answering must not be able to take every goroutine
-// the server has. Past the gate a request ends as an outage straight away rather
-// than waiting, so the number of goroutines parked inside a broken backend is
-// exactly the gate's width.
+// TestTheInFlightGateRefusesRatherThanQueues holds the bound this module puts
+// on its own side.
 func TestTheInFlightGateRefusesRatherThanQueues(t *testing.T) {
 	admitted := make(chan struct{})
 	release := make(chan struct{})
@@ -239,8 +214,6 @@ func TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull(t *testing.T) {
 		optional: []liveRoute{{endpoint: "public", method: "GET", path: "/catalog"}},
 		inFlight: 1,
 	}.serve(t, func(l *live) {
-		// The one slot is taken by a request that stays inside the backend until
-		// the case lets it go.
 		held := make(chan reply, 1)
 		go func() { held <- l.send("public", "GET", "/orders", asAlice) }()
 		select {
@@ -266,8 +239,7 @@ func TestAnExemptRouteStillAnswersWhileTheInFlightGateIsFull(t *testing.T) {
 }
 
 // TestASaturatedGateIsNotChargedToTheBackend holds the attribution of that
-// refusal. The backend was never asked, and charging it would send an operator to
-// read the logs of a credential store that is working perfectly.
+// refusal.
 func TestASaturatedGateIsNotChargedToTheBackend(t *testing.T) {
 	var asked atomic.Int64
 	b := passes(basicBackend("static", "static."))
@@ -275,7 +247,6 @@ func TestASaturatedGateIsNotChargedToTheBackend(t *testing.T) {
 	g := gatewayWith(t, settings{endpoints: []string{"public"}, budget: time.Second, inFlight: 1}, b)
 	sealed(t, g, routerWith("public"))
 
-	// Take the only slot and keep it for the length of the case.
 	g.slots <- struct{}{}
 
 	out := concludeUnder(t, g, context.Background(), asAliceBasic)
@@ -291,11 +262,8 @@ func TestASaturatedGateIsNotChargedToTheBackend(t *testing.T) {
 	}
 }
 
-// TestDrainingGivesUpOnCallsThatOutlastTheBudget holds the other end of Close.
-//
-// A backend that has stopped answering must not hold the whole shutdown open.
-// Close waits for what is inside a backend, bounded by the longest any one call
-// should still take, and then reports rather than waiting on.
+// TestDrainingGivesUpOnCallsThatOutlastTheBudget holds the other end of
+// Close.
 func TestDrainingGivesUpOnCallsThatOutlastTheBudget(t *testing.T) {
 	admitted := make(chan struct{})
 	release := make(chan struct{})
@@ -381,18 +349,6 @@ var endings = []struct {
 
 // TestAnAnswerAboutTheCredentialStandsAfterTheCallersContextEnded holds which
 // late answers the request's own context may change, and which it may not.
-//
-// A context the caller ended is read against one answer alone: a backend's report
-// that it could not answer, which is what a backend returning on its context has
-// to say and which is therefore no fact about its health. A pass, a refusal and a
-// backend that returned without answering are each something the backend said
-// about the credential or about itself, and each concludes as it would have with
-// the caller still waiting. The refusal matters most: a wrong password read as an
-// outage leaves the 401 bucket every lockout and rate rule keys on, and a backend
-// that answers nothing stops being counted as a defect.
-//
-// The budget is ten seconds and never runs out, so what the case varies is the
-// caller's context alone; the backend answers only once that has ended.
 func TestAnAnswerAboutTheCredentialStandsAfterTheCallersContextEnded(t *testing.T) {
 	for _, answer := range []struct {
 		name    string
@@ -466,16 +422,8 @@ func honouring(inside chan struct{}) *fakeVerifier {
 	return backend
 }
 
-// TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline holds the
-// attribution of a context the request itself brought to an end.
-//
-// A backend is required to return once its context ends, and the one that does
-// reports that it could not answer — it has nothing else to report. When what
-// ended the context is the caller's own deadline or the caller going away,
-// charging that report to the backend names a credential store that is healthy
-// and inflates the outage count an operator alerts on with requests nobody was
-// waiting for. It is charged to the gateway, as the other outages in which no
-// backend failed are.
+// TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline holds
+// the attribution of a context the request itself brought to an end.
 func TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline(t *testing.T) {
 	for _, ending := range endings {
 		t.Run(ending.name, func(t *testing.T) {
@@ -503,9 +451,7 @@ func TestABackendThatHonoursItsContextIsNotChargedForTheCallersDeadline(t *testi
 }
 
 // TestARequestWhoseContextHasEndedReachesNoBackend holds the same rule on the
-// near side of the call. Nobody is waiting for the answer, and a backend asked
-// anyway spends a verification on it — a password derivation, a directory round
-// trip — and a slot of the in-flight gate while it does.
+// near side of the call.
 func TestARequestWhoseContextHasEndedReachesNoBackend(t *testing.T) {
 	var asked atomic.Int64
 	backend := passes(basicBackend("static", "static."))

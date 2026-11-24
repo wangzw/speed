@@ -18,8 +18,6 @@ const (
 	jwksCacheControl = "public, max-age=300"
 )
 
-// unavailableType is the Problem.Type of a 503 this module answers: the
-// capability's prefix and the closed code the entry point's own 503 carries.
 const unavailableType = "urn:speed:authn:" + mount.CodeUnavailable
 
 // JWKS returns the public keys that verify the tokens, as a JWK set. Every key is

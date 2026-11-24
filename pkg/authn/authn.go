@@ -175,6 +175,10 @@ type Verifier interface {
 // Each returned string is one WWW-Authenticate field value; the gateway writes
 // them together, comma separated, as the one header every 401 carries.
 type Challenger interface {
+	// Challenge returns the WWW-Authenticate field values this backend writes
+	// for realm. rejected is true when the request carried a credential this
+	// backend refused, and false when it carried no credential this backend
+	// refused.
 	Challenge(realm string, rejected bool) []string
 }
 
@@ -183,5 +187,7 @@ type Challenger interface {
 // refused, the gateway has the backend write the header that clears the
 // cookie, so a browser does not keep sending one that cannot hold.
 type CookieClearer interface {
+	// ClearCookie writes the Set-Cookie header that clears the cookie the
+	// refused credential came from.
 	ClearCookie(w http.ResponseWriter)
 }

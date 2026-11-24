@@ -93,9 +93,6 @@ func (p *product) Verify(ctx context.Context, c authn.Credential) authn.Verdict 
 	return authn.Authenticated(principal)
 }
 
-// readCookie reads the session the token belongs to from the store, through the
-// library, and caches what it read. A verdict is returned when the cookie is
-// not one that passes or the store cannot say.
 func (p *product) readCookie(ctx context.Context, cs *cacheSet, token, key string) (*sessionEntry, *authn.Verdict) {
 	epoch := cs.sessions.Epoch()
 	sink := &rowSink{}
@@ -172,8 +169,6 @@ func (p *product) impersonate(ctx context.Context, cs *cacheSet, st authn.Sessio
 	return imp, nil
 }
 
-// activeGrant asks the impersonation capability whether a record holds, through
-// the cache. An answer is cached for check-ttl and a failure is not.
 func (p *product) activeGrant(ctx context.Context, cs *cacheSet, id string) (grantEntry, error) {
 	if g, ok := cs.grants.Get(id); ok {
 		return g, nil

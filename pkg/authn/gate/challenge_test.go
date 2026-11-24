@@ -11,8 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-// challengeOf runs a request on a gateway guarding the endpoint and returns what
-// a 401 on it carries.
 func challengeOf(t *testing.T, g *gateway, endpoint string, edit func(*nethttp.Request) *nethttp.Request) string {
 	t.Helper()
 	w, _ := run(g, endpoint, edit(request("GET", "/x")))
@@ -70,7 +68,6 @@ func TestACookieOnlyAssemblyAnswersWithTheCookieChallenge(t *testing.T) {
 		t.Errorf("a 401 carries %q, want %q", got, want)
 	}
 
-	// With a scheme taken as well, the cookie convention is not added to it.
 	mixed := testGateway(t, []string{"public"}, cookieBackend("session", "sid"), schemeBackend("token", "bearer"))
 	sealed(t, mixed, routerWith("public"))
 	if got := challengeOf(t, mixed, "public", func(r *nethttp.Request) *nethttp.Request { return r }); strings.Contains(got, "Cookie") {
@@ -114,9 +111,8 @@ func TestABackendWritesItsOwnPartOfTheChallenge(t *testing.T) {
 
 // TestARejectedCredentialGetsTheRejectedChallengeOfItsBackendAlone holds when
 // the rejected form is used: a 401 on a request whose credential reached a
-// backend and was refused carries that backend's rejected challenge, and every
-// other 401 carries the plain one. Without it a client is told its token is
-// invalid when it carried none.
+// backend and was refused carries that backend's rejected challenge, and
+// every other 401 carries the plain one.
 func TestARejectedCredentialGetsTheRejectedChallengeOfItsBackendAlone(t *testing.T) {
 	var cleared atomic.Int64
 	token := challengingVerifier{
@@ -178,7 +174,6 @@ func TestARejectedCredentialGetsTheRejectedChallengeOfItsBackendAlone(t *testing
 		})
 	}
 
-	// An outage carries no challenge at all.
 	w, _ := run(g, "public", withBearer(request("GET", "/x"), "down"))
 	if w.Code != nethttp.StatusServiceUnavailable || w.Header().Get(challengeHeader) != "" {
 		t.Errorf("an outage answered %d with the challenge %q, want a 503 with none", w.Code, w.Header().Get(challengeHeader))
@@ -220,10 +215,8 @@ func TestAChallengerThatWritesNothingOrWritesABadLineDoesNotBreakTheResponse(t *
 	}
 }
 
-// TestARealmCannotBreakOutOfTheChallenge holds the escaping of the endpoint name
-// written into the quoted realm. A name comes from configuration, and a quote or
-// a backslash in one would otherwise end the quoted string early and let the rest
-// be read as further challenge parameters; a line ending would start a header.
+// TestARealmCannotBreakOutOfTheChallenge holds the escaping of the endpoint
+// name written into the quoted realm.
 func TestARealmCannotBreakOutOfTheChallenge(t *testing.T) {
 	for name, want := range map[string]string{
 		`pu"blic`:       `Basic realm="pu\"blic"`,

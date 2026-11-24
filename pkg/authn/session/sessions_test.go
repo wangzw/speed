@@ -13,10 +13,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 )
 
-// The first external assumption: a token a client chose is no session. The
-// library starts an empty session for a token the store does not know, and does
-// not keep the client's string, so the session that follows is under a token the
-// server drew.
+// The first external assumption: a token a client chose is no session.
 func TestAPresetTokenIsNoSession(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -27,8 +24,6 @@ func TestAPresetTokenIsNoSession(t *testing.T) {
 			t.Errorf("a preset token is %s, want denied", got)
 		}
 
-		// The library, handed the preset token, starts a new session; the commit
-		// gives it a token of the server's.
 		ctx, err := f.p.sm.Load(context.Background(), preset)
 		noErr(t, err)
 		pl := payload{
@@ -56,6 +51,8 @@ func TestAPresetTokenIsNoSession(t *testing.T) {
 	})
 }
 
+// TestCreateRefusesWhatASessionIsNotMadeFrom checks that create refuses what
+// a session is not made from.
 func TestCreateRefusesWhatASessionIsNotMadeFrom(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -156,6 +153,8 @@ func TestThePeriodOfASessionFollowsItsKind(t *testing.T) {
 	})
 }
 
+// TestATokenSessionOutlivesTheIdleTimeout checks that a token session
+// outlives the idle timeout.
 func TestATokenSessionOutlivesTheIdleTimeout(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -179,6 +178,8 @@ func TestATokenSessionOutlivesTheIdleTimeout(t *testing.T) {
 	})
 }
 
+// TestAServiceSessionLastsAsLongAsItsSecret checks that a service session
+// lasts as long as its secret.
 func TestAServiceSessionLastsAsLongAsItsSecret(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -200,7 +201,6 @@ func TestAServiceSessionLastsAsLongAsItsSecret(t *testing.T) {
 			t.Error("the session outlived its secret")
 		}
 
-		// A new expiry for the secret renews the same row.
 		renewed := f.clock.Now().Add(30 * 24 * time.Hour)
 		again, err := f.p.ForCredential(ctx, alice, "cred-a", &renewed)
 		noErr(t, err)
@@ -211,7 +211,6 @@ func TestAServiceSessionLastsAsLongAsItsSecret(t *testing.T) {
 			t.Error("the session is not renewed to the secret's new expiry")
 		}
 
-		// A secret that does not expire has a session that does not either.
 		forever, err := f.p.ForCredential(ctx, alice, "cred-b", nil)
 		noErr(t, err)
 		if f.row(forever).ExpiresAt.Valid {
@@ -224,13 +223,14 @@ func TestAServiceSessionLastsAsLongAsItsSecret(t *testing.T) {
 	})
 }
 
+// TestABrowserSessionEndsAtEitherPeriod checks that a browser session ends at
+// either period.
 func TestABrowserSessionEndsAtEitherPeriod(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
 		f.accounts.add(alice, nil)
 
 		idle := f.create(newBrowser(alice))
-		// A request inside the touch interval does not extend the idle period.
 		f.clock.Advance(20 * time.Second)
 		if got := outcomeOf(f.verify(idle.Token)); got.String() != "authenticated" {
 			t.Fatalf("a request inside the idle timeout is %s", got)
@@ -240,8 +240,6 @@ func TestABrowserSessionEndsAtEitherPeriod(t *testing.T) {
 			t.Errorf("past the idle timeout the verdict is %s, want denied", got)
 		}
 
-		// A session that is used keeps its idle period and still ends at the
-		// absolute one.
 		used := f.create(newBrowser(alice))
 		start := f.clock.Now()
 		for f.clock.Now().Before(start.Add(defaults.AbsoluteTimeout)) {
@@ -257,6 +255,7 @@ func TestABrowserSessionEndsAtEitherPeriod(t *testing.T) {
 	})
 }
 
+// checks that ForCredential makes one row under concurrent first calls.
 func TestForCredentialIsOneRowUnderConcurrentFirstCalls(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -290,6 +289,7 @@ func TestForCredentialIsOneRowUnderConcurrentFirstCalls(t *testing.T) {
 	})
 }
 
+// checks that ForCredential refuses a revoked row and does not revive it.
 func TestForCredentialRefusesARevokedRowAndDoesNotRevive(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -317,6 +317,8 @@ func TestForCredentialRefusesARevokedRowAndDoesNotRevive(t *testing.T) {
 	})
 }
 
+// TestAServiceClientIsRestoredAfterTheAccountIsDisabledAndEnabled checks that
+// a service client is restored after the account is disabled and enabled.
 func TestAServiceClientIsRestoredAfterTheAccountIsDisabledAndEnabled(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -356,6 +358,7 @@ func TestAServiceClientIsRestoredAfterTheAccountIsDisabledAndEnabled(t *testing.
 	})
 }
 
+// checks that ForCredential refuses what it cannot answer for.
 func TestForCredentialRefusesWhatItCannotAnswerFor(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -384,6 +387,8 @@ func TestForCredentialRefusesWhatItCannotAnswerFor(t *testing.T) {
 	}
 }
 
+// TestRevokeAccountKeepsTheExceptionAndLeavesServiceSessions checks that
+// revoke account keeps the exception and leaves service sessions.
 func TestRevokeAccountKeepsTheExceptionAndLeavesServiceSessions(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -397,8 +402,6 @@ func TestRevokeAccountKeepsTheExceptionAndLeavesServiceSessions(t *testing.T) {
 		noErr(t, err)
 		bobs := f.create(newBrowser(bob))
 
-		// The statement reports the identifiers it revoked, so the set it names
-		// and the set it changed are checked as one.
 		want := []authn.SessionID{other.ID, tok.ID}
 		slices.Sort(want)
 		revoked, err := f.p.RevokeAccount(ctx, alice, keep.ID, authn.ReasonPasswordChange)
@@ -443,10 +446,7 @@ func TestRevokeAccountKeepsTheExceptionAndLeavesServiceSessions(t *testing.T) {
 
 // TestRevocableSessionsIsTheSetRevokeAccountEnds holds the two halves of one
 // contract: the identifiers a caller reads to name the sessions and the
-// identifiers the statement reports having ended are one set. A session past its
-// deadline is in it — the statement ends it, which is why a caller writing one
-// audit row per revocation has to know it — while a service session and one
-// already revoked are out.
+// identifiers the statement reports having ended are one set.
 func TestRevocableSessionsIsTheSetRevokeAccountEnds(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -494,6 +494,8 @@ func TestRevocableSessionsIsTheSetRevokeAccountEnds(t *testing.T) {
 	})
 }
 
+// TestRevokeIsIdempotentAndSaysWhy checks that revoke is idempotent and says
+// why.
 func TestRevokeIsIdempotentAndSaysWhy(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -532,6 +534,8 @@ func TestRevokeIsIdempotentAndSaysWhy(t *testing.T) {
 	})
 }
 
+// TestAFailedPublishDoesNotFailARevocation checks that a failed publish does
+// not fail a revocation.
 func TestAFailedPublishDoesNotFailARevocation(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -546,6 +550,8 @@ func TestAFailedPublishDoesNotFailARevocation(t *testing.T) {
 	}
 }
 
+// TestEvictionRevokesTheLeastRecentlyUsed checks that eviction revokes the
+// least recently used.
 func TestEvictionRevokesTheLeastRecentlyUsed(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -583,8 +589,6 @@ func TestEvictionRevokesTheLeastRecentlyUsed(t *testing.T) {
 			t.Errorf("payload = %+v", payload)
 		}
 
-		// A service session does not count against the limit, and neither do
-		// the sessions of another account.
 		_, err := f.p.ForCredential(ctx, alice, "cred-e", nil)
 		noErr(t, err)
 		f.create(newToken1(alice))
@@ -594,6 +598,7 @@ func TestEvictionRevokesTheLeastRecentlyUsed(t *testing.T) {
 	})
 }
 
+// checks that Rotate gives a new token and keeps the session.
 func TestRotateGivesANewTokenAndKeepsTheSession(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -631,6 +636,7 @@ func TestRotateGivesANewTokenAndKeepsTheSession(t *testing.T) {
 	})
 }
 
+// checks that Rotate does nothing for the other kinds.
 func TestRotateHasNothingToDoForTheOtherKinds(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -652,6 +658,7 @@ func TestRotateHasNothingToDoForTheOtherKinds(t *testing.T) {
 	}
 }
 
+// checks that Elevate records the step-up and rotates the token.
 func TestElevateRecordsTheStepUpAndRotates(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -700,6 +707,7 @@ func TestElevateRecordsTheStepUpAndRotates(t *testing.T) {
 	})
 }
 
+// checks that Elevate on a token session issues no token.
 func TestElevateOnATokenSessionKeepsNoToken(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -724,6 +732,7 @@ func TestElevateOnATokenSessionKeepsNoToken(t *testing.T) {
 	}
 }
 
+// checks that SetImpersonation attaches and ends a record.
 func TestSetImpersonationAttachesAndEndsARecord(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -769,6 +778,8 @@ func TestSetImpersonationAttachesAndEndsARecord(t *testing.T) {
 	})
 }
 
+// TestGetAndListSayWhichSessionsAreThere checks that get and list say which
+// sessions are there.
 func TestGetAndListSayWhichSessionsAreThere(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -814,6 +825,7 @@ func TestGetAndListSayWhichSessionsAreThere(t *testing.T) {
 	})
 }
 
+// checks that Current finds the session the request's cookie names.
 func TestCurrentFindsTheSessionOfTheCookie(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -848,6 +860,8 @@ func TestCurrentFindsTheSessionOfTheCookie(t *testing.T) {
 	})
 }
 
+// TestStatusIsCachedAndStatusFreshIsNot checks that status is cached and
+// status fresh is not.
 func TestStatusIsCachedAndStatusFreshIsNot(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {
 		f := newFixture(t, d)
@@ -876,7 +890,6 @@ func TestStatusIsCachedAndStatusFreshIsNot(t *testing.T) {
 			t.Errorf("three StatusFresh calls read the table %d times, want 3", got)
 		}
 
-		// The cache is a way of reading less, bounded by check-ttl.
 		f.disable(alice)
 		if !f.status(issued.ID).Active {
 			t.Error("Status did not serve the cached answer inside check-ttl")
@@ -897,6 +910,8 @@ func TestStatusIsCachedAndStatusFreshIsNot(t *testing.T) {
 	})
 }
 
+// TestAnInactiveStatusCarriesNothingToBuildAnIdentityFrom checks that an
+// inactive status carries nothing to build an identity from.
 func TestAnInactiveStatusCarriesNothingToBuildAnIdentityFrom(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, map[string]string{"dept": "eng"})
@@ -914,6 +929,8 @@ func TestAnInactiveStatusCarriesNothingToBuildAnIdentityFrom(t *testing.T) {
 	}
 }
 
+// TestAnAccountThatIsGoneMakesTheSessionInactive checks that an account that
+// is gone makes the session inactive.
 func TestAnAccountThatIsGoneMakesTheSessionInactive(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -928,6 +945,8 @@ func TestAnAccountThatIsGoneMakesTheSessionInactive(t *testing.T) {
 	}
 }
 
+// TestAnAttributeSetBeyondTheBoundsIsRefused checks that an attribute set
+// beyond the bounds is refused.
 func TestAnAttributeSetBeyondTheBoundsIsRefused(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
@@ -955,7 +974,6 @@ func TestAnAttributeSetBeyondTheBoundsIsRefused(t *testing.T) {
 		t.Error("a refused session left a row")
 	}
 
-	// The largest set the bounds allow is written, and read back whole.
 	full := map[string]string{}
 	for i := range authn.SessionIDPAttributesMax {
 		full["idp."+strings.Repeat(string(rune('a'+i)), authn.SessionIDPKeyMax-len(authn.ReservedPrefixIDP))] = strings.Repeat("v", authn.SessionIDPValueMax)
@@ -1025,9 +1043,6 @@ func TestEvictionNeverRevokesTheSessionJustMade(t *testing.T) {
 	f.clock.Advance(time.Second)
 	third := f.create(newBrowser(alice))
 
-	// The three older sessions are made to look the most recently used, so the
-	// session about to be made is the least recently used when the limit forces a
-	// revocation. It is still kept.
 	ahead := f.clock.Now().Add(time.Hour).UTC()
 	for _, id := range []authn.SessionID{first.ID, second.ID, third.ID} {
 		f.exec("UPDATE "+tableName+" SET last_seen_at = ? WHERE id = ?", ahead, string(id))

@@ -16,9 +16,6 @@ import (
 // closed set the design fixes; this module uses this one.
 const dirIncrease = "increase"
 
-// relaxing is, for each setting of this module whose move relaxes a check, the
-// direction it relaxes in. A setting absent from the table relaxes nothing and
-// is not watched.
 var relaxing = map[string]string{
 	idleTimeoutPath:     dirIncrease,
 	absoluteTimeoutPath: dirIncrease,
@@ -76,9 +73,6 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	return nil
 }
 
-// loosens reports whether the change moved the key in its relaxing direction.
-// Every watched setting of this module relaxes when its value grows, which is
-// the direction the table gives each of them.
 func loosens(direction string, before, after int64) bool {
 	return direction == dirIncrease && after > before
 }
@@ -97,8 +91,6 @@ func durationValue(key, text string, declared bool) (int64, bool) {
 	return int64(d), true
 }
 
-// declaredNumber is the declared default of one of the watched settings, as the
-// comparison reads it.
 func declaredNumber(key string) (int64, bool) {
 	switch key {
 	case idleTimeoutPath:

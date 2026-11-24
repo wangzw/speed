@@ -16,10 +16,8 @@ const modelPath = "github.com/vislake/speed/pkg/authn/internal/model"
 
 // TestTheValueTypePackagesDependOnLittle holds the layering the packaging
 // decision rests on: model imports only the standard library, and identity,
-// verdict and step import only the standard library and model, and none of the
-// three imports another. A package outside the standard library in any of them
-// would enter the closure of every module that imports the root package. The
-// root package's own guard comes with the root package.
+// verdict and step import only the standard library and model, and none of
+// the three imports another.
 func TestTheValueTypePackagesDependOnLittle(t *testing.T) {
 	const base = "github.com/vislake/speed/pkg/authn/internal/"
 	for _, c := range []struct {
@@ -79,8 +77,6 @@ func importsOf(t *testing.T, pkg string) []string {
 	return imports
 }
 
-// isStandard reports whether an import path is the standard library's, which is
-// the paths whose first element has no dot.
 func isStandard(path string) bool {
 	first, _, _ := strings.Cut(path, "/")
 	return !strings.Contains(first, ".")

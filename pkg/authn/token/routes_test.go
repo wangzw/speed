@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount/mounttest"
 )
 
-// mountToken mounts the endpoint under a fresh mounter of the rig and returns
-// it, so a case drives the real handlers through the same wrapper production
-// uses.
 func (r *rig) mountToken() *mounttest.Mounter {
 	r.t.Helper()
 	m := mounttest.New(r.t)
@@ -26,22 +23,18 @@ func (r *rig) mountToken() *mounttest.Mounter {
 	return m
 }
 
-// form posts an x-www-form-urlencoded body to path and returns the response.
 func form(m *mounttest.Mounter, path string, values url.Values) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return m.Do(req)
 }
 
-// raw posts an arbitrary body with the given content type.
 func raw(m *mounttest.Mounter, path, contentType, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", contentType)
 	return m.Do(req)
 }
 
-// goodServiceSecret points the password checker at a real credential and puts
-// the matching service session in the store.
 func (r *rig) goodServiceSecret() authn.SessionID {
 	r.t.Helper()
 	session := r.serviceSession()
@@ -51,7 +44,6 @@ func (r *rig) goodServiceSecret() authn.SessionID {
 	return session
 }
 
-// decodeToken reads a token endpoint body.
 func decodeToken(t *testing.T, rec *httptest.ResponseRecorder) AuthnTokenResponse {
 	t.Helper()
 	var body AuthnTokenResponse
@@ -425,11 +417,7 @@ func TestTheTokenEndpointsAreCallbacksWithoutTheCrossOriginCheck(t *testing.T) {
 }
 
 // TestTheEndpointsReadTheFormTheWayTheDesignFixesIt holds the endpoint's own
-// reading of a form against the entry point's stricter binding. An OAuth client
-// sends parameters these endpoints have no use for — RFC 7009's
-// token_type_hint is the standard one — and the answer stays 200 or the RFC
-// 6749 §5.2 body rather than the entry point's problem document. A repeated key
-// keeps its first value, which is the value the endpoint has always read.
+// reading of a form against the entry point's stricter binding.
 func TestTheEndpointsReadTheFormTheWayTheDesignFixesIt(t *testing.T) {
 	t.Run("an extra parameter is ignored", func(t *testing.T) {
 		r := newRig(t)

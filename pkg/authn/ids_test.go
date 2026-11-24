@@ -5,13 +5,8 @@ import (
 	"testing"
 )
 
-// The constants this package re-exports are read through the root names, which
-// is where a host and every backend reads them. An alias to the wrong internal
-// constant compiles and leaves the model's own tests green, so the values are
-// pinned here, at the surface.
-
-// TestMethodTexts holds the text each method carries: the amr claim of a token
-// and the method list of a session row. Three are RFC 8176 values.
+// TestMethodTexts holds the text each method carries: the amr claim of a
+// token and the method list of a session row.
 func TestMethodTexts(t *testing.T) {
 	for _, tc := range []struct {
 		got  Method
@@ -37,8 +32,7 @@ func TestMethodTexts(t *testing.T) {
 }
 
 // TestAssuranceNumbers holds the numbers the acr claim of a token carries as
-// decimal text. The model's tests assert the order only, and a level inserted
-// before Multi would keep it while changing what every issued token says.
+// decimal text.
 func TestAssuranceNumbers(t *testing.T) {
 	for _, tc := range []struct {
 		got  Assurance
@@ -54,9 +48,8 @@ func TestAssuranceNumbers(t *testing.T) {
 	}
 }
 
-// TestAccessLevelsAreDistinct holds the four levels apart and the zero value at
-// AccessUnknown, the reading of a request no gateway decided about. An alias
-// pointing one level at another would make a route read as the other.
+// TestAccessLevelsAreDistinct holds the four levels apart and the zero value
+// at AccessUnknown, the reading of a request no gateway decided about.
 func TestAccessLevelsAreDistinct(t *testing.T) {
 	levels := map[string]Access{
 		"AccessUnknown":  AccessUnknown,
