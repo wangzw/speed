@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-// holdingRelease is an exporter whose release does not return until the context
-// it was handed ends.
 type holdingRelease struct{}
 
 func (holdingRelease) Shutdown(ctx context.Context) error {
@@ -16,8 +14,6 @@ func (holdingRelease) Shutdown(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// recordingRelease is an exporter that records the context its release ran
-// under and answers with that context's error, the way the upstream exporters do.
 type recordingRelease struct {
 	called bool
 	err    error
@@ -29,14 +25,12 @@ func (r *recordingRelease) Shutdown(ctx context.Context) error {
 	return r.err
 }
 
-// failingRelease is an exporter whose release fails outright.
 type failingRelease struct{ err error }
 
 func (f failingRelease) Shutdown(context.Context) error { return f.err }
 
-// TestTheReleaseGoesOnPastAnExporterThatFails pins that every collected exporter
-// is released whatever an earlier one answered: a loop that stopped at the first
-// error would leave the rest holding their connections.
+// TestTheReleaseGoesOnPastAnExporterThatFails pins that every collected
+// exporter is released whatever an earlier one answered.
 func TestTheReleaseGoesOnPastAnExporterThatFails(t *testing.T) {
 	failure := errors.New("release failed")
 	after := &recordingRelease{}
@@ -51,10 +45,8 @@ func TestTheReleaseGoesOnPastAnExporterThatFails(t *testing.T) {
 	}
 }
 
-// TestTheReleaseIsNotCutShortByACancelledContext pins that the release keeps the
-// values of the context it receives and not its cancellation: an exporter
-// released under a cancelled context would answer with the cancellation, and the
-// stop would fail for a context that ended before the release began.
+// TestTheReleaseIsNotCutShortByACancelledContext pins that the release
+// keeps the values of the context it receives and not its cancellation.
 func TestTheReleaseIsNotCutShortByACancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -68,11 +60,8 @@ func TestTheReleaseIsNotCutShortByACancelledContext(t *testing.T) {
 	}
 }
 
-// TestTheReleaseBoundIsSharedByEveryExporter pins that one bound covers the whole
-// release and not each exporter in turn: an exporter that holds the release until
-// the bound ends leaves the ones after it a context that is already done, so a
-// release that gave each exporter a bound of its own would hand the second one a
-// live context.
+// TestTheReleaseBoundIsSharedByEveryExporter pins that one bound covers
+// the whole release and not each exporter in turn.
 func TestTheReleaseBoundIsSharedByEveryExporter(t *testing.T) {
 	after := &recordingRelease{}
 	done := make(chan error, 1)

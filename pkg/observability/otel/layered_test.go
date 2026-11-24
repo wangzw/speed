@@ -8,12 +8,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-// TestALaterLayerOverridesAnEarlierOne pins the direction of the merge the whole
-// resource is built with. The layers are the upstream's default, the environment
-// and this module's own attributes, in that order, and the order is what lets a
-// configured name outrank the environment and the environment outrank the
-// fallback: a merge running the other way gives every name to the lowest layer
-// that has one.
+// TestALaterLayerOverridesAnEarlierOne pins the direction of the merge
+// the whole resource is built with.
 func TestALaterLayerOverridesAnEarlierOne(t *testing.T) {
 	low := resource.NewSchemaless(attribute.String("name", "low"), attribute.String("only.low", "a"))
 	mid := resource.NewSchemaless(attribute.String("name", "mid"), attribute.String("only.mid", "b"))
@@ -35,10 +31,8 @@ func TestALaterLayerOverridesAnEarlierOne(t *testing.T) {
 	}
 }
 
-// TestLayersOnDifferentSchemasAreRefused pins that the conflict the upstream
-// reports is not dropped. The merge hands back a resource along with the error,
-// and using it would export under attributes from a convention version nobody
-// chose.
+// TestLayersOnDifferentSchemasAreRefused pins that the conflict the
+// upstream reports is not dropped.
 func TestLayersOnDifferentSchemasAreRefused(t *testing.T) {
 	first := resource.NewWithAttributes("https://example.test/schemas/1", attribute.String("name", "first"))
 	second := resource.NewWithAttributes("https://example.test/schemas/2", attribute.String("name", "second"))

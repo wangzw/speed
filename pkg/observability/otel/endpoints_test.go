@@ -23,7 +23,6 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// requestCountExporter keeps how many requests the request histogram counted.
 type requestCountExporter struct {
 	mu    sync.Mutex
 	count uint64
@@ -64,23 +63,14 @@ func (m *requestCountExporter) counted() uint64 {
 	return m.count
 }
 
-// endpointCase is one assembly of this module beside whatever the case gives it.
 type endpointCase struct {
-	// listed is the endpoint list the configuration gives, and setList says
-	// whether it gives one at all: a case that leaves it out is the default.
-	listed  []string
-	setList bool
-	// declared names the endpoints the entry module declares. Nothing declared
-	// means no entry module in the assembly, which is a background process.
+	listed   []string
+	setList  bool
 	declared []string
-	// extra registers more modules and returns their names.
-	extra func(reg *core.Registry) []string
-	// serving is the endpoints the case sends one request to while it runs.
-	serving []string
+	extra    func(reg *core.Registry) []string
+	serving  []string
 }
 
-// endpointConfig is a reading face for an endpointCase: this module's list as
-// the case sets it, and the entry module's endpoints as the case declares them.
 type endpointConfig struct {
 	c endpointCase
 }
@@ -111,18 +101,12 @@ func (f endpointConfig) Decode(namespace string, target any) error {
 	return jsonConfig(doc+`}}`).Decode(namespace, target)
 }
 
-// served is what an endpointCase left at the export backend, and the failure the
-// drive ended with. Each span is written as the endpoint it says it was served
-// on and its name, "api GET /ping".
 type served struct {
 	err   error
 	spans []string
 	count uint64
 }
 
-// run assembles the case and drives it to Serve. Every endpoint the case
-// declares carries a route another module registered, which is what a request
-// to it is answered by.
 func (c endpointCase) run(t *testing.T) served {
 	t.Helper()
 	spans := &recordingSpanExporter{}
@@ -205,13 +189,8 @@ func (c endpointCase) run(t *testing.T) served {
 	return out
 }
 
-// TestTheDefaultRegistersTheLayerOnEveryDeclaredEndpoint pins what an endpoint
-// list nobody wrote means. The entry module declares two endpoints and the
-// configuration says nothing about this module's list, so a request to either
-// one has to leave a server span and a count in the request histogram. A default
-// that registers on none, or on one, leaves a request unseen and nothing saying
-// so; the counts are read at shutdown, so a layer on one endpoint counts one
-// request of the two.
+// TestTheDefaultRegistersTheLayerOnEveryDeclaredEndpoint pins what an
+// endpoint list nobody wrote means.
 func TestTheDefaultRegistersTheLayerOnEveryDeclaredEndpoint(t *testing.T) {
 	got := endpointCase{
 		declared: []string{"api", "admin"},
@@ -228,9 +207,8 @@ func TestTheDefaultRegistersTheLayerOnEveryDeclaredEndpoint(t *testing.T) {
 	}
 }
 
-// TestAnEmptyListRegistersOnNoEndpointWhateverTheEntryModuleDeclares pins that
-// an empty list is an answer and not the absence of one: the entry module is
-// there and declares an endpoint, and no request to it is observed.
+// TestAnEmptyListRegistersOnNoEndpointWhateverTheEntryModuleDeclares pins
+// that an empty list is an answer and not the absence of one.
 func TestAnEmptyListRegistersOnNoEndpointWhateverTheEntryModuleDeclares(t *testing.T) {
 	got := endpointCase{
 		listed: []string{}, setList: true,
@@ -245,11 +223,8 @@ func TestAnEmptyListRegistersOnNoEndpointWhateverTheEntryModuleDeclares(t *testi
 	}
 }
 
-// TestAnEmptyListDoesNotTakeUpTheEntryModule pins that an empty list reaches for
-// nothing. The two modules delivering the router are ones a lookup cannot choose
-// between, so a lookup made anyway would fail the startup; the empty list is what
-// lets a process that carries this module and happens to hold such an assembly
-// start.
+// TestAnEmptyListDoesNotTakeUpTheEntryModule pins that an empty list
+// reaches for nothing.
 func TestAnEmptyListDoesNotTakeUpTheEntryModule(t *testing.T) {
 	got := endpointCase{
 		listed: []string{}, setList: true,
@@ -264,11 +239,8 @@ func TestAnEmptyListDoesNotTakeUpTheEntryModule(t *testing.T) {
 	}
 }
 
-// TestTheDefaultWithAnEntryModuleDeclaringNoEndpointStarts pins that an entry
-// module which is there and declares nothing is not a missing one: the default
-// has no name to register on, and the startup succeeds. Reading the empty
-// declaration as a missing provider would fail a process that is only waiting
-// for its endpoints to be declared.
+// TestTheDefaultWithAnEntryModuleDeclaringNoEndpointStarts pins that an
+// entry module which is there and declares nothing is not a missing one.
 func TestTheDefaultWithAnEntryModuleDeclaringNoEndpointStarts(t *testing.T) {
 	got := endpointCase{
 		extra: func(reg *core.Registry) []string {
@@ -303,9 +275,8 @@ func TestAListOfNamesRegistersOnThoseAndNoOthers(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredEndpointNameFailsTheStartupAndNamesTheKey pins the failure of
-// a listed name the entry module never declared: it is the entry module's
-// sentinel still, and the text says which setting to correct.
+// TestAnUndeclaredEndpointNameFailsTheStartupAndNamesTheKey pins the
+// failure of a listed name the entry module never declared.
 func TestAnUndeclaredEndpointNameFailsTheStartupAndNamesTheKey(t *testing.T) {
 	got := endpointCase{
 		listed: []string{"api", "metrics"}, setList: true,
@@ -322,9 +293,8 @@ func TestAnUndeclaredEndpointNameFailsTheStartupAndNamesTheKey(t *testing.T) {
 	}
 }
 
-// TestAListOfNamesWithNoEntryModuleFailsTheStartupAndNamesTheKey pins that only
-// the default is lenient: a list that names an endpoint needs the entry module,
-// and the failure says so and says how to get out of it.
+// TestAListOfNamesWithNoEntryModuleFailsTheStartupAndNamesTheKey pins
+// that only the default is lenient.
 func TestAListOfNamesWithNoEntryModuleFailsTheStartupAndNamesTheKey(t *testing.T) {
 	got := endpointCase{listed: []string{"api"}, setList: true}.run(t)
 	if !errors.Is(got.err, core.ErrMissingProvider) {
@@ -337,11 +307,6 @@ func TestAListOfNamesWithNoEntryModuleFailsTheStartupAndNamesTheKey(t *testing.T
 	}
 }
 
-// entryStandIn is a module that delivers the router capability and declares no
-// endpoint. Without the exclusive claim the entry module makes, two of them
-// reach this module's wiring as two providers a lookup cannot choose between,
-// which the exclusive claim would otherwise have turned into a resolution
-// failure before any lookup.
 func entryStandIn(name string, exclusive bool) core.Module {
 	return core.Module{
 		Name:     name,
@@ -360,10 +325,8 @@ func (standInRouter) Endpoint(string) (speedhttp.Endpoint, error) {
 }
 func (standInRouter) Endpoints() []string { return nil }
 
-// TestAnAmbiguousEntryModuleIsNotReadAsAMissingOne is the other half of the
-// default's leniency. Two modules deliver the router and a lookup cannot choose;
-// that is a failure whatever the list says, and reading it as "no entry module"
-// would start a process that serves requests with a layer on none of them.
+// TestAnAmbiguousEntryModuleIsNotReadAsAMissingOne is the other half of
+// the default's leniency.
 func TestAnAmbiguousEntryModuleIsNotReadAsAMissingOne(t *testing.T) {
 	got := endpointCase{
 		extra: func(reg *core.Registry) []string {
@@ -386,9 +349,8 @@ func TestAnAmbiguousEntryModuleIsNotReadAsAMissingOne(t *testing.T) {
 	}
 }
 
-// TestAListedNameWrittenTwiceRegistersTheLayerOnce pins that a repeated name in
-// a list of names is one endpoint: a second registration would open two spans
-// and count two requests for the one that came.
+// TestAListedNameWrittenTwiceRegistersTheLayerOnce pins that a repeated
+// name in a list of names is one endpoint.
 func TestAListedNameWrittenTwiceRegistersTheLayerOnce(t *testing.T) {
 	got := endpointCase{
 		listed: []string{"api", "api"}, setList: true,
@@ -406,10 +368,8 @@ func TestAListedNameWrittenTwiceRegistersTheLayerOnce(t *testing.T) {
 	}
 }
 
-// TestTwoExclusiveEntryModulesStillFailTheStartup pins that two entry modules
-// remain a failure on the default list. The registry refuses the pair before
-// this module's wiring runs, so the case holds that no setting of this module
-// turns the conflict into a skipped endpoint list.
+// TestTwoExclusiveEntryModulesStillFailTheStartup pins that two entry
+// modules remain a failure on the default list.
 func TestTwoExclusiveEntryModulesStillFailTheStartup(t *testing.T) {
 	got := endpointCase{
 		declared: []string{"api"},

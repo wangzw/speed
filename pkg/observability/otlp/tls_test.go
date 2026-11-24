@@ -17,11 +17,9 @@ import (
 	"github.com/vislake/speed/pkg/core/coretest"
 )
 
-// handshakes is the log sink of a TLS receiver's server, which writes there
-// about the connections it refused, which is how a case tells a refused
-// handshake from any other reason an export failed. Its refusal channel is
-// closed once the first refusal line is written, so a case waits for that
-// event rather than polling what has arrived by the time the export returns.
+// handshakes is the log sink of a TLS receiver's server, which writes
+// there about the connections it refused, which is how a case tells a
+// refused handshake from any other reason an export failed.
 type handshakes struct {
 	refusal chan struct{}
 	once    sync.Once
@@ -38,10 +36,8 @@ func (h *handshakes) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// lateWriter delays the first refusal line a server writes, so a case can
-// reproduce the line arriving after the export has already returned: net/http
-// writes it from the connection's own goroutine, with no ordering against the
-// client's error.
+// lateWriter delays the first refusal line so a case can reproduce it arriving
+// after the export returned.
 type lateWriter struct {
 	w     io.Writer
 	delay time.Duration
@@ -55,10 +51,6 @@ func (l *lateWriter) Write(p []byte) (int, error) {
 	return l.w.Write(p)
 }
 
-// tlsReceiver is a receiver for the wire's protocol behind TLS. It presents a
-// certificate the authority issued for 127.0.0.1; with clientAuth it also asks
-// for a client certificate the authority issued and refuses the handshake
-// without one.
 func tlsReceiver(t *testing.T, w wire, ca *authority, clientAuth bool) (*receiver, *handshakes) {
 	t.Helper()
 	return tlsReceiverAfter(t, w, ca, clientAuth, 0)
@@ -92,7 +84,6 @@ func tlsReceiverAfter(t *testing.T, w wire, ca *authority, clientAuth bool, dela
 	return rec, refused
 }
 
-// tlsConfig is a configuration for exporters over TLS to a receiver.
 func tlsConfig(w wire, rec *receiver) Config {
 	return Config{
 		Endpoint:     rec.endpoint,
@@ -102,8 +93,6 @@ func tlsConfig(w wire, rec *receiver) Config {
 	}
 }
 
-// expectDelivered builds the exporters and holds that both signals reached
-// the receiver.
 func expectDelivered(t *testing.T, cfg Config, w wire, rec *receiver) {
 	t.Helper()
 	exporters, err := exportersFor(t, cfg)
@@ -118,9 +107,6 @@ func expectDelivered(t *testing.T, cfg Config, w wire, rec *receiver) {
 	}
 }
 
-// expectRefused builds the exporters and holds that neither signal got past
-// the handshake: both exports fail, the receiver records no request, and its
-// server refused a handshake.
 func expectRefused(t *testing.T, cfg Config, rec *receiver, refused *handshakes) {
 	t.Helper()
 	exporters, err := exportersFor(t, cfg)
@@ -146,16 +132,8 @@ func expectRefused(t *testing.T, cfg Config, rec *receiver, refused *handshakes)
 	}
 }
 
-// TestRefusedHandshakeLogArrivesLate reproduces the race expectRefused guards
-// against: the server writes its refusal line from the connection's own
-// goroutine, so it can arrive after the export has returned. The line is held
-// back on purpose here, and the judgment still has to be "refused".
-//
-// Only the HTTP wire runs: its export returns as soon as the handshake fails,
-// so the line held back by 250ms lands after it and the race is visible. A gRPC
-// export waits out its deadline when the handshake is refused, far longer than
-// that delay, so the line is already written by the time it returns and the
-// case cannot tell the fix from the bug.
+// TestRefusedHandshakeLogArrivesLate reproduces the race expectRefused
+// guards against.
 func TestRefusedHandshakeLogArrivesLate(t *testing.T) {
 	for _, w := range wires {
 		if w.protocol != ProtocolHTTP {
@@ -170,9 +148,7 @@ func TestRefusedHandshakeLogArrivesLate(t *testing.T) {
 }
 
 // TestAPrivateAuthorityIsTrustedWhenCAFileNamesIt pins ca-file over both
-// protocols: a collector whose certificate a private authority issued is
-// reached by both exporters once ca-file names that authority, and refused at
-// the handshake with the host's root certificates, which do not hold it.
+// protocols.
 func TestAPrivateAuthorityIsTrustedWhenCAFileNamesIt(t *testing.T) {
 	for _, w := range wires {
 		t.Run(w.protocol, func(t *testing.T) {
@@ -189,9 +165,7 @@ func TestAPrivateAuthorityIsTrustedWhenCAFileNamesIt(t *testing.T) {
 	}
 }
 
-// TestCAFileReplacesTheHostRoots pins what ca-file loads to: a pool of the
-// file's certificates alone, in place of the host's root certificates rather
-// than added to them, as the upstream does with its certificate variable.
+// TestCAFileReplacesTheHostRoots pins what ca-file loads to.
 func TestCAFileReplacesTheHostRoots(t *testing.T) {
 	ca := newAuthority(t)
 	cfg := Config{Endpoint: "collector.example:4317", CAFile: ca.file}
@@ -232,7 +206,6 @@ func TestEveryCertificateInACAFileIsTrusted(t *testing.T) {
 	}
 }
 
-// bundle writes the authorities' certificates, in order, into one PEM file.
 func bundle(t *testing.T, authorities ...*authority) string {
 	t.Helper()
 	var data []byte
@@ -246,10 +219,8 @@ func bundle(t *testing.T, authorities ...*authority) string {
 	return path
 }
 
-// TestAClientCertificateIsPresentedWhenTheConfigurationGivesOne pins the client
-// certificate over both protocols: a collector that requires one issued by
-// its authority is reached by both exporters once client-cert-file and
-// client-key-file name such a pair, and refuses the handshake without it.
+// TestAClientCertificateIsPresentedWhenTheConfigurationGivesOne pins the
+// client certificate over both protocols.
 func TestAClientCertificateIsPresentedWhenTheConfigurationGivesOne(t *testing.T) {
 	for _, w := range wires {
 		t.Run(w.protocol, func(t *testing.T) {
@@ -271,11 +242,8 @@ func TestAClientCertificateIsPresentedWhenTheConfigurationGivesOne(t *testing.T)
 	}
 }
 
-// TestAnUpstreamCertificateVariableDoesNotReplaceTheCAFile pins the other half
-// of the variables' exclusion: with ca-file naming the collector's authority and
-// OTEL_EXPORTER_OTLP_CERTIFICATE naming an unrelated one, the export goes
-// through, because the variable takes the place of nothing the configuration
-// gave.
+// TestAnUpstreamCertificateVariableDoesNotReplaceTheCAFile pins the other
+// half of the variables' exclusion.
 func TestAnUpstreamCertificateVariableDoesNotReplaceTheCAFile(t *testing.T) {
 	unrelated, ca := newAuthority(t), newAuthority(t)
 	for _, prefix := range []string{"OTEL_EXPORTER_OTLP_", "OTEL_EXPORTER_OTLP_TRACES_", "OTEL_EXPORTER_OTLP_METRICS_"} {
@@ -292,11 +260,7 @@ func TestAnUpstreamCertificateVariableDoesNotReplaceTheCAFile(t *testing.T) {
 }
 
 // TestNoUpstreamCertificateVariableStandsInForTheConfiguration pins the
-// certificate variables as the second source they must not be: an authority
-// and a client certificate given only through OTEL_EXPORTER_OTLP_* variables,
-// signal-specific ones included, reach neither exporter, whether the
-// configuration gives no certificate item or gives ca-file and leaves the
-// client certificate to the environment.
+// certificate variables as the second source they must not be.
 func TestNoUpstreamCertificateVariableStandsInForTheConfiguration(t *testing.T) {
 	ca := newAuthority(t)
 	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)

@@ -1,12 +1,4 @@
 // Package stdout exports telemetry to the process's standard output.
-//
-// It is the backend a development machine uses: nothing has to be running to
-// receive the signals, and what was produced is visible in the terminal. On a
-// deployment it writes the signals into the same stream as everything else the
-// process prints, which is why it is not the backend a deployment picks.
-//
-// It delivers both exporter capabilities, non-exclusively, so that it can be
-// configured alongside a remote destination rather than instead of one.
 package stdout
 
 import (
@@ -21,8 +13,6 @@ import (
 // items are mounted under.
 const ModuleName = "observability.stdout"
 
-// init registers this module with the process registry, so a host that imports
-// the package has it available.
 func init() { core.ProcessRegistry.Register(Module()) }
 
 // Config is what this module accepts from configuration.
@@ -50,13 +40,11 @@ func Module() core.Module {
 		Prepare: prepare,
 		New:     newExporters,
 		// No Close: what this module hands over is driven by the providers the
-		// assembler built and released by the assembler once both providers
-		// have flushed. Releasing it here as well would be a second shutdown of
-		// the same value, and one that could land ahead of the final export.
+		// assembler built and released by the assembler once both providers have
+		// flushed.
 	}
 }
 
-// prepare reads this module's own configuration and states that it starts.
 func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 	if _, err := read(reg); err != nil {
 		return core.Enablement{}, err
@@ -64,7 +52,6 @@ func prepare(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 	return core.Enablement{State: core.StateEnabled}, nil
 }
 
-// read decodes this module's namespace.
 func read(reg *core.Registry) (*Config, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {

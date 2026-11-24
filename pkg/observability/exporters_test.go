@@ -11,7 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// countingSpanExporter counts what it was asked for.
 type countingSpanExporter struct {
 	shutdowns int
 }
@@ -56,11 +55,7 @@ func (c *countingMetricExporter) Shutdown(context.Context) error {
 }
 
 // TestExportersSatisfiesBothInterfacesAndShutsDownOnce pins the shape one
-// module delivering two capabilities forces on its product: a single Shutdown
-// serves both interfaces, so both providers call it, and it must release each
-// exporter exactly once. Releasing twice is not something the upstream promises
-// anything about, and the failure shows up as an exporter refusing the second
-// shutdown rather than as anything obviously wrong.
+// module delivering two capabilities forces on its product.
 func TestExportersSatisfiesBothInterfacesAndShutsDownOnce(t *testing.T) {
 	span := &countingSpanExporter{}
 	metric := &countingMetricExporter{}
@@ -85,10 +80,7 @@ func TestExportersSatisfiesBothInterfacesAndShutsDownOnce(t *testing.T) {
 }
 
 // TestExportersForwardsTheShapingMethods pins that the combination is
-// transparent to everything but data. The temporality and the aggregation are
-// the backend's statement about the data it wants, and a combination that
-// answered them itself would change how the data is shaped without the backend
-// asking.
+// transparent to everything but data.
 func TestExportersForwardsTheShapingMethods(t *testing.T) {
 	metric := &countingMetricExporter{}
 	product := &observability.Exporters{Span: &countingSpanExporter{}, Metric: metric}

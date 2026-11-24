@@ -5,15 +5,8 @@ import (
 	"testing"
 )
 
-// TestDistinctDropsARepeatedNameAndSaysSo pins what happens to a configured
-// list that names the same endpoint twice.
-//
-// The list is registered by looping, and the entry module's Use does not
-// dedupe: a repeated endpoint carries two identical layers, which doubles
-// every request in the histogram and opens two server spans per request. The
-// intent of a repeated name is the single one, so the duplicate is dropped —
-// and the line is there because a configuration that is not what it says is
-// something a host has no other way to find out.
+// TestDistinctDropsARepeatedNameAndSaysSo pins what happens to a
+// configured list that names the same endpoint twice.
 func TestDistinctDropsARepeatedNameAndSaysSo(t *testing.T) {
 	lg, buf := logBuffer()
 	p := &providers{lg: lg}
@@ -26,7 +19,6 @@ func TestDistinctDropsARepeatedNameAndSaysSo(t *testing.T) {
 		t.Errorf("the log says %q, want a line reporting the repeat", buf.String())
 	}
 
-	// A list with no repeat is returned as it came, and said nothing about.
 	buf.Reset()
 	clean := p.distinct("endpoints", []string{"api", "admin"})
 	if len(clean) != 2 {

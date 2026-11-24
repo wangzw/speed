@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// ignoredLineText is a phrase of the line that names the standard variables
-// this module overrides, and of no other line.
 const ignoredLineText = "standard OpenTelemetry variables are set and have no effect"
 
 // withoutOverriddenVariables unsets every variable on this module's list for
@@ -24,9 +22,6 @@ func withoutOverriddenVariables(t *testing.T) {
 	}
 }
 
-// offTheList are standard variables that are not on this module's list, so no
-// line names them: the exporters' own ones this module leaves to the upstream,
-// and ones the SDK reads.
 var offTheList = map[string]string{
 	"OTEL_EXPORTER_OTLP_TIMEOUT":             "5000",
 	"OTEL_EXPORTER_OTLP_TRACES_TIMEOUT":      "5000",
@@ -35,17 +30,8 @@ var offTheList = map[string]string{
 	"OTEL_TRACES_SAMPLER":                    "always_on",
 }
 
-// TestASetStandardVariableThisModuleOverridesIsNamedOnce pins the line that
-// tells a deployment its variable has no effect. With every variable build
-// overrides set, signal-specific ones included, and with variables off the
-// list set beside them, New writes exactly one warning over either protocol,
-// in plaintext and over TLS, through a logger asked for under this module's
-// name; it names each overridden variable and the item to set instead, or that
-// the setting is fixed, a certificate variable's item together with insecure
-// false, which the item requires; it names none of the variables off the list,
-// and repeats no value: a header variable carries a credential. The values are
-// ones the upstream accepts, the certificates loading as a pair, so that it
-// reports nothing of its own.
+// TestASetStandardVariableThisModuleOverridesIsNamedOnce pins the line
+// that tells a deployment its variable has no effect.
 func TestASetStandardVariableThisModuleOverridesIsNamedOnce(t *testing.T) {
 	ca := newAuthority(t)
 	client := ca.issue(t, "client", x509.ExtKeyUsageClientAuth)
@@ -129,10 +115,7 @@ func TestASetStandardVariableThisModuleOverridesIsNamedOnce(t *testing.T) {
 	}
 }
 
-// TestNoLineWhenNoOverriddenVariableIsSet pins the other side: New writes no
-// such line when none of the overridden variables is set, absent or blank
-// once trimmed, whatever the variables off the list say. A blank value is what
-// the upstream exporters read as not given.
+// TestNoLineWhenNoOverriddenVariableIsSet pins the other side.
 func TestNoLineWhenNoOverriddenVariableIsSet(t *testing.T) {
 	for _, signal := range []string{"", "TRACES_", "METRICS_"} {
 		for _, suffix := range []string{"ENDPOINT", "HEADERS", "INSECURE", "CERTIFICATE", "CLIENT_CERTIFICATE"} {

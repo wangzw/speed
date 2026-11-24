@@ -19,26 +19,14 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// serviceNameKey and serviceInstanceIDKey are the resource attributes the
-// process is identified under: which service it is, and which running instance
-// of it. They are written out rather than taken from a semantic-conventions
-// package: the keys are what every backend reads, and pinning them here keeps
-// this module out of the version churn those packages carry.
 const (
 	serviceNameKey       = attribute.Key("service.name")
 	serviceInstanceIDKey = attribute.Key("service.instance.id")
 )
 
-// newInstanceID returns an identity for one assembly of this module: a random
-// version 4 UUID, the form the upstream semantic conventions recommend.
-//
-// Replicas of one service export the same metric streams with the same
-// attributes, and a resource carrying the service name alone gives two
-// replicas' cumulative streams one identity: a collector or a metric store then
-// sees a single series flapping between their values. A random identity is
-// enough to keep them apart, and it changes on every start, which is what an
-// instance is. It is generated rather than configured because nothing in a
-// deployment's configuration differs between replicas.
+// newInstanceID returns an identity for one assembly of this module: a
+// random version 4 UUID, the form the upstream semantic conventions
+// recommend.
 func newInstanceID() string {
 	var b [16]byte
 	// rand.Read never returns an error and always fills the buffer.
@@ -48,26 +36,9 @@ func newInstanceID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// newResource builds the resource both providers carry, in three layers, each
-// overriding the one before it: the upstream's default resource, the environment
-// as it is now, and the attributes this module gives.
-//
-// The default resource is the base because it is where telemetry.sdk.* and the
-// name of a service nobody named — unknown_service:<executable name> — come
-// from. Handing the providers only this module's attributes would leave both
-// out. The service name is this module's own attribute only when configuration
-// gave one; otherwise the layers below settle it, and the environment's
-// OTEL_SERVICE_NAME, or the service.name in OTEL_RESOURCE_ATTRIBUTES, outranks
-// the fallback name. The instance identity is always this module's, so no
-// environment variable can give two replicas one.
-//
-// The environment is layered here even though the default resource already
-// carries it. The default resource is computed once per process and keeps what
-// the environment held then, so only a fresh read shows a variable set after
-// that. A process whose environment does not change gets nothing from the layer,
-// which is the production shape; it matters where the environment moves between
-// two builds, as in a test. A variable removed after the first computation is
-// not undone either, since its value stays in the default resource.
+// newResource builds the resource both providers carry, in three layers,
+// each overriding the one before it: the upstream's default resource, the
+// environment as it is now, and the attributes this module gives.
 func newResource(serviceName string) (*resource.Resource, error) {
 	own := []attribute.KeyValue{serviceInstanceIDKey.String(newInstanceID())}
 	if serviceName != "" {
@@ -77,13 +48,6 @@ func newResource(serviceName string) (*resource.Resource, error) {
 }
 
 // layered merges the resources so that each overrides the ones before it.
-//
-// A merge that finds two different schema URLs returns an error along with a
-// resource the upstream says may carry attributes from the wrong convention
-// version, and leaves the verdict to the caller. The verdict here is a failure,
-// as for any provider that cannot be built. With today's inputs it cannot arise:
-// the environment and this module's attributes carry no schema URL, so only an
-// upstream change reaches it.
 func layered(layers ...*resource.Resource) (*resource.Resource, error) {
 	merged := resource.Empty()
 	for _, layer := range layers {
@@ -95,24 +59,6 @@ func layered(layers ...*resource.Resource) (*resource.Resource, error) {
 	return merged, nil
 }
 
-// providers is this module's product.
-//
-// It carries both capabilities, because the two are built together and handed
-// out together: a consumer that resolves either one gets this value, and the
-// registry's delivery check requires one product to satisfy every capability
-// the descriptor declares.
-//
-// The two upstream interfaces are embedded rather than implemented. Writing the
-// two methods out would not work: each interface embeds an internal one whose
-// single method is unexported, so a type outside the library can satisfy them
-// only by embedding, never by defining them — the unexported method is not
-// something any other package can declare. Embedding also means the product
-// gains a method if the library adds one, instead of failing to satisfy the
-// interface after an upgrade.
-//
-// The concrete providers are kept as well, because the interfaces expose no way
-// to shut one down: Close needs the SDK types, and an assertion back out of the
-// embedded interface would be a worse way to say the same thing.
 type providers struct {
 	cfg *Config
 
@@ -124,24 +70,10 @@ type providers struct {
 	// exporters are the backends' exporters as collected, unwrapped, which
 	// Close releases once both providers have flushed through them.
 	exporters []releasable
-	// cut is the cutoff every wrapper joins its exports with, which Close arms.
-	cut *cutoff
-	// lg is the logger this module was given, held for the lines the wiring
-	// stage writes about a configuration that names the same thing twice.
-	lg *slog.Logger
+	cut       *cutoff
+	lg        *slog.Logger
 }
 
-// newProviders collects the exporters, wraps them, and builds the two
-// providers over the wrapped set.
-//
-// The wrapping happens before either provider is built, and that order is the
-// whole reason the collection is a separate step: a processor or reader holds
-// the exporter it was given, so a wrapper applied afterwards would sit outside
-// the export path and its log lines would never be written.
-//
-// A missing logger is a startup failure rather than a fall back to the process
-// root logger: a line written there would go to standard output instead of the
-// destinations configuration named, and nothing would report the difference.
 func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	logger, err := core.Resolve[log.Logger](reg)
 	if err != nil {
@@ -177,11 +109,6 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 		sdktrace.WithResource(res),
 		// ParentBased over the ratio, so that a sampled parent keeps its
 		// children: sampling per process would break a trace apart mid-flight.
-		// The ratio therefore decides only for a trace this process starts. A
-		// request arriving with a parent follows the parent's flag either way —
-		// recorded at a ratio of zero when the caller sampled it, not recorded
-		// at a ratio of one when the caller did not — and the request layer
-		// extracts ahead of authentication, so that caller is anyone.
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.SampleRatio))),
 	}
 	cut := newCutoff()
@@ -205,10 +132,8 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	}
 
 	// The two conditions below do not fail, and that is deliberate: a module
-	// that produces nothing looks from outside exactly like one that is broken,
-	// and a line is the only thing that tells them apart. Neither is visible in
-	// the startup diagnostics, which cover modules outside the enabled set
-	// rather than a module whose configuration switched it off.
+	// that produces nothing looks from outside exactly like one that is
+	// broken, and a line is the only thing that tells them apart.
 	switch {
 	case len(spanExporters) == 0 && len(metricExporters) == 0:
 		lg.Warn("no export backend is configured: spans and metrics are produced and dropped")
@@ -220,8 +145,8 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	if cfg.SampleRatio == 0 {
 		lg.Warn("sample-ratio is 0: no trace is started here, and a request whose caller sampled its trace is still recorded")
 	}
-	// A standard variable set for a setting given above is not an error
-	// either: the configured value is in force, and the line says so.
+	// A standard variable set for a setting given above is not an error: the
+	// configured value is in force, and the line says so.
 	warnIgnoredVariables(lg, os.LookupEnv)
 
 	mp := sdkmetric.NewMeterProvider(metricOpts...)
@@ -238,13 +163,8 @@ func newProviders(ctx context.Context, reg *core.Registry) (any, error) {
 	}, nil
 }
 
-// queueSize reads a batch size that takes zero to mean the upstream default.
-//
-// The upstream does not read it that way — it builds a queue of the size given,
-// so a zero is a queue that holds nothing — and the substitution happens here
-// so that the documented meaning is the implemented one. The fallback is the
-// upstream's own constant rather than a number written out, so that this
-// module's default moves with the library's.
+// queueSize reads a batch size that takes zero to mean the upstream
+// default.
 func queueSize(configured, upstreamDefault int) int {
 	if configured == 0 {
 		return upstreamDefault
@@ -252,20 +172,13 @@ func queueSize(configured, upstreamDefault int) int {
 	return configured
 }
 
-// releaseTimeout bounds the release of every exporter the assembler collected.
-// The bound is there so that a release waiting on its context, as one closing
-// a connection with an export still in flight does, cannot hold the stop. A
-// release that ignores its context is not bounded by it: the release is called
-// in line. It is not a setting because no fact about a deployment says what it
-// ought to be.
+// releaseTimeout bounds the release of every exporter the assembler
+// collected.
 const releaseTimeout = 3 * time.Second
 
 // cutoffMarginDivisor places a stop's cutoff inside shutdown-timeout: the
-// exports are cut a tenth of the bound before the bound ends (exportCutoff).
-// The margin is the time a provider has to return in once its exports are cut,
-// so that its shutdown ends inside the bound rather than at it. It follows the
-// bound rather than being a fixed length so that it stays inside a short bound,
-// and it is not a setting for the reason releaseTimeout gives.
+// exports are cut a tenth of the bound before the bound ends
+// (exportCutoff).
 const cutoffMarginDivisor = 10
 
 // exportCutoff is how long after Close begins the exports are cut, for a
@@ -274,36 +187,12 @@ func exportCutoff(bound time.Duration) time.Duration {
 	return bound - bound/cutoffMarginDivisor
 }
 
-// releasable is the one method both exporter interfaces share, and the one the
-// assembler calls on every exporter it collected.
 type releasable interface {
 	Shutdown(ctx context.Context) error
 }
 
-// releaseExporters shuts down every exporter the assembler collected, after the
-// providers have made their final export through them.
-//
-// The release is here rather than in the providers because a backend's product
-// is collected under both capabilities and has one Shutdown for both: a
-// provider releasing it would release the other provider's exporter too, ahead
-// of that provider's final export. The wrappers therefore hold the providers'
-// shutdown calls back, and this runs after both providers are shut down.
-//
-// A product collected under both capabilities appears here twice. An
-// observability.Exporters value releases its pair once and answers the second
-// call with the result of the first, which is what the backends hand over.
-//
-// The release runs under a bound of its own, shared by every exporter, and not
-// under the context the providers flushed with. That context may have expired
-// by now, as it does when a provider's shutdown overran the bound, and the
-// upstream exporters answer a context that is already done with its error,
-// closing their connection all the same: the release would fail for the wait
-// that preceded it. Only the values of ctx are kept, so a context that is
-// cancelled does not cut the release short either.
-//
-// The bound is shared, so an exporter that holds the release until it ends
-// leaves the exporters after it a context that is already done: they are
-// released, and answer with its error.
+// releaseExporters shuts down every exporter the assembler collected,
+// after the providers have made their final export through them.
 func releaseExporters(ctx context.Context, exporters []releasable) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()

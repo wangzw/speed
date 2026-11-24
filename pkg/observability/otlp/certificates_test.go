@@ -22,9 +22,7 @@ type authority struct {
 	dir  string
 	cert *x509.Certificate
 	key  *ecdsa.PrivateKey
-	// file is the authority's certificate written as PEM.
 	file string
-	// pool holds the authority's certificate alone.
 	pool *x509.CertPool
 }
 
@@ -57,15 +55,12 @@ func newAuthority(t *testing.T) *authority {
 	return a
 }
 
-// issued is a certificate the authority signed, with its key, both in memory
-// and as PEM files.
 type issued struct {
 	pair     tls.Certificate
 	certFile string
 	keyFile  string
 }
 
-// issue signs a certificate for 127.0.0.1 and localhost, for the use given.
 func (a *authority) issue(t *testing.T, name string, usage x509.ExtKeyUsage) issued {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -98,7 +93,6 @@ func (a *authority) issue(t *testing.T, name string, usage x509.ExtKeyUsage) iss
 	return out
 }
 
-// write puts one PEM block into a file of the authority's directory.
 func (a *authority) write(t *testing.T, name, blockType string, der []byte) string {
 	t.Helper()
 	path := filepath.Join(a.dir, name)

@@ -23,14 +23,8 @@ import (
 	"github.com/vislake/speed/pkg/observability/otel"
 )
 
-// TestMain gives the process an environment the upstream's default resource can
-// be computed in. The upstream computes that resource once per process, on the
-// first call, and keeps whatever OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
-// held then: a case that sets either one and happens to be the first to build a
-// provider would leave its value in the default for every case after it, and a
-// developer's own shell variable would do the same. The variables are cleared
-// and the default is computed here, so that what a case sees of the environment
-// is only what it set itself.
+// TestMain gives the process an environment the upstream's default
+// resource can be computed in.
 func TestMain(m *testing.M) {
 	for _, name := range []string{"OTEL_SERVICE_NAME", "OTEL_RESOURCE_ATTRIBUTES"} {
 		if err := os.Unsetenv(name); err != nil {
@@ -42,7 +36,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// resourceRecorder keeps the resource each signal arrived with.
 type resourceRecorder struct {
 	mu      sync.Mutex
 	spans   []*resource.Resource
@@ -82,16 +75,11 @@ func (m resourceMetrics) Export(_ context.Context, rm *metricdata.ResourceMetric
 func (resourceMetrics) ForceFlush(context.Context) error { return nil }
 func (resourceMetrics) Shutdown(context.Context) error   { return nil }
 
-// runReplica drives one assembly of the service named orders, as one replica of
-// it would, records a span and a data point, and returns the resources they were
-// exported with.
 func runReplica(t *testing.T) *resourceRecorder {
 	t.Helper()
 	return runNamedReplica(t, "orders")
 }
 
-// runNamedReplica is runReplica for a configuration that gives the service the
-// name it is passed; the empty string is a configuration that gives none.
 func runNamedReplica(t *testing.T, serviceName string) *resourceRecorder {
 	t.Helper()
 	rec := &resourceRecorder{}
@@ -156,13 +144,8 @@ func resourceValue(t *testing.T, res *resource.Resource, key string) string {
 	return v.AsString()
 }
 
-// TestTheEnvironmentAddsToTheResourceButCannotRenameIt pins what the upstream's
-// resource variables do to the resource this module builds when configuration
-// names the service. The upstream merges the attributes of
-// OTEL_RESOURCE_ATTRIBUTES into it when the providers are built, which is how a
-// platform adds where a replica runs; on a name both give, this module's value
-// wins, so neither that variable nor OTEL_SERVICE_NAME can rename a configured
-// service or give two replicas one instance.
+// TestTheEnvironmentAddsToTheResourceButCannotRenameIt pins what the upstream
+// resource variables do when configuration names the service.
 func TestTheEnvironmentAddsToTheResourceButCannotRenameIt(t *testing.T) {
 	t.Setenv("OTEL_SERVICE_NAME", "renamed")
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=renamed,service.instance.id=shared,deployment.environment=prod")
@@ -181,14 +164,8 @@ func TestTheEnvironmentAddsToTheResourceButCannotRenameIt(t *testing.T) {
 	}
 }
 
-// TestAnUnnamedServiceTakesItsNameFromTheUpstream pins what a configuration
-// that gives no service name ends up reported as, in the order the upstream
-// settles it: OTEL_SERVICE_NAME, then the service.name in
-// OTEL_RESOURCE_ATTRIBUTES, then unknown_service:<executable name>. Each case
-// is one environment set after the default resource was computed in TestMain,
-// so the default still carries the fallback name; a name reaches the resource
-// only through the environment layer, and the case that sets both variables
-// holds the order between them.
+// TestAnUnnamedServiceTakesItsNameFromTheUpstream pins the name a configuration
+// without one is reported as.
 func TestAnUnnamedServiceTakesItsNameFromTheUpstream(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -224,10 +201,8 @@ func TestAnUnnamedServiceTakesItsNameFromTheUpstream(t *testing.T) {
 	}
 }
 
-// TestAnUnnamedServiceStillHasItsOwnInstance pins that leaving the name to the
-// upstream leaves the instance identity with this module: the environment's
-// service.instance.id does not stand in for it, and the fallback does not
-// remove it.
+// TestAnUnnamedServiceStillHasItsOwnInstance pins that leaving the name
+// to the upstream leaves the instance identity with this module.
 func TestAnUnnamedServiceStillHasItsOwnInstance(t *testing.T) {
 	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.instance.id=shared")
 
@@ -239,10 +214,8 @@ func TestAnUnnamedServiceStillHasItsOwnInstance(t *testing.T) {
 	}
 }
 
-// TestTheResourceNamesTheSDK pins the telemetry.sdk attributes a backend reads
-// to tell which library produced a signal. They come with the upstream's default
-// resource, and a resource built from this module's attributes alone leaves them
-// out, on both signals.
+// TestTheResourceNamesTheSDK pins the telemetry.sdk attributes a backend
+// reads to tell which library produced a signal.
 func TestTheResourceNamesTheSDK(t *testing.T) {
 	rec := runReplica(t)
 	for signal, res := range map[string]*resource.Resource{"span": rec.spans[0], "metric": rec.metrics[0]} {
@@ -259,11 +232,7 @@ func TestTheResourceNamesTheSDK(t *testing.T) {
 }
 
 // TestEachReplicaExportsUnderItsOwnInstance is the case for telling two
-// replicas of one service apart. Both export the same metric streams with the
-// same attributes; a resource that carried the service name alone would give
-// the two cumulative streams one identity, and a collector or a metric store
-// would see a single series flapping between two replicas' values. Each
-// assembly therefore reports an instance identity of its own, on both signals.
+// replicas of one service apart.
 func TestEachReplicaExportsUnderItsOwnInstance(t *testing.T) {
 	first, second := runReplica(t), runReplica(t)
 

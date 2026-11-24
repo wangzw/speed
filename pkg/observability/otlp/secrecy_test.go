@@ -15,9 +15,6 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
-// otlpReader builds the real configuration loader over a JSON primary source
-// holding body, with this module and the log module registered so their declared
-// items are known.
 func otlpReader(t *testing.T, body string) config.Reader {
 	t.Helper()
 	locator := filepath.Join(t.TempDir(), "config.json")
@@ -40,15 +37,8 @@ func otlpReader(t *testing.T, body string) config.Reader {
 	return reader
 }
 
-// TestTheHeaderValuesAreRegisteredAsRedactionRules holds the values a header
-// carries to being masked wherever they turn up in a log line, through the real
-// logging chain: this module is driven beside the log module writing JSON to a
-// file, and a record that carries a header value is written through the
-// delivered capability.
-//
-// The assertion is that the destination shows the mask, not merely that it lacks
-// the value: the value might never have reached the record at all, and an
-// absence alone would pass for the wrong reason.
+// TestTheHeaderValuesAreRegisteredAsRedactionRules holds that header values are
+// masked wherever they appear in a log line.
 func TestTheHeaderValuesAreRegisteredAsRedactionRules(t *testing.T) {
 	withoutOverriddenVariables(t)
 	const secret = "collector-credential-7c4e1a9b"

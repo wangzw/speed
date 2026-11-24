@@ -13,18 +13,12 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// roundTripperFunc stands in for a client's transport and records what it was
-// handed.
 type roundTripperFunc func(*nethttp.Request) (*nethttp.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *nethttp.Request) (*nethttp.Response, error) { return f(r) }
 
-// TestTransportInjectsTheSpanContextAndLeavesTheCallersRequestAlone pins both
-// halves of what the wrapper owes a caller: the receiving process can continue
-// the trace, and the request the caller still holds is unchanged. The second
-// half is what makes it usable on a client that retries — a transport that
-// wrote into the caller's headers would have every retry carry the first
-// attempt's span.
+// TestTransportInjectsTheSpanContextAndLeavesTheCallersRequestAlone pins
+// both halves of what the wrapper owes a caller.
 func TestTransportInjectsTheSpanContextAndLeavesTheCallersRequestAlone(t *testing.T) {
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
 	defer func() { _ = tp.Shutdown(context.Background()) }()
@@ -57,12 +51,8 @@ func TestTransportInjectsTheSpanContextAndLeavesTheCallersRequestAlone(t *testin
 	}
 }
 
-// TestAnInboundBaggageIsNotForwarded pins what crosses the boundary in both
-// directions: the span context and nothing else. The request layer extracts
-// with this propagator ahead of authentication, so whatever an unauthenticated
-// caller writes into a baggage header would otherwise sit in the request's
-// context and be re-emitted by Transport to every third party the request goes
-// on to call, under this service's name.
+// TestAnInboundBaggageIsNotForwarded pins what crosses the boundary in
+// both directions: the span context and nothing else.
 func TestAnInboundBaggageIsNotForwarded(t *testing.T) {
 	inbound := nethttp.Header{}
 	inbound.Set("traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01")
@@ -101,10 +91,8 @@ func TestAnInboundBaggageIsNotForwarded(t *testing.T) {
 	}
 }
 
-// TestTransportWithoutASpanPassesTheRequestThrough pins the other half of the
-// contract: background work and startup reach the wrapper with no span in the
-// context, and the answer for them is to send the request as it was. Injecting
-// a header naming an invalid span would be worse than sending none.
+// TestTransportWithoutASpanPassesTheRequestThrough pins the other half of
+// the contract.
 func TestTransportWithoutASpanPassesTheRequestThrough(t *testing.T) {
 	var seen nethttp.Header
 	inner := roundTripperFunc(func(r *nethttp.Request) (*nethttp.Response, error) {
@@ -128,11 +116,8 @@ func TestTransportWithoutASpanPassesTheRequestThrough(t *testing.T) {
 	}
 }
 
-// TestTransportForwardsCloseIdleConnections pins the one optional method a
-// client looks for by assertion. http.Client does nothing at all when it is
-// missing, so a wrapped transport that did not forward it would keep the pool
-// alive past the point the caller asked for it to go, with nothing to say the
-// wrapper was why.
+// TestTransportForwardsCloseIdleConnections pins the one optional method
+// a client looks for by assertion.
 func TestTransportForwardsCloseIdleConnections(t *testing.T) {
 	underneath := &closeIdleTransport{}
 	closer, ok := observability.Transport(underneath).(interface{ CloseIdleConnections() })
@@ -153,17 +138,14 @@ func TestTransportForwardsCloseIdleConnections(t *testing.T) {
 	plain.CloseIdleConnections()
 }
 
-// closeIdleTransport is a transport that can close its idle connections.
 type closeIdleTransport struct{ closed bool }
 
 func (c *closeIdleTransport) RoundTrip(*nethttp.Request) (*nethttp.Response, error) { return nil, nil }
 
 func (c *closeIdleTransport) CloseIdleConnections() { c.closed = true }
 
-// TestPropagatorIsStable pins that both sides of a boundary get one propagator.
-// The upstream default is an empty composite that injects nothing and reports
-// no error, so a second construction that happened to be empty would be
-// invisible until a trace was found to be broken across a hop.
+// TestPropagatorIsStable pins that both sides of a boundary get one
+// propagator.
 func TestPropagatorIsStable(t *testing.T) {
 	carrier := propagation.HeaderCarrier{}
 	carrier.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")

@@ -6,12 +6,8 @@ import (
 	"testing"
 )
 
-// TestAnUndoneJoinLeavesNothingOnTheCutoff pins that undoing a join takes its
-// registration off the cutoff. The cutoff lives as long as the assembly and
-// nothing ends it while the process serves, so a join that left its
-// cancellation registered there would hold one entry for every export made
-// until the stop: a footprint that grows with the process's lifetime. The heap
-// after many joins, each undone, has to stay where it was.
+// TestAnUndoneJoinLeavesNothingOnTheCutoff pins that undoing a join takes
+// its registration off the cutoff.
 func TestAnUndoneJoinLeavesNothingOnTheCutoff(t *testing.T) {
 	const joins = 100_000
 	c := newCutoff()

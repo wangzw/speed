@@ -12,9 +12,6 @@ import (
 	"testing"
 )
 
-// leftToUpstream are the suffixes of the standard variables the upstream
-// exporters read for what build leaves to them, so they still apply and are
-// not on overriddenVariables.
 var leftToUpstream = map[string]string{
 	"TIMEOUT":             "the per-request timeout",
 	"TRACES_TIMEOUT":      "the per-request timeout",
@@ -24,11 +21,8 @@ var leftToUpstream = map[string]string{
 	"METRICS_COMPRESSION": "the compression",
 }
 
-// upstreamNamespace is what the upstream joins every suffix to.
 const upstreamNamespace = "OTEL_EXPORTER_OTLP"
 
-// upstreamSources are the files of the upstream exporters that name the
-// standard variables they read, by module and path inside the module.
 var upstreamSources = []struct{ module, file string }{
 	{"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc", "internal/otlpconfig/envconfig.go"},
 	{"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp", "internal/otlpconfig/envconfig.go"},
@@ -36,16 +30,10 @@ var upstreamSources = []struct{ module, file string }{
 	{"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp", "internal/oconf/envconfig.go"},
 }
 
-// variableSuffix is a literal shaped as a variable name or a suffix of one.
 var variableSuffix = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
 // TestNoUpstreamVariableIsLeftOffTheOverriddenList pins overriddenVariables to
-// the upstream exporters of the version this module builds against. Every
-// variable named in the files that read them, the namespace joined to each
-// suffix, is either on the list or left to the upstream, and every name on the
-// list is one those files name, so an upgrade that adds, renames or drops a
-// variable fails here until the list is brought in line. Each name on the list
-// is also one the warning reports when it alone is set.
+// the upstream exporters version this module builds against.
 func TestNoUpstreamVariableIsLeftOffTheOverriddenList(t *testing.T) {
 	read := map[string]bool{}
 	for _, src := range upstreamSources {
@@ -95,7 +83,6 @@ func TestNoUpstreamVariableIsLeftOffTheOverriddenList(t *testing.T) {
 	}
 }
 
-// moduleDir is the directory of a module in the build list.
 func moduleDir(t *testing.T, module string) string {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", module).CombinedOutput()
@@ -109,7 +96,6 @@ func moduleDir(t *testing.T, module string) string {
 	return dir
 }
 
-// stringLiterals lists the string literals of a Go file.
 func stringLiterals(t *testing.T, path string) map[string]bool {
 	t.Helper()
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)

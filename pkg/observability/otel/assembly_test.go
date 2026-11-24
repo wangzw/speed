@@ -19,9 +19,8 @@ import (
 )
 
 // fixedConfig is a reading face that gives this module a service name and
-// nothing else, so every other item keeps the default its prototype carries.
-// It stands in for the real loader, which cannot be driven without a config
-// file and a command line.
+// nothing else, so every other item keeps the default its prototype
+// carries.
 type fixedConfig struct{ serviceName string }
 
 func (f fixedConfig) Decode(namespace string, target any) error {
@@ -31,14 +30,11 @@ func (f fixedConfig) Decode(namespace string, target any) error {
 	return nil
 }
 
-// stubLogger is the logging capability, reduced to what this module uses of it.
 type stubLogger struct{ lg *slog.Logger }
 
 func (s stubLogger) Named(string) *slog.Logger { return s.lg }
 func (s stubLogger) Redaction() log.Redaction  { return nil }
 
-// assemble drives a registry holding this module to the wiring stage and hands
-// back what the module produced.
 func assemble(t *testing.T, participants ...string) (*core.Registry, *bytes.Buffer, error) {
 	t.Helper()
 	buf := &bytes.Buffer{}
@@ -56,9 +52,7 @@ func assemble(t *testing.T, participants ...string) (*core.Registry, *bytes.Buff
 }
 
 // TestTheAssemblerDeliversBothProvidersFromOneProduct pins the delivery
-// contract: the descriptor promises two capabilities, the registry requires one
-// product to satisfy both, and a consumer resolving either gets something it
-// can build spans and instruments on.
+// contract.
 func TestTheAssemblerDeliversBothProvidersFromOneProduct(t *testing.T) {
 	reg, _, err := assemble(t, otel.ModuleName)
 	if err != nil {
@@ -94,10 +88,8 @@ func TestTheAssemblerDeliversBothProvidersFromOneProduct(t *testing.T) {
 	}
 }
 
-// TestTheAssemblerStartsWithNoBackendAndSaysSo pins the one observable
-// difference between a module that produces nothing and a module that is
-// broken. Production without a destination is a legal configuration, so it must
-// not fail; the line is the only thing that stops it from looking like a fault.
+// TestTheAssemblerStartsWithNoBackendAndSaysSo pins how a module that produces
+// nothing differs observably from a broken one.
 func TestTheAssemblerStartsWithNoBackendAndSaysSo(t *testing.T) {
 	_, buf, err := assemble(t, otel.ModuleName)
 	if err != nil {
@@ -110,10 +102,7 @@ func TestTheAssemblerStartsWithNoBackendAndSaysSo(t *testing.T) {
 }
 
 // TestTheAssemblerStartsOnItsDefaultsWithNoEntryModule is the shape a
-// background process has: this module is taken in on its default configuration,
-// whose endpoint list asks for every endpoint the entry module declares, and
-// the assembly holds no entry module. Nothing in that configuration asked for a
-// particular endpoint, so the missing entry module is not a failure.
+// background process has.
 func TestTheAssemblerStartsOnItsDefaultsWithNoEntryModule(t *testing.T) {
 	if _, _, err := assemble(t, otel.ModuleName); err != nil {
 		t.Fatalf("a process with no entry module could not start this module: %v", err)
@@ -134,11 +123,8 @@ func (secondProvider) Module() core.Module {
 	}
 }
 
-// TestASecondAssemblerFailsTheStartupRatherThanSplittingTheSignals pins why the
-// delivery is exclusive. Two assemblies would each hand out their own providers,
-// so a consumer's spans would go to one pipeline and its metrics to another,
-// with nothing reporting the split — the failure has to be named at startup
-// instead.
+// TestASecondAssemblerFailsTheStartupRatherThanSplittingTheSignals pins
+// why the delivery is exclusive.
 func TestASecondAssemblerFailsTheStartupRatherThanSplittingTheSignals(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
@@ -164,10 +150,6 @@ func TestASecondAssemblerFailsTheStartupRatherThanSplittingTheSignals(t *testing
 	}
 }
 
-// suppliedProviders is an instance a host supplies for the assembler: it
-// delivers both provider capabilities and is not this module's own product. It
-// counts each Shutdown it is asked for into shutdowns, which is how a case sees
-// whether the assembler's stop reached it.
 type suppliedProviders struct {
 	tracenoop.TracerProvider
 	metricnoop.MeterProvider
@@ -179,8 +161,6 @@ func (p suppliedProviders) Shutdown(context.Context) error {
 	return nil
 }
 
-// namingConfig is a reading face whose configuration names an endpoint, which
-// is what makes the assembler reach for an entry module.
 type namingConfig struct{}
 
 func (namingConfig) Decode(namespace string, target any) error {
@@ -192,14 +172,8 @@ func (namingConfig) Decode(namespace string, target any) error {
 	return nil
 }
 
-// TestAnInstanceSuppliedForTheAssemblerIsLeftAlone pins what the assembler's
-// callbacks do with an instance that is not its own product. The configuration
-// names an endpoint while the registry holds no entry module, so a wiring stage
-// that acted on the supplied instance would fail the startup for want of one.
-// Nothing is registered, the stop that follows leaves the instance as it is,
-// and what a consumer resolves is the instance the host supplied. The module
-// writes no line: its New is the one that does, and New does not run for a
-// supplied instance.
+// TestAnInstanceSuppliedForTheAssemblerIsLeftAlone pins what the
+// assembler's callbacks do with an instance that is not its own product.
 func TestAnInstanceSuppliedForTheAssemblerIsLeftAlone(t *testing.T) {
 	logged := &bytes.Buffer{}
 	shutdowns := 0

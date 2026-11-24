@@ -11,12 +11,6 @@ import (
 	"github.com/vislake/speed/pkg/observability"
 )
 
-// newExporters builds the two exporters from this module's configuration.
-//
-// A construction failure is handed back wrapped rather than given a name of its
-// own: the judgement is the upstream's and the fix is the writer the
-// configuration gave, so a sentinel here would name a category this module
-// cannot describe any better than the error text already does.
 func newExporters(_ context.Context, reg *core.Registry) (any, error) {
 	cfg, err := read(reg)
 	if err != nil {
