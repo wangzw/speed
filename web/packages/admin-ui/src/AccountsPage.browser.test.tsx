@@ -1,12 +1,3 @@
-/**
- * AccountsPage in a real browser: the account table at the sm/md/lg
- * floor widths with fixed data. The columns shed by priority and cap the
- * identity cell, so the table must stay inside both the page and its own
- * scroll container. At the 375px mobile floor the table is narrower than
- * its content, and the row-actions column is pinned to the table's
- * scroll edge so Manage and Delete stay visible while the main columns
- * scroll.
- */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import type { AuthSession } from '@speed/auth-core'
@@ -55,8 +46,6 @@ const ACCOUNTS = [
   }),
 ]
 
-/** One account whose primary cell and row actions together are wider
- * than the page content at 375px. */
 const NARROW_ACCOUNT = accountFixture({
   id: 'account-identifier-with-a-long-value-0003',
   display_name: 'Ada Lovelace the first programmer of recorded history',
@@ -65,18 +54,13 @@ const NARROW_ACCOUNT = accountFixture({
   ],
 })
 
-/** The identity the row shows and its controls name: the display name with
- * the login username, never the account id. */
 const NARROW_LABEL = identityLabel(
   NARROW_ACCOUNT.display_name,
   accountUsername(NARROW_ACCOUNT.identifiers),
 ) as string
 
-/** One pixel of tolerance for subpixel layout rounding. */
 const PIN_TOLERANCE = 0.5
 
-/** A 401 the session classifies as a step-up shortfall: an ApiError-shaped
- * object while the snapshot stays authenticated. */
 const STEP_UP_REFUSAL = {
   status: 401,
   code: 'client.http.401',
@@ -84,8 +68,6 @@ const STEP_UP_REFUSAL = {
   auth: true,
 }
 
-/** A promise the case settles by hand, so one request can be held in
- * flight across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -100,24 +82,17 @@ function deferred<T>(): {
   return { promise, resolve, reject }
 }
 
-/** One animation frame: the component's updated state has reached the DOM
- * and the browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** A step-up flow that never advances, so the challenge parks on its
- * opening step until the case cancels it. */
 function parkedFlow(): Promise<never> {
   return new Promise<never>(() => {
-    // Never settles.
   })
 }
 
-/** What currently holds focus, for a failure message: tag, role and the
- * label or text a reader can map back to a control. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -169,9 +144,6 @@ describe('AccountsPage row actions at 375 in Chromium', () => {
           }),
       }),
     )
-    // The console shell gives page content the theme's spacing-3 inset on
-    // each side (AdminShell's content box); reproduce it so the narrow
-    // arm sees the same content width the running console does.
     renderWithProviders(
       <Box sx={{ p: 3 }}>
         <AccountsPage />
@@ -190,8 +162,6 @@ describe('AccountsPage row actions at 375 in Chromium', () => {
     })
     const container = manage.closest<HTMLElement>('.MuiTableContainer-root')
     expect(container).not.toBeNull()
-    // The account table is wider than the page content at this width, so
-    // the container can scroll and the pin is observable.
     expect(container?.scrollWidth).toBeGreaterThan(container?.clientWidth ?? 0)
 
     const box = container?.getBoundingClientRect() as DOMRect
@@ -220,7 +190,6 @@ describe('AccountsPage row actions at 375 in Chromium', () => {
   })
 })
 
-/** The list's first and second page, so a case can name the row on each. */
 const FIRST_PAGE = [
   accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
 ]
@@ -405,7 +374,6 @@ describe('AccountsPage pager focus in Chromium', () => {
 })
 
 describe('AccountsPage focus traps in Chromium', () => {
-  /** Renders the page over the fixture accounts and opens the detail panel. */
   async function openDetail(
     overrides: Partial<Parameters<typeof makeAdminBackend>[0]> = {},
     session?: AuthSession,
@@ -431,15 +399,11 @@ describe('AccountsPage focus traps in Chromium', () => {
     return screen.findByRole('dialog')
   }
 
-  /** The account the detail panel reads: the row the helper manages. */
   const TARGET_ACCOUNT = accountFixture({
     id: 'account-identifier-with-a-long-value-0001',
     display_name: 'Ada Lovelace',
   })
 
-  /** Selects Disabled in the panel's status control and returns the
-   * "Save status" button, which is now enabled because the draft differs
-   * from the account's own status. */
   async function chooseDisabled(panel: HTMLElement): Promise<HTMLElement> {
     await userEvent.click(
       within(panel).getByLabelText(enUS.accounts.status.label),
@@ -454,10 +418,6 @@ describe('AccountsPage focus traps in Chromium', () => {
     })
   }
 
-  /** Clicks the save button and holds the request in flight: the button is
-   * unavailable and shows its loading indicator, and at least one frame
-   * passes so the browser has reacted to the unavailable state before the
-   * request settles. */
   async function saveAndHold(save: HTMLElement): Promise<void> {
     await userEvent.click(save)
     await waitFor(() => {
@@ -492,8 +452,6 @@ describe('AccountsPage focus traps in Chromium', () => {
     const refused = deferred<AdminAccount>()
     const session: AuthSession = {
       ...createStepUpSession(),
-      // The challenge parks on its opening step: this case cancels it
-      // rather than completing it.
       startAuthenticatedFlow: () => parkedFlow(),
     }
     const panel = await openDetail(
@@ -510,8 +468,6 @@ describe('AccountsPage focus traps in Chromium', () => {
     const challenge = await screen.findByRole('dialog', {
       name: enUS.stepUp.title,
     })
-    // The refused attempt settled and left the status group's slot empty,
-    // so the save button is available again when the challenge is cancelled.
     await waitFor(() =>
       expect(save).not.toHaveAttribute('aria-disabled', 'true'),
     )
@@ -643,7 +599,6 @@ describe('AccountsPage focus traps in Chromium', () => {
     revoked.resolve()
   })
 
-  /** A session row as the fixture read answers it. */
   function sessionRow(id: string) {
     return {
       id,
@@ -659,10 +614,6 @@ describe('AccountsPage focus traps in Chromium', () => {
   }
 
   it("moves focus to the next session's revoke control when a middle session leaves", async () => {
-    // The revoked row drops out of the read, so its control unmounts. Focus
-    // must land on the next row's revoke control inside the drawer rather
-    // than fall to the body, where the panel's focus trap pulls it back to
-    // the paper a frame later.
     const revoked: string[] = []
     const rows = [sessionRow('sess-a'), sessionRow('sess-b'), sessionRow('sess-c')]
     const panel = await openDetail({
@@ -730,10 +681,8 @@ describe('AccountsPage focus traps in Chromium', () => {
         .replace('{{label}}', 'label')
         .replace('{{secret}}', 'one-time'),
     )
-    // The landed control stays focused and becomes unavailable, which opens
-    // its reason tooltip; that popper is portaled to the body, outside the
-    // modal's aria-hidden chain. The shared helper exempts a tooltip portal
-    // that carries no focusable control, so the scan runs with it open.
+    // The reason tooltip is portaled outside the modal's aria-hidden chain;
+    // the helper exempts a tooltip portal with no focusable control.
     expect(await screen.findByRole('tooltip')).toBeInTheDocument()
     await expectNoAxeViolations({
       decidedInBrowser: 'accountsOneTimeSecret',

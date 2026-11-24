@@ -1,12 +1,3 @@
-/**
- * AuditDetailPage: one audit record in full.
- *
- * It reads the record by id, renders its fields (its detail object as
- * key/value pairs), links back to the audit query when given the query's
- * path, and splits a refused read into the permission placeholder (403,
- * no retry) or the retryable error placeholder.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -39,7 +30,6 @@ describe('AuditDetailPage', () => {
 
     expect(await screen.findByText('tenant.rename')).toBeInTheDocument()
     expect(screen.getByText('allowed')).toBeInTheDocument()
-    // The detail object renders as key/value pairs.
     expect(screen.getByText('alias')).toBeInTheDocument()
     expect(screen.getByText('Acme')).toBeInTheDocument()
     expect(getRecord).toHaveBeenCalledWith({ id: 'rec-7' })
@@ -73,8 +63,6 @@ describe('AuditDetailPage', () => {
     renderWithProviders(<AuditDetailPage id="rec-9" />, {
       operations: refused,
     })
-    // The row renders the neutral copy with the unresolved note; the
-    // recorded id is never the visible fallback.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
     expect(cell).not.toHaveTextContent('acc-9')
@@ -82,8 +70,6 @@ describe('AuditDetailPage', () => {
   })
 
   it('shows the empty-value placeholder for fields the record carries empty', async () => {
-    // A journal field that is empty is still part of the record: the row
-    // stays, with a placeholder instead of a label and nothing beside it.
     const getRecord = vi.fn(() =>
       Promise.resolve(
         recordFixture({ purpose: '', tenant: '', detail: { note: '' } }),
@@ -139,12 +125,9 @@ describe('AuditDetailPage', () => {
       name: zhCN.auditDetail.title,
     })
     const breadcrumb = screen.getByRole('navigation')
-    // The parent step keeps the query page's name and links back to it...
     expect(
       within(breadcrumb).getByRole('link', { name: zhCN.audit.title }),
     ).toHaveAttribute('href', '/admin/audit')
-    // ...while the current step names the record itself, so the trail does
-    // not read "Admin / Audit / Audit".
     expect(
       within(breadcrumb).getByText(
         zhCN.auditDetail.crumb.replace('{{id}}', 'rec-1'),
@@ -182,8 +165,6 @@ describe('AuditDetailPage', () => {
   })
 
   it('renders the not-found placeholder for an id the route cannot parse, and keeps the 404 and failure branches', async () => {
-    // A path identifier the route cannot parse is a 400: no record can carry
-    // it, so it says the same thing to the reader as a missing record.
     const malformed = createAdminOperations(
       makeAdminBackend({
         getRecord: () =>
@@ -197,7 +178,6 @@ describe('AuditDetailPage', () => {
     expect(await screen.findByText(zhCN.detail.notFound.title)).toBeInTheDocument()
     first.unmount()
 
-    // A 404 still renders the same placeholder.
     const missing = createAdminOperations(
       makeAdminBackend({
         getRecord: () => Promise.reject({ status: 404, code: 'client.http.404' }),
@@ -209,7 +189,6 @@ describe('AuditDetailPage', () => {
     expect(await screen.findByText(zhCN.detail.notFound.title)).toBeInTheDocument()
     second.unmount()
 
-    // Any other failure keeps the retryable error placeholder.
     const failed = createAdminOperations(
       makeAdminBackend({
         getRecord: () => Promise.reject({ status: 500, code: 'client.http.500' }),

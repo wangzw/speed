@@ -1,44 +1,3 @@
-/**
- * DashboardPage: the console's landing page.
- *
- * The console root renders a dashboard rather than a redirect: a KPI row
- * summarising the roster, a platform-health row, and a list of the most
- * recent audit activity. The administration surfaces declare no statistics
- * endpoint, so every figure is derived from a list read the console already
- * has. The roster read returns the whole roster (a tenant count is its
- * length, and the enabled/disabled split its statuses). The platform-health
- * row is derived from the audit query read, the one read that spans the
- * whole platform: it counts the records of the trailing 24 hours, and the
- * successful sign-ins among them (the audit action authn.login). Those
- * counts come from the newest page of a windowed read, so a page that
- * carries a next cursor reports its count as a lower bound ("N+"). The
- * window start moves forward on the page's refresh action and at the
- * query client's automatic re-read moments -- the tab becoming visible
- * and the connection coming back -- and the numbers already on screen
- * stay until the new window settles. The recent-activity list shows the
- * newest page of records outright, through
- * the same column set and priorities as the audit query page, and the same
- * account identity unit: the account's display name where the lookup
- * answers, the recorded value with an unresolved note where it is
- * refused. When the page is given the console root path, each recent row's
- * action links to that record's audit detail page, carrying the record id
- * the detail route takes. Nothing here invents an aggregate the contract
- * does not carry.
- *
- * The audit-backed half -- the platform-health row and the recent-activity
- * list -- exists only where the process serves audit.admin. A deployment
- * without it serves no audit query, so the page mounts neither section and
- * issues no audit read at all: the gated half is a child component that is
- * only mounted when the feature is present, rather than a set of reads the
- * page skips, so the reads do not exist on that surface. The roster row and
- * any host content still render.
- *
- * Each surface renders through the console async section, so a refused
- * read (403) shows the permission placeholder without a retry and every
- * other failure shows the retryable error placeholder. The page opens
- * with ui-kit's PageHeader.
- */
-
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { focusManager, onlineManager } from '@tanstack/react-query'
@@ -75,48 +34,23 @@ import { useAdminOperations } from './operations.js'
 import type { AdminAuditRecord, AdminTenant } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
 
-/** How many of the newest audit records the recent-activity list shows. */
 const RECENT_LIMIT = 5
 
 /** The audit action a successful sign-in records (pkg/authn/login). */
 const LOGIN_ACTION = 'authn.login'
 
-/** The platform-health window: the trailing 24 hours. */
 const HEALTH_WINDOW_MS = 24 * 60 * 60 * 1000
 
-/** The page size of the platform-health reads; a full page reports as a bound. */
 const HEALTH_LIMIT = 100
 
-/**
- * The segment the audit pages sit under, below the console root the
- * dashboard was given: a recent-activity row links to
- * `${root}/audit/${record id}`, the path the audit detail declaration
- * matches.
- */
 const AUDIT_SEGMENT = 'audit'
 
-/**
- * The behaviour of the platform-health reads: the previous answer stays as
- * placeholder data while the read under a moved window is in flight, and the
- * query client's automatic re-reads of the old key are off because the moved
- * window is what re-reads the row at those moments.
- */
 const HEALTH_READ_OPTIONS = {
   keepPrevious: true,
   refetchOnWindowFocus: false,
   refetchOnReconnect: false,
 } as const
 
-/**
- * The platform-health window start, as the `since` parameter its reads
- * carry. It moves forward on the page's refresh action and on the two
- * moments the query client re-reads on its own -- the tab becoming visible
- * and the connection coming back. Those signals come from the client's own
- * focus and online managers, the same ones its automatic re-reads listen
- * to, so the page installs no listener of its own. Each move is strictly
- * later than the last, so a signal arriving within the same millisecond as
- * the previous one still changes the reads' key and issues a new read.
- */
 function useHealthWindow(): {
   readonly since: string
   readonly advance: () => void
@@ -151,13 +85,7 @@ function useHealthWindow(): {
   return { since, advance }
 }
 
-/**
- * One KPI tile: a label and a large count on a bordered inset. It is not
- * a second surface: a card here would stack another translucent layer
- * inside the section's own, and in a glass theme the inner tile would go
- * almost opaque. The divider border and the shared radius keep the tile
- * distinct without introducing a surface.
- */
+/** KpiCard renders one KPI tile: a label above a large value. */
 export function KpiCard({
   label,
   value,
@@ -173,9 +101,6 @@ export function KpiCard({
         flex: '1 1 12rem',
         minWidth: 0,
         border: 1,
-        // The tile shares the card's own rim, so a theme that gives its
-        // containers a visible border (glass does, per mode) gives the
-        // tiles the same edge.
         borderColor: (theme) => theme.surface.container.borderColor,
         borderRadius: 1,
       }}
@@ -190,21 +115,12 @@ export function KpiCard({
   )
 }
 
-/**
- * The KPI row: a card grid that answers to its own container width, the
- * layout design's component-level response for card grids. It is one
- * column below `sm`, two columns from `sm`, and `columns` columns from
- * `md` -- the tenant overview's four cards therefore read 2x2 at a 768px
- * overview and one row on a wide console, while the two-card
- * platform-health row is always two-up once the container clears `sm`.
- * The outer box is the container (an element cannot query itself); the
- * list keeps its `ul`/`li` semantics inside it.
- */
+/** KpiRow lays out cards on a container-driven grid: one column below `sm`,
+ * two from `sm`, then `columns` from `md`. */
 export function KpiRow({
   columns = 4,
   children,
 }: {
-  /** How many cards share a line from the container's `md` tier up. */
   readonly columns?: 2 | 4
   readonly children: ReactNode
 }) {
@@ -231,21 +147,10 @@ export function KpiRow({
   )
 }
 
-/**
- * A windowed count label: the plain count, or the count with a trailing "+"
- * when the read answered with a next cursor, so a page-bounded count is shown
- * as the lower bound it is rather than as a total.
- */
 function countLabel(count: number, bounded: boolean): string {
   return bounded ? `${count}+` : String(count)
 }
 
-/**
- * A sibling path below the console root the page was given. The console may
- * be mounted at the origin, where the matched root path is '/', so that root
- * contributes no prefix; a trailing slash never doubles. Undefined when the
- * page has no root path, which leaves the link out.
- */
 function joinRootHref(
   rootHref: string | undefined,
   path: string,
@@ -257,7 +162,6 @@ function joinRootHref(
   return `${root}/${path.replace(/^\/+/, '')}`
 }
 
-/** The roster's KPI row, derived from the whole roster read. */
 function KpiSection({
   tenants,
 }: {
@@ -265,9 +169,8 @@ function KpiSection({
 }) {
   const { t } = useAdminUiTranslation()
   const rows = tenants.data
-  // A load with no data yet -- the first fetch in flight, or one parked by
-  // react-query's default networkMode 'online' while offline -- keeps the
-  // loading branch: isPending alone tracks "no answer yet".
+  // isPending alone means "no answer yet": a fetch parked offline by
+  // networkMode 'online' must still show the loading branch.
   const pending = tenants.isPending && rows === undefined
 
   const kpi = (settled: readonly AdminTenant[]) => {
@@ -275,8 +178,6 @@ function KpiSection({
     const disabled = settled.filter(
       (tenant) => tenant.status === 'disabled',
     ).length
-    // A tombstone is part of the roster read: the three state counts partition
-    // it, so the deleted count is what keeps them adding up to the total.
     const deleted = settled.filter(
       (tenant) => tenant.status === 'deleted',
     ).length
@@ -316,11 +217,6 @@ function KpiSection({
   )
 }
 
-/**
- * The frame both dashboard variants share: the page header with the refresh
- * action, the roster KPI section, whatever sections the variant adds, and
- * the host's children last.
- */
 function DashboardFrame({
   tenants,
   pageRefresh,
@@ -367,11 +263,6 @@ function DashboardFrame({
   )
 }
 
-/**
- * The dashboard where the process does not serve audit.admin: only the
- * roster row, so no audit read is issued and neither audit-backed section
- * exists.
- */
 function DashboardWithoutAudit({ children }: { readonly children?: ReactNode }) {
   const operations = useAdminOperations()
   const tenants = operations.useTenants()
@@ -390,11 +281,6 @@ function DashboardWithoutAudit({ children }: { readonly children?: ReactNode }) 
   )
 }
 
-/**
- * The dashboard where the process serves audit.admin: the roster row plus
- * the platform-health row and the recent-activity list, whose reads live
- * here so they mount only with the feature.
- */
 function DashboardWithAudit({
   rootHref,
   children,
@@ -408,11 +294,6 @@ function DashboardWithAudit({
   const tenants = operations.useTenants()
   const records = operations.useAuditRecords({ limit: RECENT_LIMIT })
 
-  // The platform-health reads: the trailing 24 hours of audit records, and the
-  // successful sign-ins among them. The window start is state, so its query
-  // key changes only when the window moves, not every render. The previous
-  // answer stays as placeholder data while the read under a new window is in
-  // flight, so the numbers on screen do not flicker to a placeholder.
   const healthWindow = useHealthWindow()
   const healthActivity = operations.useAuditRecords(
     { since: healthWindow.since, limit: HEALTH_LIMIT },
@@ -423,10 +304,6 @@ function DashboardWithAudit({
     HEALTH_READ_OPTIONS,
   )
 
-  // Every read that describes the page's body is part of the refresh. The
-  // health reads re-read by moving their key with the window, so the
-  // mechanism counts them but issues no refetch of the old key; the roster
-  // and the recent-activity list re-read in place.
   const pageRefresh = usePageRefresh(
     [
       pageRefreshRead('dashboard:tenants', tenants),
@@ -441,14 +318,8 @@ function DashboardWithAudit({
     () => undefined,
   )
 
-  // The audit detail page sits below the console root under the audit
-  // segment; without a root the action stays plain text.
   const auditDetailBase = joinRootHref(rootHref, AUDIT_SEGMENT)
 
-  // The same columns and priorities as the audit query page: the action
-  // and its object carry the record's identity, while the actor and the
-  // outcome stay visible together at the `md` tier so a failed record is
-  // distinguishable on a laptop-width container.
   const recentColumns: DataTableColumn<AdminAuditRecord>[] = [
     {
       id: 'time',
@@ -481,9 +352,6 @@ function DashboardWithAudit({
       header: t('dashboard.recent.column.object'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.object,
       cellWrap: 'nowrap',
-      // An object shaped like an account id resolves through the same rule as
-      // the audit query, and its copy value is withheld; anything else
-      // renders as recorded.
       cellFullValue: (record) =>
         record.object === '' || isAccountObject(record.object)
           ? undefined
@@ -500,8 +368,6 @@ function DashboardWithAudit({
       header: t('dashboard.recent.column.actor'),
       priority: AUDIT_RECORD_COLUMN_PRIORITY.actor,
       cellWrap: 'nowrap',
-      // The actor's identity comes from the account read, so no copy control
-      // hands over the opaque id.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },
@@ -632,9 +498,6 @@ function DashboardWithAudit({
       tenants={tenants}
       pageRefresh={pageRefresh}
       onRefresh={() => {
-        // Moving the window changes the health reads' key, which is what
-        // re-reads them; the roster and the recent-activity list re-read in
-        // place.
         healthWindow.advance()
         pageRefresh.refresh()
       }}
@@ -645,24 +508,18 @@ function DashboardWithAudit({
   )
 }
 
+/** Props for DashboardPage: the console root path and host content. */
 export interface DashboardPageProps {
-  /**
-   * The console root path the dashboard declaration matched. The recent
-   * activity's rows link to each record's audit detail page below it; the
-   * console may be mounted at the origin, where that root is '/', so it is
-   * normalised before the detail path is joined. Absent, the rows stay plain
-   * text.
-   */
+  /** The console root the declaration matched; recent activity rows link to
+   * each record's audit detail page below it, an origin root '/' is
+   * normalised first, and absent leaves those rows as plain text. */
   readonly rootHref?: string
   /** Host content rendered after the page's own sections. */
   readonly children?: ReactNode
 }
 
-/**
- * The console landing. It renders the roster row in every deployment; the
- * platform-health row and the recent-activity list exist only where the
- * process serves audit.admin, so the page mounts no audit read otherwise.
- */
+/** DashboardPage renders the roster KPIs and, where audit.admin is present,
+ * the platform-health row and recent activity. */
 export function DashboardPage({ rootHref, children }: DashboardPageProps) {
   const hasFeature = useAdminHasFeature()
   return hasFeature('audit.admin') ? (

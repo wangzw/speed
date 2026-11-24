@@ -1,10 +1,3 @@
-/**
- * AuditPage in a real browser: the audit table at the sm/md/lg floor
- * widths with fixed data, and the shared column priorities at a laptop
- * container. The columns carry priorities and caps; the table and the
- * page must stay inside their widths, and at 1184px the object column
- * must be shed while the actor and the outcome stay.
- */
 import { describe, expect, it } from 'vitest'
 import {
   fireEvent,
@@ -29,7 +22,6 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
-/** The shipped en-US audit strings the visibility case reads. */
 const AUDIT = (
   adminUiResources['en-US'] as unknown as {
     readonly audit: {
@@ -90,11 +82,6 @@ describe('AuditPage column priorities in Chromium', () => {
 
     await screen.findAllByText('Ada Lovelace')
 
-    // The priorities resolve against the table's containment box, not the
-    // viewport. Pin the regime this case is about: wide enough for the
-    // actor (md, 900px) and the outcome (sm, 600px), too narrow for the
-    // object (lg, 1200px). At this width the old declaration still showed
-    // the object, so the three assertions below distinguish the two.
     const table = document.querySelector('.MuiTableContainer-root')
     expect(table).not.toBeNull()
     const containment = table!.parentElement as HTMLElement
@@ -118,14 +105,10 @@ describe('AuditPage column priorities in Chromium', () => {
       'none',
     )
 
-    // The result value of the denied record stays readable, not only its
-    // header: the outcome is the column triage starts from.
     expect(screen.getByText('denied')).toBeVisible()
   })
 })
 
-/** One animation frame: the state change has reached the DOM and the
- * browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
@@ -200,7 +183,6 @@ describe('AuditPage focus in Chromium', () => {
     control.focus()
     expect(control).toHaveFocus()
 
-    // Every activation path reaches the guard and issues nothing.
     const user = userEvent.setup()
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -233,8 +215,6 @@ describe('AuditPage focus in Chromium', () => {
     const next = screen.getByRole('button', {
       name: enUS.audit.nextPage,
     })
-    // The first page has nothing behind it; the control says so through
-    // its state alone and still takes focus.
     expect(prev).toHaveAttribute('aria-disabled', 'true')
     expect(prev).not.toHaveAttribute('aria-describedby')
     prev.focus()

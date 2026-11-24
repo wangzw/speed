@@ -1,84 +1,3 @@
-/**
- * ImpersonationsPage: the impersonation administration page of the
- * console.
- *
- * It carries two impersonation surfaces that share one page:
- *
- *  - the caller's own impersonation session, over /api/v1/auth/impersonation:
- *    the status read (GET) names the impersonation currently in force on
- *    the operator's own session (a bare 404 answers "not impersonating"),
- *    a start form (POST) begins one -- its request body is the endpoint's
- *    own {account, tenant, reason?, ttl_seconds?} shape -- and an end
- *    action (DELETE) stops it. These three are the caller-session
- *    operations the generated @speed/api-sdk surface ships
- *    (useAuthnImpersonationStatus / Start / End), so the page calls them
- *    directly and invalidates the status read through the generated key
- *    factory; the start control is offered only while no impersonation is
- *    in force (the module refuses a second start on one session with 409);
- *    the start form's target tenant is the page's own tenant selection --
- *    the tenant is a required part of the request (the module refuses an
- *    empty one) and the target account must be a member of it, so the
- *    form has no separate tenant input;
- *
- *  - the tenant's impersonation records, over /api/v1/system/tenants/{tenant}/impersonations:
- *    the record list (GET) and one record's termination (DELETE). The read
- *    names its tenant as a required query parameter, so the page opens that
- *    half with the same tenant selection the start form uses, fed by the
- *    platform roster exactly as the authorization and SSO pages do with
- *    theirs, and keeps the read disabled until a tenant is chosen. The
- *    tenant is an argument of the request, not the session's current
- *    tenant. These two are operations on the console operations bundle, so
- *    that half builds no client and writes no query key.
- *
- * The status read's bare 404 is a settled answer, not a failure: it means
- * no impersonation is in force, so the page renders it as that content --
- * never as the error placeholder and never as a stale marker -- and the
- * cached grant is discarded, because the read that just said "none" is
- * the authority. Every other status failure renders through the console's
- * shared read branches. A successful end resets the status read's cache
- * and re-reads it through the generated key, so the section can only land
- * on what the server answers next.
- *
- * A settled grant collapses the record half: an impersonated identity
- * reaches only a closed set of routes, so the gateway refuses the roster
- * read and the record read alike. Once the status read names a grant the
- * page issues neither, and replaces the tenant selector, the record list
- * and its terminate controls with one line saying the records are
- * available again after the impersonation ends. The record read also
- * waits for the status read to settle, so a page opened while an
- * impersonation is already in force never issues it. A status read that
- * is still pending, or that failed with anything but the bare 404, is not
- * evidence of an impersonation: the record half renders as it always has.
- * Ending an impersonation drops the cached record pages along with
- * resetting the status read, so the surface that returns reads again
- * instead of presenting the pre-impersonation list as current.
- *
- * Both halves report their writes through feedback scopes: the start and
- * the end share one scope whose region lives in the current-impersonation
- * section (the start form unmounts when the start lands, so a region
- * inside it would take the success message with it), and the record
- * table's terminate actions own a scope with the region under the table.
- * A start or end refused for insufficient step-up hands over to the
- * elevation gate and leaves the scope empty; the replay is a new run.
- *
- * A record is in force while its `ended_at` is null; the state column says
- * so and the terminate control is offered only then. Every account the page
- * shows -- the record's actor and target and the in-force panel's target --
- * renders through the shared account identity unit, never by its opaque
- * identifier. The timestamps render in UTC through
- * Intl. The page opens with ui-kit's PageHeader.
- *
- * The tenant scope is optionally controlled: `tenant` locks the page to the
- * given value and hides the selector, `defaultTenant` seeds the page's own
- * selection ahead of the URL's `tenant` parameter, and `onTenantChange`
- * reports each re-selection. Given none of them the page opens on the URL's
- * parameter and the selector changes it, as before.
- *
- * The declaration carries the caller-session feature, so a host narrows
- * the page out by feature presence; the page adds no gate of its own and
- * both halves render together.
- */
-
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -138,18 +57,10 @@ import { useAdminOperations } from './operations.js'
 import type { AdminAccount, AdminImpersonation } from './operations.js'
 import { AdminPageHeader } from './internal/page-header.js'
 
-/** The caller's own impersonation status as the section renders it: the
- * settled grant, or a settled "not impersonating" answer. */
 interface ImpersonationStatusView {
   readonly grant: AuthnImpersonationGrant | undefined
 }
 
-/**
- * The record table's terminate control. It resolves the record's target
- * through the same account identity unit the row's target cell renders (one
- * cached read), so a landed termination names the account in the four
- * shared shapes instead of by its opaque id.
- */
 function TerminateButton({
   record,
   busy,
@@ -188,21 +99,12 @@ function TerminateButton({
   )
 }
 
-/**
- * Whether a failure is the status read's "no impersonation in force": the
- * endpoint answers a bare 404, which the transport surfaces either as an
- * HTTP 404 or as the client.http.404 code -- read structurally, the same
- * reading the console's forbidden branch makes of a 403.
- */
+/** Whether a failure is the status read's bare 404 ("no impersonation in
+ * force"), surfaced as an HTTP 404 or the client.http.404 code. */
 function isNotImpersonating(error: unknown): boolean {
   return httpStatusOf(error) === 404
 }
 
-/**
- * Reports a settled start or end to the host, outside the write attempt:
- * fire-and-forget, with the rejection wrapped, so a host action that fails
- * cannot turn a landed write into a failure the page renders.
- */
 function notifyIdentityChange(
   callback:
     | ((change: AdminImpersonationChange) => void | Promise<void>)
@@ -217,10 +119,6 @@ function notifyIdentityChange(
     .catch(() => undefined)
 }
 
-/**
- * The reasons a record ends, mapped from the wire value to the namespace
- * leaf that names it. A reason outside this set renders as recorded.
- */
 const END_REASON_KEYS: Readonly<Record<string, string>> = {
   explicit: 'explicit',
   revoked: 'revoked',
@@ -232,22 +130,19 @@ const END_REASON_KEYS: Readonly<Record<string, string>> = {
   'start-failed': 'startFailed',
 }
 
+/** Props for ImpersonationsPage: the optional controlled tenant scope. */
 export interface ImpersonationsPageProps {
-  /**
-   * A controlled tenant scope: when given, the record read names this tenant
-   * and the selector is not rendered. An empty string is a controlled "no
-   * tenant".
-   */
+  /** A controlled tenant; given, it hides the selector. Empty string is a
+   * controlled "no tenant". */
   readonly tenant?: string
-  /**
-   * The page's initial tenant when it is not controlled. Wins over the
-   * tenant query parameter.
-   */
+  /** The initial tenant when not controlled; wins over the query parameter. */
   readonly defaultTenant?: string
   /** Reports each re-selection made through the page's own selector. */
   readonly onTenantChange?: (tenant: string) => void
 }
 
+/** ImpersonationsPage shows the caller's own impersonation and the tenant's
+ * impersonation records. */
 export function ImpersonationsPage({
   tenant: controlledTenant,
   defaultTenant,
@@ -264,48 +159,23 @@ export function ImpersonationsPage({
   const tenant = controlledTenant ?? innerTenant
   const tenantControlled = controlledTenant !== undefined
 
-  // The current-impersonation section's scope: the start and the end are
-  // the same control group (one object, one result location), and the
-  // start form unmounts when a start lands, so the page holds the slot.
   const currentFeedback = useWriteFeedback()
-  // The record table's scope: its terminate actions share one result
-  // location under the table.
   const recordsFeedback = useWriteFeedback()
-  // Which record's termination is in flight. The busy state stays on the row
-  // the operator activated; while one record's termination runs, its siblings
-  // report a context change instead of borrowing that row's progress.
   const [terminatingIds, setTerminatingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   )
-  // The current-impersonation section's heading: a landed end removes the
-  // grant block that held the end button, so focus moves to the section.
   const { sectionRef: currentSectionRef, focusHeading: focusCurrentHeading } =
     useSectionHeadingFocus()
-  // The end control itself, so a settled end can tell whether it still held
-  // focus when the grant block left the document.
   const endButtonRef = useRef<HTMLButtonElement | null>(null)
-  // The console session, and the step-up gate over it: the gate treats a
-  // write as a shortfall exactly when the session says so (a 401 that ends
-  // the session is not a shortfall, and arming a step-up for it would
-  // offer a verification that cannot help).
   const session = useAdminSession()
   const gate = useStepUpGate<() => void>(
     (retry) => retry(),
     (error) => session !== null && session.isStepUpShortfall(error),
   )
-  // The host's identity-change action (the shell publishes it). A start
-  // and an end both swap whose identity every later read belongs to, so
-  // each reports to the same seam once its write settles.
   const identityChange = useAdminImpersonationChange()
 
-  // The caller's own impersonation session, over /api/v1/auth/impersonation. These
-  // are the generated caller-session operations (not the administration
-  // bundle): the page reads the status, ends an in-force impersonation, and
-  // offers the start form only while none is in force.
   const status = useAuthnImpersonationStatus()
 
-  // The bare 404 is settled content, not a failure: it renders as "not
-  // impersonating" and discards whatever grant the cache still holds.
   const notImpersonating = isNotImpersonating(status.error)
   const statusError = notImpersonating ? undefined : status.error
   const statusPayload: ImpersonationStatusView | undefined = notImpersonating
@@ -314,23 +184,11 @@ export function ImpersonationsPage({
       ? undefined
       : { grant: status.data.grant }
   const grant = statusPayload?.grant
-  // The grant's target as a landed end names it. The current section renders
-  // the same identity through the shared unit, so this read is cached and
-  // shared with it; an absent grant resolves nothing and the notice stays
-  // neutral instead of naming the recorded id.
   const endIdentity = useAccountIdentity(grant?.target)
   const statusPending = status.isPending && statusPayload === undefined
-  // A settled read that names a grant is the only evidence of an
-  // impersonation; a pending read and a failure are "status unknown" and
-  // never count as one. The start form is offered only on a settled "not
-  // impersonating" answer. The read's error is null rather than undefined
-  // when there is none.
   const statusFailed = statusError !== undefined && statusError !== null
   const impersonating = !statusFailed && grant !== undefined
   const notInForce = statusPayload !== undefined && grant === undefined
-  // The record read waits for the status read to settle -- a read on a
-  // session that turns out to be impersonating is only refused -- and
-  // stays disabled while a grant is in force.
   const recordsEnabled = !status.isPending && !impersonating && tenant !== ''
 
   const impersonations = operations.useImpersonations(
@@ -339,9 +197,6 @@ export function ImpersonationsPage({
   )
   const revokeImpersonation = operations.useRevokeImpersonation()
 
-  // Both sections' scopes clear on a context change: another tenant, or the
-  // refresh action, which re-reads the status read and -- when the record
-  // surface renders -- the record read.
   const resetPageFeedback = useCallback(() => {
     currentFeedback.reset()
     recordsFeedback.reset()
@@ -360,15 +215,9 @@ export function ImpersonationsPage({
   const endImpersonation = useAuthnImpersonationEnd({
     mutation: {
       onSuccess: () => {
-        // The status read is the authority on what is in force: drop the
-        // cached grant and re-read, so the section lands on the server's
-        // next answer rather than a grant the end just retired.
         void queryClient.resetQueries({
           queryKey: getAuthnImpersonationStatusQueryKey(),
         })
-        // The cached record pages predate the end and describe a state it
-        // just changed. Drop them so the returning surface reads again
-        // instead of presenting the old list as current.
         queryClient.removeQueries({
           queryKey: getAuthnAdminImpersonationsListQueryKey(tenant),
         })
@@ -376,9 +225,6 @@ export function ImpersonationsPage({
     },
   })
 
-  // The tenant is an argument of every write in both sections, so a change
-  // clears their results: the old outcome would read as describing the new
-  // tenant.
   useEffect(() => {
     resetPageFeedback()
   }, [tenant, resetPageFeedback])
@@ -400,16 +246,9 @@ export function ImpersonationsPage({
       try {
         await endImpersonation.mutateAsync()
       } catch (error) {
-        // A refusal the server answers while the session is still
-        // established is a strength shortfall: the gate takes the write
-        // over and this attempt settles without touching the slot. The
-        // replayed write is a new run.
         if (gate.intercept(error, () => void endAttempt())) {
           return null
         }
-        // A bare 404 is the settled "there is no impersonation to end"
-        // (ended elsewhere, expired or terminated). It is not a failure:
-        // the page closes exactly as a successful end does.
         if (!isNotImpersonating(error)) {
           throw error
         }
@@ -420,11 +259,8 @@ export function ImpersonationsPage({
           queryKey: getAuthnAdminImpersonationsListQueryKey(tenant),
         })
       }
-      // The grant block that held the end button leaves the document; focus
-      // lands on the section's heading, which stays. Focus is only taken
-      // over when the end control still holds it or its unmount has already
-      // returned it to the document body; a reader who moved it elsewhere
-      // keeps it.
+      // Focus lands on the section's heading when the end control held it,
+      // but not when the reader moved it elsewhere.
       const active = document.activeElement
       if (
         active === null ||
@@ -433,8 +269,6 @@ export function ImpersonationsPage({
       ) {
         focusCurrentHeading()
       }
-      // The write settled: the host re-reads the identity, without the
-      // page waiting for it.
       notifyIdentityChange(identityChange, 'ended')
       return accountNotice(
         t,
@@ -455,9 +289,6 @@ export function ImpersonationsPage({
       return recordsFeedback.run(async () => {
         try {
           await revokeImpersonation.mutateAsync({ id: record.id, tenant })
-          // A termination changes what the caller's own status read may
-          // name, so that read is refreshed alongside the list the bundle
-          // already invalidates.
           void status.refetch()
           return accountNotice(
             t,
@@ -480,8 +311,6 @@ export function ImpersonationsPage({
     void attempt()
   }
 
-  // A closed-set reason renders its own label; anything else (including an
-  // empty reason) is shown as the record carries it.
   const endReasonLabel = (reason: string): string => {
     const leaf = END_REASON_KEYS[reason]
     const key = leaf === undefined ? '' : `impersonations.endReason.${leaf}`
@@ -496,9 +325,6 @@ export function ImpersonationsPage({
       header: t('impersonations.column.actor'),
       priority: 'medium',
       cellWrap: 'nowrap',
-      // A long-text identity beside the record's primary one: the flat
-      // long-text cap bounds it at every tier. The account id is never the
-      // copy value.
       contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.actor} />,
     },
@@ -506,19 +332,12 @@ export function ImpersonationsPage({
       id: 'target',
       header: t('impersonations.column.target'),
       cellWrap: 'nowrap',
-      // The record's primary identity: it never hides, and the shared
-      // whole-cell cap keeps the terminate action on screen at every tier.
-      // The account id is never the copy value.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (record) => <AccountIdentity account={record.target} />,
     },
     {
       id: 'tenant',
       header: t('impersonations.column.tenant'),
-      // The page is addressed by one tenant, so every row repeats the
-      // selector above it: the tenant is the first column shed. Its
-      // identifier has no length bound, so the long-text cap keeps the
-      // `lg` tier's total within its floor.
       priority: 'low',
       cellWrap: 'nowrap',
       cellFullValue: (record) => record.tenant,
@@ -674,8 +493,6 @@ export function ImpersonationsPage({
               feedback={currentFeedback}
               gate={gate}
               identityChange={identityChange}
-              // A start writes a record into the selected tenant's list as
-              // well as onto the operator's own session.
               onStarted={() => void impersonations.refetch()}
             />
           </Box>
@@ -688,11 +505,6 @@ export function ImpersonationsPage({
       </SectionCard>
 
       {impersonating ? (
-        // The record half is not offered through an impersonated identity:
-        // the gateway refuses the roster read and the record read, and a
-        // list rendered from refused reads would read as "no records". One
-        // line replaces the selector, the list and its terminate controls;
-        // the current-impersonation section and its end control remain.
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           {t('impersonations.recordsUnavailable')}
         </Typography>
@@ -755,7 +567,6 @@ export function ImpersonationsPage({
                     />
                   )}
                 </AdminAsyncSection>
-                {/* The table and its row actions share one result location. */}
                 <WriteFeedbackRegion outcome={recordsFeedback.outcome} />
               </SectionCard>
             </>
@@ -776,31 +587,6 @@ export function ImpersonationsPage({
   )
 }
 
-/**
- * StartImpersonationForm: the control that begins an impersonation on the
- * operator's own session (POST /api/v1/auth/impersonation). It renders the
- * endpoint's request-body fields -- a required target account, an optional
- * reason, an optional TTL in whole seconds, and the page's tenant selection
- * as the required target tenant -- and reports the write through the
- * section's feedback scope. The target account must be a member of that
- * tenant, so the form takes the tenant as a prop instead of offering a
- * second, unrelated input; the submit stays disabled until a tenant is
- * selected. A landed start clears the form and invalidates the status read
- * through the generated key factory, so the page's status section converges
- * on the record the server just wrote; a refused start keeps the values so
- * the operator can correct them. A precondition line above the controls
- * states the factor-age requirement: the server answers an unmet
- * `MFA.Seasoned` with the same step-up refusal a weak session gets, and this
- * line is what keeps an operator from retrying a sign-in that cannot help.
- *
- * Before the write goes out it calls the host's `onImpersonationStarting`
- * hook, so a host frame that speaks about the operator can enter its
- * "starting" state ahead of the request. The returned release runs when
- * the write does not land -- refused, intercepted by the step-up gate, or
- * thrown. A write that lands is not released here: the host releases it
- * once its `onImpersonationChange('started')` action settles, because the
- * host is the one that decides how the new identity takes over.
- */
 function StartImpersonationForm({
   tenant,
   feedback,
@@ -810,13 +596,10 @@ function StartImpersonationForm({
 }: {
   readonly tenant: string
   readonly feedback: WriteFeedback
-  /** The step-up gate over that session. */
   readonly gate: StepUpGate<() => void>
-  /** The host's identity-change action (see ImpersonationsPage). */
   readonly identityChange:
     | ((change: AdminImpersonationChange) => void | Promise<void>)
     | undefined
-  /** Fired after a start lands, so the page re-reads the tenant's records. */
   readonly onStarted: () => void
 }) {
   const { t } = useAdminUiTranslation()
@@ -832,21 +615,12 @@ function StartImpersonationForm({
     },
   })
 
-  // The target is chosen through the shared account picker: the operator
-  // identifies the account by display name or login identifier, and the
-  // picker hands the internal id to the request only.
   const [account, setAccount] = useState<AdminAccount | null>(null)
   const [reason, setReason] = useState('')
   const [ttl, setTtl] = useState('')
-  // The chosen account's readable identity, resolved through the same unit
-  // the in-force section renders. An unresolved read leaves the notice
-  // neutral; the recorded id is never its fallback.
   const identity = useAccountIdentity(account?.id)
   const tenantHintId = useId()
 
-  // The submit is unavailable until both a tenant and a target account are
-  // chosen. The tenant gap points at the hint already on the page; the
-  // account gap has its own reason.
   const submitExplanation =
     tenant === ''
       ? { unavailableDescribedBy: tenantHintId }
@@ -874,9 +648,6 @@ function StartImpersonationForm({
       },
     }
     const attempt = (): Promise<void> => {
-      // The host enters its "starting" state before the request goes out;
-      // the returned release runs if this attempt does not land. A landed
-      // write is the host's to release once its change action settles.
       const release = onStarting?.()
       return feedback.run(async () => {
         try {
@@ -885,14 +656,7 @@ function StartImpersonationForm({
           setReason('')
           setTtl('')
           onStarted()
-          // The write settled: the host re-reads the identity and moves
-          // the page, without the form waiting for it.
           notifyIdentityChange(identityChange, 'started')
-          // The server's grant is the authority on which account is being
-          // impersonated. The identity read above is keyed to the typed
-          // account, so it names the grant only when the two agree; a grant
-          // naming a different account stays unresolved and the notice stays
-          // neutral rather than borrowing the wrong name.
           return accountNotice(
             t,
             {
@@ -904,10 +668,6 @@ function StartImpersonationForm({
               : { name: undefined, username: undefined },
           )
         } catch (error) {
-          // The gate takes a step-up refusal over; the attempt settles
-          // without touching the slot, and a won challenge replays this
-          // body as a new run. Either way this attempt did not land, so
-          // the host's starting state is released.
           if (gate.intercept(error, () => void attempt())) {
             release?.()
             return null
@@ -922,11 +682,6 @@ function StartImpersonationForm({
 
   return (
     <Box>
-      {/* The precondition stays visible above the controls: the server
-          answers an unmet factor-age requirement with the same step-up
-          refusal a weak session gets, and signing in again cannot fix that
-          one, so this is the only place that tells the operator why the
-          start keeps failing. */}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {t('impersonations.start.precondition')}
       </Typography>

@@ -1,12 +1,3 @@
-/**
- * ImpersonationsPage in a real browser: the tenant's impersonation
- * record table at the sm/md/lg floor widths with fixed data.
- *
- * The page also reads the caller's own impersonation status directly
- * over the api-sdk runtime seam; the case binds the idle answer ("none
- * in force", a bare 404) so the record half renders. The tenant is
- * seeded through the query parameter the page opens on.
- */
 import { afterEach, describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import { page, userEvent } from 'vitest/browser'
@@ -41,7 +32,6 @@ const RECORDS: readonly AdminImpersonation[] = [
   },
 ]
 
-/** The caller-session endpoint with no impersonation in force. */
 const idleCallerSession: RequestFn = <T,>(
   path: string,
   options?: RequestOptions,
@@ -70,8 +60,6 @@ describe('ImpersonationsPage horizontal overflow in Chromium', () => {
       )
       renderWithProviders(<ImpersonationsPage />, { operations, language: 'en-US' })
 
-      // The actor and the target are named by the account read's display
-      // name, never by the recorded identifier.
       await screen.findAllByText('Operator')
       expect(screen.queryByText('staff-1')).toBeNull()
       await expectNoHorizontalOverflow()
@@ -79,8 +67,6 @@ describe('ImpersonationsPage horizontal overflow in Chromium', () => {
   }
 })
 
-/** A promise the case settles by hand, so one write can be held in flight
- * across frames. */
 function deferred<T>(): {
   readonly promise: Promise<T>
   readonly resolve: (value: T) => void
@@ -92,15 +78,12 @@ function deferred<T>(): {
   return { promise, resolve }
 }
 
-/** One animation frame: the updated state has reached the DOM and the
- * browser has had its chance to react to it. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve())
   })
 }
 
-/** What currently holds focus, for a failure message. */
 function describeActiveElement(): string {
   const active = document.activeElement
   if (active === null) {
@@ -210,8 +193,6 @@ describe('ImpersonationsPage focus in Chromium', () => {
     ).toHaveFocus()
 
     pending.resolve()
-    // The grant block leaves the document; focus lands on the section's
-    // heading rather than the page body.
     const heading = await screen.findByRole('heading', {
       name: enUS.impersonations.current.title,
     })
@@ -271,8 +252,6 @@ describe('ImpersonationsPage focus in Chromium', () => {
       expect(within(end).getByRole('progressbar')).toBeInTheDocument()
     })
 
-    // The operator leaves the end control and settles on the page's refresh
-    // action while the write is still in flight.
     const elsewhere = screen.getByRole('button', { name: enUS.common.refresh })
     elsewhere.focus()
     await nextFrame()
@@ -286,7 +265,6 @@ describe('ImpersonationsPage focus in Chromium', () => {
     })
     await nextFrame()
 
-    // The landed end does not take the focus the operator chose.
     expect(
       elsewhere,
       `focus after the impersonation ended; document.activeElement is ${describeActiveElement()}`,

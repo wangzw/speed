@@ -1,13 +1,3 @@
-/**
- * DashboardPage: the admin landing.
- *
- * It derives its KPI row from the roster read (a count of tenants and the
- * active/disabled split) and its recent-activity list from the audit
- * query's newest page. Each panel renders through the admin async
- * section, so a refused read (403) shows the permission placeholder
- * without a retry and any other failure the retryable error placeholder.
- */
-
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -40,7 +30,6 @@ const COPY = zhCN.common as {
   readonly refresh: string
 }
 
-/** The marker a refused account read leaves on the recent-activity actor. */
 
 const TENANTS = [
   tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' }),
@@ -48,11 +37,6 @@ const TENANTS = [
   tenantFixture({ name: 'old', display_name: 'Old', status: 'disabled' }),
 ]
 
-/**
- * Renders the page under the shell's feature answer. The audit-backed half
- * of the dashboard exists only where audit.admin is present, so a suite
- * that expects it must say so; the default answer serves every feature.
- */
 function renderDashboard(
   options: RenderWithProvidersOptions,
   props: DashboardPageProps = {},
@@ -77,9 +61,6 @@ describe('DashboardPage', () => {
   })
 
   it('summarizes the roster in the KPI row, tombstones included', async () => {
-    // The roster read carries tombstones. The four counts partition it, so the
-    // deleted count is what keeps active, disabled and deleted adding up to the
-    // total instead of leaving a tombstone unaccounted for.
     const tenants = [
       ...TENANTS,
       tenantFixture({ name: 'gone', display_name: 'Gone', status: 'deleted' }),
@@ -97,7 +78,6 @@ describe('DashboardPage', () => {
       }
       expect(within(card as HTMLElement).getByText(String(value))).toBeInTheDocument()
     }
-    // 4 = 2 active + 1 disabled + 1 deleted, all from the whole roster read.
     count(zhCN.dashboard.kpi.tenants, 4)
     count(zhCN.dashboard.kpi.active, 2)
     count(zhCN.dashboard.kpi.disabled, 1)
@@ -149,8 +129,6 @@ describe('DashboardPage', () => {
       }),
     )
     renderDashboard({ operations })
-    // The cell renders the neutral copy with the unresolved note; the
-    // recorded id is never the visible fallback.
     const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent(zhCN.common.accountUnavailable)
     expect(cell).not.toHaveTextContent('acc-1')
@@ -169,15 +147,9 @@ describe('DashboardPage', () => {
     )
     renderDashboard({ operations })
     await screen.findByText('tenant.read')
-    // The list carries the same set as the audit query page: the outcome
-    // outranks everything so a failure stays visible on the narrowest
-    // table that still shows a prioritized column, the actor follows at
-    // md, and the object is the first column shed.
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.object })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
-    // The body cell carries its own copy of the rule; assert it too so a
-    // header/body divergence cannot pass with only the header checked.
     expect(
       columnVisibility(screen.getByText('acme').closest('td')!),
     ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
@@ -210,9 +182,6 @@ describe('DashboardPage', () => {
     renderDashboard({ operations })
     await screen.findByText(action)
 
-    // The action is the primary identity: its cap grows at md. The cap
-    // sits on the wrapper that holds the text and the copy control
-    // together, so the control is counted inside the budget.
     const actionCell = screen.getByText(action).closest('td')
     expect(actionCell).toHaveAttribute('title', action)
     expect(containerMaxWidthOf(actionCell!.firstElementChild!)).toEqual(
@@ -222,7 +191,6 @@ describe('DashboardPage', () => {
       ]),
     )
 
-    // The object and the actor hold a flat cap that does not grow.
     const objectCell = screen.getByText(object).closest('td')
     expect(objectCell).toHaveAttribute('title', object)
     expect(objectCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
@@ -245,8 +213,6 @@ describe('DashboardPage', () => {
   it('derives the platform health row from the windowed audit read', async () => {
     const operations = createAdminOperations(
       makeAdminBackend({
-        // The sign-in health read narrows by the login action; the activity
-        // read carries only the window. Each answers with its own page.
         listRecords: (params) =>
           params?.action?.includes('authn.login')
             ? Promise.resolve({
@@ -294,7 +260,6 @@ describe('DashboardPage', () => {
       name: zhCN.dashboard.health.title,
     })
     const section = health.closest('section') as HTMLElement
-    // A page that carries a next cursor is a lower bound, shown with a "+".
     expect(await within(section).findByText('1+')).toBeInTheDocument()
   })
 
@@ -324,15 +289,12 @@ describe('DashboardPage', () => {
     const section = health.closest('section') as HTMLElement
     await within(section).findByText(zhCN.dashboard.health.activity)
     const initial = healthWindows[0]!
-    // Both health reads share the window they were opened with.
     expect(healthWindows).toEqual([initial, initial])
 
     await user.click(
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
 
-    // The refresh re-reads both health reads under a later window start
-    // rather than re-reading the old window again.
     await waitFor(() => {
       expect(
         healthWindows.filter(
@@ -372,7 +334,6 @@ describe('DashboardPage', () => {
         setDocumentVisibility('hidden')
         window.dispatchEvent(new Event('visibilitychange'))
       })
-      // Going hidden is not a moment the page reads.
       expect(
         healthWindows.filter((since) => Date.parse(since) > Date.parse(initial)),
       ).toHaveLength(0)
@@ -425,7 +386,6 @@ describe('DashboardPage', () => {
     act(() => {
       window.dispatchEvent(new Event('offline'))
     })
-    // Losing the connection is not a moment the page reads.
     expect(
       healthWindows.filter((since) => Date.parse(since) > Date.parse(initial)),
     ).toHaveLength(0)
@@ -498,7 +458,6 @@ describe('DashboardPage', () => {
       name: zhCN.dashboard.health.title,
     })
     const section = health.closest('section') as HTMLElement
-    // Settled: two successful sign-ins and one audit record.
     expect(await within(section).findByText('2')).toBeInTheDocument()
     expect(within(section).getByText('1')).toBeInTheDocument()
 
@@ -506,8 +465,6 @@ describe('DashboardPage', () => {
       screen.getByRole('button', { name: zhCN.common.refresh }),
     )
 
-    // The new window's read is in flight: the settled numbers stay on
-    // screen, and the in-flight read carries the advanced window.
     await waitFor(() => expect(releaseActivity).toBeDefined())
     expect(Date.parse(pendingActivitySince!)).toBeGreaterThan(
       Date.parse(initialActivitySince!),
@@ -577,9 +534,6 @@ describe('DashboardPage', () => {
     const { queryClient } = renderDashboard({ operations })
     await screen.findByText('tenant.read')
 
-    // The page's body reads: the roster and the three audit reads (the
-    // recent list and the two health windows). The account identity read
-    // inside the actor cell is not a body read and does not count.
     const bodyReads = () =>
       queryClient.getQueryCache().getAll().filter((query) => {
         const key = query.queryKey
@@ -628,9 +582,6 @@ describe('DashboardPage', () => {
     const status = within(header).getByRole('status')
     expect(status.textContent).toBe('')
 
-    // The tab becoming visible again is an automatic re-read moment: the
-    // page moves the health window and the query client re-reads on the
-    // visibility change, and neither announces.
     act(() => {
       focusManager.setFocused(false)
     })
@@ -653,7 +604,6 @@ describe('DashboardPage', () => {
     )
     renderDashboard({ operations }, {}, () => false)
 
-    // The roster row is not gated; the health row and the recent list are.
     expect(
       await screen.findByText(zhCN.dashboard.kpi.tenants),
     ).toBeInTheDocument()
@@ -669,8 +619,6 @@ describe('DashboardPage', () => {
         name: zhCN.dashboard.recent.title,
       }),
     ).toBeNull()
-    // A feature-absent deployment serves no audit query, so the page issues
-    // no audit read: the reads live in the section that is not mounted.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -704,8 +652,6 @@ describe('DashboardPage', () => {
           }),
       }),
     )
-    // The admin mounted at the origin matches the dashboard at '/', which
-    // contributes no prefix below it.
     renderDashboard({ operations }, { rootHref: '/' })
 
     expect(

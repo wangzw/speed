@@ -1,20 +1,3 @@
-/**
- * ImpersonationsPage: the impersonation administration page.
- *
- * The page carries two surfaces over one page: the operator's own
- * impersonation session on /api/v1/auth/impersonation (the status read, the start
- * form and the end action -- the caller-session operations the page calls
- * directly), and the tenant's record list on /api/v1/system/tenants/{tenant}/impersonations
- * (through the scripted operations bundle).
- *
- * The caller-session half is exercised over the api-sdk runtime seam: the
- * suite binds a scripted request function (bindRequestFn) that answers the
- * three /api/v1/auth/impersonation calls, so the real generated hooks run against
- * responses the test controls -- the "no impersonation" 404, a grant in
- * force, a started record. The administration half runs on the scripted
- * operations bundle, as the other admin suites do.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, within } from '@testing-library/react'
@@ -46,10 +29,8 @@ import enUS from './locales/en-US.json' with { type: 'json' }
 
 const TENANT = tenantFixture({ name: 'acme', display_name: 'Acme', status: 'active' })
 
-/** The end-reason labels a test injects into the namespace. */
 const END_REASON_LABELS = { revoked: 'end-reason-revoked' } as const
 
-/** Fills a locale template's placeholders with the values under test. */
 function fill(
   template: string,
   values: Readonly<Record<string, string>>,
@@ -60,17 +41,14 @@ function fill(
   )
 }
 
-/** The account reference a notice inserts for a resolved display name. */
 function byName(name: string): string {
   return fill(zhCN.common.accountReference.name, { name })
 }
 
-/** The account reference a notice inserts for an identifier alone. */
 function byIdentifier(identifier: string): string {
   return fill(zhCN.common.accountReference.identifier, { identifier })
 }
 
-/** The account reference a notice inserts when both resolve. */
 function byNameAndIdentifier(name: string, identifier: string): string {
   return fill(zhCN.common.accountReference.nameWithIdentifier, {
     name,
@@ -78,15 +56,12 @@ function byNameAndIdentifier(name: string, identifier: string): string {
   })
 }
 
-/** The in-force panel's target line: its prefixed label beside the name. */
 function targetLine(name: string): string {
   return `${zhCN.impersonations.current.target}${name}`
 }
 
-/** The line that replaces the record half while an impersonation is in force. */
 const RECORDS_UNAVAILABLE = zhCN.impersonations.recordsUnavailable
 
-/** The caller-session grant the status read answers with when one is in force. */
 interface GrantFixture {
   readonly id: string
   readonly target: string
@@ -95,13 +70,6 @@ interface GrantFixture {
   readonly ends_at: string
 }
 
-/**
- * A scripted /api/v1/auth/impersonation endpoint over the api-sdk runtime seam.
- * The status read answers a bare 404 ("no impersonation in force") until the
- * backend holds a grant; a start records its body and puts a grant in force;
- * an end clears it. The test drives the page and asserts the requests it made
- * by reading `started`, `ended` and `statusReads`.
- */
 function makeCallerSessionBackend() {
   let grant: GrantFixture | undefined
   const started: unknown[] = []
@@ -149,7 +117,6 @@ function makeCallerSessionBackend() {
   }
 }
 
-/** The idle caller-session endpoint: no impersonation in force. */
 const idleCallerSession: RequestFn = <T,>(
   _path: string,
   options?: RequestOptions,
@@ -180,7 +147,6 @@ async function pickTenant(user: ReturnType<typeof userEvent.setup>): Promise<voi
   await user.click(await screen.findByRole('option', { name: 'Acme' }))
 }
 
-/** A promise the test settles by hand, for observing an in-flight write. */
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => {
@@ -189,11 +155,6 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-/**
- * Asserts the header refresh is inert while a write is in flight: disabled
- * without the empty-scope explanation, and a forced activation issues no
- * read (the status read and the record read are counted together).
- */
 async function expectRefreshInert(
   countReads: () => readonly [number, number],
   readsBefore: readonly [number, number],
@@ -210,10 +171,6 @@ async function expectRefreshInert(
   expect(countReads()).toEqual(readsBefore)
 }
 
-/**
- * The display name the account read answers for the identifiers the page
- * records, so a test can tell a resolved identity from the raw id.
- */
 const ACCOUNT_NAMES: Record<string, string> = {
   'staff-1': 'Staff One',
   'acc-1': 'Target One',
@@ -221,7 +178,6 @@ const ACCOUNT_NAMES: Record<string, string> = {
   'acc-9': 'Target Nine',
 }
 
-/** The accounts the start form's picker can find. */
 const START_ACCOUNTS: readonly AdminAccount[] = [
   accountFixture({
     id: 'acc-1',
@@ -239,7 +195,6 @@ const START_ACCOUNTS: readonly AdminAccount[] = [
   }),
 ]
 
-/** Chooses the start form's target through the shared account picker. */
 async function pickStartAccount(
   user: ReturnType<typeof userEvent.setup>,
   id: string,
@@ -286,16 +241,11 @@ function withPage(
 }
 
 beforeEach(() => {
-  // Every test starts with the caller-session endpoint answering "no
-  // impersonation"; a test that scripts a grant rebinds below.
   bindRequestFn(idleCallerSession)
 })
 
 describe('ImpersonationsPage', () => {
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
-    // The terminate control exists only on the record half, which renders
-    // while no impersonation is in force; the end control exists only while
-    // one is.
     const user = userEvent.setup()
     const idle = renderWithProviders(
       <ImpersonationsPage />,
@@ -337,8 +287,6 @@ describe('ImpersonationsPage', () => {
     try {
       const operations = withPage()
       renderWithProviders(<ImpersonationsPage />, { operations })
-      // The link that carried the tenant arrives with a selection already
-      // made: no "choose a tenant" prompt, and the list read runs for it.
       expect(await screen.findByText(zhCN.impersonations.empty.title)).toBeInTheDocument()
       expect(screen.queryByText(zhCN.impersonations.needTenant.title)).toBeNull()
     } finally {
@@ -361,8 +309,6 @@ describe('ImpersonationsPage', () => {
     })
     renderWithProviders(<ImpersonationsPage />, { operations })
     await pickTenant(user)
-    // The actor and target columns show the readable identities, not the
-    // recorded ids.
     expect(await screen.findByText('Staff One')).toBeInTheDocument()
     expect(screen.getByText('Target One')).toBeInTheDocument()
     expect(screen.getByText(zhCN.impersonations.inForce)).toBeInTheDocument()
@@ -379,10 +325,6 @@ describe('ImpersonationsPage', () => {
 
     const header = (label: string): Element =>
       screen.getByRole('columnheader', { name: label })
-    // The target is the record's primary identity: no priority, shared cap.
-    // The page is tenant-scoped, so the tenant is the first column shed;
-    // the actor joins at md; the ends column and the tenant at lg; the
-    // row actions never hide.
     expect(columnVisibility(header(zhCN.impersonations.column.actor))).toEqual({
       hiddenAt: 0,
       visibleFrom: 900,
@@ -403,10 +345,6 @@ describe('ImpersonationsPage', () => {
     })
     expect(columnVisibility(header(zhCN.impersonations.column.actions))).toBeNull()
 
-    // The primary identity carries the shared whole-cell cap (160px below
-    // `md`, 200px from `md` up); the long-text actor carries the flat
-    // 160px one. Both count the copy control, so the complete recorded id
-    // stays reachable while the cell stays inside the tier budget.
     const targetCell = screen.getByText('Target One').closest('td')
     expect(targetCell).not.toBeNull()
     expect(containerMaxWidthOf(targetCell!.firstElementChild as Element)).toEqual(
@@ -418,17 +356,12 @@ describe('ImpersonationsPage', () => {
     const actorCell = screen.getByText('Staff One').closest('td')
     expect(actorCell).not.toBeNull()
     expect(actorCell!.firstElementChild).toHaveStyle({ maxWidth: '160px' })
-    // The recorded account id is not offered as a copy value.
     expect(
       within(actorCell as HTMLElement).queryByRole('button'),
     ).toBeNull()
   })
 
   it('keeps the recorded ids marked unresolved when the account read is refused', async () => {
-    // Every account identifier the page shows keeps the recorded id,
-    // labelled unresolved rather than passed off as a resolved identity.
-    // The two surfaces do not render together -- the record half is closed
-    // while an impersonation is in force -- so each is checked on its own.
     const user = userEvent.setup()
     const recordHalf = renderWithProviders(<ImpersonationsPage />, {
       operations: withPage({
@@ -509,9 +442,6 @@ describe('ImpersonationsPage', () => {
       name: zhCN.impersonations.terminate,
     })
 
-    // The record has already ended, so the control is unavailable; it stays
-    // focusable and names the reason instead of turning natively disabled
-    // (REQ-presentation-041).
     terminate.focus()
     expect(terminate).toHaveFocus()
     expect(terminate).toHaveAttribute('aria-disabled', 'true')
@@ -519,7 +449,6 @@ describe('ImpersonationsPage', () => {
       zhCN.impersonations.terminateEnded,
     )
 
-    // Every activation path refuses: click, Enter and Space send nothing.
     await user.click(terminate)
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
@@ -537,8 +466,6 @@ describe('ImpersonationsPage', () => {
     const submit = screen.getByRole('button', {
       name: zhCN.impersonations.start.submit,
     })
-    // No tenant and no account: the control stays focusable and points at
-    // the page's own selection hint.
     submit.focus()
     expect(submit).toHaveFocus()
     expect(submit).toHaveAttribute('aria-disabled', 'true')
@@ -546,8 +473,6 @@ describe('ImpersonationsPage', () => {
       zhCN.impersonations.start.tenantHint,
     )
 
-    // With a tenant chosen the remaining gap is the account, which has its
-    // own reason.
     await pickTenant(user)
     const withTenant = screen.getByRole('button', {
       name: zhCN.impersonations.start.submit,
@@ -589,18 +514,13 @@ describe('ImpersonationsPage', () => {
     await waitForCondition(() => {
       expect(ended).toEqual(['imp-1'])
     })
-    // A termination can change what the operator's own status read names,
-    // so it is re-read alongside the record list the bundle invalidates.
     await waitForCondition(() => expect(statusReads).toBeGreaterThan(1))
   })
 
-  // Every impersonation success notice names the account in the shared four
-  // shapes and never by its opaque id.
   const NOTICE_IDENTIFIERS: AdminAccount['identifiers'] = [
     { kind: 'username', value: 'ada', proven: false, sign_in: true, contact: false, default_contact: false },
   ]
 
-  /** The account read the page resolves an identity through, by account id. */
   function identityBackend(
     displayName: string,
     identifiers: AdminAccount['identifiers'],
@@ -615,7 +535,6 @@ describe('ImpersonationsPage', () => {
       )
   }
 
-  /** Waits for `account`'s identity read to land before the action captures it. */
   async function settleIdentity(
     getAccount: ReturnType<typeof vi.fn>,
     account: string,
@@ -820,8 +739,6 @@ describe('ImpersonationsPage', () => {
     await user.click(terminate(first as Element))
     expect(revokeImpersonation).toHaveBeenCalledTimes(1)
 
-    // A row that shares the scope is unavailable without a reason: the
-    // reason belongs to the record whose termination is running.
     const sibling = terminate(second as Element)
     expect(sibling).toHaveAttribute('aria-disabled', 'true')
     expect(sibling).not.toHaveAttribute('aria-busy', 'true')
@@ -980,12 +897,6 @@ describe('ImpersonationsPage', () => {
   })
 
   it('leaves the caller-session surface ungated by the feature judgement', async () => {
-    // The design's gating table is exhaustive, and the caller-session
-    // surface is not on it. The impersonation declaration names
-    // `authn.impersonation` in `requires`, so the host narrows the route
-    // table before this page renders; a page-level gate would be a second,
-    // half gate that leaves the status read and the end control running
-    // beside a hidden start form.
     const user = userEvent.setup()
     const operations = withPage({
       listImpersonations: () => Promise.resolve([record()]),
@@ -1005,7 +916,6 @@ describe('ImpersonationsPage', () => {
       screen.getByRole('button', { name: zhCN.impersonations.start.submit }),
     ).toBeInTheDocument()
 
-    // The record half is a separate administration surface and still runs.
     await pickTenant(user)
     expect(await screen.findByText('Staff One')).toBeInTheDocument()
   })
@@ -1074,7 +984,6 @@ describe('ImpersonationsPage', () => {
     await expectNoAxeViolations()
   })
 
-  // --- The caller's own impersonation session (/api/v1/auth/impersonation) -------
 
   it('shows the not-impersonating state and the start form when no impersonation is in force', async () => {
     renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
@@ -1082,15 +991,9 @@ describe('ImpersonationsPage', () => {
       await screen.findByText(zhCN.impersonations.current.none),
     ).toBeInTheDocument()
     expect(screen.getByLabelText(zhCN.impersonations.start.accountLabel)).toBeInTheDocument()
-    // The start form states its precondition beside the controls: the
-    // The server's refusal cannot tell an unmet factor-age requirement from a
-    // weak session, so the page states the requirement instead of naming a
-    // cause; only this text warns that signing in again will not help.
     expect(
       screen.getByText(zhCN.impersonations.start.precondition),
     ).toBeInTheDocument()
-    // The start form takes its target tenant from the page's one tenant
-    // selector; it carries no second, free-text tenant input of its own.
     expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
     expect(screen.queryByLabelText('Tenant identifier')).toBeNull()
     expect(
@@ -1111,12 +1014,8 @@ describe('ImpersonationsPage', () => {
         language,
         operations: withPage(),
       })
-      // The expected text comes from the locale bundle, so this fails if the
-      // shipped copy and the assertion drift apart.
       const rendered = await screen.findByText(copy)
       const text = rendered.textContent ?? ''
-      // The configuration key is an implementation detail; the deployment sets
-      // the wait, so the copy must not name the key or pin an hour figure.
       expect(text).not.toContain('authn.mfa')
       expect(text).not.toContain('sensitive-min-age')
       expect(text).not.toMatch(/\d+\s*(?:hours?|hrs?|h\b|小时)/i)
@@ -1135,8 +1034,6 @@ describe('ImpersonationsPage', () => {
     const submit = screen.getByRole('button', { name: zhCN.impersonations.start.submit })
     expect(submit).toHaveAttribute('aria-disabled', 'true')
     fireEvent.click(submit)
-    // An unavailable control refuses activation; flush the queue so an
-    // accidental request would have landed before the assertion.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -1172,8 +1069,6 @@ describe('ImpersonationsPage', () => {
         },
       ])
     })
-    // The landed start invalidates the status read, so the page converges on
-    // the record the server just wrote: the in-force panel replaces the form.
     expect(await screen.findByText(targetLine('Target One'))).toBeInTheDocument()
     expect(
       screen.queryByLabelText(zhCN.impersonations.start.accountLabel),
@@ -1200,7 +1095,6 @@ describe('ImpersonationsPage', () => {
     const backend = makeCallerSessionBackend()
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
-    // The host's action never settles: the page must not wait for it.
     const onChange = vi.fn(() => new Promise<void>(() => undefined))
     renderWithProviders(
       <AdminImpersonationChangeProvider onImpersonationChange={onChange}>
@@ -1216,7 +1110,6 @@ describe('ImpersonationsPage', () => {
 
     await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('started'))
     expect(onChange).toHaveBeenCalledTimes(1)
-    // The success copy rendered while the host action is still pending.
     expect(
       await screen.findByText(fill(zhCN.impersonations.current.started, { account: byName('Target One') })),
     ).toBeInTheDocument()
@@ -1240,8 +1133,6 @@ describe('ImpersonationsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
     await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('started'))
-    // No failure rendering: the start landed, and the host's own failure is
-    // not the page's to report.
     expect(
       await screen.findByText(fill(zhCN.impersonations.current.started, { account: byName('Target One') })),
     ).toBeInTheDocument()
@@ -1301,8 +1192,6 @@ describe('ImpersonationsPage', () => {
       }
       if (method === 'DELETE') {
         deletes += 1
-        // Already ended elsewhere: the end answers the bare 404, and the
-        // status read that follows sees nothing in force.
         inForce = false
         return Promise.reject({ status: 404, code: 'client.http.404' })
       }
@@ -1325,8 +1214,6 @@ describe('ImpersonationsPage', () => {
 
     await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('ended'))
     expect(deletes).toBe(1)
-    // The same closing path a successful end takes: the success copy, no
-    // failure banner, and the section lands on "not impersonating".
     expect(
       await screen.findByText(fill(zhCN.impersonations.current.ended, { account: byName('Target Seven') })),
     ).toBeInTheDocument()
@@ -1355,7 +1242,6 @@ describe('ImpersonationsPage', () => {
         fill(zhCN.impersonations.current.tenant, { tenant: 'acme' }),
       ),
     ).toBeInTheDocument()
-    // The start form is offered only while none is in force.
     expect(screen.queryByLabelText(zhCN.impersonations.start.accountLabel)).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
@@ -1374,8 +1260,6 @@ describe('ImpersonationsPage', () => {
         return Promise.resolve(undefined as T)
       }
       reads += 1
-      // The first read names a grant; a later read answers the bare 404
-      // the endpoint writes when nothing is in force.
       return reads === 1
         ? Promise.resolve({
             grant: {
@@ -1395,8 +1279,6 @@ describe('ImpersonationsPage', () => {
     expect(await screen.findByText(targetLine('Target One'))).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
 
-    // The 404 is the settled answer "not impersonating": the cached grant
-    // is discarded, and nothing renders as a failure or a stale marker.
     expect(await screen.findByText(zhCN.impersonations.current.none)).toBeInTheDocument()
     expect(screen.queryByText(targetLine('Target One'))).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
@@ -1410,9 +1292,6 @@ describe('ImpersonationsPage', () => {
       starts_at: '2026-10-15T12:00:00Z',
       ends_at: '2026-10-15T13:00:00Z',
     }
-    // The first status read names the grant; after the end, the re-read is
-    // held open so the test can see whether the cached grant was dropped
-    // before the next answer arrived.
     let phase: 'in-force' | 'ended' = 'in-force'
     let releaseRead: () => void = () => undefined
     const endRead = new Promise<void>((resolve) => {
@@ -1449,21 +1328,14 @@ describe('ImpersonationsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
     await waitForCondition(() => expect(ended).toBe(1))
 
-    // The end resets the status cache and re-reads it: the retired grant is
-    // gone from the screen while the new read is still in flight (an
-    // invalidate would keep it there until the refetch settled).
     await waitForCondition(() => {
       expect(screen.queryByText(targetLine('Target Seven'))).toBeNull()
     })
     expect(reads).toBeGreaterThan(1)
 
     releaseRead()
-    // The re-read answers the bare 404: the settled "not impersonating"
-    // state, not an error.
     expect(await screen.findByText(zhCN.impersonations.current.none)).toBeInTheDocument()
 
-    // The confirmation names the account the end changed, and it lives in
-    // the current-impersonation section.
     const section = screen
       .getByRole('heading', { name: zhCN.impersonations.current.title })
       .closest('section')
@@ -1486,17 +1358,10 @@ describe('ImpersonationsPage', () => {
     await pickTenant(user)
     await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
-    // A start writes a record into the tenant's list as well, so the list
-    // is re-read (the read ran once when the tenant was selected).
     await waitForCondition(() =>
       expect(listImpersonations.mock.calls.length).toBeGreaterThan(1),
     )
 
-    // The landed start replaces the form with the in-force panel; the
-    // confirmation is not unmounted with the form that produced it. The
-    // server's grant names an account other than the typed one, so the
-    // notice resolves no identity and stays neutral rather than borrowing
-    // the typed account's name or inserting either recorded id.
     const startedNotice = await screen.findByText(
       zhCN.impersonations.current.startedUnnamed,
     )
@@ -1534,9 +1399,6 @@ describe('ImpersonationsPage', () => {
       }
       if (path === '/api/v1/auth/impersonation' && method === 'POST') {
         posts.push(options?.body)
-        // The first refusal is the strength shortfall the gate takes over;
-        // the replayed write is answered with an ordinary refusal, which is
-        // the only one the section reports.
         return posts.length === 1
           ? Promise.reject({
               status: 401,
@@ -1565,9 +1427,6 @@ describe('ImpersonationsPage', () => {
     await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
-    // The first refusal settled without touching the slot (no banner for
-    // it), the dialog elevated, and the replay re-fired the same body as a
-    // new run whose refusal is what the section shows.
     expect(
       await screen.findByText(zhCN.errors.authn.forbidden),
     ).toBeInTheDocument()
@@ -1576,12 +1435,8 @@ describe('ImpersonationsPage', () => {
     expect(posts[0]).toEqual({ account: 'acc-9', tenant: 'acme' })
   })
 
-  // --- The impersonation-starting seam -----------------------------------
 
   it('fires the starting hook before the request and leaves a landed start to the host', async () => {
-    // The POST stays in flight until the test settles it: the starting hook
-    // must have been called by then, which pins "before mutateAsync"
-    // (a hook fired on settlement would still read zero here).
     const pending = deferred<unknown>()
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
@@ -1630,8 +1485,6 @@ describe('ImpersonationsPage', () => {
     })
 
     await waitForCondition(() => expect(onChange).toHaveBeenCalledWith('started'))
-    // A landed write is the host's to release once its change action
-    // settles; the page never releases it.
     expect(release).not.toHaveBeenCalled()
   })
 
@@ -1732,21 +1585,14 @@ describe('ImpersonationsPage', () => {
     await pickStartAccount(user, 'acc-9')
     await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
 
-    // The gate took the first refusal over and the replay is a new run, so
-    // the hook fired again; the blocked attempt's release ran, the landed
-    // replay's did not.
     await waitForCondition(() => expect(starting).toHaveBeenCalledTimes(2))
     expect(releases[0]).toHaveBeenCalledTimes(1)
     expect(releases[1]).not.toHaveBeenCalled()
     expect(posts[1]).toEqual(posts[0])
   })
 
-  // --- The refusal of an impersonation-restricted write ------------------
 
   it('renders the impersonation-restricted refusal without naming one cause', async () => {
-    // The code answers several refusals -- the common one is a target that
-    // is not a member of the organization -- so the text states the requirements
-    // side by side instead of naming the rarest cause.
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
       if (path === '/api/v1/auth/impersonation' && method === 'GET') {
@@ -1773,10 +1619,6 @@ describe('ImpersonationsPage', () => {
 
     const alert = await screen.findByRole('alert')
     const rendered = alert.textContent ?? ''
-    // The refusal is the restricted-impersonation message itself: it names
-    // every requirement as a peer instead of picking one out as the cause.
-    // The "during an impersonation" reading of the old text is gone in both
-    // languages.
     expect(rendered).toContain(zhCN.errors.authn.impersonation_restricted)
     expect(rendered).not.toContain('during an impersonation')
     expect(rendered).not.toContain('while impersonating')
@@ -1826,7 +1668,6 @@ describe('ImpersonationsPage', () => {
     expect(rendered).not.toContain('while impersonating')
   })
 
-  // --- The record half while an impersonation is in force ----------------
 
   it('collapses the record half and issues no record read when a grant is in force', async () => {
     const backend = makeCallerSessionBackend()
@@ -1839,8 +1680,6 @@ describe('ImpersonationsPage', () => {
     })
     bindRequestFn(backend.fn)
     const listImpersonations = vi.fn(() => Promise.resolve([record()]))
-    // The tenant is already chosen, so only the status read stands between
-    // the page and a record read.
     window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     try {
       renderWithProviders(<ImpersonationsPage />, {
@@ -1850,13 +1689,10 @@ describe('ImpersonationsPage', () => {
       expect(
         await screen.findByText(targetLine('Target One')),
       ).toBeInTheDocument()
-      // The one line replaces the selector, the list and its controls.
       expect(screen.getByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
       expect(screen.queryByLabelText(zhCN.common.tenant)).toBeNull()
       expect(screen.queryByText(zhCN.impersonations.empty.title)).toBeNull()
       expect(screen.queryByRole('button', { name: zhCN.impersonations.terminate })).toBeNull()
-      // The reads would be refused through the impersonated identity, so
-      // they are not issued at all.
       expect(listImpersonations).not.toHaveBeenCalled()
     } finally {
       window.history.replaceState({}, '', '/')
@@ -1869,7 +1705,6 @@ describe('ImpersonationsPage', () => {
       options?: RequestOptions,
     ) => {
       if (path === '/api/v1/auth/impersonation' && (options?.method ?? 'GET') === 'GET') {
-        // Never settles: the status stays unknown for the whole test.
         return new Promise<T>(() => undefined)
       }
       return Promise.resolve(undefined as T)
@@ -1878,8 +1713,6 @@ describe('ImpersonationsPage', () => {
     window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
     try {
       renderWithProviders(<ImpersonationsPage />, { operations: withPage() })
-      // "Status unknown" is not "impersonating": the record surface renders
-      // as it always has.
       expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
       expect(
         screen.getByRole('status', { name: zhCN.impersonations.loading }),
@@ -1927,8 +1760,6 @@ describe('ImpersonationsPage', () => {
       if (reads <= 2) {
         return Promise.resolve([record()])
       }
-      // The read the returning surface issues is held open, so the test can
-      // see whether the pre-impersonation list leaks back as current.
       return held.then(() => [record({ target: 'acc-7' })])
     })
     window.history.replaceState({}, '', '/admin/impersonations?tenant=acme')
@@ -1938,20 +1769,15 @@ describe('ImpersonationsPage', () => {
         operations: withPage({ listImpersonations }),
       })
 
-      // The list is read before any impersonation starts.
       expect(await screen.findByText('Staff One')).toBeInTheDocument()
 
       await pickStartAccount(user, 'acc-9')
       await user.click(screen.getByRole('button', { name: zhCN.impersonations.start.submit }))
-      // Once the status read lands on the grant, the record half is closed.
       expect(await screen.findByText(RECORDS_UNAVAILABLE)).toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: zhCN.impersonations.current.end }))
       await waitForCondition(() => expect(backend.ended).toHaveLength(1))
 
-      // The surface returns without a refresh and issues a new read. The
-      // cached pre-impersonation list is gone while that read is in flight:
-      // it describes a state the end just changed.
       await waitForCondition(() => expect(reads).toBe(3))
       expect(screen.queryByText(RECORDS_UNAVAILABLE)).toBeNull()
       expect(screen.getByLabelText(zhCN.common.tenant)).toBeInTheDocument()
@@ -1962,8 +1788,6 @@ describe('ImpersonationsPage', () => {
 
       release()
       expect(await screen.findByText('Target Seven')).toBeInTheDocument()
-      // The old record's target is gone: the list is the one the returning
-      // surface read, not the pre-impersonation page it replaced.
       expect(screen.queryByText('Target One')).toBeNull()
     } finally {
       window.history.replaceState({}, '', '/')
@@ -1971,9 +1795,6 @@ describe('ImpersonationsPage', () => {
   })
 
   it('renders an unseasoned-factor refusal in the current scope without a step-up dialog', async () => {
-    // The 403 is not the step-up's 401: no re-authentication clears it, so the
-    // attempt settles as an ordinary write failure in the section's own
-    // region and the dialog must not open.
     const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
       if (path === '/api/v1/auth/factors') {
@@ -2017,8 +1838,6 @@ describe('ImpersonationsPage', () => {
     expect(
       await screen.findByText(zhCN.errors.authn.factor_not_seasoned),
     ).toBeInTheDocument()
-    // The refusal stays in the current-impersonation section's region: the
-    // section that owns the start form, not the record table's.
     const section = screen
       .getByRole('heading', { name: zhCN.impersonations.current.title })
       .closest('section')

@@ -1,5 +1,3 @@
-/** AccountsPage suite: writes through the operations bundle, step-up and one-time secrets. */
-
 import { describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { screen, waitFor, within } from '@testing-library/react'
@@ -52,9 +50,6 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    // The status control is seeded from the account (active), so the save
-    // is unavailable until the operator picks a different status: a stray
-    // click can never disable an account the operator did not mean to.
     const save = await screen.findByRole('button', { name: zhCN.accounts.status.submit })
     expect(save).toHaveAttribute('aria-disabled', 'true')
     await user.click(screen.getByLabelText(zhCN.accounts.status.label))
@@ -75,8 +70,6 @@ describe('AccountsPage', () => {
     await user.click(screen.getByLabelText(zhCN.accounts.status.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(screen.getByRole('button', { name: zhCN.accounts.status.submit }))
-    // The landed write fills the page's standing status region, so a
-    // successful save is confirmed rather than silent.
     expect(await screen.findByText(STATUS_SAVED)).toBeInTheDocument()
   })
 
@@ -96,9 +89,6 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await screen.findByText('Ada')
 
-    // The two rows' manage/delete controls carry each account's readable
-    // identity in their accessible name -- no two identical "Delete"
-    // buttons and no account id.
     expect(
       screen.getByRole('button', {
         name: fill(zhCN.accounts.manageAria, { name: 'Ada' }),
@@ -121,9 +111,6 @@ describe('AccountsPage', () => {
       setAccountStatus: (input) => {
         calls.push(input)
         attempts += 1
-        // The first write is refused for a strength shortfall (a 401 while
-        // the session is still established); the replay after elevation
-        // succeeds.
         return attempts === 1 ? Promise.reject(stepUpRefusal()) : Promise.resolve(accountFixture())
       },
     })
@@ -133,8 +120,6 @@ describe('AccountsPage', () => {
     await user.click(screen.getByLabelText(zhCN.accounts.status.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)
-    // The refusal opens the re-auth dialog rather than a plain error, and
-    // the write is replayed exactly once.
     await waitForCondition(() => {
       expect(startFlow).toHaveBeenCalled()
     })
@@ -144,7 +129,6 @@ describe('AccountsPage', () => {
         { id: 'acc-1', status: 'disabled' },
       ])
     })
-    // The step-up elevated the session; it did not sign the operator out.
     expect(session.getSnapshot().state).toBe('authenticated')
   })
 
@@ -162,8 +146,6 @@ describe('AccountsPage', () => {
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)
 
-    // The dialog names the enterprise sign-in and offers only the re-login
-    // exit; it starts no local step-up flow and lists no factor.
     expect(await screen.findByText(zhCN.stepUp.ssoRequired)).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: zhCN.stepUp.relogin }),
@@ -194,8 +176,6 @@ describe('AccountsPage', () => {
     await user.click(screen.getByLabelText(zhCN.accounts.status.label))
     await user.click(await screen.findByRole('option', { name: zhCN.accounts.status.disabled }))
     await user.click(save)
-    // A 401 on a session that already ended is not a strength shortfall:
-    // the write fires once, no re-auth dialog opens, and no replay happens.
     await waitForCondition(() => {
       expect(calls.length).toBe(1)
     })
@@ -216,8 +196,6 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    // The control is seeded from the account (not required), so the save is
-    // unavailable until the requirement changes.
     const save = await screen.findByRole('button', { name: zhCN.accounts.mfa.submit })
     expect(save).toHaveAttribute('aria-disabled', 'true')
     await user.click(screen.getByLabelText(zhCN.accounts.mfa.label))
@@ -239,8 +217,6 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    // The display-name field is seeded from the account, and the save is
-    // unavailable until it changes.
     const name = await screen.findByLabelText(zhCN.accounts.patch.displayNameLabel)
     expect(name).toHaveValue('Operator')
     expect(
@@ -258,9 +234,6 @@ describe('AccountsPage', () => {
     const user = userEvent.setup()
     const calls: AdminPatchAccountInput[] = []
     const operations = withAccounts({
-      // A protected account: selecting the unchanged sentinel must not
-      // write the opposite (protected:false), which would silently drop the
-      // account's impersonation guard.
       getAccount: () => Promise.resolve(accountFixture({ protected: true })),
       patchAccount: (input) => {
         calls.push(input)
@@ -269,8 +242,6 @@ describe('AccountsPage', () => {
     })
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
-    // Move the display name so the save fires; leave the protected control at
-    // its sentinel.
     const name = await screen.findByLabelText(zhCN.accounts.patch.displayNameLabel)
     await user.clear(name)
     await user.type(name, 'Ada II')
@@ -371,9 +342,6 @@ describe('AccountsPage', () => {
       ).not.toBeInTheDocument(),
     )
 
-    // The confirmation closed together with the panel; the panel's own
-    // close control unmounted with it, so focus belongs on the control
-    // that opened the panel.
     await waitFor(() => expect(trigger).toHaveFocus())
   })
 
@@ -436,11 +404,8 @@ describe('AccountsPage', () => {
     })
     await openDetail(user)
     const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
-    // The account read itself is not gated here: the page's route is.
     await within(panel).findByText(DISPLAY_NAME_OPERATOR)
 
-    // No heading, table or control belonging to the three faces, and none
-    // of their reads was issued.
     for (const title of [
       zhCN.accounts.factors.title,
       zhCN.accounts.secrets.title,
@@ -461,7 +426,6 @@ describe('AccountsPage', () => {
     expect(listAccountSecrets).not.toHaveBeenCalled()
     expect(listAccountSessions).not.toHaveBeenCalled()
 
-    // The ungated write groups stay: status, patch and identifier add.
     for (const label of [
       zhCN.accounts.status.submit,
       zhCN.accounts.patch.submit,
@@ -477,7 +441,6 @@ describe('AccountsPage', () => {
       listAccountFactors: () =>
         Promise.resolve([
           { kind: 'totp', label: 'Authenticator', status: 'active' },
-          // Values the closed set does not carry stay readable as written.
           {
             kind: 'hardware',
             label: 'Key',

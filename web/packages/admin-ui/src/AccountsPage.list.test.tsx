@@ -1,5 +1,3 @@
-/** AccountsPage suite: list read, search, filtering and paging cases. */
-
 import { describe, expect, it, vi } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -50,12 +48,8 @@ describe('AccountsPage', () => {
   })
 
   it('keeps its short-value and identity columns on one line', async () => {
-    // The status cell must not split the active-status label across two
-    // lines, and a display name with a space must not break at it. jsdom does
-    // no layout, so the proof is the declared `white-space: nowrap` on the
-    // rendered cells; the table's TableContainer scroll is what absorbs the
-    // resulting width (asserted in ui-kit's DataTable suite). The account id
-    // is not a column and is not copyable.
+    // jsdom does no layout, so the proof is `white-space: nowrap` on the
+    // rendered cells; the TableContainer scroll absorbs the width.
     const user = userEvent.setup()
     const operations = withAccounts()
     renderWithProviders(<AccountsPage />, { operations })
@@ -147,7 +141,6 @@ describe('AccountsPage', () => {
     await waitForCondition(() => {
       const call = calls.find((entry) => entry.path === '/api/v1/system/auth/accounts')
       expect(call).toBeDefined()
-      // No filter is set, so the call carries the page size and nothing else.
       expect(call?.query ?? {}).toEqual({ limit: 100 })
     })
   })
@@ -202,8 +195,6 @@ describe('AccountsPage', () => {
   })
 
   it('drops the list result when the page changes', async () => {
-    // A page move is a change of the list's context: the previous page's
-    // refused row action does not describe the page now shown.
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -239,8 +230,6 @@ describe('AccountsPage', () => {
   })
 
   it('drops the list result when a filter is submitted', async () => {
-    // A submitted filter is a new list: the result written under the
-    // previous filter does not describe it.
     const user = userEvent.setup()
     const operations = createAdminOperations(
       makeAdminBackend({
@@ -290,8 +279,6 @@ describe('AccountsPage', () => {
 
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
 
-    // The empty page keeps the table's footer: the read answered with no
-    // rows, but the page before it is still reachable.
     const previous = await screen.findByRole('button', {
       name: PREVIOUS_PAGE_LABEL,
     })
@@ -324,8 +311,6 @@ describe('AccountsPage', () => {
       await screen.findByText(zhCN.accounts.error.title),
     ).toBeInTheDocument()
 
-    // The failed page renders its error placeholder, but the footer is not
-    // part of that branch: the page before it stays reachable.
     const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
     expect(previous).toBeEnabled()
     await user.click(previous)
@@ -360,9 +345,6 @@ describe('AccountsPage', () => {
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
 
-    // The page branch swapped under the footer; the activated direction
-    // keeps the focus, so a keyboard operator pages again without finding
-    // the control.
     const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
     expect(document.activeElement).toBe(next)
   })
@@ -381,8 +363,6 @@ describe('AccountsPage', () => {
     expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
     const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
     expect(next).toHaveAttribute('aria-disabled', 'true')
-    // Only the attribute reports the boundary: the control stays reachable
-    // so the operator keeps their place in the Tab order.
     expect(next).not.toBeDisabled()
   })
 
@@ -417,9 +397,6 @@ describe('AccountsPage', () => {
 
     await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
     const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
-    // An unsettled page has no cursor to advance from: the direction stays
-    // focused, reports its read as busy and unavailable, and swallows the
-    // activation, so a click cannot skip a page.
     expect(document.activeElement).toBe(next)
     expect(next).toHaveAttribute('aria-busy', 'true')
     expect(next).toHaveAttribute('aria-disabled', 'true')
@@ -495,9 +472,6 @@ describe('AccountsPage', () => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
-    // The in-flight delete owns the list's context: both directions report
-    // unavailable until it settles, stay reachable, and swallow activation
-    // without a page read.
     const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
     const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
     expect(previous).toHaveAttribute('aria-disabled', 'true')
@@ -573,8 +547,6 @@ describe('AccountsPage', () => {
         call.method === 'GET' &&
         call.path === '/api/v1/system/auth/accounts',
     )
-    // The filter submission reads its first page: the request carries the
-    // new filters and no cursor.
     expect(reads[reads.length - 1]?.query).toEqual({
       identifier_prefix: 'ada',
       identifier_kind: 'username',
@@ -673,8 +645,6 @@ describe('AccountsPage', () => {
     await openDetail(user)
     const panel = await screen.findByRole('dialog', { name: 'Ada Lovelace' })
 
-    // A by-id 404 replaces the panel's content with the "not found or
-    // unavailable" placeholder and keeps the retry that re-reads.
     expect(
       await within(panel).findByText(zhCN.detail.notFound.title),
     ).toBeInTheDocument()
@@ -698,7 +668,6 @@ describe('AccountsPage', () => {
     const listAccounts = (
       params?: Parameters<AdminBackend['listAccounts']>[0],
     ): ReturnType<AdminBackend['listAccounts']> => {
-      // The page's own opening read (no filter) is not the one under test.
       if (params?.identifier_prefix === undefined) {
         return Promise.resolve({
           accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
@@ -715,7 +684,6 @@ describe('AccountsPage', () => {
       if (searchedReads === 2) {
         return Promise.reject(new Error('refresh failed'))
       }
-      // The retry stays in flight: the marker must already be withdrawn.
       return new Promise((resolve) => {
         releaseRetry = () =>
           resolve({
@@ -729,13 +697,10 @@ describe('AccountsPage', () => {
     await search(user)
     await screen.findByText('Ada Lovelace')
 
-    // A failed refresh keeps the settled list and marks it stale.
     await user.click(screen.getByRole('button', { name: zhCN.common.refresh }))
     const stale = await screen.findByRole('alert')
     expect(stale).toHaveTextContent(zhCN.stale.description)
 
-    // The retry is in flight: the marker goes away rather than staying
-    // beside content the page is already re-reading.
     await user.click(
       within(stale).getByRole('button', { name: zhCN.accounts.retry }),
     )

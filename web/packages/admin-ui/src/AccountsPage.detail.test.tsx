@@ -1,5 +1,3 @@
-/** AccountsPage suite: account detail, deletion, row busy and focus cases, plus where a detail write result renders. */
-
 import { describe, expect, it } from 'vitest'
 import { waitForCondition } from '@speed/test-utils/wait'
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -149,11 +147,7 @@ describe('AccountsPage', () => {
     await search(user)
     await screen.findByText('Ada Lovelace')
     await user.click(screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }))
-    // The dialog gates the write: nothing fires until it is confirmed.
     expect(deleted).toEqual([])
-    // Deleting an account is irreversible and takes dependent records with
-    // it, so its confirmation carries the heavier two-step guard: the first
-    // click only arms, the deliberate second fires.
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     expect(deleted).toEqual([])
@@ -173,12 +167,6 @@ describe('AccountsPage', () => {
     })
   })
 
-  // The delete confirmation names the account the way the roster shows it:
-  // by display name and, when the view carries one, its first login
-  // identifier; an identifier alone names an account with no display name.
-  // The opaque account id is a machine value the operator cannot match
-  // against the roster, so it never enters the sentence; only an account with
-  // neither a display name nor an identifier gets the neutral sentence.
   const DELETE_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
 
   function accountsWith(
@@ -213,7 +201,6 @@ describe('AccountsPage', () => {
   })
 
   it('names the account being deleted by its display name and first identifier', async () => {
-    // (the delete control's accessible name below carries the same pair)
     const user = userEvent.setup()
     const operations = accountsWith(
       accountFixture({
@@ -243,7 +230,6 @@ describe('AccountsPage', () => {
         }),
       ),
     ).toBeInTheDocument()
-    // The identifier names the account; the opaque id still never appears.
     expect(dialog).not.toHaveTextContent(DELETE_UUID)
   })
 
@@ -356,13 +342,7 @@ describe('AccountsPage', () => {
     const panel = await screen.findByRole('dialog', { name: DETAIL_PANEL_NAME })
     await within(panel).findByText('sess-cur')
 
-    // The marker sits on the current row only, in the primary identity
-    // (created time) rather than the low-priority id column, so it stays
-    // visible when that column hides. The id cell shows the prefix; the
-    // complete id stays on the title and copy control.
     const marker = within(panel).getByText(zhCN.accounts.sessions.current)
-    // The marker names the session in use, so it uses the color that means
-    // "this is the one you are using", the same as the account page's chip.
     expect(
       marker.closest(`.${chipClasses.root}`)?.classList.contains(
         chipClasses.colorPrimary,
@@ -377,7 +357,6 @@ describe('AccountsPage', () => {
     const otherRow = within(panel).getByText('sess-oth').closest('tr')
     expect(within(otherRow as HTMLElement).queryByText(zhCN.accounts.sessions.current)).toBeNull()
 
-    // Revoking everything says the caller is signed out too.
     await user.click(
       within(panel).getByRole('button', { name: zhCN.accounts.revokeSessions }),
     )
@@ -389,7 +368,6 @@ describe('AccountsPage', () => {
     ).toBeInTheDocument()
     await user.click(within(bulk).getByRole('button', { name: zhCN.common.cancel }))
 
-    // The current row's own revocation says the same.
     await user.click(
       await within(panel).findByRole('button', {
         name: fill(zhCN.accounts.sessions.revokeAria, {
@@ -407,7 +385,6 @@ describe('AccountsPage', () => {
     ).toBeInTheDocument()
     await user.click(within(own).getByRole('button', { name: zhCN.common.cancel }))
 
-    // A row the server does not mark keeps the plain confirmation.
     await user.click(
       await within(panel).findByRole('button', {
         name: fill(zhCN.accounts.sessions.revokeAria, { id: 'sess-other' }),
@@ -456,8 +433,6 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations })
     await openDetail(user)
     await screen.findByText('ci')
-    // Each revoke control names its own row (the secret's label, the
-    // session's id), so the two are picked apart by object, not by order.
     await user.click(screen.getByRole('button', { name: REVOKE_SECRET_CI_NAME }))
     await confirmDialog(user)
     await waitForCondition(() => {
@@ -600,8 +575,6 @@ describe('AccountsPage', () => {
     const remove = screen.getByRole('button', { name: DELETE_ACCOUNT_NAME })
 
     await deleteRowThroughConfirm(user, 'Ada Lovelace')
-    // The write is in flight: the control keeps focus and reports busy
-    // instead of turning natively disabled and dropping focus to the body.
     await waitFor(() => expect(remove).toHaveFocus())
     await waitFor(() => expect(remove).toHaveAttribute('aria-busy', 'true'))
 
@@ -610,7 +583,6 @@ describe('AccountsPage', () => {
     })
   })
 
-  /** A list read over the fixture rows minus the ones already deleted. */
   function listWithoutDeleted(
     rows: readonly AdminAccount[],
     deleted: readonly string[],
@@ -881,9 +853,6 @@ describe('AccountsPage', () => {
       screen.getByRole('button', { name: revokeSessionName('sess-a') }),
     )
     await confirmDialog(user)
-    // The detail panel is modal, so its focus trap keeps focus inside it:
-    // the "elsewhere" place a reader can reach during the write is another
-    // field of the same panel, not the list's filter input behind the trap.
     const elsewhere = screen.getByLabelText(
       zhCN.accounts.patch.displayNameLabel,
     )
@@ -912,12 +881,8 @@ describe('AccountsPage', () => {
 
       await drive(user, panel)
 
-      // The failure banner renders beside the section that fired the write,
-      // inside the dialog the operator can still reach.
       const banner = await within(panel).findByRole('alert')
       expect(banner).toHaveTextContent(FORBIDDEN_TEXT)
-      // The page-level region is not used for a write initiated here; while
-      // the panel is open it is also aria-hidden and would be unreachable.
       expect(outsideOf(panel, '[role="alert"]')).toEqual([])
     },
   )
@@ -934,8 +899,6 @@ describe('AccountsPage', () => {
       await drive(user, panel)
 
       const message = await within(panel).findByText(success)
-      // The confirmation fills a polite live region inside the panel rather
-      // than the page-level one behind the modal.
       expect(message.closest('[role="status"]')).not.toBeNull()
       for (const region of outsideOf(panel, '[role="status"]')) {
         expect(region.textContent).not.toContain(success)

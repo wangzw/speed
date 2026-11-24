@@ -1,8 +1,3 @@
-/**
- * InvitationsPage in a real browser: the invitation and membership
- * tables at the sm/md/lg floor widths with fixed data. The tenant is
- * seeded through the query parameter the page opens on.
- */
 import { afterEach, describe, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { page } from 'vitest/browser'
