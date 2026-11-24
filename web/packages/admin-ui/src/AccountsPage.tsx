@@ -105,7 +105,6 @@ import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
-import TablePagination from '@mui/material/TablePagination'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
@@ -124,6 +123,7 @@ import {
   RefreshButton,
   SectionCard,
   SidePanel,
+  TablePager,
   errorCodeOf,
   pageRefreshRead,
   primaryColumnMaxWidthSx,
@@ -155,10 +155,7 @@ import { useAdminHasFeature } from './internal/features.js'
 import { identifierPrefix } from './internal/identifier-prefix.js'
 import { useAdminSession } from './internal/session.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
-import {
-  useAdminUiTranslation,
-  useUiKitTranslation,
-} from './internal/translation.js'
+import { useAdminUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useAdminOperations } from './operations.js'
 import { ADMIN_UI_NAMESPACE } from './resources.js'
@@ -290,10 +287,6 @@ export function AccountsPage({
 }: AccountsPageProps = {}) {
   const { t, i18n } = useAdminUiTranslation()
   const formatTime = useFormatInstant()
-  // The paging footer is ui-kit's own footer, rendered by this page (see
-  // the list card's footer): its wording stays in the ui-kit namespace the
-  // host already registers beside this one.
-  const { t: tUiKit } = useUiKitTranslation()
   const operations = useAdminOperations()
   const confirm = usePendingConfirm()
   const session = useAdminSession()
@@ -428,9 +421,9 @@ export function AccountsPage({
   // The footer pages through the cursor the read answered with. A cursor
   // page carries no total, so the footer cannot judge where the last page
   // is on its own: a read answered with no next cursor is the last page,
-  // and the footer disables its forward control there. A page whose read
-  // has not settled yet has no cursor to advance from either, so it
-  // disables the control too and this guard backs that up.
+  // and the footer marks its forward control unavailable there. A page
+  // whose read has not settled yet has no cursor to advance from either,
+  // so it marks the control unavailable too and this guard backs that up.
   function changePage(nextPage: number): void {
     // A write in flight owns the list's context: paging away mid-write
     // would let a result land against a list it no longer describes.
@@ -1309,8 +1302,7 @@ export function AccountsPage({
           otherwise unmount the one control that could return to the page
           before it) and keep keyboard focus across the swap. */}
       <Box sx={{ mt: 2 }}>
-        <TablePagination
-          component="div"
+        <TablePager
           // The cursor read reports no total. -1 asks the footer for the
           // unknown-total wording instead of inventing a count.
           count={-1}
@@ -1319,22 +1311,18 @@ export function AccountsPage({
           // One size, so the footer offers no size selector and the
           // callback below never fires.
           rowsPerPageOptions={[ACCOUNTS_PAGE_SIZE]}
-          onPageChange={(_event, nextPage) => changePage(nextPage)}
+          onPageChange={(nextPage) => changePage(nextPage)}
           onRowsPerPageChange={() => undefined}
-          labelRowsPerPage={tUiKit('dataTable.rowsPerPage')}
-          labelDisplayedRows={({ from, to }) =>
-            tUiKit('dataTable.displayedRowsUnknown', { from, to })
-          }
-          slotProps={{
-            actions: {
-              // Changing the page is a change of the list's context, so
-              // both directions are disabled while one of the list's
-              // writes is in flight (the same rule the toolbar's search
-              // and the header's refresh follow).
-              previousButton: { disabled: listWrite.pending || page === 0 },
-              nextButton: { disabled: listWrite.pending || !hasNextPage },
-            },
-          }}
+          hasNext={hasNextPage}
+          // Changing the page is a change of the list's context, so both
+          // directions are unavailable while one of the list's writes is
+          // in flight (the same rule the toolbar's search and the header's
+          // refresh follow).
+          unavailable={listWrite.pending}
+          // The list query's fetch is this page's read: the direction that
+          // started a page read is busy, and a read started elsewhere (a
+          // filter, a refresh) makes both directions unavailable.
+          reading={accounts.isFetching}
         />
       </Box>
 
