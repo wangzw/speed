@@ -1,7 +1,6 @@
-// Package smtp delivers the mail sending seam over a generic SMTP relay. It
-// turns a rendered message into one SMTP transaction, calls the relay once and
-// classifies the answer; the credential is registered as a literal redaction
-// rule.
+// Package smtp delivers the mail sending seam over a generic SMTP relay: one
+// SMTP transaction per message, a single call to the relay, and the credential
+// registered as a literal redaction rule.
 package smtp
 
 import (
@@ -44,8 +43,6 @@ func Module() core.Module {
 	})
 }
 
-// stance judges whether this carrier is configured to run: a wholly unset section
-// stands down, and a half-configured one is an error naming the missing items.
 func stance(cfg *moduleConfig) (core.Enablement, error) {
 	if cfg.Host == "" && cfg.From == "" && cfg.Username == "" && cfg.Password == "" {
 		return core.Enablement{

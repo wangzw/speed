@@ -1,7 +1,6 @@
 // Package feature is the declaration surface of the feature document: the Spec
-// a module registers to declare a feature it serves, the Board it posts a
-// conditional feature to, the name rules, and the sentinels the publisher fails
-// with.
+// a module registers, the Board it posts a conditional feature to, the name
+// rules, and the sentinels the publisher fails with.
 package feature
 
 import (
@@ -35,10 +34,8 @@ type Board interface {
 
 // The sentinels a caller decides on with errors.Is.
 var (
-	// ErrInvalidName reports a feature name whose shape is not valid: fewer
-	// than two dot-separated segments, a segment that does not begin with a
-	// lower-case letter, or a segment carrying a character outside lower-case
-	// letters, digits and dashes.
+	// ErrInvalidName reports a feature name whose shape is not valid: fewer than
+	// two dot-separated segments, or a segment not matching [a-z][a-z0-9-]*.
 	ErrInvalidName = errors.New("feature: a feature name is not a valid shape")
 	// ErrForeignName reports a feature name whose first segment differs from
 	// the first segment of the declaring module's name.

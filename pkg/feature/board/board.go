@@ -141,8 +141,6 @@ func readConfig(reg *core.Registry) (string, error) {
 	return cfg.Endpoint, nil
 }
 
-// productOf narrows an instance to this module's product, leaving an instance a
-// host supplied for the module alone.
 func productOf(instance any) (*board, bool) {
 	b, ok := instance.(*board)
 	return b, ok && b != nil
@@ -192,8 +190,6 @@ func newBoard(reg *core.Registry) (*board, error) {
 	return b, nil
 }
 
-// optional takes up a capability whose absence is legal; any other failure ends
-// the start.
 func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 	var zero T
 	v, err := core.Resolve[T](reg)

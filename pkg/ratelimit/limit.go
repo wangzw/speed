@@ -222,7 +222,6 @@ func cancelled(ctx context.Context) bool {
 	return ctx.Err() != nil
 }
 
-// retryAfterSeconds rounds the remaining part of the window up, never below one.
 func retryAfterSeconds(remaining int64) int {
 	seconds := (remaining + int64(time.Second) - 1) / int64(time.Second)
 	if seconds < 1 {

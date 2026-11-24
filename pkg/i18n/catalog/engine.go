@@ -37,10 +37,9 @@ var (
 	// ErrInvalidOverlay reports a configured catalogs directory holding a file
 	// that is not a message catalog.
 	ErrInvalidOverlay = errors.New("i18n: a configured catalogs directory holds a file that is not a well-formed catalog")
-	// ErrInvalidMessage reports a message the engine cannot parse: a segment
-	// naming a keyword other than plural or time, a plural segment with an
-	// invalid category, a missing "other" or a repeated category, or a time
-	// segment with an empty layout.
+	// ErrInvalidMessage reports a message the engine cannot parse: an unknown
+	// keyword, an invalid plural category, a missing "other" or repeated
+	// category, or a time segment with an empty layout.
 	ErrInvalidMessage = errors.New("i18n: a message is not well formed")
 )
 
@@ -373,10 +372,8 @@ func parseSegment(n *node, inner string) error {
 	keyword, body, _ := strings.Cut(rest, ",")
 	switch strings.TrimSpace(keyword) {
 	case "plural":
-		// The parser cuts a placeholder at its first "}}", so a branch carrying
-		// a nested placeholder is truncated before this point. A brace left in
-		// the body is reported as itself rather than as the missing "other"
-		// branch the truncation would otherwise produce.
+		// The parser cuts a placeholder at its first "}}" before this check, so a
+		// branch carrying a nested placeholder arrives truncated.
 		if strings.Contains(inner, "{{") {
 			return errors.New("a plural branch may not contain a nested placeholder")
 		}
@@ -548,10 +545,8 @@ func (e *engine) renderTime(ctx context.Context, tf *timeForm, raw string, args 
 	return i18n.TimeOf(v).In(e.location(name)).Format(tf.layout)
 }
 
-// location answers "Local" as UTC as well as the empty and unloadable names,
-// because the context accessor is exported and its value is not re-examined on
-// the read path. A loaded location is cached so a name reads the filesystem
-// once: time.LoadLocation re-reads the zoneinfo files on every call.
+// location answers "Local", empty and unloadable names as UTC. A loaded location
+// is cached: time.LoadLocation re-reads the zoneinfo files on every call.
 func (e *engine) location(name string) *time.Location {
 	if name == "" || name == "Local" {
 		return time.UTC

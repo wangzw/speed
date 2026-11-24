@@ -168,8 +168,6 @@ func (h *handler) fail(c *gin.Context, name string, err error) {
 	})
 }
 
-// lookupKey cleans the catch-all value into a bundle-relative key; the root
-// cleans to ".".
 func lookupKey(param string) string {
 	return pathpkg.Clean(strings.TrimPrefix(param, "/"))
 }

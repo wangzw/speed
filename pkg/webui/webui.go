@@ -28,8 +28,6 @@ const (
 	endpointPath        = ConfigNamespace + "." + endpointKey
 )
 
-// defaultAssetPrefix is the directory under which a build tool collects its
-// content-addressed files, used when configuration names none.
 const defaultAssetPrefix = "assets"
 
 // defaultResourcePrefix is the reserved path prefix answered as a static-resource

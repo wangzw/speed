@@ -1,7 +1,6 @@
 // Package scheduler is the periodic-trigger module, registered as
-// jobs.scheduler. It reads the periodic declarations business modules place in
-// their resources and, on every window start, enqueues one job per window per
-// tenant.
+// jobs.scheduler. On every window start it enqueues one job per window per
+// tenant from the periodic declarations business modules place in their resources.
 package scheduler
 
 import (

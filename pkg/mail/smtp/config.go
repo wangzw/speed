@@ -22,13 +22,9 @@ const (
 )
 
 const (
-	// tlsStartTLS connects in the clear and requires the server to advertise
-	// STARTTLS.
 	tlsStartTLS = "starttls"
-	// tlsImplicit encrypts from the first byte, the SMTPS posture.
 	tlsImplicit = "implicit"
-	// tlsNone runs the whole session in the clear.
-	tlsNone = "none"
+	tlsNone     = "none"
 )
 
 const defaultPort = 587
