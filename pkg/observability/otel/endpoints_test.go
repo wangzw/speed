@@ -82,8 +82,7 @@ type endpointCase struct {
 // endpointConfig is a reading face for an endpointCase: this module's list as
 // the case sets it, and the entry module's endpoints as the case declares them.
 type endpointConfig struct {
-	c         endpointCase
-	addresses map[string]string
+	c endpointCase
 }
 
 func (f endpointConfig) Decode(namespace string, target any) error {
@@ -100,7 +99,7 @@ func (f endpointConfig) Decode(namespace string, target any) error {
 		if i > 0 {
 			doc += ","
 		}
-		doc += `"` + name + `":{"address":"` + f.addresses[name] + `"}`
+		doc += `"` + name + `":{"address":"127.0.0.1:0"}`
 	}
 	doc += `},"endpoints":{`
 	for i, name := range f.c.declared {
@@ -128,16 +127,13 @@ func (c endpointCase) run(t *testing.T) served {
 	t.Helper()
 	spans := &recordingSpanExporter{}
 	metrics := &requestCountExporter{}
-	addresses := map[string]string{}
-	for _, name := range c.declared {
-		addresses[name] = freeAddress(t)
-	}
+	logs := &syncBuffer{}
 
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(log.Module())
-	reg.Supply(endpointConfig{c: c, addresses: addresses}, config.ModuleName)
-	reg.Supply(entryLogger{lg: slog.New(slog.NewTextHandler(&syncBuffer{}, nil))}, log.ModuleName)
+	reg.Supply(endpointConfig{c: c}, config.ModuleName)
+	reg.Supply(entryLogger{lg: slog.New(slog.NewJSONHandler(logs, nil))}, log.ModuleName)
 	reg.Register(Module())
 	reg.Register(core.Module{
 		Name: "test.backend",
@@ -186,7 +182,7 @@ func (c endpointCase) run(t *testing.T) served {
 		Action: func(context.Context, *core.Registry) error {
 			for _, name := range c.serving {
 				h := &entryHost{
-					base: "http://" + addresses[name],
+					base: "http://" + listeningAddress(t, logs, name),
 					client: &nethttp.Client{
 						Timeout:   5 * time.Second,
 						Transport: &nethttp.Transport{DisableKeepAlives: true},

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"net"
 	nethttp "net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -61,20 +61,24 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// freeAddress is a loopback address nothing is listening on. The entry module
-// takes its address from configuration and does not report the one it bound, so
-// the case picks the port first.
-func freeAddress(t *testing.T) string {
+func listeningAddress(t *testing.T, logs *syncBuffer, listener string) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("picking a free port: %v", err)
+	for line := range strings.SplitSeq(logs.String(), "\n") {
+		var record map[string]any
+		if json.Unmarshal([]byte(line), &record) != nil {
+			continue
+		}
+		if record["msg"] != "an HTTP listener is listening" || record["listener"] != listener {
+			continue
+		}
+		address, ok := record["address"].(string)
+		if !ok {
+			t.Fatalf("the listening record for %q carries no address: %v", listener, record)
+		}
+		return address
 	}
-	addr := l.Addr().String()
-	if err := l.Close(); err != nil {
-		t.Fatalf("releasing the picked port: %v", err)
-	}
-	return addr
+	t.Fatalf("the entry module wrote no listening record for %q; its log is:\n%s", listener, logs.String())
+	return ""
 }
 
 // entryHost is a running entry module as a client sees it.
@@ -120,12 +124,11 @@ func (h *entryHost) status(t *testing.T, method, path string, header ...string) 
 func serve(t *testing.T, p *providers, register func(ep speedhttp.Endpoint), fn func(h *entryHost)) {
 	t.Helper()
 	logs := &syncBuffer{}
-	addr := freeAddress(t)
 
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(log.Module())
-	reg.Supply(jsonConfig(`{"listeners":{"`+entryName+`":{"address":"`+addr+`"}},`+
+	reg.Supply(jsonConfig(`{"listeners":{"`+entryName+`":{"address":"127.0.0.1:0"}},`+
 		`"endpoints":{"`+entryName+`":{"listener":"`+entryName+`"}}}`), config.ModuleName)
 	reg.Supply(entryLogger{lg: slog.New(slog.NewJSONHandler(logs, nil))}, log.ModuleName)
 	reg.Register(speedhttp.Module())
@@ -153,7 +156,7 @@ func serve(t *testing.T, p *providers, register func(ep speedhttp.Endpoint), fn 
 		Participants: []string{speedhttp.ModuleName, "test.registrant"},
 		Action: func(context.Context, *core.Registry) error {
 			fn(&entryHost{
-				base: "http://" + addr,
+				base: "http://" + listeningAddress(t, logs, entryName),
 				logs: logs,
 				client: &nethttp.Client{
 					Timeout:   5 * time.Second,

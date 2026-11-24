@@ -76,13 +76,13 @@ func (*recordingMetricExporter) Shutdown(context.Context) error   { return nil }
 func TestTheAssemblerPutsTheLayerOnTheEndpointsTheConfigurationNames(t *testing.T) {
 	spans := &recordingSpanExporter{}
 	metrics := &recordingMetricExporter{}
-	addr := freeAddress(t)
+	logs := &syncBuffer{}
 
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Register(log.Module())
-	reg.Supply(wiredConfig{address: addr}, config.ModuleName)
-	reg.Supply(entryLogger{lg: slog.New(slog.NewTextHandler(&syncBuffer{}, nil))}, log.ModuleName)
+	reg.Supply(wiredConfig{address: "127.0.0.1:0"}, config.ModuleName)
+	reg.Supply(entryLogger{lg: slog.New(slog.NewJSONHandler(logs, nil))}, log.ModuleName)
 	reg.Register(speedhttp.Module())
 	reg.Register(Module())
 	reg.Register(core.Module{
@@ -121,7 +121,7 @@ func TestTheAssemblerPutsTheLayerOnTheEndpointsTheConfigurationNames(t *testing.
 		Participants: []string{ModuleName, speedhttp.ModuleName, "test.backend", "test.registrant"},
 		Action: func(context.Context, *core.Registry) error {
 			h := &entryHost{
-				base: "http://" + addr,
+				base: "http://" + listeningAddress(t, logs, entryName),
 				client: &nethttp.Client{
 					Timeout:   5 * time.Second,
 					Transport: &nethttp.Transport{DisableKeepAlives: true},
